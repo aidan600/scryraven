@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Mapping, Sequence
 
+from core.multicomponent_role_runtime import safe_packet_digest
 from core.multicomponent_sufficiency_consumption_runtime import (
     build_multicomponent_graph_consumption,
 )
@@ -527,6 +528,38 @@ def _answer_contract_missing(
     return tuple(assessments)
 
 
+def _answer_contract_assessment_exactly_reconciled(
+    assessment: SufficiencyRequirementAssessment,
+    *,
+    contract_requirements: Sequence[Mapping[str, Any]],
+    ledger_requirements: Sequence[Mapping[str, Any]],
+) -> bool:
+    """Resolve a legacy class summary only through exact contract requirement IDs."""
+
+    source_class = clean_token(assessment.required_source_class)
+    if not source_class:
+        return False
+    exact_contract_requirements = [
+        item
+        for item in contract_requirements
+        if clean_token(item.get("required_source_class")) == source_class
+        and clean_token(item.get("requirement_id"))
+    ]
+    if not exact_contract_requirements:
+        return False
+    for requirement in exact_contract_requirements:
+        ledger_requirement = _find_ledger_requirement(
+            requirement,
+            ledger_requirements,
+        )
+        if (
+            not _exact_requirement_match(requirement, ledger_requirement)
+            or clean_token(ledger_requirement.get("status")) != "satisfied"
+        ):
+            return False
+    return True
+
+
 def _mapping_tuple(value: Any) -> tuple[Mapping[str, Any], ...]:
     return tuple(item for item in _list(value) if isinstance(item, Mapping))
 
@@ -672,6 +705,8 @@ def _component_readiness_status(
 
 def _component_readiness_assessments(
     projection: Mapping[str, Any],
+    *,
+    authoritative_ready_component_ids: frozenset[str] = frozenset(),
 ) -> tuple[tuple[SufficiencyRequirementAssessment, ...], dict[str, Any]]:
     components = _mapping_tuple(projection.get("components"))
     assessments: list[SufficiencyRequirementAssessment] = []
@@ -689,6 +724,11 @@ def _component_readiness_assessments(
         readiness_status, assessment_status, reason, readiness_blockers = (
             _component_readiness_status(component)
         )
+        if component_id in authoritative_ready_component_ids:
+            readiness_status = "satisfied_component"
+            assessment_status = "satisfied"
+            reason = "current_ready_component_work_graph_v1"
+            readiness_blockers = ()
         source_class = None
         source_obligation_id = None
         if source_obligation_refs:
@@ -1324,6 +1364,88 @@ def _semantic_readiness_reasons(overlay: SemanticSufficiencyOverlay) -> tuple[st
     return tuple(dict.fromkeys(reason for reason in reasons if reason))
 
 
+def _canonical_recovery_outcome_is_current(
+    *,
+    outcome: Mapping[str, Any],
+    authorization: Mapping[str, Any],
+    graph: Mapping[str, Any],
+    semantic_state: Mapping[str, Any],
+    run_identity: Mapping[str, Any],
+) -> bool:
+    if (
+        outcome.get("owner")
+        != "RunKernel.MulticomponentRecoveryOutcome"
+        or outcome.get("canonical_state") is not True
+        or outcome.get("trace_only") is not False
+        or outcome.get("final_answer_authority") is not True
+        or outcome.get("direct_semantic_producer_used") is not False
+        or outcome.get("runtime_parallelism") is not False
+        or outcome.get("pre_recovery_synthesis_suppressed") is not True
+        or outcome.get("run_id") != run_identity.get("run_id")
+        or outcome.get("request_id") != run_identity.get("request_id")
+    ):
+        return False
+    declared_digest = clean_token(outcome.get("outcome_digest"))
+    if not declared_digest or declared_digest != safe_packet_digest(
+        {
+            key: value
+            for key, value in outcome.items()
+            if key != "outcome_digest"
+        }
+    ):
+        return False
+    if (
+        authorization.get("owner")
+        != "RunKernel.MulticomponentRecoveryAuthorization"
+        or authorization.get("canonical_state") is not True
+        or outcome.get("run_id") != authorization.get("run_id")
+        or outcome.get("request_id") != authorization.get("request_id")
+        or outcome.get("recovery_authorization_id")
+        != authorization.get("authorization_id")
+        or outcome.get("recovery_authorization_digest")
+        != authorization.get("authorization_digest")
+        or outcome.get("proposal_id") != authorization.get("proposal_id")
+        or outcome.get("proposal_digest")
+        != authorization.get("proposal_digest")
+        or outcome.get("scrutineer_artifact_id")
+        != authorization.get("scrutineer_artifact_id")
+        or outcome.get("scrutineer_artifact_digest")
+        != authorization.get("scrutineer_artifact_digest")
+    ):
+        return False
+    if (
+        outcome.get("current_answer_contract_version")
+        != semantic_state.get("accepted_contract_version")
+        or outcome.get("current_answer_contract_digest")
+        != semantic_state.get("accepted_contract_digest")
+        or outcome.get("graph_id") != graph.get("graph_id")
+        or outcome.get("graph_revision") != graph.get("graph_revision")
+        or outcome.get("graph_digest") != graph.get("graph_digest")
+    ):
+        return False
+    graph_contract = _mapping(graph.get("accepted_contract_ref"))
+    if (
+        outcome.get("graph_answer_contract_version")
+        != graph_contract.get("accepted_contract_version")
+        or outcome.get("graph_answer_contract_digest")
+        != graph_contract.get("accepted_contract_digest")
+    ):
+        return False
+    providers = _string_list(outcome.get("observed_provider_identities"))
+    if any(
+        provider not in {"tavily", "linkup", "exa"}
+        for provider in providers
+    ):
+        return False
+    attempts = _int_value(outcome.get("ordinary_acquisition_attempt_count"))
+    disposition = clean_token(outcome.get("recovery_disposition"))
+    if disposition == "blocked_requires_user_confirmation":
+        return attempts == 0 and not providers
+    if attempts != 1 or not providers:
+        return False
+    return True
+
+
 def build_deterministic_sufficiency_judgment(
     judgment_input: RunSufficiencyJudgmentInput,
 ) -> RunSufficiencyJudgment:
@@ -1341,15 +1463,33 @@ def build_deterministic_sufficiency_judgment(
     semantic_overlay = evaluate_semantic_sufficiency_overlay(
         judgment_input.semantic_state_facts,
     )
+    semantic_state = _mapping(judgment_input.semantic_state_facts)
     multicomponent_consumption = build_multicomponent_graph_consumption(
-        judgment_input.multicomponent_graph_state
+        judgment_input.multicomponent_graph_state,
+        current_contract_version=semantic_state.get("accepted_contract_version"),
+        current_contract_digest=semantic_state.get("accepted_contract_digest"),
+    )
+    graph_ready_component_ids = frozenset(
+        clean_token(item.get("component_id"))
+        for item in _mapping_tuple(
+            _mapping(judgment_input.multicomponent_graph_state).get(
+                "component_nodes"
+            )
+        )
+        if multicomponent_consumption.get("graph_ready_for_synthesis") is True
+        and item.get("current") is True
+        and item.get("stale") is not True
+        and clean_token(item.get("admission_status"))
+        in {"admitted", "admitted_with_caveats"}
+        and clean_token(item.get("component_id"))
     )
 
     ledger_requirements = _ledger_requirements(ledger)
+    required_contract_requirements = _required_contract_requirements(contract)
     missing: list[SufficiencyRequirementAssessment] = []
     partial: list[SufficiencyRequirementAssessment] = []
     satisfied: list[SufficiencyRequirementAssessment] = []
-    for requirement in _required_contract_requirements(contract):
+    for requirement in required_contract_requirements:
         ledger_requirement = _find_ledger_requirement(
             requirement,
             ledger_requirements,
@@ -1386,6 +1526,29 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
 
+    for ledger_requirement in ledger_requirements:
+        status = clean_token(ledger_requirement.get("status"))
+        requirement_id = clean_token(ledger_requirement.get("requirement_id"))
+        if (
+            status not in _MISSING_LEDGER_STATUSES
+            or not requirement_id
+            or not clean_token(ledger_requirement.get("component_id"))
+            or not clean_token(ledger_requirement.get("source_obligation_id"))
+            or any(item.requirement_id == requirement_id for item in missing)
+        ):
+            continue
+        missing.append(
+            _assessment(
+                ledger_requirement,
+                status="missing",
+                reason=(
+                    clean_text(ledger_requirement.get("reason"), limit=260)
+                    or "exact_evidence_ledger_source_obligation_unsatisfied"
+                ),
+                ledger_requirement=ledger_requirement,
+            )
+        )
+
     for semantic_missing in semantic_overlay.missing_assessments:
         assessment = _semantic_assessment(semantic_missing)
         if not any(
@@ -1394,6 +1557,12 @@ def build_deterministic_sufficiency_judgment(
             missing.append(assessment)
 
     for item in _answer_contract_missing(answer_contract):
+        if _answer_contract_assessment_exactly_reconciled(
+            item,
+            contract_requirements=required_contract_requirements,
+            ledger_requirements=ledger_requirements,
+        ):
+            continue
         if not any(
             existing.required_source_class == item.required_source_class
             and existing.requirement_kind == item.requirement_kind
@@ -1405,7 +1574,8 @@ def build_deterministic_sufficiency_judgment(
                 missing.append(item)
 
     component_assessments, component_readiness = _component_readiness_assessments(
-        _mapping(judgment_input.component_readiness_projection)
+        _mapping(judgment_input.component_readiness_projection),
+        authoritative_ready_component_ids=graph_ready_component_ids,
     )
     for item in component_assessments:
         if item.status == "satisfied":
@@ -1484,6 +1654,58 @@ def build_deterministic_sufficiency_judgment(
         posture = SufficiencyPosture.BLOCKED
         final_allowed = False
         rationale = "component_readiness_not_satisfied"
+    recovery_state = _mapping(judgment_input.multicomponent_recovery_state)
+    recovery_authorization = _mapping(
+        judgment_input.multicomponent_recovery_authorization_state
+    )
+    recovery_outcome_current = _canonical_recovery_outcome_is_current(
+        outcome=recovery_state,
+        authorization=recovery_authorization,
+        graph=_mapping(judgment_input.multicomponent_graph_state),
+        semantic_state=semantic_state,
+        run_identity=_mapping(judgment_input.run_identity),
+    )
+    terminal_recovery_partial = (
+        recovery_outcome_current
+        and clean_token(recovery_state.get("recovery_disposition"))
+        in {
+            "blocked_no_candidates",
+            "blocked_no_readable_evidence",
+            "blocked_component_admission",
+            "blocked_resynthesis",
+        }
+        and _int_value(recovery_state.get("ordinary_acquisition_attempt_count"))
+        == 1
+        and recovery_state.get("direct_semantic_producer_used") is False
+        and _partial_allowed(contract)
+        and bool(
+            multicomponent_consumption.get("direct_component_entries")
+        )
+        and (
+            multicomponent_consumption.get("graph_contract_current") is False
+            or multicomponent_consumption.get("graph_ready_for_synthesis") is not True
+        )
+    )
+    if terminal_recovery_partial:
+        # The one authorized recovery attempt is exhausted. Preserve only the
+        # pre-existing direct component findings through ordinary partial
+        # finalization; prior-contract synthesis remains suppressed.
+        decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+        posture = SufficiencyPosture.PARTIAL_ANSWER
+        final_allowed = True
+        rationale = "multicomponent_recovery_terminal_blocker_partial_output"
+        multicomponent_consumption["limitations"] = list(
+            dict.fromkeys(
+                [
+                    *multicomponent_consumption.get("limitations", ()),
+                    clean_text(
+                        recovery_state.get("bounded_blocker_reason"),
+                        limit=260,
+                    )
+                    or "The one authorized missing-component recovery attempt failed.",
+                ]
+            )
+        )
     if multicomponent_consumption:
         ordinary_ready_with_caveats = (
             decision is RunSufficiencyDecision.READY_WITH_CAVEATS

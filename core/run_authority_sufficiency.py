@@ -329,6 +329,11 @@ class RunSufficiencyJudgmentInput:
     semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
     component_readiness_projection: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_state: Mapping[str, Any] = field(default_factory=dict)
+    multicomponent_recovery_state: Mapping[str, Any] = field(default_factory=dict)
+    multicomponent_recovery_authorization_state: Mapping[str, Any] = field(
+        default_factory=dict
+    )
+    run_identity: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
         contract = _safe_mapping(self.contract_projection)
@@ -403,6 +408,62 @@ class RunSufficiencyJudgmentInput:
             "semantic_state_ref": self._semantic_state_model_ref(),
             "component_readiness_ref": self._component_readiness_model_ref(),
             "multicomponent_graph_ref": self._multicomponent_graph_model_ref(),
+            "multicomponent_recovery_ref": self._multicomponent_recovery_model_ref(),
+            "multicomponent_recovery_authorization_ref": (
+                self._multicomponent_recovery_authorization_model_ref()
+            ),
+            "run_ref": {
+                "run_id": clean_token(_safe_mapping(self.run_identity).get("run_id")),
+                "request_id": clean_token(
+                    _safe_mapping(self.run_identity).get("request_id")
+                ),
+            },
+        }
+
+    def _multicomponent_recovery_model_ref(self) -> dict[str, Any]:
+        recovery = _safe_mapping(self.multicomponent_recovery_state)
+        return {
+            "schema_version": clean_token(recovery.get("schema_version")),
+            "owner": clean_token(recovery.get("owner")),
+            "canonical_state": recovery.get("canonical_state") is True,
+            "trace_only": recovery.get("trace_only") is True,
+            "recovery_disposition": clean_token(
+                recovery.get("recovery_disposition")
+            ),
+            "recovered_component_id": clean_token(
+                recovery.get("recovered_component_id")
+            ),
+            "ordinary_acquisition_attempt_count": recovery.get(
+                "ordinary_acquisition_attempt_count"
+            ),
+            "direct_semantic_producer_used": recovery.get(
+                "direct_semantic_producer_used"
+            ),
+            "bounded_blocker_reason": clean_text(
+                recovery.get("bounded_blocker_reason"), limit=260
+            ),
+            "outcome_digest": clean_token(recovery.get("outcome_digest")),
+        }
+
+    def _multicomponent_recovery_authorization_model_ref(
+        self,
+    ) -> dict[str, Any]:
+        authorization = _safe_mapping(
+            self.multicomponent_recovery_authorization_state
+        )
+        return {
+            "owner": clean_token(authorization.get("owner")),
+            "canonical_state": authorization.get("canonical_state") is True,
+            "authorization_id": clean_token(
+                authorization.get("authorization_id")
+            ),
+            "authorization_digest": clean_token(
+                authorization.get("authorization_digest")
+            ),
+            "proposal_id": clean_token(authorization.get("proposal_id")),
+            "proposal_digest": clean_token(
+                authorization.get("proposal_digest")
+            ),
         }
 
     def _multicomponent_graph_model_ref(self) -> dict[str, Any]:

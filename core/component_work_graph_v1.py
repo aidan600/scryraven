@@ -700,6 +700,206 @@ def component_work_graph_v1_from_cross_component_artifact(
     return validate_component_work_graph_v1(graph)
 
 
+def graph_with_recovered_component(
+    graph: Mapping[str, Any],
+    *,
+    recovered_component_node: Mapping[str, Any],
+    current_contract_ref: Mapping[str, Any],
+    recovery_authorization_ref: Mapping[str, Any],
+    amendment_application_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Advance one graph identity and invalidate all pre-recovery synthesis."""
+
+    current = validate_component_work_graph_v1(graph)
+    node = validate_component_work_node_v1(recovered_component_node)
+    if node.get("run_id") != current.get("run_id") or node.get(
+        "request_id"
+    ) != current.get("request_id"):
+        raise ComponentWorkGraphV1Error("recovered component node is cross-run")
+    if any(
+        item.get("component_id") == node.get("component_id")
+        for item in current["component_nodes"]
+    ):
+        raise ComponentWorkGraphV1Error("recovered component node is duplicate")
+    if len(current["component_nodes"]) >= MAX_COMPONENT_NODES:
+        raise ComponentWorkGraphV1Error("recovered component exceeds graph cap")
+    contract_ref = _safe_mapping(current_contract_ref)
+    prior_contract_ref = _safe_mapping(current.get("accepted_contract_ref"))
+    if (
+        not contract_ref.get("accepted_contract_version")
+        or not contract_ref.get("accepted_contract_digest")
+        or contract_ref.get("accepted_contract_digest")
+        == prior_contract_ref.get("accepted_contract_digest")
+    ):
+        raise ComponentWorkGraphV1Error(
+            "graph amendment requires a new current AnswerContract binding"
+        )
+    recovery_ref = _safe_mapping(recovery_authorization_ref)
+    amendment_ref = _safe_mapping(amendment_application_ref)
+    if (
+        recovery_ref.get("canonical_state") is not True
+        or recovery_ref.get("recovery_round") != 1
+        or recovery_ref.get("graph_digest") != current.get("graph_digest")
+        or not amendment_ref.get("application_digest")
+    ):
+        raise ComponentWorkGraphV1Error(
+            "graph amendment requires exact recovery and amendment authority"
+        )
+
+    stale_nodes: list[dict[str, Any]] = []
+    for prior in current["synthesis_nodes"]:
+        stale = deepcopy(prior)
+        stale["status"] = "stale"
+        stale["current"] = False
+        stale["stale"] = True
+        stale["stale_reason"] = "AnswerContract and component graph amended"
+        _clear_synthesis_validation_and_admission(stale)
+        _refresh_node_digest(stale)
+        stale_nodes.append(stale)
+    stale_edges = []
+    for prior in current["edges"]:
+        stale = deepcopy(prior)
+        stale["current"] = False
+        stale["stale"] = True
+        stale["stale_reason"] = "pre-recovery synthesis authority invalidated"
+        stale_edges.append(stale)
+    stale_challenges = []
+    for prior in current.get("challenge_refs") or ():
+        stale = deepcopy(prior)
+        stale["current"] = False
+        stale["stale"] = True
+        stale_challenges.append(stale)
+
+    current["component_nodes"].append(node)
+    current["accepted_contract_ref"] = contract_ref
+    current["stale_synthesis_history"] = [
+        *list(current.get("stale_synthesis_history") or ()),
+        *stale_nodes,
+    ]
+    current["stale_edge_history"] = [
+        *list(current.get("stale_edge_history") or ()),
+        *stale_edges,
+    ]
+    current["stale_challenge_history"] = [
+        *list(current.get("stale_challenge_history") or ()),
+        *stale_challenges,
+    ]
+    prior_scrutineer_ref = _safe_mapping(current.get("scrutineer_ref"))
+    if prior_scrutineer_ref:
+        current["stale_scrutineer_history"] = [
+            *list(current.get("stale_scrutineer_history") or ()),
+            {
+                **prior_scrutineer_ref,
+                "current": False,
+                "stale": True,
+            },
+        ]
+    current["synthesis_nodes"] = []
+    current["edges"] = []
+    current["synthesis_topological_order"] = []
+    current["maximum_synthesis_depth"] = 0
+    current["dependency_posture"] = "requires_fresh_resynthesis"
+    current["scrutineer_required"] = True
+    current["scrutineer_status"] = "required_after_recovery"
+    current["scrutineer_ref"] = {}
+    current["challenge_refs"] = []
+    current["graph_challenge_posture"] = "none"
+    current["graph_output_suppressed"] = True
+    current["graph_status"] = GRAPH_STATUS_STALE
+    current["direct_output_component_ids"] = [
+        item["component_id"]
+        for item in current["component_nodes"]
+        if item.get("direct_output_eligible") is True
+    ]
+    current["automatic_recovery_rounds"] = 1
+    current["graph_amendment_rounds"] = 1
+    current["component_research_reentry_rounds"] = 1
+    current["whole_graph_resynthesis_rounds"] = 0
+    current["recovery_authorization_ref"] = recovery_ref
+    current["contract_amendment_application_ref"] = amendment_ref
+    current["pre_recovery_synthesis_authority_invalidated"] = True
+    return _next_revision(current)
+
+
+def component_work_graph_v1_resynthesis_from_cross_component_artifact(
+    graph: Mapping[str, Any],
+    *,
+    accepted_contract_ref: Mapping[str, Any],
+    cross_component_artifact: Mapping[str, Any],
+    additional_scrutineer_trigger_reasons: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Install one complete fresh synthesis structure on an amended graph."""
+
+    current = validate_component_work_graph_v1(graph)
+    if (
+        current.get("dependency_posture") != "requires_fresh_resynthesis"
+        or current.get("synthesis_nodes")
+        or int(current.get("whole_graph_resynthesis_rounds") or 0) != 0
+        or int(current.get("automatic_recovery_rounds") or 0) != 1
+    ):
+        raise ComponentWorkGraphV1Error(
+            "fresh whole-graph resynthesis requires one amended stale graph"
+        )
+    contract_ref = _safe_mapping(accepted_contract_ref)
+    if contract_ref != _safe_mapping(current.get("accepted_contract_ref")):
+        raise ComponentWorkGraphV1Error(
+            "fresh resynthesis AnswerContract binding mismatch"
+        )
+    fresh = component_work_graph_v1_from_cross_component_artifact(
+        run_id=str(current["run_id"]),
+        request_id=str(current["request_id"]),
+        accepted_contract_ref=contract_ref,
+        requested_synthesis_directive=str(
+            current["requested_synthesis_directive"]
+        ),
+        component_nodes=current["component_nodes"],
+        cross_component_artifact=cross_component_artifact,
+        additional_scrutineer_trigger_reasons=(
+            *(
+                ("deep_mode",)
+                if "deep_mode"
+                in set(current.get("scrutineer_trigger_reasons") or ())
+                else ()
+            ),
+            *additional_scrutineer_trigger_reasons,
+            "post_recovery_fresh_resynthesis",
+        ),
+    )
+    fresh.update(
+        {
+            "owner": current.get("owner"),
+            "canonical_state": current.get("canonical_state"),
+            "graph_id": current["graph_id"],
+            "graph_revision": int(current["graph_revision"]) + 1,
+            "previous_graph_digest": current["graph_digest"],
+            "stale_synthesis_history": list(
+                current.get("stale_synthesis_history") or ()
+            ),
+            "stale_edge_history": list(current.get("stale_edge_history") or ()),
+            "stale_challenge_history": list(
+                current.get("stale_challenge_history") or ()
+            ),
+            "stale_scrutineer_history": list(
+                current.get("stale_scrutineer_history") or ()
+            ),
+            "automatic_recovery_rounds": 1,
+            "graph_amendment_rounds": 1,
+            "component_research_reentry_rounds": 1,
+            "whole_graph_resynthesis_rounds": 1,
+            "recovery_authorization_ref": _safe_mapping(
+                current.get("recovery_authorization_ref")
+            ),
+            "contract_amendment_application_ref": _safe_mapping(
+                current.get("contract_amendment_application_ref")
+            ),
+            "pre_recovery_synthesis_authority_invalidated": True,
+            "graph_output_suppressed": False,
+        }
+    )
+    fresh["graph_digest"] = _digest(_without_graph_digest(fresh))
+    return validate_component_work_graph_v1(fresh)
+
+
 def graph_with_synthesis_validation(
     graph: Mapping[str, Any],
     *,
@@ -1121,6 +1321,7 @@ def expected_graph_after_transition(
     logical_accounting: Mapping[str, Any] | None = None,
     physical_call_accounting: Mapping[str, Any] | None = None,
     structure_graph: Mapping[str, Any] | None = None,
+    transition_graph: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Rederive the unique next canonical graph for one Graph V1 operation."""
 
@@ -1130,6 +1331,12 @@ def expected_graph_after_transition(
                 "structure transition requires the exact derived structure graph"
             )
         return runkernel_canonical_graph(structure_graph, action_ref=action_ref)
+    if operation in {"graph_amendment", "resynthesis_structure"}:
+        if not isinstance(transition_graph, Mapping):
+            raise ComponentWorkGraphV1Error(
+                f"{operation} transition requires the exact derived graph"
+            )
+        return runkernel_canonical_graph(transition_graph, action_ref=action_ref)
     current = validate_component_work_graph_v1(current_graph or {})
     if operation == "synthesis_validation":
         if not synthesis_key or role_artifact is None:
@@ -1241,6 +1448,7 @@ def reduce_component_work_graph_v1(
     operation: str,
     graph_candidate: Mapping[str, Any],
     synthesis_key: str | None = None,
+    role_evaluation_key: str | None = None,
 ) -> dict[str, Any]:
     """Bind a pure Graph V1 transition to one RunKernel action/reduction."""
 
@@ -1253,6 +1461,7 @@ def reduce_component_work_graph_v1(
         operation=operation,
         prior_graph_digest=current.get("graph_digest"),
         synthesis_key=synthesis_key,
+        role_evaluation_key=role_evaluation_key,
     )
     canonical = runkernel_canonical_graph(
         graph_candidate,
@@ -1263,6 +1472,7 @@ def reduce_component_work_graph_v1(
             "sequence": action.sequence,
             "operation": operation,
             "synthesis_key": synthesis_key,
+            "role_evaluation_key": role_evaluation_key,
         },
     )
     run_kernel.reduce(
@@ -1349,7 +1559,16 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         _validate_synthesis_node(item, graph=graph)
         for item in graph.get("synthesis_nodes") or ()
     ]
-    if not 1 <= len(synthesis_nodes) <= MAX_SYNTHESIS_NODES:
+    amended_awaiting_resynthesis = (
+        not synthesis_nodes
+        and graph.get("dependency_posture") == "requires_fresh_resynthesis"
+        and graph.get("graph_status") == GRAPH_STATUS_STALE
+        and int(graph.get("automatic_recovery_rounds") or 0) == 1
+        and int(graph.get("graph_amendment_rounds") or 0) == 1
+    )
+    if not amended_awaiting_resynthesis and not (
+        1 <= len(synthesis_nodes) <= MAX_SYNTHESIS_NODES
+    ):
         raise ComponentWorkGraphV1Error("Graph V1 synthesis count invalid")
     all_nodes = [*components, *synthesis_nodes]
     if len({item["node_id"] for item in all_nodes}) != len(all_nodes):
@@ -1406,7 +1625,12 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
             graph.get("graph_revision") or 0
         ):
             raise ComponentWorkGraphV1Error("Graph V1 challenge revision binding invalid")
-    if not edges or graph.get("dependency_posture") != "explicitly_assessed":
+    if amended_awaiting_resynthesis:
+        if edges:
+            raise ComponentWorkGraphV1Error(
+                "amended Graph V1 cannot retain current semantic edges"
+            )
+    elif not edges or graph.get("dependency_posture") != "explicitly_assessed":
         raise ComponentWorkGraphV1Error(
             "Graph V1 cannot treat empty or unknown dependency posture as independence"
         )
@@ -1452,6 +1676,12 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         raise ComponentWorkGraphV1Error("Graph V1 runtime parallelism is closed")
     if graph.get("scheduler_created") is not False or graph.get("budget_lease_created") is not False:
         raise ComponentWorkGraphV1Error("Graph V1 scheduler and leases are closed")
+    if int(graph.get("automatic_recovery_rounds") or 0) not in {0, 1}:
+        raise ComponentWorkGraphV1Error("Graph V1 recovery round count invalid")
+    if int(graph.get("graph_amendment_rounds") or 0) not in {0, 1}:
+        raise ComponentWorkGraphV1Error("Graph V1 amendment round count invalid")
+    if int(graph.get("whole_graph_resynthesis_rounds") or 0) not in {0, 1}:
+        raise ComponentWorkGraphV1Error("Graph V1 resynthesis round count invalid")
     graph["component_nodes"] = components
     graph["synthesis_nodes"] = synthesis_nodes
     return graph
@@ -1666,11 +1896,13 @@ __all__ = [
     "ComponentWorkGraphV1Error",
     "admit_synthesis_node_via_runkernel",
     "component_work_graph_v1_from_cross_component_artifact",
+    "component_work_graph_v1_resynthesis_from_cross_component_artifact",
     "cross_component_input_packet",
     "derive_multicomponent_role_call_accounting",
     "expected_graph_after_transition",
     "finalize_component_work_graph_v1",
     "graph_with_accounting",
+    "graph_with_recovered_component",
     "graph_with_scrutineer",
     "graph_with_synthesis_admission",
     "graph_with_synthesis_validation",

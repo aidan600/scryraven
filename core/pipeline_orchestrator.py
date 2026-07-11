@@ -3563,6 +3563,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             run_kernel,
             locals(),
         )
+        if run_kernel.state.current_answer_contract:
+            # Dynamic Graph V1 recovery re-enters the ordinary acquisition
+            # boundary after the legacy retrieval projection was assembled.
+            # Carry its canonical EvidenceLedger reduction into the ordinary
+            # Sufficiency handoff instead of leaving that consumer on the
+            # pre-amendment snapshot.
+            evidence_ledger_projection = (
+                run_kernel.state.evidence_ledger.to_projection().to_dict()
+            )
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
     _record_analyst_model_call = analyst_runtime_stage.build_analyst_model_call_recorder(

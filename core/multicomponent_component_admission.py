@@ -508,11 +508,15 @@ def execute_multicomponent_component_admission(
         analyst_artifact_digest=analyst["artifact_digest"],
         dprime_artifact_digest=dprime["artifact_digest"],
     )
+    accepted_contract = (
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+    )
     staged = stage_multicomponent_component_admission(
         action_id=action.action_id,
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
-        accepted_contract=run_kernel.state.initial_answer_contract,
+        accepted_contract=accepted_contract,
         evidence_ledger_projection=(
             run_kernel.state.evidence_ledger.to_projection().to_dict()
         ),
@@ -550,10 +554,10 @@ def execute_multicomponent_component_admission(
         "storage_only": False,
         "run_id": run_kernel.state.run_id,
         "request_id": run_kernel.state.request_id,
-        "accepted_contract_version": run_kernel.state.initial_answer_contract.get(
+        "accepted_contract_version": accepted_contract.get(
             "accepted_contract_version"
         ),
-        "accepted_contract_digest": run_kernel.state.initial_answer_contract.get(
+        "accepted_contract_digest": accepted_contract.get(
             "accepted_contract_digest"
         ),
         "component_admission_refs": refs,

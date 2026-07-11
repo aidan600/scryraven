@@ -31,6 +31,9 @@ def _unique_text(values: list[Any]) -> list[str]:
 
 def build_multicomponent_graph_consumption(
     graph_state: Mapping[str, Any] | None,
+    *,
+    current_contract_version: str | None = None,
+    current_contract_digest: str | None = None,
 ) -> dict[str, Any]:
     """Project only current, RunKernel-admitted output candidates."""
 
@@ -44,6 +47,17 @@ def build_multicomponent_graph_consumption(
         raise MulticomponentSufficiencyConsumptionError(
             "Sufficiency requires canonical RunKernel Graph V1 state"
         )
+    contract_ref = _mapping(graph.get("accepted_contract_ref"))
+    graph_contract_current = not (
+        current_contract_version
+        and current_contract_digest
+        and (
+            contract_ref.get("accepted_contract_version")
+            != current_contract_version
+            or contract_ref.get("accepted_contract_digest")
+            != current_contract_digest
+        )
+    )
 
     direct_entries: list[dict[str, Any]] = []
     limitations: list[str] = []
@@ -98,7 +112,7 @@ def build_multicomponent_graph_consumption(
                 "eligible under Graph V1 challenge posture."
             )
 
-    graph_ready = graph.get("graph_status") in {
+    graph_ready = graph_contract_current and graph.get("graph_status") in {
         GRAPH_STATUS_READY,
         GRAPH_STATUS_READY_WITH_CAVEATS,
     }
@@ -106,7 +120,10 @@ def build_multicomponent_graph_consumption(
     for node in graph["synthesis_nodes"]:
         admitted = node.get("status") == "admitted"
         current = node.get("current") is True and node.get("stale") is not True
-        graph_output_allowed = graph.get("graph_output_suppressed") is not True
+        graph_output_allowed = (
+            graph_contract_current
+            and graph.get("graph_output_suppressed") is not True
+        )
         if graph_output_allowed and admitted and current:
             synthesis_entries.append(
                 {
@@ -149,7 +166,12 @@ def build_multicomponent_graph_consumption(
                 f"{graph.get('graph_status')}."
             )
 
-    if not graph_ready and not synthesis_entries:
+    if not graph_contract_current:
+        limitations.insert(
+            0,
+            "Combined synthesis is unavailable because Graph V1 is bound to a prior AnswerContract version.",
+        )
+    elif not graph_ready and not synthesis_entries:
         limitations.insert(
             0,
             f"Combined synthesis is unavailable because Graph V1 posture is "
@@ -171,6 +193,9 @@ def build_multicomponent_graph_consumption(
         "graph_revision": graph.get("graph_revision"),
         "graph_digest": graph.get("graph_digest"),
         "graph_readiness_status": graph.get("graph_status"),
+        "graph_contract_current": graph_contract_current,
+        "graph_contract_version": contract_ref.get("accepted_contract_version"),
+        "graph_contract_digest": contract_ref.get("accepted_contract_digest"),
         "graph_ready_for_synthesis": graph_ready,
         "direct_component_entries": direct_entries,
         "admitted_synthesis_entries": synthesis_entries,

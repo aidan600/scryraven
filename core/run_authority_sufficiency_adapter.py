@@ -267,6 +267,10 @@ def build_sufficiency_judgment_input_from_runtime(
     contract_amendment_admission_history: Sequence[Mapping[str, Any]] = (),
     answer_contract_authority_map_projection: Mapping[str, Any] | None = None,
     multicomponent_graph_state: Mapping[str, Any] | None = None,
+    multicomponent_recovery_state: Mapping[str, Any] | None = None,
+    multicomponent_recovery_authorization_state: Mapping[str, Any] | None = None,
+    run_id: str | None = None,
+    request_id: str | None = None,
 ) -> RunSufficiencyJudgmentInput:
     """Build the AG-92C sufficiency input from runtime facts."""
 
@@ -276,6 +280,7 @@ def build_sufficiency_judgment_input_from_runtime(
         component_coverage_history=component_coverage_history,
         contract_amendment_admission_history=contract_amendment_admission_history,
         evidence_ledger_projection=evidence_ledger_projection,
+        multicomponent_graph_state=multicomponent_graph_state,
     )
 
     return RunSufficiencyJudgmentInput(
@@ -320,6 +325,11 @@ def build_sufficiency_judgment_input_from_runtime(
             evidence_ledger_projection=evidence_ledger_projection,
         ),
         multicomponent_graph_state=_mapping(multicomponent_graph_state),
+        multicomponent_recovery_state=_mapping(multicomponent_recovery_state),
+        multicomponent_recovery_authorization_state=_mapping(
+            multicomponent_recovery_authorization_state
+        ),
+        run_identity={"run_id": run_id, "request_id": request_id},
     )
 
 
