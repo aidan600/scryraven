@@ -846,6 +846,11 @@ class EvidenceLedger:
             ):
                 current = getattr(requirement, field_name)
                 incoming = _clean_token(record.get(field_name))
+                if current and incoming and current != incoming:
+                    raise ValueError(
+                        "source requirement exact lineage binding conflict: "
+                        f"{field_name}"
+                    )
                 if not current and incoming:
                     setattr(requirement, field_name, incoming)
             if not requirement.required_source_class:

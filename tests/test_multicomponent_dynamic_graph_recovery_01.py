@@ -23,6 +23,7 @@ from core.component_work_graph_v1 import (
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
 from core.cost_accounting import CostAccumulator
+from core.evidence_ledger import EvidenceLedger
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.multicomponent_component_admission import (
     component_analyst_input_packet,
@@ -1917,6 +1918,16 @@ def test_adapter_projection_or_missing_canonical_cannot_authorize_partial_output
         ("wrong-graph-revision", "graph_revision", 999),
         ("wrong-graph-digest", "graph_digest", "forged-graph-digest"),
         (
+            "wrong-graph-contract-version",
+            "graph_answer_contract_version",
+            "forged-graph-contract-version",
+        ),
+        (
+            "wrong-graph-contract-digest",
+            "graph_answer_contract_digest",
+            "forged-graph-contract-digest",
+        ),
+        (
             "diagnostic-role-as-provider",
             "observed_provider_identities",
             ["multicomponent_recovery_diagnostic"],
@@ -1952,3 +1963,39 @@ def test_stale_or_cross_bound_canonical_outcome_cannot_authorize_partial_output(
     assert outcome is None
     assert isinstance(error, orchestrator.PipelineError)
     assert captured["sufficiency_projection"]["final_answer_allowed"] is False
+
+
+def test_evidence_ledger_rejects_conflicting_exact_recovery_lineage() -> None:
+    ledger = EvidenceLedger()
+    base = {
+        "requirement_id": "source_obligation:recovered:exact-lineage",
+        "requirement_kind": "bounded_current_source_support",
+        "component_id": "component:recovered:exact-lineage",
+        "source_obligation_id": "source_obligation:recovered:exact-lineage",
+        "run_id": "run:exact-lineage",
+        "request_id": "request:exact-lineage",
+        "answer_contract_version": "contract:2",
+        "answer_contract_digest": "contract-digest:2",
+        "recovery_authorization_id": "recovery:exact-lineage",
+        "recovery_authorization_digest": "recovery-digest:exact-lineage",
+    }
+    ledger.reduce_observation(
+        {
+            "observation_id": "lineage:initial",
+            "observation_source": "test",
+            "requirements": [base],
+        }
+    )
+    with pytest.raises(ValueError, match="component_id"):
+        ledger.reduce_observation(
+            {
+                "observation_id": "lineage:conflict",
+                "observation_source": "test",
+                "requirements": [
+                    {
+                        **base,
+                        "component_id": "component:unrelated:same-class",
+                    }
+                ],
+            }
+        )

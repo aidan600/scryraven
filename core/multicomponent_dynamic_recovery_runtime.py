@@ -674,7 +674,9 @@ def _fetch_materials(
                 "resolved_domain": candidate.get("domain"),
                 "content_type": "text/html",
                 "http_status": 200 if bounded_text else None,
-                "retrieved_or_observed_at": "offline-multicomponent-recovery",
+                "retrieved_or_observed_at": (
+                    "offline-ordinary-dispatcher-observation"
+                ),
                 "content_title": candidate.get("title"),
                 "bounded_text": bounded_text,
                 "bounded_text_sanitized": True,
@@ -934,7 +936,8 @@ def execute_recovery_acquisition(
             "ordinary offline search execution boundary is unavailable"
         )
     query_text = str(
-        task.get("query_text")
+        task.get("safe_query_text")
+        or task.get("query_text")
         or task.get("query")
         or component_ref["user_facing_question"]
     )
@@ -1163,8 +1166,6 @@ def execute_recovery_acquisition(
         ),
         "evidence_ledger_owner": ledger.get("owner"),
         "evidence_ledger_candidate_count": ledger.get("candidate_count"),
-        "provider_called": False,
-        "live_provider_called": False,
         "raw_provider_payload_retained": False,
     })
     run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = projection

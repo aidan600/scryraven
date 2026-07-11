@@ -371,6 +371,7 @@ def _normalize_semantic_output(role: str, output: Mapping[str, Any]) -> dict[str
             scope_posture = _normalize_key(proposal.get("scope_posture"))
             if not all(
                 (
+                    proposal_key,
                     component_label,
                     component_question,
                     necessity_reason,

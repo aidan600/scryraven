@@ -1423,6 +1423,14 @@ def _canonical_recovery_outcome_is_current(
         or outcome.get("graph_digest") != graph.get("graph_digest")
     ):
         return False
+    graph_contract = _mapping(graph.get("accepted_contract_ref"))
+    if (
+        outcome.get("graph_answer_contract_version")
+        != graph_contract.get("accepted_contract_version")
+        or outcome.get("graph_answer_contract_digest")
+        != graph_contract.get("accepted_contract_digest")
+    ):
+        return False
     providers = _string_list(outcome.get("observed_provider_identities"))
     if any(
         provider not in {"tavily", "linkup", "exa"}
