@@ -250,7 +250,10 @@ def _semantic_material(
         raise OrdinaryMulticomponentRuntimeError(
             "component roles claimed support without bounded evidence"
         )
-    accepted = run_kernel.state.initial_answer_contract
+    accepted = (
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+    )
     component_id = str(component_ref["component_id"])
     content_ref = build_sanitized_content_reference_from_passage(
         passage=bindable.passage,

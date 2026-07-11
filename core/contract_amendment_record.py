@@ -16,6 +16,9 @@ from typing import Any, Mapping, Sequence
 
 CONTRACT_AMENDMENT_RECORD_SCHEMA_VERSION = "contract_amendment_record_ag_sem_04_v1"
 CONTRACT_AMENDMENT_RECORD_TRACE_KEY = "contract_amendment_record"
+REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION = (
+    "required_to_fulfill_existing_accepted_user_obligation"
+)
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -95,6 +98,9 @@ class UserConfirmationPosture(str, Enum):
     EXPLICIT_USER_CONFIRMATION = "explicit_user_confirmation"
     LABELED_SCENARIO_TREATMENT = "labeled_scenario_treatment"
     EXPLICIT_USER_AUTHORITY = "explicit_user_authority"
+    REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION = (
+        REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION
+    )
 
 
 class MonotonicityPosture(str, Enum):
@@ -571,6 +577,7 @@ class ContractAmendmentRecord:
             UserConfirmationPosture.EXPLICIT_USER_CONFIRMATION,
             UserConfirmationPosture.LABELED_SCENARIO_TREATMENT,
             UserConfirmationPosture.EXPLICIT_USER_AUTHORITY,
+            UserConfirmationPosture.REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION,
         } or any(
             operation.user_confirmation_required or operation.labeled_scenario_treatment
             for operation in self.operations
@@ -786,6 +793,7 @@ __all__ = [
     "ModePermissionPosture",
     "MonotonicityPosture",
     "ProposalDisposition",
+    "REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION",
     "StaleCoverageCandidatePosture",
     "UserConfirmationPosture",
     "WeakeningPosture",

@@ -71,6 +71,7 @@ _ALLOWED_USER_AUTHORITY = frozenset(
         "explicit_user_confirmation",
         "labeled_scenario_treatment",
         "explicit_user_authority",
+        "required_to_fulfill_existing_accepted_user_obligation",
     }
 )
 _BLOCKING_DISPOSITIONS = frozenset({"rejected", "blocked"})
@@ -309,6 +310,15 @@ def _component_ref_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "component_id": component_id,
         "component_revision": revision,
         "component_digest": digest,
+        "user_facing_label": _clean_text(
+            payload.get("user_facing_label"), limit=240
+        ),
+        "user_facing_question": _clean_text(
+            payload.get("user_facing_question"), limit=600
+        ),
+        "acceptance_criteria": _text_list(payload.get("acceptance_criteria")),
+        "semantic_slot_ids": _token_list(payload.get("semantic_slot_ids")),
+        "max_inference_depth": int(payload.get("max_inference_depth") or 0),
         "requirement_posture": _clean_token(
             payload.get("requirement_posture"),
         )

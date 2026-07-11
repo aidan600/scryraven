@@ -3545,6 +3545,10 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "multi-component admission requires component and role bindings"
             )
+        accepted_contract = (
+            self.state.current_answer_contract
+            or self.state.initial_answer_contract
+        )
         return self.authorize(
             stage="multicomponent_component_admission",
             action_type=ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE,
@@ -3553,7 +3557,7 @@ class RunKernel:
                 "component_id": component,
                 "analyst_artifact_digest": analyst_digest,
                 "dprime_artifact_digest": dprime_digest,
-                "accepted_contract_digest": self.state.initial_answer_contract.get(
+                "accepted_contract_digest": accepted_contract.get(
                     "accepted_contract_digest"
                 ),
             },
@@ -4841,6 +4845,56 @@ class RunKernel:
         self.state.observations.append(observation)
         self.state.next_observation_sequence += 1
 
+    def _require_multicomponent_recovery_amendment_authority(
+        self,
+        inputs: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        supplied = _safe_mapping(inputs)
+        authority_class = _clean_text(
+            supplied.get("automatic_amendment_authority_class"), limit=160
+        )
+        if not authority_class:
+            return {}
+        if authority_class != (
+            "required_to_fulfill_existing_accepted_user_obligation"
+        ):
+            raise RunKernelTransitionError(
+                "unknown automatic AnswerContract amendment authority class"
+            )
+        authorization = _safe_mapping(
+            self.state.projections.get(
+                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+            )
+        )
+        if (
+            authorization.get("owner")
+            != "RunKernel.MulticomponentRecoveryAuthorization"
+            or authorization.get("canonical_state") is not True
+            or authorization.get("run_id") != self.state.run_id
+            or authorization.get("request_id") != self.state.request_id
+            or authorization.get("automatic_amendment_authority_class")
+            != authority_class
+        ):
+            raise RunKernelTransitionError(
+                "automatic AnswerContract amendment requires canonical recovery authorization"
+            )
+        required_matches = {
+            "recovery_authorization_id": authorization.get("authorization_id"),
+            "recovery_authorization_digest": authorization.get(
+                "authorization_digest"
+            ),
+            "recovery_proposal_id": authorization.get("proposal_id"),
+            "recovery_proposal_digest": authorization.get("proposal_digest"),
+        }
+        if any(
+            supplied.get(key) != value or not value
+            for key, value in required_matches.items()
+        ):
+            raise RunKernelTransitionError(
+                "automatic AnswerContract amendment recovery binding mismatch"
+            )
+        return authorization
+
     def authorize_contract_amendment_admission(
         self,
         *,
@@ -4879,6 +4933,7 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "contract amendment admission requires " f"{label} binding"
                 )
+        self._require_multicomponent_recovery_amendment_authority(inputs)
         merged_inputs = {
             "amendment_record_id": amendment_record_id,
             "amendment_record_digest": amendment_record_digest,
@@ -4937,6 +4992,7 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "contract amendment application requires " f"{label} binding"
                 )
+        self._require_multicomponent_recovery_amendment_authority(inputs)
         merged_inputs = {
             "amendment_record_id": amendment_record_id,
             "amendment_record_digest": amendment_record_digest,
@@ -12771,6 +12827,35 @@ class RunKernel:
                 )
             except ContractAmendmentAdmissionError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
+            recovery_authority = (
+                self._require_multicomponent_recovery_amendment_authority(
+                    action.inputs
+                )
+            )
+            if recovery_authority:
+                operations = [
+                    _safe_mapping(item)
+                    for item in amendment_projection.get("operations") or ()
+                ]
+                trigger_refs = _safe_mapping(
+                    amendment_projection.get("trigger_refs")
+                )
+                if (
+                    len(operations) != 1
+                    or operations[0].get("operation_kind") != "add_component"
+                    or amendment_projection.get("disposition")
+                    != "eligible_for_future_acceptance"
+                    or amendment_projection.get("user_confirmation_posture")
+                    != (
+                        "required_to_fulfill_existing_accepted_user_obligation"
+                    )
+                    or amendment_projection.get("weakening_posture") != "none"
+                    or recovery_authority.get("proposal_id")
+                    not in (trigger_refs.get("gap_refs") or ())
+                ):
+                    raise RunKernelTransitionError(
+                        "automatic recovery amendment exceeds its narrow authority class"
+                    )
             self.state.contract_amendment_admission_state = amendment_state
             self.state.contract_amendment_admission_projection = amendment_projection
             self.state.contract_amendment_admission_history.append(
@@ -12819,6 +12904,20 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "contract amendment application could not find the "
                     "canonical admitted amendment"
+                )
+            recovery_authority = (
+                self._require_multicomponent_recovery_amendment_authority(
+                    action.inputs
+                )
+            )
+            if recovery_authority and (
+                admitted_amendment.get("user_confirmation_posture")
+                != "required_to_fulfill_existing_accepted_user_obligation"
+                or admitted_amendment.get("disposition")
+                != "eligible_for_future_acceptance"
+            ):
+                raise RunKernelTransitionError(
+                    "automatic recovery amendment admission lost its authority class"
                 )
             parent_contract = (
                 self.state.current_answer_contract
@@ -15754,7 +15853,10 @@ class RunKernel:
             component_ref = _safe_mapping(
                 observation.payload.get("component_admission_ref")
             )
-            accepted_contract = _safe_mapping(self.state.initial_answer_contract)
+            accepted_contract = _safe_mapping(
+                self.state.current_answer_contract
+                or self.state.initial_answer_contract
+            )
             accepted_contract_digest = accepted_contract.get(
                 "accepted_contract_digest"
             )
