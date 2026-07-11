@@ -3737,6 +3737,16 @@ class RunKernel:
                     "accepted_contract_digest": contract.get(
                         "accepted_contract_digest"
                     ),
+                    "parent_question_meaning_record_id": contract.get(
+                        "parent_question_meaning_record_id"
+                    ),
+                    "parent_question_meaning_record_digest": contract.get(
+                        "parent_question_meaning_record_digest"
+                    ),
+                    "accepted_answer_component_count": contract.get(
+                        "accepted_answer_component_count"
+                    )
+                    or len(contract.get("accepted_answer_component_refs", [])),
                 },
                 "contract_amendment_admission_ref": {
                     "amendment_record_id": amendment_admission.get(
@@ -3762,6 +3772,96 @@ class RunKernel:
                     ),
                 },
                 "recovered_component_admission_ref": recovered_refs[0],
+                "run_id": self.state.run_id,
+                "request_id": self.state.request_id,
+            },
+            expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
+        )
+
+    def authorize_multicomponent_selective_invalidation(self) -> AuthorizedAction:
+        """Authorize the one atomic affected-stale and carry-forward transition."""
+
+        from core.component_work_graph_v1 import (
+            COMPONENT_WORK_GRAPH_V1_STAGE,
+            MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
+            validate_component_work_graph_v1,
+            validate_selective_recomputation_closure,
+        )
+
+        graph = validate_component_work_graph_v1(
+            _safe_mapping(self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+        )
+        closure = validate_selective_recomputation_closure(
+            _safe_mapping(
+                self.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE)
+            )
+        )
+        source_ref = _safe_mapping(closure.get("source_graph_ref"))
+        if source_ref != {
+            "graph_id": graph.get("graph_id"),
+            "graph_revision": graph.get("graph_revision"),
+            "graph_digest": graph.get("graph_digest"),
+        }:
+            raise RunKernelTransitionError(
+                "selective invalidation requires the unchanged closure source graph"
+            )
+        authorization = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE)
+        )
+        contract = _safe_mapping(self.state.current_answer_contract)
+        if (
+            _safe_mapping(closure.get("recovery_authorization_ref"))
+            != {
+                "authorization_id": authorization.get("authorization_id"),
+                "authorization_digest": authorization.get("authorization_digest"),
+            }
+            or _safe_mapping(closure.get("current_contract_ref")).get(
+                "accepted_contract_digest"
+            )
+            != contract.get("accepted_contract_digest")
+        ):
+            raise RunKernelTransitionError(
+                "selective invalidation closure authority became stale"
+            )
+        if any(
+            item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
+            and item.inputs.get("operation") == "selective_invalidation"
+            for item in self.state.issued_actions.values()
+        ):
+            raise RunKernelTransitionError(
+                "selective invalidation is already authorized"
+            )
+        return self.authorize(
+            stage=COMPONENT_WORK_GRAPH_V1_STAGE,
+            action_type=ActionType.MULTICOMPONENT_GRAPH_REDUCE,
+            reason="ordinary_multicomponent_graph_selective_invalidation",
+            inputs={
+                "operation": "selective_invalidation",
+                "prior_graph_digest": graph.get("graph_digest"),
+                "source_graph_ref": source_ref,
+                "closure_id": closure.get("closure_id"),
+                "closure_digest": closure.get("closure_digest"),
+                "recovery_authorization_id": authorization.get("authorization_id"),
+                "recovery_authorization_digest": authorization.get(
+                    "authorization_digest"
+                ),
+                "current_contract_version": contract.get(
+                    "accepted_contract_version"
+                ),
+                "current_contract_digest": contract.get(
+                    "accepted_contract_digest"
+                ),
+                "contract_amendment_admission_ref": _safe_mapping(
+                    closure.get("contract_amendment_admission_ref")
+                ),
+                "contract_amendment_application_ref": _safe_mapping(
+                    closure.get("contract_amendment_application_ref")
+                ),
+                "recovered_component_admission_ref": _safe_mapping(
+                    closure.get("recovered_component_admission_ref")
+                ),
+                "target_graph_id": graph.get("graph_id"),
+                "target_graph_revision": int(graph.get("graph_revision") or 0) + 1,
                 "run_id": self.state.run_id,
                 "request_id": self.state.request_id,
             },
@@ -16730,12 +16830,16 @@ class RunKernel:
             from core.component_work_graph_v1 import (
                 COMPONENT_WORK_GRAPH_V1_OWNER,
                 COMPONENT_WORK_GRAPH_V1_STAGE,
+                MULTICOMPONENT_CARRY_FORWARD_STAGE,
+                MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
+                build_synthesis_carry_forward_projection,
                 component_work_graph_v1_from_cross_component_artifact,
                 component_work_graph_v1_resynthesis_from_cross_component_artifact,
                 derive_multicomponent_role_call_accounting,
                 derive_selective_recomputation_closure,
                 expected_graph_after_transition,
                 graph_with_recovered_component,
+                graph_with_selective_invalidation,
                 validate_component_work_graph_v1,
                 validate_selective_recomputation_closure,
             )
@@ -16824,6 +16928,16 @@ class RunKernel:
                         "accepted_contract_digest": contract.get(
                             "accepted_contract_digest"
                         ),
+                        "parent_question_meaning_record_id": contract.get(
+                            "parent_question_meaning_record_id"
+                        ),
+                        "parent_question_meaning_record_digest": contract.get(
+                            "parent_question_meaning_record_digest"
+                        ),
+                        "accepted_answer_component_count": contract.get(
+                            "accepted_answer_component_count"
+                        )
+                        or len(contract.get("accepted_answer_component_refs", [])),
                     }
                     or expected_refs["contract_amendment_admission_ref"]
                     != {
@@ -17088,6 +17202,117 @@ class RunKernel:
                         )
                     except ValueError as exc:
                         raise RunKernelTransitionError(str(exc)) from exc
+                elif operation == "selective_invalidation":
+                    closure = validate_selective_recomputation_closure(
+                        _safe_mapping(
+                            self.state.projections.get(
+                                MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
+                            )
+                        )
+                    )
+                    if (
+                        action.inputs.get("closure_id") != closure.get("closure_id")
+                        or action.inputs.get("closure_digest")
+                        != closure.get("closure_digest")
+                        or _safe_mapping(closure.get("source_graph_ref"))
+                        != {
+                            "graph_id": current_graph.get("graph_id"),
+                            "graph_revision": current_graph.get("graph_revision"),
+                            "graph_digest": current_graph.get("graph_digest"),
+                        }
+                    ):
+                        raise RunKernelTransitionError(
+                            "selective invalidation closure binding became stale"
+                        )
+                    accepted_contract = _safe_mapping(
+                        self.state.current_answer_contract
+                    )
+                    current_component_ids = {
+                        item.get("component_id")
+                        for item in current_graph.get("component_nodes") or ()
+                        if isinstance(item, Mapping)
+                    }
+                    added_components = [
+                        _safe_mapping(item)
+                        for item in accepted_contract.get(
+                            "accepted_answer_component_refs", []
+                        )
+                        if isinstance(item, Mapping)
+                        and item.get("component_id") not in current_component_ids
+                    ]
+                    component_admission = _safe_mapping(
+                        self.state.projections.get(
+                            MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                        )
+                    )
+                    expected_admission_ref = _safe_mapping(
+                        closure.get("recovered_component_admission_ref")
+                    )
+                    matching_admissions = [
+                        _safe_mapping(item)
+                        for item in component_admission.get(
+                            "component_admission_refs", []
+                        )
+                        if isinstance(item, Mapping)
+                        and _safe_mapping(item) == expected_admission_ref
+                    ]
+                    if len(added_components) != 1 or len(matching_admissions) != 1:
+                        raise RunKernelTransitionError(
+                            "selective invalidation requires the exact recovered component"
+                        )
+                    recovered_node = component_work_node_v1_from_admitted_component(
+                        run_id=self.state.run_id,
+                        request_id=self.state.request_id,
+                        accepted_component_ref=added_components[0],
+                        component_admission_ref=matching_admissions[0],
+                    )
+                    contract_ref = {
+                        "owner": accepted_contract.get("owner"),
+                        "canonical_state": accepted_contract.get("canonical_state"),
+                        "run_id": self.state.run_id,
+                        "request_id": self.state.request_id,
+                        "accepted_contract_version": accepted_contract.get(
+                            "accepted_contract_version"
+                        ),
+                        "accepted_contract_digest": accepted_contract.get(
+                            "accepted_contract_digest"
+                        ),
+                        "parent_question_meaning_record_id": accepted_contract.get(
+                            "parent_question_meaning_record_id"
+                        ),
+                        "parent_question_meaning_record_digest": accepted_contract.get(
+                            "parent_question_meaning_record_digest"
+                        ),
+                        "accepted_answer_component_count": accepted_contract.get(
+                            "accepted_answer_component_count"
+                        )
+                        or len(
+                            accepted_contract.get(
+                                "accepted_answer_component_refs", []
+                            )
+                        ),
+                    }
+                    recovery_ref = _safe_mapping(
+                        self.state.projections.get(
+                            MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                        )
+                    )
+                    application_ref = _safe_mapping(
+                        closure.get("contract_amendment_application_ref")
+                    )
+                    amendment_admission_ref = _safe_mapping(
+                        closure.get("contract_amendment_admission_ref")
+                    )
+                    transition_graph = graph_with_selective_invalidation(
+                        current_graph,
+                        closure=closure,
+                        recovered_component_node=recovered_node,
+                        current_contract_ref=contract_ref,
+                        recovery_authorization_ref=recovery_ref,
+                        contract_amendment_admission_ref=amendment_admission_ref,
+                        amendment_application_ref=application_ref,
+                        carry_forward_action_ref=action_ref,
+                    )
                 elif operation == "graph_amendment":
                     accepted_contract = _safe_mapping(
                         self.state.current_answer_contract
@@ -17241,6 +17466,27 @@ class RunKernel:
                     "Graph V1 candidate does not equal the exact rederived transition"
                 )
             self.state.projections[action.stage] = deepcopy(graph)
+            if operation == "selective_invalidation":
+                carry_projection = build_synthesis_carry_forward_projection(
+                    prior_graph=current_graph,
+                    final_graph=graph,
+                    closure=closure,
+                    carry_forward_action_ref=action_ref,
+                )
+                self.state.projections[MULTICOMPONENT_CARRY_FORWARD_STAGE] = (
+                    deepcopy(carry_projection)
+                )
+                self.state.projections[
+                    f"{MULTICOMPONENT_CARRY_FORWARD_STAGE}_history"
+                ] = {
+                    "schema_version": (
+                        "multicomponent_synthesis_carry_forward_history_v1"
+                    ),
+                    "owner": carry_projection["owner"],
+                    "canonical_state": True,
+                    "carry_forward_projection_count": 1,
+                    "carry_forward_projections": [deepcopy(carry_projection)],
+                }
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
