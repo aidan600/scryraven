@@ -286,6 +286,40 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def summary_lines(semantic: dict[str, object], configuration: dict[str, object], packet: Path) -> list[str]:
+    lines = [
+        f"consequence: {semantic.get('consequence')}",
+        f"packet: {packet}",
+        f"repository: {configuration['repository']['root']}",
+        f"candidate: {configuration['candidate_sha']}",
+        f"baseline: {configuration['baseline_sha'] or 'not-requested'}",
+    ]
+    for side, totals in dict(semantic.get("totals", {})).items():
+        lines.append(f"{side} totals: " + ", ".join(f"{key}={value}" for key, value in dict(totals).items()))
+    for key in (
+        "shared_failures_errors",
+        "baseline_only_failures_errors",
+        "candidate_only_failures_errors",
+        "candidate_added_test_files",
+        "candidate_removed_test_files",
+        "authorized_removed_test_files",
+        "unapproved_removed_test_files",
+    ):
+        lines.append(f"{key}: {json.dumps(semantic.get(key, []))}")
+    for process in semantic.get("processes", []):
+        lines.append(
+            "process: "
+            f"{process['side']}-p{process['partition']} "
+            f"classification={process['classification']} exit={process['exit_code']} "
+            f"duration_seconds={process['duration_seconds']}"
+        )
+    for invalid in semantic.get("invalid_processes", []):
+        lines.append(f"invalid process: {invalid['side']}-p{invalid['partition']} {invalid['detail']}")
+    if semantic.get("runner_error"):
+        lines.append(f"runner error: {semantic['runner_error']}")
+    return lines
+
+
 def ensure_outside(path: Path, repo: Path, label: str) -> Path:
     resolved = path.resolve()
     try:
@@ -420,7 +454,7 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
             semantic["cleanup_posture"] = cleanup_posture
             semantic["ended_at"] = utc_now()
             write_json(packet / "aggregate.json", semantic)
-            lines = [f"consequence: {semantic.get('consequence')}", f"packet: {packet}"]
+            lines = summary_lines(semantic, configuration, packet)
             for failure in semantic.get("cleanup_failures", []):
                 lines.append(f"cleanup failed: {failure.get('path')}")
                 if failure.get("command"):

@@ -112,6 +112,20 @@ def test_aggregation_and_exit_contract() -> None:
     assert aggregate["baseline_only_failures_errors"] == ["fixed"]
     assert aggregate["candidate_only_failures_errors"] == ["new"]
     assert aggregate["consequence"] == "regression"
+    assert set(aggregate) == {
+        "schema_version",
+        "totals",
+        "shared_failures_errors",
+        "baseline_only_failures_errors",
+        "candidate_only_failures_errors",
+        "candidate_added_test_files",
+        "candidate_removed_test_files",
+        "authorized_removed_test_files",
+        "unapproved_removed_test_files",
+        "invalid_processes",
+        "processes",
+        "consequence",
+    }
     assert runner.exit_for("passed") == 0
     assert runner.exit_for("regression") == 1
     assert runner.exit_for("infrastructure-invalid") == 2
@@ -238,7 +252,8 @@ def test_tiny_repo_imports_exact_worktrees_and_cleans_owned_paths(tmp_path: Path
     cleanup = json.loads((packet / "cleanup.json").read_text(encoding="utf-8"))
     assert all(not Path(path).exists() for path in cleanup["owned_paths"])
     assert (packet / "aggregate.json").is_file()
-    assert "srval" not in _git(repo, "worktree", "list", "--porcelain")
+    listing = _git(repo, "worktree", "list", "--porcelain")
+    assert all(path not in listing for path in cleanup["owned_paths"])
 
 
 def test_synthetic_candidate_only_cli(tmp_path: Path) -> None:
