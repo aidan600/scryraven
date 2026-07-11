@@ -309,7 +309,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                                     "synthesis_key": "benefit_summary",
                                     "claim_text": (
                                         "The base rebate and income threshold define "
-                                        "the available Northstar benefit."
+                                        "the verified two-part Northstar benefit."
                                     ),
                                     "relationship_type": "benefit_conjunction",
                                     "component_inputs": [base, income],
@@ -383,6 +383,15 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                     item["component_id"]
                     for item in payload["licensed_current_component_refs"]
                 ]
+                boundary_by_key = {
+                    item["synthesis_key"]: item
+                    for item in payload["preserved_boundary_synthesis_catalog"]
+                }
+                benefit_claim = boundary_by_key["benefit_summary"]["claim_text"]
+                if "verified two-part Northstar benefit" not in benefit_claim:
+                    raise AssertionError(
+                        "selective fixture did not receive preserved semantics"
+                    )
                 return json.dumps(
                     {
                         "synthesis_proposals": [
@@ -405,7 +414,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                             {
                                 "synthesis_key": "applicant_guidance",
                                 "claim_text": (
-                                    "Applicants should combine the benefit facts with "
+                                    f"Using {benefit_claim}, applicants should follow "
                                     "the applicable online-or-paper filing route."
                                 ),
                                 "relationship_type": "guided_conjunction",
@@ -1517,6 +1526,10 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
     assert "paper application" in normalized
     assert "may file online" in normalized
     assert "account number" in normalized
+    assert any(
+        "verified two-part Northstar benefit" in str(item.get("claim_text") or "")
+        for item in packet.admitted_synthesis_entries
+    )
     assert harness.forbidden_live_calls == []
 
 

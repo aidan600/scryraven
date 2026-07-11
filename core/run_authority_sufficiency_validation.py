@@ -1958,25 +1958,38 @@ def build_deterministic_sufficiency_judgment(
         **_quant_behavior_boundary_flags(final_evidence, quant_resolutions),
     }
     if multicomponent_consumption:
+        fap_synthesis_entries = list(
+            multicomponent_consumption.get("admitted_synthesis_entries", ())
+        )
+        fap_limitations = list(multicomponent_consumption.get("limitations", ()))
+        graph_readiness = multicomponent_consumption.get("graph_readiness_status")
+        if fap_synthesis_entries and graph_readiness not in {
+            "ready",
+            "ready_with_caveats",
+        }:
+            # Preserve partial synthesis in multicomponent_graph_consumption, but do
+            # not hand non-ready synthesis into FinalAnswerPacket inputs.
+            fap_synthesis_entries = []
+            fap_limitations = list(
+                dict.fromkeys(
+                    [
+                        *fap_limitations,
+                        "Admitted graph synthesis omitted from FinalAnswerPacket "
+                        "because Graph V1 is not ready for synthesis output.",
+                    ]
+                )
+            )
         final_packet_inputs.update(
             {
                 "multicomponent_graph_consumption": multicomponent_consumption,
-                "multicomponent_graph_readiness": (
-                    multicomponent_consumption.get("graph_readiness_status")
-                ),
+                "multicomponent_graph_readiness": graph_readiness,
                 "direct_component_entries": list(
                     multicomponent_consumption.get(
                         "direct_component_entries", ()
                     )
                 ),
-                "admitted_synthesis_entries": list(
-                    multicomponent_consumption.get(
-                        "admitted_synthesis_entries", ()
-                    )
-                ),
-                "multicomponent_limitations": list(
-                    multicomponent_consumption.get("limitations", ())
-                ),
+                "admitted_synthesis_entries": fap_synthesis_entries,
+                "multicomponent_limitations": fap_limitations,
             }
         )
     return replace(judgment, final_packet_inputs=final_packet_inputs)

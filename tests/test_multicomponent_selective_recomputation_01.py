@@ -17,17 +17,20 @@ from core.component_work_graph_v1 import (
     cross_component_input_packet,
     derive_selective_recomputation_closure,
     finalize_component_work_graph_v1,
+    graph_with_scrutineer,
     graph_with_selective_invalidation,
     reduce_component_work_graph_v1,
     reduce_selective_invalidation_via_runkernel,
     reduce_selective_recomputation_closure,
     runkernel_canonical_graph,
+    scrutineer_input_packet,
     selective_cross_component_input_packet,
     validate_component_work_graph_v1,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
 from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
+    ROLE_SCRUTINEER,
     ROLE_SYSTEM_PROMPTS,
     SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
@@ -51,6 +54,7 @@ from tests.test_multicomponent_component_work_graph_v1 import (
     _component_node,
     _role_artifact,
     _seed_component_admission,
+    _seed_role_artifact,
     _validate_synthesis,
 )
 
@@ -93,7 +97,10 @@ def _selective_source_graph() -> tuple[RunKernel, dict]:
             "synthesis_proposals": [
                 {
                     "synthesis_key": "benefit_summary",
-                    "claim_text": "The rebate and income threshold define the benefit.",
+                    "claim_text": (
+                        "The rebate and income threshold define the verified "
+                        "two-part Northstar benefit."
+                    ),
                     "relationship_type": "benefit_conjunction",
                     "component_inputs": [
                         "component:component-1",
@@ -337,6 +344,16 @@ def _selective_response(packet: dict) -> dict:
         item["component_id"]
         for item in packet["licensed_current_component_refs"]
     ]
+    boundary_by_key = {
+        item["synthesis_key"]: item
+        for item in packet["preserved_boundary_synthesis_catalog"]
+    }
+    benefit_claim = boundary_by_key["benefit_summary"]["claim_text"]
+    if "verified two-part Northstar benefit" not in benefit_claim:
+        raise AssertionError("selective fixture did not receive preserved semantics")
+    applicant_guidance_claim = (
+        f"Using {benefit_claim}, applicants should follow the fresh filing route."
+    )
     return {
         "synthesis_proposals": [
             {
@@ -355,10 +372,7 @@ def _selective_response(packet: dict) -> dict:
             },
             {
                 "synthesis_key": "applicant_guidance",
-                "claim_text": (
-                    "Applicants should combine the preserved benefit facts with the "
-                    "fresh filing route."
-                ),
+                "claim_text": applicant_guidance_claim,
                 "relationship_type": "guided_conjunction",
                 "component_inputs": [],
                 "affected_synthesis_inputs": ["filing_route"],
@@ -745,10 +759,40 @@ def test_selective_cross_reconstructs_only_affected_synthesis_namespaces() -> No
         "applicant_guidance",
     ]
     assert packet["prohibited_unaffected_synthesis_keys"] == ["benefit_summary"]
+    catalog = packet["preserved_boundary_synthesis_catalog"]
+    assert [item["synthesis_key"] for item in catalog] == ["benefit_summary"]
+    boundary = catalog[0]
+    carried = amended["synthesis_nodes"][0]
+    assert boundary["node_id"] == carried["node_id"]
+    assert boundary["node_revision"] == carried["node_revision"]
+    assert boundary["node_digest"] == carried["node_digest"]
+    assert boundary["claim_text"] == carried["claim_text"]
+    assert "verified two-part Northstar benefit" in boundary["claim_text"]
+    assert boundary["claim_id"] == carried["synthesis_claim_ref"]["claim_id"]
+    assert boundary["claim_digest"] == carried["synthesis_claim_ref"]["claim_digest"]
+    assert boundary["synthesis_claim_ref"]["claim_digest"] == carried[
+        "synthesis_claim_ref"
+    ]["claim_digest"]
+    assert boundary["required_caveats"] == list(carried.get("required_caveats") or ())
+    assert boundary["preserved_nonclaims"] == list(
+        carried.get("preserved_nonclaims") or ()
+    )
+    assert "blocker_refs" in boundary
+    assert boundary["carry_forward_action_ref"] == carried["current_node_authority"][
+        "runkernel_carry_forward_action_ref"
+    ]
+    assert boundary["carried_semantic_lineage"] == carried["carried_semantic_lineage"]
+    assert boundary["status"] == "admitted"
+    assert boundary["current"] is True
+    assert boundary["stale"] is False
     assert [
         item["synthesis_key"]
         for item in artifact["semantic_output"]["synthesis_proposals"]
     ] == ["filing_route", "applicant_guidance"]
+    assert (
+        "verified two-part Northstar benefit"
+        in artifact["semantic_output"]["synthesis_proposals"][1]["claim_text"]
+    )
     by_key = {item["synthesis_key"]: item for item in rebuilt["synthesis_nodes"]}
     assert set(by_key) == {
         "benefit_summary",
@@ -1084,6 +1128,13 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     assert "at or below $60,000" in normalized
     assert "paper application" in normalized
     assert "account number" in normalized
+    assert "verified two-part Northstar benefit" in selective_cross[
+        "semantic_output"
+    ]["synthesis_proposals"][1]["claim_text"]
+    assert any(
+        "verified two-part Northstar benefit" in str(item.get("claim_text") or "")
+        for item in packet.admitted_synthesis_entries
+    )
     assert harness.forbidden_live_calls == []
 
 
@@ -1138,6 +1189,343 @@ def test_selective_packet_rejects_stale_preserved_boundary() -> None:
         match="separate semantic lineage from current authority",
     ):
         selective_cross_component_input_packet(amended, closure=closure)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "forged_claim_text",
+        "forged_claim_digest",
+        "forged_claim_ref",
+        "stale_identity",
+        "missing_lineage",
+        "wrong_carry_forward",
+    ],
+)
+def test_selective_rejects_tampered_preserved_boundary_packet(mutation: str) -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+    packet = selective_cross_component_input_packet(amended, closure=closure)
+    response = _selective_response(packet)
+    tampered = deepcopy(packet)
+    boundary = tampered["preserved_boundary_synthesis_catalog"][0]
+    if mutation == "forged_claim_text":
+        boundary["claim_text"] = "Forged preserved benefit claim text."
+        boundary["synthesis_claim_ref"] = {
+            **dict(boundary.get("synthesis_claim_ref") or {}),
+            "claim_text": boundary["claim_text"],
+        }
+    elif mutation == "forged_claim_digest":
+        boundary["claim_digest"] = "forged-claim-digest"
+        boundary["synthesis_claim_ref"] = {
+            **dict(boundary.get("synthesis_claim_ref") or {}),
+            "claim_digest": "forged-claim-digest",
+        }
+    elif mutation == "forged_claim_ref":
+        boundary["synthesis_claim_ref"] = {
+            **dict(boundary.get("synthesis_claim_ref") or {}),
+            "claim_id": "forged-claim-id",
+        }
+    elif mutation == "stale_identity":
+        boundary["node_revision"] = "0"
+        boundary["node_digest"] = "stale-node-digest"
+    elif mutation == "missing_lineage":
+        boundary.pop("carried_semantic_lineage", None)
+    else:
+        boundary["carry_forward_action_ref"] = {
+            **dict(boundary.get("carry_forward_action_ref") or {}),
+            "action_id": "wrong-carry-forward-action",
+        }
+
+    artifact = execute_multicomponent_role_call(
+        run_kernel=kernel,
+        role=ROLE_CROSS_COMPONENT_ANALYST,
+        input_packet=tampered,
+        ask_model=lambda *_args, **_kwargs: response,
+        clean_json_response=lambda value: value,
+        provider="offline",
+        model="fixture",
+        base_url="http://offline.invalid/v1",
+        api_key="",
+        use_reasoning=False,
+        logical_evaluation_key=(
+            f"selective-tamper:graph-revision:{amended['graph_revision']}"
+        ),
+        output_schema_variant=SELECTIVE_CROSS_COMPONENT_SCHEMA,
+    )
+
+    with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
+        component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+            amended,
+            closure=closure,
+            cross_component_artifact=artifact,
+        )
+
+
+def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> None:
+    nodes = [_component_node(index) for index in range(1, 5)]
+    accepted_ref = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+    }
+    directive = "Explain benefits, filing route, applicant guidance, and a side note."
+    cross_input = cross_component_input_packet(
+        component_nodes=nodes,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+    )
+    cross = _role_artifact(
+        ROLE_CROSS_COMPONENT_ANALYST,
+        {
+            "synthesis_proposals": [
+                {
+                    "synthesis_key": "benefit_summary",
+                    "claim_text": (
+                        "The rebate and income threshold define the verified "
+                        "two-part Northstar benefit."
+                    ),
+                    "relationship_type": "benefit_conjunction",
+                    "component_inputs": [
+                        "component:component-1",
+                        "component:component-2",
+                    ],
+                    "synthesis_inputs": [],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                },
+                {
+                    "synthesis_key": "unrelated_note",
+                    "claim_text": "An independent unrelated note stays aside.",
+                    "relationship_type": "independent_note",
+                    "component_inputs": ["component:component-1"],
+                    "synthesis_inputs": [],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                },
+                {
+                    "synthesis_key": "filing_route",
+                    "claim_text": "The ordinary filing inputs define the route.",
+                    "relationship_type": "filing_conjunction",
+                    "component_inputs": [
+                        "component:component-3",
+                        "component:component-4",
+                    ],
+                    "synthesis_inputs": [],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                },
+                {
+                    "synthesis_key": "applicant_guidance",
+                    "claim_text": "The benefit and filing route determine guidance.",
+                    "relationship_type": "guided_conjunction",
+                    "component_inputs": [],
+                    "synthesis_inputs": ["benefit_summary", "filing_route"],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                },
+            ]
+        },
+        cross_input,
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="structure",
+        graph_candidate=candidate,
+    )
+    for key in ("benefit_summary", "unrelated_note"):
+        graph = _validate_synthesis(kernel, graph, key)
+    graph = admit_synthesis_node_via_runkernel(
+        run_kernel=kernel,
+        synthesis_key="benefit_summary",
+    )
+    scrutiny_input = scrutineer_input_packet(graph)
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "passed",
+            "reasons": ["Independent unrelated note is coherent with the graph."],
+            "challenged_synthesis_keys": [],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        scrutiny_input,
+        logical_evaluation_key="full-case",
+    )
+    _seed_role_artifact(
+        kernel,
+        scrutiny,
+        logical_evaluation_key="full-case",
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="scrutiny",
+        graph_candidate=graph_with_scrutineer(
+            graph,
+            scrutineer_artifact=scrutiny,
+        ),
+    )
+    graph = admit_synthesis_node_via_runkernel(
+        run_kernel=kernel,
+        synthesis_key="unrelated_note",
+    )
+
+    filing = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
+    )
+    authorization_core = {
+        "schema_version": "multicomponent_missing_component_recovery_authorization_v1",
+        "owner": "RunKernel.MulticomponentRecoveryAuthorization",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "authorization_id": "recovery-authorization:unrelated",
+        "authorized_action_id": "recovery-action:unrelated",
+        "target_kind": "synthesis",
+        "target_key": "synthesis_02",
+        "resolved_target": _node_ref(filing),
+        "graph_id": graph["graph_id"],
+        "graph_revision": graph["graph_revision"],
+        "graph_digest": graph["graph_digest"],
+    }
+    authorization = {
+        **authorization_core,
+        "authorization_digest": safe_packet_digest(authorization_core),
+    }
+    recovered_node = _component_node(
+        5,
+        admission_overrides={
+            "accepted_contract_version": "0.2-recovery",
+            "accepted_contract_digest": "accepted-contract-digest-recovery",
+        },
+    )
+    accepted_refs = [
+        {
+            "component_id": item["component_id"],
+            "component_revision": item["component_revision"],
+            "component_digest": item["component_digest"],
+            "user_facing_label": item["component_label"],
+            "user_facing_question": item["component_question"],
+        }
+        for item in [*graph["component_nodes"], recovered_node]
+    ]
+    current_contract = {
+        "owner": "RunKernel.CurrentAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.2-recovery",
+        "accepted_contract_digest": "accepted-contract-digest-recovery",
+        "parent_question_meaning_record_id": None,
+        "parent_question_meaning_record_digest": None,
+        "accepted_answer_component_refs": accepted_refs,
+        "accepted_answer_component_count": len(accepted_refs),
+    }
+    amendment_admission = {
+        "amendment_record_id": "amendment:unrelated",
+        "amendment_record_digest": "amendment-record-digest-unrelated",
+        "authorized_action_id": "amendment-admission-action:unrelated",
+        "admission_digest": "amendment-admission-digest-unrelated",
+    }
+    amendment_application = {
+        "amendment_record_id": "amendment:unrelated",
+        "authorized_action_id": "amendment-application-action:unrelated",
+        "application_digest": "amendment-application-digest-unrelated",
+    }
+    recovered_admission = {
+        "schema_version": "multicomponent_component_admission_ref_v1",
+        "owner": "RunKernel.MulticomponentComponentAdmission",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "component_id": recovered_node["component_id"],
+        "component_revision": recovered_node["component_revision"],
+        "component_digest": recovered_node["component_digest"],
+        "accepted_contract_version": current_contract["accepted_contract_version"],
+        "accepted_contract_digest": current_contract["accepted_contract_digest"],
+        "admission_status": "admitted",
+        "current": True,
+        "stale": False,
+        "action_id": recovered_node["component_admission_action_ref"]["action_id"],
+        "analyst_finding_ref": recovered_node["analyst_finding_ref"],
+        "dprime_validation_ref": recovered_node["dprime_validation_ref"],
+        "admitted_claim_ref": recovered_node["admitted_claim_ref"],
+        "semantic_observation_ref": recovered_node["semantic_observation_ref"],
+        "component_coverage_ref": recovered_node["component_coverage_ref"],
+        "evidence_refs": recovered_node["evidence_refs"],
+        "required_caveats": recovered_node["required_caveats"],
+        "preserved_nonclaims": recovered_node["preserved_nonclaims"],
+        "blocker_refs": recovered_node["blocker_refs"],
+    }
+    kernel.state.projections[MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE] = authorization
+    kernel.state.current_answer_contract = current_contract
+    kernel.state.contract_amendment_admission_projection = amendment_admission
+    kernel.state.contract_amendment_application_projection = amendment_application
+    component_projection = kernel.state.projections["multicomponent_component_admission"]
+    component_projection["component_admission_refs"].append(recovered_admission)
+    closure = derive_selective_recomputation_closure(
+        graph,
+        recovery_authorization_ref=authorization,
+        current_contract_ref={
+            key: current_contract[key]
+            for key in (
+                "owner",
+                "canonical_state",
+                "run_id",
+                "request_id",
+                "accepted_contract_version",
+                "accepted_contract_digest",
+                "parent_question_meaning_record_id",
+                "parent_question_meaning_record_digest",
+            )
+        }
+        | {"accepted_answer_component_count": len(accepted_refs)},
+        contract_amendment_admission_ref=amendment_admission,
+        contract_amendment_application_ref=amendment_application,
+        recovered_component_admission_ref=recovered_admission,
+    )
+    canonical_closure = reduce_selective_recomputation_closure(
+        run_kernel=kernel,
+        closure_candidate=closure,
+    )
+    amended = reduce_selective_invalidation_via_runkernel(
+        run_kernel=kernel,
+        graph=graph,
+        **_transition_inputs(kernel, canonical_closure),
+    )
+
+    assert canonical_closure["unaffected_active_synthesis_keys"] == [
+        "benefit_summary",
+        "unrelated_note",
+    ]
+    assert {item["synthesis_key"] for item in amended["synthesis_nodes"]} == {
+        "benefit_summary",
+        "unrelated_note",
+    }
+    packet = selective_cross_component_input_packet(amended, closure=canonical_closure)
+    assert [
+        item["synthesis_key"] for item in packet["preserved_boundary_synthesis_catalog"]
+    ] == ["benefit_summary"]
+    assert packet["prohibited_unaffected_synthesis_keys"] == [
+        "benefit_summary",
+        "unrelated_note",
+    ]
 
 
 def test_selective_finalization_rejects_prior_scrutineer_authority() -> None:

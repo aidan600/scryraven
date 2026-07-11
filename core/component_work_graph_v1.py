@@ -527,27 +527,71 @@ def selective_cross_component_input_packet(
     carried_by_key = {
         item["synthesis_key"]: item for item in current["synthesis_nodes"]
     }
+    unaffected_keys = set(canonical_closure["unaffected_active_synthesis_keys"])
+    graph_carry_action_refs = [
+        _safe_mapping(item) for item in current.get("carry_forward_action_refs") or ()
+    ]
+    referenced_boundary_keys: set[str] = set()
+    stale_input_refs_by_key: dict[str, list[Mapping[str, Any]]] = {}
+    for stale in stale_by_key.values():
+        for ref in stale.get("input_node_refs") or ():
+            if not isinstance(ref, Mapping) or ref.get("node_kind") != "synthesis":
+                continue
+            key = ref.get("synthesis_key")
+            if key not in unaffected_keys:
+                continue
+            referenced_boundary_keys.add(str(key))
+            stale_input_refs_by_key.setdefault(str(key), []).append(ref)
     preserved_catalog = []
-    for key in canonical_closure["unaffected_active_synthesis_keys"]:
+    for key in canonical_closure["source_synthesis_topological_order"]:
+        if key not in referenced_boundary_keys:
+            continue
         node = carried_by_key.get(key)
         action_ref = _safe_mapping(
             _safe_mapping(node.get("current_node_authority") if node else {}).get(
                 "runkernel_carry_forward_action_ref"
             )
         )
-        if node is None or not action_ref:
+        carried_lineage = _safe_mapping(
+            node.get("carried_semantic_lineage") if node else {}
+        )
+        stale_input_refs = stale_input_refs_by_key.get(key) or []
+        if (
+            node is None
+            or node.get("status") != "admitted"
+            or node.get("current") is not True
+            or node.get("stale") is True
+            or action_ref.get("operation") != "selective_invalidation"
+            or not action_ref.get("action_id")
+            or action_ref not in graph_carry_action_refs
+            or set(carried_lineage)
+            != {
+                "prior_cross_component_analyst_ref",
+                "prior_synthesis_claim_ref",
+                "prior_synthesis_dprime_ref",
+                "prior_synthesis_admission_ref",
+            }
+            or not all(_safe_mapping(item) for item in carried_lineage.values())
+            or _safe_mapping(node.get("dprime_validation_ref"))
+            or _safe_mapping(node.get("runkernel_admission_ref"))
+            or not stale_input_refs
+            or any(ref.get("node_id") != node.get("node_id") for ref in stale_input_refs)
+        ):
             raise ComponentWorkGraphV1Error(
                 "selective Cross preserved boundary lacks carry-forward authority"
             )
-        preserved_catalog.append(
-            {
-                "synthesis_key": key,
-                "node_id": node["node_id"],
-                "node_revision": node["node_revision"],
-                "node_digest": node["node_digest"],
-                "carry_forward_action_ref": action_ref,
-            }
-        )
+        bounded = _bounded_semantic_role_input_from_node(node)
+        bounded["carry_forward_action_ref"] = action_ref
+        bounded["carried_semantic_lineage"] = {
+            lineage_key: _safe_mapping(carried_lineage.get(lineage_key))
+            for lineage_key in (
+                "prior_cross_component_analyst_ref",
+                "prior_synthesis_claim_ref",
+                "prior_synthesis_dprime_ref",
+                "prior_synthesis_admission_ref",
+            )
+        }
+        preserved_catalog.append(bounded)
     recovered = component_by_id[str(recovered_component_id)]
     other_component_ids = [
         item["component_id"]
@@ -1547,10 +1591,11 @@ def component_work_graph_v1_selective_resynthesis_from_cross_artifact(
     recovered_component_id = expected_input["current_recovered_component_ref"][
         "component_id"
     ]
-    preserved_keys = {
-        item["synthesis_key"]
+    preserved_catalog_by_key = {
+        item["synthesis_key"]: item
         for item in expected_input["preserved_boundary_synthesis_catalog"]
     }
+    preserved_keys = set(preserved_catalog_by_key)
     affected_keys = set(affected_order)
     if preserved_keys & affected_keys:
         raise ComponentWorkGraphV1Error(
@@ -1630,9 +1675,26 @@ def component_work_graph_v1_selective_resynthesis_from_cross_artifact(
         input_nodes = [
             component_by_id[item] for item in proposal["component_inputs"]
         ]
-        input_nodes.extend(
-            node_by_key[item] for item in proposal["preserved_synthesis_inputs"]
-        )
+        for preserved_key in proposal["preserved_synthesis_inputs"]:
+            catalog_entry = preserved_catalog_by_key[preserved_key]
+            preserved_node = node_by_key[preserved_key]
+            if (
+                preserved_node.get("node_id") != catalog_entry.get("node_id")
+                or preserved_node.get("node_revision")
+                != catalog_entry.get("node_revision")
+                or preserved_node.get("node_digest")
+                != catalog_entry.get("node_digest")
+                or preserved_node.get("claim_text")
+                != catalog_entry.get("claim_text")
+                or _safe_mapping(preserved_node.get("synthesis_claim_ref")).get(
+                    "claim_digest"
+                )
+                != catalog_entry.get("claim_digest")
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "selective preserved boundary binding mismatch"
+                )
+            input_nodes.append(preserved_node)
         input_nodes.extend(
             node_by_key[item] for item in proposal["affected_synthesis_inputs"]
         )

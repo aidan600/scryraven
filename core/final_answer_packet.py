@@ -958,12 +958,13 @@ class FinalAnswerPacket:
                 raise ValueError(
                     "FinalAnswerPacket synthesis entry is not current RunKernel-admitted state"
                 )
-        if self.admitted_synthesis_entries and self.multicomponent_graph_readiness not in {
-            "ready",
-            "ready_with_caveats",
-        } and not self.multicomponent_limitations:
+        if (
+            self.admitted_synthesis_entries
+            and self.multicomponent_graph_readiness
+            not in {"ready", "ready_with_caveats"}
+        ):
             raise ValueError(
-                "FinalAnswerPacket non-ready synthesis requires explicit limitations"
+                "FinalAnswerPacket cannot include synthesis from a non-ready graph"
             )
 
     def _validate_semantic_packet_evidence_bindings(self) -> None:
