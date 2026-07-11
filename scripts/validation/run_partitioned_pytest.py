@@ -330,6 +330,20 @@ def ensure_outside(path: Path, repo: Path, label: str) -> Path:
     raise UnsafeInvocation(f"{label} must be outside the tracked repository: {resolved}")
 
 
+def preflight_roots(packet: Path, work_root: Path, repo: Path) -> tuple[Path, Path]:
+    packet = ensure_outside(packet, repo, "packet-root")
+    work_root = ensure_outside(work_root, repo, "work-root")
+    if packet.exists() or work_root.exists():
+        raise UnsafeInvocation("packet-root and work-root must not already exist")
+    if packet == work_root or packet in work_root.parents or work_root in packet.parents:
+        raise UnsafeInvocation("packet-root and work-root must be disjoint")
+    return packet, work_root
+
+
+def create_directory(path: Path) -> None:
+    path.mkdir(parents=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", type=Path, default=Path.cwd())
@@ -362,10 +376,11 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
     allowed_removed = sorted({normalize_test_path(path) for path in args.allow_removed_test})
     run_id = uuid.uuid4().hex[:10]
     temp_root = Path("C:/tmp") if os.name == "nt" else Path(tempfile.gettempdir())
-    packet = ensure_outside(args.packet_root or temp_root / "srval-packets" / run_id, repo, "packet-root")
-    work_root = ensure_outside(args.work_root or temp_root / f"srval-{run_id}", repo, "work-root")
-    if packet.exists() or work_root.exists():
-        raise UnsafeInvocation("packet-root and work-root must not already exist")
+    packet, work_root = preflight_roots(
+        args.packet_root or temp_root / "srval-packets" / run_id,
+        args.work_root or temp_root / f"srval-{run_id}",
+        repo,
+    )
     candidate_tests = tracked_tests(repo, candidate_sha)
     baseline_tests = tracked_tests(repo, baseline_sha) if baseline_sha else []
     union = sorted(set(candidate_tests) | set(baseline_tests))
@@ -382,7 +397,7 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
     started = utc_now()
     configuration = {
         "schema_version": SCHEMA_VERSION,
-        "repository": {"root": str(repo), "origin": git(repo, "remote", "get-url", "origin")},
+        "repository": {"root": str(repo)},
         "candidate_sha": candidate_sha, "baseline_sha": baseline_sha,
         "partitions": args.partitions, "algorithm": "sorted-union-stable-round-robin-v1",
         "max_processes": args.max_processes, "process_timeout_seconds": args.process_timeout,
@@ -390,13 +405,17 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
         "environment": environment_fingerprint(), "removed_test_allowlist": allowed_removed,
         "packet_root": str(packet), "work_root": str(work_root), "started_at": started,
     }
-    packet.mkdir(parents=True)
-    work_root.mkdir(parents=True)
-    write_json(packet / "configuration.json", configuration)
     created: list[Path] = []
     cleanup: list[dict[str, object]] = []
     semantic: dict[str, object] | None = None
+    packet_created = False
+    work_root_created = False
     try:
+        create_directory(packet)
+        packet_created = True
+        create_directory(work_root)
+        work_root_created = True
+        write_json(packet / "configuration.json", configuration)
         for index, manifest in enumerate(partitions, 1):
             (packet / "manifests").mkdir(exist_ok=True)
             (packet / "manifests" / f"partition-{index}-union.txt").write_text("\n".join(manifest) + ("\n" if manifest else ""), encoding="utf-8")
@@ -425,23 +444,44 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
         semantic = aggregate(results, bool(baseline_sha), added, removed, allowed_removed)
         write_json(packet / "process-summary.json", [dataclasses.asdict(r) for r in results])
         write_json(packet / "aggregate.json", semantic)
-    except UnsafeInvocation:
-        raise
     except (KeyboardInterrupt, Exception) as exc:
-        semantic = semantic or {"schema_version": SCHEMA_VERSION, "consequence": "infrastructure-invalid", "runner_error": f"{type(exc).__name__}: {exc}"}
-        write_json(packet / "aggregate.json", semantic)
+        packet_created = packet_created or packet.is_dir()
+        work_root_created = work_root_created or work_root.is_dir()
+        semantic = semantic or {
+            "schema_version": SCHEMA_VERSION,
+            "consequence": "infrastructure-invalid",
+            "runner_error": type(exc).__name__,
+        }
+        if packet_created:
+            try:
+                write_json(packet / "aggregate.json", semantic)
+            except OSError:
+                pass
     finally:
         if not args.keep_worktrees:
             for path in reversed(created):
                 command = ["git", "-C", str(repo), "worktree", "remove", "--force", str(path)]
-                completed = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
-                item = {"path": str(path), "command": command, "exit_code": completed.returncode, "detail": completed.stderr.strip()}
+                try:
+                    completed = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+                    item = {
+                        "path": str(path),
+                        "command": command,
+                        "exit_code": completed.returncode,
+                        "detail": "worktree removal failed" if completed.returncode else "",
+                    }
+                except (OSError, subprocess.SubprocessError) as exc:
+                    item = {
+                        "path": str(path),
+                        "command": command,
+                        "exit_code": None,
+                        "detail": type(exc).__name__,
+                    }
                 cleanup.append(item)
-                if completed.returncode and semantic is not None:
+                if item["exit_code"] != 0 and semantic is not None:
                     semantic["semantic_consequence_before_cleanup"] = semantic.get("consequence")
                     semantic["consequence"] = "infrastructure-invalid"
                     semantic.setdefault("cleanup_failures", []).append(item)
-            if all(item["exit_code"] == 0 for item in cleanup):
+            if work_root_created and all(item["exit_code"] == 0 for item in cleanup):
                 try:
                     shutil.rmtree(work_root)
                 except OSError as exc:
@@ -457,19 +497,22 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
                             {"path": str(work_root), "detail": str(exc), "operator_instruction": instruction}
                         )
         cleanup_posture = {"keep_worktrees": args.keep_worktrees, "owned_paths": [str(p) for p in created], "attempts": cleanup}
-        write_json(packet / "cleanup.json", cleanup_posture)
-        if semantic is not None:
+        if packet_created and semantic is not None:
             semantic["cleanup_posture"] = cleanup_posture
             semantic["ended_at"] = utc_now()
-            write_json(packet / "aggregate.json", semantic)
-            lines = summary_lines(semantic, configuration, packet)
-            for failure in semantic.get("cleanup_failures", []):
-                lines.append(f"cleanup failed: {failure.get('path')}")
-                if failure.get("command"):
-                    lines.append("operator instruction: " + subprocess.list2cmdline(failure["command"]))
-                elif failure.get("operator_instruction"):
-                    lines.append("operator instruction: " + failure["operator_instruction"])
-            (packet / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            try:
+                write_json(packet / "cleanup.json", cleanup_posture)
+                write_json(packet / "aggregate.json", semantic)
+                lines = summary_lines(semantic, configuration, packet)
+                for failure in semantic.get("cleanup_failures", []):
+                    lines.append(f"cleanup failed: {failure.get('path')}")
+                    if failure.get("command"):
+                        lines.append("operator instruction: " + subprocess.list2cmdline(failure["command"]))
+                    elif failure.get("operator_instruction"):
+                        lines.append("operator instruction: " + failure["operator_instruction"])
+                (packet / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            except OSError:
+                pass
     return exit_for(str(semantic["consequence"])), packet
 
 
@@ -480,8 +523,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except UnsafeInvocation as exc:
         print(f"unsafe invocation: {exc}", file=sys.stderr)
         return EXIT_UNSAFE
+    except Exception:
+        print("infrastructure-invalid: runner setup failed", file=sys.stderr)
+        return EXIT_INVALID
     print(f"artifact packet: {packet}")
-    print((packet / "summary.txt").read_text(encoding="utf-8"), end="")
+    summary = packet / "summary.txt"
+    if summary.is_file():
+        print(summary.read_text(encoding="utf-8"), end="")
+    elif code == EXIT_INVALID:
+        print("infrastructure-invalid: runner setup failed", file=sys.stderr)
     return code
 
 

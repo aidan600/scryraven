@@ -34,13 +34,18 @@ def _commit(repo: Path, message: str) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
-def _tiny_repo(tmp_path: Path, baseline_tests: dict[str, str], candidate_tests: dict[str, str]) -> tuple[Path, str, str]:
+def _tiny_repo(
+    tmp_path: Path,
+    baseline_tests: dict[str, str],
+    candidate_tests: dict[str, str],
+    origin: str = "https://example.invalid/tiny.git",
+) -> tuple[Path, str, str]:
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.email", "runner@example.invalid")
     _git(repo, "config", "user.name", "Runner Test")
-    _git(repo, "remote", "add", "origin", "https://example.invalid/tiny.git")
+    _git(repo, "remote", "add", "origin", origin)
     _write(repo / "proplex" / "__init__.py", "MARKER = 'baseline'\n")
     _write(repo / "core" / "__init__.py", "MARKER = 'baseline'\n")
     for name, body in baseline_tests.items():
@@ -251,7 +256,19 @@ def test_tiny_repo_imports_exact_worktrees_and_cleans_owned_paths(tmp_path: Path
         assert all(Path(path).is_relative_to(Path(probe["expected_root"])) for path in probe["modules"].values())
     cleanup = json.loads((packet / "cleanup.json").read_text(encoding="utf-8"))
     assert all(not Path(path).exists() for path in cleanup["owned_paths"])
-    assert (packet / "aggregate.json").is_file()
+    assert not (tmp_path / "work").exists()
+    for relative in (
+        "configuration.json",
+        "import-probes.json",
+        "manifests/partition-1-union.txt",
+        "logs/candidate-p1.log",
+        "junit/candidate-p1.xml",
+        "process-summary.json",
+        "aggregate.json",
+        "cleanup.json",
+        "summary.txt",
+    ):
+        assert (packet / relative).is_file()
     listing = _git(repo, "worktree", "list", "--porcelain")
     assert all(path not in listing for path in cleanup["owned_paths"])
 
@@ -288,3 +305,137 @@ def test_synthetic_candidate_only_cli(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "consequence: passed" in completed.stdout
     assert json.loads((packet / "aggregate.json").read_text(encoding="utf-8"))["consequence"] == "passed"
+
+
+def test_packet_omits_credential_bearing_origin_markers(tmp_path: Path) -> None:
+    markers = ("fake-user-marker", "fake-password-marker", "fake-token-marker")
+    origin = f"https://{markers[0]}:{markers[1]}@example.invalid/tiny.git?token={markers[2]}"
+    repo, _, candidate = _tiny_repo(
+        tmp_path,
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        origin,
+    )
+    code, packet = runner.execute(_args(repo, tmp_path, None, candidate))
+    assert code == 0
+    for artifact in packet.rglob("*"):
+        if artifact.is_file():
+            text = artifact.read_text(encoding="utf-8", errors="replace")
+            if any(marker in text for marker in markers):
+                pytest.fail("credential marker leaked into retained packet")
+
+
+@pytest.mark.parametrize(
+    ("packet_relative", "work_relative"),
+    [
+        ("same", "same"),
+        ("outer/packet", "outer"),
+        ("outer", "outer/work"),
+    ],
+)
+def test_overlapping_roots_fail_before_mutation(
+    tmp_path: Path, packet_relative: str, work_relative: str
+) -> None:
+    repo, _, candidate = _tiny_repo(
+        tmp_path / "fixture",
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        {"tests/test_x.py": "def test_x(): pass\n"},
+    )
+    roots = tmp_path / "roots"
+    packet = roots / packet_relative
+    work = roots / work_relative
+    before = _git(repo, "worktree", "list", "--porcelain")
+    code = runner.main(
+        ["--repository", str(repo), "--candidate", candidate, "--packet-root", str(packet), "--work-root", str(work)]
+    )
+    assert code == 3
+    assert not packet.exists()
+    assert not work.exists()
+    assert _git(repo, "worktree", "list", "--porcelain") == before
+
+
+def test_inside_repository_and_existing_roots_are_refused_without_mutation(tmp_path: Path) -> None:
+    repo, _, candidate = _tiny_repo(
+        tmp_path,
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        {"tests/test_x.py": "def test_x(): pass\n"},
+    )
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    unrelated = tmp_path / "unrelated.txt"
+    unrelated.write_text("preserve", encoding="utf-8")
+    before = _git(repo, "worktree", "list", "--porcelain")
+    cases = [
+        (repo / "packet", tmp_path / "work-a"),
+        (tmp_path / "packet-b", repo / "work"),
+        (existing, tmp_path / "work-c"),
+        (tmp_path / "packet-d", existing),
+    ]
+    for packet, work in cases:
+        with pytest.raises(runner.UnsafeInvocation):
+            runner.execute(_args(repo, tmp_path, None, candidate, packet_root=packet, work_root=work))
+        assert not packet.exists() or packet == existing
+        assert not work.exists() or work == existing
+    assert unrelated.read_text(encoding="utf-8") == "preserve"
+    assert _git(repo, "worktree", "list", "--porcelain") == before
+
+
+def test_packet_directory_creation_failure_is_infrastructure_invalid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, _, candidate = _tiny_repo(
+        tmp_path,
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        {"tests/test_x.py": "def test_x(): pass\n"},
+    )
+    packet = tmp_path / "packet"
+    work = tmp_path / "work"
+
+    def fail_create(path: Path) -> None:
+        raise OSError("synthetic setup failure")
+
+    monkeypatch.setattr(runner, "create_directory", fail_create)
+    code, returned_packet = runner.execute(_args(repo, tmp_path, None, candidate))
+    assert code == 2
+    assert returned_packet == packet.resolve()
+    assert not packet.exists()
+    assert not work.exists()
+    cli_code = runner.main(
+        [
+            "--repository",
+            str(repo),
+            "--candidate",
+            candidate,
+            "--packet-root",
+            str(packet),
+            "--work-root",
+            str(work),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert cli_code == 2
+    assert captured.err == "infrastructure-invalid: runner setup failed\n"
+
+
+def test_initial_configuration_write_failure_is_infrastructure_invalid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo, _, candidate = _tiny_repo(
+        tmp_path,
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        {"tests/test_x.py": "def test_x(): pass\n"},
+    )
+    original = runner.write_json
+
+    def fail_configuration(path: Path, value: object) -> None:
+        if path.name == "configuration.json":
+            raise OSError("synthetic configuration failure")
+        original(path, value)
+
+    monkeypatch.setattr(runner, "write_json", fail_configuration)
+    code, packet = runner.execute(_args(repo, tmp_path, None, candidate))
+    assert code == 2
+    assert not (tmp_path / "work").exists()
+    aggregate = json.loads((packet / "aggregate.json").read_text(encoding="utf-8"))
+    assert aggregate["consequence"] == "infrastructure-invalid"
+    assert aggregate["runner_error"] == "OSError"
