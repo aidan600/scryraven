@@ -227,12 +227,14 @@ def test_surface_licensing_and_workflow_scale_are_explicit() -> None:
         "never unrelated product systems",
         "rigid file allowlists only for genuinely tiny",
         "do not force intensive ceremony onto tiny work",
-        "standard is the default substantial-phase workflow posture",
-        "intensive adds multiple coherent milestones",
+        "substantial phases use the standard convergence-and-checkpoint workflow posture",
+        "the intensive agent execution profile additionally expects multiple coherent milestones",
     ):
         assert phrase in profile
     assert "## Large-phase execution posture" in addenda
-    assert "Execution profile: STANDARD | INTENSIVE" in addenda
+    assert "Agent execution profile: ROUTINE | DEEP | INTENSIVE | DELEGATED" in addenda
+    assert "Large-phase workflow posture:" in addenda
+    assert "Execution profile: STANDARD | INTENSIVE" not in addenda
 
 
 def test_validation_jobs_and_acceptance_owner_are_separate_and_stable() -> None:

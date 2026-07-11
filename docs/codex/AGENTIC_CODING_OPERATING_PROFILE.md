@@ -88,15 +88,16 @@ ROUTINE and other small repairs use the lightest safe workflow: one narrow
 surface, one focused test, one correction cycle when sufficient, one validation
 pass, and one commit. Do not force INTENSIVE ceremony onto tiny work.
 
-STANDARD is the default substantial-phase workflow posture and may use ROUTINE
-or DEEP attention; INTENSIVE adds multiple coherent milestones and separated
-affected-lane and broad-validation jobs for one large integration outcome.
+Substantial phases use the standard convergence-and-checkpoint workflow posture
+with the selected canonical agent execution profile. The INTENSIVE agent
+execution profile additionally expects multiple coherent milestones and
+separately staged affected-lane and broad-validation jobs for one large
+integration outcome.
 
-For STANDARD implementation, and especially INTENSIVE work,
-evaluate every focused red cycle using the failure count, failed node IDs,
-causal classification, whether the set is shrinking, flat, or expanding, and
-the next bounded correction. A red focused test is diagnostic information, not
-an automatic stop.
+For substantial implementation, evaluate every focused red cycle using the
+failure count, failed node IDs, causal classification, whether the set is
+shrinking, flat, or expanding, and the next bounded correction. A red focused
+test is diagnostic information, not an automatic stop.
 
 Continue when failures decrease materially, share one causal explanation, and
 directly imply a correction inside the licensed architectural surface without a

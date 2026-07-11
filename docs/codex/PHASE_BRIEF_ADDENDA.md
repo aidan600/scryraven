@@ -11,7 +11,11 @@ Use only for substantial integration work; tiny repairs retain the lightweight
 workflow in the operating profile.
 
 ```text
-Execution profile: STANDARD | INTENSIVE
+Agent execution profile: ROUTINE | DEEP | INTENSIVE | DELEGATED
+Large-phase workflow posture:
+Apply convergence evaluation, causal-cluster scope, coherent milestone
+checkpoints, and separated validation jobs.
+
 Licensed architectural surface:
 - Named producer:
 - Authority transition or reducer:
