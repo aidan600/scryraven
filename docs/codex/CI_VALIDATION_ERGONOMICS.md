@@ -71,6 +71,27 @@ promotion posture, read
   bucket manually.
 - Do not make full-suite pytest the default PR tax.
 
+## Partitioned broad-validation runner
+
+For separately authorized exceptional broad validation, use
+`scripts/validation/run_partitioned_pytest.py` instead of repeatedly retrying a
+known monolithic timeout. Candidate-only mode is the cheaper choice when the
+candidate must be independently green. Paired baseline/candidate parity is
+more expensive and is reserved for cases where shared, baseline-only, and
+candidate-only attribution is needed.
+
+The runner distinguishes candidate regression from infrastructure-invalid
+execution. A timeout, invalid pytest process, failed import-isolation probe,
+malformed required artifact, or exact-path cleanup failure is neither green nor
+red; it requires a valid rerun or infrastructure repair outside the semantic
+verdict.
+
+Ordinary PR routing remains unchanged: PRs use `docs_only` or `fast_pr`, and
+full/parity validation is not a pull-request default. CI adoption of the local
+partitioned runner is deferred until one separately authorized real broad-run
+dogfood records duration, process validity, attribution usefulness, cleanup
+reliability, and compute overhead.
+
 ## Reporting rule
 
 - Distinguish test failure from command timeout.
