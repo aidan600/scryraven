@@ -21,7 +21,7 @@ TOUCHED_DOCS = (
     QUARANTINE_DOC,
 )
 
-CURRENT_NEXT_GATE = "AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01"
+CURRENT_NEXT_GATE = "AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01"
 
 
 def _source(path: Path) -> str:
@@ -72,8 +72,8 @@ def test_guidance_map_routes_to_current_multicomponent_product_gate() -> None:
     guidance_lower = guidance.casefold()
 
     assert CURRENT_NEXT_GATE.casefold() in guidance_lower
-    assert "current mandatory next build" in guidance_lower
-    assert "no intervening proof or contract-only phase" in _collapsed(guidance_lower)
+    assert "recommended next multi-component build" in guidance_lower
+    assert "runtime parallelism remains deferred" in _collapsed(guidance_lower)
 
 
 def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:

@@ -1,12 +1,10 @@
 """PRODUCT-PATH-REGRESSION: canonical multi-component doctrine posture.
 
 Harness label: PRODUCT-PATH-REGRESSION
-Ordinary product path guarded or fed: future phase routing for the default
-ordinary multi-component answer path.
+Ordinary product path guarded or fed: installed bounded default ordinary
+multi-component answer path and its next dynamic-graph phase.
 Runtime consumer: repo-visible architecture doctrine and Codex phase guidance.
-Why ordinary product-path work cannot be done directly: this REPAIR is limited
-to doctrine and static guards; runtime Python and answer behavior are closed.
-Integration deadline: AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01.
+Integration deadline: AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01.
 Exit condition: replace only with an equal-or-stronger guard over the installed
 ordinary end-to-end component validation and synthesis path.
 Why this is not a shadow product path: it reads Markdown only and creates no
@@ -15,11 +13,11 @@ Forbidden interpretation: passing is not runtime multi-component behavior,
 live validation, citation/source-obligation satisfaction, or correctness.
 
 Test path/node id: tests/test_multicomponent_runtime_architecture_doctrine_01.py
-Proof class: docs/process repair static posture.
+Proof class: installed product architecture static posture.
 Validation bucket: phase_focus.
 Surface guarded: canonical architecture ownership and next-BUILD routing.
-High-custody or closed-this-phase surface: all runtime product Python and
-ordinary answer output remain closed.
+High-custody or closed-this-phase surface: dynamic recovery, scheduling,
+leases, and runtime parallelism remain closed.
 Runtime/product path guarded: docs consumed by future product phases; no runtime.
 Expected cost: local Markdown reads only, well under one second.
 Promotion posture: remain phase_focus unless it becomes the repo's selected
@@ -48,7 +46,7 @@ FAP_AUTHOR = ARCH / "FAP_AUTHOR_BOUNDARY.md"
 GUIDANCE = CODEX / "CODEX_GUIDANCE_MAP.md"
 PLAYBOOK = CODEX / "ARCHITECTURE_GROOVE_PLAYBOOK.md"
 
-NEXT = "AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01"
+NEXT = "AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01"
 
 
 def _read(path: Path) -> str:
@@ -65,11 +63,11 @@ def test_canonical_owner_separates_current_reuse_and_target() -> None:
     for phrase in (
         "Current default ordinary behavior",
         "Existing reusable bounded capability",
-        "Approved Phase 1 target",
+        "Installed Phase 1 path",
         "commit_semantic_producer_bundle(...)",
-        "does not establish a typed general regular-Analyst proposal",
+        "lane selection occurs before canonical semantic production",
         "The V0 contracts and serial checkpoint are not ordinary answer consumption.",
-        "This complete target is approved but not installed.",
+        "This complete bounded target is installed",
         "ordinary-bounded-multicomponent-factual-synthesis-v1",
     ):
         assert phrase in text
@@ -208,9 +206,9 @@ def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
         assert CANONICAL.name in _read(path), path.name
 
     current = _collapsed(CURRENT_STATE)
-    assert "Current default ordinary semantic production is direct" in current
-    assert "typed general component Analyst proposal followed by component D-prime validation is not installed" in current
-    assert "V0" in current and "not consumed by the ordinary answer path" in current
+    assert "Nonqualifying and single-component ordinary runs retain direct semantic production" in current
+    assert "component Analyst -> component D-prime -> RunKernel component admission" in current
+    assert "V0" in current and "review surfaces" in current
 
     semantic = _read(SEMANTIC_LOOP)
     for heading in (
@@ -237,8 +235,9 @@ def test_guidance_routes_directly_to_the_mandatory_product_build() -> None:
 
     for path in (GUIDANCE, PLAYBOOK):
         collapsed = _collapsed(path)
-        assert "No intervening proof or contract-only phase is authorized by default" in collapsed
+        assert "AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01" in collapsed
+        assert "Phase 1" in collapsed
         assert "ordinary Sufficiency" in collapsed
         assert "FinalAnswerPacket" in collapsed
         assert "Author" in collapsed
-        assert "user-facing answer" in collapsed
+        assert "RunOutcome" in collapsed

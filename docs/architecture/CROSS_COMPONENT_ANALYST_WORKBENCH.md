@@ -16,9 +16,10 @@ D-prime-as-Analyst, direct retrieval dispatch, FAP synthesis, and Author glue
 before the next Build checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
 
 That checkpoint and the subsequent V0 contract sequence are now merged. They
-remain bounded reusable contracts, not ordinary product consumption. The
-mandatory next checkpoint is now
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+remain bounded reusable contracts, not ordinary product consumption. Phase 1
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01` now installs the separate
+ordinary V1 product path; the recommended next phase is
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
 
 This document defines the smallest safe next architecture step from the current
 same-component multi-source, `ComponentWorkNode`-shaped lane toward future
@@ -324,9 +325,9 @@ retrieval path, or unbounded context sink.
 ## 8. Historical V0 Phase Sequence
 
 This sequence is retained to explain the provenance and boundaries of the
-merged V0 contracts. It is not current next-step doctrine and must not route a
-new contract-only or proof-only phase ahead of
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+merged V0 contracts. It is not current next-step doctrine. The ordinary Phase 1
+path supersedes it for the supported class, and the recommended next phase is
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
 
 ### 1. MULTICOMPONENT-CROSS-COMPONENT-ANALYST-DOCTRINE-01
 

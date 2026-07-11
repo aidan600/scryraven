@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Mapping, Sequence
 
+from core.multicomponent_sufficiency_consumption_runtime import (
+    build_multicomponent_graph_consumption,
+)
 from core.run_authority_search_judgment import RunSearchJudgmentDecision
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
@@ -1338,6 +1341,9 @@ def build_deterministic_sufficiency_judgment(
     semantic_overlay = evaluate_semantic_sufficiency_overlay(
         judgment_input.semantic_state_facts,
     )
+    multicomponent_consumption = build_multicomponent_graph_consumption(
+        judgment_input.multicomponent_graph_state
+    )
 
     ledger_requirements = _ledger_requirements(ledger)
     missing: list[SufficiencyRequirementAssessment] = []
@@ -1478,6 +1484,69 @@ def build_deterministic_sufficiency_judgment(
         posture = SufficiencyPosture.BLOCKED
         final_allowed = False
         rationale = "component_readiness_not_satisfied"
+    if multicomponent_consumption:
+        ordinary_ready_with_caveats = (
+            decision is RunSufficiencyDecision.READY_WITH_CAVEATS
+        )
+        ordinary_ready_for_synthesis = (
+            final_allowed
+            and decision
+            in {
+                RunSufficiencyDecision.READY_DIRECT,
+                RunSufficiencyDecision.READY_WITH_CAVEATS,
+            }
+        )
+        direct_entries = list(
+            multicomponent_consumption.get("direct_component_entries") or ()
+        )
+        synthesis_entries = list(
+            multicomponent_consumption.get("admitted_synthesis_entries") or ()
+        )
+        graph_ready = (
+            multicomponent_consumption.get("graph_ready_for_synthesis") is True
+        )
+        if synthesis_entries and ordinary_ready_for_synthesis:
+            if not graph_ready:
+                decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+                posture = SufficiencyPosture.PARTIAL_ANSWER
+                rationale = "multicomponent_scoped_challenge_partial_output"
+            elif ordinary_ready_with_caveats or multicomponent_consumption.get(
+                "mandatory_caveats"
+            ):
+                decision = RunSufficiencyDecision.READY_WITH_CAVEATS
+                posture = SufficiencyPosture.ANSWER_WITH_CAVEATS
+                rationale = "multicomponent_graph_ready_with_caveats"
+            else:
+                decision = RunSufficiencyDecision.READY_DIRECT
+                posture = SufficiencyPosture.DIRECT_ANSWER
+                rationale = "multicomponent_graph_ready"
+        elif not final_allowed:
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption["direct_component_entry_count"] = 0
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption["admitted_synthesis_entry_count"] = 0
+        elif direct_entries:
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption["admitted_synthesis_entry_count"] = 0
+            if ordinary_ready_for_synthesis:
+                decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+                posture = SufficiencyPosture.PARTIAL_ANSWER
+                rationale = "multicomponent_independent_direct_output_only"
+            if synthesis_entries:
+                multicomponent_consumption["limitations"] = list(
+                    dict.fromkeys(
+                        [
+                            *multicomponent_consumption.get("limitations", ()),
+                            "Admitted graph synthesis omitted because ordinary "
+                            "Sufficiency did not authorize full synthesis readiness.",
+                        ]
+                    )
+                )
+        elif ordinary_ready_for_synthesis:
+            decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+            posture = SufficiencyPosture.BLOCKED
+            final_allowed = False
+            rationale = "multicomponent_graph_has_no_admitted_direct_output"
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,
@@ -1494,6 +1563,19 @@ def build_deterministic_sufficiency_judgment(
                 *readiness_reasons,
                 *_string_list(component_readiness.get("readiness_reasons")),
                 *_semantic_readiness_reasons(semantic_overlay),
+                *(
+                    (
+                        "multicomponent_graph_"
+                        + str(
+                            multicomponent_consumption.get(
+                                "graph_readiness_status"
+                            )
+                        )
+                    ,
+                    )
+                    if multicomponent_consumption
+                    else ()
+                ),
             )
         )
     )
@@ -1511,6 +1593,16 @@ def build_deterministic_sufficiency_judgment(
     mandatory = tuple(
         dict.fromkeys((*mandatory, *semantic_overlay.mandatory_caveats))
     )
+    if multicomponent_consumption:
+        mandatory = tuple(
+            dict.fromkeys(
+                (
+                    *mandatory,
+                    *multicomponent_consumption.get("mandatory_caveats", ()),
+                    *multicomponent_consumption.get("limitations", ()),
+                )
+            )
+        )
     prohibited = _prohibited_upgrades(
         contract=contract,
         missing=missing,
@@ -1523,6 +1615,17 @@ def build_deterministic_sufficiency_judgment(
     prohibited = tuple(
         dict.fromkeys((*prohibited, *semantic_overlay.prohibited_upgrades))
     )
+    if multicomponent_consumption:
+        prohibited = tuple(
+            dict.fromkeys(
+                (
+                    *prohibited,
+                    "do_not_render_unadmitted_or_stale_synthesis",
+                    "do_not_upgrade_component_findings_into_unapproved_synthesis",
+                    "do_not_bypass_ordinary_sufficiency_graph_readiness",
+                )
+            )
+        )
     if component_readiness.get("component_readiness_blocked"):
         prohibited = tuple(
             dict.fromkeys(
@@ -1543,7 +1646,6 @@ def build_deterministic_sufficiency_judgment(
         required_satisfied = False
     if component_readiness.get("component_readiness_blocked"):
         required_satisfied = False
-
     semantic_consumption = build_semantic_consumption_summary(
         judgment_input.semantic_state_facts,
         overlay=semantic_overlay,
@@ -1574,6 +1676,7 @@ def build_deterministic_sufficiency_judgment(
         rationale=rationale,
         semantic_consumption=semantic_consumption,
         component_readiness=component_readiness,
+        multicomponent_graph_consumption=multicomponent_consumption,
     )
     final_packet_inputs = dict(judgment.final_packet_inputs)
     existing_flags = _mapping(final_packet_inputs.get("behavior_boundary_flags"))
@@ -1581,6 +1684,28 @@ def build_deterministic_sufficiency_judgment(
         **existing_flags,
         **_quant_behavior_boundary_flags(final_evidence, quant_resolutions),
     }
+    if multicomponent_consumption:
+        final_packet_inputs.update(
+            {
+                "multicomponent_graph_consumption": multicomponent_consumption,
+                "multicomponent_graph_readiness": (
+                    multicomponent_consumption.get("graph_readiness_status")
+                ),
+                "direct_component_entries": list(
+                    multicomponent_consumption.get(
+                        "direct_component_entries", ()
+                    )
+                ),
+                "admitted_synthesis_entries": list(
+                    multicomponent_consumption.get(
+                        "admitted_synthesis_entries", ()
+                    )
+                ),
+                "multicomponent_limitations": list(
+                    multicomponent_consumption.get("limitations", ())
+                ),
+            }
+        )
     return replace(judgment, final_packet_inputs=final_packet_inputs)
 
 
@@ -1899,7 +2024,59 @@ def validate_or_repair_sufficiency_judgment(
     )
 
 
+def preserve_multicomponent_sufficiency_authority(
+    committed: RunSufficiencyJudgment,
+    *,
+    deterministic_judgment: RunSufficiencyJudgment,
+) -> RunSufficiencyJudgment:
+    """Prevent model adaptation from dropping canonical Graph V1 readiness."""
+
+    if not deterministic_judgment.multicomponent_graph_consumption:
+        return committed
+    return replace(
+        committed,
+        decision=deterministic_judgment.decision,
+        final_answer_posture=deterministic_judgment.final_answer_posture,
+        contract_fulfilled=deterministic_judgment.contract_fulfilled,
+        required_obligations_satisfied=(
+            deterministic_judgment.required_obligations_satisfied
+        ),
+        final_answer_allowed=deterministic_judgment.final_answer_allowed,
+        mandatory_caveats=tuple(
+            dict.fromkeys(
+                (
+                    *committed.mandatory_caveats,
+                    *deterministic_judgment.mandatory_caveats,
+                )
+            )
+        ),
+        prohibited_upgrades=tuple(
+            dict.fromkeys(
+                (
+                    *committed.prohibited_upgrades,
+                    *deterministic_judgment.prohibited_upgrades,
+                )
+            )
+        ),
+        readiness_reasons=tuple(
+            dict.fromkeys(
+                (
+                    *committed.readiness_reasons,
+                    *deterministic_judgment.readiness_reasons,
+                )
+            )
+        ),
+        final_packet_inputs=deterministic_judgment.final_packet_inputs,
+        semantic_consumption=deterministic_judgment.semantic_consumption,
+        component_readiness=deterministic_judgment.component_readiness,
+        multicomponent_graph_consumption=(
+            deterministic_judgment.multicomponent_graph_consumption
+        ),
+    )
+
+
 __all__ = [
     "build_deterministic_sufficiency_judgment",
+    "preserve_multicomponent_sufficiency_authority",
     "validate_or_repair_sufficiency_judgment",
 ]

@@ -17,6 +17,13 @@ COMPONENT_WORK_NODE_V0_PHASE = "COMPONENTWORKNODE-SINGLE-RELATION-LIFT-01"
 COMPONENT_WORK_NODE_V0_RUNTIME_CONSUMER = (
     "proplex.mvp_single_relation_live_dogfood_run"
 )
+COMPONENT_WORK_NODE_V1_SCHEMA_VERSION = "component_work_node_v1"
+COMPONENT_WORK_NODE_V1_PHASE = (
+    "AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01"
+)
+COMPONENT_WORK_NODE_V1_RUNTIME_CONSUMER = (
+    "ordinary ComponentWorkGraph V1 synthesis runtime"
+)
 
 COMPONENT_WORK_NODE_STATUS_CONSUMED = "consumed"
 COMPONENT_WORK_NODE_STATUS_BLOCKED = "blocked"
@@ -1019,6 +1026,183 @@ def _digest_json(value: Any) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def component_work_node_v1_from_admitted_component(
+    *,
+    run_id: str,
+    request_id: str,
+    accepted_component_ref: Mapping[str, Any],
+    component_admission_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build a V1 node from canonical ordinary RunKernel component state.
+
+    V0 remains the single-relation compatibility surface.  V1 is the ordinary
+    graph input and therefore requires current run/revision/digest bindings and
+    a RunKernel component-admission posture before graph consumption.
+    """
+
+    component = _safe_mapping(accepted_component_ref)
+    admission = _safe_mapping(component_admission_ref)
+    if (
+        admission.get("schema_version")
+        != "multicomponent_component_admission_ref_v1"
+        or admission.get("owner")
+        != "RunKernel.MulticomponentComponentAdmission"
+        or admission.get("canonical_state") is not True
+        or not _clean_text(admission.get("action_id"), limit=200)
+        or not _clean_text(
+            admission.get("accepted_contract_version"),
+            limit=200,
+        )
+        or not _clean_text(
+            admission.get("accepted_contract_digest"),
+            limit=128,
+        )
+    ):
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 requires canonical RunKernel component admission"
+        )
+    component_id = _required_text(component.get("component_id"), "component_id")
+    component_revision = _required_text(
+        component.get("component_revision"), "component_revision"
+    )
+    component_digest = _required_text(
+        component.get("component_digest"), "component_digest"
+    )
+    if admission.get("run_id") != run_id or admission.get("request_id") != request_id:
+        raise ComponentWorkNodeError("ComponentWorkNode V1 cross-run admission ref")
+    if (
+        admission.get("component_id") != component_id
+        or admission.get("component_revision") != component_revision
+        or admission.get("component_digest") != component_digest
+    ):
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 component admission binding mismatch"
+        )
+    status = _clean_text(admission.get("admission_status"), limit=80)
+    if status not in {"admitted", "admitted_with_caveats", "blocked", "unsupported"}:
+        raise ComponentWorkNodeError("ComponentWorkNode V1 admission status invalid")
+    analyst_ref = _safe_mapping(admission.get("analyst_finding_ref"))
+    dprime_ref = _safe_mapping(admission.get("dprime_validation_ref"))
+    if not analyst_ref or not dprime_ref:
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 requires Analyst and component D-prime refs"
+        )
+    observation_ref = _safe_mapping(admission.get("semantic_observation_ref"))
+    coverage_ref = _safe_mapping(admission.get("component_coverage_ref"))
+    admitted_claim_ref = _safe_mapping(admission.get("admitted_claim_ref"))
+    admitted = status in {"admitted", "admitted_with_caveats"}
+    if admitted and (not observation_ref or not coverage_ref or not admitted_claim_ref):
+        raise ComponentWorkNodeError(
+            "admitted ComponentWorkNode V1 requires claim, SemanticObservation, and ComponentCoverage"
+        )
+    if not admitted and (observation_ref or coverage_ref or admitted_claim_ref):
+        raise ComponentWorkNodeError(
+            "blocked ComponentWorkNode V1 cannot carry admitted semantic state"
+        )
+
+    node = {
+        "schema_version": COMPONENT_WORK_NODE_V1_SCHEMA_VERSION,
+        "phase": COMPONENT_WORK_NODE_V1_PHASE,
+        "runtime_consumer": COMPONENT_WORK_NODE_V1_RUNTIME_CONSUMER,
+        "node_kind": "component",
+        "node_id": f"component-work-node:v1:{component_id}",
+        "node_revision": component_revision,
+        "node_digest": None,
+        "run_id": run_id,
+        "request_id": request_id,
+        "component_id": component_id,
+        "component_revision": component_revision,
+        "component_digest": component_digest,
+        "component_label": _clean_text(
+            component.get("user_facing_label")
+            or component.get("user_facing_question"),
+            limit=240,
+        ),
+        "component_question": _clean_text(
+            component.get("user_facing_question")
+            or component.get("user_facing_label"),
+            limit=400,
+        ),
+        "admission_status": status,
+        "current": admission.get("current") is True,
+        "stale": admission.get("stale") is True,
+        "analyst_finding_ref": analyst_ref,
+        "dprime_validation_ref": dprime_ref,
+        "admitted_claim_ref": admitted_claim_ref,
+        "semantic_observation_ref": observation_ref,
+        "component_coverage_ref": coverage_ref,
+        "evidence_refs": _safe_refs(admission.get("evidence_refs")),
+        "required_caveats": list(
+            _text_tuple(admission.get("required_caveats"), limit=320)
+        ),
+        "preserved_nonclaims": list(
+            _text_tuple(admission.get("preserved_nonclaims"), limit=320)
+        ),
+        "blocker_refs": _safe_refs(admission.get("blocker_refs")),
+        "direct_output_eligible": admitted and admission.get("current") is True,
+        "created_from_canonical_component_admission": True,
+        "component_admission_action_ref": {
+            "action_id": admission.get("action_id"),
+            "owner": admission.get("owner"),
+        },
+        "graph_scheduler": False,
+        "runtime_parallelism": False,
+        "citation_eligible": False,
+        "final_answer_packet_created": False,
+        "author_output_created": False,
+        "product_correctness_claimed": False,
+    }
+    node["node_digest"] = _digest_json(
+        {key: value for key, value in node.items() if key != "node_digest"}
+    )
+    return validate_component_work_node_v1(node)
+
+
+def validate_component_work_node_v1(value: Mapping[str, Any]) -> dict[str, Any]:
+    node = _safe_mapping(value)
+    if node.get("schema_version") != COMPONENT_WORK_NODE_V1_SCHEMA_VERSION:
+        raise ComponentWorkNodeError("ComponentWorkNode V1 schema mismatch")
+    if node.get("phase") != COMPONENT_WORK_NODE_V1_PHASE:
+        raise ComponentWorkNodeError("ComponentWorkNode V1 phase mismatch")
+    for key in (
+        "node_id",
+        "node_revision",
+        "node_digest",
+        "run_id",
+        "request_id",
+        "component_id",
+        "component_revision",
+        "component_digest",
+    ):
+        _required_text(node.get(key), key)
+    if node.get("node_kind") != "component":
+        raise ComponentWorkNodeError("ComponentWorkNode V1 kind mismatch")
+    if node.get("node_revision") != node.get("component_revision"):
+        raise ComponentWorkNodeError("ComponentWorkNode V1 revision mismatch")
+    if node.get("stale") is True or node.get("current") is not True:
+        if node.get("direct_output_eligible") is True:
+            raise ComponentWorkNodeError(
+                "stale ComponentWorkNode V1 cannot be direct-output eligible"
+            )
+    for key in (
+        "graph_scheduler",
+        "runtime_parallelism",
+        "citation_eligible",
+        "final_answer_packet_created",
+        "author_output_created",
+        "product_correctness_claimed",
+    ):
+        if node.get(key) is not False:
+            raise ComponentWorkNodeError(f"ComponentWorkNode V1 requires {key}=false")
+    expected = _digest_json(
+        {key: value for key, value in node.items() if key != "node_digest"}
+    )
+    if node.get("node_digest") != expected:
+        raise ComponentWorkNodeError("ComponentWorkNode V1 digest mismatch")
+    _reject_forbidden_material(node, context="ComponentWorkNode V1")
+    return _json_safe(node)
+
+
 __all__ = [
     "COMPONENT_WORK_NODE_STATUS_BLOCKED",
     "COMPONENT_WORK_NODE_STATUS_CONSUMED",
@@ -1026,9 +1210,14 @@ __all__ = [
     "COMPONENT_WORK_NODE_V0_PHASE",
     "COMPONENT_WORK_NODE_V0_SCHEMA_VERSION",
     "COMPONENT_WORK_NODE_V0_RUNTIME_CONSUMER",
+    "COMPONENT_WORK_NODE_V1_PHASE",
+    "COMPONENT_WORK_NODE_V1_RUNTIME_CONSUMER",
+    "COMPONENT_WORK_NODE_V1_SCHEMA_VERSION",
     "ComponentWorkNodeError",
     "component_work_node_v0_refs_from_product_packet",
+    "component_work_node_v1_from_admitted_component",
     "validate_component_work_node_v0_input_ref",
     "validate_component_work_node_v0_output_ref",
     "validate_component_work_node_v0_refs",
+    "validate_component_work_node_v1",
 ]

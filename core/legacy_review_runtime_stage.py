@@ -82,6 +82,42 @@ class LegacyReviewRuntimeOutcome(_LegacyReviewRuntimeOutcomeBase):
         return self[:_ORCHESTRATOR_VALUE_COUNT]
 
 
+def multicomponent_legacy_review_bypass_outcome_from_scope(
+    scope: Mapping[str, Any],
+) -> LegacyReviewRuntimeOutcome:
+    """Close legacy synth-evaluator/Scrutineer after the typed Graph V1 lane."""
+
+    return LegacyReviewRuntimeOutcome(
+        analysis="",
+        author_notes=str(scope.get("author_notes") or ""),
+        first_synth_sufficient=False,
+        synth_was_insufficient=False,
+        synth_deficiency=None,
+        supplemental_ran=False,
+        delta_urls_supplemental=0,
+        synth_evaluator_seconds=float(scope.get("synth_evaluator_seconds") or 0.0),
+        analyst_seconds=float(scope.get("analyst_seconds") or 0.0),
+        scrutineer_ran=False,
+        scrutineer_seconds=float(scope.get("scrutineer_seconds") or 0.0),
+        scrutineer_flags=[],
+        scrutineer_high_count=0,
+        scrutineer_remediation_queries=[],
+        scrutineer_remediation_dispatch_authorized=False,
+        scrutineer_remediation_dispatch_posture="skipped_multicomponent_graph_v1",
+        scrutineer_remediation_provider_role=None,
+        scrutineer_remediation_providers=[],
+        scrutineer_remediation_linkup_depth_override=None,
+        scrutineer_remediation_evidence=[],
+        scrutineer_remediation_resynthesis_triggered=False,
+        scrutineer_pass_flags_directly_to_author=False,
+        final_top_evidence=list(scope.get("final_top_evidence") or ()),
+        unique_source_urls=dict(scope.get("unique_source_urls") or {}),
+        ordered_sources=scope.get("ordered_sources"),
+        evidence_block=scope.get("evidence_block"),
+        cached_prefix=scope.get("cached_prefix"),
+    )
+
+
 _REQUEST_NON_SCOPE_FIELD_NAMES = frozenset(("scope", "status", "collector", "default_system"))
 _DEFAULTED_SCOPE_FIELDS = {"synth_was_insufficient": False, "synth_deficiency": None, "supplemental_ran": False, "delta_urls_supplemental": 0, "scrutineer_flags": [], "scrutineer_remediation_queries": [], "scrutineer_remediation_dispatch_authorized": False, "scrutineer_remediation_dispatch_posture": "skipped", "scrutineer_remediation_provider_role": None, "scrutineer_remediation_providers": [], "scrutineer_remediation_linkup_depth_override": None, "scrutineer_remediation_evidence": [], "scrutineer_remediation_resynthesis_triggered": False, "scrutineer_pass_flags_directly_to_author": False}
 _DIRECT_SCOPE_FIELD_NAMES = tuple(f.name for f in fields(LegacyReviewRuntimeRequest) if f.name not in _REQUEST_NON_SCOPE_FIELD_NAMES)

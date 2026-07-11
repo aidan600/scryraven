@@ -684,6 +684,10 @@ class FinalAnswerAuthorInputPayload:
     semantic_author_materialization: Mapping[str, Any] = field(
         default_factory=dict
     )
+    direct_component_entries: tuple[Mapping[str, Any], ...] = ()
+    admitted_synthesis_entries: tuple[Mapping[str, Any], ...] = ()
+    multicomponent_graph_readiness: str | None = None
+    multicomponent_limitations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -720,6 +724,29 @@ class FinalAnswerAuthorInputPayload:
             "authority_block_hash": _hash_text(self.authority_block) if self.authority_block else None,
             "authority_block_length": len(self.authority_block),
         }
+        if (
+            self.multicomponent_graph_readiness
+            or self.direct_component_entries
+            or self.admitted_synthesis_entries
+            or self.multicomponent_limitations
+        ):
+            payload.update(
+                {
+                    "direct_component_entry_count": len(
+                        self.direct_component_entries
+                    ),
+                    "admitted_synthesis_entry_count": len(
+                        self.admitted_synthesis_entries
+                    ),
+                    "multicomponent_graph_readiness": _clean_text(
+                        self.multicomponent_graph_readiness,
+                        limit=120,
+                    ),
+                    "multicomponent_limitation_count": len(
+                        self.multicomponent_limitations
+                    ),
+                }
+            )
         if self.semantic_authority_trace_ref:
             payload["semantic_authority_trace_ref"] = _safe_author_semantic_trace_ref(
                 self.semantic_authority_trace_ref
@@ -852,6 +879,10 @@ class FinalAnswerPacket:
         default_factory=dict
     )
     semantic_packet_evidence_bindings: tuple[Mapping[str, Any], ...] = ()
+    direct_component_entries: tuple[Mapping[str, Any], ...] = ()
+    admitted_synthesis_entries: tuple[Mapping[str, Any], ...] = ()
+    multicomponent_graph_readiness: str | None = None
+    multicomponent_limitations: tuple[str, ...] = ()
     schema_version: str = FINAL_ANSWER_PACKET_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -870,6 +901,47 @@ class FinalAnswerPacket:
             FinalAnswerReadinessStatus(raw_status),
         )
         self._validate_semantic_packet_evidence_bindings()
+        self._validate_multicomponent_entries()
+
+    def _validate_multicomponent_entries(self) -> None:
+        for raw_entry in self.direct_component_entries:
+            entry = dict(raw_entry)
+            if (
+                entry.get("entry_kind") != "direct_component"
+                or entry.get("admission_status")
+                not in {"admitted", "admitted_with_caveats"}
+                or entry.get("current") is not True
+                or entry.get("stale") is not False
+                or not _clean_text(entry.get("claim_text"), limit=1200)
+                or not _clean_token(entry.get("claim_digest"), limit=128)
+                or not dict(entry.get("semantic_observation_ref") or {})
+                or not dict(entry.get("component_coverage_ref") or {})
+            ):
+                raise ValueError(
+                    "FinalAnswerPacket direct component entry is not current admitted state"
+                )
+        for raw_entry in self.admitted_synthesis_entries:
+            entry = dict(raw_entry)
+            if (
+                entry.get("entry_kind") != "admitted_synthesis"
+                or entry.get("status") != "admitted"
+                or entry.get("current") is not True
+                or entry.get("stale") is not False
+                or not _clean_text(entry.get("claim_text"), limit=1200)
+                or not _clean_token(entry.get("claim_digest"), limit=128)
+                or not dict(entry.get("dprime_validation_ref") or {})
+                or not dict(entry.get("runkernel_admission_ref") or {})
+            ):
+                raise ValueError(
+                    "FinalAnswerPacket synthesis entry is not current RunKernel-admitted state"
+                )
+        if self.admitted_synthesis_entries and self.multicomponent_graph_readiness not in {
+            "ready",
+            "ready_with_caveats",
+        }:
+            raise ValueError(
+                "FinalAnswerPacket cannot include synthesis from a non-ready graph"
+            )
 
     def _validate_semantic_packet_evidence_bindings(self) -> None:
         if not self.semantic_packet_evidence_bindings:
@@ -1138,6 +1210,29 @@ class FinalAnswerPacket:
             "prohibited_upgrades": [_clean_text(item, limit=300) for item in self.prohibited_upgrades],
             "behavior_boundary_flags": _safe_json(self.behavior_boundary_flags),
         }
+        if (
+            self.multicomponent_graph_readiness
+            or self.direct_component_entries
+            or self.admitted_synthesis_entries
+            or self.multicomponent_limitations
+        ):
+            payload.update(
+                {
+                    "direct_component_entries": _safe_json(
+                        self.direct_component_entries
+                    ),
+                    "admitted_synthesis_entries": _safe_json(
+                        self.admitted_synthesis_entries
+                    ),
+                    "multicomponent_graph_readiness": _clean_text(
+                        self.multicomponent_graph_readiness,
+                        limit=120,
+                    ),
+                    "multicomponent_limitations": _safe_json(
+                        self.multicomponent_limitations
+                    ),
+                }
+            )
         component_readiness = _safe_json(
             self.author_input_refs.get("component_readiness")
         )
@@ -1260,6 +1355,16 @@ class FinalAnswerPacket:
                 self._semantic_content_coverage_ref_envelope()
             ),
             semantic_author_materialization=semantic_author_materialization,
+            direct_component_entries=tuple(self.direct_component_entries),
+            admitted_synthesis_entries=tuple(
+                self.admitted_synthesis_entries
+            ),
+            multicomponent_graph_readiness=(
+                self.multicomponent_graph_readiness
+            ),
+            multicomponent_limitations=tuple(
+                self.multicomponent_limitations
+            ),
         )
         return payload
 
@@ -1975,6 +2080,38 @@ class FinalAnswerPacket:
                 "- Prohibited upgrades: "
                 + "; ".join(str(item) for item in self.prohibited_upgrades)
             )
+        if self.direct_component_entries:
+            lines.append("- Approved direct component findings:")
+            for entry in self.direct_component_entries:
+                lines.append(
+                    "  - "
+                    + str(
+                        entry.get("component_label")
+                        or entry.get("component_id")
+                        or "component"
+                    )
+                    + ": "
+                    + str(entry.get("claim_text") or "")
+                )
+        if self.admitted_synthesis_entries:
+            lines.append("- Approved admitted synthesis (render as combined findings):")
+            for entry in self.admitted_synthesis_entries:
+                lines.append(
+                    "  - "
+                    + str(entry.get("synthesis_key") or "synthesis")
+                    + ": "
+                    + str(entry.get("claim_text") or "")
+                )
+        if self.multicomponent_graph_readiness:
+            lines.append(
+                "- Multi-component graph readiness: "
+                + str(self.multicomponent_graph_readiness)
+            )
+        if self.multicomponent_limitations:
+            lines.append(
+                "- Multi-component limitations to state: "
+                + "; ".join(str(item) for item in self.multicomponent_limitations)
+            )
         if semantic_author_materialization:
             block_text = str(semantic_author_materialization.get("block_text") or "")
             if block_text:
@@ -2029,6 +2166,29 @@ class FinalAnswerPacket:
             ],
             "trace_mode": "final_answer_packet_authority_projection",
         }
+        if (
+            self.multicomponent_graph_readiness
+            or self.direct_component_entries
+            or self.admitted_synthesis_entries
+            or self.multicomponent_limitations
+        ):
+            payload.update(
+                {
+                    "direct_component_entries": _safe_json(
+                        self.direct_component_entries
+                    ),
+                    "admitted_synthesis_entries": _safe_json(
+                        self.admitted_synthesis_entries
+                    ),
+                    "multicomponent_graph_readiness": _clean_text(
+                        self.multicomponent_graph_readiness,
+                        limit=120,
+                    ),
+                    "multicomponent_limitations": _safe_json(
+                        self.multicomponent_limitations
+                    ),
+                }
+            )
         if self.semantic_authority_ref:
             payload["semantic_authority_ref"] = _safe_json(self.semantic_authority_ref)
         if self.semantic_content_coverage_ref_projection:

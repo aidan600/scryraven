@@ -170,13 +170,17 @@ def test_semantic_skip_reasons_remain_return_only_in_producer_core() -> None:
 
 def test_orchestrator_semantic_producer_callsites_are_bounded() -> None:
     source = _source(PIPELINE)
-    assert source.count("execute_ordinary_semantic_producer_handoff_from_scope(") == 2
+    assert "execute_ordinary_semantic_producer_handoff_from_scope(" not in source
+    selector = "execute_ordinary_semantic_or_multicomponent_handoff_from_scope("
+    assert source.count(selector) == 3
     assert (
         "if not run_kernel.state.initial_answer_contract:\n"
         "            final_top_evidence = list(all_passages)\n"
-        "            execute_ordinary_semantic_producer_handoff_from_scope("
+        f"            {selector}"
         in source
     )
+    early_selector = source.index(selector)
+    assert "execute_selected_lane=False" in source[early_selector : early_selector + 300]
 
 
 def test_semantic_phase_fixture_labels_stay_out_of_closed_runtime_surfaces() -> None:

@@ -19,6 +19,7 @@ from core.run_authority_sufficiency_prompt import (
 )
 from core.run_authority_sufficiency_validation import (
     build_deterministic_sufficiency_judgment,
+    preserve_multicomponent_sufficiency_authority,
     validate_or_repair_sufficiency_judgment,
 )
 from core.run_kernel import (
@@ -49,6 +50,10 @@ class RunSufficiencyJudgmentHandoff:
 
     result: RunSufficiencyJudgmentResult
     projection: dict[str, Any]
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _parse_model_judgment(
@@ -154,6 +159,10 @@ def execute_run_authority_sufficiency_judgment_action(
                 ),
             )
 
+    committed = preserve_multicomponent_sufficiency_authority(
+        committed,
+        deterministic_judgment=deterministic_judgment,
+    )
     projection = committed.to_projection()
     validation_dict = validation.to_dict()
     projection["validation"] = validation_dict
@@ -262,6 +271,9 @@ def execute_sufficiency_judgment_handoff_from_scope(
         answer_contract_authority_map_projection=run_kernel.state.projections.get(
             ANSWER_CONTRACT_AUTHORITY_MAP_STAGE,
         ),
+        multicomponent_graph_state=run_kernel.state.projections.get(
+            "multicomponent_component_work_graph_v1"
+        ),
     )
     action = run_kernel.authorize_sufficiency_judgment(
         inputs={
@@ -273,6 +285,11 @@ def execute_sufficiency_judgment_handoff_from_scope(
             "search_judgment_decision": search_judgment_projection.get("decision"),
             "final_evidence_count": len(final_top_evidence),
             "smart_model_enabled": bool(smart_model_enabled),
+            "multicomponent_graph_digest": _safe_mapping(
+                run_kernel.state.projections.get(
+                    "multicomponent_component_work_graph_v1"
+                )
+            ).get("graph_digest"),
         }
     )
     result = execute_run_authority_sufficiency_judgment_action(
