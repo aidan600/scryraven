@@ -16133,9 +16133,6 @@ class RunKernel:
                         if ledger_observation is not None
                         else None
                     ),
-                    "ledger_digest": self.state.evidence_ledger.to_projection()
-                    .to_dict()
-                    .get("ledger_digest"),
                 }
                 if ledger_action is not None
                 else {}

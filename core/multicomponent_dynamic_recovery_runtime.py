@@ -809,7 +809,6 @@ def _promote_recovery_candidate_custody(
     results: Sequence[Mapping[str, Any]],
     candidate_packet: Mapping[str, Any],
 ) -> dict[str, Any]:
-    current = _active_contract(run_kernel)
     exact_lineage = _validated_recovery_obligation_lineage(
         run_kernel=run_kernel,
         component_ref=component_ref,

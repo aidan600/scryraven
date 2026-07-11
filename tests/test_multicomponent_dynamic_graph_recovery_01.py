@@ -9,7 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import core.multicomponent_dynamic_recovery_runtime as recovery_runtime
 import core.ordinary_multicomponent_synthesis_runtime as multicomponent_runtime
+import core.pipeline as product_pipeline
 import core.pipeline_orchestrator as orchestrator
 from core.component_work_graph_v1 import (
     component_work_graph_v1_resynthesis_from_cross_component_artifact,
@@ -21,6 +23,7 @@ from core.component_work_graph_v1 import (
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
 from core.cost_accounting import CostAccumulator
+from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.multicomponent_component_admission import (
     component_analyst_input_packet,
     component_dprime_input_packet,
@@ -35,6 +38,7 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     MulticomponentRoleRuntimeError,
     execute_multicomponent_role_call,
+    safe_packet_digest,
 )
 from core.multicomponent_sufficiency_consumption_runtime import (
     build_multicomponent_graph_consumption,
@@ -534,6 +538,50 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 facts
             )
         ]
+
+
+class RealRecoveryDispatcherNorthstarHarness(DynamicNorthstarHarness):
+    """Keep initial fixture custody but use the real product dispatcher for recovery."""
+
+    def process_search_queries(
+        self,
+        queries,
+        intent,
+        complexity,
+        search_depth,
+        results_per_query,
+        *args,
+        **kwargs,
+    ):
+        if kwargs.get("provider_role") == "multicomponent_recovery_diagnostic":
+            self.search_calls.append(
+                {
+                    "queries": list(queries),
+                    "provider_role": kwargs.get("provider_role"),
+                    "search_providers": list(
+                        kwargs.get("search_providers") or []
+                    ),
+                    "real_dispatcher": True,
+                }
+            )
+            return product_pipeline.process_search_queries(
+                queries,
+                intent,
+                complexity,
+                search_depth,
+                results_per_query,
+                *args,
+                **kwargs,
+            )
+        return super().process_search_queries(
+            queries,
+            intent,
+            complexity,
+            search_depth,
+            results_per_query,
+            *args,
+            **kwargs,
+        )
 
 
 def test_scrutineer_proposal_reduces_to_one_exact_recovery_authorization() -> None:
@@ -1262,6 +1310,9 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
         "multicomponent_missing_component_recovery_authorization"
     ]
     recovery = kernel.state.projections["multicomponent_dynamic_recovery"]
+    canonical_outcome = kernel.state.projections[
+        "multicomponent_recovery_outcome"
+    ]
     assert authorization["target_kind"] == "synthesis"
     assert authorization["target_key"] == "synthesis_01"
     assert authorization["recovery_authorization_action_count"] == 1
@@ -1274,6 +1325,18 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
     assert recovery["status"] == "acquired"
     assert recovery["ordinary_acquisition_attempt_count"] == 1
     assert recovery["direct_semantic_producer_used"] is False
+    assert canonical_outcome["owner"] == "RunKernel.MulticomponentRecoveryOutcome"
+    assert canonical_outcome["canonical_state"] is True
+    assert canonical_outcome["trace_only"] is False
+    assert canonical_outcome["recovery_disposition"] == "acquired"
+    assert canonical_outcome["observed_provider_identities"] == ["tavily"]
+    assert canonical_outcome["graph_digest"] == graph["graph_digest"]
+    assert canonical_outcome["component_admission_ref"]["component_id"].startswith(
+        "component:recovered:"
+    )
+    assert kernel.state.projections[
+        "multicomponent_recovery_outcome_history"
+    ]["outcomes"] == [canonical_outcome]
     assert len(
         [
             call
@@ -1394,8 +1457,18 @@ def test_dynamic_northstar_terminal_blocker_uses_ordinary_finalization(
     kernel = captured["run_kernel"]
     graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
     recovery = kernel.state.projections["multicomponent_dynamic_recovery"]
+    canonical_outcome = kernel.state.projections[
+        "multicomponent_recovery_outcome"
+    ]
     assert recovery["status"] == "blocked"
     assert recovery["ordinary_acquisition_attempt_count"] == 1
+    assert canonical_outcome["recovery_disposition"] == "blocked_no_candidates"
+    assert canonical_outcome["ordinary_acquisition_attempt_count"] == 1
+    assert canonical_outcome["observed_provider_identities"] == ["tavily"]
+    assert canonical_outcome["graph_digest"] == graph["graph_digest"]
+    assert "fetch_read_content_packet_ref" not in canonical_outcome
+    assert "evidence_ledger_reduction_ref" not in canonical_outcome
+    assert "component_admission_ref" not in canonical_outcome
     assert len(kernel.state.contract_amendment_application_history) == 1
     assert len(graph["component_nodes"]) == 3
     assert all(
@@ -1445,9 +1518,19 @@ def test_dynamic_northstar_scope_broadening_requires_confirmation_without_dispat
 
     kernel = captured["run_kernel"]
     recovery = kernel.state.projections["multicomponent_dynamic_recovery"]
+    canonical_outcome = kernel.state.projections[
+        "multicomponent_recovery_outcome"
+    ]
     assert recovery["status"] == "blocked"
     assert recovery["requires_user_confirmation"] is True
     assert recovery["ordinary_acquisition_attempt_count"] == 0
+    assert canonical_outcome["recovery_disposition"] == (
+        "blocked_requires_user_confirmation"
+    )
+    assert canonical_outcome["ordinary_acquisition_attempt_count"] == 0
+    assert canonical_outcome["observed_provider_identities"] == []
+    assert "amendment_record_id" not in canonical_outcome
+    assert "ordinary_search_planner_ref" not in canonical_outcome
     assert kernel.state.current_answer_contract == {}
     assert kernel.state.contract_amendment_application_history == []
     assert not any(
@@ -1457,3 +1540,415 @@ def test_dynamic_northstar_scope_broadening_requires_confirmation_without_dispat
     assert captured["packet_handoff_called"] is True
     assert captured["author_handoff_called"] is True
     assert "unresolved" in " ".join(outcome.report.split()).casefold()
+
+
+def test_real_ordinary_dispatcher_recovers_northstar_component(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = RealRecoveryDispatcherNorthstarHarness(tmp_path)
+    provider_calls: list[dict[str, object]] = []
+
+    def tavily_stub(query: str, **kwargs):
+        provider_calls.append({"query": query, "kwargs": dict(kwargs)})
+        return (
+            [
+                {
+                    "title": "Northstar bonus claimant paper application rule",
+                    "url": "https://www.irs.gov/northstar-fictional-paper-rule",
+                    "raw_content": (
+                        "The fictional Northstar program rule states that an "
+                        "applicant claiming the income-based bonus must submit "
+                        "the paper application. This bounded text is deliberately "
+                        "long enough to travel through the ordinary snippet "
+                        "construction path without any live provider call."
+                    ),
+                    "snippet": (
+                        "Northstar income-bonus claimants must submit the paper "
+                        "application."
+                    ),
+                    "credibility": 4,
+                    "source_class": "legal_or_regulatory_text",
+                    "currentness_signal": "current",
+                    "eligible_for_stronger_obligation": True,
+                }
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(product_pipeline, "search_web_results", tavily_stub)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-11",
+            session_id="dynamic-northstar-real-dispatch-session",
+            run_id="dynamic-northstar-real-dispatch-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    kernel = captured["run_kernel"]
+    canonical = kernel.state.projections["multicomponent_recovery_outcome"]
+    graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
+    assert len(provider_calls) == 1
+    assert "paper" in str(provider_calls[0]["query"]).casefold()
+    assert canonical["observed_provider_identities"] == ["tavily"]
+    assert canonical["search_result_candidate_packet_ref"]["candidate_count"] == 1
+    assert canonical["fetch_read_content_packet_ref"]["packet_id"]
+    assert canonical["evidence_ledger_reduction_ref"]["action_id"]
+    assert canonical["evidence_ledger_reduction_ref"]["observation_id"]
+    assert canonical["component_admission_ref"]["component_id"].startswith(
+        "component:recovered:"
+    )
+    assert graph["graph_status"] == "ready"
+    assert len(graph["component_nodes"]) == 4
+    assert captured["author_handoff_called"] is True
+    normalized = " ".join(outcome.report.split())
+    assert "$1,200" in normalized
+    assert "at or below $60,000" in normalized
+    assert "paper application" in normalized
+    assert "may file online" in normalized
+
+
+def test_real_ordinary_dispatcher_empty_result_reaches_canonical_terminal_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = RealRecoveryDispatcherNorthstarHarness(
+        tmp_path,
+        readable_recovery=False,
+    )
+    provider_calls: list[str] = []
+
+    def empty_tavily_stub(query: str, **_kwargs):
+        provider_calls.append(query)
+        return [], []
+
+    monkeypatch.setattr(
+        product_pipeline,
+        "search_web_results",
+        empty_tavily_stub,
+    )
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-11",
+            session_id="dynamic-northstar-real-empty-session",
+            run_id="dynamic-northstar-real-empty-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    kernel = captured["run_kernel"]
+    canonical = kernel.state.projections["multicomponent_recovery_outcome"]
+    graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
+    assert len(provider_calls) == 1
+    assert canonical["recovery_disposition"] == "blocked_no_candidates"
+    assert canonical["ordinary_acquisition_attempt_count"] == 1
+    assert canonical["observed_provider_identities"] == ["tavily"]
+    assert canonical["search_result_candidate_packet_ref"]["candidate_count"] == 0
+    assert "fetch_read_content_packet_ref" not in canonical
+    assert "component_admission_ref" not in canonical
+    assert len(graph["component_nodes"]) == 3
+    assert all(
+        "recovered" not in str(item["component_id"])
+        for item in graph["component_nodes"]
+    )
+    assert graph["graph_status"] == "challenged_synthesis"
+    assert captured["sufficiency_projection"]["decision"] == (
+        "partial_answer_authorized"
+    )
+    assert captured["author_handoff_called"] is True
+    assert "unresolved" in " ".join(outcome.report.split()).casefold()
+
+
+def test_same_source_class_unrelated_obligation_remains_unsatisfied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = DynamicNorthstarHarness(tmp_path)
+    unrelated_id = "source_obligation:unrelated:legal_filing_record"
+    original_promote = recovery_runtime._promote_recovery_candidate_custody
+
+    def promote_with_unrelated_requirement(*, run_kernel, **kwargs):
+        payload = {
+            "observation_id": (
+                f"{run_kernel.state.run_id}:unrelated-same-class-obligation"
+            ),
+            "observation_source": "test_exact_unrelated_source_obligation",
+            "requirements": [
+                {
+                    "requirement_id": unrelated_id,
+                    "requirement_kind": "bounded_current_source_support",
+                    "origin_ref": "unrelated_exact_source_obligation",
+                    "component_id": "component:unrelated:filing-record",
+                    "source_obligation_id": unrelated_id,
+                    "run_id": run_kernel.state.run_id,
+                    "request_id": run_kernel.state.request_id,
+                    "answer_contract_version": run_kernel.state.current_answer_contract[
+                        "accepted_contract_version"
+                    ],
+                    "answer_contract_digest": run_kernel.state.current_answer_contract[
+                        "accepted_contract_digest"
+                    ],
+                    "required_source_class": "legal_or_regulatory_text",
+                    "required_evidence_material_type": "answer_bearing_content",
+                }
+            ],
+            "candidates": [],
+            "requirement_links": [],
+        }
+        action = run_kernel.authorize_evidence_ledger_reduction(
+            inputs={
+                "observation_source": payload["observation_source"],
+                "candidate_count": 0,
+                "requirement_count": 1,
+            }
+        )
+        run_kernel.reduce(
+            execute_evidence_ledger_reduction_action(
+                action,
+                payload=payload,
+            ).observation
+        )
+        return original_promote(run_kernel=run_kernel, **kwargs)
+
+    monkeypatch.setattr(
+        recovery_runtime,
+        "_promote_recovery_candidate_custody",
+        promote_with_unrelated_requirement,
+    )
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-11",
+            session_id="dynamic-northstar-unrelated-session",
+            run_id="dynamic-northstar-unrelated-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    kernel = captured["run_kernel"]
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirements = {
+        item["requirement_id"]: item
+        for item in ledger["source_requirements"]
+    }
+    recovered_id = next(
+        requirement_id
+        for requirement_id in requirements
+        if requirement_id.startswith("source_obligation:recovered:")
+    )
+    recovered = requirements[recovered_id]
+    unrelated = requirements[unrelated_id]
+    assert recovered["required_source_class"] == unrelated["required_source_class"]
+    assert recovered["status"] == "satisfied"
+    assert recovered["linked_candidate_ids"]
+    assert unrelated["status"] == "unsatisfied"
+    assert unrelated["linked_candidate_ids"] == []
+    assert not set(recovered["linked_candidate_ids"]) & set(
+        unrelated["linked_candidate_ids"]
+    )
+    missing_ids = {
+        item["requirement_id"]
+        for item in captured["sufficiency_projection"][
+            "missing_required_obligations"
+        ]
+    }
+    assert unrelated_id in missing_ids
+
+
+def _run_terminal_northstar_with_sufficiency_mutation(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutate,
+    suffix: str,
+):
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = DynamicNorthstarHarness(tmp_path, readable_recovery=False)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    captured_sufficiency = orchestrator.execute_sufficiency_judgment_handoff_from_scope
+
+    def mutate_before_sufficiency(run_kernel, runtime_scope, **kwargs):
+        mutate(run_kernel)
+        return captured_sufficiency(run_kernel, runtime_scope, **kwargs)
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_sufficiency_judgment_handoff_from_scope",
+        mutate_before_sufficiency,
+    )
+    outcome = None
+    error = None
+    try:
+        outcome = orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-11",
+                session_id=f"dynamic-northstar-negative-{suffix}-session",
+                run_id=f"dynamic-northstar-negative-{suffix}-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+    except orchestrator.PipelineError as exc:
+        error = exc
+    return outcome, error, captured
+
+
+def test_adapter_trace_status_and_attempt_count_cannot_change_partial_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forge_trace(run_kernel):
+        trace = run_kernel.state.projections["multicomponent_dynamic_recovery"]
+        trace["status"] = "acquired"
+        trace["ordinary_acquisition_attempt_count"] = 999
+        trace["final_answer_authority"] = True
+
+    outcome, error, captured = _run_terminal_northstar_with_sufficiency_mutation(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        mutate=forge_trace,
+        suffix="trace-ignored",
+    )
+    assert error is None
+    assert outcome is not None
+    assert captured["sufficiency_projection"]["decision"] == (
+        "partial_answer_authorized"
+    )
+    assert captured["author_handoff_called"] is True
+
+
+@pytest.mark.parametrize("posture", ["forged_adapter", "missing_canonical"])
+def test_adapter_projection_or_missing_canonical_cannot_authorize_partial_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    posture: str,
+) -> None:
+    def remove_canonical(run_kernel):
+        run_kernel.state.projections.pop("multicomponent_recovery_outcome")
+        if posture == "forged_adapter":
+            run_kernel.state.projections["multicomponent_dynamic_recovery"] = {
+                "owner": "OrdinaryMulticomponent.DynamicRecoveryAdapter",
+                "canonical_state": True,
+                "trace_only": False,
+                "final_answer_authority": True,
+                "status": "blocked",
+                "ordinary_acquisition_attempt_count": 1,
+                "direct_semantic_producer_used": False,
+            }
+
+    outcome, error, captured = _run_terminal_northstar_with_sufficiency_mutation(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        mutate=remove_canonical,
+        suffix=posture,
+    )
+    assert outcome is None
+    assert isinstance(error, orchestrator.PipelineError)
+    assert captured["sufficiency_projection"]["final_answer_allowed"] is False
+
+
+@pytest.mark.parametrize(
+    ("case", "field", "replacement"),
+    [
+        ("cross-run", "run_id", "forged-other-run"),
+        ("wrong-request", "request_id", "forged-other-request"),
+        (
+            "wrong-recovery-digest",
+            "recovery_authorization_digest",
+            "forged-recovery-digest",
+        ),
+        ("wrong-proposal-digest", "proposal_digest", "forged-proposal-digest"),
+        (
+            "wrong-contract-version",
+            "current_answer_contract_version",
+            "forged-contract-version",
+        ),
+        (
+            "wrong-contract-digest",
+            "current_answer_contract_digest",
+            "forged-contract-digest",
+        ),
+        ("wrong-graph-id", "graph_id", "forged-graph-id"),
+        ("wrong-graph-revision", "graph_revision", 999),
+        ("wrong-graph-digest", "graph_digest", "forged-graph-digest"),
+        (
+            "diagnostic-role-as-provider",
+            "observed_provider_identities",
+            ["multicomponent_recovery_diagnostic"],
+        ),
+    ],
+)
+def test_stale_or_cross_bound_canonical_outcome_cannot_authorize_partial_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    field: str,
+    replacement,
+) -> None:
+    def forge_canonical(run_kernel):
+        canonical = run_kernel.state.projections[
+            "multicomponent_recovery_outcome"
+        ]
+        canonical[field] = replacement
+        canonical["outcome_digest"] = safe_packet_digest(
+            {
+                key: value
+                for key, value in canonical.items()
+                if key != "outcome_digest"
+            }
+        )
+
+    outcome, error, captured = _run_terminal_northstar_with_sufficiency_mutation(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        mutate=forge_canonical,
+        suffix=case,
+    )
+    assert outcome is None
+    assert isinstance(error, orchestrator.PipelineError)
+    assert captured["sufficiency_projection"]["final_answer_allowed"] is False

@@ -1518,6 +1518,29 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
 
+    for ledger_requirement in ledger_requirements:
+        status = clean_token(ledger_requirement.get("status"))
+        requirement_id = clean_token(ledger_requirement.get("requirement_id"))
+        if (
+            status not in _MISSING_LEDGER_STATUSES
+            or not requirement_id
+            or not clean_token(ledger_requirement.get("component_id"))
+            or not clean_token(ledger_requirement.get("source_obligation_id"))
+            or any(item.requirement_id == requirement_id for item in missing)
+        ):
+            continue
+        missing.append(
+            _assessment(
+                ledger_requirement,
+                status="missing",
+                reason=(
+                    clean_text(ledger_requirement.get("reason"), limit=260)
+                    or "exact_evidence_ledger_source_obligation_unsatisfied"
+                ),
+                ledger_requirement=ledger_requirement,
+            )
+        )
+
     for semantic_missing in semantic_overlay.missing_assessments:
         assessment = _semantic_assessment(semantic_missing)
         if not any(
