@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -368,7 +369,7 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
     candidate_tests = tracked_tests(repo, candidate_sha)
     baseline_tests = tracked_tests(repo, baseline_sha) if baseline_sha else []
     union = sorted(set(candidate_tests) | set(baseline_tests))
-    added = sorted(set(candidate_tests) - set(baseline_tests)) if baseline_sha else candidate_tests
+    added = sorted(set(candidate_tests) - set(baseline_tests)) if baseline_sha else []
     removed = sorted(set(baseline_tests) - set(candidate_tests))
     unknown_allowed = sorted(set(allowed_removed) - set(removed))
     if unknown_allowed:
@@ -447,7 +448,14 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
                     if semantic is not None:
                         semantic["semantic_consequence_before_cleanup"] = semantic.get("consequence")
                         semantic["consequence"] = "infrastructure-invalid"
-                        semantic.setdefault("cleanup_failures", []).append({"path": str(work_root), "detail": str(exc)})
+                        instruction = (
+                            f"Remove-Item -LiteralPath '{str(work_root).replace(chr(39), chr(39) * 2)}' -Recurse -Force"
+                            if os.name == "nt"
+                            else f"rm -rf -- {shlex.quote(str(work_root))}"
+                        )
+                        semantic.setdefault("cleanup_failures", []).append(
+                            {"path": str(work_root), "detail": str(exc), "operator_instruction": instruction}
+                        )
         cleanup_posture = {"keep_worktrees": args.keep_worktrees, "owned_paths": [str(p) for p in created], "attempts": cleanup}
         write_json(packet / "cleanup.json", cleanup_posture)
         if semantic is not None:
@@ -459,6 +467,8 @@ def execute(args: argparse.Namespace) -> tuple[int, Path]:
                 lines.append(f"cleanup failed: {failure.get('path')}")
                 if failure.get("command"):
                     lines.append("operator instruction: " + subprocess.list2cmdline(failure["command"]))
+                elif failure.get("operator_instruction"):
+                    lines.append("operator instruction: " + failure["operator_instruction"])
             (packet / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return exit_for(str(semantic["consequence"])), packet
 
