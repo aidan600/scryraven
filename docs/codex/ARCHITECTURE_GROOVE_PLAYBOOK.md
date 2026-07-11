@@ -62,14 +62,14 @@ Default workflow:
 ```text
 1. Start from updated main.
 2. Create/use a phase branch.
-3. Inspect the relevant repo-visible files.
-4. Choose the right phase size and write a short plan.
-5. Implement within scope.
-6. Add/update in-scope tests and docs links caused by the phase.
-7. Run required offline tests/checks.
-8. Fix in-scope failures.
-9. Self-review the diff.
-10. If the phase brief allows publication, push the completed branch and create a PR.
+3. Inspect and plan the bounded implementation.
+4. Implement with phase-focused tests while one causal cluster converges.
+5. Create coherent milestone commits and one clean candidate checkpoint.
+6. Review the exact implementation diff.
+7. Run affected durable lanes once.
+8. If authorized, push and update or open the PR.
+9. Run full-suite or baseline-parity validation as a separate authorized job.
+10. Perform final independent or skeptical-maintainer review.
 11. Return one final phase bundle.
 ```
 
@@ -131,9 +131,46 @@ checkpoint commits when useful. Run focused validation during implementation,
 complete the ordinary consumer endpoint, review the complete diff, fix in-scope
 findings, rerun affected validation, and return one final bundle.
 
-Internal milestones are coordination aids, not automatic PR boundaries. Stop
-only at the decision and authority boundaries in the root contract or at a
-phase-specific stop condition.
+Internal milestones are coordination aids, not automatic PR boundaries. Use
+coherent local checkpoint commits at completed seams and before expensive
+validation. When blocked, leave a clean worktree at the last coherent checkpoint
+or only the exact explicitly reported unresolved edit. Checkpointing does not
+claim completion, correctness, publication permission, merge approval, or broad
+validation success. Stop only at divergence, unrelated responsibility,
+architectural uncertainty, the decision and authority boundaries in the root
+contract, or a phase-specific stop condition—not merely because focused tests
+remain red while the same causal cluster is shrinking and directly implies the
+next bounded correction.
+
+## Implementation and validation jobs
+
+Keep implementation, affected-lane validation, publication, full-suite or
+baseline-parity validation, and final review as separate jobs. Implementation
+context is for building and focused correction; affected lanes establish
+confidence in directly owned integration surfaces. Broad validation classifies
+repository behavior and may block merge, but must not strand a coherent
+implementation as uncommitted work.
+
+When broad validation is red, capture exact failures and do not immediately
+repeat the broad run. Diagnose with focused tests or owning lanes, repair
+branch-attributable failures, create a new coherent checkpoint when needed, and
+then run at most the authorized final broad validation. Do not rerun the full
+suite after every isolated correction or run multiple broad validation processes
+concurrently. Record why each broad run was authorized, report only meaningful
+state changes, and infer neither success nor failure from silence or elapsed
+time. A separate broad job need not stop productive work that does not invalidate
+its candidate checkpoint.
+
+## Stable acceptance ownership
+
+One Strategy/Review chat owns the active phase acceptance target. Gather
+material red-team findings before the phase brief and queue noncritical new ideas
+for later. Interrupt implementation only for immediate safety, authority, or
+product-integrity blockers. A new observation becomes a mid-phase requirement
+only when it exposes authority laundering, unsafe secret/private-data exposure,
+behavior contrary to the approved product thesis, or a genuine architecture
+decision. Review chooses exactly one: approve merge, request one focused fix,
+reject or revert, or stop for architectural decision.
 
 ## Adjacent cleanup
 

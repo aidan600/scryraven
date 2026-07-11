@@ -5,6 +5,39 @@ Status: Conditional fields for the compact phase brief.
 Use only the addenda triggered by the phase. Do not copy empty sections into a
 brief. Standing procedure remains in the root contract and playbook.
 
+## Large-phase execution posture
+
+Use only for substantial integration work; tiny repairs retain the lightweight
+workflow in the operating profile.
+
+```text
+Agent execution profile: ROUTINE | DEEP | INTENSIVE | DELEGATED
+Large-phase workflow posture:
+Apply convergence evaluation, causal-cluster scope, coherent milestone
+checkpoints, and separated validation jobs.
+
+Licensed architectural surface:
+- Named producer:
+- Authority transition or reducer:
+- Downstream consumer:
+- Focused acceptance path:
+- Product behavior preserved:
+
+Convergence rule:
+Continue while failures decrease and remain within one causal cluster.
+Stop on divergence, unrelated responsibility, or architectural uncertainty.
+
+Checkpoint policy:
+Create coherent local checkpoint commits at milestones and before expensive validation.
+
+Validation separation:
+Focused implementation -> candidate checkpoint and exact-diff review -> affected
+lanes -> publication -> full-suite or parity validation -> independent final review.
+
+Acceptance owner:
+One Strategy/Review chat owns the active acceptance target.
+```
+
 ## Proof-only leash
 
 ```text

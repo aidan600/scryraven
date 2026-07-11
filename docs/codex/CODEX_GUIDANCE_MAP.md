@@ -10,10 +10,10 @@ belong in their phase or architecture records, not in this map.
 
 | Task | Canonical owner |
 | --- | --- |
-| Build / Proof / Repair workflow, Path B, phase sizing, review loop, final bundle | [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md) |
-| Execution profile and delegation posture | [AGENTIC_CODING_OPERATING_PROFILE.md](AGENTIC_CODING_OPERATING_PROFILE.md) |
+| Build / Proof / Repair workflow, Path B, phase sizing, validation-job separation, acceptance ownership, review loop, final bundle | [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md) |
+| Execution profile, convergence evaluation, causal clusters, coherent checkpoints, architectural-surface licensing, delegation posture | [AGENTIC_CODING_OPERATING_PROFILE.md](AGENTIC_CODING_OPERATING_PROFILE.md) |
 | Compact phase prompt | [PHASE_BRIEF_TEMPLATE.md](PHASE_BRIEF_TEMPLATE.md) |
-| Conditional proof, live, harness, migration, or delegation fields | [PHASE_BRIEF_ADDENDA.md](PHASE_BRIEF_ADDENDA.md) |
+| Conditional large-phase, proof, live, harness, migration, or delegation fields | [PHASE_BRIEF_ADDENDA.md](PHASE_BRIEF_ADDENDA.md) |
 | Bundled internal milestones | [EXECUTION_PLAN_TEMPLATE.md](EXECUTION_PLAN_TEMPLATE.md) |
 | Proof class, product delta, consumer seam, nonproofs | [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md) |
 | Test classification and promotion | [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md) |
