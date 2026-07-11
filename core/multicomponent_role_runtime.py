@@ -51,11 +51,18 @@ ROLE_SYSTEM_PROMPTS = {
     ),
     ROLE_SCRUTINEER: (
         "You are ScryRaven's full Scrutineer. Adversarially challenge the supplied "
-        "validated case. Return challenge_status, reasons, challenge_targets, caveats, "
-        "and nonclaims. Each challenge target may contain only target_kind and the safe "
-        "local target_key supplied in the catalog. Do not copy canonical IDs, revisions, "
-        "digests, or refs; create first-pass synthesis; replace claims; admit state; "
-        "dispatch research; or render final prose."
+        "validated case. Return challenge_status, reasons, challenge_targets, "
+        "missing_component_proposals, caveats, and nonclaims. Each challenge target "
+        "may contain only target_kind and the safe local target_key supplied in the "
+        "catalog. A missing-component proposal is a separate sibling object with a "
+        "local proposal_key, component_label, component_question, necessity_reason, "
+        "target_kind, target_key, relationship_to_accepted_synthesis_directive, "
+        "scope_posture, bounded_search_hints, source_requirement_hints, caveats, and "
+        "nonclaims. Use scope_posture required_to_fulfill_existing_accepted_user_obligation "
+        "only when the component is subordinate and necessary to fulfill the supplied "
+        "accepted synthesis directive; otherwise use new_or_broadened_user_intent. "
+        "Do not copy canonical IDs, revisions, digests, or refs; create first-pass "
+        "synthesis; replace claims; admit state; dispatch research; or render final prose."
     ),
 }
 
@@ -340,6 +347,99 @@ def _normalize_semantic_output(role: str, output: Mapping[str, Any]) -> dict[str
             raise MulticomponentRoleRuntimeError(
                 "challenged or blocked Scrutineer posture requires a target"
             )
+        missing_component_proposals: list[dict[str, Any]] = []
+        for raw_proposal in _safe_sequence(
+            payload.get("missing_component_proposals")
+        ):
+            proposal = _safe_mapping(raw_proposal)
+            proposal_key = _local_key(proposal.get("proposal_key"))
+            component_label = _clean_text(
+                proposal.get("component_label"), limit=240
+            )
+            component_question = _clean_text(
+                proposal.get("component_question"), limit=600
+            )
+            necessity_reason = _clean_text(
+                proposal.get("necessity_reason"), limit=800
+            )
+            target_kind = _normalize_key(proposal.get("target_kind"))
+            target_key = _local_key(proposal.get("target_key"))
+            relationship = _clean_text(
+                proposal.get("relationship_to_accepted_synthesis_directive"),
+                limit=800,
+            )
+            scope_posture = _normalize_key(proposal.get("scope_posture"))
+            if not all(
+                (
+                    component_label,
+                    component_question,
+                    necessity_reason,
+                    relationship,
+                )
+            ):
+                raise MulticomponentRoleRuntimeError(
+                    "Scrutineer missing-component proposal requires bounded semantic fields"
+                )
+            if target_kind not in {
+                "component",
+                "synthesis",
+                "edge",
+                "subgraph",
+                "graph",
+            }:
+                raise MulticomponentRoleRuntimeError(
+                    "Scrutineer missing-component proposal target kind invalid"
+                )
+            if scope_posture not in {
+                "required_to_fulfill_existing_accepted_user_obligation",
+                "new_or_broadened_user_intent",
+            }:
+                raise MulticomponentRoleRuntimeError(
+                    "Scrutineer missing-component proposal scope posture invalid"
+                )
+            if (target_kind, target_key) not in {
+                (item["target_kind"], item["target_key"])
+                for item in challenge_targets
+            }:
+                raise MulticomponentRoleRuntimeError(
+                    "Scrutineer missing-component proposal must bind a challenge target"
+                )
+            missing_component_proposals.append(
+                {
+                    "proposal_key": proposal_key,
+                    "component_label": component_label,
+                    "component_question": component_question,
+                    "necessity_reason": necessity_reason,
+                    "target_kind": target_kind,
+                    "target_key": target_key,
+                    "relationship_to_accepted_synthesis_directive": relationship,
+                    "scope_posture": scope_posture,
+                    "bounded_search_hints": _text_list(
+                        proposal.get("bounded_search_hints"), limit=300
+                    ),
+                    "source_requirement_hints": _text_list(
+                        proposal.get("source_requirement_hints"), limit=240
+                    ),
+                    "caveats": _text_list(proposal.get("caveats")),
+                    "nonclaims": _text_list(proposal.get("nonclaims")),
+                }
+            )
+        if len(missing_component_proposals) > 1:
+            raise MulticomponentRoleRuntimeError(
+                "Scrutineer may propose at most one missing component"
+            )
+        if len(
+            {item["proposal_key"] for item in missing_component_proposals}
+        ) != len(missing_component_proposals):
+            raise MulticomponentRoleRuntimeError(
+                "duplicate Scrutineer missing-component proposal key"
+            )
+        if status in {"passed", "passed_with_caveats"} and (
+            missing_component_proposals
+        ):
+            raise MulticomponentRoleRuntimeError(
+                "passing Scrutineer posture cannot propose a missing component"
+            )
         normalized_scrutineer = {
             "challenge_status": status,
             "reasons": _text_list(payload.get("reasons")),
@@ -350,6 +450,10 @@ def _normalize_semantic_output(role: str, output: Mapping[str, Any]) -> dict[str
             normalized_scrutineer["challenge_targets"] = challenge_targets
         if "challenged_synthesis_keys" in payload:
             normalized_scrutineer["challenged_synthesis_keys"] = legacy_synthesis_keys
+        if "missing_component_proposals" in payload:
+            normalized_scrutineer["missing_component_proposals"] = (
+                missing_component_proposals
+            )
         return normalized_scrutineer
     raise MulticomponentRoleRuntimeError(f"unknown semantic role: {role}")
 
