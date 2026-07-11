@@ -16,10 +16,12 @@ from core.component_work_graph_v1 import (
     COMPONENT_WORK_GRAPH_V1_STAGE,
     admit_synthesis_node_via_runkernel,
     component_work_graph_v1_from_cross_component_artifact,
+    component_work_graph_v1_resynthesis_from_cross_component_artifact,
     cross_component_input_packet,
     derive_multicomponent_role_call_accounting,
     finalize_component_work_graph_v1,
     graph_with_accounting,
+    graph_with_recovered_component,
     graph_with_scrutineer,
     graph_with_synthesis_validation,
     reduce_component_work_graph_v1,
@@ -31,6 +33,12 @@ from core.multicomponent_component_admission import (
     component_analyst_input_packet,
     component_dprime_input_packet,
     execute_multicomponent_component_admission,
+)
+from core.multicomponent_dynamic_recovery_runtime import (
+    MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+    RECOVERY_STATUS_BLOCKED,
+    apply_recovered_component_amendment,
+    execute_recovery_acquisition,
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
@@ -324,6 +332,322 @@ def _semantic_material(
     return observation.to_dict(), [content_ref.to_dict()], coverage.to_dict()
 
 
+def _execute_fresh_resynthesis(
+    *,
+    run_kernel: Any,
+    graph: Mapping[str, Any],
+    requested_synthesis_directive: str,
+    role_kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Execute the one serial whole-graph pass after recovered admission."""
+
+    current_contract = run_kernel.state.current_answer_contract
+    contract_ref = _accepted_contract_ref(current_contract)
+    cross_input = cross_component_input_packet(
+        component_nodes=graph["component_nodes"],
+        accepted_contract_ref=contract_ref,
+        requested_synthesis_directive=requested_synthesis_directive,
+    )
+    cross_key = f"graph-v1:revision:{graph['graph_revision']}"
+    cross_artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_CROSS_COMPONENT_ANALYST,
+        input_packet=cross_input,
+        logical_evaluation_key=cross_key,
+        **dict(role_kwargs),
+    )
+    candidate = component_work_graph_v1_resynthesis_from_cross_component_artifact(
+        graph,
+        accepted_contract_ref=contract_ref,
+        cross_component_artifact=cross_artifact,
+    )
+    current = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="resynthesis_structure",
+        graph_candidate=candidate,
+        role_evaluation_key=cross_key,
+    )
+    deferred_admission_keys: list[str] = []
+    for synthesis_key in list(current["synthesis_topological_order"]):
+        dprime_input = synthesis_dprime_input_packet(
+            current,
+            synthesis_key=synthesis_key,
+        )
+        evaluation_key = (
+            f"{synthesis_key}:graph-revision:{current['graph_revision']}"
+        )
+        dprime_artifact = execute_multicomponent_role_call(
+            run_kernel=run_kernel,
+            role=ROLE_SYNTHESIS_DPRIME,
+            input_packet=dprime_input,
+            logical_evaluation_key=evaluation_key,
+            **dict(role_kwargs),
+        )
+        current = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="synthesis_validation",
+            synthesis_key=synthesis_key,
+            role_evaluation_key=evaluation_key,
+            graph_candidate=graph_with_synthesis_validation(
+                current,
+                synthesis_key=synthesis_key,
+                dprime_artifact=dprime_artifact,
+            ),
+        )
+        node = next(
+            item
+            for item in current["synthesis_nodes"]
+            if item["synthesis_key"] == synthesis_key
+        )
+        if node.get("status") != "validated":
+            break
+        node_is_upstream = any(
+            ref.get("node_id") == node.get("node_id")
+            for candidate_node in current["synthesis_nodes"]
+            if candidate_node.get("synthesis_key") != synthesis_key
+            for ref in candidate_node.get("input_node_refs") or ()
+        )
+        if node_is_upstream:
+            current = admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=synthesis_key,
+            )
+        else:
+            deferred_admission_keys.append(synthesis_key)
+
+    if current.get("scrutineer_required") is True:
+        scrutiny_key = f"full-case:graph-revision:{current['graph_revision']}"
+        scrutineer_artifact = execute_multicomponent_role_call(
+            run_kernel=run_kernel,
+            role=ROLE_SCRUTINEER,
+            input_packet=scrutineer_input_packet(current),
+            logical_evaluation_key=scrutiny_key,
+            **dict(role_kwargs),
+        )
+        current = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="scrutiny",
+            role_evaluation_key=scrutiny_key,
+            graph_candidate=graph_with_scrutineer(
+                current,
+                scrutineer_artifact=scrutineer_artifact,
+            ),
+        )
+
+    for synthesis_key in deferred_admission_keys:
+        node = next(
+            item
+            for item in current["synthesis_nodes"]
+            if item["synthesis_key"] == synthesis_key
+        )
+        if node.get("status") == "validated" and current.get(
+            "scrutineer_status"
+        ) in {"passed", "passed_with_caveats"}:
+            current = admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=synthesis_key,
+            )
+
+    logical, physical = derive_multicomponent_role_call_accounting(
+        run_kernel.state.projections,
+        issued_actions=run_kernel.state.issued_actions,
+    )
+    current = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="accounting",
+        graph_candidate=graph_with_accounting(
+            current,
+            logical_accounting=logical,
+            physical_call_accounting=physical,
+        ),
+    )
+    return reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(current),
+    )
+
+
+def _attempt_dynamic_recovery(
+    *,
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    graph: Mapping[str, Any],
+    scrutineer_artifact: Mapping[str, Any],
+    requested_synthesis_directive: str,
+    role_kwargs: Mapping[str, Any],
+    query: str,
+) -> dict[str, Any] | None:
+    output = _safe_mapping(scrutineer_artifact.get("semantic_output"))
+    proposals = [
+        _safe_mapping(item)
+        for item in output.get("missing_component_proposals") or ()
+        if isinstance(item, Mapping)
+    ]
+    if not proposals:
+        return None
+    if len(proposals) != 1:
+        raise OrdinaryMulticomponentRuntimeError(
+            "ordinary dynamic recovery can consume exactly one proposal"
+        )
+    from core.run_kernel import Observation, RunKernelTransitionError, RunStageStatus
+
+    try:
+        authorization_action = (
+            run_kernel.authorize_multicomponent_missing_component_recovery(
+                proposal_key=str(proposals[0]["proposal_key"])
+            )
+        )
+    except RunKernelTransitionError as exc:
+        if "requires_user_confirmation" not in str(exc):
+            raise
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = {
+            "schema_version": "multicomponent_dynamic_recovery_v1",
+            "owner": "OrdinaryMulticomponent.DynamicRecoveryAdapter",
+            "run_id": run_kernel.state.run_id,
+            "request_id": run_kernel.state.request_id,
+            "status": RECOVERY_STATUS_BLOCKED,
+            "blocker": "missing component proposal requires user confirmation",
+            "requires_user_confirmation": True,
+            "ordinary_acquisition_attempt_count": 0,
+            "direct_semantic_producer_used": False,
+        }
+        return None
+    run_kernel.reduce(
+        Observation.from_action(
+            authorization_action,
+            observation_type=authorization_action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={},
+        )
+    )
+    amendment = apply_recovered_component_amendment(run_kernel=run_kernel)
+    acquisition = execute_recovery_acquisition(
+        run_kernel=run_kernel,
+        runtime_scope=runtime_scope,
+        component_ref=amendment.component_ref,
+    )
+    if not acquisition.acquired or acquisition.bindable is None:
+        return None
+
+    component_ref = amendment.component_ref
+    component_id = str(component_ref["component_id"])
+    analyst_input = component_analyst_input_packet(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        accepted_contract=run_kernel.state.current_answer_contract,
+        component_ref=component_ref,
+        evidence_input=_evidence_input(acquisition.bindable),
+    )
+    analyst_artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_COMPONENT_ANALYST,
+        input_packet=analyst_input,
+        logical_evaluation_key=component_id,
+        **dict(role_kwargs),
+    )
+    dprime_input = component_dprime_input_packet(
+        analyst_artifact=analyst_artifact,
+        analyst_input_packet=analyst_input,
+    )
+    dprime_artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_COMPONENT_DPRIME,
+        input_packet=dprime_input,
+        logical_evaluation_key=component_id,
+        **dict(role_kwargs),
+    )
+    observation, content_refs, coverage = _semantic_material(
+        run_kernel=run_kernel,
+        component_ref=component_ref,
+        bindable=acquisition.bindable,
+        analyst_artifact=analyst_artifact,
+        dprime_artifact=dprime_artifact,
+        query=query,
+    )
+    component_admission_ref = execute_multicomponent_component_admission(
+        run_kernel=run_kernel,
+        component_id=component_id,
+        analyst_artifact=analyst_artifact,
+        dprime_artifact=dprime_artifact,
+        analyst_input_packet=analyst_input,
+        semantic_observation=observation,
+        sanitized_content_references=content_refs,
+        component_coverage_record=coverage,
+    )
+    if component_admission_ref.get("admission_status") not in {
+        "admitted",
+        "admitted_with_caveats",
+    }:
+        recovery_projection = dict(
+            run_kernel.state.projections.get(
+                MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+                {},
+            )
+        )
+        recovery_projection.update(
+            {
+                "status": RECOVERY_STATUS_BLOCKED,
+                "blocker": "recovered component did not pass typed admission",
+            }
+        )
+        run_kernel.state.projections[
+            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
+        ] = recovery_projection
+        return None
+    recovered_node = component_work_node_v1_from_admitted_component(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        accepted_component_ref=component_ref,
+        component_admission_ref=component_admission_ref,
+    )
+    authorization = run_kernel.state.projections[authorization_action.stage]
+    application = run_kernel.state.contract_amendment_application_projection
+    application_ref = {
+        "owner": application.get("owner"),
+        "application_digest": application.get("application_digest"),
+        "authorized_action_id": application.get("authorized_action_id"),
+        "amendment_record_id": application.get("amendment_record_id"),
+    }
+    amended = graph_with_recovered_component(
+        graph,
+        recovered_component_node=recovered_node,
+        current_contract_ref=_accepted_contract_ref(
+            run_kernel.state.current_answer_contract
+        ),
+        recovery_authorization_ref=authorization,
+        amendment_application_ref=application_ref,
+    )
+    amended = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="graph_amendment",
+        graph_candidate=amended,
+    )
+    final_graph = _execute_fresh_resynthesis(
+        run_kernel=run_kernel,
+        graph=amended,
+        requested_synthesis_directive=requested_synthesis_directive,
+        role_kwargs=role_kwargs,
+    )
+    if final_graph.get("graph_status") not in {"ready", "ready_with_caveats"}:
+        recovery_projection = dict(
+            run_kernel.state.projections.get(
+                MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+                {},
+            )
+        )
+        recovery_projection.update(
+            {
+                "status": RECOVERY_STATUS_BLOCKED,
+                "blocker": "fresh whole-graph resynthesis did not reach ready posture",
+            }
+        )
+        run_kernel.state.projections[
+            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
+        ] = recovery_projection
+    return final_graph
+
+
 def _execute_selected_lane(
     *,
     run_kernel: Any,
@@ -563,6 +887,17 @@ def _execute_selected_lane(
                 scrutineer_artifact=scrutineer_artifact,
             ),
         )
+        recovered_graph = _attempt_dynamic_recovery(
+            run_kernel=run_kernel,
+            runtime_scope=runtime_scope,
+            graph=graph,
+            scrutineer_artifact=scrutineer_artifact,
+            requested_synthesis_directive=requested_synthesis_directive,
+            role_kwargs=role_kwargs,
+            query=query,
+        )
+        if recovered_graph is not None:
+            return
 
     for synthesis_key in deferred_admission_keys:
         node = next(

@@ -630,6 +630,12 @@ def _promote_recovery_candidate_custody(
     results: Sequence[Mapping[str, Any]],
     candidate_packet: Mapping[str, Any],
 ) -> dict[str, Any]:
+    ledger_before = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    existing_requirements = [
+        dict(item)
+        for item in ledger_before.get("source_requirements") or ()
+        if isinstance(item, Mapping)
+    ]
     candidate_records = [
         dict(item)
         for item in candidate_packet.get("candidate_records") or ()
@@ -641,6 +647,17 @@ def _promote_recovery_candidate_custody(
         readable = bool(_clean_text(result.get("text"), limit=20_000)) and str(
             result.get("readable_status") or "readable"
         ).casefold() in {"readable", "available", "ok"}
+        matching_requirement_ids = [
+            str(requirement["requirement_id"])
+            for requirement in existing_requirements
+            if requirement.get("requirement_id")
+            and str(requirement.get("required_source_class") or "").casefold()
+            == str(result.get("source_class") or "").casefold()
+            and str(requirement.get("status") or "").casefold() != "satisfied"
+        ]
+        linked_requirement_ids = list(
+            dict.fromkeys([source_obligation_id, *matching_requirement_ids])
+        )
         promoted.append(
             {
                 "candidate_id": candidate["candidate_id"],
@@ -658,16 +675,19 @@ def _promote_recovery_candidate_custody(
                 "final_evidence_eligible": readable,
                 "evidence_material_type": "answer_bearing_content",
                 "requirement_id": source_obligation_id,
-                "source_obligation_candidate_ids": [source_obligation_id],
+                "source_obligation_candidate_ids": linked_requirement_ids,
             }
         )
-        links.append(
+        links.extend(
             {
-                "requirement_id": source_obligation_id,
+                "requirement_id": requirement_id,
                 "candidate_id": candidate["candidate_id"],
-                "link_reason": "RunKernel-authorized recovered component acquisition",
+                "link_reason": (
+                    "RunKernel-authorized recovered component acquisition"
+                ),
                 "link_status": "accepted" if readable else "unfetchable",
             }
+            for requirement_id in linked_requirement_ids
         )
     payload = {
         "observation_id": (

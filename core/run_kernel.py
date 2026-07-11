@@ -3492,9 +3492,9 @@ class RunKernel:
         phase_caps = {
             "component_analyst": 5,
             "component_dprime": 5,
-            "cross_component_analyst": 1,
-            "synthesis_dprime": 4,
-            "scrutineer": 1,
+            "cross_component_analyst": 2,
+            "synthesis_dprime": 8,
+            "scrutineer": 2,
         }
         prior_role_actions = [
             prior
@@ -3572,6 +3572,7 @@ class RunKernel:
         operation: str,
         prior_graph_digest: str | None,
         synthesis_key: str | None = None,
+        role_evaluation_key: str | None = None,
     ) -> AuthorizedAction:
         operation_name = _clean_text(operation, limit=80)
         if operation_name not in {
@@ -3581,6 +3582,8 @@ class RunKernel:
             "synthesis_admission",
             "accounting",
             "finalize",
+            "graph_amendment",
+            "resynthesis_structure",
         }:
             raise RunKernelTransitionError("unknown Graph V1 reduction operation")
         current_graph = _safe_mapping(
@@ -3606,6 +3609,9 @@ class RunKernel:
                 "operation": operation_name,
                 "prior_graph_digest": prior_graph_digest,
                 "synthesis_key": _clean_text(synthesis_key, limit=80),
+                "role_evaluation_key": _clean_text(
+                    role_evaluation_key, limit=180
+                ),
             },
             expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
         )
@@ -16049,8 +16055,10 @@ class RunKernel:
             from core.component_work_graph_v1 import (
                 COMPONENT_WORK_GRAPH_V1_OWNER,
                 component_work_graph_v1_from_cross_component_artifact,
+                component_work_graph_v1_resynthesis_from_cross_component_artifact,
                 derive_multicomponent_role_call_accounting,
                 expected_graph_after_transition,
+                graph_with_recovered_component,
                 validate_component_work_graph_v1,
             )
             from core.component_work_node import (
@@ -16084,10 +16092,12 @@ class RunKernel:
             operation = action.inputs.get("operation")
             current_graph = _safe_mapping(self.state.projections.get(action.stage))
             synthesis_key = action.inputs.get("synthesis_key")
+            role_evaluation_key = action.inputs.get("role_evaluation_key")
             role_artifact = None
             logical_accounting = None
             physical_call_accounting = None
             structure_graph = None
+            transition_graph = None
             if operation == "structure":
                 if current_graph or int(graph.get("graph_revision") or 0) != 1:
                     raise RunKernelTransitionError(
@@ -16225,7 +16235,9 @@ class RunKernel:
                 if operation == "synthesis_validation":
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
-                            f"multicomponent_role:{ROLE_SYNTHESIS_DPRIME}:{synthesis_key}"
+                            "multicomponent_role:"
+                            f"{ROLE_SYNTHESIS_DPRIME}:"
+                            f"{role_evaluation_key or synthesis_key}"
                         )
                     )
                     if not role_artifact:
@@ -16235,7 +16247,9 @@ class RunKernel:
                 elif operation == "scrutiny":
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
-                            f"multicomponent_role:{ROLE_SCRUTINEER}:full-case"
+                            "multicomponent_role:"
+                            f"{ROLE_SCRUTINEER}:"
+                            f"{role_evaluation_key or 'full-case'}"
                         )
                     )
                     if not role_artifact:
@@ -16252,6 +16266,138 @@ class RunKernel:
                         )
                     except ValueError as exc:
                         raise RunKernelTransitionError(str(exc)) from exc
+                elif operation == "graph_amendment":
+                    accepted_contract = _safe_mapping(
+                        self.state.current_answer_contract
+                    )
+                    if not accepted_contract:
+                        raise RunKernelTransitionError(
+                            "Graph V1 amendment requires current AnswerContract"
+                        )
+                    current_component_ids = {
+                        item.get("component_id")
+                        for item in current_graph.get("component_nodes") or ()
+                        if isinstance(item, Mapping)
+                    }
+                    added_components = [
+                        _safe_mapping(item)
+                        for item in accepted_contract.get(
+                            "accepted_answer_component_refs", []
+                        )
+                        if isinstance(item, Mapping)
+                        and item.get("component_id") not in current_component_ids
+                    ]
+                    component_admission = _safe_mapping(
+                        self.state.projections.get(
+                            MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                        )
+                    )
+                    if len(added_components) != 1:
+                        raise RunKernelTransitionError(
+                            "Graph V1 amendment requires exactly one added component"
+                        )
+                    added_component = added_components[0]
+                    matching_admissions = [
+                        _safe_mapping(item)
+                        for item in component_admission.get(
+                            "component_admission_refs", []
+                        )
+                        if isinstance(item, Mapping)
+                        and item.get("component_id")
+                        == added_component.get("component_id")
+                        and item.get("accepted_contract_digest")
+                        == accepted_contract.get("accepted_contract_digest")
+                    ]
+                    if len(matching_admissions) != 1:
+                        raise RunKernelTransitionError(
+                            "Graph V1 amendment requires exact recovered component admission"
+                        )
+                    recovered_node = component_work_node_v1_from_admitted_component(
+                        run_id=self.state.run_id,
+                        request_id=self.state.request_id,
+                        accepted_component_ref=added_component,
+                        component_admission_ref=matching_admissions[0],
+                    )
+                    contract_ref = {
+                        "owner": accepted_contract.get("owner"),
+                        "canonical_state": accepted_contract.get("canonical_state"),
+                        "run_id": self.state.run_id,
+                        "request_id": self.state.request_id,
+                        "accepted_contract_version": accepted_contract.get(
+                            "accepted_contract_version"
+                        ),
+                        "accepted_contract_digest": accepted_contract.get(
+                            "accepted_contract_digest"
+                        ),
+                        "parent_question_meaning_record_id": accepted_contract.get(
+                            "parent_question_meaning_record_id"
+                        ),
+                        "parent_question_meaning_record_digest": accepted_contract.get(
+                            "parent_question_meaning_record_digest"
+                        ),
+                        "accepted_answer_component_count": accepted_contract.get(
+                            "accepted_answer_component_count"
+                        )
+                        or len(
+                            accepted_contract.get(
+                                "accepted_answer_component_refs", []
+                            )
+                        ),
+                    }
+                    recovery_ref = _safe_mapping(
+                        self.state.projections.get(
+                            MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                        )
+                    )
+                    application = _safe_mapping(
+                        self.state.contract_amendment_application_projection
+                    )
+                    application_ref = {
+                        "owner": application.get("owner"),
+                        "application_digest": application.get(
+                            "application_digest"
+                        ),
+                        "authorized_action_id": application.get(
+                            "authorized_action_id"
+                        ),
+                        "amendment_record_id": application.get(
+                            "amendment_record_id"
+                        ),
+                    }
+                    transition_graph = graph_with_recovered_component(
+                        current_graph,
+                        recovered_component_node=recovered_node,
+                        current_contract_ref=contract_ref,
+                        recovery_authorization_ref=recovery_ref,
+                        amendment_application_ref=application_ref,
+                    )
+                elif operation == "resynthesis_structure":
+                    evaluation_key = _clean_text(
+                        role_evaluation_key, limit=180
+                    )
+                    if not evaluation_key:
+                        raise RunKernelTransitionError(
+                            "Graph V1 resynthesis requires revision-specific role key"
+                        )
+                    role_artifact = _safe_mapping(
+                        self.state.projections.get(
+                            "multicomponent_role:"
+                            f"{ROLE_CROSS_COMPONENT_ANALYST}:{evaluation_key}"
+                        )
+                    )
+                    if not role_artifact:
+                        raise RunKernelTransitionError(
+                            "Graph V1 resynthesis lacks completed Cross-Component Analyst"
+                        )
+                    transition_graph = (
+                        component_work_graph_v1_resynthesis_from_cross_component_artifact(
+                            current_graph,
+                            accepted_contract_ref=_safe_mapping(
+                                current_graph.get("accepted_contract_ref")
+                            ),
+                            cross_component_artifact=role_artifact,
+                        )
+                    )
             try:
                 expected_graph = expected_graph_after_transition(
                     current_graph or None,
@@ -16262,6 +16408,7 @@ class RunKernel:
                     logical_accounting=logical_accounting,
                     physical_call_accounting=physical_call_accounting,
                     structure_graph=structure_graph,
+                    transition_graph=transition_graph,
                 )
             except ValueError as exc:
                 raise RunKernelTransitionError(

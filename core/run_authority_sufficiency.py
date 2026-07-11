@@ -329,6 +329,7 @@ class RunSufficiencyJudgmentInput:
     semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
     component_readiness_projection: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_state: Mapping[str, Any] = field(default_factory=dict)
+    multicomponent_recovery_state: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
         contract = _safe_mapping(self.contract_projection)
@@ -403,6 +404,23 @@ class RunSufficiencyJudgmentInput:
             "semantic_state_ref": self._semantic_state_model_ref(),
             "component_readiness_ref": self._component_readiness_model_ref(),
             "multicomponent_graph_ref": self._multicomponent_graph_model_ref(),
+            "multicomponent_recovery_ref": self._multicomponent_recovery_model_ref(),
+        }
+
+    def _multicomponent_recovery_model_ref(self) -> dict[str, Any]:
+        recovery = _safe_mapping(self.multicomponent_recovery_state)
+        return {
+            "schema_version": clean_token(recovery.get("schema_version")),
+            "owner": clean_token(recovery.get("owner")),
+            "status": clean_token(recovery.get("status")),
+            "component_id": clean_token(recovery.get("component_id")),
+            "ordinary_acquisition_attempt_count": recovery.get(
+                "ordinary_acquisition_attempt_count"
+            ),
+            "direct_semantic_producer_used": recovery.get(
+                "direct_semantic_producer_used"
+            ),
+            "blocker": clean_text(recovery.get("blocker"), limit=260),
         }
 
     def _multicomponent_graph_model_ref(self) -> dict[str, Any]:

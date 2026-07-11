@@ -274,6 +274,9 @@ def execute_sufficiency_judgment_handoff_from_scope(
         multicomponent_graph_state=run_kernel.state.projections.get(
             "multicomponent_component_work_graph_v1"
         ),
+        multicomponent_recovery_state=run_kernel.state.projections.get(
+            "multicomponent_dynamic_recovery"
+        ),
     )
     action = run_kernel.authorize_sufficiency_judgment(
         inputs={

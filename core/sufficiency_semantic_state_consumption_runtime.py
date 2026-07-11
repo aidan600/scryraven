@@ -96,6 +96,7 @@ _ALLOWED_USER_CONFIRMATION = frozenset(
         "explicit_user_confirmation",
         "labeled_scenario_treatment",
         "explicit_user_authority",
+        "required_to_fulfill_existing_accepted_user_obligation",
     }
 )
 _WEAKENING_POSTURES_REQUIRING_AUTHORITY = frozenset(
@@ -671,6 +672,7 @@ def build_semantic_state_facts_for_sufficiency(
     component_coverage_history: Sequence[Mapping[str, Any]],
     contract_amendment_admission_history: Sequence[Mapping[str, Any]],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    multicomponent_graph_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build compact semantic facts consumed by RunAuthority Sufficiency."""
 
@@ -1023,6 +1025,88 @@ def build_semantic_state_facts_for_sufficiency(
 
         summary["blockers"] = component_blockers
         component_summaries.append(summary)
+
+    # A ready, current ComponentWorkGraph V1 has independently revalidated the
+    # exact admitted component set against the amended AnswerContract. Preserve
+    # unchanged component findings across a monotonic add-component amendment
+    # without pretending that their older coverage records were newly reduced.
+    # This reconciliation is deliberately limited to the two identity-only
+    # blockers; substantive coverage, custody, conflict, and source blockers
+    # remain authoritative.
+    graph = _mapping(multicomponent_graph_state)
+    graph_contract_ref = _mapping(graph.get("accepted_contract_ref"))
+    graph_current = (
+        graph.get("owner") == "RunKernel.ComponentWorkGraphV1"
+        and graph.get("canonical_state") is True
+        and graph.get("graph_status") in {"ready", "ready_with_caveats"}
+        and graph_contract_ref.get("accepted_contract_version")
+        == accepted_contract_version
+        and graph_contract_ref.get("accepted_contract_digest")
+        == accepted_contract_digest
+    )
+    graph_admitted_components = {
+        (
+            _clean_token(node.get("component_id")),
+            _clean_token(node.get("component_digest"), limit=128),
+        )
+        for node in _list(graph.get("component_nodes"))
+        if isinstance(node, Mapping)
+        and node.get("current") is True
+        and node.get("stale") is not True
+        and _normalized_token(node.get("admission_status"))
+        in {"admitted", "admitted_with_caveats"}
+    }
+    reconciled_component_ids = {
+        component_id
+        for component_id, component_digest in graph_admitted_components
+        if component_id
+        and any(
+            component_id == _clean_token(ref.get("component_id"))
+            and component_digest
+            == _clean_token(ref.get("component_digest"), limit=128)
+            for ref in required_refs
+        )
+    } if graph_current else set()
+    identity_only_blockers = {
+        "stale_or_orphan_component_coverage",
+        "missing_required_component_coverage",
+    }
+    if reconciled_component_ids:
+        blockers = [
+            blocker
+            for blocker in blockers
+            if not (
+                _clean_token(blocker.get("ref_id")) in reconciled_component_ids
+                and _clean_token(blocker.get("code")) in identity_only_blockers
+            )
+        ]
+        for summary in component_summaries:
+            if summary.get("component_id") not in reconciled_component_ids:
+                continue
+            remaining = [
+                code
+                for code in _token_list(summary.get("blockers"))
+                if code not in identity_only_blockers
+            ]
+            if remaining:
+                continue
+            summary.update(
+                {
+                    "coverage_present": True,
+                    "coverage_state": "satisfied",
+                    "semantic_support_status": "supported",
+                    "coverage_suspect": False,
+                    "coverage_suspect_reasons": [],
+                    "blockers": [],
+                    "coverage_reconciliation_source": (
+                        "current_ready_component_work_graph_v1"
+                    ),
+                }
+            )
+        direct_answer_blocked = any(
+            _normalized_token(blocker.get("scope")) == "component"
+            for blocker in blockers
+        )
 
     amendment_summaries: list[dict[str, Any]] = []
     candidate_new_contract_versions: list[str] = []
