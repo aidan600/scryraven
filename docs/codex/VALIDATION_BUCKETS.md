@@ -146,3 +146,32 @@ python scripts/validation/run_bucket.py semantic_search_lane
 python scripts/validation/run_bucket.py author_lane --collect-only
 python scripts/validation/run_bucket.py full
 ```
+
+## Exceptional partitioned broad validation
+
+`scripts/validation/run_bucket.py` remains the bucket-selection authority.
+When a separately authorized broad-validation job risks a monolithic outer
+timeout, use the local partitioned runner rather than adding another bucket or
+expanding ordinary pull-request validation:
+
+```powershell
+py scripts\validation\run_partitioned_pytest.py --candidate HEAD --partitions 4 --max-processes 2
+```
+
+Use candidate-only mode when the candidate must be green independently. Use
+paired parity only when failures need baseline attribution:
+
+```powershell
+py scripts\validation\run_partitioned_pytest.py --baseline <BASE_SHA> --candidate <CANDIDATE_SHA> --partitions 4 --max-processes 2
+```
+
+The runner discovers tracked `tests/test*.py` files from each exact Git tree,
+partitions their sorted union by stable round robin, and filters each union
+partition for the corresponding ref. A candidate test removal fails closed.
+Reviewers may authorize only an exact path, repeatably, for example
+`--allow-removed-test tests\test_retired_contract.py`; authorized removals
+remain visible in the packet.
+
+This is exceptional offline developer validation. Ordinary PRs remain on
+`docs_only` or `fast_pr`; `fast_pr` membership and cost are unchanged. The new
+runner's directly owning tests are `phase_focus`, not `fast_pr` sentinels.
