@@ -12838,6 +12838,16 @@ class RunKernel:
                     action.inputs
                 )
             )
+            recovery_posture = (
+                "required_to_fulfill_existing_accepted_user_obligation"
+            )
+            if (
+                amendment_projection.get("user_confirmation_posture")
+                == recovery_posture
+            ) != bool(recovery_authority):
+                raise RunKernelTransitionError(
+                    "automatic recovery amendment posture requires exact recovery authority"
+                )
             if recovery_authority:
                 operations = [
                     _safe_mapping(item)
@@ -12916,6 +12926,16 @@ class RunKernel:
                     action.inputs
                 )
             )
+            recovery_posture = (
+                "required_to_fulfill_existing_accepted_user_obligation"
+            )
+            if (
+                admitted_amendment.get("user_confirmation_posture")
+                == recovery_posture
+            ) != bool(recovery_authority):
+                raise RunKernelTransitionError(
+                    "automatic recovery amendment application requires exact recovery authority"
+                )
             if recovery_authority and (
                 admitted_amendment.get("user_confirmation_posture")
                 != "required_to_fulfill_existing_accepted_user_obligation"

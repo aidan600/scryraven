@@ -28,6 +28,7 @@ from core.multicomponent_component_admission import (
 )
 from core.multicomponent_dynamic_recovery_runtime import (
     apply_recovered_component_amendment,
+    build_recovered_component_amendment,
     execute_recovery_acquisition,
 )
 from core.multicomponent_role_runtime import (
@@ -621,6 +622,46 @@ def test_recovery_duplicate_second_round_and_scope_broadening_fail_closed() -> N
         broadened.authorize_multicomponent_missing_component_recovery(
             proposal_key="bonus_paper_rule"
         )
+
+
+def test_recovery_amendment_posture_cannot_bypass_exact_authority_inputs() -> None:
+    kernel, _graph = _challenged_graph_with_missing_component_proposal()
+    recovery = kernel.authorize_multicomponent_missing_component_recovery(
+        proposal_key="bonus_paper_rule"
+    )
+    kernel.reduce(
+        Observation.from_action(
+            recovery,
+            observation_type=recovery.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={},
+        )
+    )
+    kernel.state.initial_answer_contract_projection = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+    }
+    _component, record = build_recovered_component_amendment(run_kernel=kernel)
+    admission = kernel.authorize_contract_amendment_admission(
+        amendment_record_id=record.amendment_record_id,
+        amendment_record_digest=record.record_digest,
+        parent_contract_digest=record.parent_contract_digest,
+        parent_contract_version=record.parent_contract_version,
+    )
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="requires exact recovery authority",
+    ):
+        kernel.reduce(
+            Observation.from_action(
+                admission,
+                observation_type=admission.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={"contract_amendment_record": record.to_dict()},
+            )
+        )
+    assert kernel.state.contract_amendment_admission_history == []
 
 
 def test_pre_amendment_graph_fails_closed_against_current_contract() -> None:
