@@ -1753,9 +1753,6 @@ def component_work_graph_v1_selective_resynthesis_from_cross_artifact(
     current["graph_output_suppressed"] = True
     current["graph_status"] = GRAPH_STATUS_SYNTHESIS_VALIDATION_REQUIRED
     current["recomputed_synthesis_count"] = len(fresh_nodes)
-    current["fresh_affected_synthesis_refs"] = [
-        _node_ref(item) for item in fresh_nodes
-    ]
     current["selective_cross_component_analyst_ref"] = role_artifact_ref(cross)
     return _next_revision(current)
 
