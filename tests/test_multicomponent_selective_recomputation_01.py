@@ -13,6 +13,7 @@ from core.component_work_graph_v1 import (
     admit_synthesis_node_via_runkernel,
     build_synthesis_carry_forward_projection,
     component_work_graph_v1_from_cross_component_artifact,
+    component_work_graph_v1_selective_resynthesis_from_cross_artifact,
     cross_component_input_packet,
     derive_selective_recomputation_closure,
     graph_with_selective_invalidation,
@@ -20,12 +21,21 @@ from core.component_work_graph_v1 import (
     reduce_selective_invalidation_via_runkernel,
     reduce_selective_recomputation_closure,
     runkernel_canonical_graph,
+    selective_cross_component_input_packet,
     validate_component_work_graph_v1,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
 from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
+    ROLE_SYSTEM_PROMPTS,
+    SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
+    SELECTIVE_CROSS_COMPONENT_SCHEMA,
+    MulticomponentRoleRuntimeError,
+    execute_multicomponent_role_call,
     safe_packet_digest,
+)
+from core.ordinary_multicomponent_synthesis_runtime import (
+    _execute_selective_reconstruction,
 )
 from core.run_kernel import (
     MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
@@ -304,6 +314,84 @@ def _transition_inputs(kernel: RunKernel, closure: dict) -> dict:
             "contract_amendment_application_ref"
         ],
     }
+
+
+def _selectively_invalidated_graph() -> tuple[RunKernel, dict, dict, dict]:
+    kernel, source, closure = _closure_fixture()
+    canonical_closure = reduce_selective_recomputation_closure(
+        run_kernel=kernel,
+        closure_candidate=closure,
+    )
+    amended = reduce_selective_invalidation_via_runkernel(
+        run_kernel=kernel,
+        graph=source,
+        **_transition_inputs(kernel, canonical_closure),
+    )
+    return kernel, source, canonical_closure, amended
+
+
+def _selective_response(packet: dict) -> dict:
+    recovered_id = packet["current_recovered_component_ref"]["component_id"]
+    other_ids = [
+        item["component_id"]
+        for item in packet["licensed_current_component_refs"]
+    ]
+    return {
+        "synthesis_proposals": [
+            {
+                "synthesis_key": "filing_route",
+                "claim_text": (
+                    "The ordinary inputs permit online filing, while income-bonus "
+                    "claimants must use the paper application."
+                ),
+                "relationship_type": "conditional_filing_route",
+                "component_inputs": [*other_ids, recovered_id],
+                "affected_synthesis_inputs": [],
+                "preserved_synthesis_inputs": [],
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": [],
+            },
+            {
+                "synthesis_key": "applicant_guidance",
+                "claim_text": (
+                    "Applicants should combine the preserved benefit facts with the "
+                    "fresh filing route."
+                ),
+                "relationship_type": "guided_conjunction",
+                "component_inputs": [],
+                "affected_synthesis_inputs": ["filing_route"],
+                "preserved_synthesis_inputs": ["benefit_summary"],
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": [],
+            },
+        ]
+    }
+
+
+def _execute_selective_cross(
+    kernel: RunKernel,
+    graph: dict,
+    closure: dict,
+    response: dict,
+) -> tuple[dict, dict]:
+    packet = selective_cross_component_input_packet(graph, closure=closure)
+    artifact = execute_multicomponent_role_call(
+        run_kernel=kernel,
+        role=ROLE_CROSS_COMPONENT_ANALYST,
+        input_packet=packet,
+        ask_model=lambda *_args, **_kwargs: response,
+        clean_json_response=lambda value: value,
+        provider="offline",
+        model="fixture",
+        base_url="http://offline.invalid/v1",
+        api_key="",
+        use_reasoning=False,
+        logical_evaluation_key=f"selective:graph-revision:{graph['graph_revision']}",
+        output_schema_variant=SELECTIVE_CROSS_COMPONENT_SCHEMA,
+    )
+    return packet, artifact
 
 
 def test_runkernel_derives_exact_pretransition_selective_closure() -> None:
@@ -626,3 +714,202 @@ def test_carry_forward_projection_rejects_action_or_final_graph_mismatch() -> No
             closure=canonical_closure,
             carry_forward_action_ref=action_ref,
         )
+
+
+def test_selective_cross_reconstructs_only_affected_synthesis_namespaces() -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+    packet = selective_cross_component_input_packet(amended, closure=closure)
+    response = _selective_response(packet)
+    _packet, artifact = _execute_selective_cross(
+        kernel,
+        amended,
+        closure,
+        response,
+    )
+    candidate = component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+        amended,
+        closure=closure,
+        cross_component_artifact=artifact,
+    )
+    evaluation_key = artifact["logical_evaluation_key"]
+    rebuilt = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="selective_resynthesis_structure",
+        graph_candidate=candidate,
+        role_evaluation_key=evaluation_key,
+    )
+
+    assert packet["affected_synthesis_key_catalog"] == [
+        "filing_route",
+        "applicant_guidance",
+    ]
+    assert packet["prohibited_unaffected_synthesis_keys"] == ["benefit_summary"]
+    assert [
+        item["synthesis_key"]
+        for item in artifact["semantic_output"]["synthesis_proposals"]
+    ] == ["filing_route", "applicant_guidance"]
+    by_key = {item["synthesis_key"]: item for item in rebuilt["synthesis_nodes"]}
+    assert set(by_key) == {
+        "benefit_summary",
+        "filing_route",
+        "applicant_guidance",
+    }
+    assert by_key["benefit_summary"] == amended["synthesis_nodes"][0]
+    assert by_key["applicant_guidance"]["input_namespaces"] == {
+        "component_inputs": [],
+        "affected_synthesis_inputs": ["filing_route"],
+        "preserved_synthesis_inputs": ["benefit_summary"],
+    }
+    input_by_key = {
+        item.get("synthesis_key"): item
+        for item in by_key["applicant_guidance"]["input_node_refs"]
+        if item.get("node_kind") == "synthesis"
+    }
+    assert input_by_key["filing_route"]["node_digest"] == by_key[
+        "filing_route"
+    ]["node_digest"]
+    assert input_by_key["benefit_summary"]["node_digest"] == by_key[
+        "benefit_summary"
+    ]["node_digest"]
+    assert by_key["filing_route"]["superseded_node_ref"]["synthesis_key"] == (
+        "filing_route"
+    )
+    assert by_key["applicant_guidance"]["superseded_node_ref"][
+        "synthesis_key"
+    ] == "applicant_guidance"
+    assert rebuilt["whole_graph_resynthesis_rounds"] == 0
+    assert rebuilt["selective_recomputation_rounds"] == 1
+    assert rebuilt["recomputed_synthesis_count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("preserved_as_fresh", "exactly the affected topological order"),
+        ("affected_as_preserved", "unlicensed input namespace"),
+        ("unknown_preserved", "unlicensed input namespace"),
+        ("omit_affected", "exactly the affected topological order"),
+        ("changed_dependency", "changed an unlicensed dependency"),
+    ],
+)
+def test_selective_cross_rejects_unlicensed_proposal_shapes(
+    mutation: str,
+    message: str,
+) -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+    packet = selective_cross_component_input_packet(amended, closure=closure)
+    response = _selective_response(packet)
+    proposals = response["synthesis_proposals"]
+    if mutation == "preserved_as_fresh":
+        proposals.append(
+            {
+                **deepcopy(proposals[0]),
+                "synthesis_key": "benefit_summary",
+            }
+        )
+    elif mutation == "affected_as_preserved":
+        proposals[1]["affected_synthesis_inputs"] = []
+        proposals[1]["preserved_synthesis_inputs"] = [
+            "benefit_summary",
+            "filing_route",
+        ]
+    elif mutation == "unknown_preserved":
+        proposals[1]["preserved_synthesis_inputs"] = ["unknown_boundary"]
+    elif mutation == "omit_affected":
+        proposals.pop()
+    else:
+        proposals[0]["component_inputs"] = proposals[0]["component_inputs"][:-1]
+    _packet, artifact = _execute_selective_cross(
+        kernel,
+        amended,
+        closure,
+        response,
+    )
+
+    with pytest.raises(ComponentWorkGraphV1Error, match=message):
+        component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+            amended,
+            closure=closure,
+            cross_component_artifact=artifact,
+        )
+
+
+def test_selective_cross_schema_rejects_overlapping_synthesis_namespaces() -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+    packet = selective_cross_component_input_packet(amended, closure=closure)
+    response = _selective_response(packet)
+    response["synthesis_proposals"][1]["preserved_synthesis_inputs"].append(
+        "filing_route"
+    )
+
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="namespaces must be disjoint",
+    ):
+        _execute_selective_cross(kernel, amended, closure, response)
+
+
+def test_selective_reconstruction_calls_cross_and_dprime_only_for_affected_keys() -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+    carried_before = deepcopy(amended["synthesis_nodes"][0])
+
+    def ask_model(prompt: str, system_prompt: str, **_kwargs):
+        import json
+
+        packet = json.loads(prompt)
+        if system_prompt == SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT:
+            return _selective_response(packet)
+        if system_prompt == ROLE_SYSTEM_PROMPTS["synthesis_dprime"]:
+            return {
+                "validation_status": "supported",
+                "reasons": ["The exact current inputs support the proposal."],
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": [],
+            }
+        raise AssertionError(f"unexpected selective role prompt: {system_prompt}")
+
+    rebuilt, deferred = _execute_selective_reconstruction(
+        run_kernel=kernel,
+        graph=amended,
+        closure=closure,
+        role_kwargs={
+            "ask_model": ask_model,
+            "clean_json_response": lambda value: value,
+            "provider": "offline",
+            "model": "fixture",
+            "base_url": "http://offline.invalid/v1",
+            "api_key": "",
+            "use_reasoning": False,
+        },
+    )
+
+    by_key = {item["synthesis_key"]: item for item in rebuilt["synthesis_nodes"]}
+    assert by_key["benefit_summary"] == carried_before
+    assert by_key["filing_route"]["status"] == "admitted"
+    assert by_key["applicant_guidance"]["status"] == "validated"
+    assert deferred == ["applicant_guidance"]
+    selective_role_actions = [
+        item
+        for item in kernel.state.issued_actions.values()
+        if item.inputs.get("logical_evaluation_key")
+        and (
+            ":selective:" in item.inputs["logical_evaluation_key"]
+            or item.inputs["logical_evaluation_key"].startswith("selective:")
+        )
+    ]
+    assert [item.inputs["role"] for item in selective_role_actions] == [
+        "cross_component_analyst",
+        "synthesis_dprime",
+        "synthesis_dprime",
+    ]
+    dprime_keys = [
+        item.inputs["logical_evaluation_key"]
+        for item in selective_role_actions
+        if item.inputs["role"] == "synthesis_dprime"
+    ]
+    assert len(dprime_keys) == 2
+    assert all("graph-revision:" in item for item in dprime_keys)
+    assert any(item.startswith("filing_route:") for item in dprime_keys)
+    assert any(item.startswith("applicant_guidance:") for item in dprime_keys)
+    assert all(not item.startswith("benefit_summary:") for item in dprime_keys)

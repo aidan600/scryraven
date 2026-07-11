@@ -3626,18 +3626,50 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "Graph V1 reduction requires the current canonical graph digest"
             )
+        action_inputs = {
+            "operation": operation_name,
+            "prior_graph_digest": prior_graph_digest,
+            "synthesis_key": _clean_text(synthesis_key, limit=80),
+            "role_evaluation_key": _clean_text(
+                role_evaluation_key, limit=180
+            ),
+        }
+        if operation_name == "selective_resynthesis_structure":
+            from core.component_work_graph_v1 import (
+                MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
+                validate_selective_recomputation_closure,
+            )
+
+            closure = validate_selective_recomputation_closure(
+                _safe_mapping(
+                    self.state.projections.get(
+                        MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
+                    )
+                )
+            )
+            if (
+                current_graph.get("dependency_posture")
+                != "requires_selective_resynthesis"
+                or _safe_mapping(current_graph.get("selective_closure_ref"))
+                != {
+                    "closure_id": closure.get("closure_id"),
+                    "closure_digest": closure.get("closure_digest"),
+                }
+            ):
+                raise RunKernelTransitionError(
+                    "selective resynthesis requires the closure-bound transition graph"
+                )
+            action_inputs.update(
+                {
+                    "closure_id": closure.get("closure_id"),
+                    "closure_digest": closure.get("closure_digest"),
+                }
+            )
         return self.authorize(
             stage="multicomponent_component_work_graph_v1",
             action_type=ActionType.MULTICOMPONENT_GRAPH_REDUCE,
             reason=f"ordinary_multicomponent_graph_{operation_name}",
-            inputs={
-                "operation": operation_name,
-                "prior_graph_digest": prior_graph_digest,
-                "synthesis_key": _clean_text(synthesis_key, limit=80),
-                "role_evaluation_key": _clean_text(
-                    role_evaluation_key, limit=180
-                ),
-            },
+            inputs=action_inputs,
             expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
         )
 
@@ -16835,6 +16867,7 @@ class RunKernel:
                 build_synthesis_carry_forward_projection,
                 component_work_graph_v1_from_cross_component_artifact,
                 component_work_graph_v1_resynthesis_from_cross_component_artifact,
+                component_work_graph_v1_selective_resynthesis_from_cross_artifact,
                 derive_multicomponent_role_call_accounting,
                 derive_selective_recomputation_closure,
                 expected_graph_after_transition,
@@ -17442,6 +17475,42 @@ class RunKernel:
                             accepted_contract_ref=_safe_mapping(
                                 current_graph.get("accepted_contract_ref")
                             ),
+                            cross_component_artifact=role_artifact,
+                        )
+                    )
+                elif operation == "selective_resynthesis_structure":
+                    evaluation_key = _clean_text(role_evaluation_key, limit=180)
+                    closure = validate_selective_recomputation_closure(
+                        _safe_mapping(
+                            self.state.projections.get(
+                                MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
+                            )
+                        )
+                    )
+                    if (
+                        not evaluation_key
+                        or action.inputs.get("closure_id")
+                        != closure.get("closure_id")
+                        or action.inputs.get("closure_digest")
+                        != closure.get("closure_digest")
+                    ):
+                        raise RunKernelTransitionError(
+                            "selective resynthesis action lacks exact closure binding"
+                        )
+                    role_artifact = _safe_mapping(
+                        self.state.projections.get(
+                            "multicomponent_role:"
+                            f"{ROLE_CROSS_COMPONENT_ANALYST}:{evaluation_key}"
+                        )
+                    )
+                    if not role_artifact:
+                        raise RunKernelTransitionError(
+                            "selective resynthesis lacks completed selective Cross artifact"
+                        )
+                    transition_graph = (
+                        component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+                            current_graph,
+                            closure=closure,
                             cross_component_artifact=role_artifact,
                         )
                     )

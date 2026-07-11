@@ -19,6 +19,16 @@ ROLE_COMPONENT_DPRIME = "component_dprime"
 ROLE_CROSS_COMPONENT_ANALYST = "cross_component_analyst"
 ROLE_SYNTHESIS_DPRIME = "synthesis_dprime"
 ROLE_SCRUTINEER = "scrutineer"
+SELECTIVE_CROSS_COMPONENT_SCHEMA = "selective_affected_synthesis_v1"
+SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT = (
+    "You are ScryRaven's selective Cross-Component Analyst. Propose exactly the "
+    "licensed affected synthesis keys in the supplied topological order. Each "
+    "proposal must use the separate component_inputs, affected_synthesis_inputs, "
+    "and preserved_synthesis_inputs namespaces. Preserved synthesis keys are "
+    "read-only boundary inputs and must not be re-proposed. Return "
+    "synthesis_proposals only. Do not validate, admit, dispatch research, change "
+    "unaffected synthesis, copy canonical refs, or write final prose."
+)
 
 ROLE_SYSTEM_PROMPTS = {
     ROLE_COMPONENT_ANALYST: (
@@ -232,7 +242,12 @@ def _local_key(value: Any) -> str:
     return text
 
 
-def _normalize_semantic_output(role: str, output: Mapping[str, Any]) -> dict[str, Any]:
+def _normalize_semantic_output(
+    role: str,
+    output: Mapping[str, Any],
+    *,
+    output_schema_variant: str | None = None,
+) -> dict[str, Any]:
     payload = _safe_mapping(output)
     if role == ROLE_COMPONENT_ANALYST:
         claim_text = _clean_text(payload.get("claim_text"), limit=1000)
@@ -273,27 +288,69 @@ def _normalize_semantic_output(role: str, output: Mapping[str, Any]) -> dict[str
             claim_text = _clean_text(proposal.get("claim_text"), limit=1200)
             relationship_type = _normalize_key(proposal.get("relationship_type"))
             component_inputs = _text_list(proposal.get("component_inputs"), limit=160)
-            synthesis_inputs = [
-                _local_key(item) for item in _safe_sequence(proposal.get("synthesis_inputs"))
-            ]
+            if output_schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA:
+                if "synthesis_inputs" in proposal:
+                    raise MulticomponentRoleRuntimeError(
+                        "selective Cross proposal cannot use the full-graph synthesis namespace"
+                    )
+                affected_inputs = [
+                    _local_key(item)
+                    for item in _safe_sequence(
+                        proposal.get("affected_synthesis_inputs")
+                    )
+                ]
+                preserved_inputs = [
+                    _local_key(item)
+                    for item in _safe_sequence(
+                        proposal.get("preserved_synthesis_inputs")
+                    )
+                ]
+                if set(affected_inputs) & set(preserved_inputs):
+                    raise MulticomponentRoleRuntimeError(
+                        "selective Cross synthesis input namespaces must be disjoint"
+                    )
+                synthesis_inputs = []
+            else:
+                if "affected_synthesis_inputs" in proposal or (
+                    "preserved_synthesis_inputs" in proposal
+                ):
+                    raise MulticomponentRoleRuntimeError(
+                        "ordinary Cross proposal cannot use selective namespaces"
+                    )
+                synthesis_inputs = [
+                    _local_key(item)
+                    for item in _safe_sequence(proposal.get("synthesis_inputs"))
+                ]
+                affected_inputs = []
+                preserved_inputs = []
             if not claim_text or not relationship_type or not (
-                component_inputs or synthesis_inputs
+                component_inputs
+                or synthesis_inputs
+                or affected_inputs
+                or preserved_inputs
             ):
                 raise MulticomponentRoleRuntimeError(
                     "cross-component proposal requires claim, relationship, and inputs"
                 )
-            proposals.append(
-                {
+            normalized_proposal = {
                     "synthesis_key": key,
                     "claim_text": claim_text,
                     "relationship_type": relationship_type,
                     "component_inputs": component_inputs,
-                    "synthesis_inputs": synthesis_inputs,
                     "caveats": _text_list(proposal.get("caveats")),
                     "nonclaims": _text_list(proposal.get("nonclaims")),
                     "blockers": _text_list(proposal.get("blockers")),
-                }
-            )
+            }
+            if output_schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA:
+                normalized_proposal.update(
+                    {
+                        "affected_synthesis_inputs": affected_inputs,
+                        "preserved_synthesis_inputs": preserved_inputs,
+                    }
+                )
+            else:
+                normalized_proposal["synthesis_inputs"] = synthesis_inputs
+            proposals.append(normalized_proposal)
         if not 1 <= len(proposals) <= 4:
             raise MulticomponentRoleRuntimeError(
                 "Cross-Component Analyst must propose one to four synthesis nodes"
@@ -470,6 +527,16 @@ def validate_multicomponent_role_artifact(
     role = _normalize_key(artifact.get("role"))
     if role not in ROLE_SYSTEM_PROMPTS or (expected_role and role != expected_role):
         raise MulticomponentRoleRuntimeError("semantic role artifact role mismatch")
+    schema_variant = _clean_text(
+        artifact.get("output_schema_variant"), limit=80
+    )
+    if schema_variant and not (
+        role == ROLE_CROSS_COMPONENT_ANALYST
+        and schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+    ):
+        raise MulticomponentRoleRuntimeError(
+            "semantic role artifact schema variant is invalid"
+        )
     for key in (
         "artifact_id",
         "artifact_digest",
@@ -487,6 +554,7 @@ def validate_multicomponent_role_artifact(
     normalized_output = _normalize_semantic_output(
         role,
         _safe_mapping(artifact.get("semantic_output")),
+        output_schema_variant=schema_variant,
     )
     normalized = {**artifact, "role": role, "semantic_output": normalized_output}
     declared = normalized.pop("artifact_digest")
@@ -510,12 +578,21 @@ def execute_multicomponent_role_call(
     api_key: str,
     use_reasoning: bool,
     logical_evaluation_key: str,
+    output_schema_variant: str | None = None,
 ) -> dict[str, Any]:
     """Authorize, execute, parse, bind, and reduce one semantic role call."""
 
     normalized_role = _normalize_key(role)
     if normalized_role not in ROLE_SYSTEM_PROMPTS:
         raise MulticomponentRoleRuntimeError("unknown semantic role")
+    schema_variant = _clean_text(output_schema_variant, limit=80)
+    if schema_variant and not (
+        normalized_role == ROLE_CROSS_COMPONENT_ANALYST
+        and schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+    ):
+        raise MulticomponentRoleRuntimeError(
+            "semantic role output schema variant is invalid"
+        )
     safe_input = _json_safe(input_packet)
     if not isinstance(safe_input, Mapping):
         raise MulticomponentRoleRuntimeError("semantic role input must be a mapping")
@@ -525,9 +602,14 @@ def execute_multicomponent_role_call(
         input_packet_digest=input_digest,
         logical_evaluation_key=logical_evaluation_key,
     )
+    system_prompt = (
+        SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
+        if schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+        else ROLE_SYSTEM_PROMPTS[normalized_role]
+    )
     raw = ask_model(
         json.dumps(safe_input, sort_keys=True),
-        ROLE_SYSTEM_PROMPTS[normalized_role],
+        system_prompt,
         provider=provider,
         model=model,
         effort="high",
@@ -539,6 +621,7 @@ def execute_multicomponent_role_call(
     semantic_output = _normalize_semantic_output(
         normalized_role,
         _parse_role_output(raw, clean_json_response=clean_json_response),
+        output_schema_variant=schema_variant,
     )
     artifact_core = {
         "schema_version": "multicomponent_semantic_role_artifact_v1",
@@ -566,6 +649,8 @@ def execute_multicomponent_role_call(
         "raw_model_response_retained": False,
         "raw_provider_payload_retained": False,
     }
+    if schema_variant:
+        artifact_core["output_schema_variant"] = schema_variant
     artifact = {**artifact_core, "artifact_digest": _digest(artifact_core)}
 
     from core.run_kernel import Observation, RunStageStatus
@@ -585,7 +670,7 @@ def execute_multicomponent_role_call(
 
 def role_artifact_ref(value: Mapping[str, Any]) -> dict[str, Any]:
     artifact = validate_multicomponent_role_artifact(value)
-    return {
+    ref = {
         "schema_version": artifact["schema_version"],
         "role": artifact["role"],
         "artifact_id": artifact["artifact_id"],
@@ -598,6 +683,9 @@ def role_artifact_ref(value: Mapping[str, Any]) -> dict[str, Any]:
         "physical_calls": 1,
         "authorized_action_ref": dict(artifact["authorized_action_ref"]),
     }
+    if artifact.get("output_schema_variant"):
+        ref["output_schema_variant"] = artifact["output_schema_variant"]
+    return ref
 
 
 def safe_packet_digest(value: Mapping[str, Any]) -> str:
@@ -613,6 +701,8 @@ __all__ = [
     "ROLE_SCRUTINEER",
     "ROLE_SYNTHESIS_DPRIME",
     "ROLE_SYSTEM_PROMPTS",
+    "SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT",
+    "SELECTIVE_CROSS_COMPONENT_SCHEMA",
     "SUPPORTED_QUERY_CLASS",
     "MulticomponentRoleRuntimeError",
     "execute_multicomponent_role_call",

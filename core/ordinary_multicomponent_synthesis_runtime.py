@@ -17,6 +17,7 @@ from core.component_work_graph_v1 import (
     admit_synthesis_node_via_runkernel,
     component_work_graph_v1_from_cross_component_artifact,
     component_work_graph_v1_resynthesis_from_cross_component_artifact,
+    component_work_graph_v1_selective_resynthesis_from_cross_artifact,
     cross_component_input_packet,
     derive_multicomponent_role_call_accounting,
     finalize_component_work_graph_v1,
@@ -26,6 +27,7 @@ from core.component_work_graph_v1 import (
     graph_with_synthesis_validation,
     reduce_component_work_graph_v1,
     scrutineer_input_packet,
+    selective_cross_component_input_packet,
     synthesis_dprime_input_packet,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
@@ -51,6 +53,7 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
+    SELECTIVE_CROSS_COMPONENT_SCHEMA,
     execute_multicomponent_role_call,
 )
 from core.ordinary_semantic_producer_runtime import (
@@ -471,6 +474,90 @@ def _execute_fresh_resynthesis(
         operation="finalize",
         graph_candidate=finalize_component_work_graph_v1(current),
     )
+
+
+def _execute_selective_reconstruction(
+    *,
+    run_kernel: Any,
+    graph: Mapping[str, Any],
+    closure: Mapping[str, Any],
+    role_kwargs: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Execute one selective Cross pass and validate only affected synthesis."""
+
+    cross_input = selective_cross_component_input_packet(
+        graph,
+        closure=closure,
+    )
+    cross_key = f"selective:graph-revision:{graph['graph_revision']}"
+    cross_artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_CROSS_COMPONENT_ANALYST,
+        input_packet=cross_input,
+        logical_evaluation_key=cross_key,
+        output_schema_variant=SELECTIVE_CROSS_COMPONENT_SCHEMA,
+        **dict(role_kwargs),
+    )
+    candidate = component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+        graph,
+        closure=closure,
+        cross_component_artifact=cross_artifact,
+    )
+    current = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="selective_resynthesis_structure",
+        graph_candidate=candidate,
+        role_evaluation_key=cross_key,
+    )
+    deferred_admission_keys: list[str] = []
+    for synthesis_key in closure["affected_topological_order"]:
+        dprime_input = synthesis_dprime_input_packet(
+            current,
+            synthesis_key=synthesis_key,
+        )
+        evaluation_key = (
+            f"{synthesis_key}:selective:graph-revision:"
+            f"{current['graph_revision']}"
+        )
+        dprime_artifact = execute_multicomponent_role_call(
+            run_kernel=run_kernel,
+            role=ROLE_SYNTHESIS_DPRIME,
+            input_packet=dprime_input,
+            logical_evaluation_key=evaluation_key,
+            **dict(role_kwargs),
+        )
+        current = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="synthesis_validation",
+            synthesis_key=synthesis_key,
+            role_evaluation_key=evaluation_key,
+            graph_candidate=graph_with_synthesis_validation(
+                current,
+                synthesis_key=synthesis_key,
+                dprime_artifact=dprime_artifact,
+            ),
+        )
+        node = next(
+            item
+            for item in current["synthesis_nodes"]
+            if item["synthesis_key"] == synthesis_key
+        )
+        if node.get("status") != "validated":
+            break
+        node_is_upstream = any(
+            ref.get("node_id") == node.get("node_id")
+            for candidate_node in current["synthesis_nodes"]
+            if candidate_node.get("synthesis_key") != synthesis_key
+            for ref in candidate_node.get("input_node_refs") or ()
+        )
+        if node_is_upstream:
+            current = admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=synthesis_key,
+            )
+        else:
+            deferred_admission_keys.append(synthesis_key)
+    return current, deferred_admission_keys
 
 
 def _attempt_dynamic_recovery(

@@ -16,6 +16,7 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
+    SELECTIVE_CROSS_COMPONENT_SCHEMA,
     SUPPORTED_QUERY_CLASS,
     role_artifact_ref,
     validate_multicomponent_role_artifact,
@@ -449,12 +450,137 @@ def derive_selective_recomputation_closure(
         "affected_synthesis_keys": affected_order,
         "unaffected_active_synthesis_keys": unaffected_keys,
         "affected_topological_order": affected_order,
+        "source_synthesis_topological_order": list(
+            source["synthesis_topological_order"]
+        ),
     }
     closure_digest = _digest(core)
     return {
         **core,
         "closure_id": f"selective-closure:{closure_digest[:20]}",
         "closure_digest": closure_digest,
+    }
+
+
+def selective_cross_component_input_packet(
+    graph: Mapping[str, Any],
+    *,
+    closure: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the exact affected-only Cross packet and preserved boundary."""
+
+    current = validate_component_work_graph_v1(graph)
+    canonical_closure = validate_selective_recomputation_closure(closure)
+    if (
+        current.get("dependency_posture") != "requires_selective_resynthesis"
+        or _safe_mapping(current.get("selective_closure_ref"))
+        != {
+            "closure_id": canonical_closure.get("closure_id"),
+            "closure_digest": canonical_closure.get("closure_digest"),
+        }
+    ):
+        raise ComponentWorkGraphV1Error(
+            "selective Cross packet requires the closure-bound transition graph"
+        )
+    affected_keys = list(canonical_closure["affected_topological_order"])
+    stale_by_key = {
+        _safe_mapping(item.get("superseded_node_ref")).get("synthesis_key"): item
+        for item in current.get("stale_synthesis_history") or ()
+        if isinstance(item, Mapping)
+        and _safe_mapping(item.get("superseded_node_ref")).get("synthesis_key")
+        in set(affected_keys)
+    }
+    if set(stale_by_key) != set(affected_keys):
+        raise ComponentWorkGraphV1Error(
+            "selective Cross packet lacks exact affected stale lineage"
+        )
+    recovered_component_id = _safe_mapping(
+        canonical_closure.get("recovered_component_admission_ref")
+    ).get("component_id")
+    licensed_component_ids = {
+        ref.get("component_id")
+        for key in affected_keys
+        for ref in stale_by_key[key].get("input_node_refs") or ()
+        if ref.get("node_kind") == "component" and ref.get("component_id")
+    }
+    licensed_component_ids.add(recovered_component_id)
+    component_by_id = {
+        item["component_id"]: item for item in current["component_nodes"]
+    }
+    if None in licensed_component_ids or any(
+        component_id not in component_by_id
+        for component_id in licensed_component_ids
+    ):
+        raise ComponentWorkGraphV1Error(
+            "selective Cross packet component license is invalid"
+        )
+    carried_by_key = {
+        item["synthesis_key"]: item for item in current["synthesis_nodes"]
+    }
+    preserved_catalog = []
+    for key in canonical_closure["unaffected_active_synthesis_keys"]:
+        node = carried_by_key.get(key)
+        action_ref = _safe_mapping(
+            _safe_mapping(node.get("current_node_authority") if node else {}).get(
+                "runkernel_carry_forward_action_ref"
+            )
+        )
+        if node is None or not action_ref:
+            raise ComponentWorkGraphV1Error(
+                "selective Cross preserved boundary lacks carry-forward authority"
+            )
+        preserved_catalog.append(
+            {
+                "synthesis_key": key,
+                "node_id": node["node_id"],
+                "node_revision": node["node_revision"],
+                "node_digest": node["node_digest"],
+                "carry_forward_action_ref": action_ref,
+            }
+        )
+    recovered = component_by_id[str(recovered_component_id)]
+    other_component_ids = [
+        item["component_id"]
+        for item in current["component_nodes"]
+        if item["component_id"] in licensed_component_ids
+        and item["component_id"] != recovered_component_id
+    ]
+    return {
+        "supported_query_class": SUPPORTED_QUERY_CLASS,
+        "output_schema_variant": SELECTIVE_CROSS_COMPONENT_SCHEMA,
+        "graph_ref": {
+            "graph_id": current["graph_id"],
+            "graph_revision": current["graph_revision"],
+            "graph_digest": current["graph_digest"],
+            "run_id": current["run_id"],
+            "request_id": current["request_id"],
+        },
+        "current_contract_ref": _safe_mapping(current["accepted_contract_ref"]),
+        "closure_ref": {
+            "closure_id": canonical_closure["closure_id"],
+            "closure_digest": canonical_closure["closure_digest"],
+        },
+        "affected_synthesis_key_catalog": affected_keys,
+        "affected_topological_order": affected_keys,
+        "current_recovered_component_ref": (
+            _bounded_semantic_role_input_from_node(recovered)
+        ),
+        "licensed_current_component_refs": [
+            _bounded_semantic_role_input_from_node(component_by_id[item])
+            for item in other_component_ids
+        ],
+        "preserved_boundary_synthesis_catalog": preserved_catalog,
+        "prohibited_unaffected_synthesis_keys": list(
+            canonical_closure["unaffected_active_synthesis_keys"]
+        ),
+        "recovery_authorization_ref": _safe_mapping(
+            canonical_closure["recovery_authorization_ref"]
+        ),
+        "requested_synthesis_directive": current[
+            "requested_synthesis_directive"
+        ],
+        "run_id": current["run_id"],
+        "request_id": current["request_id"],
     }
 
 
@@ -1358,6 +1484,270 @@ def reduce_selective_invalidation_via_runkernel(
         )
     )
     return deepcopy(run_kernel.state.projections[action.stage])
+
+
+def component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+    graph: Mapping[str, Any],
+    *,
+    closure: Mapping[str, Any],
+    cross_component_artifact: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Rebuild exactly the affected synthesis keys around carried boundaries."""
+
+    current = validate_component_work_graph_v1(graph)
+    canonical_closure = validate_selective_recomputation_closure(closure)
+    if (
+        current.get("dependency_posture") != "requires_selective_resynthesis"
+        or int(current.get("selective_recomputation_rounds") or 0) != 1
+        or int(current.get("whole_graph_resynthesis_rounds") or 0) != 0
+    ):
+        raise ComponentWorkGraphV1Error(
+            "selective resynthesis requires the one invalidated transition graph"
+        )
+    cross = validate_multicomponent_role_artifact(
+        cross_component_artifact,
+        expected_role=ROLE_CROSS_COMPONENT_ANALYST,
+    )
+    if cross.get("output_schema_variant") != SELECTIVE_CROSS_COMPONENT_SCHEMA:
+        raise ComponentWorkGraphV1Error(
+            "selective resynthesis requires the selective Cross schema"
+        )
+    expected_input = selective_cross_component_input_packet(
+        current,
+        closure=canonical_closure,
+    )
+    if cross.get("input_packet_digest") != _digest(expected_input):
+        raise ComponentWorkGraphV1Error(
+            "selective Cross input binding mismatch"
+        )
+    proposals = list(cross["semantic_output"]["synthesis_proposals"])
+    affected_order = list(canonical_closure["affected_topological_order"])
+    if [item["synthesis_key"] for item in proposals] != affected_order:
+        raise ComponentWorkGraphV1Error(
+            "selective Cross must propose exactly the affected topological order"
+        )
+    proposal_by_key = {item["synthesis_key"]: item for item in proposals}
+    packet_component_refs = [
+        expected_input["current_recovered_component_ref"],
+        *expected_input["licensed_current_component_refs"],
+    ]
+    licensed_component_ids = {
+        item["component_id"] for item in packet_component_refs
+    }
+    recovered_component_id = expected_input["current_recovered_component_ref"][
+        "component_id"
+    ]
+    preserved_keys = {
+        item["synthesis_key"]
+        for item in expected_input["preserved_boundary_synthesis_catalog"]
+    }
+    affected_keys = set(affected_order)
+    if preserved_keys & affected_keys:
+        raise ComponentWorkGraphV1Error(
+            "selective synthesis namespaces overlap"
+        )
+    stale_by_key = {
+        _safe_mapping(item.get("superseded_node_ref")).get("synthesis_key"): item
+        for item in current.get("stale_synthesis_history") or ()
+        if isinstance(item, Mapping)
+        and _safe_mapping(item.get("superseded_node_ref")).get("synthesis_key")
+        in affected_keys
+    }
+    direct_keys = set(canonical_closure["directly_affected_synthesis_keys"])
+    for proposal in proposals:
+        key = proposal["synthesis_key"]
+        component_inputs = list(proposal["component_inputs"])
+        affected_inputs = list(proposal["affected_synthesis_inputs"])
+        boundary_inputs = list(proposal["preserved_synthesis_inputs"])
+        if (
+            len(set(component_inputs)) != len(component_inputs)
+            or len(set(affected_inputs)) != len(affected_inputs)
+            or len(set(boundary_inputs)) != len(boundary_inputs)
+            or set(component_inputs) - licensed_component_ids
+            or set(affected_inputs) - affected_keys
+            or set(boundary_inputs) - preserved_keys
+            or set(affected_inputs) & set(boundary_inputs)
+            or any(
+                affected_order.index(item) >= affected_order.index(key)
+                for item in affected_inputs
+            )
+        ):
+            raise ComponentWorkGraphV1Error(
+                "selective Cross proposal used an unlicensed input namespace"
+            )
+        stale = stale_by_key[key]
+        prior_component_ids = {
+            ref.get("component_id")
+            for ref in stale.get("input_node_refs") or ()
+            if ref.get("node_kind") == "component"
+        }
+        prior_synthesis_keys = {
+            ref.get("synthesis_key")
+            for ref in stale.get("input_node_refs") or ()
+            if ref.get("node_kind") == "synthesis"
+        }
+        expected_component_ids = set(prior_component_ids)
+        if key in direct_keys:
+            expected_component_ids.add(recovered_component_id)
+        if (
+            set(component_inputs) != expected_component_ids
+            or set(affected_inputs)
+            != prior_synthesis_keys & affected_keys
+            or set(boundary_inputs)
+            != prior_synthesis_keys & preserved_keys
+        ):
+            raise ComponentWorkGraphV1Error(
+                "selective Cross proposal changed an unlicensed dependency"
+            )
+
+    component_by_id = {
+        item["component_id"]: item for item in current["component_nodes"]
+    }
+    node_by_key = {
+        item["synthesis_key"]: item for item in current["synthesis_nodes"]
+    }
+    selective_seed = _digest(
+        {
+            "source_graph_ref": canonical_closure["source_graph_ref"],
+            "transition_graph_digest": current["graph_digest"],
+            "cross_artifact_digest": cross["artifact_digest"],
+        }
+    )
+    fresh_nodes: list[dict[str, Any]] = []
+    fresh_edges: list[dict[str, Any]] = []
+    for key in affected_order:
+        proposal = proposal_by_key[key]
+        input_nodes = [
+            component_by_id[item] for item in proposal["component_inputs"]
+        ]
+        input_nodes.extend(
+            node_by_key[item] for item in proposal["preserved_synthesis_inputs"]
+        )
+        input_nodes.extend(
+            node_by_key[item] for item in proposal["affected_synthesis_inputs"]
+        )
+        input_refs = [_node_ref(item) for item in input_nodes]
+        synthesis_inputs = [
+            item for item in input_nodes if item.get("node_kind") == "synthesis"
+        ]
+        depth = 1 + max(
+            (int(item.get("synthesis_depth") or 0) for item in synthesis_inputs),
+            default=0,
+        )
+        proposal_core = {
+            "synthesis_key": key,
+            "claim_text": proposal["claim_text"],
+            "relationship_type": proposal["relationship_type"],
+            "component_inputs": list(proposal["component_inputs"]),
+            "affected_synthesis_inputs": list(
+                proposal["affected_synthesis_inputs"]
+            ),
+            "preserved_synthesis_inputs": list(
+                proposal["preserved_synthesis_inputs"]
+            ),
+            "cross_component_analyst_ref": role_artifact_ref(cross),
+        }
+        node = {
+            "schema_version": "synthesis_work_node_v1",
+            "node_kind": "synthesis",
+            "node_id": f"synthesis-work-node:v1:{selective_seed[:12]}:{key}",
+            "node_revision": "1",
+            "node_digest": None,
+            "run_id": current["run_id"],
+            "request_id": current["request_id"],
+            "synthesis_key": key,
+            "synthesis_depth": depth,
+            "claim_text": proposal["claim_text"],
+            "relationship_type": proposal["relationship_type"],
+            "input_node_refs": input_refs,
+            "input_namespaces": {
+                "component_inputs": list(proposal["component_inputs"]),
+                "affected_synthesis_inputs": list(
+                    proposal["affected_synthesis_inputs"]
+                ),
+                "preserved_synthesis_inputs": list(
+                    proposal["preserved_synthesis_inputs"]
+                ),
+            },
+            "proposal_ref": {
+                "proposal_id": f"selective-synthesis-proposal:{selective_seed[:12]}:{key}",
+                "proposal_digest": _digest(proposal_core),
+                "cross_component_analyst_ref": role_artifact_ref(cross),
+            },
+            "synthesis_claim_ref": {
+                "claim_id": f"selective-synthesis-claim:{selective_seed[:12]}:{key}",
+                "claim_digest": _digest(proposal["claim_text"]),
+            },
+            "superseded_node_ref": _safe_mapping(
+                stale_by_key[key]["superseded_node_ref"]
+            ),
+            "required_caveats": list(proposal.get("caveats") or ()),
+            "preserved_nonclaims": list(proposal.get("nonclaims") or ()),
+            "blocker_refs": [
+                {"reason": item} for item in proposal.get("blockers") or ()
+            ],
+            "status": "proposed",
+            "current": True,
+            "stale": False,
+            "dprime_validation_ref": {},
+            "scrutineer_ref": {},
+            "runkernel_admission_ref": {},
+        }
+        node["node_digest"] = _digest(_node_digest_payload(node))
+        fresh_nodes.append(node)
+        node_by_key[key] = node
+        for input_ref in input_refs:
+            edge_core = {
+                "from_node_id": input_ref["node_id"],
+                "from_node_revision": input_ref["node_revision"],
+                "from_node_digest": input_ref["node_digest"],
+                "to_node_id": node["node_id"],
+                "edge_kind": "semantic_dependency",
+                "dependency_posture": "proposed",
+            }
+            fresh_edges.append(
+                {
+                    **edge_core,
+                    "edge_id": f"edge:v1:{_digest(edge_core)[:20]}",
+                    "edge_digest": _digest(edge_core),
+                }
+            )
+
+    all_by_key = {
+        item["synthesis_key"]: item
+        for item in [*current["synthesis_nodes"], *fresh_nodes]
+    }
+    full_order = list(canonical_closure["source_synthesis_topological_order"])
+    if set(full_order) != set(all_by_key):
+        raise ComponentWorkGraphV1Error(
+            "selective resynthesis did not reconstruct the source logical key set"
+        )
+    current["synthesis_nodes"] = [all_by_key[key] for key in full_order]
+    current["synthesis_topological_order"] = full_order
+    current["edges"] = [*current["edges"], *fresh_edges]
+    current["maximum_synthesis_depth"] = max(
+        int(item.get("synthesis_depth") or 0)
+        for item in current["synthesis_nodes"]
+    )
+    current["dependency_posture"] = "explicitly_assessed"
+    current["scrutineer_required"] = True
+    current["scrutineer_status"] = "required_after_selective_recovery"
+    current["scrutineer_trigger_reasons"] = list(
+        dict.fromkeys(
+            [
+                *current.get("scrutineer_trigger_reasons", ()),
+                "post_recovery_selective_recomputation",
+            ]
+        )
+    )
+    current["graph_output_suppressed"] = True
+    current["graph_status"] = GRAPH_STATUS_SYNTHESIS_VALIDATION_REQUIRED
+    current["recomputed_synthesis_count"] = len(fresh_nodes)
+    current["fresh_affected_synthesis_refs"] = [
+        _node_ref(item) for item in fresh_nodes
+    ]
+    current["selective_cross_component_analyst_ref"] = role_artifact_ref(cross)
+    return _next_revision(current)
 
 
 def component_work_graph_v1_resynthesis_from_cross_component_artifact(
@@ -2295,6 +2685,8 @@ def _validate_synthesis_node(
     if is_carried:
         if (
             node.get("status") != "admitted"
+            or node.get("current") is not True
+            or node.get("stale") is True
             or carry_action_ref.get("operation") != "selective_invalidation"
             or not carry_action_ref.get("action_id")
             or set(carried_lineage)
@@ -2495,6 +2887,7 @@ __all__ = [
     "build_synthesis_carry_forward_projection",
     "component_work_graph_v1_from_cross_component_artifact",
     "component_work_graph_v1_resynthesis_from_cross_component_artifact",
+    "component_work_graph_v1_selective_resynthesis_from_cross_artifact",
     "cross_component_input_packet",
     "derive_multicomponent_role_call_accounting",
     "derive_selective_recomputation_closure",
@@ -2511,6 +2904,7 @@ __all__ = [
     "reduce_selective_recomputation_closure",
     "reduce_selective_invalidation_via_runkernel",
     "scrutineer_input_packet",
+    "selective_cross_component_input_packet",
     "synthesis_dprime_input_packet",
     "validate_component_work_graph_v1",
     "validate_selective_recomputation_closure",
