@@ -51,9 +51,11 @@ ROLE_SYSTEM_PROMPTS = {
     ),
     ROLE_SCRUTINEER: (
         "You are ScryRaven's full Scrutineer. Adversarially challenge the supplied "
-        "validated case. Return challenge_status, reasons, challenged_synthesis_keys, "
-        "caveats, and nonclaims. Do not create first-pass synthesis, replace claims, "
-        "admit state, dispatch research, or render final prose."
+        "validated case. Return challenge_status, reasons, challenge_targets, caveats, "
+        "and nonclaims. Each challenge target may contain only target_kind and the safe "
+        "local target_key supplied in the catalog. Do not copy canonical IDs, revisions, "
+        "digests, or refs; create first-pass synthesis; replace claims; admit state; "
+        "dispatch research; or render final prose."
     ),
 }
 
@@ -73,8 +75,12 @@ _FORBIDDEN_AUTHORITY_KEYS = frozenset(
         "proposal_id",
         "validation_id",
         "challenge_id",
+        "component_id",
+        "edge_id",
         "graph_id",
         "node_id",
+        "node_revision",
+        "graph_revision",
         "revision",
         "canonical_state",
         "admission_status",
@@ -292,16 +298,59 @@ def _normalize_semantic_output(role: str, output: Mapping[str, Any]) -> dict[str
         status = _normalize_key(payload.get("challenge_status"))
         if status not in _ROLE_STATUSES[role]:
             raise MulticomponentRoleRuntimeError("Scrutineer challenge_status invalid")
-        return {
+        challenge_targets: list[dict[str, str]] = []
+        for raw_target in _safe_sequence(payload.get("challenge_targets")):
+            target = _safe_mapping(raw_target)
+            if set(target) != {"target_kind", "target_key"}:
+                raise MulticomponentRoleRuntimeError(
+                    "Scrutineer challenge target must contain only target_kind and target_key"
+                )
+            target_kind = _normalize_key(target.get("target_kind"))
+            if target_kind not in {"component", "synthesis", "edge", "subgraph", "graph"}:
+                raise MulticomponentRoleRuntimeError(
+                    "Scrutineer challenge target kind invalid"
+                )
+            challenge_targets.append(
+                {
+                    "target_kind": target_kind,
+                    "target_key": _local_key(target.get("target_key")),
+                }
+            )
+        if len({(item["target_kind"], item["target_key"]) for item in challenge_targets}) != len(
+            challenge_targets
+        ):
+            raise MulticomponentRoleRuntimeError("duplicate Scrutineer challenge target")
+        legacy_synthesis_keys = [
+            _local_key(item)
+            for item in _safe_sequence(payload.get("challenged_synthesis_keys"))
+        ]
+        if len(set(legacy_synthesis_keys)) != len(legacy_synthesis_keys):
+            raise MulticomponentRoleRuntimeError("duplicate challenged_synthesis_key")
+        if challenge_targets and legacy_synthesis_keys:
+            raise MulticomponentRoleRuntimeError(
+                "Scrutineer cannot mix typed and legacy challenge targets"
+            )
+        if status in {"passed", "passed_with_caveats"} and challenge_targets:
+            raise MulticomponentRoleRuntimeError(
+                "passing Scrutineer posture cannot select challenge targets"
+            )
+        if status in {"challenged", "blocked"} and not (
+            challenge_targets or legacy_synthesis_keys
+        ):
+            raise MulticomponentRoleRuntimeError(
+                "challenged or blocked Scrutineer posture requires a target"
+            )
+        normalized_scrutineer = {
             "challenge_status": status,
             "reasons": _text_list(payload.get("reasons")),
-            "challenged_synthesis_keys": [
-                _local_key(item)
-                for item in _safe_sequence(payload.get("challenged_synthesis_keys"))
-            ],
             "caveats": _text_list(payload.get("caveats")),
             "nonclaims": _text_list(payload.get("nonclaims")),
         }
+        if "challenge_targets" in payload:
+            normalized_scrutineer["challenge_targets"] = challenge_targets
+        if "challenged_synthesis_keys" in payload:
+            normalized_scrutineer["challenged_synthesis_keys"] = legacy_synthesis_keys
+        return normalized_scrutineer
     raise MulticomponentRoleRuntimeError(f"unknown semantic role: {role}")
 
 

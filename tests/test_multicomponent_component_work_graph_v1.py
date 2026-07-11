@@ -1069,9 +1069,17 @@ def test_scrutineer_challenge_against_admitted_upstream_is_governed() -> None:
     assert s_node["status"] == "blocked_dependency"
     assert not s_node.get("dprime_validation_ref")
     assert not s_node.get("runkernel_admission_ref")
-    assert any(
-        ref.get("synthesis_key") == "E" for ref in graph.get("challenge_refs") or ()
+    challenge_ref = next(
+        ref
+        for ref in graph.get("challenge_refs") or ()
+        if ref.get("synthesis_key") == "E"
     )
+    assert challenge_ref["target_kind"] == "synthesis"
+    assert challenge_ref["target_key"].startswith("synthesis_")
+    assert challenge_ref["resolved_target"]["synthesis_key"] == "E"
+    assert challenge_ref["resolved_target"]["node_id"] == e_before["node_id"]
+    assert challenge_ref["resolved_target"]["node_revision"] == e_before["node_revision"]
+    assert challenge_ref["resolved_target"]["node_digest"] == e_before["node_digest"]
 
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
@@ -1265,11 +1273,32 @@ def test_graph_validation_rejects_unrelated_synthesis_mutation() -> None:
             dprime_artifact=artifact,
         )
     )
+    synthesis_target = next(
+        item
+        for item in scrutineer_input_packet(graph)["challenge_target_catalog"]
+        if item["target_kind"] == "synthesis"
+        and item["canonical_target_ref"]["synthesis_key"] == "E"
+    )
     candidate["challenge_refs"] = [
         {
+            "target_kind": "synthesis",
+            "target_key": synthesis_target["target_key"],
             "synthesis_key": "E",
-            "scrutineer_ref": {"artifact_id": "forged"},
-            "reasons": ["unrelated tamper"],
+            "resolved_target": synthesis_target["canonical_target_ref"],
+            "resolution_graph_id": graph["graph_id"],
+            "resolution_graph_revision": graph["graph_revision"],
+            "resolution_graph_digest": graph["graph_digest"],
+            "run_id": graph["run_id"],
+            "request_id": graph["request_id"],
+            "scrutineer_ref": {
+                "role": ROLE_SCRUTINEER,
+                "artifact_id": "artifact:forged-but-structured",
+                "artifact_digest": "artifact-digest:forged-but-structured",
+            },
+            "challenge_status": "challenged",
+            "reasons": ["Schema-valid unauthorized transition mutation."],
+            "caveats": [],
+            "nonclaims": [],
         }
     ]
     candidate["graph_digest"] = graph_v1._digest(
@@ -1331,3 +1360,332 @@ def test_admitted_synthesis_preserves_dprime_validated_revision_proof() -> None:
     assert admitted["dprime_validated_node_revision"] == validated_revision
     assert admitted["dprime_validated_node_digest"] == validated_digest
     assert admitted["runkernel_admission_ref"]
+
+
+def _independent_admitted_graph() -> tuple[RunKernel, dict]:
+    nodes = [_component_node(index) for index in range(1, 5)]
+    accepted_ref = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+    }
+    directive = "Explain two independent combined results."
+    cross_input = cross_component_input_packet(
+        component_nodes=nodes,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+    )
+    proposals = []
+    for key, component_ids in (
+        ("E", ["component:component-1", "component:component-2"]),
+        ("F", ["component:component-3", "component:component-4"]),
+    ):
+        proposals.append(
+            {
+                "synthesis_key": key,
+                "claim_text": f"{key} combines its two component facts.",
+                "relationship_type": "conjunction",
+                "component_inputs": component_ids,
+                "synthesis_inputs": [],
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": [],
+            }
+        )
+    cross = _role_artifact(
+        ROLE_CROSS_COMPONENT_ANALYST,
+        {"synthesis_proposals": proposals},
+        cross_input,
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="structure",
+        graph_candidate=candidate,
+    )
+    for key in ("E", "F"):
+        graph = _validate_synthesis(kernel, graph, key)
+        graph = admit_synthesis_node_via_runkernel(
+            run_kernel=kernel,
+            synthesis_key=key,
+        )
+    return kernel, graph
+
+
+def _catalog_target(graph: dict, kind: str, *, meaning: str | None = None) -> dict:
+    targets = [
+        item
+        for item in scrutineer_input_packet(graph)["challenge_target_catalog"]
+        if item["target_kind"] == kind
+    ]
+    if meaning is None:
+        return targets[0]
+    for target in targets:
+        encoded = json.dumps(target, sort_keys=True)
+        if meaning in encoded:
+            return target
+    raise AssertionError(f"No {kind} target contains {meaning}")
+
+
+def _apply_typed_scrutiny(
+    kernel: RunKernel,
+    graph: dict,
+    *,
+    target: dict,
+    status: str = "challenged",
+) -> dict:
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": status,
+            "reasons": [f"Targeted {target['target_kind']} challenge."],
+            "challenge_targets": [
+                {
+                    "target_kind": target["target_kind"],
+                    "target_key": target["target_key"],
+                }
+            ],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+        logical_evaluation_key="full-case",
+    )
+    _seed_role_artifact(kernel, scrutiny, logical_evaluation_key="full-case")
+    return reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="scrutiny",
+        graph_candidate=graph_with_scrutineer(
+            graph,
+            scrutineer_artifact=scrutiny,
+        ),
+    )
+
+
+def _finalize_and_consume(kernel: RunKernel, graph: dict) -> tuple[dict, dict]:
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 4},
+            multicomponent_graph_state=graph,
+        )
+    )
+    return graph, judgment.final_packet_inputs
+
+
+def test_scrutineer_typed_component_target_suppresses_direct_and_dependents() -> None:
+    kernel, graph = _independent_admitted_graph()
+    target = _catalog_target(graph, "component", meaning="component:component-1")
+    graph = _apply_typed_scrutiny(kernel, graph, target=target)
+    graph, packet = _finalize_and_consume(kernel, graph)
+    assert graph["graph_status"] == "challenged_component"
+    assert {item["component_id"] for item in packet["direct_component_entries"]} == {
+        "component:component-2",
+        "component:component-3",
+        "component:component-4",
+    }
+    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
+        "F"
+    }
+
+
+def test_scrutineer_typed_synthesis_target_preserves_independent_branch() -> None:
+    kernel, graph = _independent_admitted_graph()
+    target = _catalog_target(graph, "synthesis", meaning='"synthesis_key": "E"')
+    graph = _apply_typed_scrutiny(kernel, graph, target=target)
+    graph, packet = _finalize_and_consume(kernel, graph)
+    assert graph["graph_status"] == "challenged_synthesis"
+    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
+        "F"
+    }
+
+
+def test_scrutineer_typed_edge_target_invalidates_exact_downstream_branch() -> None:
+    kernel, graph = _independent_admitted_graph()
+    target = _catalog_target(graph, "edge", meaning='"synthesis_key": "E"')
+    graph = _apply_typed_scrutiny(kernel, graph, target=target)
+    graph, packet = _finalize_and_consume(kernel, graph)
+    assert graph["graph_status"] == "challenged_edge"
+    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
+        "F"
+    }
+    assert len(packet["direct_component_entries"]) == 4
+
+
+def test_scrutineer_typed_subgraph_target_preserves_independent_branch() -> None:
+    kernel, graph = _independent_admitted_graph()
+    target = _catalog_target(graph, "subgraph", meaning='"synthesis_key": "E"')
+    graph = _apply_typed_scrutiny(kernel, graph, target=target)
+    graph, packet = _finalize_and_consume(kernel, graph)
+    assert graph["graph_status"] == "challenged_subgraph"
+    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
+        "F"
+    }
+
+
+def test_scrutineer_typed_graph_target_suppresses_all_output() -> None:
+    kernel, graph = _independent_admitted_graph()
+    target = _catalog_target(graph, "graph")
+    graph = _apply_typed_scrutiny(kernel, graph, target=target, status="blocked")
+    graph, packet = _finalize_and_consume(kernel, graph)
+    assert graph["graph_status"] == "blocked_graph"
+    assert graph["graph_output_suppressed"] is True
+    assert packet["direct_component_entries"] == []
+    assert packet["admitted_synthesis_entries"] == []
+
+
+@pytest.mark.parametrize(
+    ("kind", "key", "message"),
+    [
+        ("component", "missing_target", "unknown target key"),
+        ("edge", "component_01", "wrong target kind"),
+    ],
+)
+def test_scrutineer_rejects_unknown_or_wrong_kind_target(
+    kind: str,
+    key: str,
+    message: str,
+) -> None:
+    _, graph = _independent_admitted_graph()
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "challenged",
+            "reasons": ["Invalid target."],
+            "challenge_targets": [{"target_kind": kind, "target_key": key}],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+    )
+    with pytest.raises(ComponentWorkGraphV1Error, match=message):
+        graph_with_scrutineer(graph, scrutineer_artifact=scrutiny)
+
+
+@pytest.mark.parametrize("target_kind", ["component", "edge", "subgraph", "graph"])
+def test_scrutineer_rejects_tampered_catalog_binding(target_kind: str) -> None:
+    _, graph = _independent_admitted_graph()
+    packet = scrutineer_input_packet(graph)
+    target = next(
+        item
+        for item in packet["challenge_target_catalog"]
+        if item["target_kind"] == target_kind
+    )
+    target["canonical_target_ref"] = {
+        **target["canonical_target_ref"],
+        "tampered_digest": "forged",
+    }
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "challenged",
+            "reasons": ["Tampered binding."],
+            "challenge_targets": [
+                {
+                    "target_kind": target["target_kind"],
+                    "target_key": target["target_key"],
+                }
+            ],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        packet,
+    )
+    with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
+        graph_with_scrutineer(graph, scrutineer_artifact=scrutiny)
+
+
+def test_scrutineer_catalog_digest_and_stale_graph_binding_are_exact() -> None:
+    _, graph = _independent_admitted_graph()
+    packet = scrutineer_input_packet(graph)
+    changed = deepcopy(packet)
+    changed["challenge_target_catalog"][0]["label"] = "Changed bounded label"
+    assert safe_packet_digest(packet) != safe_packet_digest(changed)
+    changed["graph_ref"]["request_id"] = "request:other"
+    target = changed["challenge_target_catalog"][0]
+    artifact = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "challenged",
+            "reasons": ["Stale or cross-request binding."],
+            "challenge_targets": [
+                {
+                    "target_kind": target["target_kind"],
+                    "target_key": target["target_key"],
+                }
+            ],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        changed,
+    )
+    with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
+        graph_with_scrutineer(graph, scrutineer_artifact=artifact)
+
+
+@pytest.mark.parametrize(
+    "semantic_output",
+    [
+        {
+            "challenge_status": "challenged",
+            "reasons": [],
+            "challenge_targets": [
+                {"target_kind": "component", "target_key": "component_01"},
+                {"target_kind": "component", "target_key": "component_01"},
+            ],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        {
+            "challenge_status": "challenged",
+            "reasons": [],
+            "challenge_targets": [
+                {
+                    "target_kind": "component",
+                    "target_key": "component_01",
+                    "node_id": "forged",
+                }
+            ],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        {
+            "challenge_status": "passed",
+            "reasons": [],
+            "challenge_targets": [
+                {"target_kind": "component", "target_key": "component_01"}
+            ],
+            "caveats": [],
+            "nonclaims": [],
+        },
+    ],
+)
+def test_scrutineer_rejects_duplicate_authority_or_malformed_selection(
+    semantic_output: dict,
+) -> None:
+    _, graph = _independent_admitted_graph()
+    artifact = _role_artifact(
+        ROLE_SCRUTINEER,
+        semantic_output,
+        scrutineer_input_packet(graph),
+    )
+    with pytest.raises(MulticomponentRoleRuntimeError):
+        graph_with_scrutineer(graph, scrutineer_artifact=artifact)

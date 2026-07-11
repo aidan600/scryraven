@@ -55,8 +55,13 @@ def build_multicomponent_graph_consumption(
             "admitted_with_caveats",
         }
         current = node.get("current") is True and node.get("stale") is not True
+        graph_eligible = (
+            node.get("direct_output_eligible") is True
+            and node.get("component_id") in graph.get("direct_output_component_ids", ())
+            and graph.get("graph_output_suppressed") is not True
+        )
         claim = _mapping(node.get("admitted_claim_ref"))
-        if admitted and current and claim.get("claim_text"):
+        if admitted and current and graph_eligible and claim.get("claim_text"):
             direct_entries.append(
                 {
                     "entry_kind": "direct_component",
@@ -89,7 +94,8 @@ def build_multicomponent_graph_consumption(
         else:
             limitations.append(
                 f"Component {node.get('component_id')} omitted: "
-                f"{node.get('admission_status') or 'not admitted'}."
+                f"{node.get('admission_status') or 'not admitted'} or not currently "
+                "eligible under Graph V1 challenge posture."
             )
 
     graph_ready = graph.get("graph_status") in {
@@ -100,7 +106,8 @@ def build_multicomponent_graph_consumption(
     for node in graph["synthesis_nodes"]:
         admitted = node.get("status") == "admitted"
         current = node.get("current") is True and node.get("stale") is not True
-        if graph_ready and admitted and current:
+        graph_output_allowed = graph.get("graph_output_suppressed") is not True
+        if graph_output_allowed and admitted and current:
             synthesis_entries.append(
                 {
                     "entry_kind": "admitted_synthesis",
@@ -142,11 +149,17 @@ def build_multicomponent_graph_consumption(
                 f"{graph.get('graph_status')}."
             )
 
-    if not graph_ready:
+    if not graph_ready and not synthesis_entries:
         limitations.insert(
             0,
             f"Combined synthesis is unavailable because Graph V1 posture is "
             f"{graph.get('graph_status')}.",
+        )
+    elif not graph_ready:
+        limitations.insert(
+            0,
+            f"Only unaffected admitted synthesis remains available under Graph V1 "
+            f"posture {graph.get('graph_status')}.",
         )
     return {
         "schema_version": "multicomponent_sufficiency_consumption_v1",

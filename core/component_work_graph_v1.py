@@ -38,6 +38,11 @@ GRAPH_STATUS_MISSING_DEPENDENCY = "missing_component_or_dependency"
 GRAPH_STATUS_MISSING_SCRUTINY = "missing_required_scrutiny"
 GRAPH_STATUS_CHALLENGED = "challenged_synthesis"
 GRAPH_STATUS_BLOCKED = "blocked_synthesis"
+GRAPH_STATUS_CHALLENGED_COMPONENT = "challenged_component"
+GRAPH_STATUS_CHALLENGED_EDGE = "challenged_edge"
+GRAPH_STATUS_CHALLENGED_SUBGRAPH = "challenged_subgraph"
+GRAPH_STATUS_CHALLENGED_GRAPH = "challenged_graph"
+GRAPH_STATUS_BLOCKED_GRAPH = "blocked_graph"
 GRAPH_STATUS_STALE = "stale_synthesis"
 GRAPH_STATUS_RECOVERY_UNAVAILABLE = "recovery_proposed_unavailable"
 GRAPH_STATUS_UNSUPPORTED = "unsupported_graph_posture"
@@ -313,7 +318,150 @@ def scrutineer_input_packet(graph: Mapping[str, Any]) -> dict[str, Any]:
             }
             for item in validated["synthesis_nodes"]
         ],
+        "challenge_target_catalog": _scrutineer_challenge_target_catalog(validated),
     }
+
+
+def _scrutineer_challenge_target_catalog(
+    graph: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    nodes = [*graph["component_nodes"], *graph["synthesis_nodes"]]
+    node_by_id = {item["node_id"]: item for item in nodes}
+    catalog: list[dict[str, Any]] = []
+    for index, node in enumerate(graph["component_nodes"], start=1):
+        catalog.append(
+            {
+                "target_kind": "component",
+                "target_key": f"component_{index:02d}",
+                "label": f"Component: {node.get('component_label') or node.get('component_id')}",
+                "canonical_target_ref": _node_ref(node),
+                "semantic_material": {
+                    "component_label": node.get("component_label"),
+                    "component_question": node.get("component_question"),
+                    "admitted_claim_ref": _safe_mapping(node.get("admitted_claim_ref")),
+                    "required_caveats": list(node.get("required_caveats") or ()),
+                    "preserved_nonclaims": list(node.get("preserved_nonclaims") or ()),
+                    "admission_status": node.get("admission_status"),
+                    "direct_output_eligible": node.get("direct_output_eligible") is True,
+                },
+            }
+        )
+    for index, node in enumerate(graph["synthesis_nodes"], start=1):
+        catalog.append(
+            {
+                "target_kind": "synthesis",
+                "target_key": f"synthesis_{index:02d}",
+                "label": f"Synthesis: {node.get('synthesis_key')}",
+                "canonical_target_ref": _node_ref(node),
+                "semantic_material": {
+                    "synthesis_key": node.get("synthesis_key"),
+                    "claim_text": node.get("claim_text"),
+                    "relationship_type": node.get("relationship_type"),
+                    "required_caveats": list(node.get("required_caveats") or ()),
+                    "preserved_nonclaims": list(node.get("preserved_nonclaims") or ()),
+                    "blocker_refs": _bounded_blocker_projection(
+                        list(node.get("blocker_refs") or ())
+                    ),
+                    "validation_admission_current_posture": {
+                        "status": node.get("status"),
+                        "current": node.get("current") is True,
+                        "stale": node.get("stale") is True,
+                        "dprime_validated": bool(node.get("dprime_validation_ref")),
+                        "runkernel_admitted": bool(node.get("runkernel_admission_ref")),
+                    },
+                },
+            }
+        )
+    for index, edge in enumerate(graph["edges"], start=1):
+        upstream = node_by_id[edge["from_node_id"]]
+        downstream = node_by_id[edge["to_node_id"]]
+        catalog.append(
+            {
+                "target_kind": "edge",
+                "target_key": f"edge_{index:02d}",
+                "label": (
+                    f"Semantic dependency: {upstream.get('component_label') or upstream.get('synthesis_key')} "
+                    f"-> {downstream.get('synthesis_key')}"
+                ),
+                "canonical_target_ref": {
+                    "edge_id": edge.get("edge_id"),
+                    "edge_digest": edge.get("edge_digest"),
+                    "from_node_ref": _node_ref(upstream),
+                    "to_node_ref": _node_ref(downstream),
+                },
+                "semantic_material": {
+                    "edge_kind": edge.get("edge_kind"),
+                    "dependency_posture": edge.get("dependency_posture"),
+                    "upstream_meaning": _bounded_semantic_role_input_from_node(upstream),
+                    "downstream_meaning": _bounded_semantic_role_input_from_node(downstream),
+                },
+            }
+        )
+    downstream_by_id: dict[str, list[str]] = {}
+    for edge in graph["edges"]:
+        downstream_by_id.setdefault(edge["from_node_id"], []).append(edge["to_node_id"])
+    for index, root in enumerate(graph["synthesis_nodes"], start=1):
+        member_ids = {root["node_id"]}
+        pending = [root["node_id"]]
+        while pending:
+            upstream_id = pending.pop(0)
+            for downstream_id in downstream_by_id.get(upstream_id, ()):
+                if downstream_id not in member_ids:
+                    member_ids.add(downstream_id)
+                    pending.append(downstream_id)
+        member_nodes = [node_by_id[item] for item in member_ids]
+        member_nodes.sort(key=lambda item: (item.get("synthesis_depth", 0), item["node_id"]))
+        member_edges = [
+            edge
+            for edge in graph["edges"]
+            if edge["from_node_id"] in member_ids and edge["to_node_id"] in member_ids
+        ]
+        member_edge_refs = [
+            {"edge_id": edge["edge_id"], "edge_digest": edge["edge_digest"]}
+            for edge in member_edges
+        ]
+        binding = {
+            "root_synthesis_ref": _node_ref(root),
+            "member_node_refs": [_node_ref(item) for item in member_nodes],
+            "member_edge_refs": member_edge_refs,
+        }
+        catalog.append(
+            {
+                "target_kind": "subgraph",
+                "target_key": f"subgraph_{index:02d}",
+                "label": f"Synthesis branch rooted at {root.get('synthesis_key')}",
+                "canonical_target_ref": {
+                    **binding,
+                    "subgraph_digest": _digest(binding),
+                },
+                "semantic_material": {
+                    "branch_meaning": root.get("claim_text"),
+                    "member_synthesis_keys": [
+                        item.get("synthesis_key") for item in member_nodes
+                    ],
+                },
+            }
+        )
+    catalog.append(
+        {
+            "target_kind": "graph",
+            "target_key": "whole_graph",
+            "label": "Whole current ComponentWorkGraph V1 case",
+            "canonical_target_ref": {
+                "graph_id": graph["graph_id"],
+                "graph_revision": graph["graph_revision"],
+                "graph_digest": graph["graph_digest"],
+                "run_id": graph["run_id"],
+                "request_id": graph["request_id"],
+            },
+            "semantic_material": {
+                "graph_status": graph.get("graph_status"),
+                "dependency_posture": graph.get("dependency_posture"),
+                "scrutineer_status": graph.get("scrutineer_status"),
+            },
+        }
+    )
+    return catalog
 
 
 def component_work_graph_v1_from_cross_component_artifact(
@@ -537,6 +685,8 @@ def component_work_graph_v1_from_cross_component_artifact(
         "scrutineer_status": "required" if trigger_reasons else "not_required",
         "scrutineer_ref": {},
         "challenge_refs": [],
+        "graph_challenge_posture": "none",
+        "graph_output_suppressed": False,
         "graph_status": GRAPH_STATUS_SYNTHESIS_VALIDATION_REQUIRED,
         "logical_accounting": {},
         "physical_call_accounting": {},
@@ -634,6 +784,92 @@ def graph_with_synthesis_validation(
     return _next_revision(current)
 
 
+def _resolved_scrutineer_targets(
+    graph: Mapping[str, Any],
+    output: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    catalog = _scrutineer_challenge_target_catalog(graph)
+    by_pair = {
+        (item["target_kind"], item["target_key"]): item for item in catalog
+    }
+    kind_by_key: dict[str, set[str]] = {}
+    for item in catalog:
+        kind_by_key.setdefault(item["target_key"], set()).add(item["target_kind"])
+    selections = list(output.get("challenge_targets") or ())
+    legacy_keys = list(output.get("challenged_synthesis_keys") or ())
+    if legacy_keys:
+        synthesis_catalog = {
+            item["semantic_material"].get("synthesis_key"): item
+            for item in catalog
+            if item["target_kind"] == "synthesis"
+        }
+        for synthesis_key in legacy_keys:
+            target = synthesis_catalog.get(synthesis_key)
+            if target is None:
+                raise ComponentWorkGraphV1Error(
+                    "Scrutineer referenced unknown legacy synthesis target"
+                )
+            selections.append(
+                {
+                    "target_kind": "synthesis",
+                    "target_key": target["target_key"],
+                }
+            )
+    if (
+        output.get("challenge_status") == "passed_with_caveats"
+        and not selections
+        and (output.get("caveats") or output.get("nonclaims"))
+    ):
+        # Narrow compatibility for Phase 1 fixtures that predate typed targets:
+        # material whole-case caveats revise every synthesis target, as before.
+        selections.extend(
+            {
+                "target_kind": "synthesis",
+                "target_key": item["target_key"],
+            }
+            for item in catalog
+            if item["target_kind"] == "synthesis"
+        )
+    resolved: list[dict[str, Any]] = []
+    for selection in selections:
+        pair = (selection.get("target_kind"), selection.get("target_key"))
+        target = by_pair.get(pair)
+        if target is None:
+            if pair[1] in kind_by_key:
+                raise ComponentWorkGraphV1Error(
+                    "Scrutineer target key used with the wrong target kind"
+                )
+            raise ComponentWorkGraphV1Error("Scrutineer referenced unknown target key")
+        resolved.append(deepcopy(target))
+    return resolved
+
+
+def _invalidate_synthesis_closure(
+    graph: dict[str, Any],
+    *,
+    initial_node_ids: set[str],
+    initial_status: str,
+) -> None:
+    invalidated_ids = set(initial_node_ids)
+    for node in graph["synthesis_nodes"]:
+        if node["node_id"] in initial_node_ids:
+            node["status"] = initial_status
+            _clear_synthesis_validation_and_admission(node)
+            _refresh_node_digest(node)
+    changed = True
+    while changed:
+        changed = False
+        for node in graph["synthesis_nodes"]:
+            if node["node_id"] in invalidated_ids:
+                continue
+            if any(ref["node_id"] in invalidated_ids for ref in node["input_node_refs"]):
+                node["status"] = "blocked_dependency"
+                _clear_synthesis_validation_and_admission(node)
+                _refresh_node_digest(node)
+                invalidated_ids.add(node["node_id"])
+                changed = True
+
+
 def graph_with_scrutineer(
     graph: Mapping[str, Any],
     *,
@@ -648,56 +884,100 @@ def graph_with_scrutineer(
     if artifact["input_packet_digest"] != _digest(expected_input):
         raise ComponentWorkGraphV1Error("Scrutineer input binding mismatch")
     output = artifact["semantic_output"]
-    challenged = set(output.get("challenged_synthesis_keys") or ())
-    known = {item["synthesis_key"] for item in current["synthesis_nodes"]}
-    if not challenged.issubset(known):
-        raise ComponentWorkGraphV1Error("Scrutineer referenced unknown synthesis")
+    resolved_targets = _resolved_scrutineer_targets(current, output)
     current["scrutineer_ref"] = role_artifact_ref(artifact)
     current["scrutineer_status"] = output["challenge_status"]
     output_caveats = list(output.get("caveats") or ())
     output_nonclaims = list(output.get("nonclaims") or ())
-    for node in current["synthesis_nodes"]:
-        challenged_here = (
-            node["synthesis_key"] in challenged
-            or output["challenge_status"] == "blocked"
-        )
-        merged_caveats = list(
-            dict.fromkeys([*node.get("required_caveats", ()), *output_caveats])
-        )
-        merged_nonclaims = list(
-            dict.fromkeys(
-                [*node.get("preserved_nonclaims", ()), *output_nonclaims]
+    challenge_status = output["challenge_status"]
+    for target in resolved_targets:
+        kind = target["target_kind"]
+        ref = target["canonical_target_ref"]
+        challenge_ref = {
+            "target_kind": kind,
+            "target_key": target["target_key"],
+            "resolved_target": ref,
+            "resolution_graph_id": current["graph_id"],
+            "resolution_graph_revision": current["graph_revision"],
+            "resolution_graph_digest": current["graph_digest"],
+            "run_id": current["run_id"],
+            "request_id": current["request_id"],
+            "scrutineer_ref": role_artifact_ref(artifact),
+            "challenge_status": challenge_status,
+            "reasons": list(output.get("reasons") or ()),
+            "caveats": output_caveats,
+            "nonclaims": output_nonclaims,
+        }
+        if kind == "synthesis":
+            challenge_ref["synthesis_key"] = ref["synthesis_key"]
+        current["challenge_refs"].append(challenge_ref)
+        initial_status = "blocked" if challenge_status == "blocked" else "challenged"
+        if challenge_status == "passed_with_caveats":
+            initial_status = "proposed"
+        if kind == "component":
+            component_id = ref.get("component_id")
+            current["direct_output_component_ids"] = [
+                item
+                for item in current["direct_output_component_ids"]
+                if item != component_id
+            ]
+            component_node_id = ref["node_id"]
+            dependent_ids = {
+                node["node_id"]
+                for node in current["synthesis_nodes"]
+                if any(
+                    input_ref["node_id"] == component_node_id
+                    for input_ref in node["input_node_refs"]
+                )
+            }
+            _invalidate_synthesis_closure(
+                current,
+                initial_node_ids=dependent_ids,
+                initial_status="blocked_dependency",
             )
-        )
-        material = (
-            challenged_here
-            or merged_caveats != list(node.get("required_caveats") or ())
-            or merged_nonclaims != list(node.get("preserved_nonclaims") or ())
-        )
-        if not material:
-            # Clean / metadata-only attachment stays at graph scope so the
-            # D-prime-validated node revision and digest remain exact.
-            continue
-        # Material findings against admitted synthesis become governed
-        # challenge/invalidation posture rather than an unhandled exception.
-        if challenged_here:
-            node["status"] = "challenged"
-            current["challenge_refs"].append(
-                {
-                    "synthesis_key": node["synthesis_key"],
-                    "scrutineer_ref": role_artifact_ref(artifact),
-                    "reasons": list(output.get("reasons") or ()),
-                }
+        elif kind == "synthesis":
+            node = next(
+                item
+                for item in current["synthesis_nodes"]
+                if item["node_id"] == ref["node_id"]
             )
-        else:
-            # Material caveat/nonclaim drift requires revision before readiness.
-            node["status"] = "proposed"
-        node["required_caveats"] = merged_caveats
-        node["preserved_nonclaims"] = merged_nonclaims
-        node["scrutineer_ref"] = role_artifact_ref(artifact)
-        _clear_synthesis_validation_and_admission(node)
-        _refresh_node_digest(node)
-    _invalidate_challenged_dependents(current)
+            node["required_caveats"] = list(
+                dict.fromkeys([*node.get("required_caveats", ()), *output_caveats])
+            )
+            node["preserved_nonclaims"] = list(
+                dict.fromkeys([*node.get("preserved_nonclaims", ()), *output_nonclaims])
+            )
+            node["scrutineer_ref"] = role_artifact_ref(artifact)
+            _invalidate_synthesis_closure(
+                current,
+                initial_node_ids={node["node_id"]},
+                initial_status=initial_status,
+            )
+        elif kind == "edge":
+            _invalidate_synthesis_closure(
+                current,
+                initial_node_ids={ref["to_node_ref"]["node_id"]},
+                initial_status=initial_status,
+            )
+        elif kind == "subgraph":
+            _invalidate_synthesis_closure(
+                current,
+                initial_node_ids={
+                    item["node_id"] for item in ref["member_node_refs"]
+                },
+                initial_status=initial_status,
+            )
+        elif kind == "graph":
+            current["graph_challenge_posture"] = challenge_status
+            current["graph_output_suppressed"] = True
+            current["direct_output_component_ids"] = []
+            _invalidate_synthesis_closure(
+                current,
+                initial_node_ids={
+                    item["node_id"] for item in current["synthesis_nodes"]
+                },
+                initial_status=initial_status,
+            )
     return _next_revision(current)
 
 
@@ -900,9 +1180,24 @@ def expected_graph_after_transition(
 def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]:
     current = validate_component_work_graph_v1(graph)
     synth_statuses = {item["status"] for item in current["synthesis_nodes"]}
+    challenge_kinds = {
+        item.get("target_kind") for item in current.get("challenge_refs") or ()
+    }
     direct_count = len(current["direct_output_component_ids"])
     component_count = len(current["component_nodes"])
-    if any(item.get("stale") is True for item in current["synthesis_nodes"]):
+    if "graph" in challenge_kinds:
+        status = (
+            GRAPH_STATUS_BLOCKED_GRAPH
+            if current.get("graph_challenge_posture") == "blocked"
+            else GRAPH_STATUS_CHALLENGED_GRAPH
+        )
+    elif "component" in challenge_kinds:
+        status = GRAPH_STATUS_CHALLENGED_COMPONENT
+    elif "edge" in challenge_kinds:
+        status = GRAPH_STATUS_CHALLENGED_EDGE
+    elif "subgraph" in challenge_kinds:
+        status = GRAPH_STATUS_CHALLENGED_SUBGRAPH
+    elif any(item.get("stale") is True for item in current["synthesis_nodes"]):
         status = GRAPH_STATUS_STALE
     elif "challenged" in synth_statuses:
         status = GRAPH_STATUS_CHALLENGED
@@ -1087,6 +1382,30 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
             raise ComponentWorkGraphV1Error("Graph V1 edge digest mismatch")
         edge_ids.add(item["edge_id"])
         edge_pairs.add(pair)
+    for challenge in graph.get("challenge_refs") or ():
+        item = _safe_mapping(challenge)
+        if item.get("target_kind") not in {
+            "component",
+            "synthesis",
+            "edge",
+            "subgraph",
+            "graph",
+        }:
+            raise ComponentWorkGraphV1Error("Graph V1 challenge target kind invalid")
+        if not item.get("target_key") or not _safe_mapping(
+            item.get("resolved_target")
+        ):
+            raise ComponentWorkGraphV1Error("Graph V1 resolved challenge target missing")
+        if (
+            item.get("resolution_graph_id") != graph.get("graph_id")
+            or item.get("run_id") != graph.get("run_id")
+            or item.get("request_id") != graph.get("request_id")
+        ):
+            raise ComponentWorkGraphV1Error("Graph V1 challenge cross-run binding")
+        if int(item.get("resolution_graph_revision") or 0) >= int(
+            graph.get("graph_revision") or 0
+        ):
+            raise ComponentWorkGraphV1Error("Graph V1 challenge revision binding invalid")
     if not edges or graph.get("dependency_posture") != "explicitly_assessed":
         raise ComponentWorkGraphV1Error(
             "Graph V1 cannot treat empty or unknown dependency posture as independence"

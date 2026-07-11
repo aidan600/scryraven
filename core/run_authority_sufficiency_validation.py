@@ -1505,8 +1505,12 @@ def build_deterministic_sufficiency_judgment(
         graph_ready = (
             multicomponent_consumption.get("graph_ready_for_synthesis") is True
         )
-        if graph_ready and synthesis_entries and ordinary_ready_for_synthesis:
-            if ordinary_ready_with_caveats or multicomponent_consumption.get(
+        if synthesis_entries and ordinary_ready_for_synthesis:
+            if not graph_ready:
+                decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+                posture = SufficiencyPosture.PARTIAL_ANSWER
+                rationale = "multicomponent_scoped_challenge_partial_output"
+            elif ordinary_ready_with_caveats or multicomponent_consumption.get(
                 "mandatory_caveats"
             ):
                 decision = RunSufficiencyDecision.READY_WITH_CAVEATS
