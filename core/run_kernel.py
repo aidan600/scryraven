@@ -568,6 +568,20 @@ SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE = "semantic_producer_bundle_commit"
 MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE = (
     "multicomponent_missing_component_recovery_authorization"
 )
+MULTICOMPONENT_RECOVERY_OUTCOME_STAGE = "multicomponent_recovery_outcome"
+_MULTICOMPONENT_RECOVERY_OUTCOME_DISPOSITIONS = frozenset(
+    {
+        "acquired",
+        "blocked_requires_user_confirmation",
+        "blocked_no_candidates",
+        "blocked_no_readable_evidence",
+        "blocked_component_admission",
+        "blocked_resynthesis",
+    }
+)
+_MULTICOMPONENT_RECOVERY_ORDINARY_PROVIDERS = frozenset(
+    {"tavily", "linkup", "exa"}
+)
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON = (
     "ordinary_semantic_producer_atomic_bundle_commit"
 )
@@ -737,6 +751,9 @@ class ActionType(str, Enum):
     MULTICOMPONENT_RECOVERY_AUTHORIZE = (
         "multicomponent_missing_component_recovery_authorize"
     )
+    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE = (
+        "multicomponent_recovery_outcome_reduce"
+    )
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     CONTRACT_AMENDMENT_APPLY = "contract_amendment_apply"
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = (
@@ -849,6 +866,9 @@ class ObservationType(str, Enum):
     MULTICOMPONENT_GRAPH_REDUCED = "multicomponent_graph_reduced"
     MULTICOMPONENT_RECOVERY_AUTHORIZED = (
         "multicomponent_missing_component_recovery_authorized"
+    )
+    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCED = (
+        "multicomponent_recovery_outcome_reduced"
     )
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     CONTRACT_AMENDMENT_APPLIED = "contract_amendment_applied"
@@ -3737,12 +3757,17 @@ class RunKernel:
                 "multi-component recovery requires exactly one canonical proposal"
             )
         proposal = matching[0]
-        if proposal.get("scope_posture") != (
-            "required_to_fulfill_existing_accepted_user_obligation"
-        ):
+        scope_posture = proposal.get("scope_posture")
+        if scope_posture not in {
+            "required_to_fulfill_existing_accepted_user_obligation",
+            "new_or_broadened_user_intent",
+        }:
             raise RunKernelTransitionError(
-                "multi-component recovery proposal requires_user_confirmation"
+                "multi-component recovery proposal scope posture is invalid"
             )
+        search_authorized = scope_posture == (
+            "required_to_fulfill_existing_accepted_user_obligation"
+        )
         target_pair = (proposal.get("target_kind"), proposal.get("target_key"))
         matching_challenges = [
             _safe_mapping(item)
@@ -3799,7 +3824,11 @@ class RunKernel:
                 ),
                 "automatic_amendment_authority_class": (
                     "required_to_fulfill_existing_accepted_user_obligation"
+                    if search_authorized
+                    else None
                 ),
+                "recovery_scope_posture": scope_posture,
+                "search_authorized": search_authorized,
                 "component_count_before_recovery": len(
                     graph.get("component_nodes") or ()
                 ),
@@ -3812,6 +3841,120 @@ class RunKernel:
             },
             expected_observation_type=(
                 ObservationType.MULTICOMPONENT_RECOVERY_AUTHORIZED
+            ),
+        )
+
+    def authorize_multicomponent_recovery_outcome(
+        self,
+        *,
+        disposition: str,
+        observed_provider_identities: Sequence[str] = (),
+        blocker_reason: str | None = None,
+    ) -> AuthorizedAction:
+        """Authorize one canonical terminal outcome for the bounded recovery."""
+
+        clean_disposition = _clean_text(disposition, limit=80)
+        if clean_disposition not in _MULTICOMPONENT_RECOVERY_OUTCOME_DISPOSITIONS:
+            raise RunKernelTransitionError(
+                "multi-component recovery outcome disposition is invalid"
+            )
+        prior = [
+            item
+            for item in self.state.issued_actions.values()
+            if item.action_type
+            is ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE
+        ]
+        if prior:
+            raise RunKernelTransitionError(
+                "multi-component recovery outcome is already authorized"
+            )
+        authorization = _safe_mapping(
+            self.state.projections.get(
+                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+            )
+        )
+        if (
+            authorization.get("owner")
+            != "RunKernel.MulticomponentRecoveryAuthorization"
+            or authorization.get("canonical_state") is not True
+            or authorization.get("run_id") != self.state.run_id
+            or authorization.get("request_id") != self.state.request_id
+        ):
+            raise RunKernelTransitionError(
+                "multi-component recovery outcome requires canonical authorization"
+            )
+        providers = list(
+            dict.fromkeys(
+                item
+                for item in (
+                    _clean_text(value, limit=80)
+                    for value in observed_provider_identities
+                )
+                if item
+            )
+        )
+        if any(
+            provider not in _MULTICOMPONENT_RECOVERY_ORDINARY_PROVIDERS
+            for provider in providers
+        ):
+            raise RunKernelTransitionError(
+                "multi-component recovery outcome provider is not an ordinary provider"
+            )
+        requires_confirmation = (
+            clean_disposition == "blocked_requires_user_confirmation"
+        )
+        if requires_confirmation:
+            if authorization.get("search_authorized") is not False or providers:
+                raise RunKernelTransitionError(
+                    "confirmation-blocked recovery cannot record provider execution"
+                )
+        else:
+            live_state = _safe_mapping(self.state.live_search_validation_state)
+            observed_provider = _clean_text(
+                live_state.get("provider_used"), limit=80
+            )
+            if (
+                authorization.get("search_authorized") is not True
+                or not self.state.search_planner_proposal_state
+                or not self.state.search_executor_handoff_state
+                or not live_state
+                or not observed_provider
+                or observed_provider
+                not in _MULTICOMPONENT_RECOVERY_ORDINARY_PROVIDERS
+                or (providers and observed_provider not in providers)
+            ):
+                raise RunKernelTransitionError(
+                    "recovery outcome requires one canonical ordinary acquisition attempt"
+                )
+            # The adapter may report diagnostics, but executed-provider authority
+            # is rederived from canonical live-search state.
+            providers = [observed_provider]
+        blocker = _clean_text(blocker_reason, limit=300)
+        if clean_disposition == "acquired" and blocker:
+            raise RunKernelTransitionError(
+                "acquired recovery outcome cannot carry a blocker"
+            )
+        if clean_disposition != "acquired" and not blocker:
+            raise RunKernelTransitionError(
+                "blocked recovery outcome requires a bounded blocker reason"
+            )
+        return self.authorize(
+            stage=MULTICOMPONENT_RECOVERY_OUTCOME_STAGE,
+            action_type=ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE,
+            reason="multicomponent_recovery_terminal_outcome",
+            inputs={
+                "disposition": clean_disposition,
+                "observed_provider_identities": providers,
+                "blocker_reason": blocker,
+                "recovery_authorization_id": authorization.get(
+                    "authorization_id"
+                ),
+                "recovery_authorization_digest": authorization.get(
+                    "authorization_digest"
+                ),
+            },
+            expected_observation_type=(
+                ObservationType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCED
             ),
         )
 
@@ -15786,6 +15929,9 @@ class RunKernel:
                 "automatic_amendment_authority_class": action.inputs.get(
                     "automatic_amendment_authority_class"
                 ),
+                "recovery_scope_posture": action.inputs.get(
+                    "recovery_scope_posture"
+                ),
                 "component_count_before_recovery": action.inputs.get(
                     "component_count_before_recovery"
                 ),
@@ -15816,7 +15962,8 @@ class RunKernel:
                 "whole_graph_resynthesis_round": action.inputs.get(
                     "whole_graph_resynthesis_round"
                 ),
-                "search_authorized": True,
+                "search_authorized": action.inputs.get("search_authorized")
+                is True,
                 "provider_selected": False,
                 "component_admitted": False,
                 "contract_amendment_applied": False,
@@ -15826,6 +15973,385 @@ class RunKernel:
                 "authorization_digest": safe_packet_digest(projection_core),
             }
             self.state.projections[action.stage] = projection
+        elif (
+            action.action_type
+            is ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE
+        ):
+            from core.component_work_graph_v1 import (
+                COMPONENT_WORK_GRAPH_V1_STAGE,
+                GRAPH_STATUS_READY,
+                GRAPH_STATUS_READY_WITH_CAVEATS,
+                validate_component_work_graph_v1,
+            )
+            from core.multicomponent_component_admission import (
+                MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+            )
+            from core.multicomponent_role_runtime import safe_packet_digest
+            from core.search_executor_handoff_runtime import (
+                handoff_ref_from_handoff_state,
+                planner_ref_from_search_planner_state,
+            )
+            from core.search_result_candidate_packet import (
+                build_search_result_candidate_packet_from_live_validation_state,
+                search_result_candidate_packet_ref_from_packet,
+                validate_search_result_candidate_packet,
+            )
+
+            if observation.payload:
+                raise RunKernelTransitionError(
+                    "recovery outcome observation cannot supply authority fields"
+                )
+            authorization = _safe_mapping(
+                self.state.projections.get(
+                    MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                )
+            )
+            if (
+                authorization.get("authorization_id")
+                != action.inputs.get("recovery_authorization_id")
+                or authorization.get("authorization_digest")
+                != action.inputs.get("recovery_authorization_digest")
+                or authorization.get("run_id") != self.state.run_id
+                or authorization.get("request_id") != self.state.request_id
+            ):
+                raise RunKernelTransitionError(
+                    "recovery outcome authorization binding became stale"
+                )
+            disposition = str(action.inputs.get("disposition") or "")
+            providers = list(
+                action.inputs.get("observed_provider_identities") or ()
+            )
+            active_contract = _safe_mapping(
+                self.state.current_answer_contract
+                or self.state.initial_answer_contract
+            )
+            graph = validate_component_work_graph_v1(
+                _safe_mapping(
+                    self.state.projections.get(
+                        COMPONENT_WORK_GRAPH_V1_STAGE
+                    )
+                )
+            )
+            graph_contract = _safe_mapping(graph.get("accepted_contract_ref"))
+            amendment_admission = _safe_mapping(
+                self.state.contract_amendment_admission_projection
+            )
+            amendment_application = _safe_mapping(
+                self.state.contract_amendment_application_projection
+            )
+            planner_ref = planner_ref_from_search_planner_state(
+                self.state.search_planner_proposal_state
+            )
+            handoff_ref = handoff_ref_from_handoff_state(
+                self.state.search_executor_handoff_state
+            )
+            live_state = _safe_mapping(self.state.live_search_validation_state)
+            selected_task_refs = [
+                {
+                    "search_task_id": item.get("search_task_id"),
+                    "query_intent_id": item.get("query_intent_id"),
+                    "component_id": item.get("component_id"),
+                    "source_obligation_candidate_ids": list(
+                        item.get("source_obligation_candidate_ids") or ()
+                    ),
+                }
+                for item in self.state.search_executor_handoff_state.get(
+                    "search_task_records", ()
+                )
+                if isinstance(item, Mapping)
+                and item.get("search_task_id")
+                in set(live_state.get("selected_search_task_ids") or ())
+            ]
+            candidate_packet_ref: dict[str, Any] = {}
+            if live_state:
+                candidate_packet = validate_search_result_candidate_packet(
+                    build_search_result_candidate_packet_from_live_validation_state(
+                        live_state
+                    )
+                )
+                candidate_packet_ref = (
+                    search_result_candidate_packet_ref_from_packet(
+                        candidate_packet
+                    )
+                )
+                if live_state.get("provider_used") not in providers:
+                    raise RunKernelTransitionError(
+                        "recovery outcome lost actual ordinary provider identity"
+                    )
+            authorization_action = self.state.issued_actions.get(
+                str(authorization.get("authorized_action_id") or "")
+            )
+            authorization_sequence = (
+                authorization_action.sequence
+                if authorization_action is not None
+                else -1
+            )
+            recovery_ledger_actions = [
+                item
+                for item in self.state.issued_actions.values()
+                if item.action_type is ActionType.EVIDENCE_LEDGER_REDUCE
+                and item.action_id in self.state.reduced_action_ids
+                and item.sequence > authorization_sequence
+            ]
+            fetch_actions = [
+                item
+                for item in recovery_ledger_actions
+                if item.inputs.get("fetch_read_content_packet_id")
+            ]
+            fetch_action = fetch_actions[-1] if fetch_actions else None
+            fetch_packet_ref = (
+                {
+                    "packet_id": fetch_action.inputs.get(
+                        "fetch_read_content_packet_id"
+                    ),
+                    "packet_digest": fetch_action.inputs.get(
+                        "fetch_read_content_packet_digest"
+                    ),
+                }
+                if fetch_action is not None
+                else {}
+            )
+            ledger_action = (
+                recovery_ledger_actions[-1]
+                if recovery_ledger_actions
+                else None
+            )
+            ledger_observation = next(
+                (
+                    item
+                    for item in reversed(self.state.observations)
+                    if ledger_action is not None
+                    and item.action_id == ledger_action.action_id
+                ),
+                None,
+            )
+            ledger_ref = (
+                {
+                    "action_id": ledger_action.action_id,
+                    "observation_id": (
+                        ledger_observation.observation_id
+                        if ledger_observation is not None
+                        else None
+                    ),
+                    "ledger_digest": self.state.evidence_ledger.to_projection()
+                    .to_dict()
+                    .get("ledger_digest"),
+                }
+                if ledger_action is not None
+                else {}
+            )
+            component_id = (
+                f"component:recovered:"
+                f"{str(authorization.get('proposal_digest') or '')[:16]}"
+            )
+            component_projection = _safe_mapping(
+                self.state.projections.get(
+                    MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                )
+            )
+            matching_admissions = [
+                _safe_mapping(item)
+                for item in component_projection.get(
+                    "component_admission_refs", ()
+                )
+                if isinstance(item, Mapping)
+                and item.get("component_id") == component_id
+            ]
+            component_admission_ref = (
+                matching_admissions[-1] if matching_admissions else {}
+            )
+            candidate_count = int(live_state.get("candidate_count") or 0)
+            graph_ready = graph.get("graph_status") in {
+                GRAPH_STATUS_READY,
+                GRAPH_STATUS_READY_WITH_CAVEATS,
+            }
+            admitted = component_admission_ref.get("admission_status") in {
+                "admitted",
+                "admitted_with_caveats",
+            }
+            if disposition == "blocked_requires_user_confirmation":
+                if (
+                    authorization.get("search_authorized") is not False
+                    or planner_ref
+                    or handoff_ref
+                    or live_state
+                    or amendment_application
+                ):
+                    raise RunKernelTransitionError(
+                        "confirmation-blocked recovery outcome has execution state"
+                    )
+            elif disposition == "blocked_no_candidates":
+                if (
+                    candidate_count != 0
+                    or component_admission_ref
+                    or fetch_packet_ref
+                    or ledger_ref
+                ):
+                    raise RunKernelTransitionError(
+                        "no-candidate recovery outcome conflicts with canonical state"
+                    )
+            elif disposition == "blocked_no_readable_evidence":
+                if (
+                    candidate_count <= 0
+                    or component_admission_ref
+                    or not fetch_packet_ref
+                    or not ledger_ref
+                ):
+                    raise RunKernelTransitionError(
+                        "no-readable recovery outcome conflicts with canonical state"
+                    )
+            elif disposition == "blocked_component_admission":
+                if not component_admission_ref or admitted:
+                    raise RunKernelTransitionError(
+                        "component-blocked recovery outcome conflicts with admission"
+                    )
+            elif disposition == "blocked_resynthesis":
+                if not admitted or graph_ready:
+                    raise RunKernelTransitionError(
+                        "resynthesis-blocked recovery outcome conflicts with graph"
+                    )
+            elif disposition == "acquired":
+                if not admitted or not graph_ready:
+                    raise RunKernelTransitionError(
+                        "acquired recovery outcome requires admitted component and ready graph"
+                    )
+            pre_recovery_synthesis_suppressed = bool(
+                graph.get("pre_recovery_synthesis_authority_invalidated")
+                or graph.get("graph_output_suppressed")
+                or not graph_ready
+                or graph_contract.get("accepted_contract_digest")
+                != active_contract.get("accepted_contract_digest")
+            )
+            if not pre_recovery_synthesis_suppressed:
+                raise RunKernelTransitionError(
+                    "recovery outcome requires pre-recovery synthesis suppression"
+                )
+            outcome_actions = [
+                item
+                for item in self.state.issued_actions.values()
+                if item.action_type
+                is ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE
+            ]
+            if outcome_actions != [action]:
+                raise RunKernelTransitionError(
+                    "recovery outcome action history is not singular"
+                )
+            projection_core = {
+                "schema_version": "multicomponent_recovery_outcome_v1",
+                "owner": "RunKernel.MulticomponentRecoveryOutcome",
+                "canonical_state": True,
+                "trace_only": False,
+                "final_answer_authority": True,
+                "run_id": self.state.run_id,
+                "request_id": self.state.request_id,
+                "outcome_id": f"multicomponent-recovery-outcome:{action.action_id}",
+                "authorized_action_id": action.action_id,
+                "recovery_disposition": disposition,
+                "bounded_blocker_reason": action.inputs.get("blocker_reason"),
+                "recovery_authorization_id": authorization.get(
+                    "authorization_id"
+                ),
+                "recovery_authorization_digest": authorization.get(
+                    "authorization_digest"
+                ),
+                "proposal_id": authorization.get("proposal_id"),
+                "proposal_digest": authorization.get("proposal_digest"),
+                "scrutineer_artifact_id": authorization.get(
+                    "scrutineer_artifact_id"
+                ),
+                "scrutineer_artifact_digest": authorization.get(
+                    "scrutineer_artifact_digest"
+                ),
+                "current_answer_contract_version": active_contract.get(
+                    "accepted_contract_version"
+                ),
+                "current_answer_contract_digest": active_contract.get(
+                    "accepted_contract_digest"
+                ),
+                "graph_id": graph.get("graph_id"),
+                "graph_revision": graph.get("graph_revision"),
+                "graph_digest": graph.get("graph_digest"),
+                "graph_answer_contract_version": graph_contract.get(
+                    "accepted_contract_version"
+                ),
+                "graph_answer_contract_digest": graph_contract.get(
+                    "accepted_contract_digest"
+                ),
+                "ordinary_acquisition_attempt_count": (
+                    0
+                    if disposition
+                    == "blocked_requires_user_confirmation"
+                    else 1
+                ),
+                "observed_provider_identities": providers,
+                "pre_recovery_synthesis_suppressed": (
+                    pre_recovery_synthesis_suppressed
+                ),
+                "direct_semantic_producer_used": False,
+                "runtime_parallelism": False,
+                "recovery_outcome_action_count": len(outcome_actions),
+                "recovery_outcome_observation_count": 1,
+            }
+            if amendment_admission:
+                projection_core.update(
+                    {
+                        "amendment_record_id": amendment_admission.get(
+                            "amendment_record_id"
+                        ),
+                        "amendment_record_digest": amendment_admission.get(
+                            "amendment_record_digest"
+                        ),
+                        "amendment_admission_action_id": amendment_admission.get(
+                            "authorized_action_id"
+                        ),
+                        "amendment_admission_digest": amendment_admission.get(
+                            "admission_digest"
+                        ),
+                    }
+                )
+            if amendment_application:
+                projection_core.update(
+                    {
+                        "amendment_application_action_id": (
+                            amendment_application.get("authorized_action_id")
+                        ),
+                        "amendment_application_digest": (
+                            amendment_application.get("application_digest")
+                        ),
+                        "recovered_component_id": component_id,
+                    }
+                )
+            if planner_ref:
+                projection_core["ordinary_search_planner_ref"] = planner_ref
+            if handoff_ref:
+                projection_core[
+                    "ordinary_search_executor_handoff_ref"
+                ] = handoff_ref
+            if selected_task_refs:
+                projection_core["selected_search_task_refs"] = selected_task_refs
+            if candidate_packet_ref:
+                projection_core[
+                    "search_result_candidate_packet_ref"
+                ] = candidate_packet_ref
+            if fetch_packet_ref:
+                projection_core["fetch_read_content_packet_ref"] = fetch_packet_ref
+            if ledger_ref:
+                projection_core["evidence_ledger_reduction_ref"] = ledger_ref
+            if component_admission_ref:
+                projection_core["component_admission_ref"] = component_admission_ref
+            outcome_projection = {
+                **projection_core,
+                "outcome_digest": safe_packet_digest(projection_core),
+            }
+            self.state.projections[action.stage] = outcome_projection
+            self.state.projections[f"{action.stage}_history"] = {
+                "schema_version": "multicomponent_recovery_outcome_history_v1",
+                "owner": "RunKernel.MulticomponentRecoveryOutcome",
+                "canonical_state": True,
+                "trace_only": False,
+                "outcome_count": 1,
+                "outcomes": [deepcopy(outcome_projection)],
+            }
         elif action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
@@ -17068,6 +17594,7 @@ __all__ = [
     "COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE",
+    "MULTICOMPONENT_RECOVERY_OUTCOME_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
     "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",

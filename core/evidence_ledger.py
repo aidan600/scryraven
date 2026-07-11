@@ -369,6 +369,14 @@ class SourceRequirementRecord:
     requirement_id: str
     requirement_kind: str
     origin_ref: str | None = None
+    component_id: str | None = None
+    source_obligation_id: str | None = None
+    run_id: str | None = None
+    request_id: str | None = None
+    answer_contract_version: str | None = None
+    answer_contract_digest: str | None = None
+    recovery_authorization_id: str | None = None
+    recovery_authorization_digest: str | None = None
     required_source_class: str | None = None
     required_source_tier: str | None = None
     required_currentness: str | None = None
@@ -384,6 +392,22 @@ class SourceRequirementRecord:
                 "requirement_id": _clean_token(self.requirement_id),
                 "requirement_kind": _clean_token(self.requirement_kind),
                 "origin_ref": _clean_text(self.origin_ref),
+                "component_id": _clean_token(self.component_id),
+                "source_obligation_id": _clean_token(self.source_obligation_id),
+                "run_id": _clean_token(self.run_id),
+                "request_id": _clean_token(self.request_id),
+                "answer_contract_version": _clean_token(
+                    self.answer_contract_version
+                ),
+                "answer_contract_digest": _clean_token(
+                    self.answer_contract_digest
+                ),
+                "recovery_authorization_id": _clean_token(
+                    self.recovery_authorization_id
+                ),
+                "recovery_authorization_digest": _clean_token(
+                    self.recovery_authorization_digest
+                ),
                 "required_source_class": _clean_token(self.required_source_class),
                 "required_source_tier": _clean_token(self.required_source_tier),
                 "required_currentness": _clean_token(self.required_currentness),
@@ -777,6 +801,24 @@ class EvidenceLedger:
                     or record.get("answer_contract_ref")
                     or record.get("source_obligation_ref")
                 ),
+                component_id=_clean_token(record.get("component_id")),
+                source_obligation_id=_clean_token(
+                    record.get("source_obligation_id")
+                ),
+                run_id=_clean_token(record.get("run_id")),
+                request_id=_clean_token(record.get("request_id")),
+                answer_contract_version=_clean_token(
+                    record.get("answer_contract_version")
+                ),
+                answer_contract_digest=_clean_token(
+                    record.get("answer_contract_digest")
+                ),
+                recovery_authorization_id=_clean_token(
+                    record.get("recovery_authorization_id")
+                ),
+                recovery_authorization_digest=_clean_token(
+                    record.get("recovery_authorization_digest")
+                ),
                 required_source_class=_clean_token(
                     record.get("required_source_class") or record.get("source_class")
                 ),
@@ -792,6 +834,20 @@ class EvidenceLedger:
             )
             self.requirements[requirement_id] = requirement
         else:
+            for field_name in (
+                "component_id",
+                "source_obligation_id",
+                "run_id",
+                "request_id",
+                "answer_contract_version",
+                "answer_contract_digest",
+                "recovery_authorization_id",
+                "recovery_authorization_digest",
+            ):
+                current = getattr(requirement, field_name)
+                incoming = _clean_token(record.get(field_name))
+                if not current and incoming:
+                    setattr(requirement, field_name, incoming)
             if not requirement.required_source_class:
                 requirement.required_source_class = _clean_token(
                     record.get("required_source_class") or record.get("source_class")

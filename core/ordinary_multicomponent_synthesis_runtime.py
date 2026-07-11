@@ -36,9 +36,14 @@ from core.multicomponent_component_admission import (
 )
 from core.multicomponent_dynamic_recovery_runtime import (
     MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+    RECOVERY_DISPOSITION_ACQUIRED,
+    RECOVERY_DISPOSITION_BLOCKED_COMPONENT_ADMISSION,
+    RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION,
+    RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
     RECOVERY_STATUS_BLOCKED,
     apply_recovered_component_amendment,
     execute_recovery_acquisition,
+    reduce_recovery_outcome,
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
@@ -490,29 +495,13 @@ def _attempt_dynamic_recovery(
         raise OrdinaryMulticomponentRuntimeError(
             "ordinary dynamic recovery can consume exactly one proposal"
         )
-    from core.run_kernel import Observation, RunKernelTransitionError, RunStageStatus
+    from core.run_kernel import Observation, RunStageStatus
 
-    try:
-        authorization_action = (
-            run_kernel.authorize_multicomponent_missing_component_recovery(
-                proposal_key=str(proposals[0]["proposal_key"])
-            )
+    authorization_action = (
+        run_kernel.authorize_multicomponent_missing_component_recovery(
+            proposal_key=str(proposals[0]["proposal_key"])
         )
-    except RunKernelTransitionError as exc:
-        if "requires_user_confirmation" not in str(exc):
-            raise
-        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = {
-            "schema_version": "multicomponent_dynamic_recovery_v1",
-            "owner": "OrdinaryMulticomponent.DynamicRecoveryAdapter",
-            "run_id": run_kernel.state.run_id,
-            "request_id": run_kernel.state.request_id,
-            "status": RECOVERY_STATUS_BLOCKED,
-            "blocker": "missing component proposal requires user confirmation",
-            "requires_user_confirmation": True,
-            "ordinary_acquisition_attempt_count": 0,
-            "direct_semantic_producer_used": False,
-        }
-        return None
+    )
     run_kernel.reduce(
         Observation.from_action(
             authorization_action,
@@ -521,6 +510,28 @@ def _attempt_dynamic_recovery(
             payload={},
         )
     )
+    authorization = run_kernel.state.projections[authorization_action.stage]
+    if authorization.get("search_authorized") is not True:
+        blocker = "missing component proposal requires user confirmation"
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = {
+            "schema_version": "multicomponent_dynamic_recovery_v1",
+            "owner": "OrdinaryMulticomponent.DynamicRecoveryAdapter",
+            "trace_only": True,
+            "canonical_state": False,
+            "final_answer_authority": False,
+            "run_id": run_kernel.state.run_id,
+            "request_id": run_kernel.state.request_id,
+            "status": RECOVERY_STATUS_BLOCKED,
+            "blocker": blocker,
+            "requires_user_confirmation": True,
+            "ordinary_acquisition_attempt_count": 0,
+            "direct_semantic_producer_used": False,
+            "runtime_parallelism": False,
+            "pending_recovery_disposition": (
+                RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION
+            ),
+        }
+        return None
     amendment = apply_recovered_component_amendment(run_kernel=run_kernel)
     acquisition = execute_recovery_acquisition(
         run_kernel=run_kernel,
@@ -589,6 +600,9 @@ def _attempt_dynamic_recovery(
             {
                 "status": RECOVERY_STATUS_BLOCKED,
                 "blocker": "recovered component did not pass typed admission",
+                "pending_recovery_disposition": (
+                    RECOVERY_DISPOSITION_BLOCKED_COMPONENT_ADMISSION
+                ),
             }
         )
         run_kernel.state.projections[
@@ -645,7 +659,50 @@ def _attempt_dynamic_recovery(
         run_kernel.state.projections[
             MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
         ] = recovery_projection
+        reduce_recovery_outcome(
+            run_kernel=run_kernel,
+            disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
+            observed_provider_identities=(
+                acquisition.observed_provider_identities
+            ),
+            blocker_reason=str(recovery_projection["blocker"]),
+        )
+    else:
+        reduce_recovery_outcome(
+            run_kernel=run_kernel,
+            disposition=RECOVERY_DISPOSITION_ACQUIRED,
+            observed_provider_identities=(
+                acquisition.observed_provider_identities
+            ),
+        )
     return final_graph
+
+
+def _reduce_pending_recovery_outcome(run_kernel: Any) -> None:
+    """Commit a trace-reported terminal fact after the graph reaches final revision."""
+
+    from core.run_kernel import MULTICOMPONENT_RECOVERY_OUTCOME_STAGE
+
+    if run_kernel.state.projections.get(MULTICOMPONENT_RECOVERY_OUTCOME_STAGE):
+        return
+    trace = _safe_mapping(
+        run_kernel.state.projections.get(MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE)
+    )
+    disposition = _clean_text(
+        trace.get("pending_recovery_disposition"), limit=100
+    )
+    if not disposition:
+        return
+    reduce_recovery_outcome(
+        run_kernel=run_kernel,
+        disposition=disposition,
+        observed_provider_identities=tuple(
+            str(item)
+            for item in trace.get("observed_provider_identities") or ()
+            if str(item or "").strip()
+        ),
+        blocker_reason=_clean_text(trace.get("blocker"), limit=300),
+    )
 
 
 def _execute_selected_lane(
@@ -934,6 +991,7 @@ def _execute_selected_lane(
         operation="finalize",
         graph_candidate=finalize_component_work_graph_v1(graph),
     )
+    _reduce_pending_recovery_outcome(run_kernel)
 
 
 def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(

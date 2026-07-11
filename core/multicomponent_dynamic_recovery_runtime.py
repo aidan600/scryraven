@@ -44,6 +44,7 @@ from core.live_search_validation_runtime import (
 from core.ordinary_semantic_producer_runtime import BindableFinalPassage
 from core.run_kernel import (
     MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
+    MULTICOMPONENT_RECOVERY_OUTCOME_STAGE,
     Observation,
     ObservationType,
     RunStageStatus,
@@ -83,6 +84,18 @@ MULTICOMPONENT_DYNAMIC_RECOVERY_OWNER = (
 )
 RECOVERY_STATUS_ACQUIRED = "acquired"
 RECOVERY_STATUS_BLOCKED = "blocked"
+RECOVERY_DISPOSITION_ACQUIRED = "acquired"
+RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION = (
+    "blocked_requires_user_confirmation"
+)
+RECOVERY_DISPOSITION_BLOCKED_NO_CANDIDATES = "blocked_no_candidates"
+RECOVERY_DISPOSITION_BLOCKED_NO_READABLE_EVIDENCE = (
+    "blocked_no_readable_evidence"
+)
+RECOVERY_DISPOSITION_BLOCKED_COMPONENT_ADMISSION = (
+    "blocked_component_admission"
+)
+RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS = "blocked_resynthesis"
 _MAX_RECOVERY_RESULTS = 5
 
 
@@ -104,6 +117,7 @@ class RecoveryAcquisitionResult:
     bindable: BindableFinalPassage | None
     projection: Mapping[str, Any]
     blocker: str | None = None
+    observed_provider_identities: tuple[str, ...] = ()
 
     @property
     def acquired(self) -> bool:
@@ -207,6 +221,55 @@ def _digest(value: Any) -> str:
 
 def _identity_token(value: Any) -> str:
     return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
+
+
+def _trace_projection(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **dict(payload),
+        "trace_only": True,
+        "canonical_state": False,
+        "final_answer_authority": False,
+    }
+
+
+def reduce_recovery_outcome(
+    *,
+    run_kernel: Any,
+    disposition: str,
+    observed_provider_identities: Sequence[str] = (),
+    blocker_reason: str | None = None,
+) -> dict[str, Any]:
+    """Reduce one authority-bearing terminal recovery outcome through RunKernel."""
+
+    action = run_kernel.authorize_multicomponent_recovery_outcome(
+        disposition=disposition,
+        observed_provider_identities=observed_provider_identities,
+        blocker_reason=blocker_reason,
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={},
+        )
+    )
+    return dict(run_kernel.state.projections[MULTICOMPONENT_RECOVERY_OUTCOME_STAGE])
+
+
+def _observed_provider_identities(
+    results: Sequence[Mapping[str, Any]],
+    diagnostics: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    providers: list[str] = []
+    for value in (
+        *[item.get("_provider") for item in results],
+        *[item.get("provider") for item in diagnostics],
+    ):
+        provider = str(value or "").strip().casefold()
+        if provider and provider not in providers:
+            providers.append(provider)
+    return tuple(providers)
 
 
 def _active_contract(run_kernel: Any) -> dict[str, Any]:
@@ -519,7 +582,7 @@ def _reduce_recovery_planner(
     return requirement_id
 
 
-def _reduce_recovery_handoff(*, run_kernel: Any, provider: str) -> None:
+def _reduce_recovery_handoff(*, run_kernel: Any) -> None:
     current = _active_contract(run_kernel)
     planner_state = run_kernel.state.search_planner_proposal_state
     handoff_input = SearchExecutorHandoffInput(
@@ -546,7 +609,7 @@ def _reduce_recovery_handoff(*, run_kernel: Any, provider: str) -> None:
         prohibited_upgrades=current.get("prohibited_upgrades", []),
         query_budget={"max_search_tasks": 1, "max_results_per_task": 5},
         allowed_verticals=["search"],
-        provider_preference_hint=provider,
+        provider_preference_hint=None,
     )
     action = run_kernel.authorize_search_executor_handoff()
     result = execute_search_executor_handoff_action(
@@ -622,20 +685,138 @@ def _fetch_materials(
     return tuple(materials)
 
 
+def _validated_recovery_obligation_lineage(
+    *,
+    run_kernel: Any,
+    component_ref: Mapping[str, Any],
+    source_obligation_id: str,
+    search_requirement_id: str,
+    authorization: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify the exact obligation identity before any EvidenceLedger link."""
+
+    current = _active_contract(run_kernel)
+    current_components = [
+        dict(item)
+        for item in current.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping)
+        and item.get("component_id") == component_ref.get("component_id")
+    ]
+    if len(current_components) != 1:
+        raise MulticomponentDynamicRecoveryError(
+            "recovered obligation requires one current component binding"
+        )
+    current_component = current_components[0]
+    for key in ("component_id", "component_revision", "component_digest"):
+        if current_component.get(key) != component_ref.get(key):
+            raise MulticomponentDynamicRecoveryError(
+                "recovered obligation component binding became stale"
+            )
+    source_ids = [
+        str(item)
+        for item in current_component.get("source_obligation_candidate_ids") or ()
+        if str(item or "").strip()
+    ]
+    if source_ids != [source_obligation_id]:
+        raise MulticomponentDynamicRecoveryError(
+            "recovered obligation source identity became stale"
+        )
+    if (
+        authorization.get("authorization_id")
+        != _recovery_authorization(run_kernel).get("authorization_id")
+        or authorization.get("authorization_digest")
+        != _recovery_authorization(run_kernel).get("authorization_digest")
+        or authorization.get("search_authorized") is not True
+    ):
+        raise MulticomponentDynamicRecoveryError(
+            "recovered obligation authorization binding became stale"
+        )
+
+    planner = _safe_mapping(run_kernel.state.search_planner_proposal_state)
+    planner_requirements = [
+        dict(item)
+        for item in planner.get("component_search_requirements") or ()
+        if isinstance(item, Mapping)
+        and item.get("component_id") == current_component["component_id"]
+        and item.get("requirement_id") == search_requirement_id
+        and list(item.get("source_obligation_candidate_ids") or ())
+        == [source_obligation_id]
+    ]
+    if (
+        planner.get("run_id") != run_kernel.state.run_id
+        or planner.get("request_id") != run_kernel.state.request_id
+        or len(planner_requirements) != 1
+    ):
+        raise MulticomponentDynamicRecoveryError(
+            "recovered obligation planner lineage is not exact"
+        )
+    planner_authorization = _safe_mapping(
+        _safe_mapping(planner_requirements[0].get("metadata")).get(
+            "recovery_authorization_ref"
+        )
+    )
+    if (
+        planner_authorization.get("authorization_id")
+        != authorization.get("authorization_id")
+        or planner_authorization.get("authorization_digest")
+        != authorization.get("authorization_digest")
+    ):
+        raise MulticomponentDynamicRecoveryError(
+            "recovered obligation planner authorization lineage is not exact"
+        )
+
+    handoff = _safe_mapping(run_kernel.state.search_executor_handoff_state)
+    tasks = [
+        dict(item)
+        for item in handoff.get("search_task_records") or ()
+        if isinstance(item, Mapping)
+        and item.get("component_id") == current_component["component_id"]
+        and list(item.get("source_obligation_candidate_ids") or ())
+        == [source_obligation_id]
+    ]
+    parent = _safe_mapping(handoff.get("parent_current_contract_ref"))
+    if (
+        handoff.get("run_id") != run_kernel.state.run_id
+        or handoff.get("request_id") != run_kernel.state.request_id
+        or parent.get("contract_version")
+        != current.get("accepted_contract_version")
+        or parent.get("contract_digest")
+        != current.get("accepted_contract_digest")
+        or len(tasks) != 1
+    ):
+        raise MulticomponentDynamicRecoveryError(
+            "recovered obligation handoff lineage is not exact"
+        )
+    return {
+        "component_id": current_component["component_id"],
+        "source_obligation_id": source_obligation_id,
+        "run_id": run_kernel.state.run_id,
+        "request_id": run_kernel.state.request_id,
+        "answer_contract_version": current["accepted_contract_version"],
+        "answer_contract_digest": current["accepted_contract_digest"],
+        "recovery_authorization_id": authorization["authorization_id"],
+        "recovery_authorization_digest": authorization["authorization_digest"],
+    }
+
+
 def _promote_recovery_candidate_custody(
     *,
     run_kernel: Any,
     component_ref: Mapping[str, Any],
     source_obligation_id: str,
+    search_requirement_id: str,
+    authorization: Mapping[str, Any],
     results: Sequence[Mapping[str, Any]],
     candidate_packet: Mapping[str, Any],
 ) -> dict[str, Any]:
-    ledger_before = run_kernel.state.evidence_ledger.to_projection().to_dict()
-    existing_requirements = [
-        dict(item)
-        for item in ledger_before.get("source_requirements") or ()
-        if isinstance(item, Mapping)
-    ]
+    current = _active_contract(run_kernel)
+    exact_lineage = _validated_recovery_obligation_lineage(
+        run_kernel=run_kernel,
+        component_ref=component_ref,
+        source_obligation_id=source_obligation_id,
+        search_requirement_id=search_requirement_id,
+        authorization=authorization,
+    )
     candidate_records = [
         dict(item)
         for item in candidate_packet.get("candidate_records") or ()
@@ -647,16 +828,8 @@ def _promote_recovery_candidate_custody(
         readable = bool(_clean_text(result.get("text"), limit=20_000)) and str(
             result.get("readable_status") or "readable"
         ).casefold() in {"readable", "available", "ok"}
-        matching_requirement_ids = [
-            str(requirement["requirement_id"])
-            for requirement in existing_requirements
-            if requirement.get("requirement_id")
-            and str(requirement.get("required_source_class") or "").casefold()
-            == str(result.get("source_class") or "").casefold()
-            and str(requirement.get("status") or "").casefold() != "satisfied"
-        ]
         linked_requirement_ids = list(
-            dict.fromkeys([source_obligation_id, *matching_requirement_ids])
+            dict.fromkeys([source_obligation_id, search_requirement_id])
         )
         promoted.append(
             {
@@ -671,6 +844,8 @@ def _promote_recovery_candidate_custody(
                 "currentness_signal": result.get("currentness_signal") or "current",
                 "source_class": result.get("source_class"),
                 "source_tier": result.get("source_tier"),
+                "provider_name": result.get("_provider"),
+                "provider_role": "multicomponent_recovery_diagnostic",
                 "eligible_for_stronger_obligation": readable,
                 "final_evidence_eligible": readable,
                 "evidence_material_type": "answer_bearing_content",
@@ -698,9 +873,25 @@ def _promote_recovery_candidate_custody(
             {
                 "requirement_id": source_obligation_id,
                 "requirement_kind": "bounded_current_source_support",
-                "origin_ref": component_ref["component_id"],
+                "origin_ref": "multicomponent_recovery_exact_source_obligation",
+                **exact_lineage,
+                "required_source_class": next(
+                    (
+                        item.get("source_class")
+                        for item in results
+                        if item.get("source_class")
+                    ),
+                    None,
+                ),
                 "required_evidence_material_type": "answer_bearing_content",
-            }
+            },
+            {
+                "requirement_id": search_requirement_id,
+                "requirement_kind": "recovery_search_requirement",
+                "origin_ref": "multicomponent_recovery_exact_search_requirement",
+                **exact_lineage,
+                "required_evidence_material_type": "answer_bearing_content",
+            },
         ],
         "candidates": promoted,
         "requirement_links": links,
@@ -709,7 +900,7 @@ def _promote_recovery_candidate_custody(
         inputs={
             "observation_source": payload["observation_source"],
             "candidate_count": len(promoted),
-            "requirement_count": 1,
+            "requirement_count": 2,
         }
     )
     result = execute_evidence_ledger_reduction_action(action, payload=payload)
@@ -726,16 +917,19 @@ def execute_recovery_acquisition(
     """Execute exactly one offline ordinary acquisition attempt."""
 
     authorization = _recovery_authorization(run_kernel)
-    provider = "offline-multicomponent-recovery"
-    _reduce_recovery_planner(
+    search_requirement_id = _reduce_recovery_planner(
         run_kernel=run_kernel,
         component_ref=component_ref,
         authorization=authorization,
     )
-    _reduce_recovery_handoff(run_kernel=run_kernel, provider=provider)
+    _reduce_recovery_handoff(run_kernel=run_kernel)
     task = _selected_task(run_kernel)
     deps = runtime_scope.get("deps")
-    execute_search = getattr(deps, "process_search_queries", None)
+    execute_search = runtime_scope.get("process_search_queries") or getattr(
+        deps,
+        "process_search_queries",
+        None,
+    )
     if not callable(execute_search):
         raise MulticomponentDynamicRecoveryError(
             "ordinary offline search execution boundary is unavailable"
@@ -745,21 +939,61 @@ def execute_recovery_acquisition(
         or task.get("query")
         or component_ref["user_facing_question"]
     )
+    recovery_provider_diagnostics: list[dict[str, Any]] = []
+    seen_urls = runtime_scope.get("seen_urls")
+    if not isinstance(seen_urls, set):
+        seen_urls = set()
+    collected_images = runtime_scope.get("collected_images")
+    if not isinstance(collected_images, set):
+        collected_images = set()
     raw_results = execute_search(
         [query_text],
         str(runtime_scope.get("intent") or "general"),
         str(runtime_scope.get("complexity") or "medium"),
         str(runtime_scope.get("search_depth") or "basic"),
         _MAX_RECOVERY_RESULTS,
-        provider_role="multicomponent_recovery_offline",
-        search_providers=[provider],
+        list(runtime_scope.get("include_domains") or ()),
+        list(runtime_scope.get("exclude_domains") or ()),
+        runtime_scope.get("query_embedding"),
+        seen_urls,
+        collected_images,
+        str(runtime_scope.get("embed_provider") or ""),
+        str(runtime_scope.get("embed_model") or ""),
+        runtime_scope.get("local_url"),
+        runtime_scope.get("embed_texts") or getattr(deps, "embed_texts", None),
+        getattr(deps, "compute_similarities", None),
+        status_container=runtime_scope.get("status"),
+        provider_diagnostics=recovery_provider_diagnostics,
+        provider_role="multicomponent_recovery_diagnostic",
     )
-    results = [
+    all_results = [
         dict(item)
         for item in raw_results or ()
         if isinstance(item, Mapping)
     ][:_MAX_RECOVERY_RESULTS]
-    base_projection = {
+    observed_providers = _observed_provider_identities(
+        all_results,
+        recovery_provider_diagnostics,
+    )
+    selected_provider = next(
+        (
+            str(item.get("_provider") or "").strip().casefold()
+            for item in all_results
+            if item.get("_provider")
+        ),
+        observed_providers[0] if observed_providers else None,
+    )
+    if not selected_provider:
+        raise MulticomponentDynamicRecoveryError(
+            "ordinary recovery dispatcher did not expose a provider identity"
+        )
+    results = [
+        item
+        for item in all_results
+        if str(item.get("_provider") or "").strip().casefold()
+        == selected_provider
+    ]
+    base_projection = _trace_projection({
         "schema_version": "multicomponent_dynamic_recovery_v1",
         "owner": MULTICOMPONENT_DYNAMIC_RECOVERY_OWNER,
         "run_id": run_kernel.state.run_id,
@@ -776,29 +1010,16 @@ def execute_recovery_acquisition(
         "ordinary_acquisition_attempt_count": 1,
         "runtime_parallelism": False,
         "direct_semantic_producer_used": False,
-    }
-    if not results:
-        projection = {
-            **base_projection,
-            "status": RECOVERY_STATUS_BLOCKED,
-            "blocker": "no recovery search candidates were returned",
-            "candidate_count": 0,
-        }
-        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = projection
-        return RecoveryAcquisitionResult(
-            status=RECOVERY_STATUS_BLOCKED,
-            bindable=None,
-            projection=projection,
-            blocker=str(projection["blocker"]),
-        )
+        "observed_provider_identities": list(observed_providers),
+    })
 
     current = _active_contract(run_kernel)
     selected_task_id = str(task["search_task_id"])
     live_action = run_kernel.authorize_live_search_validation(
         selected_search_task_ids=[selected_task_id],
-        provider_authorized=provider,
+        provider_authorized=selected_provider,
         provider_call_cap=1,
-        results_per_task_cap=len(results),
+        results_per_task_cap=max(1, len(results)),
         parent_current_contract_version=current["accepted_contract_version"],
         parent_current_contract_digest=current["accepted_contract_digest"],
         handoff_id=run_kernel.state.search_executor_handoff_state["handoff_id"],
@@ -810,7 +1031,7 @@ def execute_recovery_acquisition(
         action=live_action,
         current_answer_contract=current,
         search_executor_handoff_state=run_kernel.state.search_executor_handoff_state,
-        provider_used=provider,
+        provider_used=selected_provider,
         provider_results_by_task={selected_task_id: results},
         execution_mode=LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
         broker_invoked=False,
@@ -829,6 +1050,27 @@ def execute_recovery_acquisition(
             run_kernel.state.live_search_validation_state
         )
     )
+    if not results:
+        projection = _trace_projection({
+            **base_projection,
+            "status": RECOVERY_STATUS_BLOCKED,
+            "blocker": "no recovery search candidates were returned",
+            "pending_recovery_disposition": (
+                RECOVERY_DISPOSITION_BLOCKED_NO_CANDIDATES
+            ),
+            "candidate_count": 0,
+            "search_result_candidate_packet_ref": (
+                search_result_candidate_packet_ref_from_packet(candidate_packet)
+            ),
+        })
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = projection
+        return RecoveryAcquisitionResult(
+            status=RECOVERY_STATUS_BLOCKED,
+            bindable=None,
+            projection=projection,
+            blocker=str(projection["blocker"]),
+            observed_provider_identities=observed_providers,
+        )
     fetch_packet = validate_fetch_read_content_packet(
         build_fetch_read_content_packet_from_candidate_packet(
             candidate_packet,
@@ -847,6 +1089,8 @@ def execute_recovery_acquisition(
         run_kernel=run_kernel,
         component_ref=component_ref,
         source_obligation_id=str(source_ids[0]),
+        search_requirement_id=search_requirement_id,
+        authorization=authorization,
         results=results,
         candidate_packet=candidate_packet,
     )
@@ -866,10 +1110,13 @@ def execute_recovery_acquisition(
         None,
     )
     if readable_ref is None:
-        projection = {
+        projection = _trace_projection({
             **base_projection,
             "status": RECOVERY_STATUS_BLOCKED,
             "blocker": "no legitimate readable recovery evidence was admitted",
+            "pending_recovery_disposition": (
+                RECOVERY_DISPOSITION_BLOCKED_NO_READABLE_EVIDENCE
+            ),
             "candidate_count": len(results),
             "search_result_candidate_packet_ref": (
                 search_result_candidate_packet_ref_from_packet(candidate_packet)
@@ -877,13 +1124,14 @@ def execute_recovery_acquisition(
             "fetch_read_content_packet_ref": (
                 fetch_read_content_packet_ref_from_packet(fetch_packet)
             ),
-        }
+        })
         run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = projection
         return RecoveryAcquisitionResult(
             status=RECOVERY_STATUS_BLOCKED,
             bindable=None,
             projection=projection,
             blocker=str(projection["blocker"]),
+            observed_provider_identities=observed_providers,
         )
     candidate_token = _identity_token(readable_ref["candidate_id"])
     candidate_id = str(candidate_by_id[candidate_token]["candidate_id"])
@@ -903,7 +1151,7 @@ def execute_recovery_acquisition(
         evidence_ref_id=candidate_id,
         candidate_record=candidate_by_id[candidate_token],
     )
-    projection = {
+    projection = _trace_projection({
         **base_projection,
         "status": RECOVERY_STATUS_ACQUIRED,
         "candidate_count": len(results),
@@ -919,18 +1167,25 @@ def execute_recovery_acquisition(
         "provider_called": False,
         "live_provider_called": False,
         "raw_provider_payload_retained": False,
-    }
+    })
     run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = projection
     return RecoveryAcquisitionResult(
         status=RECOVERY_STATUS_ACQUIRED,
         bindable=bindable,
         projection=projection,
+        observed_provider_identities=observed_providers,
     )
 
 
 __all__ = [
     "MULTICOMPONENT_DYNAMIC_RECOVERY_OWNER",
     "MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE",
+    "RECOVERY_DISPOSITION_ACQUIRED",
+    "RECOVERY_DISPOSITION_BLOCKED_COMPONENT_ADMISSION",
+    "RECOVERY_DISPOSITION_BLOCKED_NO_CANDIDATES",
+    "RECOVERY_DISPOSITION_BLOCKED_NO_READABLE_EVIDENCE",
+    "RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION",
+    "RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS",
     "RECOVERY_STATUS_ACQUIRED",
     "RECOVERY_STATUS_BLOCKED",
     "MulticomponentDynamicRecoveryError",
@@ -939,4 +1194,5 @@ __all__ = [
     "apply_recovered_component_amendment",
     "build_recovered_component_amendment",
     "execute_recovery_acquisition",
+    "reduce_recovery_outcome",
 ]

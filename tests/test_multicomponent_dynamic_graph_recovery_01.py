@@ -424,7 +424,15 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "search_providers": list(kwargs.get("search_providers") or []),
             }
         )
-        if kwargs.get("provider_role") == "multicomponent_recovery_offline":
+        if kwargs.get("provider_role") == "multicomponent_recovery_diagnostic":
+            diagnostics = kwargs.get("provider_diagnostics")
+            if isinstance(diagnostics, list):
+                diagnostics.append(
+                    {
+                        "provider": "tavily",
+                        "provider_role": kwargs.get("provider_role"),
+                    }
+                )
             if not self.readable_recovery:
                 return []
             return [
@@ -445,7 +453,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                     "disposition": "accepted",
                     "eligible_for_stronger_obligation": True,
                     "query_ref": str(queries[0]),
-                    "_provider": "offline_fake_search",
+                    "_provider": "tavily",
                 }
             ]
         passages = self.build_search_passages()
@@ -463,6 +471,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "The Northstar Home-Energy Rebate base rebate is $1,200.",
                 "sourced_numeric_values",
                 "Northstar base rebate amount",
+                "official",
             ),
             (
                 202,
@@ -470,6 +479,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "The income bonus is available at or below $60,000 household income.",
                 "sourced_numeric_values",
                 "Northstar income-based bonus qualification",
+                "official",
             ),
             (
                 203,
@@ -477,6 +487,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "An ordinary applicant not claiming the income bonus may file online.",
                 "primary_source_documents",
                 "Northstar ordinary applicant online filing",
+                "official",
             ),
             (
                 205,
@@ -484,6 +495,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "The fictional Northstar record documents the rebate program.",
                 "academic_primary_literature",
                 "Northstar academic primary literature",
+                "primary",
             ),
             (
                 206,
@@ -491,6 +503,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "The fictional current Northstar legal record establishes the program.",
                 "legal_or_regulatory_text",
                 "Northstar legal primary source",
+                "primary",
             ),
         )
         return [
@@ -501,16 +514,23 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "text": text,
                 "score": 1.0 - index * 0.01,
                 "credibility": 4,
-                "source_tier": "official",
+                "source_tier": source_tier,
                 "source_class": source_class,
                 "currentness_signal": "current",
                 "readable_status": "readable",
                 "disposition": "accepted",
                 "eligible_for_stronger_obligation": True,
                 "query_ref": query_ref,
-                "_provider": "offline_fake_search",
+                "_provider": "tavily",
             }
-            for index, (source_id, title, text, source_class, query_ref) in enumerate(
+            for index, (
+                source_id,
+                title,
+                text,
+                source_class,
+                query_ref,
+                source_tier,
+            ) in enumerate(
                 facts
             )
         ]
@@ -615,13 +635,26 @@ def test_recovery_duplicate_second_round_and_scope_broadening_fail_closed() -> N
     broadened, _graph = _challenged_graph_with_missing_component_proposal(
         scope_posture="new_or_broadened_user_intent"
     )
-    with pytest.raises(
-        RunKernelTransitionError,
-        match="requires_user_confirmation",
-    ):
+    broadened_action = (
         broadened.authorize_multicomponent_missing_component_recovery(
             proposal_key="bonus_paper_rule"
         )
+    )
+    broadened.reduce(
+        Observation.from_action(
+            broadened_action,
+            observation_type=broadened_action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={},
+        )
+    )
+    broadened_authorization = broadened.state.projections[
+        broadened_action.stage
+    ]
+    assert broadened_authorization["search_authorized"] is False
+    assert broadened_authorization[
+        "automatic_amendment_authority_class"
+    ] is None
 
 
 def test_recovery_amendment_posture_cannot_bypass_exact_authority_inputs() -> None:
@@ -776,6 +809,7 @@ def test_recovery_reenters_ordinary_offline_acquisition_and_evidence_ledger() ->
                 "currentness_signal": "current",
                 "source_class": "primary_source_documents",
                 "source_tier": "official",
+                "_provider": "tavily",
             }
         ]
 
@@ -850,6 +884,7 @@ def test_recovered_component_uses_typed_analyst_dprime_and_runkernel_admission()
                 "currentness_signal": "current",
                 "source_class": "primary_source_documents",
                 "source_tier": "official",
+                "_provider": "tavily",
             }
         ]
 
@@ -1243,7 +1278,7 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
         [
             call
             for call in harness.search_calls
-            if call.get("provider_role") == "multicomponent_recovery_offline"
+            if call.get("provider_role") == "multicomponent_recovery_diagnostic"
         ]
     ) == 1
     assert len(graph["component_nodes"]) == 4
@@ -1318,17 +1353,43 @@ def test_dynamic_northstar_terminal_blocker_uses_ordinary_finalization(
         capture_stages=(HANDOFF_SUFFICIENCY, HANDOFF_PACKET, HANDOFF_AUTHOR),
     )
 
-    outcome = orchestrator.run_pipeline(
-        offline_balanced_run_config(
-            query=harness.query,
-            current_date="2026-07-11",
-            session_id="dynamic-northstar-blocked-session",
-            run_id="dynamic-northstar-blocked-run",
-        ),
-        harness.deps(),
-        NullStatusWriter(),
-        CostAccumulator(),
-    )
+    try:
+        outcome = orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-11",
+                session_id="dynamic-northstar-blocked-session",
+                run_id="dynamic-northstar-blocked-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+    except Exception as exc:
+        kernel = captured.get("run_kernel")
+        pytest.fail(
+            json.dumps(
+                {
+                    "error": str(exc),
+                    "sufficiency": captured.get("sufficiency_projection"),
+                    "canonical_outcome": (
+                        kernel.state.projections.get(
+                            "multicomponent_recovery_outcome"
+                        )
+                        if kernel is not None
+                        else None
+                    ),
+                    "authorization": (
+                        kernel.state.projections.get(
+                            "multicomponent_missing_component_recovery_authorization"
+                        )
+                        if kernel is not None
+                        else None
+                    ),
+                },
+                sort_keys=True,
+            )
+        )
 
     kernel = captured["run_kernel"]
     graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
@@ -1354,7 +1415,7 @@ def test_dynamic_northstar_terminal_blocker_uses_ordinary_finalization(
         [
             call
             for call in harness.search_calls
-            if call.get("provider_role") == "multicomponent_recovery_offline"
+            if call.get("provider_role") == "multicomponent_recovery_diagnostic"
         ]
     ) == 1
 
@@ -1390,7 +1451,7 @@ def test_dynamic_northstar_scope_broadening_requires_confirmation_without_dispat
     assert kernel.state.current_answer_contract == {}
     assert kernel.state.contract_amendment_application_history == []
     assert not any(
-        call.get("provider_role") == "multicomponent_recovery_offline"
+        call.get("provider_role") == "multicomponent_recovery_diagnostic"
         for call in harness.search_calls
     )
     assert captured["packet_handoff_called"] is True
