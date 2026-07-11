@@ -4101,7 +4101,8 @@ class RunKernel:
                 "amendment_round": 1,
                 "graph_amendment_round": 1,
                 "component_research_reentry_round": 1,
-                "whole_graph_resynthesis_round": 1,
+                "selective_recomputation_round": 1,
+                "whole_graph_resynthesis_round": 0,
             },
             expected_observation_type=(
                 ObservationType.MULTICOMPONENT_RECOVERY_AUTHORIZED
@@ -16226,6 +16227,9 @@ class RunKernel:
                 "whole_graph_resynthesis_round": action.inputs.get(
                     "whole_graph_resynthesis_round"
                 ),
+                "selective_recomputation_round": action.inputs.get(
+                    "selective_recomputation_round"
+                ),
                 "search_authorized": action.inputs.get("search_authorized")
                 is True,
                 "provider_selected": False,
@@ -16245,6 +16249,8 @@ class RunKernel:
                 COMPONENT_WORK_GRAPH_V1_STAGE,
                 GRAPH_STATUS_READY,
                 GRAPH_STATUS_READY_WITH_CAVEATS,
+                MULTICOMPONENT_CARRY_FORWARD_STAGE,
+                MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
                 validate_component_work_graph_v1,
             )
             from core.multicomponent_component_admission import (
@@ -16430,6 +16436,12 @@ class RunKernel:
                 "admitted",
                 "admitted_with_caveats",
             }
+            selective_closure = _safe_mapping(
+                self.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE)
+            )
+            carry_forward = _safe_mapping(
+                self.state.projections.get(MULTICOMPONENT_CARRY_FORWARD_STAGE)
+            )
             if disposition == "blocked_requires_user_confirmation":
                 if (
                     authorization.get("search_authorized") is not False
@@ -16475,6 +16487,34 @@ class RunKernel:
                 if not admitted or not graph_ready:
                     raise RunKernelTransitionError(
                         "acquired recovery outcome requires admitted component and ready graph"
+                    )
+                if (
+                    int(graph.get("selective_recomputation_rounds") or 0) != 1
+                    or int(graph.get("whole_graph_resynthesis_rounds") or 0) != 0
+                    or _safe_mapping(graph.get("selective_closure_ref"))
+                    != {
+                        "closure_id": selective_closure.get("closure_id"),
+                        "closure_digest": selective_closure.get("closure_digest"),
+                    }
+                    or _safe_mapping(carry_forward.get("final_graph_ref")).get(
+                        "graph_id"
+                    )
+                    != graph.get("graph_id")
+                    or int(
+                        _safe_mapping(carry_forward.get("final_graph_ref")).get(
+                            "graph_revision"
+                        )
+                        or 0
+                    )
+                    >= int(graph.get("graph_revision") or 0)
+                    or not _safe_mapping(carry_forward.get("final_graph_ref")).get(
+                        "graph_digest"
+                    )
+                    or int(carry_forward.get("carry_forward_count") or 0)
+                    != int(graph.get("carry_forward_count") or 0)
+                ):
+                    raise RunKernelTransitionError(
+                        "acquired recovery outcome lacks exact selective recomputation authority"
                     )
             pre_recovery_synthesis_suppressed = bool(
                 graph.get("pre_recovery_synthesis_authority_invalidated")
@@ -16553,6 +16593,78 @@ class RunKernel:
                 "recovery_outcome_action_count": len(outcome_actions),
                 "recovery_outcome_observation_count": 1,
             }
+            if selective_closure:
+                projection_core.update(
+                    {
+                        "selective_recomputation_rounds": int(
+                            graph.get("selective_recomputation_rounds") or 0
+                        ),
+                        "whole_graph_resynthesis_rounds": int(
+                            graph.get("whole_graph_resynthesis_rounds") or 0
+                        ),
+                        "affected_synthesis_count": int(
+                            graph.get("affected_synthesis_count") or 0
+                        ),
+                        "preserved_synthesis_count": int(
+                            graph.get("preserved_synthesis_count") or 0
+                        ),
+                        "recomputed_synthesis_count": int(
+                            graph.get("recomputed_synthesis_count") or 0
+                        ),
+                        "carry_forward_count": int(
+                            graph.get("carry_forward_count") or 0
+                        ),
+                        "selective_closure_ref": {
+                            "closure_id": selective_closure.get("closure_id"),
+                            "closure_digest": selective_closure.get(
+                                "closure_digest"
+                            ),
+                        },
+                        "fresh_affected_synthesis_refs": [
+                            {
+                                "node_kind": item.get("node_kind"),
+                                "node_id": item.get("node_id"),
+                                "node_revision": item.get("node_revision"),
+                                "node_digest": item.get("node_digest"),
+                                "synthesis_key": item.get("synthesis_key"),
+                                "status": item.get("status"),
+                                "current": item.get("current") is True,
+                                "stale": item.get("stale") is True,
+                            }
+                            for item in graph.get("synthesis_nodes") or ()
+                            if item.get("synthesis_key")
+                            in set(
+                                selective_closure.get(
+                                    "affected_synthesis_keys", ()
+                                )
+                            )
+                        ],
+                        "fresh_full_case_scrutineer_ref": _safe_mapping(
+                            graph.get("scrutineer_ref")
+                        ),
+                        "logical_role_accounting": _safe_mapping(
+                            graph.get("logical_accounting")
+                        ),
+                        "physical_role_call_accounting": _safe_mapping(
+                            graph.get("physical_call_accounting")
+                        ),
+                    }
+                )
+            if carry_forward:
+                projection_core["carry_forward_projection_ref"] = {
+                    "carry_forward_projection_digest": carry_forward.get(
+                        "carry_forward_projection_digest"
+                    ),
+                    "runkernel_carry_forward_action_ref": _safe_mapping(
+                        carry_forward.get("runkernel_carry_forward_action_ref")
+                    ),
+                    "final_graph_ref": _safe_mapping(
+                        carry_forward.get("final_graph_ref")
+                    ),
+                    "carry_forward_count": carry_forward.get(
+                        "carry_forward_count"
+                    ),
+                }
             if amendment_admission:
                 projection_core.update(
                     {

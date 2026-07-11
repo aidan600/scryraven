@@ -158,6 +158,7 @@ DYNAMIC_NORTHSTAR_QUERY = """For the fictional Northstar Home-Energy Rebate:
 - What is the base rebate?
 - Who qualifies for the income-based bonus?
 - Can an ordinary applicant file online?
+- What identifier must every applicant include?
 
 Then explain how bonus eligibility changes the filing route and what an
 eligible applicant should do."""
@@ -167,8 +168,9 @@ DYNAMIC_NORTHSTAR_REPORT = """Northstar Home-Energy Rebate
 The base rebate is $1,200. The income bonus is available at or below $60,000
 household income. An applicant claiming the income-based bonus must submit the
 paper application, while an ordinary applicant who is not claiming the bonus
-may file online. The filing distinction is limited to the fictional Northstar
-rules supplied for this answer."""
+may file online. Every application must include the Northstar program account
+number. The filing distinction is limited to the fictional Northstar rules
+supplied for this answer."""
 
 
 class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
@@ -188,6 +190,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "Northstar base rebate amount",
                 "Northstar income-based bonus qualification",
                 "Northstar ordinary applicant online filing",
+                "Northstar application account number requirement",
             ),
             raw_author_response=(
                 DYNAMIC_NORTHSTAR_REPORT
@@ -204,9 +207,14 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
         self.broadening_proposal = broadening_proposal
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs):
-        from core.multicomponent_role_runtime import ROLE_SYSTEM_PROMPTS
+        from core.multicomponent_role_runtime import (
+            ROLE_SYSTEM_PROMPTS,
+            SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
+        )
 
-        if system_prompt in ROLE_SYSTEM_PROMPTS.values():
+        if system_prompt in ROLE_SYSTEM_PROMPTS.values() or system_prompt == (
+            SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
+        ):
             self.model_calls.append(
                 {
                     "system_prompt": system_prompt,
@@ -231,6 +239,11 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 elif "online" in question:
                     claim = (
                         "An ordinary applicant not claiming the income bonus may file online."
+                    )
+                elif "account number" in question or "identifier" in question:
+                    claim = (
+                        "Every application must include the Northstar program "
+                        "account number."
                     )
                 elif "paper" in question:
                     claim = (
@@ -269,8 +282,16 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 income = next(
                     value for key, value in by_question.items() if "income" in key
                 )
+                base = next(
+                    value for key, value in by_question.items() if "base rebate" in key
+                )
                 online = next(
                     value for key, value in by_question.items() if "online" in key
+                )
+                account = next(
+                    value
+                    for key, value in by_question.items()
+                    if "account number" in key or "identifier" in key
                 )
                 paper = next(
                     (
@@ -285,20 +306,51 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                         {
                             "synthesis_proposals": [
                                 {
+                                    "synthesis_key": "benefit_summary",
+                                    "claim_text": (
+                                        "The base rebate and income threshold define "
+                                        "the available Northstar benefit."
+                                    ),
+                                    "relationship_type": "benefit_conjunction",
+                                    "component_inputs": [base, income],
+                                    "synthesis_inputs": [],
+                                    "caveats": [],
+                                    "nonclaims": [],
+                                    "blockers": [],
+                                },
+                                {
                                     "synthesis_key": "filing_route",
                                     "claim_text": (
                                         "Ordinary non-bonus applicants may file online, "
                                         "but the route for bonus claimants is not established."
                                     ),
                                     "relationship_type": "conditional_filing_route",
-                                    "component_inputs": [income, online],
+                                    "component_inputs": [online, account],
                                     "synthesis_inputs": [],
                                     "caveats": [
                                         "The bonus-claimant filing rule is not established."
                                     ],
                                     "nonclaims": [],
                                     "blockers": [],
-                                }
+                                },
+                                {
+                                    "synthesis_key": "applicant_guidance",
+                                    "claim_text": (
+                                        "Applicants should combine the benefit facts "
+                                        "with the currently known filing route."
+                                    ),
+                                    "relationship_type": "guided_conjunction",
+                                    "component_inputs": [],
+                                    "synthesis_inputs": [
+                                        "benefit_summary",
+                                        "filing_route",
+                                    ],
+                                    "caveats": [
+                                        "The bonus-claimant filing route is unresolved."
+                                    ],
+                                    "nonclaims": [],
+                                    "blockers": [],
+                                },
                             ]
                         }
                     )
@@ -312,7 +364,7 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                                     "ordinary non-bonus applicants may file online."
                                 ),
                                 "relationship_type": "conditional_filing_route",
-                                "component_inputs": [income, paper, online],
+                                "component_inputs": [online, account, paper],
                                 "synthesis_inputs": [],
                                 "caveats": [],
                                 "nonclaims": [
@@ -320,6 +372,50 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                                 ],
                                 "blockers": [],
                             }
+                        ]
+                    }
+                )
+            if system_prompt == SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT:
+                recovered = payload["current_recovered_component_ref"][
+                    "component_id"
+                ]
+                licensed = [
+                    item["component_id"]
+                    for item in payload["licensed_current_component_refs"]
+                ]
+                return json.dumps(
+                    {
+                        "synthesis_proposals": [
+                            {
+                                "synthesis_key": "filing_route",
+                                "claim_text": (
+                                    "Income-bonus claimants must use the paper application; "
+                                    "ordinary non-bonus applicants may file online."
+                                ),
+                                "relationship_type": "conditional_filing_route",
+                                "component_inputs": [*licensed, recovered],
+                                "affected_synthesis_inputs": [],
+                                "preserved_synthesis_inputs": [],
+                                "caveats": [],
+                                "nonclaims": [
+                                    "No filing rule outside the fictional program is claimed."
+                                ],
+                                "blockers": [],
+                            },
+                            {
+                                "synthesis_key": "applicant_guidance",
+                                "claim_text": (
+                                    "Applicants should combine the benefit facts with "
+                                    "the applicable online-or-paper filing route."
+                                ),
+                                "relationship_type": "guided_conjunction",
+                                "component_inputs": [],
+                                "affected_synthesis_inputs": ["filing_route"],
+                                "preserved_synthesis_inputs": ["benefit_summary"],
+                                "caveats": [],
+                                "nonclaims": [],
+                                "blockers": [],
+                            },
                         ]
                     }
                 )
@@ -492,6 +588,14 @@ class DynamicNorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "An ordinary applicant not claiming the income bonus may file online.",
                 "primary_source_documents",
                 "Northstar ordinary applicant online filing",
+                "official",
+            ),
+            (
+                207,
+                "Northstar account number requirement",
+                "Every application must include the Northstar program account number.",
+                "primary_source_documents",
+                "Northstar application account number requirement",
                 "official",
             ),
             (
@@ -1315,7 +1419,7 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
         "multicomponent_recovery_outcome"
     ]
     assert authorization["target_kind"] == "synthesis"
-    assert authorization["target_key"] == "synthesis_01"
+    assert authorization["target_key"] == "synthesis_02"
     assert authorization["recovery_authorization_action_count"] == 1
     assert len(kernel.state.contract_amendment_admission_history) == 1
     assert len(kernel.state.contract_amendment_application_history) == 1
@@ -1345,8 +1449,8 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
             if call.get("provider_role") == "multicomponent_recovery_diagnostic"
         ]
     ) == 1
-    assert len(graph["component_nodes"]) == 4
-    assert len(graph["stale_synthesis_history"]) == 1
+    assert len(graph["component_nodes"]) == 5
+    assert len(graph["stale_synthesis_history"]) == 2
     assert all(
         item["current"] is False and item["stale"] is True
         for item in graph["stale_synthesis_history"]
@@ -1354,26 +1458,35 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
     assert graph["automatic_recovery_rounds"] == 1
     assert graph["graph_amendment_rounds"] == 1
     assert graph["component_research_reentry_rounds"] == 1
-    assert graph["whole_graph_resynthesis_rounds"] == 1
+    assert graph["whole_graph_resynthesis_rounds"] == 0
+    assert graph["selective_recomputation_rounds"] == 1
+    assert graph["affected_synthesis_count"] == 2
+    assert graph["preserved_synthesis_count"] == 1
+    assert graph["recomputed_synthesis_count"] == 2
+    assert graph["carry_forward_count"] == 1
     assert graph["graph_id"] == authorization["graph_id"]
     assert graph["graph_revision"] > authorization["graph_revision"]
     assert graph["accepted_contract_ref"]["accepted_contract_digest"] == (
         kernel.state.current_answer_contract["accepted_contract_digest"]
     )
     assert graph["graph_status"] == "ready"
-    assert [item["status"] for item in graph["synthesis_nodes"]] == ["admitted"]
+    assert [item["status"] for item in graph["synthesis_nodes"]] == [
+        "admitted",
+        "admitted",
+        "admitted",
+    ]
     assert graph["logical_accounting"] == {
-        "component_analyst_evaluations": 4,
-        "component_dprime_evaluations": 4,
+        "component_analyst_evaluations": 5,
+        "component_dprime_evaluations": 5,
         "cross_component_analyst_evaluations": 2,
-        "synthesis_dprime_evaluations": 2,
+        "synthesis_dprime_evaluations": 5,
         "scrutineer_evaluations": 2,
     }
     assert graph["physical_call_accounting"] == {
-        "component_analyst_calls": 4,
-        "component_dprime_calls": 4,
+        "component_analyst_calls": 5,
+        "component_dprime_calls": 5,
         "cross_component_analyst_calls": 2,
-        "synthesis_dprime_calls": 2,
+        "synthesis_dprime_calls": 5,
         "scrutineer_calls": 2,
     }
     sufficiency = captured["sufficiency_projection"]
@@ -1382,8 +1495,8 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
         "graph_contract_current"
     ] is True
     packet = captured["packet_handoff"].packet
-    assert len(packet.direct_component_entries) == 4
-    assert len(packet.admitted_synthesis_entries) == 1, json.dumps(
+    assert len(packet.direct_component_entries) == 5
+    assert len(packet.admitted_synthesis_entries) == 3, json.dumps(
         {
             "decision": sufficiency.get("decision"),
             "posture": sufficiency.get("final_answer_posture"),
@@ -1403,6 +1516,7 @@ def test_dynamic_northstar_ordinary_pipeline_recovers_and_answers(
     assert "at or below $60,000" in normalized
     assert "paper application" in normalized
     assert "may file online" in normalized
+    assert "account number" in normalized
     assert harness.forbidden_live_calls == []
 
 
@@ -1471,7 +1585,7 @@ def test_dynamic_northstar_terminal_blocker_uses_ordinary_finalization(
     assert "evidence_ledger_reduction_ref" not in canonical_outcome
     assert "component_admission_ref" not in canonical_outcome
     assert len(kernel.state.contract_amendment_application_history) == 1
-    assert len(graph["component_nodes"]) == 3
+    assert len(graph["component_nodes"]) == 4
     assert all(
         "recovered" not in str(item["component_id"])
         for item in graph["component_nodes"]
@@ -1613,7 +1727,7 @@ def test_real_ordinary_dispatcher_recovers_northstar_component(
         "component:recovered:"
     )
     assert graph["graph_status"] == "ready"
-    assert len(graph["component_nodes"]) == 4
+    assert len(graph["component_nodes"]) == 5
     assert captured["author_handoff_called"] is True
     normalized = " ".join(outcome.report.split())
     assert "$1,200" in normalized
@@ -1672,7 +1786,7 @@ def test_real_ordinary_dispatcher_empty_result_reaches_canonical_terminal_output
     assert canonical["search_result_candidate_packet_ref"]["candidate_count"] == 0
     assert "fetch_read_content_packet_ref" not in canonical
     assert "component_admission_ref" not in canonical
-    assert len(graph["component_nodes"]) == 3
+    assert len(graph["component_nodes"]) == 4
     assert all(
         "recovered" not in str(item["component_id"])
         for item in graph["component_nodes"]

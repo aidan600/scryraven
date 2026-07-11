@@ -16,6 +16,7 @@ from core.component_work_graph_v1 import (
     component_work_graph_v1_selective_resynthesis_from_cross_artifact,
     cross_component_input_packet,
     derive_selective_recomputation_closure,
+    finalize_component_work_graph_v1,
     graph_with_selective_invalidation,
     reduce_component_work_graph_v1,
     reduce_selective_invalidation_via_runkernel,
@@ -913,3 +914,327 @@ def test_selective_reconstruction_calls_cross_and_dprime_only_for_affected_keys(
     assert any(item.startswith("filing_route:") for item in dprime_keys)
     assert any(item.startswith("applicant_guidance:") for item in dprime_keys)
     assert all(not item.startswith("benefit_summary:") for item in dprime_keys)
+
+
+def test_five_component_northstar_product_path_selectively_recovers_and_finalizes(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core.ordinary_multicomponent_synthesis_runtime as runtime
+    import core.pipeline_orchestrator as orchestrator
+    from core.cost_accounting import CostAccumulator
+    from core.protocols import NullStatusWriter
+    from tests.helpers.offline_ordinary_pipeline import (
+        HANDOFF_AUTHOR,
+        HANDOFF_PACKET,
+        HANDOFF_SEMANTIC,
+        HANDOFF_SUFFICIENCY,
+        install_handoff_capture,
+        offline_balanced_run_config,
+    )
+    from tests.test_multicomponent_dynamic_graph_recovery_01 import (
+        DynamicNorthstarHarness,
+        _forbid_direct_semantic_producer,
+    )
+
+    def forbidden_whole_graph_rebuild(**_kwargs):
+        raise AssertionError("ordinary successful recovery invoked whole-graph rebuild")
+
+    monkeypatch.setattr(
+        runtime,
+        "_execute_fresh_resynthesis",
+        forbidden_whole_graph_rebuild,
+    )
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = DynamicNorthstarHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-11",
+            session_id="selective-northstar-session",
+            run_id="selective-northstar-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    kernel = captured["run_kernel"]
+    graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
+    closure = kernel.state.projections[MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE]
+    carry = kernel.state.projections[MULTICOMPONENT_CARRY_FORWARD_STAGE]
+    recovery_outcome = kernel.state.projections["multicomponent_recovery_outcome"]
+    assert closure["directly_affected_synthesis_keys"] == ["filing_route"]
+    assert closure["transitively_affected_synthesis_keys"] == [
+        "applicant_guidance"
+    ]
+    assert closure["affected_synthesis_keys"] == [
+        "filing_route",
+        "applicant_guidance",
+    ]
+    assert closure["unaffected_active_synthesis_keys"] == ["benefit_summary"]
+    closure_action = next(
+        item
+        for item in kernel.state.issued_actions.values()
+        if item.inputs.get("operation") == "selective_closure"
+    )
+    invalidation_action = next(
+        item
+        for item in kernel.state.issued_actions.values()
+        if item.inputs.get("operation") == "selective_invalidation"
+    )
+    assert closure_action.sequence < invalidation_action.sequence
+    by_key = {item["synthesis_key"]: item for item in graph["synthesis_nodes"]}
+    carried = by_key["benefit_summary"]
+    carry_record = carry["carry_forward_records"][0]
+    assert carried["node_id"] == carry_record["prior_node_ref"]["node_id"]
+    assert carried["node_revision"] != carry_record["prior_node_ref"][
+        "node_revision"
+    ]
+    assert carried["node_digest"] != carry_record["prior_node_ref"]["node_digest"]
+    assert carry_record["new_node_ref"]["node_digest"] == carried["node_digest"]
+    assert carried["dprime_validation_ref"] == {}
+    assert carried["runkernel_admission_ref"] == {}
+    assert carried["carried_semantic_lineage"]["prior_synthesis_dprime_ref"]
+    assert carried["carried_semantic_lineage"]["prior_synthesis_admission_ref"]
+    assert carry["final_graph_ref"]["graph_digest"] != graph["graph_digest"]
+    assert carry["runkernel_carry_forward_action_ref"] == carried[
+        "current_node_authority"
+    ]["runkernel_carry_forward_action_ref"]
+    stale_keys = {
+        item["superseded_node_ref"]["synthesis_key"]
+        for item in graph["stale_synthesis_history"]
+    }
+    assert stale_keys == {"filing_route", "applicant_guidance"}
+    assert by_key["filing_route"]["superseded_node_ref"]["synthesis_key"] == (
+        "filing_route"
+    )
+    assert by_key["applicant_guidance"]["input_namespaces"] == {
+        "component_inputs": [],
+        "affected_synthesis_inputs": ["filing_route"],
+        "preserved_synthesis_inputs": ["benefit_summary"],
+    }
+    selective_cross = next(
+        item
+        for stage, item in kernel.state.projections.items()
+        if stage.startswith("multicomponent_role:cross_component_analyst:selective:")
+    )
+    assert [
+        item["synthesis_key"]
+        for item in selective_cross["semantic_output"]["synthesis_proposals"]
+    ] == ["filing_route", "applicant_guidance"]
+    selective_dprime_actions = [
+        item
+        for item in kernel.state.issued_actions.values()
+        if item.inputs.get("role") == "synthesis_dprime"
+        and ":selective:" in str(item.inputs.get("logical_evaluation_key"))
+    ]
+    assert len(selective_dprime_actions) == 2
+    assert all(
+        not str(item.inputs["logical_evaluation_key"]).startswith(
+            "benefit_summary:"
+        )
+        for item in selective_dprime_actions
+    )
+    scrutineer_actions = [
+        item
+        for item in kernel.state.issued_actions.values()
+        if item.inputs.get("role") == "scrutineer"
+    ]
+    assert len(scrutineer_actions) == 2
+    assert str(scrutineer_actions[-1].inputs["logical_evaluation_key"]).startswith(
+        "full-case:selective:graph-revision:"
+    )
+    assert graph["graph_status"] == "ready"
+    assert graph["whole_graph_resynthesis_rounds"] == 0
+    assert graph["selective_recomputation_rounds"] == 1
+    assert graph["logical_accounting"] == {
+        "component_analyst_evaluations": 5,
+        "component_dprime_evaluations": 5,
+        "cross_component_analyst_evaluations": 2,
+        "synthesis_dprime_evaluations": 5,
+        "scrutineer_evaluations": 2,
+    }
+    assert recovery_outcome["affected_synthesis_count"] == 2
+    assert recovery_outcome["preserved_synthesis_count"] == 1
+    assert recovery_outcome["recomputed_synthesis_count"] == 2
+    assert recovery_outcome["fresh_full_case_scrutineer_ref"] == graph[
+        "scrutineer_ref"
+    ]
+    sufficiency = captured["sufficiency_projection"]
+    assert sufficiency["final_answer_allowed"] is True
+    packet = captured["packet_handoff"].packet
+    assert len(packet.direct_component_entries) == 5
+    assert {
+        item["synthesis_key"] for item in packet.admitted_synthesis_entries
+    } == {"benefit_summary", "filing_route", "applicant_guidance"}
+    assert captured["author_handoff_called"] is True
+    normalized = " ".join(outcome.report.split())
+    assert "$1,200" in normalized
+    assert "at or below $60,000" in normalized
+    assert "paper application" in normalized
+    assert "account number" in normalized
+    assert harness.forbidden_live_calls == []
+
+
+def test_closure_cannot_be_derived_after_selective_topology_replacement() -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+
+    with pytest.raises(
+        ComponentWorkGraphV1Error,
+        match="authorization-bound source graph",
+    ):
+        derive_selective_recomputation_closure(
+            amended,
+            recovery_authorization_ref=kernel.state.projections[
+                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+            ],
+            current_contract_ref=closure["current_contract_ref"],
+            contract_amendment_admission_ref=closure[
+                "contract_amendment_admission_ref"
+            ],
+            contract_amendment_application_ref=closure[
+                "contract_amendment_application_ref"
+            ],
+            recovered_component_admission_ref=closure[
+                "recovered_component_admission_ref"
+            ],
+        )
+
+
+def test_selective_packet_rejects_stale_preserved_boundary() -> None:
+    _kernel, _source, closure, amended = _selectively_invalidated_graph()
+    carried = amended["synthesis_nodes"][0]
+    carried["current"] = False
+    carried["stale"] = True
+    carried["node_digest"] = safe_packet_digest(
+        {
+            key: value
+            for key, value in carried.items()
+            if key
+            not in {
+                "node_digest",
+                "dprime_validated_node_revision",
+                "dprime_validated_node_digest",
+            }
+        }
+    )
+    amended["graph_digest"] = safe_packet_digest(
+        {key: value for key, value in amended.items() if key != "graph_digest"}
+    )
+
+    with pytest.raises(
+        ComponentWorkGraphV1Error,
+        match="separate semantic lineage from current authority",
+    ):
+        selective_cross_component_input_packet(amended, closure=closure)
+
+
+def test_selective_finalization_rejects_prior_scrutineer_authority() -> None:
+    kernel, _source, closure, amended = _selectively_invalidated_graph()
+    packet = selective_cross_component_input_packet(amended, closure=closure)
+    _packet, artifact = _execute_selective_cross(
+        kernel,
+        amended,
+        closure,
+        _selective_response(packet),
+    )
+    candidate = component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+        amended,
+        closure=closure,
+        cross_component_artifact=artifact,
+    )
+    rebuilt = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="selective_resynthesis_structure",
+        graph_candidate=candidate,
+        role_evaluation_key=artifact["logical_evaluation_key"],
+    )
+    rebuilt["scrutineer_status"] = "passed"
+    rebuilt["scrutineer_ref"] = {
+        "artifact_id": "prior-scrutineer",
+        "artifact_digest": "prior-scrutineer-digest",
+        "logical_evaluation_key": "full-case",
+    }
+    rebuilt["graph_digest"] = safe_packet_digest(
+        {key: value for key, value in rebuilt.items() if key != "graph_digest"}
+    )
+
+    finalized = finalize_component_work_graph_v1(rebuilt)
+
+    assert finalized["graph_status"] == "missing_required_scrutiny"
+    assert finalized["graph_output_suppressed"] is True
+
+
+def test_second_selective_recomputation_round_is_rejected() -> None:
+    kernel, _source, _closure, _amended = _selectively_invalidated_graph()
+
+    with pytest.raises(RunKernelTransitionError):
+        kernel.authorize_multicomponent_selective_invalidation()
+
+
+def test_selective_failure_blocks_without_whole_graph_fallback(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core.ordinary_multicomponent_synthesis_runtime as runtime
+    import core.pipeline_orchestrator as orchestrator
+    from core.cost_accounting import CostAccumulator
+    from core.protocols import NullStatusWriter
+    from tests.helpers.offline_ordinary_pipeline import (
+        HANDOFF_SEMANTIC,
+        install_handoff_capture,
+        offline_balanced_run_config,
+    )
+    from tests.test_multicomponent_dynamic_graph_recovery_01 import (
+        DynamicNorthstarHarness,
+        _forbid_direct_semantic_producer,
+    )
+
+    whole_graph_called = False
+
+    def fail_selective(**_kwargs):
+        raise ComponentWorkGraphV1Error("forced selective proof failure")
+
+    def observe_whole_graph(**_kwargs):
+        nonlocal whole_graph_called
+        whole_graph_called = True
+        raise AssertionError("whole-graph fallback is forbidden")
+
+    monkeypatch.setattr(runtime, "_execute_selective_resynthesis", fail_selective)
+    monkeypatch.setattr(runtime, "_execute_fresh_resynthesis", observe_whole_graph)
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = DynamicNorthstarHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(HANDOFF_SEMANTIC,),
+    )
+
+    with pytest.raises(Exception):
+        orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-11",
+                session_id="selective-failure-session",
+                run_id="selective-failure-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    kernel = captured["semantic_run_kernel"]
+    recovery = kernel.state.projections["multicomponent_dynamic_recovery"]
+    assert recovery["status"] == "blocked"
+    assert recovery["whole_graph_fallback_invoked"] is False
+    assert whole_graph_called is False

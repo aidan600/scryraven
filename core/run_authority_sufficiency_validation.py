@@ -1443,6 +1443,57 @@ def _canonical_recovery_outcome_is_current(
         return attempts == 0 and not providers
     if attempts != 1 or not providers:
         return False
+    if disposition == "acquired":
+        closure_ref = _mapping(outcome.get("selective_closure_ref"))
+        graph_closure_ref = _mapping(graph.get("selective_closure_ref"))
+        if (
+            _int_value(outcome.get("selective_recomputation_rounds")) != 1
+            or _int_value(outcome.get("whole_graph_resynthesis_rounds")) != 0
+            or _int_value(outcome.get("affected_synthesis_count"))
+            != _int_value(graph.get("affected_synthesis_count"))
+            or _int_value(outcome.get("preserved_synthesis_count"))
+            != _int_value(graph.get("preserved_synthesis_count"))
+            or _int_value(outcome.get("recomputed_synthesis_count"))
+            != _int_value(graph.get("recomputed_synthesis_count"))
+            or _int_value(outcome.get("carry_forward_count"))
+            != _int_value(graph.get("carry_forward_count"))
+            or closure_ref != graph_closure_ref
+            or _mapping(outcome.get("fresh_full_case_scrutineer_ref"))
+            != _mapping(graph.get("scrutineer_ref"))
+            or _mapping(outcome.get("logical_role_accounting"))
+            != _mapping(graph.get("logical_accounting"))
+            or _mapping(outcome.get("physical_role_call_accounting"))
+            != _mapping(graph.get("physical_call_accounting"))
+        ):
+            return False
+        outcome_fresh = {
+            clean_token(item.get("synthesis_key")): _mapping(item)
+            for item in _mapping_tuple(
+                outcome.get("fresh_affected_synthesis_refs")
+            )
+        }
+        current_fresh = {
+            clean_token(item.get("synthesis_key")): _mapping(item)
+            for item in _mapping_tuple(graph.get("synthesis_nodes"))
+            if _mapping(item.get("superseded_node_ref"))
+        }
+        if (
+            len(current_fresh)
+            != _int_value(graph.get("affected_synthesis_count"))
+            or set(outcome_fresh) != set(current_fresh)
+        ):
+            return False
+        for key, node in current_fresh.items():
+            ref = outcome_fresh.get(key, {})
+            if (
+                ref.get("node_id") != node.get("node_id")
+                or ref.get("node_revision") != node.get("node_revision")
+                or ref.get("node_digest") != node.get("node_digest")
+                or ref.get("status") != "admitted"
+                or ref.get("current") is not True
+                or ref.get("stale") is not False
+            ):
+                return False
     return True
 
 

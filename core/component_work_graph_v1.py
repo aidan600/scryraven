@@ -368,8 +368,8 @@ def derive_selective_recomputation_closure(
         item["synthesis_key"]: item for item in source["synthesis_nodes"]
     }
     target = synthesis_by_id.get(resolved_target.get("node_id"))
-    if target is None or any(
-        resolved_target.get(key) != _node_ref(target).get(key)
+    resolved_matches_active = target is not None and all(
+        resolved_target.get(key) == _node_ref(target).get(key)
         for key in (
             "node_kind",
             "node_id",
@@ -380,7 +380,17 @@ def derive_selective_recomputation_closure(
             "current",
             "stale",
         )
-    ):
+    )
+    resolved_matches_challenge = target is not None and any(
+        challenge.get("target_kind") == authorization.get("target_kind")
+        and challenge.get("target_key") == authorization.get("target_key")
+        and _safe_mapping(challenge.get("resolved_target")) == resolved_target
+        and resolved_target.get("node_id") == target.get("node_id")
+        and resolved_target.get("synthesis_key") == target.get("synthesis_key")
+        for challenge in source.get("challenge_refs") or ()
+        if isinstance(challenge, Mapping)
+    )
+    if not (resolved_matches_active or resolved_matches_challenge):
         raise ComponentWorkGraphV1Error(
             "selective closure recovery target is not the exact current synthesis"
         )
@@ -2320,6 +2330,21 @@ def expected_graph_after_transition(
 
 def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]:
     current = validate_component_work_graph_v1(graph)
+    scrutineer_ref = _safe_mapping(current.get("scrutineer_ref"))
+    selective_scrutiny_current = True
+    if int(current.get("selective_recomputation_rounds") or 0) == 1:
+        selective_scrutiny_current = bool(
+            str(scrutineer_ref.get("logical_evaluation_key") or "").startswith(
+                "full-case:selective:graph-revision:"
+            )
+            and all(
+                stale.get("artifact_id") != scrutineer_ref.get("artifact_id")
+                or stale.get("artifact_digest")
+                != scrutineer_ref.get("artifact_digest")
+                for stale in current.get("stale_scrutineer_history") or ()
+                if isinstance(stale, Mapping)
+            )
+        )
     synth_statuses = {item["status"] for item in current["synthesis_nodes"]}
     challenge_kinds = {
         item.get("target_kind") for item in current.get("challenge_refs") or ()
@@ -2346,9 +2371,10 @@ def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]
         status = GRAPH_STATUS_MISSING_DEPENDENCY
     elif "blocked" in synth_statuses:
         status = GRAPH_STATUS_BLOCKED
-    elif current.get("scrutineer_required") is True and current.get(
-        "scrutineer_status"
-    ) not in {"passed", "passed_with_caveats"}:
+    elif current.get("scrutineer_required") is True and (
+        current.get("scrutineer_status") not in {"passed", "passed_with_caveats"}
+        or not selective_scrutiny_current
+    ):
         status = GRAPH_STATUS_MISSING_SCRUTINY
     elif direct_count < component_count:
         status = GRAPH_STATUS_PARTIAL
@@ -2360,6 +2386,8 @@ def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]
     else:
         status = GRAPH_STATUS_UNSUPPORTED
     current["graph_status"] = status
+    if status in _READY_STATUSES:
+        current["graph_output_suppressed"] = False
     return _next_revision(current)
 
 
@@ -2501,15 +2529,14 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         and int(graph.get("graph_amendment_rounds") or 0) == 1
     )
     selective_awaiting_resynthesis = (
-        bool(synthesis_nodes)
-        and graph.get("dependency_posture") == "requires_selective_resynthesis"
+        graph.get("dependency_posture") == "requires_selective_resynthesis"
         and graph.get("graph_status") == GRAPH_STATUS_STALE
         and int(graph.get("automatic_recovery_rounds") or 0) == 1
         and int(graph.get("graph_amendment_rounds") or 0) == 1
         and int(graph.get("selective_recomputation_rounds") or 0) == 1
         and int(graph.get("whole_graph_resynthesis_rounds") or 0) == 0
     )
-    if not amended_awaiting_resynthesis and not (
+    if not amended_awaiting_resynthesis and not selective_awaiting_resynthesis and not (
         1 <= len(synthesis_nodes) <= MAX_SYNTHESIS_NODES
     ):
         raise ComponentWorkGraphV1Error("Graph V1 synthesis count invalid")
@@ -2568,10 +2595,12 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
             graph.get("graph_revision") or 0
         ):
             raise ComponentWorkGraphV1Error("Graph V1 challenge revision binding invalid")
-    if amended_awaiting_resynthesis:
+    if amended_awaiting_resynthesis or (
+        selective_awaiting_resynthesis and not synthesis_nodes
+    ):
         if edges:
             raise ComponentWorkGraphV1Error(
-                "amended Graph V1 cannot retain current semantic edges"
+                "awaiting-resynthesis Graph V1 cannot retain current semantic edges"
             )
     elif not edges or graph.get("dependency_posture") not in {
         "explicitly_assessed",

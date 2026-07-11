@@ -922,6 +922,30 @@ class FinalAnswerPacket:
                 )
         for raw_entry in self.admitted_synthesis_entries:
             entry = dict(raw_entry)
+            carried_lineage = dict(entry.get("carried_semantic_lineage") or {})
+            current_node_authority = dict(entry.get("current_node_authority") or {})
+            carry_action_ref = dict(
+                current_node_authority.get("runkernel_carry_forward_action_ref")
+                or {}
+            )
+            fresh_authority = bool(
+                dict(entry.get("dprime_validation_ref") or {})
+                and dict(entry.get("runkernel_admission_ref") or {})
+            )
+            carried_authority = bool(
+                carry_action_ref.get("operation") == "selective_invalidation"
+                and carry_action_ref.get("action_id")
+                and set(carried_lineage)
+                == {
+                    "prior_cross_component_analyst_ref",
+                    "prior_synthesis_claim_ref",
+                    "prior_synthesis_dprime_ref",
+                    "prior_synthesis_admission_ref",
+                }
+                and all(dict(item or {}) for item in carried_lineage.values())
+                and not dict(entry.get("dprime_validation_ref") or {})
+                and not dict(entry.get("runkernel_admission_ref") or {})
+            )
             if (
                 entry.get("entry_kind") != "admitted_synthesis"
                 or entry.get("status") != "admitted"
@@ -929,8 +953,7 @@ class FinalAnswerPacket:
                 or entry.get("stale") is not False
                 or not _clean_text(entry.get("claim_text"), limit=1200)
                 or not _clean_token(entry.get("claim_digest"), limit=128)
-                or not dict(entry.get("dprime_validation_ref") or {})
-                or not dict(entry.get("runkernel_admission_ref") or {})
+                or not (fresh_authority or carried_authority)
             ):
                 raise ValueError(
                     "FinalAnswerPacket synthesis entry is not current RunKernel-admitted state"
@@ -938,9 +961,9 @@ class FinalAnswerPacket:
         if self.admitted_synthesis_entries and self.multicomponent_graph_readiness not in {
             "ready",
             "ready_with_caveats",
-        }:
+        } and not self.multicomponent_limitations:
             raise ValueError(
-                "FinalAnswerPacket cannot include synthesis from a non-ready graph"
+                "FinalAnswerPacket non-ready synthesis requires explicit limitations"
             )
 
     def _validate_semantic_packet_evidence_bindings(self) -> None:

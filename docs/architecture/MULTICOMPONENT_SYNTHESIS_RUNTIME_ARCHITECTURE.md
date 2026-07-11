@@ -1,18 +1,20 @@
 # Multi-Component Synthesis Runtime Architecture
 
 Status: canonical repo-visible architecture for the installed bounded ordinary
-multi-component runtime and its deferred dynamic-graph direction.
+multi-component runtime through Phase 3 selective recomputation.
 
 Mode: BUILD.
 
-Phase: `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+Phase: `AG-MULTICOMPONENT-SELECTIVE-RECOMPUTATION-01`.
 
 Verdict target: `YES`.
 
 The earlier `MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01` established
-the governing direction. Phase 1 now installs the bounded ordinary product path
-for `ordinary-bounded-multicomponent-factual-synthesis-v1`. The recommended
-next phase is `AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
+the governing direction. Phase 1 installed the bounded ordinary product path
+for `ordinary-bounded-multicomponent-factual-synthesis-v1`. Phase 2 installed
+one governed missing-component recovery and AnswerContract amendment. Phase 3
+replaces Phase 2's ordinary successful-recovery whole-graph rebuild with serial
+selective invalidation, carry-forward, and affected-only recomputation.
 
 ## Current, Reusable, And Target States
 
@@ -67,7 +69,7 @@ default ordinary semantic producer invokes the complete approved component
 validation or cross-component synthesis lane. The V0 contracts and serial
 checkpoint are not ordinary answer consumption.
 
-### Installed Phase 1 path
+### Installed Phase 1 through Phase 3 path
 
 ```text
 component requirement and custody facts
@@ -89,8 +91,23 @@ component requirement and custody facts
 -> ordinary user-facing answer
 ```
 
-This complete bounded target is installed for the named supported query class.
-It is not a claim of arbitrary-query support or dynamic graph recovery.
+On one authorized missing-component recovery, the installed continuation is:
+
+```text
+authorization-bound pre-transition ComponentWorkGraph V1
+-> RunKernel-derived affected synthesis closure
+-> exact recovered component admission and current AnswerContract binding
+-> affected synthesis staled; unaffected synthesis deterministically carried
+-> selective Cross-Component Analyst proposal for affected keys only
+-> affected synthesis D-prime and RunKernel admission in topological order
+-> one fresh whole-case Scrutineer
+-> ordinary Sufficiency / FinalAnswerPacket / Author
+```
+
+Carried nodes preserve semantic lineage but do not launder the prior D-prime or
+admission as direct authority for a new node revision. Their current authority
+is the RunKernel carry-forward action; the final node/graph binding is recorded
+in a non-circular sibling carry-forward projection.
 
 ## Durable Role Ownership
 
@@ -257,35 +274,29 @@ diagnostic finalization cannot substitute for ordinary answer consumption.
 Sufficiency, FinalAnswerPacket, and Author must consume the admitted direct and
 synthesized material through the default ordinary entrypoint in the same BUILD.
 
-## Boundary 3 And Later Commitments
+## Phase 4 And Later Commitments
 
-Phase 1 establishes serial correctness and ordinary end-to-end consumption.
-The committed later destination is:
+Phases 1 through 3 establish serial correctness, ordinary end-to-end
+consumption, one bounded dynamic recovery, and selective recomputation. The
+remaining committed direction is:
 
 ```text
-dynamic graph and AnswerContract amendment
--> targeted ordinary research re-entry
--> selective invalidation
--> selective synthesis recomputation
--> revision-specific validation and scrutiny
--> RunKernel scheduling and budget leases
--> runtime parallelism where supported
+Phase 4: RunKernel scheduling and work/budget leases
+-> Phase 5: runtime parallelism where supported
 ```
 
-These Boundary 3 capabilities are deferred, not rejected or optional ideas.
-Runtime parallelism is not currently installed and must not be claimed before
-scheduling, leases, dependency readiness, cancellation, and resource support
-are licensed. The durable graph remains serial-compatible even after supported
-parallelism is added.
+Phase 4 scheduling and leases are deferred. Phase 5 runtime parallelism is
+deferred and must not be claimed before scheduling, leases, dependency
+readiness, cancellation, and resource support are licensed. The durable graph
+remains serial-compatible even after supported parallelism is added.
 
 ## Phase Boundary And Non-Proofs
 
-Phase 1 proves an offline synthetic ordinary product path through RunOutcome and
-CLI rendering. It does not prove live model quality, product correctness,
-automatic graph recovery, automatic missing-component research, dynamic graph
-mutation, selective recomputation, scheduling, budget leases, runtime
-parallelism, or arbitrary-query support. Its caps are implementation bounds,
-not permanent mode policy.
+Phase 3 proves an offline synthetic ordinary product path through RunOutcome and
+CLI rendering for one bounded selective recovery. It does not prove live model
+quality, arbitrary-query support, more than one recovery/selective round,
+scheduling, work or budget leases, cancellation, or runtime parallelism. Its
+caps are implementation bounds, not permanent mode policy.
 
-The recommended next checkpoint is exactly
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
+The next multi-component checkpoint is Phase 4 scheduling and leases. Phase 5
+runtime parallelism remains separately deferred.
