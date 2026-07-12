@@ -18240,6 +18240,18 @@ class RunKernel:
                                 "transport_completed"
                             )
                             is True,
+                            "provider_request_attempt_count": max(
+                                0,
+                                min(
+                                    1,
+                                    int(
+                                        observation.payload.get(
+                                            "provider_request_attempt_count"
+                                        )
+                                        or 0
+                                    ),
+                                ),
+                            ),
                             "observed_batch_max_in_flight": int(
                                 observation.payload.get(
                                     "observed_batch_max_in_flight"
@@ -18345,6 +18357,18 @@ class RunKernel:
                                 "transport_completed"
                             )
                             is True,
+                            "provider_request_attempt_count": max(
+                                0,
+                                min(
+                                    1,
+                                    int(
+                                        observation.payload.get(
+                                            "provider_request_attempt_count"
+                                        )
+                                        or 0
+                                    ),
+                                ),
+                            ),
                             "observed_batch_max_in_flight": int(
                                 observation.payload.get(
                                     "observed_batch_max_in_flight"

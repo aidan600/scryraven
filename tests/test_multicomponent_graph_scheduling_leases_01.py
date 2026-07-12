@@ -50,6 +50,7 @@ from core.multicomponent_role_runtime import (
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
+    MulticomponentRoleRuntimeError,
     execute_multicomponent_role_call,
     safe_packet_digest,
 )
@@ -61,6 +62,9 @@ from core.run_kernel import (
     RunKernel,
     RunKernelTransitionError,
     RunStageStatus,
+)
+from core.strict_one_shot_model_transport import (
+    wrap_text_callable_as_strict_one_shot_transport,
 )
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
@@ -251,14 +255,18 @@ def _initialize_existing_graph_scheduler(
     return packets
 
 
-def _role_kwargs(*, ask_model):
+def _role_kwargs(*, ask_model=None, strict_one_shot_transport=None, provider="OpenAI", model="gpt-5.4"):
+    if strict_one_shot_transport is None:
+        if ask_model is None:
+            raise ValueError("need transport")
+        strict_one_shot_transport = wrap_text_callable_as_strict_one_shot_transport(
+            ask_model, canonical_provider=provider, model=model
+        )
     return {
-        "ask_model": ask_model,
-        "clean_json_response": lambda value: value,
-        "provider": "offline",
-        "model": "fixture",
-        "base_url": "",
-        "api_key": "",
+        "strict_one_shot_transport": strict_one_shot_transport,
+        "clean_json_response": None,
+        "provider": provider,
+        "model": model,
         "use_reasoning": False,
     }
 
@@ -406,7 +414,7 @@ def test_09_transport_failure_is_spent_and_admits_no_artifact() -> None:
     kernel, packets = _scheduler_kernel()
     lease = kernel.grant_next_multicomponent_work_lease()
     work = lease["work"]
-    with pytest.raises(RuntimeError, match="transport failed"):
+    with pytest.raises(MulticomponentRoleRuntimeError, match="model_transport_failure"):
         execute_multicomponent_role_call(
             run_kernel=kernel,
             role=work["role"],

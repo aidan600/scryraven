@@ -51,6 +51,9 @@ from core.ordinary_multicomponent_synthesis_runtime import (
 )
 from core.protocols import NullStatusWriter
 from core.run_kernel import Observation, RunKernelTransitionError, RunStageStatus
+from core.strict_one_shot_model_transport import (
+    wrap_text_callable_as_strict_one_shot_transport,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -134,12 +137,14 @@ def _challenged_graph_with_missing_component_proposal(
         run_kernel=kernel,
         role=ROLE_SCRUTINEER,
         input_packet=scrutiny_input,
-        ask_model=lambda *_args, **_kwargs: json.dumps(response),
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(response),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
+        ),
         clean_json_response=lambda value: value,
-        provider="offline",
-        model="fixture",
-        base_url="http://offline.invalid/v1",
-        api_key="",
+        provider="OpenAI",
+        model="gpt-5.4",
         use_reasoning=False,
         logical_evaluation_key="full-case",
     )
@@ -1073,23 +1078,25 @@ def test_recovered_component_uses_typed_analyst_dprime_and_runkernel_admission()
         run_kernel=kernel,
         role="component_analyst",
         input_packet=analyst_input,
-        ask_model=lambda *_args, **_kwargs: json.dumps(
-            {
-                "claim_text": (
-                    "Applicants claiming the income-based bonus must submit "
-                    "the paper application."
-                ),
-                "support_status": "supported",
-                "caveats": [],
-                "nonclaims": [],
-                "blockers": [],
-            }
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(
+                {
+                    "claim_text": (
+                        "Applicants claiming the income-based bonus must submit "
+                        "the paper application."
+                    ),
+                    "support_status": "supported",
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            ),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
         ),
         clean_json_response=lambda value: value,
-        provider="offline",
-        model="fixture",
-        base_url="http://offline.invalid/v1",
-        api_key="",
+        provider="OpenAI",
+        model="gpt-5.4",
         use_reasoning=False,
         logical_evaluation_key=component_id,
     )
@@ -1101,20 +1108,22 @@ def test_recovered_component_uses_typed_analyst_dprime_and_runkernel_admission()
         run_kernel=kernel,
         role="component_dprime",
         input_packet=dprime_input,
-        ask_model=lambda *_args, **_kwargs: json.dumps(
-            {
-                "validation_status": "supported",
-                "reasons": ["The exact bounded evidence supports the claim."],
-                "caveats": [],
-                "nonclaims": [],
-                "blockers": [],
-            }
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(
+                {
+                    "validation_status": "supported",
+                    "reasons": ["The exact bounded evidence supports the claim."],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            ),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
         ),
         clean_json_response=lambda value: value,
-        provider="offline",
-        model="fixture",
-        base_url="http://offline.invalid/v1",
-        api_key="",
+        provider="OpenAI",
+        model="gpt-5.4",
         use_reasoning=False,
         logical_evaluation_key=component_id,
     )
@@ -1276,29 +1285,31 @@ def test_graph_identity_advances_and_pre_recovery_synthesis_becomes_noncurrent()
         run_kernel=kernel,
         role="cross_component_analyst",
         input_packet=cross_input,
-        ask_model=lambda *_args, **_kwargs: json.dumps(
-            {
-                "synthesis_proposals": [
-                    {
-                        "synthesis_key": "fresh_route",
-                        "claim_text": (
-                            "Bonus claimants use paper; ordinary applicants may file online."
-                        ),
-                        "relationship_type": "conditional_filing_route",
-                        "component_inputs": component_ids,
-                        "synthesis_inputs": [],
-                        "caveats": [],
-                        "nonclaims": [],
-                        "blockers": [],
-                    }
-                ]
-            }
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(
+                {
+                    "synthesis_proposals": [
+                        {
+                            "synthesis_key": "fresh_route",
+                            "claim_text": (
+                                "Bonus claimants use paper; ordinary applicants may file online."
+                            ),
+                            "relationship_type": "conditional_filing_route",
+                            "component_inputs": component_ids,
+                            "synthesis_inputs": [],
+                            "caveats": [],
+                            "nonclaims": [],
+                            "blockers": [],
+                        }
+                    ]
+                }
+            ),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
         ),
         clean_json_response=lambda value: value,
-        provider="offline",
-        model="fixture",
-        base_url="http://offline.invalid/v1",
-        api_key="",
+        provider="OpenAI",
+        model="gpt-5.4",
         use_reasoning=False,
         logical_evaluation_key=evaluation_key,
     )

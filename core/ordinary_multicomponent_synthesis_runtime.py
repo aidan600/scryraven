@@ -240,20 +240,32 @@ def _accept_question_meaning_record(run_kernel: Any, qmr: Any) -> None:
 
 
 def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
+    from core.strict_one_shot_model_transport import (
+        build_strict_one_shot_smart_model_transport,
+        normalize_canonical_model_provider,
+    )
+
     deps = runtime_scope.get("deps")
     cleaner = getattr(deps, "clean_json_response", None)
-    ask_model = runtime_scope.get("ask_model")
-    if not callable(ask_model):
-        raise OrdinaryMulticomponentRuntimeError(
-            "qualifying multi-component lane requires ordinary model transport"
+    transport = runtime_scope.get("strict_one_shot_smart_model_transport")
+    if not callable(transport) and deps is not None:
+        transport = getattr(deps, "strict_one_shot_smart_model_transport", None)
+    canonical_provider = normalize_canonical_model_provider(
+        runtime_scope.get("smart_provider")
+    )
+    model = str(runtime_scope.get("smart_model") or "")
+    if not callable(transport):
+        transport = build_strict_one_shot_smart_model_transport(
+            smart_provider=canonical_provider,
+            smart_model=model,
+            local_url=str(runtime_scope.get("local_url") or "") or None,
+            openrouter_api_key=str(runtime_scope.get("or_api_key") or "") or None,
         )
     return {
-        "ask_model": ask_model,
+        "strict_one_shot_transport": transport,
         "clean_json_response": cleaner if callable(cleaner) else None,
-        "provider": str(runtime_scope.get("smart_provider") or ""),
-        "model": str(runtime_scope.get("smart_model") or ""),
-        "base_url": str(runtime_scope.get("local_url") or ""),
-        "api_key": str(runtime_scope.get("or_api_key") or ""),
+        "provider": canonical_provider,
+        "model": model,
         "use_reasoning": bool(runtime_scope.get("use_reasoning")),
     }
 
@@ -1657,7 +1669,14 @@ def _execute_run_kernel_selected_batch(
             prepare_multicomponent_transport_call(
                 action=action,
                 input_packet=packet,
-                **dict(role_kwargs),
+                **{
+                    **dict(role_kwargs),
+                    "provider": str(
+                        scheduler.get("configured_provider_class")
+                        or role_kwargs.get("provider")
+                        or ""
+                    ),
+                },
             )
             for action, packet in zip(actions, packets, strict=True)
         ]
@@ -1674,6 +1693,7 @@ def _execute_run_kernel_selected_batch(
                         "transport_submitted": False,
                         "transport_started": False,
                         "transport_completed": False,
+                        "provider_request_attempt_count": 0,
                         "observed_batch_max_in_flight": 0,
                     },
                 )
@@ -1785,6 +1805,13 @@ def _execute_run_kernel_selected_batch(
                             "transport_submitted": result.transport_submitted,
                             "transport_started": result.transport_started,
                             "transport_completed": result.transport_completed,
+                            "provider_request_attempt_count": max(
+                                0,
+                                min(
+                                    1,
+                                    int(result.provider_request_attempt_count or 0),
+                                ),
+                            ),
                             "observed_batch_max_in_flight": maximum_in_flight,
                         },
                     )

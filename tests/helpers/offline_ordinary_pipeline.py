@@ -216,6 +216,44 @@ class OfflineOrdinaryPipelineHarness:
 
         return _called
 
+    def strict_one_shot_smart_model_transport(
+        self,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> Any:
+        from core.strict_one_shot_model_transport import (
+            BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
+            StrictOneShotModelTransportResult,
+            normalize_canonical_model_provider,
+        )
+
+        provider = str(kwargs.get("provider") or "OpenAI")
+        model = str(kwargs.get("model") or "gpt-5.4")
+        canonical_provider = normalize_canonical_model_provider(provider)
+        try:
+            output_text = self.ask_model(prompt, system_prompt, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - test fake preserves safe failure facts.
+            return StrictOneShotModelTransportResult(
+                return_code=2,
+                failure_kind=BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
+                detail=f"Offline strict one-shot fake failed closed: {type(exc).__name__}.",
+                canonical_provider=canonical_provider,
+                configured_model=model,
+                provider_request_attempt_count=1,
+                provider_request_succeeded=False,
+                provider_request_failed=True,
+            )
+        return StrictOneShotModelTransportResult(
+            return_code=0,
+            output_text=str(output_text or ""),
+            canonical_provider=canonical_provider,
+            configured_model=model,
+            provider_request_attempt_count=1,
+            provider_request_succeeded=True,
+            provider_request_failed=False,
+        )
+
     def deps(self) -> RunDeps:
         return RunDeps(
             ask_model=self.ask_model,
@@ -242,6 +280,7 @@ class OfflineOrdinaryPipelineHarness:
             kb_triggers_path=self.tmp_path / "kb.jsonl",
             policy_state_path=self.tmp_path / "policy.json",
             policy_journal_path=self.tmp_path / "policy_journal.jsonl",
+            strict_one_shot_smart_model_transport=self.strict_one_shot_smart_model_transport,
         )
 
 

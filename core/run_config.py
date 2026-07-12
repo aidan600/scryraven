@@ -153,6 +153,10 @@ class RunDeps:
     # Optional offline/fake fetch-read adapter for ordinary source custody.
     ordinary_live_source_fetch_read: Callable[..., Any] | None = None
 
+    # Optional Phase 5A strict one-shot SmartModel transport. When absent, the
+    # ordinary multi-component runtime composes the repository-owned default.
+    strict_one_shot_smart_model_transport: Callable[..., Any] | None = None
+
 
 @dataclass
 class RunOutcome:

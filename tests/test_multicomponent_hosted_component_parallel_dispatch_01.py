@@ -51,6 +51,11 @@ from core.multicomponent_role_runtime import (
 )
 from core.protocols import NullStatusWriter
 from core.run_kernel import ActionType, RunKernel, RunKernelTransitionError, RunStageStatus
+from core.strict_one_shot_model_transport import (
+    StrictOneShotModelTransportResult,
+    normalize_canonical_model_provider,
+    wrap_text_callable_as_strict_one_shot_transport,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_SEMANTIC,
     install_handoff_capture,
@@ -107,8 +112,9 @@ class SynchronizedHostedNorthstarHarness(NorthstarHarness):
             ROLE_COMPONENT_DPRIME: [],
         }
 
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
-        role = next(
+    @staticmethod
+    def _role_for_system_prompt(system_prompt: str) -> str | None:
+        return next(
             (
                 candidate
                 for candidate in (ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_DPRIME)
@@ -116,8 +122,62 @@ class SynchronizedHostedNorthstarHarness(NorthstarHarness):
             ),
             None,
         )
+
+    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        return super().ask_model(prompt, system_prompt, **kwargs)
+
+    def strict_one_shot_smart_model_transport(
+        self,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> Any:
+        from core.strict_one_shot_model_transport import (
+            BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
+            BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED,
+            PROVIDER_UNSUPPORTED,
+        )
+
+        provider = normalize_canonical_model_provider(kwargs.get("provider") or "OpenAI")
+        model = str(kwargs.get("model") or "gpt-5.4")
+        if provider == PROVIDER_UNSUPPORTED:
+            return StrictOneShotModelTransportResult(
+                return_code=2,
+                failure_kind=BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED,
+                detail="Configured SmartModel provider is not supported by the strict one-shot transport.",
+                canonical_provider=PROVIDER_UNSUPPORTED,
+                configured_model=model,
+                provider_request_attempt_count=0,
+                provider_request_succeeded=False,
+                provider_request_failed=False,
+            )
+        try:
+            text = self._strict_role_text(prompt, system_prompt, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - bounded fake transport failure.
+            return StrictOneShotModelTransportResult(
+                return_code=2,
+                failure_kind=BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
+                detail=f"Injected strict one-shot failure: {type(exc).__name__}.",
+                canonical_provider=provider,
+                configured_model=model,
+                provider_request_attempt_count=1,
+                provider_request_succeeded=False,
+                provider_request_failed=True,
+            )
+        return StrictOneShotModelTransportResult(
+            return_code=0,
+            output_text=text,
+            canonical_provider=provider,
+            configured_model=model,
+            provider_request_attempt_count=1,
+            provider_request_succeeded=True,
+            provider_request_failed=False,
+        )
+
+    def _strict_role_text(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        role = self._role_for_system_prompt(system_prompt)
         if role is None:
-            return super().ask_model(prompt, system_prompt, **kwargs)
+            return NorthstarHarness.ask_model(self, prompt, system_prompt, **kwargs)
         with self._call_lock:
             call_index = self.role_call_counts[role]
             self.role_call_counts[role] += 1
@@ -146,9 +206,9 @@ class SynchronizedHostedNorthstarHarness(NorthstarHarness):
                 if self.fail_first_analyst == "malformed":
                     result = "not-json"
                 else:
-                    result = super().ask_model(prompt, system_prompt, **kwargs)
+                    result = NorthstarHarness.ask_model(self, prompt, system_prompt, **kwargs)
             else:
-                result = super().ask_model(prompt, system_prompt, **kwargs)
+                result = NorthstarHarness.ask_model(self, prompt, system_prompt, **kwargs)
             with self._call_lock:
                 self.physical_completion_order[role].append(call_index)
             if self.synchronize and call_index < 4 and not wait_for_sibling:
@@ -170,7 +230,7 @@ class SynchronizedHostedNorthstarHarness(NorthstarHarness):
             BACKEND_LOCAL_OPENAI_COMPATIBLE,
             1,
         ),
-        ("unsupported-provider", "unsupported-provider", BACKEND_CONSERVATIVE_UNKNOWN, 1),
+        ("unsupported-provider", "unsupported", BACKEND_CONSERVATIVE_UNKNOWN, 1),
     ],
 )
 def test_scheduler_v2_profile_is_derived_only_from_canonical_provider_identity(
@@ -647,10 +707,9 @@ def test_openai_ordinary_product_overlaps_analyst_and_dprime_at_width_two(
     ("provider", "backend"),
     [
         ("Local (LM Studio)", BACKEND_LOCAL_OPENAI_COMPATIBLE),
-        ("unsupported-provider", BACKEND_CONSERVATIVE_UNKNOWN),
     ],
 )
-def test_local_and_unknown_ordinary_product_use_v2_serial_fallback(
+def test_local_ordinary_product_uses_v2_serial_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
@@ -674,6 +733,32 @@ def test_local_and_unknown_ordinary_product_use_v2_serial_fallback(
     ] == 1
     assert harness.role_maximum_in_flight[ROLE_COMPONENT_ANALYST] == 1
     assert harness.role_maximum_in_flight[ROLE_COMPONENT_DPRIME] == 1
+    assert scheduler["local_parallelism_enabled"] is False
+
+
+def test_unsupported_ordinary_product_uses_width_1_safe_blocked_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outcome, kernel, harness, _captured = _run_hosted_product(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        provider="unsupported-provider",
+        synchronize=False,
+    )
+    scheduler = _scheduler(kernel)
+    counters = scheduler["accounting_counters"]
+
+    assert outcome.report != NORTHSTAR_REPORT
+    assert "ScryRaven could not complete" in outcome.report or outcome.report
+    assert scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+    assert scheduler["configured_provider_class"] == "unsupported"
+    assert scheduler["backend_class"] == BACKEND_CONSERVATIVE_UNKNOWN
+    assert scheduler["effective_width"] == 1
+    assert scheduler["maximum_active_physical_leases"] == 1
+    assert int(counters.get("provider_request_attempt_count") or 0) == 0
+    assert int(counters.get("failed_transport_count") or 0) >= 1
+    assert harness.role_maximum_in_flight[ROLE_COMPONENT_ANALYST] <= 1
     assert scheduler["local_parallelism_enabled"] is False
 
 
@@ -865,14 +950,16 @@ def test_postdispatch_authority_change_rejects_late_batch_results_as_stale() -> 
         prepare_multicomponent_transport_call(
             action=action,
             input_packet=packet,
-            ask_model=lambda *_args, **_kwargs: (
-                '{"claim_text":"Late bounded claim","support_status":"supported"}'
+            strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+                lambda *_args, **_kwargs: (
+                    '{"claim_text":"Late bounded claim","support_status":"supported"}'
+                ),
+                canonical_provider="OpenAI",
+                model="gpt-5.4",
             ),
             clean_json_response=lambda value: value,
             provider="OpenAI",
-            model="offline-fixture",
-            base_url="",
-            api_key="",
+            model="gpt-5.4",
             use_reasoning=False,
         )
         for action, packet in zip(actions, packets, strict=True)

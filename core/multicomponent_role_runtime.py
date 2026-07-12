@@ -11,7 +11,7 @@ import json
 import re
 import time
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from threading import get_ident
 from typing import Any, Callable, Mapping, Sequence
@@ -156,16 +156,16 @@ class PreparedMulticomponentTransportCall:
     action_sequence: int
     role: str
     logical_evaluation_key: str
-    input_packet: Mapping[str, Any]
+    input_packet: Mapping[str, Any] = field(repr=False, compare=False)
     input_packet_digest: str
     output_schema_variant: str | None
     provider: str
     model: str
-    base_url: str
-    api_key: str
     use_reasoning: bool
-    ask_model: Callable[..., Any]
-    clean_json_response: Callable[[str], str] | None
+    strict_one_shot_transport: Callable[..., Any] = field(repr=False, compare=False)
+    clean_json_response: Callable[[str], str] | None = field(
+        default=None, repr=False, compare=False
+    )
     raw_retention: bool = False
 
 
@@ -194,6 +194,7 @@ class SafeMulticomponentWorkerResult:
     transport_submitted: bool
     transport_started: bool
     transport_completed: bool
+    provider_request_attempt_count: int
     worker_thread_id: int | None
     duration_seconds: float
     raw_prompt_retained: bool = False
@@ -635,18 +636,19 @@ def prepare_multicomponent_transport_call(
     *,
     action: Any,
     input_packet: Mapping[str, Any],
-    ask_model: Callable[..., Any],
+    strict_one_shot_transport: Callable[..., Any],
     clean_json_response: Callable[[str], str] | None,
     provider: str,
     model: str,
-    base_url: str,
-    api_key: str,
     use_reasoning: bool,
 ) -> PreparedMulticomponentTransportCall:
     """Bind one committed child action to its exact transient transport input."""
 
     from core.multicomponent_graph_scheduling import (
         MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
+    )
+    from core.strict_one_shot_model_transport import (
+        normalize_canonical_model_provider,
     )
 
     inputs = _safe_mapping(getattr(action, "inputs", {}))
@@ -673,6 +675,11 @@ def prepare_multicomponent_transport_call(
         raise MulticomponentRoleRuntimeError(
             "prepared transport does not match committed child action"
         )
+    if not callable(strict_one_shot_transport):
+        raise MulticomponentRoleRuntimeError(
+            "prepared transport requires a strict one-shot SmartModel transport"
+        )
+    canonical_provider = normalize_canonical_model_provider(provider)
     return PreparedMulticomponentTransportCall(
         schema_version=MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
         batch_index=int(inputs["batch_index"]),
@@ -689,12 +696,10 @@ def prepare_multicomponent_transport_call(
         input_packet=deepcopy(dict(safe_input)),
         input_packet_digest=input_digest,
         output_schema_variant=_clean_text(inputs.get("output_schema_variant"), limit=80),
-        provider=str(provider or ""),
+        provider=canonical_provider,
         model=str(model or ""),
-        base_url=str(base_url or ""),
-        api_key=str(api_key or ""),
         use_reasoning=bool(use_reasoning),
-        ask_model=ask_model,
+        strict_one_shot_transport=strict_one_shot_transport,
         clean_json_response=clean_json_response,
     )
 
@@ -707,35 +712,58 @@ def execute_prepared_multicomponent_transport(
     from core.multicomponent_graph_scheduling import (
         MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
     )
+    from core.strict_one_shot_model_transport import (
+        StrictOneShotModelTransportResult,
+        normalize_canonical_model_provider,
+    )
 
     started_at = time.perf_counter()
     thread_id = get_ident()
+    attempt_count = 0
+    result_provider = normalize_canonical_model_provider(prepared.provider)
     try:
         system_prompt = (
             SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
             if prepared.output_schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
             else ROLE_SYSTEM_PROMPTS[prepared.role]
         )
-        raw = prepared.ask_model(
+        transport_result = prepared.strict_one_shot_transport(
             json.dumps(prepared.input_packet, sort_keys=True),
             system_prompt,
             provider=prepared.provider,
             model=prepared.model,
             effort="high",
-            base_url=prepared.base_url,
-            api_key=prepared.api_key,
             require_json=True,
             use_reasoning=prepared.use_reasoning,
         )
-        normalized = _normalize_semantic_output(
-            prepared.role,
-            _parse_role_output(
-                raw,
-                clean_json_response=prepared.clean_json_response,
-            ),
-            output_schema_variant=prepared.output_schema_variant,
+        if not isinstance(transport_result, StrictOneShotModelTransportResult):
+            raise MulticomponentRoleRuntimeError(
+                "strict one-shot transport returned an invalid result type"
+            )
+        attempt_count = int(transport_result.provider_request_attempt_count or 0)
+        if attempt_count not in {0, 1}:
+            raise MulticomponentRoleRuntimeError(
+                "strict one-shot transport reported an invalid provider attempt count"
+            )
+        result_provider = normalize_canonical_model_provider(
+            transport_result.canonical_provider
         )
-        failure_kind = None
+        if result_provider != normalize_canonical_model_provider(prepared.provider):
+            normalized = None
+            failure_kind = "provider_identity_mismatch"
+        elif transport_result.return_code != 0:
+            normalized = None
+            failure_kind = "model_transport_failure"
+        else:
+            normalized = _normalize_semantic_output(
+                prepared.role,
+                _parse_role_output(
+                    transport_result.output_text,
+                    clean_json_response=prepared.clean_json_response,
+                ),
+                output_schema_variant=prepared.output_schema_variant,
+            )
+            failure_kind = None
     except Exception as exc:
         normalized = None
         failure_kind = (
@@ -743,6 +771,8 @@ def execute_prepared_multicomponent_transport(
             if isinstance(exc, (MulticomponentRoleRuntimeError, json.JSONDecodeError))
             else "model_transport_failure"
         )
+        if failure_kind == "provider_identity_mismatch":
+            pass
     return SafeMulticomponentWorkerResult(
         schema_version=MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
         batch_index=prepared.batch_index,
@@ -758,13 +788,14 @@ def execute_prepared_multicomponent_transport(
         logical_evaluation_key=prepared.logical_evaluation_key,
         input_packet_digest=prepared.input_packet_digest,
         output_schema_variant=prepared.output_schema_variant,
-        provider=prepared.provider,
+        provider=result_provider,
         model=prepared.model,
         normalized_semantic_output=normalized,
         failure_kind=failure_kind,
         transport_submitted=True,
         transport_started=True,
         transport_completed=True,
+        provider_request_attempt_count=attempt_count,
         worker_thread_id=thread_id,
         duration_seconds=max(0.0, time.perf_counter() - started_at),
     )
@@ -783,6 +814,7 @@ def failed_unstarted_multicomponent_worker_result(
     from core.multicomponent_graph_scheduling import (
         MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
     )
+    from core.strict_one_shot_model_transport import normalize_canonical_model_provider
 
     return SafeMulticomponentWorkerResult(
         schema_version=MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
@@ -799,13 +831,14 @@ def failed_unstarted_multicomponent_worker_result(
         logical_evaluation_key=prepared.logical_evaluation_key,
         input_packet_digest=prepared.input_packet_digest,
         output_schema_variant=prepared.output_schema_variant,
-        provider=prepared.provider,
+        provider=normalize_canonical_model_provider(prepared.provider),
         model=prepared.model,
         normalized_semantic_output=None,
         failure_kind=str(failure_kind or "failed_submission")[:100],
         transport_submitted=transport_submitted,
         transport_started=transport_started,
         transport_completed=transport_completed,
+        provider_request_attempt_count=0,
         worker_thread_id=None,
         duration_seconds=0.0,
     )
@@ -824,8 +857,12 @@ def reduce_multicomponent_worker_result(
         LEASE_FAILED,
         LEASE_STALE,
         MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
+        MULTICOMPONENT_SCHEDULER_STAGE,
     )
     from core.run_kernel import Observation, RunStageStatus
+    from core.strict_one_shot_model_transport import (
+        normalize_canonical_model_provider,
+    )
 
     inputs = _safe_mapping(getattr(action, "inputs", {}))
     expected = {
@@ -853,8 +890,17 @@ def reduce_multicomponent_worker_result(
         "transport_submitted": result.transport_submitted,
         "transport_started": result.transport_started,
         "transport_completed": result.transport_completed,
+        "provider_request_attempt_count": max(
+            0, min(1, int(result.provider_request_attempt_count or 0))
+        ),
         "observed_batch_max_in_flight": max(0, int(observed_batch_max_in_flight)),
     }
+    scheduler = _safe_mapping(
+        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+    )
+    scheduler_provider = normalize_canonical_model_provider(
+        scheduler.get("configured_provider_class")
+    )
     if result.failure_kind:
         run_kernel.reduce(
             Observation.from_action(
@@ -864,6 +910,23 @@ def reduce_multicomponent_worker_result(
                 payload={
                     "lease_settlement": LEASE_FAILED,
                     "failure_kind": result.failure_kind,
+                    **transport_facts,
+                },
+            )
+        )
+        return None
+    if (
+        scheduler_provider
+        and normalize_canonical_model_provider(result.provider) != scheduler_provider
+    ):
+        run_kernel.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.FAILED,
+                payload={
+                    "lease_settlement": LEASE_FAILED,
+                    "failure_kind": "provider_identity_mismatch",
                     **transport_facts,
                 },
             )
@@ -894,7 +957,7 @@ def reduce_multicomponent_worker_result(
         "logical_evaluations": 1,
         "physical_calls": 1,
         "configured_model_route": {
-            "provider": result.provider,
+            "provider": scheduler_provider or normalize_canonical_model_provider(result.provider),
             "model": result.model,
             "role": "SmartModel",
         },
@@ -955,18 +1018,21 @@ def execute_multicomponent_role_call(
     run_kernel: Any,
     role: str,
     input_packet: Mapping[str, Any],
-    ask_model: Callable[..., Any],
+    strict_one_shot_transport: Callable[..., Any],
     clean_json_response: Callable[[str], str] | None,
     provider: str,
     model: str,
-    base_url: str,
-    api_key: str,
     use_reasoning: bool,
     logical_evaluation_key: str,
     output_schema_variant: str | None = None,
     lease_id: str | None = None,
 ) -> dict[str, Any]:
     """Authorize, execute, parse, bind, and reduce one semantic role call."""
+
+    from core.strict_one_shot_model_transport import (
+        StrictOneShotModelTransportResult,
+        normalize_canonical_model_provider,
+    )
 
     normalized_role = _normalize_key(role)
     if normalized_role not in ROLE_SYSTEM_PROMPTS:
@@ -982,7 +1048,12 @@ def execute_multicomponent_role_call(
     safe_input = _json_safe(input_packet)
     if not isinstance(safe_input, Mapping):
         raise MulticomponentRoleRuntimeError("semantic role input must be a mapping")
+    if not callable(strict_one_shot_transport):
+        raise MulticomponentRoleRuntimeError(
+            "semantic role transport requires a strict one-shot SmartModel transport"
+        )
     input_digest = _digest(safe_input)
+    canonical_provider = normalize_canonical_model_provider(provider)
     from core.multicomponent_graph_scheduling import (
         LEASE_FAILED,
         LEASE_STALE,
@@ -1022,20 +1093,32 @@ def execute_multicomponent_role_call(
     from core.run_kernel import Observation, RunStageStatus
 
     try:
-        raw = ask_model(
+        transport_result = strict_one_shot_transport(
             json.dumps(safe_input, sort_keys=True),
             system_prompt,
-            provider=provider,
+            provider=canonical_provider,
             model=model,
             effort="high",
-            base_url=base_url,
-            api_key=api_key,
             require_json=True,
             use_reasoning=use_reasoning,
         )
+        if not isinstance(transport_result, StrictOneShotModelTransportResult):
+            raise MulticomponentRoleRuntimeError(
+                "strict one-shot transport returned an invalid result type"
+            )
+        if (
+            normalize_canonical_model_provider(transport_result.canonical_provider)
+            != canonical_provider
+        ):
+            raise MulticomponentRoleRuntimeError("provider_identity_mismatch")
+        if transport_result.return_code != 0:
+            raise MulticomponentRoleRuntimeError("model_transport_failure")
         semantic_output = _normalize_semantic_output(
             normalized_role,
-            _parse_role_output(raw, clean_json_response=clean_json_response),
+            _parse_role_output(
+                transport_result.output_text,
+                clean_json_response=clean_json_response,
+            ),
             output_schema_variant=schema_variant,
         )
     except Exception as exc:
@@ -1045,6 +1128,10 @@ def execute_multicomponent_role_call(
                 if not isinstance(exc, MulticomponentRoleRuntimeError)
                 else "invalid_role_output"
             )
+            if str(exc) == "provider_identity_mismatch":
+                failure_kind = "provider_identity_mismatch"
+            elif str(exc) == "model_transport_failure":
+                failure_kind = "model_transport_failure"
             run_kernel.reduce(
                 Observation.from_action(
                     action,
@@ -1068,7 +1155,7 @@ def execute_multicomponent_role_call(
         "logical_evaluations": 1,
         "physical_calls": 1,
         "configured_model_route": {
-            "provider": provider,
+            "provider": canonical_provider,
             "model": model,
             "role": "SmartModel",
         },

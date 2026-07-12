@@ -270,6 +270,7 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
             "transport_submission_count",
             "transport_started_count",
             "transport_completed_count",
+            "provider_request_attempt_count",
             "successful_artifact_count",
             "failed_submission_count",
             "failed_transport_count",
@@ -292,6 +293,8 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
         ]
         if (
             any(value < 0 for value in values.values())
+            or values["provider_request_attempt_count"]
+            > values["transport_started_count"]
             or values["transport_started_count"]
             > values["transport_submission_count"]
             or values["transport_completed_count"] > values["transport_started_count"]
@@ -397,6 +400,7 @@ def initialize_scheduler_v2_state(
         "transport_submission_count": 0,
         "transport_started_count": 0,
         "transport_completed_count": 0,
+        "provider_request_attempt_count": 0,
         "successful_artifact_count": 0,
         "failed_submission_count": 0,
         "failed_transport_count": 0,
@@ -1372,6 +1376,7 @@ def dispatch_batch(
         "transport_submission_count": 0,
         "transport_started_count": 0,
         "transport_completed_count": 0,
+        "provider_request_attempt_count": 0,
         "successful_artifact_count": 0,
         "failed_submission_count": 0,
         "failed_transport_count": 0,
@@ -1584,9 +1589,16 @@ def settle_role_lease(
         submitted = inputs.get("transport_submitted") is True
         started = inputs.get("transport_started") is True
         completed = inputs.get("transport_completed") is True
+        attempt_count = max(
+            0, min(1, int(inputs.get("provider_request_attempt_count") or 0))
+        )
         if started and not submitted or completed and not started:
             raise MulticomponentGraphSchedulingError(
                 "transport accounting facts are not monotonic"
+            )
+        if attempt_count and not started:
+            raise MulticomponentGraphSchedulingError(
+                "provider request attempts require a started transport"
             )
         counters = _mapping(scheduler.get("accounting_counters"))
         counters["transport_submission_count"] = int(
@@ -1598,6 +1610,9 @@ def settle_role_lease(
         counters["transport_completed_count"] = int(
             counters.get("transport_completed_count") or 0
         ) + int(completed)
+        counters["provider_request_attempt_count"] = int(
+            counters.get("provider_request_attempt_count") or 0
+        ) + attempt_count
         if settlement == LEASE_COMPLETED:
             outcome_key = "successful_artifact_count"
         elif settlement == LEASE_STALE:
@@ -1632,6 +1647,9 @@ def settle_role_lease(
         summary["transport_completed_count"] = int(
             summary.get("transport_completed_count") or 0
         ) + int(completed)
+        summary["provider_request_attempt_count"] = int(
+            summary.get("provider_request_attempt_count") or 0
+        ) + attempt_count
         summary[outcome_key] = int(summary.get(outcome_key) or 0) + 1
         batch["safe_accounting_summary"] = summary
         batch_leases = [
