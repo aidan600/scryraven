@@ -1,11 +1,11 @@
 # Multi-Component Synthesis Runtime Architecture
 
 Status: canonical repo-visible architecture for the installed bounded ordinary
-multi-component runtime through Phase 4 serial graph scheduling and leases.
+multi-component runtime through Phase 5A hosted component parallel dispatch.
 
 Mode: BUILD.
 
-Phase: `AG-MULTICOMPONENT-GRAPH-SCHEDULING-LEASES-01`.
+Phase: `AG-MULTICOMPONENT-HOSTED-COMPONENT-PARALLEL-DISPATCH-01`.
 
 Verdict target: `YES`.
 
@@ -16,7 +16,9 @@ one governed missing-component recovery and AnswerContract amendment. Phase 3
 replaces Phase 2's ordinary successful-recovery whole-graph rebuild with serial
 selective invalidation, carry-forward, and affected-only recomputation. Phase 4
 installs RunKernel-owned incremental scheduling and exact semantic-work leases
-on the default selected ordinary path while retaining serial physical execution.
+on the default selected ordinary path. Phase 5A upgrades that ordinary consumer
+to Scheduler V2 and bounded hosted width-2 overlap for eligible initial
+component Analyst and D-prime waves.
 
 ## Current, Reusable, And Target States
 
@@ -71,7 +73,7 @@ default ordinary semantic producer invokes the complete approved component
 validation or cross-component synthesis lane. The V0 contracts and serial
 checkpoint are not ordinary answer consumption.
 
-### Installed Phase 1 through Phase 4 path
+### Installed Phase 1 through Phase 5A path
 
 ```text
 component requirement and custody facts
@@ -93,20 +95,25 @@ component requirement and custody facts
 -> ordinary user-facing answer
 ```
 
-Every semantic role arrow in that selected path is now scheduler-governed.
-The ordinary runtime first asks RunKernel to derive and grant the exact next
-work item, reconstructs the packet named by that work descriptor, commits its
-spend immediately before transport, and routes the resulting artifact to the
-existing deterministic owner. It then rederives readiness and repeats until
-canonical completion or blockage. The driver does not receive a caller-authored
-role, logical key, or packet as its next-work choice. The
+Every semantic role arrow in that selected path is scheduler-governed. The
+ordinary runtime asks RunKernel to derive and atomically grant the exact
+contiguous next work batch, reconstructs every named packet on the main thread,
+and asks RunKernel to atomically commit batch spend plus all ordered child
+actions before transport. Transport-only outcomes are collected by canonical
+batch index; role observations and deterministic consumers reduce serially in
+child-action order. The driver does not receive a caller-authored role, logical
+key, batch, width, backend class, or packet as its next-work choice. The
 component Analyst, component D-prime, initial and selective Cross-Component
 Analyst, initial and affected synthesis D-prime, and initial and fresh selective
 Scrutineer calls all require the exact active lease lineage.
 
-Logical readiness may contain multiple deterministic candidates. It is not
-physical concurrency: Phase 4 permits at most one active physical lease and
-records `runtime_parallelism=false`.
+Scheduler V2 derives `hosted_api` width 2 for configured OpenAI and OpenRouter,
+`local_openai_compatible` width 1 for Local, and `conservative_unknown` width 1
+for unsupported identities through the existing canonical provider normalizer.
+Only independent initial component Analyst and D-prime batches may contain two
+items. Cross-Component Analyst, synthesis D-prime, Scrutineer, recovery, and
+selective work remains serial. Scheduler V1 is retained as immutable historical
+serial schema and cannot accept V2 batch or parallel state.
 
 On one authorized missing-component recovery, the installed continuation is:
 
@@ -136,7 +143,7 @@ in a non-circular sibling carry-forward projection.
 | Cross-Component Analyst | Uses a dedicated configured SmartModel role to propose semantic relationships, dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, and recovery needs. | Validate or admit its own synthesis, dispatch recovery, or render. |
 | Synthesis D-prime | Uses a separate configured SmartModel role to validate nominated synthesis against current admitted component, synthesis, edge, blocker, and caveat refs. | Invent synthesis, act as Cross-Component Analyst, admit state, or render. |
 | Scrutineer | Uses a separate configured SmartModel role to adversarially challenge a component, synthesis, edge, subgraph, or whole-case posture. | Act as the first-pass Analyst, manufacture a replacement case, admit state, or render. |
-| RunKernel | Derives current ready semantic work, grants and settles exact leases, authorizes dispatch and role calls, enforces caps, validates bindings, reduces canonical state, and admits, blocks, challenges, or authorizes recovery. | Manufacture semantic output, replace semantic roles with deterministic heuristics, accept caller-authored scheduler state, or become an orchestrator brain. |
+| RunKernel | Derives current ready semantic work and transport profile; owns contiguous batches, atomic grants/cancellation/dispatch, child actions, exact leases, settlement, caps, and canonical reduction; and admits, blocks, challenges, or authorizes recovery. | Manufacture semantic output, replace semantic roles with deterministic heuristics, accept caller-authored scheduler/concurrency state, or become an orchestrator brain. |
 | Sufficiency | Decides readiness from admitted state. | Invent or repair synthesis. |
 | FinalAnswerPacket | Packages admitted and readiness-approved direct and synthesized material. | Generate, repair, validate, or reinterpret synthesis. |
 | Author | Renders the packet and may explain admitted synthesis. | Create synthesis, glue unadmitted component outputs, repair evidence, or upgrade support. |
@@ -291,16 +298,33 @@ diagnostic finalization cannot substitute for ordinary answer consumption.
 Sufficiency, FinalAnswerPacket, and Author must consume the admitted direct and
 synthesized material through the default ordinary entrypoint in the same BUILD.
 
-## Installed Phase 4 And Later Commitments
+## Installed Phase 4, Phase 5A, And Later Commitments
 
 Phases 1 through 4 establish serial correctness, ordinary end-to-end
 consumption, one bounded dynamic recovery, selective recomputation, and
-RunKernel-owned serial scheduling with work/budget leases. The default selected
-ordinary path consumes this scheduler; the old role loops remain only as
-historical compatibility helpers. The scheduler driver invokes the existing
-deterministic graph, admission, recovery, closure, accounting, and finalization
-owners after each exact selected artifact; those owners do not nominate the
-next semantic call.
+RunKernel-owned scheduling with work/budget leases. Phase 5A installs Scheduler
+V2 and bounded hosted overlap through that same default selected ordinary path;
+the old single-work role loops remain only historical compatibility helpers.
+After every wave's role actions are terminal, the scheduler driver invokes the
+existing deterministic graph, admission, recovery, closure, accounting, and
+finalization owners serially; those owners do not nominate the next semantic
+call.
+
+Batch membership is a contiguous prefix of canonical ready-work order. The
+grant reserves all exact leases atomically. Complete private child descriptors
+are validated before mutation. Dispatch atomically spends the batch and
+publishes all contiguous child-action sequences. A failed precommit batch
+publishes no child action, consumes no logical key, and returns all reservations
+together. After commitment, executor, submission, transport, output-validation,
+artifact, and stale failures remain spent and drain all siblings before a
+blocked terminal is installed.
+
+Workers receive no RunKernel, mutable RunState, graph, EvidenceLedger, admission
+state, recovery authority, FAP/Author state, persistence writer, or trace
+writer. They execute synchronous transport and pure parsing/normalization only.
+Canonical artifacts, digests, observations, lease settlement, component
+admission, and graph changes are constructed on the main product thread.
+Physical completion order cannot alter canonical reduction order.
 
 The compatibility envelope is derived from the one existing shared role-cap
 mapping (component Analyst 5, component D-prime 5, Cross 2, synthesis D-prime
@@ -322,29 +346,28 @@ unit and rejecting any late successful observation; unrelated work remains
 active. No caller-authored transition label or digest can create cancellation
 authority.
 
-The remaining committed direction is:
+The current sequence is:
 
 ```text
 Phase 4: RunKernel scheduling and work/budget leases
--> Phase 5: runtime parallelism where supported
+-> Phase 5A: hosted initial-component width-2 transport
+-> later: separately licensed hosted characterization
+-> later: calibrated Local characterization
 ```
 
-Phase 4 scheduling and leases are installed. Phase 5 runtime parallelism is
-deferred and must reuse this scheduler without weakening lease, dependency,
-settlement, cancellation, or admission authority. The durable graph remains
-serial-compatible even after supported parallelism is added.
+Phase 5A is a compatibility cap, not a measurement of maximum useful provider
+concurrency. Adaptive rate-limit handling, user-configurable width, live hosted
+characterization, Local parallelism, graph-bound parallelism, and quantitative
+Specialist activation are not installed. The durable graph remains
+serial-compatible.
 
 ## Phase Boundary And Non-Proofs
 
-Phase 4 proves an offline synthetic ordinary product path through RunOutcome and
-CLI rendering where every supported semantic call is scheduler-selected,
-reserved, dispatch-committed, and settled. It proves safe early and late
-exhaustion, exact predispatch refund, postdispatch spend retention, and one
-active physical lease. It does not prove live model quality, arbitrary-query
-support, more than one recovery/selective round, permanent mode budgets, or
-runtime parallelism. Its compatibility caps are installed limits, not permanent
-mode policy.
-
-The next multi-component checkpoint is Phase 5 bounded physical dispatch
-parallelism through the installed scheduler. Runtime parallelism remains
-separately deferred.
+Phase 5A proves through injected offline transports in ordinary `run_pipeline`
+that eligible hosted initial component Analyst and D-prime calls physically
+overlap at maximum in-flight count 2 while deterministic canonical state and the
+ordinary answer remain stable. It proves Local/unknown width-1 compatibility,
+atomic precommit behavior, failure draining, and exact accounting. It does not
+prove live model quality, provider throughput/rate-limit capacity,
+arbitrary-query support, more than one recovery/selective round, permanent mode
+budgets, Local parallelism, or graph-bound parallelism.

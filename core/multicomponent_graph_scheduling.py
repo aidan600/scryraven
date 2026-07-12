@@ -29,8 +29,37 @@ from core.multicomponent_role_runtime import (
 MULTICOMPONENT_SCHEDULER_STAGE = "multicomponent_graph_scheduler"
 MULTICOMPONENT_SCHEDULER_OWNER = "RunKernel.MulticomponentGraphScheduler"
 MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION = "multicomponent_graph_scheduler_v1"
+MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION = "multicomponent_graph_scheduler_v2"
 MULTICOMPONENT_LEASE_SCHEMA_VERSION = "multicomponent_semantic_work_lease_v1"
+MULTICOMPONENT_LEASE_V2_SCHEMA_VERSION = "multicomponent_semantic_work_lease_v2"
 MULTICOMPONENT_WORK_SCHEMA_VERSION = "multicomponent_semantic_work_v1"
+MULTICOMPONENT_BATCH_SCHEMA_VERSION = "multicomponent_semantic_work_batch_v1"
+MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION = (
+    "multicomponent_semantic_batch_lease_group_v1"
+)
+MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION = (
+    "multicomponent_private_child_action_descriptor_v1"
+)
+MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION = (
+    "multicomponent_private_child_action_descriptor_set_v1"
+)
+MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION = (
+    "multicomponent_prepared_transport_call_v1"
+)
+MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION = (
+    "multicomponent_safe_worker_result_v1"
+)
+MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION = (
+    "multicomponent_batch_accounting_summary_v1"
+)
+
+BACKEND_HOSTED_API = "hosted_api"
+BACKEND_LOCAL_OPENAI_COMPATIBLE = "local_openai_compatible"
+BACKEND_CONSERVATIVE_UNKNOWN = "conservative_unknown"
+
+PARALLEL_INITIAL_COMPONENT_ANALYST = "parallel_initial_component_analyst"
+PARALLEL_INITIAL_COMPONENT_DPRIME = "parallel_initial_component_dprime"
+PARALLEL_SERIAL_ONLY = "serial_only"
 
 # This is the one authoritative compatibility mapping.  The existing role-call
 # authorization and the Phase 4 scheduler both consume it.
@@ -74,6 +103,37 @@ def derive_multicomponent_compatibility_envelope() -> int:
     """Return the internal compatibility envelope derived from shared caps."""
 
     return sum(MULTICOMPONENT_ROLE_CALL_LIMITS.values())
+
+
+def derive_multicomponent_transport_profile(configured_provider: Any) -> dict[str, Any]:
+    """Derive the RunKernel-owned safe execution profile from product config."""
+
+    from core.strict_accounted_model_route import (
+        PROVIDER_LOCAL,
+        PROVIDER_OPENAI,
+        PROVIDER_OPENROUTER,
+        normalize_fast_model_provider,
+    )
+
+    provider = normalize_fast_model_provider(configured_provider)
+    if provider in {PROVIDER_OPENAI, PROVIDER_OPENROUTER}:
+        backend_class = BACKEND_HOSTED_API
+        effective_width = 2
+    elif provider == PROVIDER_LOCAL:
+        backend_class = BACKEND_LOCAL_OPENAI_COMPATIBLE
+        effective_width = 1
+    else:
+        backend_class = BACKEND_CONSERVATIVE_UNKNOWN
+        effective_width = 1
+    return {
+        "configured_provider_class": provider,
+        "backend_class": backend_class,
+        "effective_width": effective_width,
+        "hard_cap": effective_width,
+        "runtime_parallelism": effective_width == 2,
+        "serial_scheduling": effective_width == 1,
+        "maximum_active_physical_leases": effective_width,
+    }
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
@@ -183,9 +243,10 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
         raise MulticomponentGraphSchedulingError(
             "scheduler live allocation invariant is invalid"
         )
-    if len(active) > 1:
+    maximum_active = int(current.get("maximum_active_physical_leases") or 0)
+    if len(active) > maximum_active:
         raise MulticomponentGraphSchedulingError(
-            "scheduler permits more than one active physical lease"
+            "scheduler exceeds its maximum active physical leases"
         )
     role_reserved = {role: 0 for role in MULTICOMPONENT_ROLE_CALL_LIMITS}
     role_spent = {role: 0 for role in MULTICOMPONENT_ROLE_CALL_LIMITS}
@@ -201,6 +262,56 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
         if role_reserved[role] + role_spent[role] > limit:
             raise MulticomponentGraphSchedulingError(
                 "scheduler role allocation exceeds the shared role cap"
+            )
+    if current.get("schema_version") == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        counters = _mapping(current.get("accounting_counters"))
+        names = (
+            "dispatch_committed_unit_count",
+            "transport_submission_count",
+            "transport_started_count",
+            "transport_completed_count",
+            "provider_request_attempt_count",
+            "successful_artifact_count",
+            "failed_submission_count",
+            "failed_transport_count",
+            "stale_result_count",
+            "maximum_observed_in_flight_transports",
+        )
+        values = {name: int(counters.get(name) or 0) for name in names}
+        outcomes = sum(
+            values[name]
+            for name in (
+                "successful_artifact_count",
+                "failed_submission_count",
+                "failed_transport_count",
+                "stale_result_count",
+            )
+        )
+        batch_leases = [lease for lease in leases if lease.get("batch_id")]
+        active_batch_leases = [
+            lease for lease in batch_leases if lease.get("status") in _ACTIVE_STATUSES
+        ]
+        if (
+            any(value < 0 for value in values.values())
+            or values["provider_request_attempt_count"]
+            > values["transport_started_count"]
+            or values["transport_started_count"]
+            > values["transport_submission_count"]
+            or values["transport_completed_count"] > values["transport_started_count"]
+            or values["transport_submission_count"]
+            > values["dispatch_committed_unit_count"]
+            or outcomes > values["dispatch_committed_unit_count"]
+            or values["maximum_observed_in_flight_transports"]
+            > int(current.get("effective_width") or 0)
+            or counters.get("physical_overlap_observed")
+            is not (values["maximum_observed_in_flight_transports"] > 1)
+            or (
+                not active_batch_leases
+                and outcomes != values["dispatch_committed_unit_count"]
+            )
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "scheduler V2 transport accounting invariant is invalid"
             )
     envelope.update(
         {
@@ -218,6 +329,8 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def initialize_scheduler_state(*, run_id: str, request_id: str) -> dict[str, Any]:
+    """Construct the retained historical Phase 4 scheduler V1 projection."""
+
     total = derive_multicomponent_compatibility_envelope()
     caps = dict(MULTICOMPONENT_ROLE_CALL_LIMITS)
     envelope_core = {
@@ -268,15 +381,145 @@ def initialize_scheduler_state(*, run_id: str, request_id: str) -> dict[str, Any
     return _refresh_scheduler(state)
 
 
+def initialize_scheduler_v2_state(
+    *, run_id: str, request_id: str, configured_provider: Any
+) -> dict[str, Any]:
+    """Construct the ordinary Phase 5A scheduler from configured provider only."""
+
+    total = derive_multicomponent_compatibility_envelope()
+    caps = dict(MULTICOMPONENT_ROLE_CALL_LIMITS)
+    profile = derive_multicomponent_transport_profile(configured_provider)
+    envelope_core = {
+        "owner": MULTICOMPONENT_SCHEDULER_OWNER,
+        "role_limits": caps,
+        "total_units": total,
+    }
+    accounting = {
+        "schema_version": MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION,
+        "dispatch_committed_unit_count": 0,
+        "transport_submission_count": 0,
+        "transport_started_count": 0,
+        "transport_completed_count": 0,
+        "provider_request_attempt_count": 0,
+        "successful_artifact_count": 0,
+        "failed_submission_count": 0,
+        "failed_transport_count": 0,
+        "stale_result_count": 0,
+        "batch_count": 0,
+        "parallel_batch_count": 0,
+        "width_1_batch_count": 0,
+        "maximum_observed_in_flight_transports": 0,
+        "physical_overlap_observed": False,
+    }
+    state = {
+        "schema_version": MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION,
+        "owner": MULTICOMPONENT_SCHEDULER_OWNER,
+        "canonical_state": True,
+        "trace_only": False,
+        "run_id": run_id,
+        "request_id": request_id,
+        "supported_query_class": SUPPORTED_QUERY_CLASS,
+        "status": "active",
+        "terminal_posture": None,
+        "scheduler_revision": 1,
+        **profile,
+        "active_physical_lease_count": 0,
+        "compatibility_envelope": {
+            **envelope_core,
+            "envelope_id": f"multicomponent-envelope:{_digest(envelope_core)[:20]}",
+            "envelope_digest": _digest(envelope_core),
+            "remaining_units": total,
+            "reserved_units": 0,
+            "spent_units": 0,
+            "returned_units": 0,
+            "role_reserved_units": {role: 0 for role in caps},
+            "role_spent_units": {role: 0 for role in caps},
+        },
+        "batch_history": [],
+        "lease_history": [],
+        "transition_history": [
+            {
+                "transition": "scheduler_initialized",
+                "scheduler_revision": 1,
+                "runtime_parallelism": profile["runtime_parallelism"],
+                "effective_width": profile["effective_width"],
+                "backend_class": profile["backend_class"],
+            }
+        ],
+        "accounting_counters": accounting,
+        "last_ready_work": [],
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "private_descriptor_retained": False,
+        "prepared_transport_retained": False,
+        "worker_result_retained": False,
+        "private_log_retained": False,
+        "full_trace_retained": False,
+        "local_parallelism_enabled": False,
+        "adaptive_rate_limit_enabled": False,
+        "live_characterization_run": False,
+    }
+    return _refresh_scheduler(state)
+
+
 def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
     state = deepcopy(dict(value))
-    if (
-        state.get("schema_version") != MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION
-        or state.get("owner") != MULTICOMPONENT_SCHEDULER_OWNER
+    schema_version = state.get("schema_version")
+    common_invalid = (
+        state.get("owner") != MULTICOMPONENT_SCHEDULER_OWNER
         or state.get("canonical_state") is not True
-        or state.get("runtime_parallelism") is not False
-        or state.get("maximum_active_physical_leases") != 1
-    ):
+    )
+    if schema_version == MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION:
+        v2_only_fields = {
+            "configured_provider_class",
+            "backend_class",
+            "effective_width",
+            "hard_cap",
+            "batch_history",
+            "accounting_counters",
+            "private_descriptor_retained",
+            "prepared_transport_retained",
+            "worker_result_retained",
+        }
+        invalid = (
+            common_invalid
+            or state.get("runtime_parallelism") is not False
+            or state.get("serial_scheduling") is not True
+            or state.get("maximum_active_physical_leases") != 1
+            or any(field in state for field in v2_only_fields)
+        )
+    elif schema_version == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        profile = derive_multicomponent_transport_profile(
+            state.get("configured_provider_class")
+        )
+        invalid = common_invalid or any(
+            state.get(field) != expected for field, expected in profile.items()
+        )
+        invalid = invalid or (
+            state.get("hard_cap") not in {1, 2}
+            or not isinstance(state.get("batch_history"), list)
+            or not isinstance(state.get("accounting_counters"), Mapping)
+            or any(
+                state.get(flag) is not False
+                for flag in (
+                    "raw_prompt_retained",
+                    "raw_model_response_retained",
+                    "raw_provider_payload_retained",
+                    "private_descriptor_retained",
+                    "prepared_transport_retained",
+                    "worker_result_retained",
+                    "private_log_retained",
+                    "full_trace_retained",
+                    "local_parallelism_enabled",
+                    "adaptive_rate_limit_enabled",
+                    "live_characterization_run",
+                )
+            )
+        )
+    else:
+        invalid = True
+    if invalid:
         raise MulticomponentGraphSchedulingError("scheduler schema or owner mismatch")
     declared = state.pop("scheduler_digest", None)
     refreshed = _refresh_scheduler(state)
@@ -297,7 +540,7 @@ def _completed_artifact(state: Any, role: str, evaluation_key: str) -> dict[str,
     raw = _mapping(
         state.projections.get(f"multicomponent_role:{role}:{evaluation_key}")
     )
-    if not raw:
+    if raw.get("schema_version") != "multicomponent_semantic_role_artifact_v1":
         return {}
     return validate_multicomponent_role_artifact(raw, expected_role=role)
 
@@ -383,6 +626,7 @@ def _work(
             "closure_id": canonical_closure.get("closure_id"),
             "closure_digest": canonical_closure.get("closure_digest"),
         }
+    core["parallel_class"] = classify_work_parallelism(core)
     digest = _digest(core)
     return {
         **core,
@@ -391,13 +635,36 @@ def _work(
     }
 
 
+def classify_work_parallelism(work: Mapping[str, Any]) -> str:
+    """Classify Phase 5A eligibility from exact canonical work facts."""
+
+    item = _mapping(work)
+    initial_component = (
+        item.get("target_kind") == "component"
+        and bool(item.get("component_id"))
+        and not _mapping(item.get("graph_ref"))
+        and not _mapping(item.get("recovery_authorization_ref"))
+        and not _mapping(item.get("contract_amendment_admission_ref"))
+        and not _mapping(item.get("contract_amendment_application_ref"))
+        and not _mapping(item.get("selective_closure_ref"))
+    )
+    if initial_component and item.get("role") == ROLE_COMPONENT_ANALYST:
+        return PARALLEL_INITIAL_COMPONENT_ANALYST
+    if initial_component and item.get("role") == ROLE_COMPONENT_DPRIME:
+        return PARALLEL_INITIAL_COMPONENT_DPRIME
+    return PARALLEL_SERIAL_ONLY
+
+
 def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[dict[str, Any]]:
     """Incrementally derive current semantic work from canonical owners."""
 
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if scheduler.get("status") != "active":
+    if scheduler.get("status") != "active" and not (
+        allow_active_lease
+        and scheduler.get("status") == "draining_required_work_failed"
+    ):
         return []
     if not allow_active_lease and any(
         _mapping(lease).get("status") in _ACTIVE_STATUSES
@@ -661,18 +928,478 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
 
 def work_is_current(state: Any, work: Mapping[str, Any]) -> bool:
     target = _mapping(work)
-    def semantic_identity(value: Mapping[str, Any]) -> dict[str, Any]:
-        identity = deepcopy(dict(value))
-        for key in ("work_id", "work_digest", "scheduler_revision"):
-            identity.pop(key, None)
-        return identity
     try:
         return any(
-            semantic_identity(candidate) == semantic_identity(target)
+            _semantic_work_identity(candidate) == _semantic_work_identity(target)
             for candidate in derive_ready_work(state, allow_active_lease=True)
         )
     except MulticomponentGraphSchedulingError:
         return False
+
+
+def _semantic_work_identity(value: Mapping[str, Any]) -> dict[str, Any]:
+    identity = deepcopy(dict(value))
+    for key in ("work_id", "work_digest", "scheduler_revision"):
+        identity.pop(key, None)
+    return identity
+
+
+def _work_ref(work: Mapping[str, Any]) -> dict[str, Any]:
+    item = _mapping(work)
+    return {
+        "work_id": item.get("work_id"),
+        "work_digest": item.get("work_digest"),
+        "role": item.get("role"),
+        "parallel_class": item.get("parallel_class"),
+        "logical_evaluation_key": item.get("logical_evaluation_key"),
+        "input_packet_digest": item.get("input_packet_digest"),
+        "target_kind": item.get("target_kind"),
+        "component_id": item.get("component_id"),
+        "synthesis_key": item.get("synthesis_key"),
+    }
+
+
+def derive_ready_batch_work(state: Any) -> list[dict[str, Any]]:
+    """Return the exact contiguous V2 prefix eligible for one atomic grant."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        raise MulticomponentGraphSchedulingError("batch membership requires scheduler V2")
+    ready = derive_ready_work(state)
+    if not ready:
+        return []
+    envelope = _mapping(scheduler.get("compatibility_envelope"))
+    remaining = int(envelope.get("remaining_units") or 0)
+    if remaining <= 0:
+        return []
+    first = _mapping(ready[0])
+    role = str(first.get("role") or "")
+    parallel_class = classify_work_parallelism(first)
+    if first.get("parallel_class") != parallel_class:
+        raise MulticomponentGraphSchedulingError("work parallel classification mismatch")
+    role_used = int(_mapping(envelope.get("role_reserved_units")).get(role) or 0) + int(
+        _mapping(envelope.get("role_spent_units")).get(role) or 0
+    )
+    role_remaining = int(MULTICOMPONENT_ROLE_CALL_LIMITS[role]) - role_used
+    if role_remaining <= 0:
+        return []
+    effective_width = int(scheduler.get("effective_width") or 0)
+    width = 1 if parallel_class == PARALLEL_SERIAL_ONLY else effective_width
+    limit = min(width, remaining, role_remaining)
+    selected: list[dict[str, Any]] = []
+    seen: dict[str, set[str]] = {
+        "work_id": set(),
+        "logical_evaluation_key": set(),
+        "component_id": set(),
+        "input_packet_digest": set(),
+    }
+    for candidate_raw in ready:
+        if len(selected) >= limit:
+            break
+        candidate = _mapping(candidate_raw)
+        candidate_class = classify_work_parallelism(candidate)
+        if (
+            candidate.get("role") != role
+            or candidate_class != parallel_class
+            or candidate.get("parallel_class") != candidate_class
+            or candidate.get("scheduler_revision") != first.get("scheduler_revision")
+        ):
+            break
+        duplicate = False
+        for key in seen:
+            value = str(candidate.get(key) or "")
+            if (not value and key != "component_id") or (
+                value and value in seen[key]
+            ):
+                duplicate = True
+                break
+        if duplicate:
+            raise MulticomponentGraphSchedulingError(
+                "batch membership contains duplicate canonical identity"
+            )
+        selected.append(deepcopy(candidate))
+        for key in seen:
+            value = str(candidate.get(key) or "")
+            if value:
+                seen[key].add(value)
+    return selected
+
+
+def _batch_index(scheduler: Mapping[str, Any], batch_id: str) -> int:
+    for index, item in enumerate(scheduler.get("batch_history") or ()):
+        if _mapping(item).get("batch_id") == batch_id:
+            return index
+    raise MulticomponentGraphSchedulingError("unknown scheduler batch")
+
+
+def grant_next_batch(
+    *, state: Any, action_ref: Mapping[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Atomically reserve the exact V2 contiguous prefix and its leases."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        raise MulticomponentGraphSchedulingError("batch grant requires scheduler V2")
+    ready = derive_ready_work(state)
+    if not ready:
+        raise MulticomponentGraphSchedulingError("scheduler has no current ready work")
+    selected = derive_ready_batch_work(state)
+    next_revision = int(scheduler.get("scheduler_revision") or 0) + 1
+    first = _mapping(ready[0])
+    parallel_class = classify_work_parallelism(first)
+    batch_seed = {
+        "schema_version": MULTICOMPONENT_BATCH_SCHEMA_VERSION,
+        "run_id": state.run_id,
+        "request_id": state.request_id,
+        "scheduler_revision_at_derivation": first.get("scheduler_revision"),
+        "accepted_contract_ref": deepcopy(first.get("accepted_contract_ref")),
+        "graph_ref": deepcopy(first.get("graph_ref")),
+        "backend_class": scheduler.get("backend_class"),
+        "effective_width": scheduler.get("effective_width"),
+        "parallel_class": parallel_class,
+        "ordered_work_refs": [_work_ref(item) for item in (selected or [first])],
+    }
+    batch_digest = _digest(batch_seed)
+    batch_id = f"multicomponent-batch:{batch_digest[:24]}"
+    envelope = _mapping(scheduler.get("compatibility_envelope"))
+    exhausted = not selected
+    batch: dict[str, Any] = {
+        **batch_seed,
+        "batch_id": batch_id,
+        "batch_digest": batch_digest,
+        "lease_group": {
+            "schema_version": MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION,
+            "batch_id": batch_id,
+            "batch_digest": batch_digest,
+            "ordered_lease_refs": [],
+        },
+        "ordered_lease_refs": [],
+        "ordered_child_action_refs": [],
+        "status": LEASE_DENIED_EXHAUSTED if exhausted else LEASE_GRANTED,
+        "grant_action_ref": deepcopy(dict(action_ref)),
+        "dispatch_action_ref": {},
+        "cancellation_action_ref": {},
+        "terminal_settlement_summary": {},
+        "safe_accounting_summary": {},
+    }
+    leases: list[dict[str, Any]] = []
+    if exhausted:
+        lease_core = {
+            "schema_version": MULTICOMPONENT_LEASE_V2_SCHEMA_VERSION,
+            "run_id": state.run_id,
+            "request_id": state.request_id,
+            "batch_id": batch_id,
+            "batch_digest": batch_digest,
+            "batch_index": 0,
+            "work": deepcopy(first),
+            "grant_action_ref": deepcopy(dict(action_ref)),
+            "scheduler_revision_at_derivation": first.get("scheduler_revision"),
+            "scheduler_revision_at_grant": next_revision,
+            "reservation_units": 0,
+            "status": LEASE_DENIED_EXHAUSTED,
+            "dispatch_action_ref": {},
+            "role_action_ref": {},
+            "settlement_reason": "compatibility_envelope_exhausted",
+        }
+        lease_digest = _digest(lease_core)
+        denied_lease = {
+            **lease_core,
+            "lease_id": f"multicomponent-lease:{lease_digest[:24]}",
+            "lease_digest": lease_digest,
+        }
+        denied_ref = {
+            "lease_id": denied_lease["lease_id"],
+            "lease_digest": denied_lease["lease_digest"],
+            "batch_index": 0,
+            "work_id": first.get("work_id"),
+            "work_digest": first.get("work_digest"),
+        }
+        batch["ordered_lease_refs"] = [deepcopy(denied_ref)]
+        batch["lease_group"]["ordered_lease_refs"] = [deepcopy(denied_ref)]
+        scheduler["lease_history"].append(denied_lease)
+        scheduler["status"] = "blocked_exhausted"
+        scheduler["terminal_posture"] = "blocked_exhausted"
+        scheduler["exhausted_required_work_ref"] = _work_ref(first)
+    else:
+        for batch_index, work in enumerate(selected):
+            lease_core = {
+                "schema_version": MULTICOMPONENT_LEASE_V2_SCHEMA_VERSION,
+                "run_id": state.run_id,
+                "request_id": state.request_id,
+                "batch_id": batch_id,
+                "batch_digest": batch_digest,
+                "batch_index": batch_index,
+                "work": deepcopy(work),
+                "grant_action_ref": deepcopy(dict(action_ref)),
+                "scheduler_revision_at_derivation": work.get("scheduler_revision"),
+                "scheduler_revision_at_grant": next_revision,
+                "reservation_units": 1,
+                "status": LEASE_GRANTED,
+                "dispatch_action_ref": {},
+                "role_action_ref": {},
+                "settlement_reason": None,
+            }
+            lease_digest = _digest(lease_core)
+            lease = {
+                **lease_core,
+                "lease_id": f"multicomponent-lease:{lease_digest[:24]}",
+                "lease_digest": lease_digest,
+            }
+            leases.append(lease)
+        lease_refs = [
+            {
+                "lease_id": lease["lease_id"],
+                "lease_digest": lease["lease_digest"],
+                "batch_index": lease["batch_index"],
+                "work_id": _mapping(lease["work"]).get("work_id"),
+                "work_digest": _mapping(lease["work"]).get("work_digest"),
+            }
+            for lease in leases
+        ]
+        batch["ordered_lease_refs"] = deepcopy(lease_refs)
+        batch["lease_group"]["ordered_lease_refs"] = deepcopy(lease_refs)
+        envelope["remaining_units"] = int(envelope["remaining_units"]) - len(leases)
+        scheduler["compatibility_envelope"] = envelope
+        scheduler["lease_history"].extend(leases)
+    scheduler["scheduler_revision"] = next_revision
+    scheduler["last_ready_work"] = [deepcopy(item) for item in ready]
+    scheduler["batch_history"].append(batch)
+    counters = _mapping(scheduler.get("accounting_counters"))
+    counters["batch_count"] = int(counters.get("batch_count") or 0) + 1
+    if len(leases) > 1:
+        counters["parallel_batch_count"] = int(
+            counters.get("parallel_batch_count") or 0
+        ) + 1
+    else:
+        counters["width_1_batch_count"] = int(counters.get("width_1_batch_count") or 0) + 1
+    scheduler["accounting_counters"] = counters
+    scheduler["transition_history"].append(
+        {
+            "transition": batch["status"],
+            "scheduler_revision": next_revision,
+            "batch_id": batch_id,
+            "ordered_work_ids": [item["work_id"] for item in batch["ordered_work_refs"]],
+            "ordered_lease_ids": [item["lease_id"] for item in batch["ordered_lease_refs"]],
+            "ready_work_count": len(ready),
+        }
+    )
+    return _refresh_scheduler(scheduler), deepcopy(batch)
+
+
+def cancel_batch(
+    *, state: Any, batch_id: str, action_ref: Mapping[str, Any], reason: str
+) -> dict[str, Any]:
+    """Atomically return every still-granted reservation in one V2 batch."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        raise MulticomponentGraphSchedulingError("batch cancellation requires scheduler V2")
+    batch_index = _batch_index(scheduler, batch_id)
+    batch = _mapping(scheduler["batch_history"][batch_index])
+    if batch.get("status") != LEASE_GRANTED:
+        raise MulticomponentGraphSchedulingError("batch is not cancellable")
+    lease_ids = [
+        str(_mapping(item).get("lease_id") or "")
+        for item in batch.get("ordered_lease_refs") or ()
+    ]
+    lease_indexes = [_lease_index(scheduler, lease_id) for lease_id in lease_ids]
+    leases = [_mapping(scheduler["lease_history"][index]) for index in lease_indexes]
+    if not leases or any(lease.get("status") != LEASE_GRANTED for lease in leases):
+        raise MulticomponentGraphSchedulingError(
+            "batch cancellation requires every reservation to remain granted"
+        )
+    cancellation_reason = str(reason or "predispatch_batch_cancellation")[:160]
+    for index, lease in zip(lease_indexes, leases, strict=True):
+        lease["status"] = LEASE_CANCELLED
+        lease["settlement_reason"] = cancellation_reason
+        scheduler["lease_history"][index] = lease
+    next_revision = int(scheduler["scheduler_revision"]) + 1
+    batch["status"] = LEASE_CANCELLED
+    batch["cancellation_action_ref"] = deepcopy(dict(action_ref))
+    batch["terminal_settlement_summary"] = {
+        "settlement": LEASE_CANCELLED,
+        "lease_count": len(leases),
+        "all_reservations_returned": True,
+    }
+    scheduler["batch_history"][batch_index] = batch
+    envelope = _mapping(scheduler.get("compatibility_envelope"))
+    envelope["remaining_units"] = int(envelope["remaining_units"]) + len(leases)
+    envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(leases)
+    scheduler["compatibility_envelope"] = envelope
+    scheduler["scheduler_revision"] = next_revision
+    scheduler["transition_history"].append(
+        {
+            "transition": LEASE_CANCELLED,
+            "scheduler_revision": next_revision,
+            "batch_id": batch_id,
+            "ordered_lease_ids": lease_ids,
+            "returned_units": len(leases),
+        }
+    )
+    return _refresh_scheduler(scheduler)
+
+
+def dispatch_batch(
+    *,
+    state: Any,
+    batch_id: str,
+    dispatch_action_ref: Mapping[str, Any],
+    descriptor_set: Mapping[str, Any],
+    child_action_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Atomically spend a V2 batch and bind its canonical child actions."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        raise MulticomponentGraphSchedulingError("batch dispatch requires scheduler V2")
+    batch_index = _batch_index(scheduler, batch_id)
+    batch = _mapping(scheduler["batch_history"][batch_index])
+    if batch.get("status") != LEASE_GRANTED:
+        raise MulticomponentGraphSchedulingError("batch is not dispatchable")
+    lease_refs = [_mapping(item) for item in batch.get("ordered_lease_refs") or ()]
+    lease_indexes = [
+        _lease_index(scheduler, str(item.get("lease_id") or "")) for item in lease_refs
+    ]
+    leases = [_mapping(scheduler["lease_history"][index]) for index in lease_indexes]
+    if not leases or any(lease.get("status") != LEASE_GRANTED for lease in leases):
+        raise MulticomponentGraphSchedulingError(
+            "batch dispatch requires every exact granted lease"
+        )
+    current_ready = derive_ready_work(state, allow_active_lease=True)
+    if len(current_ready) < len(leases) or any(
+        _semantic_work_identity(current_ready[index])
+        != _semantic_work_identity(_mapping(lease.get("work")))
+        for index, lease in enumerate(leases)
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "batch dispatch membership is not the current contiguous ready prefix"
+        )
+    descriptors = _mapping(descriptor_set)
+    declared_set_digest = descriptors.get("descriptor_set_digest")
+    descriptor_set_core = deepcopy(descriptors)
+    descriptor_set_core.pop("descriptor_set_digest", None)
+    if (
+        descriptors.get("schema_version")
+        != MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION
+        or descriptors.get("batch_id") != batch.get("batch_id")
+        or descriptors.get("batch_digest") != batch.get("batch_digest")
+        or declared_set_digest != _digest(descriptor_set_core)
+    ):
+        raise MulticomponentGraphSchedulingError("descriptor-set identity mismatch")
+    descriptor_items = [
+        _mapping(item) for item in descriptors.get("ordered_descriptors") or ()
+    ]
+    action_refs = [_mapping(item) for item in child_action_refs]
+    if len(descriptor_items) != len(leases) or len(action_refs) != len(leases):
+        raise MulticomponentGraphSchedulingError(
+            "batch dispatch child cardinality mismatch"
+        )
+    expected_action_types = {
+        ROLE_COMPONENT_ANALYST: "multicomponent_component_analyst_execute",
+        ROLE_COMPONENT_DPRIME: "multicomponent_component_dprime_execute",
+        ROLE_CROSS_COMPONENT_ANALYST: "multicomponent_cross_analyst_execute",
+        ROLE_SYNTHESIS_DPRIME: "multicomponent_synthesis_dprime_execute",
+        ROLE_SCRUTINEER: "multicomponent_scrutineer_execute",
+    }
+    seen_keys: set[str] = set()
+    for batch_index_value, (lease, descriptor, action_ref) in enumerate(
+        zip(leases, descriptor_items, action_refs, strict=True)
+    ):
+        work = _mapping(lease.get("work"))
+        descriptor_core = deepcopy(descriptor)
+        declared_descriptor_digest = descriptor_core.pop("descriptor_digest", None)
+        expected = {
+            "schema_version": MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION,
+            "batch_id": batch.get("batch_id"),
+            "batch_digest": batch.get("batch_digest"),
+            "batch_index": batch_index_value,
+            "work_id": work.get("work_id"),
+            "work_digest": work.get("work_digest"),
+            "lease_id": lease.get("lease_id"),
+            "lease_digest": lease.get("lease_digest"),
+            "role": work.get("role"),
+            "action_type": expected_action_types[str(work.get("role") or "")],
+            "logical_evaluation_key": work.get("logical_evaluation_key"),
+            "input_packet_digest": work.get("input_packet_digest"),
+            "output_schema_variant": work.get("output_schema_variant"),
+        }
+        if any(descriptor_core.get(key) != value for key, value in expected.items()):
+            raise MulticomponentGraphSchedulingError(
+                "private child descriptor and granted lease disagree"
+            )
+        if declared_descriptor_digest != _digest(descriptor_core):
+            raise MulticomponentGraphSchedulingError("private child descriptor digest mismatch")
+        logical_key = str(work.get("logical_evaluation_key") or "")
+        if logical_key in seen_keys:
+            raise MulticomponentGraphSchedulingError("descriptor logical key is duplicate")
+        seen_keys.add(logical_key)
+        expected_ref = {
+            "batch_index": batch_index_value,
+            "role": work.get("role"),
+            "logical_evaluation_key": logical_key,
+            "input_packet_digest": work.get("input_packet_digest"),
+            "lease_id": lease.get("lease_id"),
+            "lease_digest": lease.get("lease_digest"),
+            "work_id": work.get("work_id"),
+            "work_digest": work.get("work_digest"),
+        }
+        if any(action_ref.get(key) != value for key, value in expected_ref.items()):
+            raise MulticomponentGraphSchedulingError(
+                "child action ref and descriptor binding disagree"
+            )
+    child_sequences = [int(item.get("sequence") or 0) for item in action_refs]
+    if child_sequences != list(range(child_sequences[0], child_sequences[0] + len(leases))):
+        raise MulticomponentGraphSchedulingError("child action sequences are not contiguous")
+    for index, (lease_index, lease, action_ref) in enumerate(
+        zip(lease_indexes, leases, action_refs, strict=True)
+    ):
+        lease["status"] = LEASE_EXECUTION_STARTED
+        lease["dispatch_action_ref"] = deepcopy(dict(dispatch_action_ref))
+        lease["role_action_ref"] = deepcopy(action_ref)
+        scheduler["lease_history"][lease_index] = lease
+    next_revision = int(scheduler["scheduler_revision"]) + 1
+    batch["status"] = "dispatch_committed"
+    batch["dispatch_action_ref"] = deepcopy(dict(dispatch_action_ref))
+    batch["descriptor_set_digest"] = declared_set_digest
+    batch["ordered_child_action_refs"] = deepcopy(action_refs)
+    batch["safe_accounting_summary"] = {
+        "schema_version": MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION,
+        "dispatch_committed_unit_count": len(leases),
+        "transport_submission_count": 0,
+        "transport_started_count": 0,
+        "transport_completed_count": 0,
+        "provider_request_attempt_count": 0,
+        "successful_artifact_count": 0,
+        "failed_submission_count": 0,
+        "failed_transport_count": 0,
+        "stale_result_count": 0,
+    }
+    scheduler["batch_history"][batch_index] = batch
+    counters = _mapping(scheduler.get("accounting_counters"))
+    counters["dispatch_committed_unit_count"] = int(
+        counters.get("dispatch_committed_unit_count") or 0
+    ) + len(leases)
+    scheduler["accounting_counters"] = counters
+    scheduler["scheduler_revision"] = next_revision
+    scheduler["transition_history"].append(
+        {
+            "transition": "batch_dispatch_committed",
+            "scheduler_revision": next_revision,
+            "batch_id": batch_id,
+            "dispatch_action_id": _mapping(dispatch_action_ref).get("action_id"),
+            "ordered_child_action_ids": [item.get("action_id") for item in action_refs],
+            "dispatch_committed_unit_count": len(leases),
+        }
+    )
+    return _refresh_scheduler(scheduler)
 
 
 def grant_next_lease(
@@ -814,6 +1541,9 @@ def settle_role_lease(
     if lease.get("status") != LEASE_EXECUTION_STARTED:
         raise MulticomponentGraphSchedulingError("lease is not awaiting settlement")
     for key in (
+        "batch_id",
+        "batch_digest",
+        "batch_index",
         "lease_digest",
         "work_id",
         "work_digest",
@@ -821,7 +1551,11 @@ def settle_role_lease(
         "logical_evaluation_key",
         "input_packet_digest",
     ):
-        expected = lease.get(key) if key == "lease_digest" else work.get(key)
+        expected = (
+            lease.get(key)
+            if key in {"batch_id", "batch_digest", "batch_index", "lease_digest"}
+            else work.get(key)
+        )
         if inputs.get(key) != expected:
             raise MulticomponentGraphSchedulingError(
                 "role action settlement binding mismatch"
@@ -848,14 +1582,117 @@ def settle_role_lease(
             "role": work.get("role"),
         }
     )
+    if (
+        scheduler.get("schema_version") == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+        and inputs.get("batch_id")
+    ):
+        submitted = inputs.get("transport_submitted") is True
+        started = inputs.get("transport_started") is True
+        completed = inputs.get("transport_completed") is True
+        attempt_count = max(
+            0, min(1, int(inputs.get("provider_request_attempt_count") or 0))
+        )
+        if started and not submitted or completed and not started:
+            raise MulticomponentGraphSchedulingError(
+                "transport accounting facts are not monotonic"
+            )
+        if attempt_count and not started:
+            raise MulticomponentGraphSchedulingError(
+                "provider request attempts require a started transport"
+            )
+        counters = _mapping(scheduler.get("accounting_counters"))
+        counters["transport_submission_count"] = int(
+            counters.get("transport_submission_count") or 0
+        ) + int(submitted)
+        counters["transport_started_count"] = int(
+            counters.get("transport_started_count") or 0
+        ) + int(started)
+        counters["transport_completed_count"] = int(
+            counters.get("transport_completed_count") or 0
+        ) + int(completed)
+        counters["provider_request_attempt_count"] = int(
+            counters.get("provider_request_attempt_count") or 0
+        ) + attempt_count
+        if settlement == LEASE_COMPLETED:
+            outcome_key = "successful_artifact_count"
+        elif settlement == LEASE_STALE:
+            outcome_key = "stale_result_count"
+        elif inputs.get("failure_kind") in {
+            "executor_initialization_failure",
+            "failed_submission",
+        }:
+            outcome_key = "failed_submission_count"
+        else:
+            outcome_key = "failed_transport_count"
+        counters[outcome_key] = int(counters.get(outcome_key) or 0) + 1
+        observed_max = max(0, int(inputs.get("observed_batch_max_in_flight") or 0))
+        counters["maximum_observed_in_flight_transports"] = max(
+            int(counters.get("maximum_observed_in_flight_transports") or 0),
+            observed_max,
+        )
+        counters["physical_overlap_observed"] = (
+            counters.get("maximum_observed_in_flight_transports", 0) > 1
+        )
+        scheduler["accounting_counters"] = counters
+        batch_id = str(inputs.get("batch_id") or "")
+        batch_index = _batch_index(scheduler, batch_id)
+        batch = _mapping(scheduler["batch_history"][batch_index])
+        summary = _mapping(batch.get("safe_accounting_summary"))
+        summary["transport_submission_count"] = int(
+            summary.get("transport_submission_count") or 0
+        ) + int(submitted)
+        summary["transport_started_count"] = int(
+            summary.get("transport_started_count") or 0
+        ) + int(started)
+        summary["transport_completed_count"] = int(
+            summary.get("transport_completed_count") or 0
+        ) + int(completed)
+        summary["provider_request_attempt_count"] = int(
+            summary.get("provider_request_attempt_count") or 0
+        ) + attempt_count
+        summary[outcome_key] = int(summary.get(outcome_key) or 0) + 1
+        batch["safe_accounting_summary"] = summary
+        batch_leases = [
+            _mapping(scheduler["lease_history"][_lease_index(scheduler, str(ref["lease_id"]))])
+            for ref in batch.get("ordered_lease_refs") or ()
+        ]
+        batch_active = [
+            item for item in batch_leases if item.get("status") in _ACTIVE_STATUSES
+        ]
+        if batch_active:
+            batch["status"] = "draining"
+        else:
+            settlements = [str(item.get("status") or "") for item in batch_leases]
+            batch["status"] = "settled"
+            batch["terminal_settlement_summary"] = {
+                "lease_count": len(batch_leases),
+                "ordered_settlements": settlements,
+                "all_leases_terminal": all(
+                    status in _TERMINAL_STATUSES for status in settlements
+                ),
+            }
+        scheduler["batch_history"][batch_index] = batch
     if settlement in {LEASE_FAILED, LEASE_STALE}:
-        scheduler["status"] = "blocked_required_work_failed"
         scheduler["failed_required_work_ref"] = {
             "work_id": work.get("work_id"),
             "work_digest": work.get("work_digest"),
             "role": work.get("role"),
             "settlement": settlement,
         }
+    active_after = [
+        item
+        for item in scheduler["lease_history"]
+        if _mapping(item).get("status") in _ACTIVE_STATUSES
+    ]
+    if scheduler.get("failed_required_work_ref"):
+        scheduler["status"] = (
+            "draining_required_work_failed"
+            if active_after
+            else "blocked_required_work_failed"
+        )
+        scheduler["terminal_posture"] = (
+            None if active_after else "blocked_required_work_failed"
+        )
     return _refresh_scheduler(scheduler)
 
 
@@ -884,6 +1721,9 @@ def validate_role_lease_settlement(
             "role settlement requires the exact active spent lease"
         )
     for key in (
+        "batch_id",
+        "batch_digest",
+        "batch_index",
         "lease_digest",
         "work_id",
         "work_digest",
@@ -891,7 +1731,11 @@ def validate_role_lease_settlement(
         "logical_evaluation_key",
         "input_packet_digest",
     ):
-        expected = lease.get(key) if key == "lease_digest" else work.get(key)
+        expected = (
+            lease.get(key)
+            if key in {"batch_id", "batch_digest", "batch_index", "lease_digest"}
+            else work.get(key)
+        )
         if inputs.get(key) != expected:
             raise MulticomponentGraphSchedulingError(
                 "role action and active lease settlement binding disagree"
@@ -918,6 +1762,10 @@ def validate_role_lease_settlement(
         "request_id",
         "input_packet_digest",
         "logical_evaluation_key",
+        "batch_id",
+        "batch_digest",
+        "batch_index",
+        "descriptor_digest",
         "lease_id",
         "lease_digest",
         "work_id",
@@ -1061,41 +1909,118 @@ def _settle_for_canonical_authority_transition(
         for index, item in enumerate(scheduler.get("lease_history") or ())
         if _mapping(item).get("status") in _ACTIVE_STATUSES
     ]
-    affected = False
-    if active:
-        index, lease = active[0]
-        work = _mapping(lease.get("work"))
-        affected = not work_is_current(state, work)
-    if active and affected:
+    affected = [
+        (index, lease)
+        for index, lease in active
+        if not work_is_current(state, _mapping(lease.get("work")))
+    ]
+    granted_affected = [item for item in affected if item[1].get("status") == LEASE_GRANTED]
+    if granted_affected and scheduler.get("schema_version") == (
+        MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+    ) and all(lease.get("batch_id") for _, lease in active):
+        batch_ids = {str(lease.get("batch_id") or "") for _, lease in active}
+        if len(batch_ids) != 1 or any(
+            lease.get("status") != LEASE_GRANTED for _, lease in active
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "predispatch authority change cannot partially cancel a V2 batch"
+            )
         scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
-        if lease.get("status") == LEASE_GRANTED:
+        for index, lease in active:
             lease["status"] = LEASE_CANCELLED
-            envelope = _mapping(scheduler.get("compatibility_envelope"))
-            envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
-            envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
-            scheduler["compatibility_envelope"] = envelope
-            settlement = LEASE_CANCELLED
-        else:
-            lease["status"] = LEASE_STALE
-            settlement = LEASE_STALE
-        lease["settlement_reason"] = transition
-        scheduler["lease_history"][index] = lease
+            lease["settlement_reason"] = transition
+            scheduler["lease_history"][index] = lease
+        envelope = _mapping(scheduler.get("compatibility_envelope"))
+        envelope["remaining_units"] = int(envelope["remaining_units"]) + len(active)
+        envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(active)
+        scheduler["compatibility_envelope"] = envelope
+        batch_id = next(iter(batch_ids))
+        batch_index = _batch_index(scheduler, batch_id)
+        batch = _mapping(scheduler["batch_history"][batch_index])
+        batch["status"] = LEASE_CANCELLED
+        batch["terminal_settlement_summary"] = {
+            "settlement": LEASE_CANCELLED,
+            "lease_count": len(active),
+            "authority_change_settlement": True,
+        }
+        scheduler["batch_history"][batch_index] = batch
         scheduler["transition_history"].append(
             {
-                "transition": settlement,
+                "transition": LEASE_CANCELLED,
                 "scheduler_revision": scheduler["scheduler_revision"],
-                "lease_id": lease.get("lease_id"),
-                "work_id": work.get("work_id"),
+                "batch_id": batch_id,
+                "ordered_lease_ids": [lease.get("lease_id") for _, lease in active],
                 "authority_change_settlement": True,
             }
         )
+    else:
+        for index, lease in affected:
+            scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+            work = _mapping(lease.get("work"))
+            if lease.get("status") == LEASE_GRANTED:
+                lease["status"] = LEASE_CANCELLED
+                envelope = _mapping(scheduler.get("compatibility_envelope"))
+                envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
+                envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
+                scheduler["compatibility_envelope"] = envelope
+                settlement = LEASE_CANCELLED
+            else:
+                lease["status"] = LEASE_STALE
+                settlement = LEASE_STALE
+                if scheduler.get("schema_version") == (
+                    MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+                ) and lease.get("batch_id"):
+                    counters = _mapping(scheduler.get("accounting_counters"))
+                    counters["stale_result_count"] = int(
+                        counters.get("stale_result_count") or 0
+                    ) + 1
+                    scheduler["accounting_counters"] = counters
+            lease["settlement_reason"] = transition
+            scheduler["lease_history"][index] = lease
+            scheduler["transition_history"].append(
+                {
+                    "transition": settlement,
+                    "scheduler_revision": scheduler["scheduler_revision"],
+                    "lease_id": lease.get("lease_id"),
+                    "work_id": work.get("work_id"),
+                    "authority_change_settlement": True,
+                }
+            )
+        if affected and scheduler.get("schema_version") == (
+            MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+        ):
+            affected_batch_ids = {
+                str(lease.get("batch_id") or "")
+                for _, lease in affected
+                if lease.get("batch_id")
+            }
+            for batch_id in affected_batch_ids:
+                batch_index = _batch_index(scheduler, batch_id)
+                batch = _mapping(scheduler["batch_history"][batch_index])
+                batch_leases = [
+                    _mapping(
+                        scheduler["lease_history"][
+                            _lease_index(scheduler, str(_mapping(ref).get("lease_id") or ""))
+                        ]
+                    )
+                    for ref in batch.get("ordered_lease_refs") or ()
+                ]
+                if all(item.get("status") in _TERMINAL_STATUSES for item in batch_leases):
+                    batch["status"] = "settled"
+                    batch["terminal_settlement_summary"] = {
+                        "lease_count": len(batch_leases),
+                        "ordered_settlements": [item.get("status") for item in batch_leases],
+                        "all_leases_terminal": True,
+                    }
+                scheduler["batch_history"][batch_index] = batch
     scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
     scheduler["transition_history"].append(
         {
             "transition": transition,
             "scheduler_revision": scheduler["scheduler_revision"],
             "authority_ref": _canonical_authority_ref(state, transition),
-            "affected_active_lease": affected,
+            "affected_active_lease": bool(affected),
+            "affected_active_lease_count": len(affected),
         }
     )
     scheduler["last_ready_work"] = []
@@ -1148,19 +2073,35 @@ __all__ = [
     "LEASE_GRANTED",
     "LEASE_STALE",
     "MULTICOMPONENT_LEASE_SCHEMA_VERSION",
+    "MULTICOMPONENT_LEASE_V2_SCHEMA_VERSION",
+    "MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION",
+    "MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION",
+    "MULTICOMPONENT_BATCH_SCHEMA_VERSION",
+    "MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION",
+    "MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION",
+    "MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION",
     "MULTICOMPONENT_ROLE_CALL_LIMITS",
+    "MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_OWNER",
     "MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION",
+    "MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_STAGE",
     "MULTICOMPONENT_WORK_SCHEMA_VERSION",
     "MulticomponentGraphSchedulingError",
+    "cancel_batch",
     "cancel_lease",
+    "classify_work_parallelism",
     "complete_scheduler",
     "derive_multicomponent_compatibility_envelope",
+    "derive_multicomponent_transport_profile",
     "derive_ready_work",
+    "derive_ready_batch_work",
     "dispatch_lease",
+    "dispatch_batch",
     "grant_next_lease",
+    "grant_next_batch",
     "initialize_scheduler_state",
+    "initialize_scheduler_v2_state",
     "scheduler_trace_projection",
     "settle_role_lease",
     "validate_scheduler_state",

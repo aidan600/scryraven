@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -47,6 +48,9 @@ from core.run_kernel import (
     RunKernel,
     RunKernelTransitionError,
     RunStageStatus,
+)
+from core.strict_one_shot_model_transport import (
+    wrap_text_callable_as_strict_one_shot_transport,
 )
 from tests.test_multicomponent_component_work_graph_v1 import (
     REQUEST_ID,
@@ -396,12 +400,14 @@ def _execute_selective_cross(
         run_kernel=kernel,
         role=ROLE_CROSS_COMPONENT_ANALYST,
         input_packet=packet,
-        ask_model=lambda *_args, **_kwargs: response,
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(response),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
+        ),
         clean_json_response=lambda value: value,
-        provider="offline",
-        model="fixture",
-        base_url="http://offline.invalid/v1",
-        api_key="",
+        provider="OpenAI",
+        model="gpt-5.4",
         use_reasoning=False,
         logical_evaluation_key=f"selective:graph-revision:{graph['graph_revision']}",
         output_schema_variant=SELECTIVE_CROSS_COMPONENT_SCHEMA,
@@ -903,15 +909,17 @@ def test_selective_reconstruction_calls_cross_and_dprime_only_for_affected_keys(
 
         packet = json.loads(prompt)
         if system_prompt == SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT:
-            return _selective_response(packet)
+            return json.dumps(_selective_response(packet))
         if system_prompt == ROLE_SYSTEM_PROMPTS["synthesis_dprime"]:
-            return {
-                "validation_status": "supported",
-                "reasons": ["The exact current inputs support the proposal."],
-                "caveats": [],
-                "nonclaims": [],
-                "blockers": [],
-            }
+            return json.dumps(
+                {
+                    "validation_status": "supported",
+                    "reasons": ["The exact current inputs support the proposal."],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            )
         raise AssertionError(f"unexpected selective role prompt: {system_prompt}")
 
     rebuilt, deferred = _execute_selective_reconstruction(
@@ -919,12 +927,14 @@ def test_selective_reconstruction_calls_cross_and_dprime_only_for_affected_keys(
         graph=amended,
         closure=closure,
         role_kwargs={
-            "ask_model": ask_model,
+            "strict_one_shot_transport": wrap_text_callable_as_strict_one_shot_transport(
+                ask_model,
+                canonical_provider="OpenAI",
+                model="gpt-5.4",
+            ),
             "clean_json_response": lambda value: value,
-            "provider": "offline",
-            "model": "fixture",
-            "base_url": "http://offline.invalid/v1",
-            "api_key": "",
+            "provider": "OpenAI",
+            "model": "gpt-5.4",
             "use_reasoning": False,
         },
     )
@@ -1240,12 +1250,14 @@ def test_selective_rejects_tampered_preserved_boundary_packet(mutation: str) -> 
         run_kernel=kernel,
         role=ROLE_CROSS_COMPONENT_ANALYST,
         input_packet=tampered,
-        ask_model=lambda *_args, **_kwargs: response,
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(response),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
+        ),
         clean_json_response=lambda value: value,
-        provider="offline",
-        model="fixture",
-        base_url="http://offline.invalid/v1",
-        api_key="",
+        provider="OpenAI",
+        model="gpt-5.4",
         use_reasoning=False,
         logical_evaluation_key=(
             f"selective-tamper:graph-revision:{amended['graph_revision']}"

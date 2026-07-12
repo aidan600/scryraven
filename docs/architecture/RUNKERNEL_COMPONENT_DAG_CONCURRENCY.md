@@ -17,11 +17,13 @@ explicit admission boundaries, not a sequential checklist.
 
 The durable direction is an n-capable, mode-budgeted, acyclic graph that is
 serial-compatible initially and supports bounded synthesis-of-synthesis.
-Serial correctness, dynamic recovery, selective recomputation, and Phase 4
-RunKernel scheduling/work leases are installed on ComponentWorkGraph V1.
-Runtime parallelism remains a later commitment. None of execution, scheduling,
-budget leases, or runtime parallelism is installed by the historical V0
-contracts.
+Serial correctness, dynamic recovery, selective recomputation, Phase 4
+RunKernel scheduling/work leases, and Phase 5A hosted initial-component
+parallel dispatch are installed on ComponentWorkGraph V1. Runtime parallelism
+is limited to eligible initial component Analyst and D-prime waves at width 2;
+graph-bound, recovery, selective, Local, and unknown-provider work remains
+serial. None of execution, scheduling, budget leases, or runtime parallelism is
+installed by the historical V0 contracts.
 
 The installed implementation is owned by `core.multicomponent_graph_scheduling`
 and consumed by the ordinary selected runtime. This companion document does not
@@ -129,14 +131,39 @@ admitted semantic edges, challenge refs, revision/staleness metadata, and
 depth/budget posture. Do not silently redefine V0: V0 may remain a compatibility
 or review-only input and is a named strangler target for the ordinary path.
 
-## Installed Phase 4 Budget And Lease Doctrine
+## Installed Phase 4 And Phase 5A Budget, Lease, And Dispatch Doctrine
 
 The selected ordinary ComponentWorkGraph V1 path uses a parent compatibility
-envelope plus exact semantic-work leases. A single serial driver asks RunKernel
-for the first exact ready item before it knows which role will run, reconstructs
-the packet bound by that descriptor, dispatches the exact lease, and sends the
-artifact to the existing deterministic consumer. Caller traversal order cannot
-nominate or override the next semantic call.
+envelope plus exact semantic-work leases. Scheduler V2 asks RunKernel for a
+contiguous prefix of canonical ready-work order before the driver knows which
+role will run. It never skips an intervening item, mixes roles, or creates an
+all-Analyst/all-D-prime stage barrier. Caller traversal order cannot nominate or
+override the next semantic call.
+
+For configured OpenAI and OpenRouter SmartModel providers, RunKernel derives
+`hosted_api` with effective width and hard cap 2. Local derives
+`local_openai_compatible` at width 1, and unknown providers derive
+`conservative_unknown` at width 1. These facts come only from the existing
+canonical provider normalizer. They are a compatibility policy, not measured
+provider capacity, user configuration, routing authority, or adaptive
+rate-limit policy. Retained scheduler V1 remains strictly serial historical
+state and rejects V2 batch fields or parallel posture.
+
+RunKernel atomically grants the exact V2 batch and leases, while packet
+reconstruction and private child-action preparation remain transient on the
+main product thread. Batch dispatch atomically moves all reservations to spent
+and publishes the complete contiguous child-action set. No child action or
+logical key is visible before that commitment. A precommit defect atomically
+returns the full batch; partial refund and partial child publication are
+invalid.
+
+Only independent initial component Analyst and initial component D-prime waves
+may use a per-run bounded worker pool. Workers execute configured transport and
+pure normalization only. RunKernel mutation, artifact identity/digest
+construction, observations, component admission, graph reduction, recovery,
+Sufficiency, FAP, Author, persistence, and trace mutation remain on the main
+thread. Physical completion order is stored by batch index and cannot choose
+canonical observation, component-admission, graph, accounting, or answer order.
 
 Component budgets must be reserved from the parent envelope before concurrent
 work starts. This prevents multi-component work from silently multiplying cost,
@@ -152,8 +179,9 @@ fourth live bucket.
 Leases are cancellable before dispatch, bounded, attributable to exact current
 work, and auditable by RunKernel. Failed or stale postdispatch work retains its
 unit. Required exhaustion reaches ordinary Sufficiency/FAP and the safe blocked
-terminal. Phase 4 permits one active physical lease; logical readiness is not
-physical concurrency.
+terminal. Scheduler V2 permits at most two active physical leases only for the
+eligible hosted initial-component classes; all other work uses V2 batches of
+one.
 
 Scheduler completion and every blocked terminal require zero active leases.
 Invalid completion with either a granted or dispatch-committed lease is a
@@ -252,26 +280,28 @@ where it exists:
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
 The list above records V0 provenance and older roadmap names; it is not the
-current next-phase route. Phases 1 through 4 are installed. The recommended next
-checkpoint is Phase 5 bounded physical dispatch parallelism through the same
-scheduler.
+current next-phase route. Phases 1 through 4 and Phase 5A hosted component
+parallel dispatch are installed. Hosted live characterization remains a
+separate next checkpoint; Local characterization remains later.
 
 After serial end-to-end ordinary activation, the committed Boundary 3 sequence
 is dynamic graph and AnswerContract amendment, targeted ordinary research
 re-entry, selective invalidation, selective synthesis recomputation,
-revision-specific validation/scrutiny, and RunKernel scheduling and budget
-leases are installed. Runtime parallelism where supported remains deferred, not
-rejected.
+revision-specific validation/scrutiny, RunKernel scheduling and budget leases,
+and width-2 hosted initial-component dispatch are installed. Cross, synthesis,
+Scrutineer, recovery, and selective work remains serial.
 
 ## Current Status
 
 The V0 work through
 `MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` remains no-execution and
 review-only. ComponentWorkGraph V1 now supports the installed Phase 1 ordinary
-path, Phase 2 recovery, Phase 3 selective recomputation, and Phase 4 serial
-scheduling/lease authority through ordinary Sufficiency/FAP/Author consumption.
-It does not install runtime parallelism, live validation, source-display
-changes, citation changes, or product correctness claims. No permanent
+path, Phase 2 recovery, Phase 3 selective recomputation, Phase 4 lease
+authority, and Phase 5A hosted initial-component width-2 transport through
+ordinary Sufficiency/FAP/Author consumption. It does not install graph-bound,
+recovery, selective, or Local parallelism; adaptive rate-limit handling; live
+provider characterization; source-display or citation changes; Specialist
+activation; or broader product-correctness claims. No permanent
 Fast/Balanced/Deep semantic-call budgets were selected.
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP.

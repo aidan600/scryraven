@@ -744,6 +744,9 @@ class ActionType(str, Enum):
     MULTICOMPONENT_LEASE_GRANT = "multicomponent_semantic_lease_grant"
     MULTICOMPONENT_LEASE_DISPATCH = "multicomponent_semantic_lease_dispatch"
     MULTICOMPONENT_LEASE_CANCEL = "multicomponent_semantic_lease_cancel"
+    MULTICOMPONENT_BATCH_GRANT = "multicomponent_semantic_batch_grant"
+    MULTICOMPONENT_BATCH_DISPATCH = "multicomponent_semantic_batch_dispatch"
+    MULTICOMPONENT_BATCH_CANCEL = "multicomponent_semantic_batch_cancel"
     MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = (
         "multicomponent_component_dprime_execute"
     )
@@ -866,6 +869,9 @@ class ObservationType(str, Enum):
     MULTICOMPONENT_LEASE_GRANTED = "multicomponent_semantic_lease_granted"
     MULTICOMPONENT_LEASE_DISPATCHED = "multicomponent_semantic_lease_dispatched"
     MULTICOMPONENT_LEASE_CANCELLED = "multicomponent_semantic_lease_cancelled"
+    MULTICOMPONENT_BATCH_GRANTED = "multicomponent_semantic_batch_granted"
+    MULTICOMPONENT_BATCH_DISPATCHED = "multicomponent_semantic_batch_dispatched"
+    MULTICOMPONENT_BATCH_CANCELLED = "multicomponent_semantic_batch_cancelled"
     MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = (
         "multicomponent_component_dprime_completed"
     )
@@ -3490,11 +3496,13 @@ class RunKernel:
         *,
         component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
         requested_synthesis_directive: str,
+        configured_provider: str = "OpenAI",
     ) -> dict[str, Any]:
-        """Initialize the qualifying lane's RunKernel-owned serial scheduler."""
+        """Initialize the qualifying lane's RunKernel-owned V2 scheduler."""
 
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
+            derive_multicomponent_transport_profile,
         )
         from core.multicomponent_role_runtime import safe_packet_digest
 
@@ -3562,11 +3570,14 @@ class RunKernel:
             "requested_synthesis_directive": directive,
             "component_analyst_input_packets": deepcopy(packets),
             "recovery_bindings": {},
+            "configured_provider_class": derive_multicomponent_transport_profile(
+                configured_provider
+            )["configured_provider_class"],
         }
         action = self.authorize(
             stage=MULTICOMPONENT_SCHEDULER_STAGE,
             action_type=ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE,
-            reason="ordinary_multicomponent_serial_scheduler_initialize",
+            reason="ordinary_multicomponent_v2_scheduler_initialize",
             inputs={
                 "component_input_packet_digests": {
                     key: safe_packet_digest(value) for key, value in packets.items()
@@ -3574,6 +3585,9 @@ class RunKernel:
                 "requested_synthesis_directive_digest": safe_packet_digest(
                     {"requested_synthesis_directive": directive}
                 ),
+                "configured_provider_class": self.state.multicomponent_scheduler_context[
+                    "configured_provider_class"
+                ],
             },
             expected_observation_type=(
                 ObservationType.MULTICOMPONENT_SCHEDULER_INITIALIZED
@@ -3629,6 +3643,443 @@ class RunKernel:
         from core.multicomponent_graph_scheduling import derive_ready_work
 
         return deepcopy(derive_ready_work(self.state))
+
+    def grant_next_multicomponent_work_batch(self) -> dict[str, Any]:
+        """Rederive and atomically reserve the exact V2 contiguous prefix."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            derive_ready_batch_work,
+            derive_ready_work,
+        )
+
+        ready = derive_ready_work(self.state)
+        if not ready:
+            raise RunKernelTransitionError("scheduler has no current ready work")
+        batch_work = derive_ready_batch_work(self.state)
+        action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-grant:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_BATCH_GRANT,
+            reason="ordinary_multicomponent_next_current_work_batch",
+            inputs={
+                "expected_first_ready_work": deepcopy(ready[0]),
+                "expected_batch_work": deepcopy(batch_work),
+            },
+            expected_observation_type=ObservationType.MULTICOMPONENT_BATCH_GRANTED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        scheduler = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        return deepcopy(_safe_mapping((scheduler.get("batch_history") or [{}])[-1]))
+
+    def cancel_multicomponent_work_batch(
+        self,
+        *,
+        batch_id: str,
+        reason: str = "predispatch_batch_cancellation",
+    ) -> dict[str, Any]:
+        """Atomically return every granted reservation in one V2 batch."""
+
+        from core.multicomponent_graph_scheduling import MULTICOMPONENT_SCHEDULER_STAGE
+
+        action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-cancel:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_BATCH_CANCEL,
+            reason="ordinary_multicomponent_predispatch_batch_return",
+            inputs={"batch_id": batch_id, "cancellation_reason": reason},
+            expected_observation_type=ObservationType.MULTICOMPONENT_BATCH_CANCELLED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        return deepcopy(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
+        )
+
+    @staticmethod
+    def _multicomponent_role_action_contract(
+        role: str,
+    ) -> tuple[ActionType, ObservationType]:
+        role_types = {
+            "component_analyst": (
+                ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+                ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
+            ),
+            "component_dprime": (
+                ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+                ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
+            ),
+            "cross_component_analyst": (
+                ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
+                ObservationType.MULTICOMPONENT_CROSS_ANALYST_COMPLETED,
+            ),
+            "synthesis_dprime": (
+                ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
+                ObservationType.MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED,
+            ),
+            "scrutineer": (
+                ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
+                ObservationType.MULTICOMPONENT_SCRUTINEER_COMPLETED,
+            ),
+        }
+        try:
+            return role_types[role]
+        except KeyError as exc:
+            raise RunKernelTransitionError(
+                "unknown multi-component semantic role"
+            ) from exc
+
+    def _build_multicomponent_private_child_descriptor(
+        self,
+        *,
+        batch: Mapping[str, Any],
+        lease: Mapping[str, Any],
+        batch_index: int,
+    ) -> dict[str, Any]:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION,
+        )
+        from core.multicomponent_role_runtime import safe_packet_digest
+
+        work = _safe_mapping(lease.get("work"))
+        action_type, observation_type = self._multicomponent_role_action_contract(
+            str(work.get("role") or "")
+        )
+        descriptor_core = {
+            "schema_version": MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION,
+            "batch_id": batch.get("batch_id"),
+            "batch_digest": batch.get("batch_digest"),
+            "batch_index": batch_index,
+            "work_id": work.get("work_id"),
+            "work_digest": work.get("work_digest"),
+            "lease_id": lease.get("lease_id"),
+            "lease_digest": lease.get("lease_digest"),
+            "role": work.get("role"),
+            "action_type": action_type.value,
+            "expected_observation_type": observation_type.value,
+            "logical_evaluation_key": work.get("logical_evaluation_key"),
+            "input_packet_digest": work.get("input_packet_digest"),
+            "output_schema_variant": work.get("output_schema_variant"),
+            "safe_target_ref": {
+                "target_kind": work.get("target_kind"),
+                "component_id": work.get("component_id"),
+                "synthesis_key": work.get("synthesis_key"),
+                "node_ref": deepcopy(work.get("node_ref")),
+            },
+            "authority_refs": {
+                "accepted_contract_ref": deepcopy(work.get("accepted_contract_ref")),
+                "graph_ref": deepcopy(work.get("graph_ref")),
+                "recovery_authorization_ref": deepcopy(
+                    work.get("recovery_authorization_ref")
+                ),
+                "contract_amendment_admission_ref": deepcopy(
+                    work.get("contract_amendment_admission_ref")
+                ),
+                "contract_amendment_application_ref": deepcopy(
+                    work.get("contract_amendment_application_ref")
+                ),
+                "selective_closure_ref": deepcopy(work.get("selective_closure_ref")),
+            },
+            "expected_action_stage_seed": (
+                f"multicomponent_role:{work.get('role')}:"
+                f"{work.get('logical_evaluation_key')}"
+            ),
+        }
+        return {
+            **descriptor_core,
+            "descriptor_digest": safe_packet_digest(descriptor_core),
+        }
+
+    def build_multicomponent_private_child_descriptor_set(
+        self,
+        *,
+        batch_id: str,
+        packet_digests: Sequence[str],
+    ) -> dict[str, Any]:
+        """Build a complete transient descriptor set without canonical mutation."""
+
+        from core.multicomponent_graph_scheduling import (
+            LEASE_GRANTED,
+            MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION,
+            MULTICOMPONENT_ROLE_CALL_LIMITS,
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            validate_scheduler_state,
+            work_is_current,
+        )
+        from core.multicomponent_role_runtime import safe_packet_digest
+
+        scheduler = validate_scheduler_state(
+            _safe_mapping(self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+        )
+        batch = next(
+            (
+                _safe_mapping(item)
+                for item in scheduler.get("batch_history") or ()
+                if _safe_mapping(item).get("batch_id") == batch_id
+            ),
+            {},
+        )
+        if batch.get("status") != LEASE_GRANTED:
+            raise RunKernelTransitionError("scheduler batch is not granted")
+        lease_refs = [
+            _safe_mapping(item) for item in batch.get("ordered_lease_refs") or ()
+        ]
+        leases = [
+            next(
+                _safe_mapping(item)
+                for item in scheduler.get("lease_history") or ()
+                if _safe_mapping(item).get("lease_id") == ref.get("lease_id")
+            )
+            for ref in lease_refs
+        ]
+        if len(leases) != len(packet_digests) or any(
+            lease.get("status") != LEASE_GRANTED for lease in leases
+        ):
+            raise RunKernelTransitionError(
+                "private descriptor preparation requires every granted lease"
+            )
+        prior_counts: dict[str, int] = {}
+        batch_counts: dict[str, int] = {}
+        seen_keys: set[tuple[str, str]] = set()
+        descriptors: list[dict[str, Any]] = []
+        for batch_index, (lease, packet_digest) in enumerate(
+            zip(leases, packet_digests, strict=True)
+        ):
+            work = _safe_mapping(lease.get("work"))
+            role = str(work.get("role") or "")
+            action_type, _observation_type = self._multicomponent_role_action_contract(role)
+            key = str(work.get("logical_evaluation_key") or "")
+            if (
+                packet_digest != work.get("input_packet_digest")
+                or not work_is_current(self.state, work)
+                or (role, key) in seen_keys
+            ):
+                raise RunKernelTransitionError(
+                    "private descriptor packet or logical binding is not current"
+                )
+            seen_keys.add((role, key))
+            if role not in prior_counts:
+                prior = [
+                    item
+                    for item in self.state.issued_actions.values()
+                    if item.action_type is action_type
+                ]
+                if any(
+                    item.inputs.get("logical_evaluation_key") == key for item in prior
+                ):
+                    raise RunKernelTransitionError(
+                        "multi-component role logical evaluation key is duplicate"
+                    )
+                prior_counts[role] = len(prior)
+            batch_counts[role] = batch_counts.get(role, 0) + 1
+            if prior_counts[role] + batch_counts[role] > MULTICOMPONENT_ROLE_CALL_LIMITS[role]:
+                raise RunKernelTransitionError(
+                    "multi-component batch exceeds the shared role cap"
+                )
+            descriptors.append(
+                self._build_multicomponent_private_child_descriptor(
+                    batch=batch,
+                    lease=lease,
+                    batch_index=batch_index,
+                )
+            )
+        descriptor_set_core = {
+            "schema_version": MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION,
+            "batch_id": batch.get("batch_id"),
+            "batch_digest": batch.get("batch_digest"),
+            "ordered_descriptors": descriptors,
+        }
+        return {
+            **descriptor_set_core,
+            "descriptor_set_digest": safe_packet_digest(descriptor_set_core),
+        }
+
+    def _materialize_multicomponent_child_action(
+        self,
+        *,
+        descriptor: Mapping[str, Any],
+        lease: Mapping[str, Any],
+        dispatch_action_ref: Mapping[str, Any],
+        sequence: int,
+    ) -> AuthorizedAction:
+        work = _safe_mapping(lease.get("work"))
+        role = str(work.get("role") or "")
+        action_type, observation_type = self._multicomponent_role_action_contract(role)
+        stage = str(descriptor.get("expected_action_stage_seed") or "")
+        return AuthorizedAction(
+            action_id=f"{self.state.run_id}:action:{sequence}:{action_type.value}",
+            run_id=self.state.run_id,
+            stage=stage,
+            action_type=action_type,
+            reason="ordinary_multicomponent_semantic_role_execution",
+            inputs={
+                "role": role,
+                "input_packet_digest": work.get("input_packet_digest"),
+                "logical_evaluation_key": work.get("logical_evaluation_key"),
+                "supported_query_class": (
+                    "ordinary-bounded-multicomponent-factual-synthesis-v1"
+                ),
+                "batch_id": descriptor.get("batch_id"),
+                "batch_digest": descriptor.get("batch_digest"),
+                "batch_index": descriptor.get("batch_index"),
+                "descriptor_digest": descriptor.get("descriptor_digest"),
+                "lease_id": lease.get("lease_id"),
+                "lease_digest": lease.get("lease_digest"),
+                "work_id": work.get("work_id"),
+                "work_digest": work.get("work_digest"),
+                "grant_action_ref": deepcopy(lease.get("grant_action_ref")),
+                "dispatch_action_ref": deepcopy(dict(dispatch_action_ref)),
+                "accepted_contract_ref": deepcopy(work.get("accepted_contract_ref")),
+                "graph_ref": deepcopy(work.get("graph_ref")),
+                "target_kind": work.get("target_kind"),
+                "component_id": work.get("component_id"),
+                "synthesis_key": work.get("synthesis_key"),
+                "node_ref": deepcopy(work.get("node_ref")),
+                "recovery_authorization_ref": deepcopy(
+                    work.get("recovery_authorization_ref")
+                ),
+                "contract_amendment_admission_ref": deepcopy(
+                    work.get("contract_amendment_admission_ref")
+                ),
+                "contract_amendment_application_ref": deepcopy(
+                    work.get("contract_amendment_application_ref")
+                ),
+                "selective_closure_ref": deepcopy(work.get("selective_closure_ref")),
+                "scheduler_revision_at_grant": lease.get(
+                    "scheduler_revision_at_grant"
+                ),
+                "output_schema_variant": work.get("output_schema_variant"),
+            },
+            expected_observation_type=observation_type,
+            sequence=sequence,
+        )
+
+    def commit_multicomponent_batch_dispatch(
+        self,
+        *,
+        batch_id: str,
+        packet_digests: Sequence[str],
+    ) -> tuple[AuthorizedAction, ...]:
+        """Atomically commit dispatch and publish all ordered child actions."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            validate_scheduler_state,
+        )
+
+        try:
+            descriptor_set = self.build_multicomponent_private_child_descriptor_set(
+                batch_id=batch_id,
+                packet_digests=packet_digests,
+            )
+            scheduler = validate_scheduler_state(
+                _safe_mapping(
+                    self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+                )
+            )
+            batch = next(
+                _safe_mapping(item)
+                for item in scheduler.get("batch_history") or ()
+                if _safe_mapping(item).get("batch_id") == batch_id
+            )
+            leases_by_id = {
+                str(_safe_mapping(item).get("lease_id") or ""): _safe_mapping(item)
+                for item in scheduler.get("lease_history") or ()
+            }
+            dispatch_sequence = self.state.next_action_sequence
+            dispatch_stage = (
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-dispatch:"
+                f"{dispatch_sequence}"
+            )
+            dispatch_action_id = (
+                f"{self.state.run_id}:action:{dispatch_sequence}:"
+                f"{ActionType.MULTICOMPONENT_BATCH_DISPATCH.value}"
+            )
+            dispatch_action_ref = {
+                "action_id": dispatch_action_id,
+                "stage": dispatch_stage,
+                "sequence": dispatch_sequence,
+                "observation_type": (
+                    ObservationType.MULTICOMPONENT_BATCH_DISPATCHED.value
+                ),
+            }
+            private_actions = tuple(
+                self._materialize_multicomponent_child_action(
+                    descriptor=descriptor,
+                    lease=leases_by_id[str(descriptor.get("lease_id") or "")],
+                    dispatch_action_ref=dispatch_action_ref,
+                    sequence=dispatch_sequence + batch_index + 1,
+                )
+                for batch_index, descriptor in enumerate(
+                    descriptor_set["ordered_descriptors"]
+                )
+            )
+        except Exception:
+            self.cancel_multicomponent_work_batch(
+                batch_id=batch_id,
+                reason="private_child_descriptor_preparation_failed",
+            )
+            raise
+        dispatch_action = self.authorize(
+            stage=dispatch_stage,
+            action_type=ActionType.MULTICOMPONENT_BATCH_DISPATCH,
+            reason="ordinary_multicomponent_atomic_batch_pretransport_commitment",
+            inputs={
+                "batch_id": batch.get("batch_id"),
+                "batch_digest": batch.get("batch_digest"),
+                "descriptor_set_digest": descriptor_set.get("descriptor_set_digest"),
+            },
+            expected_observation_type=ObservationType.MULTICOMPONENT_BATCH_DISPATCHED,
+        )
+        if dispatch_action.action_id != dispatch_action_id:
+            raise RunKernelTransitionError("batch dispatch action sequence changed")
+        self._pending_multicomponent_batch_dispatch = {
+            "dispatch_action_id": dispatch_action.action_id,
+            "descriptor_set": descriptor_set,
+            "private_actions": private_actions,
+            "packet_digests": tuple(packet_digests),
+        }
+        try:
+            self.reduce(
+                Observation.from_action(
+                    dispatch_action,
+                    observation_type=dispatch_action.expected_observation_type,
+                    status=RunStageStatus.COMPLETED,
+                    payload={},
+                )
+            )
+        finally:
+            self.__dict__.pop("_pending_multicomponent_batch_dispatch", None)
+        scheduler = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        committed = next(
+            _safe_mapping(item)
+            for item in scheduler.get("batch_history") or ()
+            if _safe_mapping(item).get("batch_id") == batch_id
+        )
+        if committed.get("status") != "dispatch_committed":
+            raise RunKernelTransitionError("batch dispatch failed before child publication")
+        return private_actions
 
     def prepare_multicomponent_role_dispatch(
         self,
@@ -3801,7 +4252,7 @@ class RunKernel:
         if action.action_type not in {
             ActionType.CONTRACT_AMENDMENT_APPLY,
             ActionType.MULTICOMPONENT_GRAPH_REDUCE,
-        } or action.sequence != self.state.next_observation_sequence + 1:
+        }:
             return {}
         scheduler_raw = _safe_mapping(
             self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
@@ -3814,22 +4265,30 @@ class RunKernel:
             for item in scheduler.get("lease_history") or ()
             if _safe_mapping(item).get("status") == LEASE_EXECUTION_STARTED
         ]
-        if len(active) != 1:
-            return {}
-        lease = active[0]
-        role_action_id = str(
-            _safe_mapping(lease.get("role_action_ref")).get("action_id") or ""
-        )
-        role_action = self.state.issued_actions.get(role_action_id)
-        if (
-            role_action is None
-            or role_action.sequence != self.state.next_observation_sequence
-            or role_action.action_id in self.state.reduced_action_ids
+        if not active or action.sequence != (
+            self.state.next_observation_sequence + len(active)
         ):
             return {}
+        pending_leases: list[dict[str, Any]] = []
+        for offset, lease in enumerate(active):
+            role_action_id = str(
+                _safe_mapping(lease.get("role_action_ref")).get("action_id") or ""
+            )
+            role_action = self.state.issued_actions.get(role_action_id)
+            if (
+                role_action is None
+                or role_action.sequence != self.state.next_observation_sequence + offset
+                or role_action.action_id in self.state.reduced_action_ids
+            ):
+                return {}
+            pending_leases.append(
+                {
+                    "lease_id": lease.get("lease_id"),
+                    "role_action_id": role_action_id,
+                }
+            )
         return {
-            "lease_id": lease.get("lease_id"),
-            "role_action_id": role_action_id,
+            "pending_leases": pending_leases,
         }
 
     def _commit_multicomponent_authority_supersession(
@@ -3843,52 +4302,57 @@ class RunKernel:
         if not pending:
             return
         candidate = _safe_mapping(scheduler)
-        lease = next(
-            (
-                _safe_mapping(item)
-                for item in candidate.get("lease_history") or ()
-                if _safe_mapping(item).get("lease_id") == pending.get("lease_id")
-            ),
-            {},
-        )
-        role_action = self.state.issued_actions.get(
-            str(pending.get("role_action_id") or "")
-        )
-        if lease.get("status") != LEASE_STALE or role_action is None:
-            raise RunKernelTransitionError(
-                "unrelated authority transition cannot supersede active semantic work"
+        resolved: list[tuple[dict[str, Any], AuthorizedAction]] = []
+        for pending_lease in pending.get("pending_leases") or ():
+            lease = next(
+                (
+                    _safe_mapping(item)
+                    for item in candidate.get("lease_history") or ()
+                    if _safe_mapping(item).get("lease_id")
+                    == _safe_mapping(pending_lease).get("lease_id")
+                ),
+                {},
             )
-        failure_kind = "canonical_authority_changed_before_role_observation"
-        synthetic = Observation.from_action(
-            role_action,
-            observation_type=role_action.expected_observation_type,
-            status=RunStageStatus.FAILED,
-            payload={
-                "lease_settlement": LEASE_STALE,
+            role_action = self.state.issued_actions.get(
+                str(_safe_mapping(pending_lease).get("role_action_id") or "")
+            )
+            if lease.get("status") != LEASE_STALE or role_action is None:
+                raise RunKernelTransitionError(
+                    "unrelated authority transition cannot supersede active semantic work"
+                )
+            resolved.append((lease, role_action))
+        for lease, role_action in resolved:
+            failure_kind = "canonical_authority_changed_before_role_observation"
+            synthetic = Observation.from_action(
+                role_action,
+                observation_type=role_action.expected_observation_type,
+                status=RunStageStatus.FAILED,
+                payload={
+                    "lease_settlement": LEASE_STALE,
+                    "failure_kind": failure_kind,
+                },
+            )
+            self.state.reduced_action_ids.add(role_action.action_id)
+            self.state.action_statuses[role_action.action_id] = RunStageStatus.FAILED
+            self.state.stage_statuses[role_action.stage] = RunStageStatus.FAILED
+            self.state.projections[role_action.stage] = {
+                "schema_version": "multicomponent_semantic_role_failure_v1",
+                "owner": "RunKernel.MulticomponentGraphScheduler",
+                "canonical_state": True,
+                "role": role_action.inputs.get("role"),
+                "logical_evaluation_key": role_action.inputs.get(
+                    "logical_evaluation_key"
+                ),
+                "work_id": role_action.inputs.get("work_id"),
+                "lease_id": role_action.inputs.get("lease_id"),
+                "settlement": LEASE_STALE,
                 "failure_kind": failure_kind,
-            },
-        )
-        self.state.reduced_action_ids.add(role_action.action_id)
-        self.state.action_statuses[role_action.action_id] = RunStageStatus.FAILED
-        self.state.stage_statuses[role_action.stage] = RunStageStatus.FAILED
-        self.state.projections[role_action.stage] = {
-            "schema_version": "multicomponent_semantic_role_failure_v1",
-            "owner": "RunKernel.MulticomponentGraphScheduler",
-            "canonical_state": True,
-            "role": role_action.inputs.get("role"),
-            "logical_evaluation_key": role_action.inputs.get(
-                "logical_evaluation_key"
-            ),
-            "work_id": role_action.inputs.get("work_id"),
-            "lease_id": role_action.inputs.get("lease_id"),
-            "settlement": LEASE_STALE,
-            "failure_kind": failure_kind,
-            "semantic_artifact_admitted": False,
-            "raw_model_response_retained": False,
-            "raw_provider_payload_retained": False,
-        }
-        self.state.observations.append(synthetic)
-        self.state.next_observation_sequence += 1
+                "semantic_artifact_admitted": False,
+                "raw_model_response_retained": False,
+                "raw_provider_payload_retained": False,
+            }
+            self.state.observations.append(synthetic)
+            self.state.next_observation_sequence += 1
 
     def _commit_deferred_authority_action(
         self,
@@ -17448,7 +17912,7 @@ class RunKernel:
         elif action.action_type is ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE:
             from core.multicomponent_graph_scheduling import (
                 MULTICOMPONENT_SCHEDULER_STAGE,
-                initialize_scheduler_state,
+                initialize_scheduler_v2_state,
             )
             from core.multicomponent_role_runtime import safe_packet_digest
 
@@ -17464,15 +17928,195 @@ class RunKernel:
                 != expected_digests
                 or action.inputs.get("requested_synthesis_directive_digest")
                 != safe_packet_digest({"requested_synthesis_directive": directive})
+                or action.inputs.get("configured_provider_class")
+                != context.get("configured_provider_class")
             ):
                 raise RunKernelTransitionError(
                     "scheduler initialization action does not bind private canonical context"
                 )
             self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
-                initialize_scheduler_state(
+                initialize_scheduler_v2_state(
                     run_id=self.state.run_id,
                     request_id=self.state.request_id,
+                    configured_provider=context.get("configured_provider_class"),
                 )
+            )
+        elif action.action_type is ActionType.MULTICOMPONENT_BATCH_GRANT:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                derive_ready_batch_work,
+                derive_ready_work,
+                grant_next_batch,
+            )
+
+            ready = derive_ready_work(self.state)
+            batch_work = derive_ready_batch_work(self.state)
+            if (
+                not ready
+                or _safe_mapping(action.inputs.get("expected_first_ready_work"))
+                != ready[0]
+                or [
+                    _safe_mapping(item)
+                    for item in action.inputs.get("expected_batch_work") or ()
+                ]
+                != batch_work
+            ):
+                raise RunKernelTransitionError(
+                    "batch grant action does not name the exact current prefix"
+                )
+            scheduler, _batch = grant_next_batch(
+                state=self.state,
+                action_ref={
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "sequence": action.sequence,
+                    "observation_type": action.expected_observation_type.value,
+                },
+            )
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
+        elif action.action_type is ActionType.MULTICOMPONENT_BATCH_DISPATCH:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                cancel_batch,
+                dispatch_batch,
+            )
+
+            pending_raw = getattr(
+                self, "_pending_multicomponent_batch_dispatch", {}
+            )
+            pending = dict(pending_raw) if isinstance(pending_raw, Mapping) else {}
+            dispatch_action_ref = {
+                "action_id": action.action_id,
+                "stage": action.stage,
+                "sequence": action.sequence,
+                "observation_type": action.expected_observation_type.value,
+            }
+            try:
+                descriptor_set = _safe_mapping(pending.get("descriptor_set"))
+                private_actions = tuple(pending.get("private_actions") or ())
+                packet_digests = tuple(pending.get("packet_digests") or ())
+                if (
+                    pending.get("dispatch_action_id") != action.action_id
+                    or descriptor_set
+                    != self.build_multicomponent_private_child_descriptor_set(
+                        batch_id=str(action.inputs.get("batch_id") or ""),
+                        packet_digests=packet_digests,
+                    )
+                    or action.inputs.get("descriptor_set_digest")
+                    != descriptor_set.get("descriptor_set_digest")
+                    or not private_actions
+                    or [item.sequence for item in private_actions]
+                    != list(
+                        range(
+                            self.state.next_action_sequence,
+                            self.state.next_action_sequence + len(private_actions),
+                        )
+                    )
+                    or any(
+                        item.action_id in self.state.issued_actions
+                        for item in private_actions
+                    )
+                ):
+                    raise RunKernelTransitionError(
+                        "batch dispatch private child set is not exact"
+                    )
+                child_action_refs = [
+                    {
+                        "action_id": item.action_id,
+                        "stage": item.stage,
+                        "sequence": item.sequence,
+                        "observation_type": item.expected_observation_type.value,
+                        "batch_index": item.inputs.get("batch_index"),
+                        "role": item.inputs.get("role"),
+                        "logical_evaluation_key": item.inputs.get(
+                            "logical_evaluation_key"
+                        ),
+                        "input_packet_digest": item.inputs.get(
+                            "input_packet_digest"
+                        ),
+                        "lease_id": item.inputs.get("lease_id"),
+                        "lease_digest": item.inputs.get("lease_digest"),
+                        "work_id": item.inputs.get("work_id"),
+                        "work_digest": item.inputs.get("work_digest"),
+                    }
+                    for item in private_actions
+                ]
+                candidate_scheduler = dispatch_batch(
+                    state=self.state,
+                    batch_id=str(action.inputs.get("batch_id") or ""),
+                    dispatch_action_ref=dispatch_action_ref,
+                    descriptor_set=descriptor_set,
+                    child_action_refs=child_action_refs,
+                )
+            except Exception as exc:
+                candidate_scheduler = cancel_batch(
+                    state=self.state,
+                    batch_id=str(action.inputs.get("batch_id") or ""),
+                    action_ref=dispatch_action_ref,
+                    reason="batch_dispatch_precommit_validation_failed",
+                )
+                observation = Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.FAILED,
+                    payload={
+                        "failure_kind": "batch_dispatch_precommit_validation_failed",
+                        "child_actions_published": False,
+                        "logical_keys_consumed": False,
+                        "failure_type": type(exc).__name__,
+                    },
+                )
+                self.state.action_statuses[action.action_id] = RunStageStatus.FAILED
+                self.state.stage_statuses[action.stage] = RunStageStatus.FAILED
+                self.state.projections[action.stage] = {
+                    "schema_version": "multicomponent_batch_dispatch_precommit_failure_v1",
+                    "owner": "RunKernel.MulticomponentGraphScheduler",
+                    "canonical_state": True,
+                    "batch_id": action.inputs.get("batch_id"),
+                    "batch_digest": action.inputs.get("batch_digest"),
+                    "failure_kind": "batch_dispatch_precommit_validation_failed",
+                    "child_actions_published": False,
+                    "logical_keys_consumed": False,
+                    "raw_private_material_retained": False,
+                }
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    candidate_scheduler
+                )
+            else:
+                self.state.issued_actions.update(
+                    {item.action_id: item for item in private_actions}
+                )
+                self.state.action_statuses.update(
+                    {
+                        item.action_id: RunStageStatus.AUTHORIZED
+                        for item in private_actions
+                    }
+                )
+                for item in private_actions:
+                    self.state.stage_statuses[item.stage] = RunStageStatus.AUTHORIZED
+                self.state.next_action_sequence += len(private_actions)
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    candidate_scheduler
+                )
+        elif action.action_type is ActionType.MULTICOMPONENT_BATCH_CANCEL:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                cancel_batch,
+            )
+
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = cancel_batch(
+                state=self.state,
+                batch_id=str(action.inputs.get("batch_id") or ""),
+                action_ref={
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "sequence": action.sequence,
+                    "observation_type": action.expected_observation_type.value,
+                },
+                reason=str(
+                    action.inputs.get("cancellation_reason")
+                    or "predispatch_batch_cancellation"
+                ),
             )
         elif action.action_type is ActionType.MULTICOMPONENT_LEASE_GRANT:
             from core.multicomponent_graph_scheduling import (
@@ -17584,6 +18228,36 @@ class RunKernel:
                             "failure_kind": _clean_text(
                                 observation.payload.get("failure_kind"), limit=100
                             ),
+                            "transport_submitted": observation.payload.get(
+                                "transport_submitted"
+                            )
+                            is True,
+                            "transport_started": observation.payload.get(
+                                "transport_started"
+                            )
+                            is True,
+                            "transport_completed": observation.payload.get(
+                                "transport_completed"
+                            )
+                            is True,
+                            "provider_request_attempt_count": max(
+                                0,
+                                min(
+                                    1,
+                                    int(
+                                        observation.payload.get(
+                                            "provider_request_attempt_count"
+                                        )
+                                        or 0
+                                    ),
+                                ),
+                            ),
+                            "observed_batch_max_in_flight": int(
+                                observation.payload.get(
+                                    "observed_batch_max_in_flight"
+                                )
+                                or 0
+                            ),
                         },
                         settlement=settlement,
                     )
@@ -17639,6 +18313,10 @@ class RunKernel:
                 )
             if artifact and scheduler_active:
                 for key in (
+                    "batch_id",
+                    "batch_digest",
+                    "batch_index",
+                    "descriptor_digest",
                     "lease_id",
                     "lease_digest",
                     "work_id",
@@ -17665,7 +18343,39 @@ class RunKernel:
                 self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
                     settle_role_lease(
                         state=self.state,
-                        action_inputs=action.inputs,
+                        action_inputs={
+                            **dict(action.inputs),
+                            "transport_submitted": observation.payload.get(
+                                "transport_submitted"
+                            )
+                            is True,
+                            "transport_started": observation.payload.get(
+                                "transport_started"
+                            )
+                            is True,
+                            "transport_completed": observation.payload.get(
+                                "transport_completed"
+                            )
+                            is True,
+                            "provider_request_attempt_count": max(
+                                0,
+                                min(
+                                    1,
+                                    int(
+                                        observation.payload.get(
+                                            "provider_request_attempt_count"
+                                        )
+                                        or 0
+                                    ),
+                                ),
+                            ),
+                            "observed_batch_max_in_flight": int(
+                                observation.payload.get(
+                                    "observed_batch_max_in_flight"
+                                )
+                                or 0
+                            ),
+                        },
                         settlement=LEASE_COMPLETED,
                     )
                 )

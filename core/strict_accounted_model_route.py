@@ -41,6 +41,7 @@ PRODUCT_CONFIG_INITIALIZATION_BOUNDARY = (
 PROVIDER_OPENAI = "OpenAI"
 PROVIDER_OPENROUTER = "OpenRouter"
 PROVIDER_LOCAL = "Local (LM Studio)"
+PROVIDER_UNSUPPORTED = "unsupported"
 ENDPOINT_KIND_OPENAI_RESPONSES = "openai_responses_api"
 ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE = "chat_completions_compatible"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -560,7 +561,11 @@ def build_strict_accounted_fast_model_planning_route(
 
 
 def normalize_fast_model_provider(value: Any) -> str:
+    """Return a safe canonical provider identity; never retain unsupported raw values."""
+
     text = _clean_route_value(value)
+    if not text:
+        return PROVIDER_UNSUPPORTED
     key = _normalize_key(text)
     if key == "openai":
         return PROVIDER_OPENAI
@@ -568,7 +573,7 @@ def normalize_fast_model_provider(value: Any) -> str:
         return PROVIDER_OPENROUTER
     if key in {"local", "lm_studio", "local_lm_studio", "local_(lm_studio)"}:
         return PROVIDER_LOCAL
-    return text
+    return PROVIDER_UNSUPPORTED
 
 
 def _build_openai_compatible_client(**kwargs: Any) -> Any:
@@ -724,6 +729,7 @@ __all__ = [
     "PROVIDER_LOCAL",
     "PROVIDER_OPENAI",
     "PROVIDER_OPENROUTER",
+    "PROVIDER_UNSUPPORTED",
     "RETRY_POLICY_FORBIDDEN",
     "STRICT_ACCOUNTED_FASTMODEL_ROUTE_PHASE",
     "STRICT_ACCOUNTED_FASTMODEL_ROUTE_SCHEMA_VERSION",

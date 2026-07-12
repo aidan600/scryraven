@@ -1,7 +1,9 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-MULTICOMPONENT-SELECTIVE-RECOMPUTATION-01`, following
+`AG-MULTICOMPONENT-HOSTED-COMPONENT-PARALLEL-DISPATCH-01`, following
+`AG-MULTICOMPONENT-GRAPH-SCHEDULING-LEASES-01`,
+`AG-MULTICOMPONENT-SELECTIVE-RECOMPUTATION-01`,
 `AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`,
 `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`,
 `AG-CURRENT-PATH-QUARANTINE-01`,
@@ -71,10 +73,24 @@ Current summary:
   return one reservation; postdispatch failure remains spent; terminal states
   require zero active leases; required exhaustion reaches ordinary
   Sufficiency/FAP and the safe non-Author terminal RunOutcome.
-- Logical readiness is not physical concurrency. Phase 4 permits one active
-  physical lease and records `runtime_parallelism=false`. Phase 5 bounded
-  physical dispatch parallelism remains deferred, and no permanent
-  Fast/Balanced/Deep semantic-call budgets were selected.
+- Multi-component Phase 5A hosted initial-component parallel dispatch is
+  installed. Ordinary qualifying runs use Scheduler V2 for hosted, Local, and
+  unknown providers. RunKernel derives OpenAI/OpenRouter `hosted_api` width 2,
+  Local `local_openai_compatible` width 1, and unknown
+  `conservative_unknown` width 1 from the existing canonical provider
+  normalizer. Batch membership is the contiguous ready-work prefix; grant,
+  cancellation, dispatch spend, and child-action publication are atomic.
+  Transport-only workers may overlap independent initial component Analyst or
+  D-prime calls, while canonical artifacts, observations, component admission,
+  graph reduction, recovery/selective work, Sufficiency, FAP, and Author remain
+  serial on the main product thread. Failure draining defers blocked terminal
+  installation until active leases reach zero. Retained V1 remains a strict
+  historical serial schema.
+- Width 2 is a compatibility cap, not live provider characterization. Adaptive
+  rate-limit handling, Local parallelism, graph-bound/recovery/selective
+  parallelism, user-configurable width, and quantitative Specialist activation
+  are not installed. No permanent Fast/Balanced/Deep semantic-call budgets were
+  selected.
 
 - `AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
   consumer-seam, current/legacy/passive/closed status, old-path treatment, and
@@ -349,6 +365,9 @@ What this current-state summary does not prove:
 - source-obligation satisfaction;
 - product correctness;
 - product-quality Author prose.
+- useful or maximum live hosted-provider concurrency;
+- adaptive rate-limit behavior;
+- Local-model parallel capacity;
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.
 - Passive/shadow surfaces are not product readiness.

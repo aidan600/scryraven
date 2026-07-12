@@ -50,6 +50,7 @@ from core.multicomponent_role_runtime import (
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
+    MulticomponentRoleRuntimeError,
     execute_multicomponent_role_call,
     safe_packet_digest,
 )
@@ -61,6 +62,9 @@ from core.run_kernel import (
     RunKernel,
     RunKernelTransitionError,
     RunStageStatus,
+)
+from core.strict_one_shot_model_transport import (
+    wrap_text_callable_as_strict_one_shot_transport,
 )
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
@@ -251,14 +255,18 @@ def _initialize_existing_graph_scheduler(
     return packets
 
 
-def _role_kwargs(*, ask_model):
+def _role_kwargs(*, ask_model=None, strict_one_shot_transport=None, provider="OpenAI", model="gpt-5.4"):
+    if strict_one_shot_transport is None:
+        if ask_model is None:
+            raise ValueError("need transport")
+        strict_one_shot_transport = wrap_text_callable_as_strict_one_shot_transport(
+            ask_model, canonical_provider=provider, model=model
+        )
     return {
-        "ask_model": ask_model,
-        "clean_json_response": lambda value: value,
-        "provider": "offline",
-        "model": "fixture",
-        "base_url": "",
-        "api_key": "",
+        "strict_one_shot_transport": strict_one_shot_transport,
+        "clean_json_response": None,
+        "provider": provider,
+        "model": model,
         "use_reasoning": False,
     }
 
@@ -406,7 +414,7 @@ def test_09_transport_failure_is_spent_and_admits_no_artifact() -> None:
     kernel, packets = _scheduler_kernel()
     lease = kernel.grant_next_multicomponent_work_lease()
     work = lease["work"]
-    with pytest.raises(RuntimeError, match="transport failed"):
+    with pytest.raises(MulticomponentRoleRuntimeError, match="model_transport_failure"):
         execute_multicomponent_role_call(
             run_kernel=kernel,
             role=work["role"],
@@ -622,20 +630,24 @@ def test_21_product_driver_dispatches_only_scheduler_selected_work(
 ) -> None:
     import core.ordinary_multicomponent_synthesis_runtime as runtime
 
-    original = runtime._execute_multicomponent_role_transport
+    original = runtime.execute_prepared_multicomponent_transport
     observed: list[tuple[str, str, str, str]] = []
 
-    def exact_dispatch(**kwargs):
-        kernel = kwargs["run_kernel"]
-        lease = _scheduler(kernel)["lease_history"][-1]
+    def exact_dispatch(prepared):
+        kernel = captured_kernel["value"]
+        lease = next(
+            item
+            for item in _scheduler(kernel)["lease_history"]
+            if item["lease_id"] == prepared.lease_id
+        )
         work = lease["work"]
-        assert kwargs["lease_id"] == lease["lease_id"]
-        assert kwargs["role"] == work["role"]
-        assert kwargs["logical_evaluation_key"] == work["logical_evaluation_key"]
-        assert safe_packet_digest(kwargs["input_packet"]) == work[
+        assert prepared.lease_id == lease["lease_id"]
+        assert prepared.role == work["role"]
+        assert prepared.logical_evaluation_key == work["logical_evaluation_key"]
+        assert safe_packet_digest(prepared.input_packet) == work[
             "input_packet_digest"
         ]
-        assert kwargs.get("output_schema_variant") == work.get(
+        assert prepared.output_schema_variant == work.get(
             "output_schema_variant"
         )
         observed.append(
@@ -646,9 +658,17 @@ def test_21_product_driver_dispatches_only_scheduler_selected_work(
                 str(work["logical_evaluation_key"]),
             )
         )
-        return original(**kwargs)
+        return original(prepared)
 
-    monkeypatch.setattr(runtime, "_execute_multicomponent_role_transport", exact_dispatch)
+    captured_kernel: dict[str, Any] = {"value": None}
+    original_commit = RunKernel.commit_multicomponent_batch_dispatch
+
+    def capture_commit(self: RunKernel, **kwargs):
+        captured_kernel["value"] = self
+        return original_commit(self, **kwargs)
+
+    monkeypatch.setattr(RunKernel, "commit_multicomponent_batch_dispatch", capture_commit)
+    monkeypatch.setattr(runtime, "execute_prepared_multicomponent_transport", exact_dispatch)
     _outcome, kernel, _captured, _harness = _run_product(tmp_path)
     assert len(observed) == len(_scheduler(kernel)["lease_history"])
 

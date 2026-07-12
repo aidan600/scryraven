@@ -42,6 +42,9 @@ from core.run_authority_sufficiency_validation import (
     build_deterministic_sufficiency_judgment,
 )
 from core.run_kernel import RunKernel, RunKernelTransitionError
+from core.strict_one_shot_model_transport import (
+    wrap_text_callable_as_strict_one_shot_transport,
+)
 
 RUN_ID = "run:multicomponent-graph-v1-test"
 REQUEST_ID = "request:multicomponent-graph-v1-test"
@@ -637,19 +640,23 @@ def test_role_transport_rejects_authority_claims_before_reduction() -> None:
             run_kernel=kernel,
             role=ROLE_COMPONENT_ANALYST,
             input_packet={"component_ref": {"component_id": "component:1"}},
-            ask_model=lambda *_args, **_kwargs: {
-                "claim_text": "The evidence supports the component.",
-                "support_status": "supported",
-                "caveats": [],
-                "nonclaims": [],
-                "blockers": [],
-                "artifact_digest": "transport-must-not-assign-this",
-            },
+            strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+                lambda *_args, **_kwargs: json.dumps(
+                    {
+                        "claim_text": "The evidence supports the component.",
+                        "support_status": "supported",
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                        "artifact_digest": "transport-must-not-assign-this",
+                    }
+                ),
+                canonical_provider="OpenAI",
+                model="gpt-5.4",
+            ),
             clean_json_response=None,
-            provider="offline",
-            model="fixture",
-            base_url="",
-            api_key="",
+            provider="OpenAI",
+            model="gpt-5.4",
             use_reasoning=False,
             logical_evaluation_key="component:1",
         )
@@ -698,19 +705,23 @@ def test_component_dprime_transport_cannot_replace_analyst_claim() -> None:
             run_kernel=kernel,
             role=ROLE_COMPONENT_DPRIME,
             input_packet={"nominated_claim": "The nominated claim."},
-            ask_model=lambda *_args, **_kwargs: {
-                "validation_status": "supported",
-                "claim_text": "A replacement claim.",
-                "reasons": [],
-                "caveats": [],
-                "nonclaims": [],
-                "blockers": [],
-            },
+            strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+                lambda *_args, **_kwargs: json.dumps(
+                    {
+                        "validation_status": "supported",
+                        "claim_text": "A replacement claim.",
+                        "reasons": [],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                ),
+                canonical_provider="OpenAI",
+                model="gpt-5.4",
+            ),
             clean_json_response=None,
-            provider="offline",
-            model="fixture",
-            base_url="",
-            api_key="",
+            provider="OpenAI",
+            model="gpt-5.4",
             use_reasoning=False,
             logical_evaluation_key="component:1",
         )
