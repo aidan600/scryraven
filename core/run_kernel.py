@@ -737,6 +737,12 @@ class ActionType(str, Enum):
     MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE = (
         "multicomponent_component_analyst_execute"
     )
+    MULTICOMPONENT_SCHEDULER_INITIALIZE = (
+        "multicomponent_graph_scheduler_initialize"
+    )
+    MULTICOMPONENT_LEASE_GRANT = "multicomponent_semantic_lease_grant"
+    MULTICOMPONENT_LEASE_DISPATCH = "multicomponent_semantic_lease_dispatch"
+    MULTICOMPONENT_LEASE_CANCEL = "multicomponent_semantic_lease_cancel"
     MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = (
         "multicomponent_component_dprime_execute"
     )
@@ -853,6 +859,12 @@ class ObservationType(str, Enum):
     MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED = (
         "multicomponent_component_analyst_completed"
     )
+    MULTICOMPONENT_SCHEDULER_INITIALIZED = (
+        "multicomponent_graph_scheduler_initialized"
+    )
+    MULTICOMPONENT_LEASE_GRANTED = "multicomponent_semantic_lease_granted"
+    MULTICOMPONENT_LEASE_DISPATCHED = "multicomponent_semantic_lease_dispatched"
+    MULTICOMPONENT_LEASE_CANCELLED = "multicomponent_semantic_lease_cancelled"
     MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = (
         "multicomponent_component_dprime_completed"
     )
@@ -1596,6 +1608,9 @@ class RunState:
     followup_author_observation_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    # Exact scheduler packet context is canonical in-memory state but is not a
+    # trace/export surface.  The public projection stores only digests and refs.
+    multicomponent_scheduler_context: dict[str, Any] = field(default_factory=dict)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -3469,15 +3484,380 @@ class RunKernel:
             ),
         )
 
+    def initialize_multicomponent_graph_scheduler(
+        self,
+        *,
+        component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
+        requested_synthesis_directive: str,
+    ) -> dict[str, Any]:
+        """Initialize the qualifying lane's RunKernel-owned serial scheduler."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+        )
+        from core.multicomponent_role_runtime import safe_packet_digest
+
+        if self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+            raise RunKernelTransitionError("multi-component scheduler already exists")
+        contract = _safe_mapping(
+            self.state.current_answer_contract or self.state.initial_answer_contract
+        )
+        component_refs = [
+            _safe_mapping(item)
+            for item in contract.get("accepted_answer_component_refs") or ()
+        ]
+        component_by_id = {
+            str(item.get("component_id") or ""): item for item in component_refs
+        }
+        packets = {
+            str(key): _safe_mapping(value)
+            for key, value in component_analyst_input_packets.items()
+        }
+        if not component_by_id or set(packets) != set(component_by_id):
+            raise RunKernelTransitionError(
+                "scheduler initialization requires one exact packet per accepted component"
+            )
+        for component_id, packet in packets.items():
+            binding = _safe_mapping(packet.get("run_binding"))
+            packet_component = _safe_mapping(packet.get("component_ref"))
+            accepted_component = component_by_id[component_id]
+            if (
+                binding.get("run_id") != self.state.run_id
+                or binding.get("request_id") != self.state.request_id
+                or binding.get("accepted_contract_version")
+                != contract.get("accepted_contract_version")
+                or binding.get("accepted_contract_digest")
+                != contract.get("accepted_contract_digest")
+                or packet_component.get("component_id") != component_id
+                or packet_component.get("component_revision")
+                != accepted_component.get("component_revision")
+                or packet_component.get("component_digest")
+                != accepted_component.get("component_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "scheduler component packet is not current canonical input"
+                )
+        directive = _clean_text(requested_synthesis_directive, limit=360)
+        metadata = _safe_mapping(contract.get("question_meaning_metadata"))
+        if not directive or directive != _clean_text(
+            metadata.get("requested_synthesis_directive"), limit=360
+        ):
+            raise RunKernelTransitionError(
+                "scheduler synthesis directive is not current contract authority"
+            )
+        self.state.multicomponent_scheduler_context = {
+            "requested_synthesis_directive": directive,
+            "component_analyst_input_packets": deepcopy(packets),
+            "recovery_bindings": {},
+        }
+        action = self.authorize(
+            stage=MULTICOMPONENT_SCHEDULER_STAGE,
+            action_type=ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE,
+            reason="ordinary_multicomponent_serial_scheduler_initialize",
+            inputs={
+                "component_input_packet_digests": {
+                    key: safe_packet_digest(value) for key, value in packets.items()
+                },
+                "requested_synthesis_directive_digest": safe_packet_digest(
+                    {"requested_synthesis_directive": directive}
+                ),
+            },
+            expected_observation_type=(
+                ObservationType.MULTICOMPONENT_SCHEDULER_INITIALIZED
+            ),
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        return deepcopy(self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE])
+
+    def grant_next_multicomponent_work_lease(self) -> dict[str, Any]:
+        """Rederive readiness and grant or canonically deny its first item."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            derive_ready_work,
+        )
+
+        ready = derive_ready_work(self.state)
+        if not ready:
+            raise RunKernelTransitionError("scheduler has no current ready work")
+        action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:grant:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_LEASE_GRANT,
+            reason="ordinary_multicomponent_next_current_work_lease",
+            inputs={"expected_first_ready_work": deepcopy(ready[0])},
+            expected_observation_type=ObservationType.MULTICOMPONENT_LEASE_GRANTED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        scheduler = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        return deepcopy(_safe_mapping((scheduler.get("lease_history") or [{}])[-1]))
+
+    def prepare_multicomponent_role_dispatch(
+        self,
+        *,
+        lease_id: str,
+        role: str,
+        input_packet_digest: str,
+        logical_evaluation_key: str,
+        output_schema_variant: str | None = None,
+    ) -> AuthorizedAction:
+        """Issue the role action and reduce its exact pretransport spend."""
+
+        from core.multicomponent_graph_scheduling import (
+            LEASE_GRANTED,
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            validate_scheduler_state,
+        )
+
+        scheduler = validate_scheduler_state(
+            _safe_mapping(self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+        )
+        lease = next(
+            (
+                _safe_mapping(item)
+                for item in scheduler.get("lease_history") or ()
+                if _safe_mapping(item).get("lease_id") == lease_id
+            ),
+            {},
+        )
+        work = _safe_mapping(lease.get("work"))
+        if lease.get("status") != LEASE_GRANTED:
+            raise RunKernelTransitionError("scheduler lease is not granted")
+        if (
+            work.get("role") != role
+            or work.get("input_packet_digest") != input_packet_digest
+            or work.get("logical_evaluation_key") != logical_evaluation_key
+            or work.get("output_schema_variant") != output_schema_variant
+        ):
+            raise RunKernelTransitionError(
+                "requested semantic dispatch does not equal scheduler-selected work"
+            )
+        dispatch_action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:dispatch:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_LEASE_DISPATCH,
+            reason="ordinary_multicomponent_canonical_pretransport_commitment",
+            inputs={
+                "lease_id": lease.get("lease_id"),
+                "lease_digest": lease.get("lease_digest"),
+                "work_id": work.get("work_id"),
+                "work_digest": work.get("work_digest"),
+            },
+            expected_observation_type=(
+                ObservationType.MULTICOMPONENT_LEASE_DISPATCHED
+            ),
+        )
+        role_action = self.authorize_multicomponent_role_call(
+            role=role,
+            input_packet_digest=input_packet_digest,
+            logical_evaluation_key=logical_evaluation_key,
+            lease_id=lease_id,
+            dispatch_action_id=dispatch_action.action_id,
+            output_schema_variant=output_schema_variant,
+        )
+        role_action_ref = {
+            "action_id": role_action.action_id,
+            "stage": role_action.stage,
+            "sequence": role_action.sequence,
+            "observation_type": role_action.expected_observation_type.value,
+            "role": role_action.inputs.get("role"),
+            "logical_evaluation_key": role_action.inputs.get(
+                "logical_evaluation_key"
+            ),
+            "input_packet_digest": role_action.inputs.get("input_packet_digest"),
+            "lease_id": role_action.inputs.get("lease_id"),
+            "lease_digest": role_action.inputs.get("lease_digest"),
+            "work_id": role_action.inputs.get("work_id"),
+            "work_digest": role_action.inputs.get("work_digest"),
+        }
+        self.reduce(
+            Observation.from_action(
+                dispatch_action,
+                observation_type=dispatch_action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={"role_action_ref": role_action_ref},
+            )
+        )
+        return role_action
+
+    def cancel_multicomponent_work_lease(
+        self, *, lease_id: str, reason: str = "predispatch_cancellation"
+    ) -> dict[str, Any]:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+        )
+
+        action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:cancel:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_LEASE_CANCEL,
+            reason="ordinary_multicomponent_predispatch_reservation_return",
+            inputs={"lease_id": lease_id, "cancellation_reason": reason},
+            expected_observation_type=ObservationType.MULTICOMPONENT_LEASE_CANCELLED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        return deepcopy(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
+        )
+
+    def register_multicomponent_recovery_scheduler_context(
+        self,
+        *,
+        component_id: str,
+        analyst_input_packet: Mapping[str, Any],
+        recovery_authorization_ref: Mapping[str, Any],
+        contract_amendment_admission_ref: Mapping[str, Any],
+        contract_amendment_application_ref: Mapping[str, Any],
+    ) -> None:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            record_scheduler_authority_change,
+        )
+
+        context = _safe_mapping(self.state.multicomponent_scheduler_context)
+        if not context or not self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+            raise RunKernelTransitionError("recovery requires active scheduler context")
+        packet = _safe_mapping(analyst_input_packet)
+        binding = _safe_mapping(packet.get("run_binding"))
+        component = _safe_mapping(packet.get("component_ref"))
+        contract = _safe_mapping(self.state.current_answer_contract)
+        accepted = next(
+            (
+                _safe_mapping(item)
+                for item in contract.get("accepted_answer_component_refs") or ()
+                if _safe_mapping(item).get("component_id") == component_id
+            ),
+            {},
+        )
+        if (
+            not accepted
+            or binding.get("run_id") != self.state.run_id
+            or binding.get("request_id") != self.state.request_id
+            or binding.get("accepted_contract_digest")
+            != contract.get("accepted_contract_digest")
+            or component.get("component_id") != component_id
+            or component.get("component_digest") != accepted.get("component_digest")
+        ):
+            raise RunKernelTransitionError(
+                "recovery scheduler context is not current contract authority"
+            )
+        packets = _safe_mapping(context.get("component_analyst_input_packets"))
+        packets[component_id] = deepcopy(packet)
+        recoveries = _safe_mapping(context.get("recovery_bindings"))
+        recoveries[component_id] = {
+            "recovery_authorization_ref": deepcopy(
+                dict(recovery_authorization_ref)
+            ),
+            "contract_amendment_admission_ref": deepcopy(
+                dict(contract_amendment_admission_ref)
+            ),
+            "contract_amendment_application_ref": deepcopy(
+                dict(contract_amendment_application_ref)
+            ),
+        }
+        context["component_analyst_input_packets"] = packets
+        context["recovery_bindings"] = recoveries
+        self.state.multicomponent_scheduler_context = context
+        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+            record_scheduler_authority_change(
+                state=self.state,
+                transition="recovery_contract_authority_registered",
+                authority_ref={
+                    "component_id": component_id,
+                    "recovery_authorization_id": recovery_authorization_ref.get(
+                        "recovery_authorization_id"
+                    ),
+                    "recovery_authorization_digest": recovery_authorization_ref.get(
+                        "recovery_authorization_digest"
+                    ),
+                    "amendment_record_id": contract_amendment_admission_ref.get(
+                        "amendment_record_id"
+                    ),
+                    "application_digest": contract_amendment_application_ref.get(
+                        "application_digest"
+                    ),
+                },
+            )
+        )
+
+    def complete_multicomponent_graph_scheduler(self) -> dict[str, Any]:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            complete_scheduler,
+        )
+
+        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = complete_scheduler(
+            self.state
+        )
+        return deepcopy(self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE])
+
+    def multicomponent_work_lease_is_current(self, lease_id: str) -> bool:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            validate_scheduler_state,
+            work_is_current,
+        )
+
+        scheduler = validate_scheduler_state(
+            _safe_mapping(self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+        )
+        lease = next(
+            (
+                _safe_mapping(item)
+                for item in scheduler.get("lease_history") or ()
+                if _safe_mapping(item).get("lease_id") == lease_id
+            ),
+            {},
+        )
+        return bool(lease and work_is_current(self.state, _safe_mapping(lease.get("work"))))
+
     def authorize_multicomponent_role_call(
         self,
         *,
         role: str,
         input_packet_digest: str,
         logical_evaluation_key: str,
+        lease_id: str | None = None,
+        dispatch_action_id: str | None = None,
+        output_schema_variant: str | None = None,
     ) -> AuthorizedAction:
         """Authorize one exact semantic-role evaluation for the V1 lane."""
 
+        from core.multicomponent_graph_scheduling import (
+            LEASE_GRANTED,
+            MULTICOMPONENT_ROLE_CALL_LIMITS,
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            validate_scheduler_state,
+        )
         from core.multicomponent_role_runtime import ROLE_SYSTEM_PROMPTS
 
         role_name = _clean_text(role, limit=80)
@@ -3512,13 +3892,6 @@ class RunKernel:
             ),
         }
         action_type, observation_type = role_types[role_name]
-        phase_caps = {
-            "component_analyst": 5,
-            "component_dprime": 5,
-            "cross_component_analyst": 2,
-            "synthesis_dprime": 8,
-            "scrutineer": 2,
-        }
         prior_role_actions = [
             prior
             for prior in self.state.issued_actions.values()
@@ -3531,9 +3904,78 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "multi-component role logical evaluation key is duplicate"
             )
-        if len(prior_role_actions) >= phase_caps[role_name]:
+        if len(prior_role_actions) >= MULTICOMPONENT_ROLE_CALL_LIMITS[role_name]:
             raise RunKernelTransitionError(
-                "multi-component role call exceeds the Phase 1 cap"
+                "multi-component role call exceeds the shared compatibility mapping Phase 1 cap"
+            )
+        scheduler_raw = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        lease_inputs: dict[str, Any] = {}
+        if scheduler_raw:
+            scheduler = validate_scheduler_state(scheduler_raw)
+            lease = next(
+                (
+                    _safe_mapping(item)
+                    for item in scheduler.get("lease_history") or ()
+                    if _safe_mapping(item).get("lease_id") == lease_id
+                ),
+                {},
+            )
+            work = _safe_mapping(lease.get("work"))
+            dispatch = self.state.issued_actions.get(str(dispatch_action_id or ""))
+            if (
+                lease.get("status") != LEASE_GRANTED
+                or work.get("role") != role_name
+                or work.get("input_packet_digest") != input_digest
+                or work.get("logical_evaluation_key") != evaluation_key
+                or work.get("output_schema_variant") != output_schema_variant
+                or dispatch is None
+                or dispatch.action_type is not ActionType.MULTICOMPONENT_LEASE_DISPATCH
+                or dispatch.inputs.get("lease_id") != lease.get("lease_id")
+                or dispatch.inputs.get("work_id") != work.get("work_id")
+            ):
+                raise RunKernelTransitionError(
+                    "scheduler-active role call requires its exact granted lease"
+                )
+            lease_inputs = {
+                "lease_id": lease.get("lease_id"),
+                "lease_digest": lease.get("lease_digest"),
+                "work_id": work.get("work_id"),
+                "work_digest": work.get("work_digest"),
+                "grant_action_ref": deepcopy(lease.get("grant_action_ref")),
+                "dispatch_action_ref": {
+                    "action_id": dispatch.action_id,
+                    "stage": dispatch.stage,
+                    "sequence": dispatch.sequence,
+                    "observation_type": dispatch.expected_observation_type.value,
+                },
+                "accepted_contract_ref": deepcopy(work.get("accepted_contract_ref")),
+                "graph_ref": deepcopy(work.get("graph_ref")),
+                "target_kind": work.get("target_kind"),
+                "component_id": work.get("component_id"),
+                "synthesis_key": work.get("synthesis_key"),
+                "node_ref": deepcopy(work.get("node_ref")),
+                "recovery_authorization_ref": deepcopy(
+                    work.get("recovery_authorization_ref")
+                ),
+                "contract_amendment_admission_ref": deepcopy(
+                    work.get("contract_amendment_admission_ref")
+                ),
+                "contract_amendment_application_ref": deepcopy(
+                    work.get("contract_amendment_application_ref")
+                ),
+                "selective_closure_ref": deepcopy(
+                    work.get("selective_closure_ref")
+                ),
+                "scheduler_revision_at_grant": lease.get(
+                    "scheduler_revision_at_grant"
+                ),
+                "output_schema_variant": output_schema_variant,
+            }
+        elif lease_id or dispatch_action_id:
+            raise RunKernelTransitionError(
+                "caller-authored lease lineage is forbidden without scheduler state"
             )
         return self.authorize(
             stage=f"multicomponent_role:{role_name}:{evaluation_key}",
@@ -3546,6 +3988,7 @@ class RunKernel:
                 "supported_query_class": (
                     "ordinary-bounded-multicomponent-factual-synthesis-v1"
                 ),
+                **lease_inputs,
             },
             expected_observation_type=observation_type,
         )
@@ -16725,6 +17168,106 @@ class RunKernel:
                 "outcome_count": 1,
                 "outcomes": [deepcopy(outcome_projection)],
             }
+        elif action.action_type is ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                initialize_scheduler_state,
+            )
+            from core.multicomponent_role_runtime import safe_packet_digest
+
+            context = _safe_mapping(self.state.multicomponent_scheduler_context)
+            packets = _safe_mapping(context.get("component_analyst_input_packets"))
+            expected_digests = {
+                key: safe_packet_digest(_safe_mapping(value))
+                for key, value in packets.items()
+            }
+            directive = str(context.get("requested_synthesis_directive") or "")
+            if (
+                action.inputs.get("component_input_packet_digests")
+                != expected_digests
+                or action.inputs.get("requested_synthesis_directive_digest")
+                != safe_packet_digest({"requested_synthesis_directive": directive})
+            ):
+                raise RunKernelTransitionError(
+                    "scheduler initialization action does not bind private canonical context"
+                )
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                initialize_scheduler_state(
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                )
+            )
+        elif action.action_type is ActionType.MULTICOMPONENT_LEASE_GRANT:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                derive_ready_work,
+                grant_next_lease,
+            )
+
+            ready = derive_ready_work(self.state)
+            if (
+                not ready
+                or _safe_mapping(action.inputs.get("expected_first_ready_work"))
+                != ready[0]
+            ):
+                raise RunKernelTransitionError(
+                    "lease grant action does not name the exact first current work"
+                )
+            scheduler, _lease = grant_next_lease(
+                state=self.state,
+                action_ref={
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "sequence": action.sequence,
+                    "observation_type": action.expected_observation_type.value,
+                },
+            )
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
+        elif action.action_type is ActionType.MULTICOMPONENT_LEASE_DISPATCH:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                dispatch_lease,
+            )
+
+            role_action_ref = _safe_mapping(
+                observation.payload.get("role_action_ref")
+            )
+            role_action = self.state.issued_actions.get(
+                str(role_action_ref.get("action_id") or "")
+            )
+            if (
+                role_action is None
+                or role_action.inputs.get("dispatch_action_ref", {}).get("action_id")
+                != action.action_id
+            ):
+                raise RunKernelTransitionError(
+                    "dispatch commitment requires the exact issued role action"
+                )
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = dispatch_lease(
+                state=self.state,
+                lease_id=str(action.inputs.get("lease_id") or ""),
+                dispatch_action_ref={
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "sequence": action.sequence,
+                    "observation_type": action.expected_observation_type.value,
+                },
+                role_action_ref=role_action_ref,
+            )
+        elif action.action_type is ActionType.MULTICOMPONENT_LEASE_CANCEL:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                cancel_lease,
+            )
+
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = cancel_lease(
+                state=self.state,
+                lease_id=str(action.inputs.get("lease_id") or ""),
+                reason=str(
+                    action.inputs.get("cancellation_reason")
+                    or "predispatch_cancellation"
+                ),
+            )
         elif action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
@@ -16732,40 +17275,125 @@ class RunKernel:
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
         }:
+            from core.multicomponent_graph_scheduling import (
+                LEASE_COMPLETED,
+                LEASE_FAILED,
+                LEASE_STALE,
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                settle_role_lease,
+            )
             from core.multicomponent_role_runtime import (
                 validate_multicomponent_role_artifact,
             )
 
-            artifact = validate_multicomponent_role_artifact(
-                _safe_mapping(observation.payload.get("semantic_role_artifact")),
-                expected_role=str(action.inputs.get("role") or ""),
-            )
-            if artifact.get("run_id") != self.state.run_id:
+            scheduler_active = bool(action.inputs.get("lease_id"))
+            if observation.status is RunStageStatus.FAILED:
+                if not scheduler_active:
+                    raise RunKernelTransitionError(
+                        "unscheduled semantic role failure cannot claim lease settlement"
+                    )
+                settlement = str(
+                    observation.payload.get("lease_settlement") or LEASE_FAILED
+                )
+                if settlement not in {LEASE_FAILED, LEASE_STALE}:
+                    raise RunKernelTransitionError(
+                        "semantic role failure settlement is invalid"
+                    )
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    settle_role_lease(
+                        state=self.state,
+                        action_inputs={
+                            **dict(action.inputs),
+                            "failure_kind": _clean_text(
+                                observation.payload.get("failure_kind"), limit=100
+                            ),
+                        },
+                        settlement=settlement,
+                    )
+                )
+                self.state.projections[action.stage] = {
+                    "schema_version": "multicomponent_semantic_role_failure_v1",
+                    "owner": "RunKernel.MulticomponentGraphScheduler",
+                    "canonical_state": True,
+                    "role": action.inputs.get("role"),
+                    "logical_evaluation_key": action.inputs.get(
+                        "logical_evaluation_key"
+                    ),
+                    "work_id": action.inputs.get("work_id"),
+                    "lease_id": action.inputs.get("lease_id"),
+                    "settlement": settlement,
+                    "failure_kind": _clean_text(
+                        observation.payload.get("failure_kind"), limit=100
+                    ),
+                    "semantic_artifact_admitted": False,
+                    "raw_model_response_retained": False,
+                    "raw_provider_payload_retained": False,
+                }
+                artifact = {}
+            else:
+                artifact = validate_multicomponent_role_artifact(
+                    _safe_mapping(observation.payload.get("semantic_role_artifact")),
+                    expected_role=str(action.inputs.get("role") or ""),
+                )
+            if artifact and artifact.get("run_id") != self.state.run_id:
                 raise RunKernelTransitionError(
                     "multi-component semantic role cross-run observation"
                 )
-            if artifact.get("request_id") != self.state.request_id:
+            if artifact and artifact.get("request_id") != self.state.request_id:
                 raise RunKernelTransitionError(
                     "multi-component semantic role request binding mismatch"
                 )
-            if artifact.get("input_packet_digest") != action.inputs.get(
+            if artifact and artifact.get("input_packet_digest") != action.inputs.get(
                 "input_packet_digest"
             ):
                 raise RunKernelTransitionError(
                     "multi-component semantic role input binding mismatch"
                 )
-            if artifact.get("logical_evaluation_key") != action.inputs.get(
+            if artifact and artifact.get("logical_evaluation_key") != action.inputs.get(
                 "logical_evaluation_key"
             ):
                 raise RunKernelTransitionError(
                     "multi-component semantic role logical evaluation key mismatch"
                 )
             action_ref = _safe_mapping(artifact.get("authorized_action_ref"))
-            if action_ref.get("action_id") != action.action_id:
+            if artifact and action_ref.get("action_id") != action.action_id:
                 raise RunKernelTransitionError(
                     "multi-component semantic role action binding mismatch"
                 )
-            self.state.projections[action.stage] = deepcopy(artifact)
+            if artifact and scheduler_active:
+                for key in (
+                    "lease_id",
+                    "lease_digest",
+                    "work_id",
+                    "work_digest",
+                    "grant_action_ref",
+                    "dispatch_action_ref",
+                    "accepted_contract_ref",
+                    "graph_ref",
+                    "target_kind",
+                    "component_id",
+                    "synthesis_key",
+                    "node_ref",
+                    "recovery_authorization_ref",
+                    "contract_amendment_admission_ref",
+                    "contract_amendment_application_ref",
+                    "selective_closure_ref",
+                    "scheduler_revision_at_grant",
+                    "output_schema_variant",
+                ):
+                    if artifact.get(key) != action.inputs.get(key):
+                        raise RunKernelTransitionError(
+                            "semantic artifact and lease lineage disagree"
+                        )
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    settle_role_lease(
+                        state=self.state,
+                        action_inputs=action.inputs,
+                        settlement=LEASE_COMPLETED,
+                    )
+                )
+            if artifact:
+                self.state.projections[action.stage] = deepcopy(artifact)
         elif action.action_type is ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE:
             from core.multicomponent_component_admission import (
                 MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,

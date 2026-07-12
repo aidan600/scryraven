@@ -56,7 +56,10 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
-    execute_multicomponent_role_call,
+    safe_packet_digest,
+)
+from core.multicomponent_role_runtime import (
+    execute_multicomponent_role_call as _execute_multicomponent_role_transport,
 )
 from core.ordinary_semantic_producer_runtime import (
     OrdinarySemanticProducerHandoffResult,
@@ -96,8 +99,80 @@ class OrdinaryMulticomponentRuntimeError(RuntimeError):
     """Raised when a selected typed lane cannot complete without fallback."""
 
 
+class _ScheduledSemanticWorkBlocked(RuntimeError):
+    """Internal control transfer from canonical scheduler blockage to FAP."""
+
+
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def execute_multicomponent_role_call(
+    *,
+    run_kernel: Any,
+    role: str,
+    input_packet: Mapping[str, Any],
+    logical_evaluation_key: str,
+    output_schema_variant: str | None = None,
+    **runtime_kwargs: Any,
+) -> dict[str, Any]:
+    """Consume only the first exact RunKernel-ready work item and its lease."""
+
+    from core.multicomponent_graph_scheduling import (
+        LEASE_DENIED_EXHAUSTED,
+        MULTICOMPONENT_SCHEDULER_STAGE,
+    )
+
+    if not run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+        # Historical/component tests without a qualifying product scheduler keep
+        # their established direct RunKernel role authorization contract.
+        return _execute_multicomponent_role_transport(
+            run_kernel=run_kernel,
+            role=role,
+            input_packet=input_packet,
+            logical_evaluation_key=logical_evaluation_key,
+            output_schema_variant=output_schema_variant,
+            **runtime_kwargs,
+        )
+    lease = run_kernel.grant_next_multicomponent_work_lease()
+    work = _safe_mapping(lease.get("work"))
+    if lease.get("status") == LEASE_DENIED_EXHAUSTED:
+        raise _ScheduledSemanticWorkBlocked(
+            "required semantic work denied by the compatibility envelope"
+        )
+    if (
+        work.get("role") != role
+        or work.get("logical_evaluation_key") != logical_evaluation_key
+        or work.get("input_packet_digest") != safe_packet_digest(input_packet)
+        or work.get("output_schema_variant") != output_schema_variant
+    ):
+        run_kernel.cancel_multicomponent_work_lease(
+            lease_id=str(lease.get("lease_id") or ""),
+            reason="deterministic_consumer_did_not_match_scheduler_ready_work",
+        )
+        raise OrdinaryMulticomponentRuntimeError(
+            "ordinary deterministic transition requested work other than the "
+            "RunKernel-selected first ready item"
+        )
+    try:
+        return _execute_multicomponent_role_transport(
+            run_kernel=run_kernel,
+            role=role,
+            input_packet=input_packet,
+            logical_evaluation_key=logical_evaluation_key,
+            output_schema_variant=output_schema_variant,
+            lease_id=str(lease["lease_id"]),
+            **runtime_kwargs,
+        )
+    except Exception as exc:
+        scheduler = _safe_mapping(
+            run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        if str(scheduler.get("status") or "").startswith("blocked_"):
+            raise _ScheduledSemanticWorkBlocked(
+                "required scheduled semantic work did not complete"
+            ) from exc
+        raise
 
 
 def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
@@ -706,6 +781,29 @@ def _attempt_dynamic_recovery(
         component_ref=component_ref,
         evidence_input=_evidence_input(acquisition.bindable),
     )
+    authorization = run_kernel.state.projections[authorization_action.stage]
+    application = run_kernel.state.contract_amendment_application_projection
+    application_ref = {
+        "application_digest": application.get("application_digest"),
+        "authorized_action_id": application.get("authorized_action_id"),
+        "amendment_record_id": application.get("amendment_record_id"),
+    }
+    amendment_admission = run_kernel.state.contract_amendment_admission_projection
+    amendment_admission_ref = {
+        "amendment_record_id": amendment_admission.get("amendment_record_id"),
+        "amendment_record_digest": amendment_admission.get(
+            "amendment_record_digest"
+        ),
+        "authorized_action_id": amendment_admission.get("authorized_action_id"),
+        "admission_digest": amendment_admission.get("admission_digest"),
+    }
+    run_kernel.register_multicomponent_recovery_scheduler_context(
+        component_id=component_id,
+        analyst_input_packet=analyst_input,
+        recovery_authorization_ref=authorization,
+        contract_amendment_admission_ref=amendment_admission_ref,
+        contract_amendment_application_ref=application_ref,
+    )
     analyst_artifact = execute_multicomponent_role_call(
         run_kernel=run_kernel,
         role=ROLE_COMPONENT_ANALYST,
@@ -771,22 +869,6 @@ def _attempt_dynamic_recovery(
         accepted_component_ref=component_ref,
         component_admission_ref=component_admission_ref,
     )
-    authorization = run_kernel.state.projections[authorization_action.stage]
-    application = run_kernel.state.contract_amendment_application_projection
-    application_ref = {
-        "application_digest": application.get("application_digest"),
-        "authorized_action_id": application.get("authorized_action_id"),
-        "amendment_record_id": application.get("amendment_record_id"),
-    }
-    amendment_admission = run_kernel.state.contract_amendment_admission_projection
-    amendment_admission_ref = {
-        "amendment_record_id": amendment_admission.get("amendment_record_id"),
-        "amendment_record_digest": amendment_admission.get(
-            "amendment_record_digest"
-        ),
-        "authorized_action_id": amendment_admission.get("authorized_action_id"),
-        "admission_digest": amendment_admission.get("admission_digest"),
-    }
     current_contract_ref = _accepted_contract_ref(
         run_kernel.state.current_answer_contract
     )
@@ -887,6 +969,7 @@ def _attempt_dynamic_recovery(
                 acquisition.observed_provider_identities
             ),
         )
+    run_kernel.complete_multicomponent_graph_scheduler()
     return final_graph
 
 
@@ -987,17 +1070,27 @@ def _execute_selected_lane(
         )
     role_kwargs = _role_runtime_kwargs(runtime_scope)
     query = str(runtime_scope.get("query") or "")
-    component_admission_refs: list[dict[str, Any]] = []
-    for component_ref in component_refs:
-        component_id = str(component_ref["component_id"])
-        bindable = selected.get(component_id)
-        analyst_input = component_analyst_input_packet(
+    analyst_inputs = {
+        str(component_ref["component_id"]): component_analyst_input_packet(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             accepted_contract=accepted,
             component_ref=component_ref,
-            evidence_input=_evidence_input(bindable),
+            evidence_input=_evidence_input(
+                selected.get(str(component_ref["component_id"]))
+            ),
         )
+        for component_ref in component_refs
+    }
+    run_kernel.initialize_multicomponent_graph_scheduler(
+        component_analyst_input_packets=analyst_inputs,
+        requested_synthesis_directive=requested_synthesis_directive,
+    )
+    component_admission_refs: list[dict[str, Any]] = []
+    for component_ref in component_refs:
+        component_id = str(component_ref["component_id"])
+        bindable = selected.get(component_id)
+        analyst_input = analyst_inputs[component_id]
         analyst_artifact = execute_multicomponent_role_call(
             run_kernel=run_kernel,
             role=ROLE_COMPONENT_ANALYST,
@@ -1203,6 +1296,7 @@ def _execute_selected_lane(
         operation="finalize",
         graph_candidate=finalize_component_work_graph_v1(graph),
     )
+    run_kernel.complete_multicomponent_graph_scheduler()
     _reduce_pending_recovery_outcome(run_kernel)
 
 
@@ -1248,11 +1342,16 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 limit=360,
             )
             assert requested_synthesis_directive is not None
-            _execute_selected_lane(
-                run_kernel=run_kernel,
-                runtime_scope=runtime_scope,
-                requested_synthesis_directive=requested_synthesis_directive,
-            )
+            try:
+                _execute_selected_lane(
+                    run_kernel=run_kernel,
+                    runtime_scope=runtime_scope,
+                    requested_synthesis_directive=requested_synthesis_directive,
+                )
+            except _ScheduledSemanticWorkBlocked:
+                # Canonical exhaustion/failure is ordinary readiness input.  Do
+                # not escape the selected lane or invoke the direct producer.
+                pass
             return OrdinaryMulticomponentResult(
                 status=OrdinaryMulticomponentStatus.COMPLETED
             )
