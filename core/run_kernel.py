@@ -744,6 +744,9 @@ class ActionType(str, Enum):
     MULTICOMPONENT_LEASE_GRANT = "multicomponent_semantic_lease_grant"
     MULTICOMPONENT_LEASE_DISPATCH = "multicomponent_semantic_lease_dispatch"
     MULTICOMPONENT_LEASE_CANCEL = "multicomponent_semantic_lease_cancel"
+    MULTICOMPONENT_BATCH_GRANT = "multicomponent_semantic_batch_grant"
+    MULTICOMPONENT_BATCH_DISPATCH = "multicomponent_semantic_batch_dispatch"
+    MULTICOMPONENT_BATCH_CANCEL = "multicomponent_semantic_batch_cancel"
     MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = (
         "multicomponent_component_dprime_execute"
     )
@@ -866,6 +869,9 @@ class ObservationType(str, Enum):
     MULTICOMPONENT_LEASE_GRANTED = "multicomponent_semantic_lease_granted"
     MULTICOMPONENT_LEASE_DISPATCHED = "multicomponent_semantic_lease_dispatched"
     MULTICOMPONENT_LEASE_CANCELLED = "multicomponent_semantic_lease_cancelled"
+    MULTICOMPONENT_BATCH_GRANTED = "multicomponent_semantic_batch_granted"
+    MULTICOMPONENT_BATCH_DISPATCHED = "multicomponent_semantic_batch_dispatched"
+    MULTICOMPONENT_BATCH_CANCELLED = "multicomponent_semantic_batch_cancelled"
     MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = (
         "multicomponent_component_dprime_completed"
     )
@@ -3637,6 +3643,77 @@ class RunKernel:
         from core.multicomponent_graph_scheduling import derive_ready_work
 
         return deepcopy(derive_ready_work(self.state))
+
+    def grant_next_multicomponent_work_batch(self) -> dict[str, Any]:
+        """Rederive and atomically reserve the exact V2 contiguous prefix."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            derive_ready_batch_work,
+            derive_ready_work,
+        )
+
+        ready = derive_ready_work(self.state)
+        if not ready:
+            raise RunKernelTransitionError("scheduler has no current ready work")
+        batch_work = derive_ready_batch_work(self.state)
+        action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-grant:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_BATCH_GRANT,
+            reason="ordinary_multicomponent_next_current_work_batch",
+            inputs={
+                "expected_first_ready_work": deepcopy(ready[0]),
+                "expected_batch_work": deepcopy(batch_work),
+            },
+            expected_observation_type=ObservationType.MULTICOMPONENT_BATCH_GRANTED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        scheduler = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        return deepcopy(_safe_mapping((scheduler.get("batch_history") or [{}])[-1]))
+
+    def cancel_multicomponent_work_batch(
+        self,
+        *,
+        batch_id: str,
+        reason: str = "predispatch_batch_cancellation",
+    ) -> dict[str, Any]:
+        """Atomically return every granted reservation in one V2 batch."""
+
+        from core.multicomponent_graph_scheduling import MULTICOMPONENT_SCHEDULER_STAGE
+
+        action = self.authorize(
+            stage=(
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-cancel:"
+                f"{self.state.next_action_sequence}"
+            ),
+            action_type=ActionType.MULTICOMPONENT_BATCH_CANCEL,
+            reason="ordinary_multicomponent_predispatch_batch_return",
+            inputs={"batch_id": batch_id, "cancellation_reason": reason},
+            expected_observation_type=ObservationType.MULTICOMPONENT_BATCH_CANCELLED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        return deepcopy(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
+        )
 
     def prepare_multicomponent_role_dispatch(
         self,
@@ -17484,6 +17561,59 @@ class RunKernel:
                     request_id=self.state.request_id,
                     configured_provider=context.get("configured_provider_class"),
                 )
+            )
+        elif action.action_type is ActionType.MULTICOMPONENT_BATCH_GRANT:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                derive_ready_batch_work,
+                derive_ready_work,
+                grant_next_batch,
+            )
+
+            ready = derive_ready_work(self.state)
+            batch_work = derive_ready_batch_work(self.state)
+            if (
+                not ready
+                or _safe_mapping(action.inputs.get("expected_first_ready_work"))
+                != ready[0]
+                or [
+                    _safe_mapping(item)
+                    for item in action.inputs.get("expected_batch_work") or ()
+                ]
+                != batch_work
+            ):
+                raise RunKernelTransitionError(
+                    "batch grant action does not name the exact current prefix"
+                )
+            scheduler, _batch = grant_next_batch(
+                state=self.state,
+                action_ref={
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "sequence": action.sequence,
+                    "observation_type": action.expected_observation_type.value,
+                },
+            )
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
+        elif action.action_type is ActionType.MULTICOMPONENT_BATCH_CANCEL:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                cancel_batch,
+            )
+
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = cancel_batch(
+                state=self.state,
+                batch_id=str(action.inputs.get("batch_id") or ""),
+                action_ref={
+                    "action_id": action.action_id,
+                    "stage": action.stage,
+                    "sequence": action.sequence,
+                    "observation_type": action.expected_observation_type.value,
+                },
+                reason=str(
+                    action.inputs.get("cancellation_reason")
+                    or "predispatch_batch_cancellation"
+                ),
             )
         elif action.action_type is ActionType.MULTICOMPONENT_LEASE_GRANT:
             from core.multicomponent_graph_scheduling import (
