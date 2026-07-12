@@ -171,6 +171,14 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
     total = int(envelope.get("total_units") or 0)
     remaining = int(envelope.get("remaining_units") or 0)
     returned = int(envelope.get("returned_units") or 0)
+    if (
+        _mapping(envelope.get("role_limits"))
+        != dict(MULTICOMPONENT_ROLE_CALL_LIMITS)
+        or total != derive_multicomponent_compatibility_envelope()
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "scheduler envelope disagrees with the shared role-cap mapping"
+        )
     if total != remaining + reserved + spent:
         raise MulticomponentGraphSchedulingError(
             "scheduler live allocation invariant is invalid"
@@ -420,9 +428,11 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         target_kind="component",
                         component_id=component_id,
                         node_ref={
-                            "node_id": f"component-work-node:v1:{component_id}",
-                            "node_revision": component_ref.get("component_revision"),
-                            "node_digest": component_ref.get("component_digest"),
+                            "component_id": component_id,
+                            "component_revision": component_ref.get(
+                                "component_revision"
+                            ),
+                            "component_digest": component_ref.get("component_digest"),
                         },
                         prerequisite_refs=(
                             _contract_ref(contract),
@@ -455,9 +465,11 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         target_kind="component",
                         component_id=component_id,
                         node_ref={
-                            "node_id": f"component-work-node:v1:{component_id}",
-                            "node_revision": component_ref.get("component_revision"),
-                            "node_digest": component_ref.get("component_digest"),
+                            "component_id": component_id,
+                            "component_revision": component_ref.get(
+                                "component_revision"
+                            ),
+                            "component_digest": component_ref.get("component_digest"),
                         },
                         prerequisite_refs=(
                             _mapping(analyst.get("authorized_action_ref")),
@@ -839,6 +851,105 @@ def settle_role_lease(
     return _refresh_scheduler(scheduler)
 
 
+def validate_role_lease_settlement(
+    *,
+    state: Any,
+    action_id: str,
+    action_inputs: Mapping[str, Any],
+    observation_failed: bool,
+    observation_payload: Mapping[str, Any],
+) -> None:
+    """Validate a role settlement before RunKernel marks its action reduced."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    inputs = _mapping(action_inputs)
+    index = _lease_index(scheduler, str(inputs.get("lease_id") or ""))
+    lease = _mapping(scheduler["lease_history"][index])
+    work = _mapping(lease.get("work"))
+    if (
+        lease.get("status") != LEASE_EXECUTION_STARTED
+        or _mapping(lease.get("role_action_ref")).get("action_id") != action_id
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "role settlement requires the exact active spent lease"
+        )
+    for key in (
+        "lease_digest",
+        "work_id",
+        "work_digest",
+        "role",
+        "logical_evaluation_key",
+        "input_packet_digest",
+    ):
+        expected = lease.get(key) if key == "lease_digest" else work.get(key)
+        if inputs.get(key) != expected:
+            raise MulticomponentGraphSchedulingError(
+                "role action and active lease settlement binding disagree"
+            )
+    payload = _mapping(observation_payload)
+    if observation_failed:
+        settlement = str(payload.get("lease_settlement") or LEASE_FAILED)
+        if settlement not in {LEASE_FAILED, LEASE_STALE}:
+            raise MulticomponentGraphSchedulingError(
+                "role failure names an invalid lease settlement"
+            )
+        current = work_is_current(state, work)
+        if settlement == LEASE_STALE and current:
+            raise MulticomponentGraphSchedulingError(
+                "current work cannot claim stale-result settlement"
+            )
+        return
+    artifact = validate_multicomponent_role_artifact(
+        _mapping(payload.get("semantic_role_artifact")),
+        expected_role=str(inputs.get("role") or ""),
+    )
+    for key in (
+        "run_id",
+        "request_id",
+        "input_packet_digest",
+        "logical_evaluation_key",
+        "lease_id",
+        "lease_digest",
+        "work_id",
+        "work_digest",
+        "grant_action_ref",
+        "dispatch_action_ref",
+        "accepted_contract_ref",
+        "graph_ref",
+        "target_kind",
+        "component_id",
+        "synthesis_key",
+        "node_ref",
+        "recovery_authorization_ref",
+        "contract_amendment_admission_ref",
+        "contract_amendment_application_ref",
+        "selective_closure_ref",
+        "scheduler_revision_at_grant",
+        "output_schema_variant",
+    ):
+        expected = (
+            state.run_id
+            if key == "run_id"
+            else state.request_id
+            if key == "request_id"
+            else inputs.get(key)
+        )
+        if artifact.get(key) != expected:
+            raise MulticomponentGraphSchedulingError(
+                "semantic artifact and active lease lineage disagree"
+            )
+    if _mapping(artifact.get("authorized_action_ref")).get("action_id") != action_id:
+        raise MulticomponentGraphSchedulingError(
+            "semantic artifact names a different role action"
+        )
+    if not work_is_current(state, work):
+        raise MulticomponentGraphSchedulingError(
+            "stale semantic work cannot claim successful completion"
+        )
+
+
 def cancel_lease(*, state: Any, lease_id: str, reason: str) -> dict[str, Any]:
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
@@ -947,5 +1058,6 @@ __all__ = [
     "scheduler_trace_projection",
     "settle_role_lease",
     "validate_scheduler_state",
+    "validate_role_lease_settlement",
     "work_is_current",
 ]

@@ -3517,9 +3517,18 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "scheduler initialization requires one exact packet per accepted component"
             )
+        ledger_candidate_ids = {
+            str(_safe_mapping(item).get("candidate_id") or "")
+            for item in self.state.evidence_ledger.to_projection().to_dict().get(
+                "candidate_records", ()
+            )
+            if _safe_mapping(item).get("candidate_id")
+        }
         for component_id, packet in packets.items():
             binding = _safe_mapping(packet.get("run_binding"))
             packet_component = _safe_mapping(packet.get("component_ref"))
+            evidence = _safe_mapping(packet.get("component_evidence"))
+            custody = _safe_mapping(evidence.get("candidate_custody_ref"))
             accepted_component = component_by_id[component_id]
             if (
                 binding.get("run_id") != self.state.run_id
@@ -3533,6 +3542,9 @@ class RunKernel:
                 != accepted_component.get("component_revision")
                 or packet_component.get("component_digest")
                 != accepted_component.get("component_digest")
+                or evidence.get("evidence_status") != "available"
+                or evidence.get("evidence_ref_id") not in ledger_candidate_ids
+                or custody.get("candidate_id") != evidence.get("evidence_ref_id")
             ):
                 raise RunKernelTransitionError(
                     "scheduler component packet is not current canonical input"
@@ -3758,6 +3770,15 @@ class RunKernel:
             ),
             {},
         )
+        evidence = _safe_mapping(packet.get("component_evidence"))
+        custody = _safe_mapping(evidence.get("candidate_custody_ref"))
+        ledger_candidate_ids = {
+            str(_safe_mapping(item).get("candidate_id") or "")
+            for item in self.state.evidence_ledger.to_projection().to_dict().get(
+                "candidate_records", ()
+            )
+            if _safe_mapping(item).get("candidate_id")
+        }
         if (
             not accepted
             or binding.get("run_id") != self.state.run_id
@@ -3766,6 +3787,9 @@ class RunKernel:
             != contract.get("accepted_contract_digest")
             or component.get("component_id") != component_id
             or component.get("component_digest") != accepted.get("component_digest")
+            or evidence.get("evidence_status") != "available"
+            or evidence.get("evidence_ref_id") not in ledger_candidate_ids
+            or custody.get("candidate_id") != evidence.get("evidence_ref_id")
         ):
             raise RunKernelTransitionError(
                 "recovery scheduler context is not current contract authority"
@@ -3794,10 +3818,10 @@ class RunKernel:
                 authority_ref={
                     "component_id": component_id,
                     "recovery_authorization_id": recovery_authorization_ref.get(
-                        "recovery_authorization_id"
+                        "authorization_id"
                     ),
                     "recovery_authorization_digest": recovery_authorization_ref.get(
-                        "recovery_authorization_digest"
+                        "authorization_digest"
                     ),
                     "amendment_record_id": contract_amendment_admission_ref.get(
                         "amendment_record_id"
@@ -12901,6 +12925,25 @@ class RunKernel:
                 )
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type in {
+            ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+            ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
+            ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
+        } and action.inputs.get("lease_id"):
+            from core.multicomponent_graph_scheduling import (
+                validate_role_lease_settlement,
+            )
+
+            validate_role_lease_settlement(
+                state=self.state,
+                action_id=action.action_id,
+                action_inputs=action.inputs,
+                observation_failed=observation.status is RunStageStatus.FAILED,
+                observation_payload=observation.payload,
+            )
 
         self.state.reduced_action_ids.add(action.action_id)
         self.state.action_statuses[action.action_id] = observation.status

@@ -724,10 +724,25 @@ def execute_multicomponent_role_call(
         artifact_core["output_schema_variant"] = schema_variant
     artifact = {**artifact_core, "artifact_digest": _digest(artifact_core)}
 
-    validate_multicomponent_role_artifact(
-        artifact,
-        expected_role=normalized_role,
-    )
+    try:
+        validate_multicomponent_role_artifact(
+            artifact,
+            expected_role=normalized_role,
+        )
+    except Exception:
+        if scheduler_active:
+            run_kernel.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.FAILED,
+                    payload={
+                        "lease_settlement": LEASE_FAILED,
+                        "failure_kind": "artifact_validation_failure",
+                    },
+                )
+            )
+        raise
     if scheduler_active and not run_kernel.multicomponent_work_lease_is_current(
         str(lease_id)
     ):

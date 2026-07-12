@@ -20,6 +20,7 @@ import pytest
 import core.multicomponent_graph_scheduling as scheduling
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
+from core.evidence_ledger import EvidenceCandidate
 from core.multicomponent_component_admission import component_analyst_input_packet
 from core.multicomponent_graph_scheduling import (
     LEASE_CANCELLED,
@@ -154,6 +155,12 @@ def _scheduler_kernel() -> tuple[RunKernel, dict[str, dict[str, Any]]]:
     contract = _contract(kernel)
     kernel.state.initial_answer_contract = contract
     kernel.state.initial_answer_contract_projection = {"accepted": True}
+    for component in contract["accepted_answer_component_refs"]:
+        candidate_id = f"evidence:{component['component_id']}"
+        kernel.state.evidence_ledger.candidates[candidate_id] = EvidenceCandidate(
+            candidate_id=candidate_id,
+            readable_status="readable",
+        )
     packets = {
         str(component["component_id"]): component_analyst_input_packet(
             run_id=kernel.state.run_id,
@@ -161,8 +168,12 @@ def _scheduler_kernel() -> tuple[RunKernel, dict[str, dict[str, Any]]]:
             accepted_contract=contract,
             component_ref=component,
             evidence_input={
+                "evidence_status": "available",
                 "evidence_ref_id": f"evidence:{component['component_id']}",
-                "sanitized_excerpt": "A bounded fixture fact.",
+                "bounded_text": "A bounded fixture fact.",
+                "candidate_custody_ref": {
+                    "candidate_id": f"evidence:{component['component_id']}"
+                },
             },
         )
         for component in contract["accepted_answer_component_refs"]
