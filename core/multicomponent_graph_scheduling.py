@@ -139,6 +139,22 @@ def _node_ref(node: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _component_admission_ref(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "component_id": value.get("component_id"),
+        "action_id": value.get("action_id"),
+        "admission_status": value.get("admission_status"),
+        "accepted_contract_version": value.get("accepted_contract_version"),
+        "accepted_contract_digest": value.get("accepted_contract_digest"),
+        "analyst_artifact_digest": _mapping(
+            value.get("analyst_finding_ref")
+        ).get("artifact_digest"),
+        "dprime_artifact_digest": _mapping(
+            value.get("dprime_validation_ref")
+        ).get("artifact_digest"),
+    }
+
+
 def _scheduler_without_digest(state: Mapping[str, Any]) -> dict[str, Any]:
     payload = deepcopy(dict(state))
     payload.pop("scheduler_digest", None)
@@ -325,15 +341,26 @@ def _work(
     }
     recovery = _mapping(recovery_binding)
     if recovery:
-        core["recovery_authorization_ref"] = _mapping(
-            recovery.get("recovery_authorization_ref")
-        )
-        core["contract_amendment_admission_ref"] = _mapping(
-            recovery.get("contract_amendment_admission_ref")
-        )
-        core["contract_amendment_application_ref"] = _mapping(
-            recovery.get("contract_amendment_application_ref")
-        )
+        authorization = _mapping(recovery.get("recovery_authorization_ref"))
+        amendment = _mapping(recovery.get("contract_amendment_admission_ref"))
+        application = _mapping(recovery.get("contract_amendment_application_ref"))
+        core["recovery_authorization_ref"] = {
+            "recovery_authorization_id": authorization.get("authorization_id"),
+            "recovery_authorization_digest": authorization.get(
+                "authorization_digest"
+            ),
+        }
+        core["contract_amendment_admission_ref"] = {
+            "amendment_record_id": amendment.get("amendment_record_id"),
+            "amendment_record_digest": amendment.get("amendment_record_digest"),
+            "authorized_action_id": amendment.get("authorized_action_id"),
+            "admission_digest": amendment.get("admission_digest"),
+        }
+        core["contract_amendment_application_ref"] = {
+            "amendment_record_id": application.get("amendment_record_id"),
+            "authorized_action_id": application.get("authorized_action_id"),
+            "application_digest": application.get("application_digest"),
+        }
     canonical_closure = _mapping(closure)
     if canonical_closure:
         core["selective_closure_ref"] = {
@@ -483,16 +510,25 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             evaluation_key="graph-v1",
             input_packet=packet,
             target_kind="graph",
-            prerequisite_refs=tuple(admissions.values()),
+            prerequisite_refs=tuple(
+                _component_admission_ref(admissions[str(item["component_id"])])
+                for item in component_refs
+            ),
         )
         return [work]
 
     graph = validate_component_work_graph_v1(graph_raw)
     closure: dict[str, Any] = {}
+    closure_raw = _mapping(
+        state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE)
+    )
+    if closure_raw and int(graph.get("selective_recomputation_rounds") or 0) == 1:
+        closure = validate_selective_recomputation_closure(closure_raw)
     if graph.get("dependency_posture") == "requires_selective_resynthesis":
-        closure = validate_selective_recomputation_closure(
-            _mapping(state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE))
-        )
+        if not closure:
+            raise MulticomponentGraphSchedulingError(
+                "selective graph posture lacks current closure authority"
+            )
         if not graph.get("selective_cross_component_analyst_ref"):
             packet = selective_cross_component_input_packet(graph, closure=closure)
             key = f"selective:graph-revision:{graph['graph_revision']}"
@@ -668,6 +704,7 @@ def grant_next_lease(
             "lease_id": lease["lease_id"],
             "work_id": work["work_id"],
             "role": role,
+            "ready_work_count": len(ready),
         }
     )
     if exhausted:

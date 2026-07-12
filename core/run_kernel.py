@@ -6149,7 +6149,17 @@ class RunKernel:
             )
         )
         if graph:
-            if graph.get("graph_status") == "synthesis_validation_required":
+            scheduler = _safe_mapping(
+                self.state.projections.get("multicomponent_graph_scheduler")
+            )
+            scheduler_required_work_blocked = scheduler.get("status") in {
+                "blocked_exhausted",
+                "blocked_required_work_failed",
+            }
+            if (
+                graph.get("graph_status") == "synthesis_validation_required"
+                and not scheduler_required_work_blocked
+            ):
                 raise RunKernelTransitionError(
                     "ordinary Sufficiency requires finalized Graph V1 state"
                 )

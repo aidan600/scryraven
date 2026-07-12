@@ -936,6 +936,11 @@ def _attempt_dynamic_recovery(
                 ),
                 blocker_reason=str(recovery_projection["blocker"]),
             )
+        if not isinstance(exc, _ScheduledSemanticWorkBlocked):
+            # A deterministic graph/authority defect is not an ordinary
+            # scheduler blockage and must retain the installed fail-closed
+            # invariant behavior.
+            raise
         return amended
     if final_graph.get("graph_status") not in {"ready", "ready_with_caveats"}:
         recovery_projection = dict(
@@ -1326,6 +1331,13 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         )
 
     if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
+        return OrdinaryMulticomponentResult(
+            status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
+        )
+    scheduler_state = _safe_mapping(
+        run_kernel.state.projections.get("multicomponent_graph_scheduler")
+    )
+    if str(scheduler_state.get("status") or "").startswith("blocked_"):
         return OrdinaryMulticomponentResult(
             status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
         )

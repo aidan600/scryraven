@@ -1515,6 +1515,16 @@ def build_deterministic_sufficiency_judgment(
         judgment_input.semantic_state_facts,
     )
     semantic_state = _mapping(judgment_input.semantic_state_facts)
+    scheduler_required_work_blocked = False
+    scheduler_state = _mapping(judgment_input.multicomponent_scheduler_state)
+    if scheduler_state:
+        from core.multicomponent_graph_scheduling import validate_scheduler_state
+
+        canonical_scheduler = validate_scheduler_state(scheduler_state)
+        scheduler_required_work_blocked = canonical_scheduler.get("status") in {
+            "blocked_exhausted",
+            "blocked_required_work_failed",
+        }
     multicomponent_consumption = build_multicomponent_graph_consumption(
         judgment_input.multicomponent_graph_state,
         current_contract_version=semantic_state.get("accepted_contract_version"),
@@ -1820,6 +1830,17 @@ def build_deterministic_sufficiency_judgment(
             posture = SufficiencyPosture.BLOCKED
             final_allowed = False
             rationale = "multicomponent_graph_has_no_admitted_direct_output"
+    if scheduler_required_work_blocked:
+        decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+        posture = SufficiencyPosture.BLOCKED
+        final_allowed = False
+        rationale = "multicomponent_scheduler_required_work_blocked"
+        if multicomponent_consumption:
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption["direct_component_entry_count"] = 0
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption["admitted_synthesis_entry_count"] = 0
+            multicomponent_consumption["scheduler_required_work_blocked"] = True
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,
@@ -1836,6 +1857,11 @@ def build_deterministic_sufficiency_judgment(
                 *readiness_reasons,
                 *_string_list(component_readiness.get("readiness_reasons")),
                 *_semantic_readiness_reasons(semantic_overlay),
+                *(
+                    ("multicomponent_scheduler_required_work_blocked",)
+                    if scheduler_required_work_blocked
+                    else ()
+                ),
                 *(
                     (
                         "multicomponent_graph_"

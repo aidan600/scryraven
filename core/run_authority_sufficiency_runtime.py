@@ -284,6 +284,9 @@ def execute_sufficiency_judgment_handoff_from_scope(
                 MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
             )
         ),
+        multicomponent_scheduler_state=run_kernel.state.projections.get(
+            "multicomponent_graph_scheduler"
+        ),
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
     )
