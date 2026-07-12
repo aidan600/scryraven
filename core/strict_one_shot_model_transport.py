@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
+from core.cost_accounting import estimate_tokens, extract_usage_tokens
 from core.strict_accounted_model_route import (
     ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE,
     ENDPOINT_KIND_OPENAI_RESPONSES,
@@ -26,6 +27,10 @@ from core.strict_accounted_model_route import (
     TIMEOUT_POLICY_FAIL_CLOSED,
     normalize_fast_model_provider,
 )
+
+# Repository-owned Phase 5A chat-completions sampling posture. Callers must not
+# supply or override temperature; OpenAI Responses requests omit it entirely.
+STRICT_ONE_SHOT_CHAT_TEMPERATURE = 0.3
 
 SUPPORTED_STRICT_ONE_SHOT_PROVIDERS = frozenset(
     {PROVIDER_OPENAI, PROVIDER_OPENROUTER, PROVIDER_LOCAL}
@@ -71,9 +76,18 @@ _FORBIDDEN_RUNTIME_KWARGS = frozenset(
         "raw_prompt",
         "retry",
         "retry_policy",
+        "temperature",
         "token",
     }
 )
+
+_ZERO_USAGE_FACTS: dict[str, Any] = {
+    "provider_response_received": False,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "usage_observed": False,
+    "usage_estimated": False,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +103,11 @@ class StrictOneShotModelTransportResult:
     provider_request_attempt_count: int = 0
     provider_request_succeeded: bool = False
     provider_request_failed: bool = False
+    provider_response_received: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    usage_observed: bool = False
+    usage_estimated: bool = False
     configured_endpoint_kind: str = ""
     strict_one_shot: bool = True
     retry_policy: str = RETRY_POLICY_FORBIDDEN
@@ -182,6 +201,12 @@ class StrictOneShotModelTransport:
                 provider_request_failed=True,
             )
         output_text = _response_text(response)
+        usage_facts = _bounded_usage_facts_from_response(
+            response,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            output_text=output_text,
+        )
         if not output_text:
             return self._failed_result(
                 base,
@@ -189,6 +214,7 @@ class StrictOneShotModelTransport:
                 detail="Strict one-shot provider request returned no text.",
                 attempted=1,
                 provider_request_failed=True,
+                usage_facts=usage_facts,
             )
         return StrictOneShotModelTransportResult(
             return_code=0,
@@ -209,6 +235,7 @@ class StrictOneShotModelTransport:
             raw_model_response_retained=False,
             raw_provider_payload_retained=False,
             credential_values_retained=False,
+            **usage_facts,
         )
 
     def _base_result(self, *, provider: str, model: str) -> dict[str, Any]:
@@ -392,6 +419,7 @@ class StrictOneShotModelTransport:
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
+            "temperature": STRICT_ONE_SHOT_CHAT_TEMPERATURE,
         }
         if kwargs.get("require_json") is True:
             create_kwargs["response_format"] = {"type": "json_object"}
@@ -421,7 +449,11 @@ class StrictOneShotModelTransport:
         detail: str,
         attempted: int = 0,
         provider_request_failed: bool = False,
+        usage_facts: Mapping[str, Any] | None = None,
     ) -> StrictOneShotModelTransportResult:
+        bounded_usage = dict(_ZERO_USAGE_FACTS)
+        if usage_facts is not None:
+            bounded_usage.update(_validate_usage_facts(usage_facts))
         return StrictOneShotModelTransportResult(
             return_code=2,
             failure_kind=failure_kind,
@@ -442,6 +474,7 @@ class StrictOneShotModelTransport:
             raw_model_response_retained=False,
             raw_provider_payload_retained=False,
             credential_values_retained=False,
+            **bounded_usage,
         )
 
 
@@ -520,6 +553,11 @@ def wrap_text_callable_as_strict_one_shot_transport(
                 configured_endpoint_kind=_endpoint_kind_for_provider(provider),
             )
         text = str(output_text or "")
+        usage_facts = _bounded_usage_facts_from_transient_texts(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            output_text=text,
+        )
         if not text:
             return StrictOneShotModelTransportResult(
                 return_code=2,
@@ -531,6 +569,7 @@ def wrap_text_callable_as_strict_one_shot_transport(
                 provider_request_succeeded=False,
                 provider_request_failed=True,
                 configured_endpoint_kind=_endpoint_kind_for_provider(provider),
+                **usage_facts,
             )
         return StrictOneShotModelTransportResult(
             return_code=0,
@@ -541,6 +580,7 @@ def wrap_text_callable_as_strict_one_shot_transport(
             provider_request_succeeded=True,
             provider_request_failed=False,
             configured_endpoint_kind=_endpoint_kind_for_provider(provider),
+            **usage_facts,
         )
 
     return _transport
@@ -558,6 +598,69 @@ def _endpoint_kind_for_provider(provider: str) -> str:
     if provider in {PROVIDER_OPENROUTER, PROVIDER_LOCAL}:
         return ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE
     return ""
+
+
+def _bounded_usage_facts_from_response(
+    response: Any,
+    *,
+    prompt: str,
+    system_prompt: str,
+    output_text: str,
+) -> dict[str, Any]:
+    observed_input, observed_output = extract_usage_tokens(response)
+    usage_observed = observed_input is not None or observed_output is not None
+    usage_estimated = False
+    if observed_input is None:
+        input_tokens = estimate_tokens(prompt) + estimate_tokens(system_prompt)
+        usage_estimated = True
+    else:
+        input_tokens = max(0, int(observed_input))
+    if observed_output is None:
+        output_tokens = estimate_tokens(output_text)
+        usage_estimated = True
+    else:
+        output_tokens = max(0, int(observed_output))
+    return _validate_usage_facts(
+        {
+            "provider_response_received": True,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "usage_observed": usage_observed,
+            "usage_estimated": usage_estimated,
+        }
+    )
+
+
+def _bounded_usage_facts_from_transient_texts(
+    *,
+    prompt: str,
+    system_prompt: str,
+    output_text: str,
+) -> dict[str, Any]:
+    return _validate_usage_facts(
+        {
+            "provider_response_received": True,
+            "input_tokens": estimate_tokens(prompt) + estimate_tokens(system_prompt),
+            "output_tokens": estimate_tokens(output_text),
+            "usage_observed": False,
+            "usage_estimated": True,
+        }
+    )
+
+
+def _validate_usage_facts(values: Mapping[str, Any]) -> dict[str, Any]:
+    provider_response_received = bool(values.get("provider_response_received"))
+    if not provider_response_received:
+        return dict(_ZERO_USAGE_FACTS)
+    input_tokens = max(0, int(values.get("input_tokens") or 0))
+    output_tokens = max(0, int(values.get("output_tokens") or 0))
+    return {
+        "provider_response_received": True,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "usage_observed": bool(values.get("usage_observed")),
+        "usage_estimated": bool(values.get("usage_estimated")),
+    }
 
 
 def _response_text(response: Any) -> str:
@@ -642,6 +745,7 @@ __all__ = [
     "PROVIDER_OPENAI",
     "PROVIDER_OPENROUTER",
     "PROVIDER_UNSUPPORTED",
+    "STRICT_ONE_SHOT_CHAT_TEMPERATURE",
     "SUPPORTED_STRICT_ONE_SHOT_PROVIDERS",
     "StrictOneShotModelTransport",
     "StrictOneShotModelTransportResult",

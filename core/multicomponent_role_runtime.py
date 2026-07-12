@@ -197,6 +197,11 @@ class SafeMulticomponentWorkerResult:
     provider_request_attempt_count: int
     worker_thread_id: int | None
     duration_seconds: float
+    provider_response_received: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    usage_observed: bool = False
+    usage_estimated: bool = False
     raw_prompt_retained: bool = False
     raw_model_response_retained: bool = False
     raw_provider_payload_retained: bool = False
@@ -704,6 +709,27 @@ def prepare_multicomponent_transport_call(
     )
 
 
+def _bounded_worker_usage_facts(transport_result: Any) -> dict[str, Any]:
+    provider_response_received = bool(
+        getattr(transport_result, "provider_response_received", False)
+    )
+    if not provider_response_received:
+        return {
+            "provider_response_received": False,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "usage_observed": False,
+            "usage_estimated": False,
+        }
+    return {
+        "provider_response_received": True,
+        "input_tokens": max(0, int(getattr(transport_result, "input_tokens", 0) or 0)),
+        "output_tokens": max(0, int(getattr(transport_result, "output_tokens", 0) or 0)),
+        "usage_observed": bool(getattr(transport_result, "usage_observed", False)),
+        "usage_estimated": bool(getattr(transport_result, "usage_estimated", False)),
+    }
+
+
 def execute_prepared_multicomponent_transport(
     prepared: PreparedMulticomponentTransportCall,
 ) -> SafeMulticomponentWorkerResult:
@@ -720,6 +746,13 @@ def execute_prepared_multicomponent_transport(
     started_at = time.perf_counter()
     thread_id = get_ident()
     attempt_count = 0
+    usage_facts = {
+        "provider_response_received": False,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "usage_observed": False,
+        "usage_estimated": False,
+    }
     result_provider = normalize_canonical_model_provider(prepared.provider)
     try:
         system_prompt = (
@@ -745,6 +778,7 @@ def execute_prepared_multicomponent_transport(
             raise MulticomponentRoleRuntimeError(
                 "strict one-shot transport reported an invalid provider attempt count"
             )
+        usage_facts = _bounded_worker_usage_facts(transport_result)
         result_provider = normalize_canonical_model_provider(
             transport_result.canonical_provider
         )
@@ -798,6 +832,7 @@ def execute_prepared_multicomponent_transport(
         provider_request_attempt_count=attempt_count,
         worker_thread_id=thread_id,
         duration_seconds=max(0.0, time.perf_counter() - started_at),
+        **usage_facts,
     )
 
 

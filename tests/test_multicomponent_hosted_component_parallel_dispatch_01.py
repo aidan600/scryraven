@@ -45,6 +45,7 @@ from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_DPRIME,
     ROLE_SYSTEM_PROMPTS,
     execute_prepared_multicomponent_transport,
+    failed_unstarted_multicomponent_worker_result,
     prepare_multicomponent_transport_call,
     reduce_multicomponent_worker_result,
     safe_packet_digest,
@@ -52,6 +53,7 @@ from core.multicomponent_role_runtime import (
 from core.protocols import NullStatusWriter
 from core.run_kernel import ActionType, RunKernel, RunKernelTransitionError, RunStageStatus
 from core.strict_one_shot_model_transport import (
+    PROVIDER_OPENAI,
     StrictOneShotModelTransportResult,
     normalize_canonical_model_provider,
     wrap_text_callable_as_strict_one_shot_transport,
@@ -70,6 +72,18 @@ from tests.test_multicomponent_ordinary_end_to_end_synthesis_01 import (
     NORTHSTAR_REPORT,
     NorthstarHarness,
 )
+
+
+def _redact_identity_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _redact_identity_fields(item)
+            for key, item in value.items()
+            if key not in {"run_id", "request_id", "action_id", "session_id"}
+        }
+    if isinstance(value, list):
+        return [_redact_identity_fields(item) for item in value]
+    return value
 
 
 class SynchronizedHostedNorthstarHarness(NorthstarHarness):
@@ -132,6 +146,7 @@ class SynchronizedHostedNorthstarHarness(NorthstarHarness):
         system_prompt: str,
         **kwargs: Any,
     ) -> Any:
+        from core.cost_accounting import estimate_tokens
         from core.strict_one_shot_model_transport import (
             BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
             BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED,
@@ -172,6 +187,11 @@ class SynchronizedHostedNorthstarHarness(NorthstarHarness):
             provider_request_attempt_count=1,
             provider_request_succeeded=True,
             provider_request_failed=False,
+            provider_response_received=True,
+            input_tokens=estimate_tokens(prompt) + estimate_tokens(system_prompt),
+            output_tokens=estimate_tokens(text),
+            usage_observed=False,
+            usage_estimated=True,
         )
 
     def _strict_role_text(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
@@ -563,6 +583,8 @@ def _run_hosted_product(
     synchronize: bool,
     completion_order: str | None = None,
     fail_first_analyst: str | None = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
 ) -> tuple[Any, RunKernel, SynchronizedHostedNorthstarHarness, dict[str, Any]]:
     scrub_offline_runtime(monkeypatch)
     harness = SynchronizedHostedNorthstarHarness(
@@ -578,8 +600,8 @@ def _run_hosted_product(
     config = offline_balanced_run_config(
         query=harness.query,
         current_date="2026-07-12",
-        session_id=f"phase5a-{provider}-session",
-        run_id=f"phase5a-{provider}-run",
+        session_id=session_id or f"phase5a-{provider}-session",
+        run_id=run_id or f"phase5a-{provider}-run",
     )
     config.smart_provider = provider
     outcome = orchestrator.run_pipeline(
@@ -984,3 +1006,367 @@ def test_postdispatch_authority_change_rejects_late_batch_results_as_stale() -> 
     assert scheduler["compatibility_envelope"]["spent_units"] == 2
     assert scheduler["accounting_counters"]["stale_result_count"] == 2
     assert scheduler["accounting_counters"]["successful_artifact_count"] == 0
+
+
+def _cost_snapshot_subset(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "total_calls": int(snapshot.get("total_calls") or 0),
+        "calls_by_phase": dict(snapshot.get("calls_by_phase") or {}),
+        "cost_by_model": dict(snapshot.get("cost_by_model") or {}),
+        "total_input_tokens": int(snapshot.get("total_input_tokens") or 0),
+        "total_output_tokens": int(snapshot.get("total_output_tokens") or 0),
+    }
+
+
+def test_ordinary_hosted_run_records_phase5a_costs_in_run_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from threading import get_ident
+
+    main_thread = get_ident()
+    record_threads: list[int] = []
+    original_record = CostAccumulator.record_model_call
+
+    def _spy(self: CostAccumulator, **kwargs: Any) -> None:
+        record_threads.append(get_ident())
+        return original_record(self, **kwargs)
+
+    monkeypatch.setattr(CostAccumulator, "record_model_call", _spy)
+    outcome, kernel, _harness, _captured = _run_hosted_product(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        provider="OpenAI",
+        synchronize=False,
+    )
+    scheduler = _scheduler(kernel)
+    phase5a_calls = int(scheduler["accounting_counters"]["provider_request_attempt_count"])
+    snapshot = outcome.cost_snapshot
+    assert phase5a_calls > 0
+    assert int(snapshot["calls_by_phase"].get("model") or 0) >= phase5a_calls
+    assert "offline-fake-smart-model" in snapshot["cost_by_model"]
+    assert int(snapshot["total_input_tokens"]) > 0
+    assert int(snapshot["total_output_tokens"]) > 0
+    assert all(thread_id == main_thread for thread_id in record_threads)
+    privacy_blob = json.dumps(
+        {
+            "snapshot": snapshot,
+            "scheduler": _redact_identity_fields(scheduler),
+        },
+        sort_keys=True,
+        default=str,
+    )
+    for marker in ("sk-", "OPENAI_API_KEY", "Bearer "):
+        assert marker not in privacy_blob
+    assert '"raw_prompt_retained": true' not in privacy_blob.casefold()
+    assert '"raw_model_response_retained": true' not in privacy_blob.casefold()
+    assert '"raw_provider_payload_retained": true' not in privacy_blob.casefold()
+    assert '"credential_values_retained": true' not in privacy_blob.casefold()
+
+
+def test_width_one_and_width_two_produce_equivalent_aggregate_cost(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_session = "phase5a-width-eq-session"
+    shared_run = "phase5a-width-eq-run"
+    width_two, kernel_two, _h2, _c2 = _run_hosted_product(
+        tmp_path=tmp_path / "w2",
+        monkeypatch=monkeypatch,
+        provider="OpenAI",
+        synchronize=True,
+        session_id=shared_session,
+        run_id=shared_run,
+    )
+    width_one, kernel_one, _h1, _c1 = _run_hosted_product(
+        tmp_path=tmp_path / "w1",
+        monkeypatch=monkeypatch,
+        provider="lm_studio",
+        synchronize=False,
+        session_id=shared_session,
+        run_id=shared_run,
+    )
+    assert int(_scheduler(kernel_two)["effective_width"]) == 2
+    assert int(_scheduler(kernel_one)["effective_width"]) == 1
+    assert int(
+        _scheduler(kernel_two)["accounting_counters"]["provider_request_attempt_count"]
+    ) == int(
+        _scheduler(kernel_one)["accounting_counters"]["provider_request_attempt_count"]
+    )
+    left = _cost_snapshot_subset(width_two.cost_snapshot)
+    right = _cost_snapshot_subset(width_one.cost_snapshot)
+    assert left["calls_by_phase"].get("model") == right["calls_by_phase"].get("model")
+    assert left["cost_by_model"].get("offline-fake-smart-model") == right[
+        "cost_by_model"
+    ].get("offline-fake-smart-model")
+    assert left["total_input_tokens"] == right["total_input_tokens"]
+    assert left["total_output_tokens"] == right["total_output_tokens"]
+
+
+def test_reversed_completion_order_preserves_cost_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, _k1, _h1, _c1 = _run_hosted_product(
+        tmp_path=tmp_path / "first",
+        monkeypatch=monkeypatch,
+        provider="OpenAI",
+        synchronize=True,
+        completion_order="first_first",
+    )
+    second, _k2, _h2, _c2 = _run_hosted_product(
+        tmp_path=tmp_path / "second",
+        monkeypatch=monkeypatch,
+        provider="OpenAI",
+        synchronize=True,
+        completion_order="second_first",
+    )
+    assert _cost_snapshot_subset(first.cost_snapshot) == _cost_snapshot_subset(
+        second.cost_snapshot
+    )
+
+
+def test_malformed_response_bearing_result_records_one_cost_call() -> None:
+    from core.cost_accounting import estimate_tokens
+    from core.ordinary_multicomponent_synthesis_runtime import (
+        _record_phase5a_model_costs_on_main_thread,
+    )
+
+    kernel, packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    leases = [
+        item
+        for item in _scheduler(kernel)["lease_history"]
+        if item.get("batch_id") == batch.get("batch_id")
+    ]
+    digests = [
+        safe_packet_digest(packets[str(lease["work"]["component_id"])])
+        for lease in leases
+    ]
+    actions = kernel.commit_multicomponent_batch_dispatch(
+        batch_id=str(batch.get("batch_id") or ""),
+        packet_digests=digests,
+    )
+    transport = wrap_text_callable_as_strict_one_shot_transport(
+        lambda *_a, **_k: "not-json",
+        canonical_provider="OpenAI",
+        model="gpt-5.4",
+    )
+    prepared = [
+        prepare_multicomponent_transport_call(
+            action=action,
+            input_packet=packets[str(lease["work"]["component_id"])],
+            strict_one_shot_transport=transport,
+            clean_json_response=None,
+            provider="OpenAI",
+            model="gpt-5.4",
+            use_reasoning=False,
+        )
+        for action, lease in zip(actions, leases, strict=True)
+    ]
+    results = [execute_prepared_multicomponent_transport(item) for item in prepared]
+    assert all(result.provider_response_received for result in results)
+    assert all(result.normalized_semantic_output is None for result in results)
+    accumulator = CostAccumulator()
+    drive_context = {
+        "runtime_scope": {"accumulator": accumulator, "smart_model": "gpt-5.4"},
+        "cost_recorded_child_action_ids": set(),
+    }
+    _record_phase5a_model_costs_on_main_thread(
+        drive_context=drive_context,
+        actions=actions,
+        results=results,
+        configured_model="gpt-5.4",
+    )
+    # Idempotent: second pass must not double-count.
+    _record_phase5a_model_costs_on_main_thread(
+        drive_context=drive_context,
+        actions=actions,
+        results=results,
+        configured_model="gpt-5.4",
+    )
+    snapshot = accumulator.snapshot()
+    assert snapshot["calls_by_phase"]["model"] == len(actions)
+    assert snapshot["total_calls"] == len(actions)
+    assert snapshot["total_input_tokens"] > 0
+    assert snapshot["total_output_tokens"] == len(actions) * estimate_tokens("not-json")
+
+
+def test_empty_and_artifact_failure_still_record_response_bearing_cost() -> None:
+    from core.ordinary_multicomponent_synthesis_runtime import (
+        _record_phase5a_model_costs_on_main_thread,
+    )
+    from core.strict_one_shot_model_transport import (
+        BLOCKED_STRICT_ONE_SHOT_OUTPUT_EMPTY,
+    )
+
+    kernel, packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    leases = [
+        item
+        for item in _scheduler(kernel)["lease_history"]
+        if item.get("batch_id") == batch.get("batch_id")
+    ]
+    digests = [
+        safe_packet_digest(packets[str(lease["work"]["component_id"])])
+        for lease in leases
+    ]
+    actions = kernel.commit_multicomponent_batch_dispatch(
+        batch_id=str(batch.get("batch_id") or ""),
+        packet_digests=digests,
+    )
+    empty_result = StrictOneShotModelTransportResult(
+        return_code=2,
+        failure_kind=BLOCKED_STRICT_ONE_SHOT_OUTPUT_EMPTY,
+        detail="empty",
+        canonical_provider=PROVIDER_OPENAI,
+        configured_model="gpt-5.4",
+        provider_request_attempt_count=1,
+        provider_request_failed=True,
+        provider_response_received=True,
+        input_tokens=12,
+        output_tokens=0,
+        usage_observed=False,
+        usage_estimated=True,
+    )
+
+    def _empty_transport(*_a: Any, **_k: Any) -> StrictOneShotModelTransportResult:
+        return empty_result
+
+    prepared = prepare_multicomponent_transport_call(
+        action=actions[0],
+        input_packet=packets[str(leases[0]["work"]["component_id"])],
+        strict_one_shot_transport=_empty_transport,
+        clean_json_response=None,
+        provider="OpenAI",
+        model="gpt-5.4",
+        use_reasoning=False,
+    )
+    result = execute_prepared_multicomponent_transport(prepared)
+    assert result.provider_response_received is True
+    assert result.normalized_semantic_output is None
+    accumulator = CostAccumulator()
+    drive_context = {
+        "runtime_scope": {"accumulator": accumulator, "smart_model": "gpt-5.4"},
+        "cost_recorded_child_action_ids": set(),
+    }
+    _record_phase5a_model_costs_on_main_thread(
+        drive_context=drive_context,
+        actions=[actions[0]],
+        results=[result],
+        configured_model="gpt-5.4",
+    )
+    assert accumulator.snapshot()["calls_by_phase"]["model"] == 1
+    assert accumulator.snapshot()["total_input_tokens"] == 12
+
+
+def test_executor_submission_and_no_response_failures_add_zero_model_cost() -> None:
+    from core.ordinary_multicomponent_synthesis_runtime import (
+        _record_phase5a_model_costs_on_main_thread,
+    )
+
+    kernel, packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    leases = [
+        item
+        for item in _scheduler(kernel)["lease_history"]
+        if item.get("batch_id") == batch.get("batch_id")
+    ]
+    digests = [
+        safe_packet_digest(packets[str(lease["work"]["component_id"])])
+        for lease in leases
+    ]
+    actions = kernel.commit_multicomponent_batch_dispatch(
+        batch_id=str(batch.get("batch_id") or ""),
+        packet_digests=digests,
+    )
+    transport = wrap_text_callable_as_strict_one_shot_transport(
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")),
+        canonical_provider="OpenAI",
+        model="gpt-5.4",
+    )
+    prepared_calls = [
+        prepare_multicomponent_transport_call(
+            action=action,
+            input_packet=packets[str(lease["work"]["component_id"])],
+            strict_one_shot_transport=transport,
+            clean_json_response=None,
+            provider="OpenAI",
+            model="gpt-5.4",
+            use_reasoning=False,
+        )
+        for action, lease in zip(actions, leases, strict=True)
+    ]
+    unstarted = [
+        failed_unstarted_multicomponent_worker_result(
+            prepared,
+            failure_kind="executor_initialization_failure",
+        )
+        for prepared in prepared_calls
+    ]
+    attempted = [
+        execute_prepared_multicomponent_transport(prepared)
+        for prepared in prepared_calls
+    ]
+    assert all(item.provider_request_attempt_count == 0 for item in unstarted)
+    assert all(item.provider_response_received is False for item in unstarted)
+    assert all(item.provider_request_attempt_count == 1 for item in attempted)
+    assert all(item.provider_response_received is False for item in attempted)
+    accumulator = CostAccumulator()
+    drive_context = {
+        "runtime_scope": {"accumulator": accumulator, "smart_model": "gpt-5.4"},
+        "cost_recorded_child_action_ids": set(),
+    }
+    _record_phase5a_model_costs_on_main_thread(
+        drive_context=drive_context,
+        actions=actions,
+        results=unstarted,
+        configured_model="gpt-5.4",
+    )
+    assert accumulator.snapshot()["total_calls"] == 0
+    drive_context["cost_recorded_child_action_ids"] = set()
+    _record_phase5a_model_costs_on_main_thread(
+        drive_context=drive_context,
+        actions=actions,
+        results=attempted,
+        configured_model="gpt-5.4",
+    )
+    assert accumulator.snapshot()["total_calls"] == 0
+
+
+def test_workers_never_receive_cost_accumulator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_in_worker: list[bool] = []
+    original = ordinary_runtime.execute_prepared_multicomponent_transport
+
+    def _wrapped(prepared):
+        transport = prepared.strict_one_shot_transport
+        owns_accumulator = any(
+            "cost_accumulator" in name or name == "accumulator"
+            for name in dir(transport)
+        )
+        seen_in_worker.append(owns_accumulator)
+        assert not hasattr(prepared, "cost_accumulator")
+        assert "accumulator" not in repr(prepared).casefold()
+        return original(prepared)
+
+    monkeypatch.setattr(
+        ordinary_runtime,
+        "execute_prepared_multicomponent_transport",
+        _wrapped,
+    )
+    monkeypatch.setattr(
+        "core.ordinary_multicomponent_synthesis_runtime.execute_prepared_multicomponent_transport",
+        _wrapped,
+    )
+    outcome, _kernel, _harness, _captured = _run_hosted_product(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        provider="OpenAI",
+        synchronize=True,
+    )
+    assert "Northstar" in outcome.report
+    assert seen_in_worker
+    assert all(flag is False for flag in seen_in_worker)

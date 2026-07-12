@@ -1617,6 +1617,52 @@ def _consume_scheduler_selected_artifact(
     )
 
 
+def _record_phase5a_model_costs_on_main_thread(
+    *,
+    drive_context: dict[str, Any],
+    actions: list[Any],
+    results: list[SafeMulticomponentWorkerResult | None],
+    configured_model: str,
+) -> None:
+    """Record response-bearing Phase 5A SmartModel calls on the product thread.
+
+    CostAccumulator stays out of workers, leases, prepared calls, and RunKernel.
+    Recording is exactly-once per child action_id for the current drive context.
+    """
+
+    recorded = drive_context.setdefault("cost_recorded_child_action_ids", set())
+    if not isinstance(recorded, set):
+        recorded = set(recorded)
+        drive_context["cost_recorded_child_action_ids"] = recorded
+    runtime_scope = _safe_mapping(drive_context.get("runtime_scope"))
+    accumulator = runtime_scope.get("accumulator")
+    model = str(configured_model or runtime_scope.get("smart_model") or "")
+    ordered = sorted(
+        (
+            (action, result)
+            for action, result in zip(actions, results, strict=True)
+            if result is not None
+        ),
+        key=lambda pair: (
+            int(getattr(pair[0], "sequence", 0) or 0),
+            str(getattr(pair[0], "action_id", "") or ""),
+        ),
+    )
+    for action, result in ordered:
+        action_id = str(getattr(action, "action_id", "") or "")
+        if not action_id or action_id in recorded:
+            continue
+        recorded.add(action_id)
+        if accumulator is None or not bool(result.provider_response_received):
+            continue
+        accumulator.record_model_call(
+            phase="model",
+            model=model or str(result.model or ""),
+            input_tokens=max(0, int(result.input_tokens or 0)),
+            output_tokens=max(0, int(result.output_tokens or 0)),
+        )
+
+
 def _execute_run_kernel_selected_batch(
     *,
     run_kernel: Any,
@@ -1782,6 +1828,12 @@ def _execute_run_kernel_selected_batch(
         raise OrdinaryMulticomponentRuntimeError(
             "committed batch did not produce one safe outcome per child"
         )
+    _record_phase5a_model_costs_on_main_thread(
+        drive_context=drive_context,
+        actions=actions,
+        results=results,
+        configured_model=str(role_kwargs.get("model") or ""),
+    )
     artifacts: list[dict[str, Any] | None] = []
     for action, result in zip(actions, results, strict=True):
         assert result is not None
@@ -1888,6 +1940,7 @@ def _drive_run_kernel_selected_semantic_work(
         "runtime_scope": runtime_scope,
         "selected_bindables": dict(selected_bindables),
         "query": query,
+        "cost_recorded_child_action_ids": set(),
         "additional_scrutineer_trigger_reasons": (
             *(("deep_mode",) if mode.casefold() == "deep" else ()),
             *(("high_stakes_quantitative_posture",) if _safe_mapping(

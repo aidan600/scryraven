@@ -222,6 +222,7 @@ class OfflineOrdinaryPipelineHarness:
         system_prompt: str,
         **kwargs: Any,
     ) -> Any:
+        from core.cost_accounting import estimate_tokens
         from core.strict_one_shot_model_transport import (
             BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
             StrictOneShotModelTransportResult,
@@ -244,14 +245,20 @@ class OfflineOrdinaryPipelineHarness:
                 provider_request_succeeded=False,
                 provider_request_failed=True,
             )
+        text = str(output_text or "")
         return StrictOneShotModelTransportResult(
             return_code=0,
-            output_text=str(output_text or ""),
+            output_text=text,
             canonical_provider=canonical_provider,
             configured_model=model,
             provider_request_attempt_count=1,
             provider_request_succeeded=True,
             provider_request_failed=False,
+            provider_response_received=True,
+            input_tokens=estimate_tokens(prompt) + estimate_tokens(system_prompt),
+            output_tokens=estimate_tokens(text),
+            usage_observed=False,
+            usage_estimated=True,
         )
 
     def deps(self) -> RunDeps:

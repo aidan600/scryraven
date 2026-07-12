@@ -623,3 +623,332 @@ def test_normalize_aliases_and_unsupported() -> None:
     assert normalize_canonical_model_provider("lm_studio") == PROVIDER_LOCAL
     assert normalize_canonical_model_provider("nope") == PROVIDER_UNSUPPORTED
     assert normalize_canonical_model_provider("") == PROVIDER_UNSUPPORTED
+
+
+def test_openrouter_and_alias_chat_requests_use_installed_temperature() -> None:
+    from core.strict_one_shot_model_transport import STRICT_ONE_SHOT_CHAT_TEMPERATURE
+
+    for provider in ("OpenRouter", "open_router"):
+        calls: list[dict[str, Any]] = []
+        transport = build_strict_one_shot_smart_model_transport(
+            smart_provider=provider,
+            smart_model="openrouter/model",
+            credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+            client_factory=_fake_client_factory(calls, _analyst_json()),
+        )
+        result = transport("{}", "system", require_json=True)
+        assert result.return_code == 0
+        assert result.canonical_provider == PROVIDER_OPENROUTER
+        assert calls[0]["chat_create"]["temperature"] == STRICT_ONE_SHOT_CHAT_TEMPERATURE
+        assert calls[0]["chat_create"]["temperature"] == 0.3
+
+
+def test_local_and_lm_studio_alias_chat_requests_use_installed_temperature() -> None:
+    from core.strict_one_shot_model_transport import STRICT_ONE_SHOT_CHAT_TEMPERATURE
+
+    for provider in ("Local (LM Studio)", "lm_studio"):
+        calls: list[dict[str, Any]] = []
+        transport = build_strict_one_shot_smart_model_transport(
+            smart_provider=provider,
+            smart_model="local-model",
+            local_url="http://localhost:1234/v1",
+            credential_lookup={}.get,
+            client_factory=_fake_client_factory(calls, _analyst_json()),
+        )
+        result = transport("{}", "system", require_json=True)
+        assert result.return_code == 0
+        assert result.canonical_provider == PROVIDER_LOCAL
+        assert calls[0]["chat_create"]["temperature"] == STRICT_ONE_SHOT_CHAT_TEMPERATURE
+        assert calls[0]["chat_create"]["temperature"] == 0.3
+
+
+def test_openai_responses_request_omits_temperature() -> None:
+    calls: list[dict[str, Any]] = []
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenAI",
+        smart_model="gpt-5.4",
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
+        client_factory=_fake_client_factory(calls, _analyst_json()),
+    )
+    result = transport("{}", "system", require_json=True)
+    assert result.return_code == 0
+    assert "temperature" not in calls[0]["responses_create"]
+    assert calls[0]["responses_create_count"] == 1
+    assert calls[0]["chat_create_count"] == 0
+
+
+def test_caller_authored_temperature_is_rejected() -> None:
+    calls: list[dict[str, Any]] = []
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+        client_factory=_fake_client_factory(calls, _analyst_json()),
+    )
+    result = transport("{}", "system", require_json=True, temperature=0.9)
+    assert result.return_code == 2
+    assert result.failure_kind == "BLOCKED_STRICT_ONE_SHOT_UNSAFE_REQUEST"
+    assert result.provider_request_attempt_count == 0
+    assert calls == []
+
+
+def test_temperature_is_absent_from_scheduler_worker_artifact_and_trace_surfaces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outcome, kernel, harness, _captured = _run_hosted_product(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        provider="OpenRouter",
+        synchronize=False,
+    )
+    assert "Northstar" in outcome.report
+    scheduler = _scheduler(kernel)
+    blob = json.dumps(
+        {
+            "scheduler": _redact_identity_fields(scheduler),
+            "projections": _redact_identity_fields(dict(kernel.state.projections)),
+            "harness_calls": harness.model_calls,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    assert "temperature" not in blob.casefold()
+    for surface in (
+        scheduler,
+        dict(kernel.state.projections),
+        [dict(item) for item in scheduler.get("lease_history") or ()],
+        [dict(item) for item in scheduler.get("batch_history") or ()],
+    ):
+        encoded = json.dumps(_redact_identity_fields(surface), sort_keys=True, default=str)
+        assert '"temperature"' not in encoded.casefold()
+        assert "'temperature'" not in encoded.casefold()
+
+
+def test_usage_facts_prefer_provider_observed_tokens() -> None:
+    calls: list[dict[str, Any]] = []
+
+    class _UsageResponse:
+        def __init__(self) -> None:
+            self.choices = [
+                type(
+                    "Choice",
+                    (),
+                    {
+                        "message": type(
+                            "Message",
+                            (),
+                            {"content": _analyst_json()},
+                        )()
+                    },
+                )()
+            ]
+            self.usage = type(
+                "Usage",
+                (),
+                {"prompt_tokens": 11, "completion_tokens": 7},
+            )()
+
+    def _factory(**kwargs: Any) -> Any:
+        record = {
+            "factory": dict(kwargs),
+            "chat_create_count": 0,
+            "responses_create_count": 0,
+        }
+        calls.append(record)
+
+        class _Completions:
+            @staticmethod
+            def create(**create_kwargs: Any) -> Any:
+                record["chat_create_count"] += 1
+                record["chat_create"] = dict(create_kwargs)
+                return _UsageResponse()
+
+        class _Client:
+            chat = type("Chat", (), {"completions": _Completions()})()
+            responses = type(
+                "Responses",
+                (),
+                {"create": staticmethod(lambda **_k: (_ for _ in ()).throw(AssertionError()))},
+            )()
+
+        return _Client()
+
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+        client_factory=_factory,
+    )
+    result = transport("prompt-text", "system-text", require_json=True)
+    assert result.return_code == 0
+    assert result.provider_response_received is True
+    assert result.input_tokens == 11
+    assert result.output_tokens == 7
+    assert result.usage_observed is True
+    assert result.usage_estimated is False
+    assert "prompt-text" not in repr(result)
+    assert "system-text" not in repr(result)
+
+
+def test_usage_facts_estimate_when_provider_usage_absent() -> None:
+    from core.cost_accounting import estimate_tokens
+
+    calls: list[dict[str, Any]] = []
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+        client_factory=_fake_client_factory(calls, _analyst_json()),
+    )
+    prompt = "prompt-for-estimate"
+    system_prompt = "system-for-estimate"
+    result = transport(prompt, system_prompt, require_json=True)
+    assert result.provider_response_received is True
+    assert result.input_tokens == estimate_tokens(prompt) + estimate_tokens(system_prompt)
+    assert result.output_tokens == estimate_tokens(_analyst_json())
+    assert result.usage_observed is False
+    assert result.usage_estimated is True
+    assert prompt not in repr(result)
+    assert system_prompt not in repr(result)
+
+
+def test_usage_facts_partial_provider_usage_mixes_observed_and_estimated() -> None:
+    from core.cost_accounting import estimate_tokens
+
+    class _PartialUsageResponse:
+        def __init__(self) -> None:
+            self.choices = [
+                type(
+                    "Choice",
+                    (),
+                    {
+                        "message": type(
+                            "Message",
+                            (),
+                            {"content": _analyst_json()},
+                        )()
+                    },
+                )()
+            ]
+            self.usage = type("Usage", (), {"prompt_tokens": 19})()
+
+    def _factory(**kwargs: Any) -> Any:
+        class _Completions:
+            @staticmethod
+            def create(**_create_kwargs: Any) -> Any:
+                return _PartialUsageResponse()
+
+        return type(
+            "Client",
+            (),
+            {
+                "chat": type("Chat", (), {"completions": _Completions()})(),
+                "responses": type(
+                    "Responses",
+                    (),
+                    {
+                        "create": staticmethod(
+                            lambda **_k: (_ for _ in ()).throw(AssertionError())
+                        )
+                    },
+                )(),
+            },
+        )()
+
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+        client_factory=_factory,
+    )
+    result = transport("prompt-partial", "system-partial", require_json=True)
+    assert result.input_tokens == 19
+    assert result.output_tokens == estimate_tokens(_analyst_json())
+    assert result.usage_observed is True
+    assert result.usage_estimated is True
+
+
+def test_empty_output_still_marks_provider_response_received_with_usage() -> None:
+    calls: list[dict[str, Any]] = []
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+        client_factory=_fake_client_factory(calls, ""),
+    )
+    result = transport("{}", "system", require_json=True)
+    assert result.return_code == 2
+    assert result.failure_kind == "BLOCKED_STRICT_ONE_SHOT_OUTPUT_EMPTY"
+    assert result.provider_response_received is True
+    assert result.provider_request_attempt_count == 1
+    assert result.input_tokens >= 0
+    assert result.output_tokens == 0
+    assert result.usage_estimated is True
+
+
+def test_provider_exception_without_response_has_zero_usage() -> None:
+    def _factory(**kwargs: Any) -> Any:
+        class _Completions:
+            @staticmethod
+            def create(**_create_kwargs: Any) -> Any:
+                raise RuntimeError("injected no-response failure")
+
+        return type(
+            "Client",
+            (),
+            {
+                "chat": type("Chat", (), {"completions": _Completions()})(),
+                "responses": type("Responses", (), {})(),
+            },
+        )()
+
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
+        client_factory=_factory,
+    )
+    result = transport("{}", "system", require_json=True)
+    assert result.return_code == 2
+    assert result.provider_request_attempt_count == 1
+    assert result.provider_response_received is False
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
+    assert result.usage_observed is False
+    assert result.usage_estimated is False
+
+
+def test_pre_request_failures_have_zero_usage_and_zero_attempts() -> None:
+    transport = build_strict_one_shot_smart_model_transport(
+        smart_provider="MysteryAI",
+        smart_model="x",
+        credential_lookup={}.get,
+        client_factory=_fake_client_factory([], _analyst_json()),
+    )
+    result = transport("{}", "system")
+    assert result.provider_request_attempt_count == 0
+    assert result.provider_response_received is False
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
+
+    missing_cred = build_strict_one_shot_smart_model_transport(
+        smart_provider="OpenRouter",
+        smart_model="openrouter/model",
+        credential_lookup={}.get,
+        client_factory=_fake_client_factory([], _analyst_json()),
+    )
+    cred_result = missing_cred("{}", "system")
+    assert cred_result.provider_request_attempt_count == 0
+    assert cred_result.provider_response_received is False
+
+    missing_local = build_strict_one_shot_smart_model_transport(
+        smart_provider="Local (LM Studio)",
+        smart_model="local-model",
+        local_url=None,
+        credential_lookup={}.get,
+        client_factory=_fake_client_factory([], _analyst_json()),
+    )
+    local_result = missing_local("{}", "system")
+    assert local_result.provider_request_attempt_count == 0
+    assert local_result.provider_response_received is False
