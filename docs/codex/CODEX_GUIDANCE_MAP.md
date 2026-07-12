@@ -74,14 +74,15 @@ machinery already owned downstream.
 | Analyst Workbench | [../architecture/ANALYST_WORKBENCH_FULL_SLICE.md](../architecture/ANALYST_WORKBENCH_FULL_SLICE.md) |
 | FAP / Author boundary | [../architecture/FAP_AUTHOR_BOUNDARY.md](../architecture/FAP_AUTHOR_BOUNDARY.md) |
 
-Multi-component Phases 1 through 4 are installed: bounded ordinary
+Multi-component Phases 1 through 4 and Phase 5A are installed: bounded ordinary
 component/synthesis consumption, one dynamic AnswerContract recovery, selective
-affected-only recomputation, and RunKernel-owned serial scheduling with exact
-work/budget leases through ordinary Sufficiency, FinalAnswerPacket, Author or
-the safe blocked terminal, RunOutcome, and CLI output. The recommended next
-multi-component BUILD is Phase 5 bounded physical dispatch parallelism through
-the installed scheduler. Runtime parallelism remains deferred until that phase;
-no permanent Fast/Balanced/Deep semantic-call budgets have been selected.
+affected-only recomputation, RunKernel-owned scheduling with exact work/budget
+leases, and bounded hosted initial component Analyst/D-prime overlap at width 2
+through ordinary Sufficiency, FinalAnswerPacket, Author or the safe blocked
+terminal, RunOutcome, and CLI output. Local, unknown, graph-bound, recovery, and
+selective work remains serial. Hosted live characterization and Local
+characterization remain separate later checkpoints; no permanent
+Fast/Balanced/Deep semantic-call budgets have been selected.
 
 Older PR-number timelines, completed-phase next-step labels, and the former
 post-#352 through #355 limited-live-validation sequence are historical context,

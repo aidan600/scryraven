@@ -93,7 +93,7 @@ not the LLM reasoner; it is the authority hub and reducer owner.
 
 Multi-component role doctrine is defined in
 [CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
-The canonical durable and installed Phase 1 through Phase 4 architecture is
+The canonical durable and installed Phase 1 through Phase 5A architecture is
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 That path must remain:
 
@@ -151,24 +151,26 @@ dynamic graph / AnswerContract amendment
 -> targeted ordinary research re-entry
 -> selective invalidation and synthesis recomputation
 -> revision-specific validation and scrutiny
--> RunKernel incremental readiness / exact work lease
--> canonical pretransport dispatch spend
+-> RunKernel incremental readiness / exact contiguous V2 work batch
+-> atomic batch grant and pretransport dispatch/child-action publication
+-> transport-only execution by canonical batch index
+-> serial main-thread role observations and deterministic consumers
 -> atomic role-artifact admission / lease completion
 -> ordinary Sufficiency / FinalAnswerPacket / Author or safe blocked RunOutcome
 ```
 
-Every semantic call in the selected loop requires exact lease authority. The
-loop grants first, reconstructs the canonical packet from the selected work,
-dispatches that exact lease, routes the artifact to its deterministic consumer,
-and only then rederives readiness. The compatibility envelope derives from the
-installed role caps; predispatch cancellation returns its reservation and
-postdispatch failure retains its unit. Completed and blocked scheduler states
-require zero active leases, and rejected completion attempts do not mutate lease
-or budget arithmetic.
-Logical readiness is not physical concurrency: one physical lease is active at
-a time and `runtime_parallelism=false`. Phase 5 bounded physical dispatch
-parallelism remains deferred, and no permanent Fast/Balanced/Deep semantic-call
-budgets were selected.
+Every semantic call in the selected loop requires exact lease authority.
+Scheduler V2 grants the contiguous canonical ready prefix, reconstructs all
+packets and private child descriptors on the main thread, and atomically spends
+the batch while publishing all ordered child actions before transport begins.
+OpenAI/OpenRouter initial component Analyst and D-prime waves may use width 2;
+Local, unknown-provider, Cross, synthesis, Scrutineer, recovery, and selective
+work uses width 1. Worker completion order does not choose observation,
+admission, graph, accounting, or answer order. Predispatch batch cancellation
+returns every reservation atomically; postdispatch failure retains its unit and
+drains siblings before blockage. Completed and blocked scheduler states require
+zero active leases. No permanent Fast/Balanced/Deep semantic-call budgets were
+selected.
 
 ## 2. First Live Validation Boundary
 
@@ -710,9 +712,9 @@ This document and the quarantine registry do not prove:
 The numbered sequence below is retained as completed historical phase context.
 It is not the current next-phase route. The bounded ordinary multi-component
 path now reaches Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI
-output through installed Phase 4 serial scheduling and exact leases. The
-recommended next checkpoint is Phase 5 bounded physical dispatch parallelism
-through the same RunKernel scheduler.
+output through installed Phase 5A Scheduler V2 and bounded hosted
+initial-component overlap. Hosted live characterization is a separate later
+checkpoint; Local characterization remains later still.
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half

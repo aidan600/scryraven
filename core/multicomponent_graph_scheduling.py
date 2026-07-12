@@ -263,6 +263,53 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
             raise MulticomponentGraphSchedulingError(
                 "scheduler role allocation exceeds the shared role cap"
             )
+    if current.get("schema_version") == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        counters = _mapping(current.get("accounting_counters"))
+        names = (
+            "dispatch_committed_unit_count",
+            "transport_submission_count",
+            "transport_started_count",
+            "transport_completed_count",
+            "successful_artifact_count",
+            "failed_submission_count",
+            "failed_transport_count",
+            "stale_result_count",
+            "maximum_observed_in_flight_transports",
+        )
+        values = {name: int(counters.get(name) or 0) for name in names}
+        outcomes = sum(
+            values[name]
+            for name in (
+                "successful_artifact_count",
+                "failed_submission_count",
+                "failed_transport_count",
+                "stale_result_count",
+            )
+        )
+        batch_leases = [lease for lease in leases if lease.get("batch_id")]
+        active_batch_leases = [
+            lease for lease in batch_leases if lease.get("status") in _ACTIVE_STATUSES
+        ]
+        if (
+            any(value < 0 for value in values.values())
+            or values["transport_started_count"]
+            > values["transport_submission_count"]
+            or values["transport_completed_count"] > values["transport_started_count"]
+            or values["transport_submission_count"]
+            > values["dispatch_committed_unit_count"]
+            or outcomes > values["dispatch_committed_unit_count"]
+            or values["maximum_observed_in_flight_transports"]
+            > int(current.get("effective_width") or 0)
+            or counters.get("physical_overlap_observed")
+            is not (values["maximum_observed_in_flight_transports"] > 1)
+            or (
+                not active_batch_leases
+                and outcomes != values["dispatch_committed_unit_count"]
+            )
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "scheduler V2 transport accounting invariant is invalid"
+            )
     envelope.update(
         {
             "reserved_units": reserved,
@@ -1904,7 +1951,7 @@ def _settle_for_canonical_authority_transition(
                 settlement = LEASE_STALE
                 if scheduler.get("schema_version") == (
                     MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
-                ):
+                ) and lease.get("batch_id"):
                     counters = _mapping(scheduler.get("accounting_counters"))
                     counters["stale_result_count"] = int(
                         counters.get("stale_result_count") or 0

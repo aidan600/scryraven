@@ -1701,7 +1701,11 @@ def _execute_run_kernel_selected_batch(
         None for _ in prepared_calls
     ]
     effective_width = int(scheduler.get("effective_width") or 1)
-    if len(prepared_calls) == 1 or effective_width == 1:
+    use_executor = effective_width > 1 and str(batch.get("parallel_class") or "") in {
+        "parallel_initial_component_analyst",
+        "parallel_initial_component_dprime",
+    }
+    if not use_executor:
         results[0] = execute_with_diagnostics(prepared_calls[0])
     else:
         executor: ThreadPoolExecutor | None = None

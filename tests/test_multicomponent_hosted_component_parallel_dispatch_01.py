@@ -10,9 +10,11 @@ Test classification:
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
 from threading import Barrier, Event, Lock, get_ident
+from threading import enumerate as enumerate_threads
 from typing import Any
 
 import pytest
@@ -212,6 +214,21 @@ def test_retained_scheduler_v1_rejects_every_parallel_or_batch_extension() -> No
         forged[key] = value
         with pytest.raises(MulticomponentGraphSchedulingError):
             validate_scheduler_state(forged)
+    two_active = deepcopy(scheduler)
+    two_active.pop("scheduler_digest")
+    two_active["lease_history"] = [
+        {
+            "status": "granted_reserved",
+            "work": {"role": ROLE_COMPONENT_ANALYST},
+        },
+        {
+            "status": "granted_reserved",
+            "work": {"role": ROLE_COMPONENT_ANALYST},
+        },
+    ]
+    two_active["compatibility_envelope"]["remaining_units"] -= 2
+    with pytest.raises(MulticomponentGraphSchedulingError):
+        scheduling._refresh_scheduler(two_active)
 
 
 def test_v2_batch_grant_reserves_exact_contiguous_analyst_prefix() -> None:
@@ -419,6 +436,20 @@ def test_atomic_dispatch_publishes_all_children_only_with_commitment(
     assert scheduler["compatibility_envelope"]["spent_units"] == 2
     assert scheduler["accounting_counters"]["dispatch_committed_unit_count"] == 2
     assert scheduler["private_descriptor_retained"] is False
+    retained_scheduler_text = json.dumps(scheduler, sort_keys=True)
+    assert "A bounded fixture fact" not in retained_scheduler_text
+    assert NORTHSTAR_REPORT not in retained_scheduler_text
+    for flag in (
+        "raw_prompt_retained",
+        "raw_model_response_retained",
+        "raw_provider_payload_retained",
+        "private_descriptor_retained",
+        "prepared_transport_retained",
+        "worker_result_retained",
+        "private_log_retained",
+        "full_trace_retained",
+    ):
+        assert scheduler[flag] is False
 
 
 def test_issued_dispatch_precommit_failure_closes_action_without_children(
@@ -544,7 +575,13 @@ def test_openai_ordinary_product_overlaps_analyst_and_dprime_at_width_two(
     assert scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
     assert scheduler["backend_class"] == BACKEND_HOSTED_API
     assert scheduler["effective_width"] == 2
+    assert {
+        call["provider"]
+        for call in harness.model_calls
+        if call["system_prompt"] in ROLE_SYSTEM_PROMPTS.values()
+    } == {"OpenAI"}
     assert harness.role_maximum_in_flight[ROLE_COMPONENT_ANALYST] == 2
+    assert harness.role_call_counts[ROLE_COMPONENT_ANALYST] == 5
     assert harness.role_maximum_in_flight[ROLE_COMPONENT_DPRIME] == 2
     assert counters["maximum_observed_in_flight_transports"] == 2
     assert counters["physical_overlap_observed"] is True
@@ -561,6 +598,18 @@ def test_openai_ordinary_product_overlaps_analyst_and_dprime_at_width_two(
         ROLE_COMPONENT_ANALYST,
         ROLE_COMPONENT_DPRIME,
     ]
+    analyst_batch_sizes = [
+        len(batch["ordered_work_refs"])
+        for batch in scheduler["batch_history"]
+        if batch["parallel_class"] == "parallel_initial_component_analyst"
+    ]
+    dprime_batch_sizes = [
+        len(batch["ordered_work_refs"])
+        for batch in scheduler["batch_history"]
+        if batch["parallel_class"] == "parallel_initial_component_dprime"
+    ]
+    assert analyst_batch_sizes == [2, 2, 1]
+    assert dprime_batch_sizes == [2, 2, 1]
     assert all(
         len({item["role"] for item in batch["ordered_work_refs"]}) == 1
         for batch in scheduler["batch_history"]
@@ -577,7 +626,7 @@ def test_openai_ordinary_product_overlaps_analyst_and_dprime_at_width_two(
     assert counters["transport_completed_count"] == counters[
         "successful_artifact_count"
     ]
-    assert any(
+    assert all(
         thread_id != main_thread_id
         for thread_id in (
             harness.role_thread_ids[ROLE_COMPONENT_ANALYST]
@@ -588,6 +637,10 @@ def test_openai_ordinary_product_overlaps_analyst_and_dprime_at_width_two(
     assert set(admission_thread_ids) == {main_thread_id}
     assert set(authorize_thread_ids) == {main_thread_id}
     assert set(reduce_thread_ids) == {main_thread_id}
+    assert not any(
+        thread.name.startswith("scryraven-component-wave")
+        for thread in enumerate_threads()
+    )
 
 
 @pytest.mark.parametrize(
@@ -778,6 +831,7 @@ def test_required_worker_failure_drains_sibling_before_terminalization(
     counters = scheduler["accounting_counters"]
 
     assert harness.role_maximum_in_flight[ROLE_COMPONENT_ANALYST] == 2
+    assert harness.role_call_counts[ROLE_COMPONENT_ANALYST] == 2
     assert counters["dispatch_committed_unit_count"] == 2
     assert counters["transport_submission_count"] == 2
     assert counters["transport_started_count"] == 2
