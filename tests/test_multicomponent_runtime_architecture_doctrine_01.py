@@ -2,10 +2,10 @@
 
 Harness label: PRODUCT-PATH-REGRESSION
 Ordinary product path guarded or fed: installed bounded default ordinary
-multi-component answer path through Phase 3 selective recomputation.
+multi-component answer path through Phase 4 serial scheduling and leases.
 Runtime consumer: repo-visible architecture doctrine and Codex phase guidance.
-Integration deadline: none; Phase 4 scheduling/leases and Phase 5 runtime
-parallelism remain deferred commitments.
+Integration deadline: none; Phase 4 scheduling/leases are installed and Phase 5
+runtime parallelism remains deferred.
 Exit condition: replace only with an equal-or-stronger guard over the installed
 ordinary end-to-end component validation, recovery, and selective-recomputation
 path.
@@ -17,16 +17,16 @@ live validation, citation/source-obligation satisfaction, or correctness.
 Test path/node id: tests/test_multicomponent_runtime_architecture_doctrine_01.py
 Proof class: installed product architecture static posture.
 Validation bucket: phase_focus.
-Surface guarded: canonical architecture ownership and deferred Phase 4/5
-routing.
+Surface guarded: canonical architecture ownership, installed Phase 4, and
+deferred Phase 5 routing.
 High-custody or closed-this-phase surface: Phase 4 RunKernel scheduling and
-work/budget leases, and Phase 5 runtime parallelism, remain deferred.
+work/budget leases are installed; Phase 5 runtime parallelism remains deferred.
 Runtime/product path guarded: docs consumed by future product phases; no runtime.
 Expected cost: local Markdown reads only, well under one second.
 Promotion posture: remain phase_focus unless it becomes the repo's selected
 cheap broad docs sentinel.
 Demotion/retirement condition: an equal-or-stronger current doctrine guard owns
-the installed ordinary path through Phase 3.
+the installed ordinary path through Phase 4.
 Why not fast_pr: this is detailed phase doctrine, not ordinary PR tax.
 """
 
@@ -64,7 +64,7 @@ def test_canonical_owner_separates_current_reuse_and_installed_path() -> None:
     for phrase in (
         "Current default ordinary behavior",
         "Existing reusable bounded capability",
-        "Installed Phase 1 through Phase 3 path",
+        "Installed Phase 1 through Phase 4 path",
         "commit_semantic_producer_bundle(...)",
         "lane selection occurs before canonical semantic production",
         "The V0 contracts and serial checkpoint are not ordinary answer consumption.",
@@ -104,7 +104,7 @@ def test_roles_remain_separate_smartmodel_capabilities() -> None:
         "separately configured SmartModel role",
         "must not hardcode GPT-5.6",
         "must not replace broad semantic analysis",
-        "RunKernel | Authorizes role calls",
+        "RunKernel | Derives current ready semantic work",
     ):
         assert phrase in collapsed
 
@@ -194,7 +194,7 @@ def test_historical_phase_one_envelope_bounds_and_scrutiny_triggers() -> None:
         assert phrase in text
 
 
-def test_installed_phase_two_three_and_deferred_phase_four_five() -> None:
+def test_installed_phase_two_three_four_and_deferred_phase_five() -> None:
     text = _read(CANONICAL)
     collapsed = _collapsed(CANONICAL)
 
@@ -208,15 +208,17 @@ def test_installed_phase_two_three_and_deferred_phase_four_five() -> None:
         "one fresh whole-case Scrutineer",
         "Phase 4: RunKernel scheduling and work/budget leases",
         "Phase 5: runtime parallelism",
-        "Phase 4 scheduling and leases are deferred",
+        "Phase 4 scheduling and leases are installed",
         "Phase 5 runtime parallelism is deferred",
-        "separately deferred",
+        "one active physical lease",
+        "No permanent Fast/Balanced/Deep semantic-call budget values were chosen",
     ):
         assert phrase in text or phrase in collapsed
 
-    # Guard against regressing installed Phase 2/3 back to deferred posture.
+    # Guard against regressing installed Phase 2/3/4 back to deferred posture.
     assert "These Boundary 3 capabilities are deferred, not rejected" not in text
-    assert "Installed Phase 1 path" not in text or "Installed Phase 1 through Phase 3 path" in collapsed
+    assert "Phase 4 scheduling and leases are deferred" not in text
+    assert "Installed Phase 1 path" not in text or "Installed Phase 1 through Phase 4 path" in collapsed
 
 
 def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
@@ -240,10 +242,10 @@ def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
 
     semantic = _read(SEMANTIC_LOOP)
     for heading in (
-        "current default ordinary component loop",
-        "approved Phase 1 component-validation loop",
-        "approved Phase 1 cross-component loop",
-        "committed dynamic recovery loop",
+        "current nonqualifying and single-component ordinary loop",
+        "installed qualifying component-validation loop",
+        "installed qualifying cross-component loop",
+        "installed dynamic recovery and scheduling loop",
     ):
         assert heading in semantic
 
@@ -257,19 +259,19 @@ def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
     assert "explain synthesis that is already admitted and packaged by FAP" in fap
 
 
-def test_guidance_routes_installed_path_and_deferred_phase_four_five() -> None:
+def test_guidance_routes_installed_phase_four_and_deferred_phase_five() -> None:
     canonical = _collapsed(CANONICAL)
     current = _collapsed(CURRENT_STATE)
 
     for phrase in (
-        "Installed Phase 1 through Phase 3 path",
+        "Installed Phase 1 through Phase 4 path",
         "Phase 2 installed one governed missing-component recovery",
         "Phase 3 replaces",
         "Phase 4: RunKernel scheduling and work/budget leases",
         "Phase 5: runtime parallelism",
-        "Phase 4 scheduling and leases are deferred",
+        "Phase 4 scheduling and leases are installed",
         "Phase 5 runtime parallelism",
-        "separately deferred",
+        "one active physical lease",
         "ordinary Sufficiency",
         "FinalAnswerPacket",
         "Author",
@@ -279,9 +281,8 @@ def test_guidance_routes_installed_path_and_deferred_phase_four_five() -> None:
 
     for phrase in (
         "Multi-component Phase 3 selective recomputation is installed",
-        "Phase 4 scheduling and work/budget leases are deferred",
-        "Phase 5 runtime",
-        "parallelism is deferred",
+        "Multi-component Phase 4 serial scheduling and work/budget leases are installed",
+        "Phase 5 bounded physical dispatch parallelism remains deferred",
         "ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome",
     ):
         assert phrase in current

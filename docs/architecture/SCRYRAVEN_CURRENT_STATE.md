@@ -60,9 +60,17 @@ Current summary:
   new deterministic authority, recomputes affected synthesis in topological
   order, runs one fresh whole-case Scrutineer, and returns through ordinary
   Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI output.
-- Phase 4 scheduling and work/budget leases are deferred. Phase 5 runtime
-  parallelism is deferred. Neither is implied by Phase 3's serial selective
-  transition.
+- Multi-component Phase 4 serial scheduling and work/budget leases are
+  installed. The default selected ordinary path incrementally consumes exact
+  RunKernel-derived ready work; every semantic call requires one exact active
+  lease and pretransport spend commitment. The compatibility envelope derives
+  from the shared installed role caps. Predispatch cancellation may return one
+  reservation; postdispatch failure remains spent; required exhaustion reaches
+  ordinary Sufficiency/FAP and the safe non-Author terminal RunOutcome.
+- Logical readiness is not physical concurrency. Phase 4 permits one active
+  physical lease and records `runtime_parallelism=false`. Phase 5 bounded
+  physical dispatch parallelism remains deferred, and no permanent
+  Fast/Balanced/Deep semantic-call budgets were selected.
 
 - `AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
   consumer-seam, current/legacy/passive/closed status, old-path treatment, and

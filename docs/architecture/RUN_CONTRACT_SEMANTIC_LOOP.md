@@ -91,9 +91,9 @@ The deterministic contract is not a substitute for semantic understanding.
 Semantic understanding is not a substitute for contract authority. RunKernel is
 not the LLM reasoner; it is the authority hub and reducer owner.
 
-Future multi-component doctrine is defined in
+Multi-component role doctrine is defined in
 [CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
-The canonical durable and Phase 1 architecture is
+The canonical durable and installed Phase 1 through Phase 4 architecture is
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 That path must remain:
 
@@ -108,9 +108,9 @@ It must not become component finals glued by FAP or Author, direct retrieval
 dispatch by Analyst/D-prime/ComponentWorkGraph, or graph execution hidden inside
 proposal/validation surfaces.
 
-### Current And Approved Multi-Component Loops
+### Current Installed Multi-Component Loops
 
-The current default ordinary component loop is direct:
+The current nonqualifying and single-component ordinary loop remains direct:
 
 ```text
 accepted component structure + selected passages / sanitized content refs
@@ -121,10 +121,9 @@ accepted component structure + selected passages / sanitized content refs
 -> ordinary Sufficiency -> FinalAnswerPacket -> Author
 ```
 
-This current loop does not invoke a typed general regular component Analyst
-proposal followed by component D-prime validation.
+This direct loop does not invoke the multi-component scheduler.
 
-The approved Phase 1 component-validation loop is:
+The installed qualifying component-validation loop is:
 
 ```text
 component requirement and custody facts
@@ -134,7 +133,7 @@ component requirement and custody facts
 -> SemanticObservation -> ComponentCoverage -> ComponentWorkNode
 ```
 
-The approved Phase 1 cross-component loop is:
+The installed qualifying cross-component loop is:
 
 ```text
 ComponentWorkGraph V1 with first-class synthesis nodes
@@ -145,19 +144,26 @@ ComponentWorkGraph V1 with first-class synthesis nodes
 -> ordinary Sufficiency -> FinalAnswerPacket -> Author -> user-facing answer
 ```
 
-The committed dynamic recovery loop, after serial end-to-end activation, is:
+The installed dynamic recovery and scheduling loop is:
 
 ```text
 dynamic graph / AnswerContract amendment
 -> targeted ordinary research re-entry
 -> selective invalidation and synthesis recomputation
 -> revision-specific validation and scrutiny
--> RunKernel scheduling / budget leases
--> runtime parallelism where supported
+-> RunKernel incremental readiness / exact work lease
+-> canonical pretransport dispatch spend
+-> atomic role-artifact admission / lease completion
+-> ordinary Sufficiency / FinalAnswerPacket / Author or safe blocked RunOutcome
 ```
 
-These are current, approved Phase 1, and committed-later states respectively;
-the complete target is not already installed.
+Every semantic call in the selected loop requires exact lease authority. The
+compatibility envelope derives from the installed role caps; predispatch
+cancellation returns its reservation and postdispatch failure retains its unit.
+Logical readiness is not physical concurrency: one physical lease is active at
+a time and `runtime_parallelism=false`. Phase 5 bounded physical dispatch
+parallelism remains deferred, and no permanent Fast/Balanced/Deep semantic-call
+budgets were selected.
 
 ## 2. First Live Validation Boundary
 
@@ -699,8 +705,9 @@ This document and the quarantine registry do not prove:
 The numbered sequence below is retained as completed historical phase context.
 It is not the current next-phase route. The bounded ordinary multi-component
 path now reaches Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI
-output. The recommended next checkpoint is
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
+output through installed Phase 4 serial scheduling and exact leases. The
+recommended next checkpoint is Phase 5 bounded physical dispatch parallelism
+through the same RunKernel scheduler.
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half

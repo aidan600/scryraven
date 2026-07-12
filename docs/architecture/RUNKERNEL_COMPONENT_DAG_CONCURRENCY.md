@@ -17,13 +17,15 @@ explicit admission boundaries, not a sequential checklist.
 
 The durable direction is an n-capable, mode-budgeted, acyclic graph that is
 serial-compatible initially and supports bounded synthesis-of-synthesis.
-Serial correctness comes first; dynamic recovery follows; scheduling and
-runtime parallelism are later commitments. None of execution, scheduling,
-budget leases, or runtime parallelism is currently installed by the V0
+Serial correctness, dynamic recovery, selective recomputation, and Phase 4
+RunKernel scheduling/work leases are installed on ComponentWorkGraph V1.
+Runtime parallelism remains a later commitment. None of execution, scheduling,
+budget leases, or runtime parallelism is installed by the historical V0
 contracts.
 
-This document does not implement component DAG scheduling, budget leases, model
-routing, query planning, or multi-component planning.
+The installed implementation is owned by `core.multicomponent_graph_scheduling`
+and consumed by the ordinary selected runtime. This companion document does not
+itself execute work, route models, plan queries, or plan semantics.
 
 ## Multi-Source And Multi-Component
 
@@ -127,18 +129,27 @@ admitted semantic edges, challenge refs, revision/staleness metadata, and
 depth/budget posture. Do not silently redefine V0: V0 may remain a compatibility
 or review-only input and is a named strangler target for the ordinary path.
 
-## Budget Doctrine
+## Installed Phase 4 Budget And Lease Doctrine
 
-Future component DAG work should use a parent run budget plus component budget
-leases.
+The selected ordinary ComponentWorkGraph V1 path uses a parent compatibility
+envelope plus exact semantic-work leases.
 
 Component budgets must be reserved from the parent envelope before concurrent
 work starts. This prevents multi-component work from silently multiplying cost,
 latency, provider calls, model calls, fetch/read attempts, or retrieval work.
 
-Budget leases should be cancellable, bounded, attributable to component work,
-and auditable by the parent run. Unused budget may return to the parent envelope
-only through RunKernel policy.
+The parent total is derived from the shared installed role caps rather than a
+second caller-authored total. One semantic transport commits one unit. Grant
+moves remaining to reserved; predispatch cancellation returns it exactly once;
+dispatch moves reserved to permanently spent. Completion and postdispatch
+failure do not change allocation. Returned units are cumulative audit, not a
+fourth live bucket.
+
+Leases are cancellable before dispatch, bounded, attributable to exact current
+work, and auditable by RunKernel. Failed or stale postdispatch work retains its
+unit. Required exhaustion reaches ordinary Sufficiency/FAP and the safe blocked
+terminal. Phase 4 permits one active physical lease; logical readiness is not
+physical concurrency.
 
 ## Mode Doctrine
 
@@ -228,26 +239,27 @@ where it exists:
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
 The list above records V0 provenance and older roadmap names; it is not the
-current next-phase route. The recommended next checkpoint is
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
+current next-phase route. Phases 1 through 4 are installed. The recommended next
+checkpoint is Phase 5 bounded physical dispatch parallelism through the same
+scheduler.
 
 After serial end-to-end ordinary activation, the committed Boundary 3 sequence
 is dynamic graph and AnswerContract amendment, targeted ordinary research
 re-entry, selective invalidation, selective synthesis recomputation,
-revision-specific validation/scrutiny, RunKernel scheduling and budget leases,
-then runtime parallelism where supported. These destinations are deferred, not
+revision-specific validation/scrutiny, and RunKernel scheduling and budget
+leases are installed. Runtime parallelism where supported remains deferred, not
 rejected.
 
 ## Current Status
 
 The V0 work through
 `MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` remains no-execution and
-review-only. Phase 1 adds a separate ComponentWorkGraph V1 ordinary path with
-typed component Analyst/D-prime production, RunKernel component and synthesis
-admission, and ordinary Sufficiency/FAP/Author consumption. It does not install
-dynamic graph mutation, scheduling, budget leases, selective recomputation,
-runtime parallelism, live validation, source-display changes, citation changes,
-or product correctness claims.
+review-only. ComponentWorkGraph V1 now supports the installed Phase 1 ordinary
+path, Phase 2 recovery, Phase 3 selective recomputation, and Phase 4 serial
+scheduling/lease authority through ordinary Sufficiency/FAP/Author consumption.
+It does not install runtime parallelism, live validation, source-display
+changes, citation changes, or product correctness claims. No permanent
+Fast/Balanced/Deep semantic-call budgets were selected.
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP.
 

@@ -74,13 +74,14 @@ machinery already owned downstream.
 | Analyst Workbench | [../architecture/ANALYST_WORKBENCH_FULL_SLICE.md](../architecture/ANALYST_WORKBENCH_FULL_SLICE.md) |
 | FAP / Author boundary | [../architecture/FAP_AUTHOR_BOUNDARY.md](../architecture/FAP_AUTHOR_BOUNDARY.md) |
 
-The recommended next multi-component BUILD is
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`. Phase 1 installs the bounded
-ordinary component/synthesis path through ordinary Sufficiency,
-FinalAnswerPacket, Author, RunOutcome, and CLI output. The next phase owns dynamic graph and
-AnswerContract amendment, targeted ordinary research re-entry, selective
-invalidation/recomputation, scheduling, and budget leases; runtime parallelism
-remains deferred.
+Multi-component Phases 1 through 4 are installed: bounded ordinary
+component/synthesis consumption, one dynamic AnswerContract recovery, selective
+affected-only recomputation, and RunKernel-owned serial scheduling with exact
+work/budget leases through ordinary Sufficiency, FinalAnswerPacket, Author or
+the safe blocked terminal, RunOutcome, and CLI output. The recommended next
+multi-component BUILD is Phase 5 bounded physical dispatch parallelism through
+the installed scheduler. Runtime parallelism remains deferred until that phase;
+no permanent Fast/Balanced/Deep semantic-call budgets have been selected.
 
 Older PR-number timelines, completed-phase next-step labels, and the former
 post-#352 through #355 limited-live-validation sequence are historical context,
