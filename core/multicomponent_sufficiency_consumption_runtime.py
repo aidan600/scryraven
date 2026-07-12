@@ -58,6 +58,48 @@ def build_multicomponent_graph_consumption(
             != current_contract_digest
         )
     )
+    active_node_by_id = {
+        item["node_id"]: item
+        for item in [*graph["component_nodes"], *graph["synthesis_nodes"]]
+    }
+    carry_action_refs = [
+        _mapping(item) for item in graph.get("carry_forward_action_refs") or ()
+    ]
+    for node in graph["synthesis_nodes"]:
+        for ref in node.get("input_node_refs") or ():
+            upstream = active_node_by_id.get(ref.get("node_id"))
+            if upstream is None or any(
+                ref.get(key) != upstream.get(key)
+                for key in (
+                    "node_kind",
+                    "node_id",
+                    "node_revision",
+                    "node_digest",
+                    "component_id",
+                    "synthesis_key",
+                    "current",
+                    "stale",
+                )
+            ) or ref.get("status") != (
+                upstream.get("status") or upstream.get("admission_status")
+            ):
+                raise MulticomponentSufficiencyConsumptionError(
+                    "Sufficiency rejected a stale or inexact synthesis input ref"
+                )
+        current_authority = _mapping(node.get("current_node_authority"))
+        carry_ref = _mapping(
+            current_authority.get("runkernel_carry_forward_action_ref")
+        )
+        if carry_ref:
+            if (
+                carry_ref not in carry_action_refs
+                or not _mapping(node.get("carried_semantic_lineage"))
+                or _mapping(node.get("dprime_validation_ref"))
+                or _mapping(node.get("runkernel_admission_ref"))
+            ):
+                raise MulticomponentSufficiencyConsumptionError(
+                    "Sufficiency rejected invalid carried synthesis authority"
+                )
 
     direct_entries: list[dict[str, Any]] = []
     limitations: list[str] = []
@@ -148,6 +190,12 @@ def build_multicomponent_graph_consumption(
                     "scrutineer_ref": _mapping(node.get("scrutineer_ref")),
                     "runkernel_admission_ref": _mapping(
                         node.get("runkernel_admission_ref")
+                    ),
+                    "carried_semantic_lineage": _mapping(
+                        node.get("carried_semantic_lineage")
+                    ),
+                    "current_node_authority": _mapping(
+                        node.get("current_node_authority")
                     ),
                     "required_caveats": list(
                         node.get("required_caveats") or ()

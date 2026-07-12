@@ -1474,7 +1474,7 @@ def _apply_typed_scrutiny(
     )
 
 
-def _finalize_and_consume(kernel: RunKernel, graph: dict) -> tuple[dict, dict]:
+def _finalize_and_consume(kernel: RunKernel, graph: dict):
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="finalize",
@@ -1488,45 +1488,60 @@ def _finalize_and_consume(kernel: RunKernel, graph: dict) -> tuple[dict, dict]:
             multicomponent_graph_state=graph,
         )
     )
-    return graph, judgment.final_packet_inputs
+    return graph, judgment
 
 
 def test_scrutineer_typed_component_target_suppresses_direct_and_dependents() -> None:
     kernel, graph = _independent_admitted_graph()
     target = _catalog_target(graph, "component", meaning="component:component-1")
     graph = _apply_typed_scrutiny(kernel, graph, target=target)
-    graph, packet = _finalize_and_consume(kernel, graph)
+    graph, judgment = _finalize_and_consume(kernel, graph)
+    packet = judgment.final_packet_inputs
     assert graph["graph_status"] == "challenged_component"
     assert {item["component_id"] for item in packet["direct_component_entries"]} == {
         "component:component-2",
         "component:component-3",
         "component:component-4",
     }
-    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
-        "F"
-    }
+    assert {
+        item["synthesis_key"]
+        for item in judgment.multicomponent_graph_consumption[
+            "admitted_synthesis_entries"
+        ]
+    } == {"F"}
+    assert packet["admitted_synthesis_entries"] == []
 
 
 def test_scrutineer_typed_synthesis_target_preserves_independent_branch() -> None:
     kernel, graph = _independent_admitted_graph()
     target = _catalog_target(graph, "synthesis", meaning='"synthesis_key": "E"')
     graph = _apply_typed_scrutiny(kernel, graph, target=target)
-    graph, packet = _finalize_and_consume(kernel, graph)
+    graph, judgment = _finalize_and_consume(kernel, graph)
+    packet = judgment.final_packet_inputs
     assert graph["graph_status"] == "challenged_synthesis"
-    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
-        "F"
-    }
+    assert {
+        item["synthesis_key"]
+        for item in judgment.multicomponent_graph_consumption[
+            "admitted_synthesis_entries"
+        ]
+    } == {"F"}
+    assert packet["admitted_synthesis_entries"] == []
 
 
 def test_scrutineer_typed_edge_target_invalidates_exact_downstream_branch() -> None:
     kernel, graph = _independent_admitted_graph()
     target = _catalog_target(graph, "edge", meaning='"synthesis_key": "E"')
     graph = _apply_typed_scrutiny(kernel, graph, target=target)
-    graph, packet = _finalize_and_consume(kernel, graph)
+    graph, judgment = _finalize_and_consume(kernel, graph)
+    packet = judgment.final_packet_inputs
     assert graph["graph_status"] == "challenged_edge"
-    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
-        "F"
-    }
+    assert {
+        item["synthesis_key"]
+        for item in judgment.multicomponent_graph_consumption[
+            "admitted_synthesis_entries"
+        ]
+    } == {"F"}
+    assert packet["admitted_synthesis_entries"] == []
     assert len(packet["direct_component_entries"]) == 4
 
 
@@ -1534,18 +1549,24 @@ def test_scrutineer_typed_subgraph_target_preserves_independent_branch() -> None
     kernel, graph = _independent_admitted_graph()
     target = _catalog_target(graph, "subgraph", meaning='"synthesis_key": "E"')
     graph = _apply_typed_scrutiny(kernel, graph, target=target)
-    graph, packet = _finalize_and_consume(kernel, graph)
+    graph, judgment = _finalize_and_consume(kernel, graph)
+    packet = judgment.final_packet_inputs
     assert graph["graph_status"] == "challenged_subgraph"
-    assert {item["synthesis_key"] for item in packet["admitted_synthesis_entries"]} == {
-        "F"
-    }
+    assert {
+        item["synthesis_key"]
+        for item in judgment.multicomponent_graph_consumption[
+            "admitted_synthesis_entries"
+        ]
+    } == {"F"}
+    assert packet["admitted_synthesis_entries"] == []
 
 
 def test_scrutineer_typed_graph_target_suppresses_all_output() -> None:
     kernel, graph = _independent_admitted_graph()
     target = _catalog_target(graph, "graph")
     graph = _apply_typed_scrutiny(kernel, graph, target=target, status="blocked")
-    graph, packet = _finalize_and_consume(kernel, graph)
+    graph, judgment = _finalize_and_consume(kernel, graph)
+    packet = judgment.final_packet_inputs
     assert graph["graph_status"] == "blocked_graph"
     assert graph["graph_output_suppressed"] is True
     assert packet["direct_component_entries"] == []

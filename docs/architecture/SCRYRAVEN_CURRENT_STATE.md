@@ -1,7 +1,9 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`, following
+`AG-MULTICOMPONENT-SELECTIVE-RECOMPUTATION-01`, following
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`,
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`,
 `AG-CURRENT-PATH-QUARANTINE-01`,
 `AUTHOR-PROSE-ONLY-FINALIZATION-01`,
 `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
@@ -47,11 +49,20 @@ Current summary:
   D-prime, required full Scrutineer posture, and RunKernel graph/synthesis
   admission are installed for the supported class and are consumed through
   ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI output.
-- The recommended next BUILD is
-  `AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`. It owns dynamic graph and
-  AnswerContract amendment, targeted ordinary research re-entry, selective
-  invalidation/recomputation, scheduling, and budget leases. Runtime
-  parallelism remains deferred until those authorities exist.
+- Multi-component Phase 2 is complete: one Scrutineer-originated missing
+  component can amend the AnswerContract, re-enter ordinary acquisition, pass
+  typed component admission, and return through ordinary finalization. Its
+  former successful-recovery whole-graph rebuild remains a focused
+  compatibility helper, not the ordinary success policy.
+- Multi-component Phase 3 selective recomputation is installed. RunKernel
+  derives the affected synthesis closure from the authorization-bound
+  pre-transition graph, carries only exact unaffected admitted synthesis under
+  new deterministic authority, recomputes affected synthesis in topological
+  order, runs one fresh whole-case Scrutineer, and returns through ordinary
+  Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI output.
+- Phase 4 scheduling and work/budget leases are deferred. Phase 5 runtime
+  parallelism is deferred. Neither is implied by Phase 3's serial selective
+  transition.
 
 - `AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
   consumer-seam, current/legacy/passive/closed status, old-path treatment, and

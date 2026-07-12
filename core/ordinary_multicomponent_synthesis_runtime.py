@@ -17,15 +17,19 @@ from core.component_work_graph_v1 import (
     admit_synthesis_node_via_runkernel,
     component_work_graph_v1_from_cross_component_artifact,
     component_work_graph_v1_resynthesis_from_cross_component_artifact,
+    component_work_graph_v1_selective_resynthesis_from_cross_artifact,
     cross_component_input_packet,
     derive_multicomponent_role_call_accounting,
+    derive_selective_recomputation_closure,
     finalize_component_work_graph_v1,
     graph_with_accounting,
-    graph_with_recovered_component,
     graph_with_scrutineer,
     graph_with_synthesis_validation,
     reduce_component_work_graph_v1,
+    reduce_selective_invalidation_via_runkernel,
+    reduce_selective_recomputation_closure,
     scrutineer_input_packet,
+    selective_cross_component_input_packet,
     synthesis_dprime_input_packet,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
@@ -51,6 +55,7 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
+    SELECTIVE_CROSS_COMPONENT_SCHEMA,
     execute_multicomponent_role_call,
 )
 from core.ordinary_semantic_producer_runtime import (
@@ -473,6 +478,157 @@ def _execute_fresh_resynthesis(
     )
 
 
+def _execute_selective_reconstruction(
+    *,
+    run_kernel: Any,
+    graph: Mapping[str, Any],
+    closure: Mapping[str, Any],
+    role_kwargs: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Execute one selective Cross pass and validate only affected synthesis."""
+
+    cross_input = selective_cross_component_input_packet(
+        graph,
+        closure=closure,
+    )
+    cross_key = f"selective:graph-revision:{graph['graph_revision']}"
+    cross_artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_CROSS_COMPONENT_ANALYST,
+        input_packet=cross_input,
+        logical_evaluation_key=cross_key,
+        output_schema_variant=SELECTIVE_CROSS_COMPONENT_SCHEMA,
+        **dict(role_kwargs),
+    )
+    candidate = component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+        graph,
+        closure=closure,
+        cross_component_artifact=cross_artifact,
+    )
+    current = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="selective_resynthesis_structure",
+        graph_candidate=candidate,
+        role_evaluation_key=cross_key,
+    )
+    deferred_admission_keys: list[str] = []
+    for synthesis_key in closure["affected_topological_order"]:
+        dprime_input = synthesis_dprime_input_packet(
+            current,
+            synthesis_key=synthesis_key,
+        )
+        evaluation_key = (
+            f"{synthesis_key}:selective:graph-revision:"
+            f"{current['graph_revision']}"
+        )
+        dprime_artifact = execute_multicomponent_role_call(
+            run_kernel=run_kernel,
+            role=ROLE_SYNTHESIS_DPRIME,
+            input_packet=dprime_input,
+            logical_evaluation_key=evaluation_key,
+            **dict(role_kwargs),
+        )
+        current = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="synthesis_validation",
+            synthesis_key=synthesis_key,
+            role_evaluation_key=evaluation_key,
+            graph_candidate=graph_with_synthesis_validation(
+                current,
+                synthesis_key=synthesis_key,
+                dprime_artifact=dprime_artifact,
+            ),
+        )
+        node = next(
+            item
+            for item in current["synthesis_nodes"]
+            if item["synthesis_key"] == synthesis_key
+        )
+        if node.get("status") != "validated":
+            break
+        node_is_upstream = any(
+            ref.get("node_id") == node.get("node_id")
+            for candidate_node in current["synthesis_nodes"]
+            if candidate_node.get("synthesis_key") != synthesis_key
+            for ref in candidate_node.get("input_node_refs") or ()
+        )
+        if node_is_upstream:
+            current = admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=synthesis_key,
+            )
+        else:
+            deferred_admission_keys.append(synthesis_key)
+    return current, deferred_admission_keys
+
+
+def _execute_selective_resynthesis(
+    *,
+    run_kernel: Any,
+    graph: Mapping[str, Any],
+    closure: Mapping[str, Any],
+    role_kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Complete affected reconstruction with one fresh whole-case scrutiny."""
+
+    current, deferred_admission_keys = _execute_selective_reconstruction(
+        run_kernel=run_kernel,
+        graph=graph,
+        closure=closure,
+        role_kwargs=role_kwargs,
+    )
+    scrutiny_key = (
+        f"full-case:selective:graph-revision:{current['graph_revision']}"
+    )
+    scrutineer_artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_SCRUTINEER,
+        input_packet=scrutineer_input_packet(current),
+        logical_evaluation_key=scrutiny_key,
+        **dict(role_kwargs),
+    )
+    current = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="scrutiny",
+        role_evaluation_key=scrutiny_key,
+        graph_candidate=graph_with_scrutineer(
+            current,
+            scrutineer_artifact=scrutineer_artifact,
+        ),
+    )
+    for synthesis_key in deferred_admission_keys:
+        node = next(
+            item
+            for item in current["synthesis_nodes"]
+            if item["synthesis_key"] == synthesis_key
+        )
+        if node.get("status") == "validated" and current.get(
+            "scrutineer_status"
+        ) in {"passed", "passed_with_caveats"}:
+            current = admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=synthesis_key,
+            )
+    logical, physical = derive_multicomponent_role_call_accounting(
+        run_kernel.state.projections,
+        issued_actions=run_kernel.state.issued_actions,
+    )
+    current = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="accounting",
+        graph_candidate=graph_with_accounting(
+            current,
+            logical_accounting=logical,
+            physical_call_accounting=physical,
+        ),
+    )
+    return reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(current),
+    )
+
+
 def _attempt_dynamic_recovery(
     *,
     run_kernel: Any,
@@ -618,31 +774,87 @@ def _attempt_dynamic_recovery(
     authorization = run_kernel.state.projections[authorization_action.stage]
     application = run_kernel.state.contract_amendment_application_projection
     application_ref = {
-        "owner": application.get("owner"),
         "application_digest": application.get("application_digest"),
         "authorized_action_id": application.get("authorized_action_id"),
         "amendment_record_id": application.get("amendment_record_id"),
     }
-    amended = graph_with_recovered_component(
-        graph,
-        recovered_component_node=recovered_node,
-        current_contract_ref=_accepted_contract_ref(
-            run_kernel.state.current_answer_contract
+    amendment_admission = run_kernel.state.contract_amendment_admission_projection
+    amendment_admission_ref = {
+        "amendment_record_id": amendment_admission.get("amendment_record_id"),
+        "amendment_record_digest": amendment_admission.get(
+            "amendment_record_digest"
         ),
+        "authorized_action_id": amendment_admission.get("authorized_action_id"),
+        "admission_digest": amendment_admission.get("admission_digest"),
+    }
+    current_contract_ref = _accepted_contract_ref(
+        run_kernel.state.current_answer_contract
+    )
+    closure_candidate = derive_selective_recomputation_closure(
+        graph,
         recovery_authorization_ref=authorization,
+        current_contract_ref=current_contract_ref,
+        contract_amendment_admission_ref=amendment_admission_ref,
+        contract_amendment_application_ref=application_ref,
+        recovered_component_admission_ref=component_admission_ref,
+    )
+    closure = reduce_selective_recomputation_closure(
+        run_kernel=run_kernel,
+        closure_candidate=closure_candidate,
+    )
+    amended = reduce_selective_invalidation_via_runkernel(
+        run_kernel=run_kernel,
+        graph=graph,
+        closure=closure,
+        recovered_component_node=recovered_node,
+        current_contract_ref=current_contract_ref,
+        recovery_authorization_ref=authorization,
+        contract_amendment_admission_ref=amendment_admission_ref,
         amendment_application_ref=application_ref,
     )
-    amended = reduce_component_work_graph_v1(
-        run_kernel=run_kernel,
-        operation="graph_amendment",
-        graph_candidate=amended,
-    )
-    final_graph = _execute_fresh_resynthesis(
-        run_kernel=run_kernel,
-        graph=amended,
-        requested_synthesis_directive=requested_synthesis_directive,
-        role_kwargs=role_kwargs,
-    )
+    try:
+        final_graph = _execute_selective_resynthesis(
+            run_kernel=run_kernel,
+            graph=amended,
+            closure=closure,
+            role_kwargs=role_kwargs,
+        )
+    except Exception as exc:
+        recovery_projection = dict(
+            run_kernel.state.projections.get(
+                MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+                {},
+            )
+        )
+        recovery_projection.update(
+            {
+                "status": RECOVERY_STATUS_BLOCKED,
+                "blocker": "selective recomputation authority could not be proven",
+                "selective_failure_type": type(exc).__name__,
+                "pending_recovery_disposition": (
+                    RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
+                ),
+                "whole_graph_fallback_invoked": False,
+            }
+        )
+        run_kernel.state.projections[
+            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
+        ] = recovery_projection
+        pending_actions = [
+            item
+            for item in run_kernel.state.issued_actions.values()
+            if item.action_id not in run_kernel.state.reduced_action_ids
+        ]
+        if not pending_actions:
+            reduce_recovery_outcome(
+                run_kernel=run_kernel,
+                disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
+                observed_provider_identities=(
+                    acquisition.observed_provider_identities
+                ),
+                blocker_reason=str(recovery_projection["blocker"]),
+            )
+        return amended
     if final_graph.get("graph_status") not in {"ready", "ready_with_caveats"}:
         recovery_projection = dict(
             run_kernel.state.projections.get(
@@ -653,7 +865,7 @@ def _attempt_dynamic_recovery(
         recovery_projection.update(
             {
                 "status": RECOVERY_STATUS_BLOCKED,
-                "blocker": "fresh whole-graph resynthesis did not reach ready posture",
+                "blocker": "selective recomputation did not reach ready posture",
             }
         )
         run_kernel.state.projections[

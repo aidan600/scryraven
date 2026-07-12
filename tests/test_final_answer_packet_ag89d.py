@@ -10,6 +10,7 @@ from core.final_answer_packet import (
     CitationRequirementStatus,
     ClaimPosture,
     EvidenceAuthorityStatus,
+    FinalAnswerPacket,
     FinalEvidenceRecord,
     SourceObligationStatus,
 )
@@ -670,3 +671,81 @@ def test_ag_sem_12a_semantic_authority_ref_exact_non_delta_author_surfaces() -> 
     from tests.test_ag_sem_12a_fap_semantic_authority_projection import _author_surfaces
 
     assert _author_surfaces(packet_with) == _author_surfaces(packet_without)
+
+
+def _carried_synthesis_entry() -> dict:
+    return {
+        "entry_kind": "admitted_synthesis",
+        "synthesis_key": "benefit_summary",
+        "synthesis_depth": 1,
+        "claim_text": (
+            "The rebate and income threshold define the verified "
+            "two-part Northstar benefit."
+        ),
+        "claim_id": "carried-claim:benefit_summary",
+        "claim_digest": "carried-claim-digest",
+        "relationship_type": "benefit_conjunction",
+        "status": "admitted",
+        "current": True,
+        "stale": False,
+        "input_node_refs": [],
+        "dprime_validation_ref": {},
+        "scrutineer_ref": {},
+        "runkernel_admission_ref": {},
+        "carried_semantic_lineage": {
+            "prior_cross_component_analyst_ref": {
+                "artifact_id": "prior-cross",
+                "artifact_digest": "prior-cross-digest",
+            },
+            "prior_synthesis_claim_ref": {
+                "claim_id": "prior-claim",
+                "claim_digest": "prior-claim-digest",
+            },
+            "prior_synthesis_dprime_ref": {
+                "artifact_id": "prior-dprime",
+                "artifact_digest": "prior-dprime-digest",
+            },
+            "prior_synthesis_admission_ref": {
+                "admission_id": "prior-admission",
+                "admission_digest": "prior-admission-digest",
+            },
+        },
+        "current_node_authority": {
+            "runkernel_carry_forward_action_ref": {
+                "operation": "selective_invalidation",
+                "action_id": "carry-forward-action:test",
+            }
+        },
+        "required_caveats": [],
+        "preserved_nonclaims": [],
+    }
+
+
+@pytest.mark.parametrize("readiness", ["ready", "ready_with_caveats"])
+def test_final_answer_packet_accepts_valid_carried_synthesis_when_graph_ready(
+    readiness: str,
+) -> None:
+    packet = FinalAnswerPacket(
+        packet_id="fap-carried-ready",
+        admitted_synthesis_entries=(_carried_synthesis_entry(),),
+        multicomponent_graph_readiness=readiness,
+        multicomponent_limitations=("optional caveat text",),
+    )
+
+    assert len(packet.admitted_synthesis_entries) == 1
+    assert packet.multicomponent_graph_readiness == readiness
+
+
+def test_final_answer_packet_rejects_carried_synthesis_on_non_ready_graph_even_with_limitations() -> None:
+    with pytest.raises(
+        ValueError,
+        match="cannot include synthesis from a non-ready graph",
+    ):
+        FinalAnswerPacket(
+            packet_id="fap-carried-non-ready",
+            admitted_synthesis_entries=(_carried_synthesis_entry(),),
+            multicomponent_graph_readiness="stale",
+            multicomponent_limitations=(
+                "Only unaffected admitted synthesis remains available.",
+            ),
+        )
