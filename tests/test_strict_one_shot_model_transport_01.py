@@ -313,8 +313,7 @@ def test_openrouter_one_shot_uses_chat_and_never_openai_default_client() -> None
     transport = build_strict_one_shot_smart_model_transport(
         smart_provider="open_router",
         smart_model="openrouter/model",
-        openrouter_api_key="unit-test-openrouter-key",
-        credential_lookup={}.get,
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
         client_factory=_fake_client_factory(calls, _analyst_json()),
     )
     result = transport("{}", "system", require_json=True)
