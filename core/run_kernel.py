@@ -4252,7 +4252,7 @@ class RunKernel:
         if action.action_type not in {
             ActionType.CONTRACT_AMENDMENT_APPLY,
             ActionType.MULTICOMPONENT_GRAPH_REDUCE,
-        } or action.sequence != self.state.next_observation_sequence + 1:
+        }:
             return {}
         scheduler_raw = _safe_mapping(
             self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
@@ -4265,22 +4265,30 @@ class RunKernel:
             for item in scheduler.get("lease_history") or ()
             if _safe_mapping(item).get("status") == LEASE_EXECUTION_STARTED
         ]
-        if len(active) != 1:
-            return {}
-        lease = active[0]
-        role_action_id = str(
-            _safe_mapping(lease.get("role_action_ref")).get("action_id") or ""
-        )
-        role_action = self.state.issued_actions.get(role_action_id)
-        if (
-            role_action is None
-            or role_action.sequence != self.state.next_observation_sequence
-            or role_action.action_id in self.state.reduced_action_ids
+        if not active or action.sequence != (
+            self.state.next_observation_sequence + len(active)
         ):
             return {}
+        pending_leases: list[dict[str, Any]] = []
+        for offset, lease in enumerate(active):
+            role_action_id = str(
+                _safe_mapping(lease.get("role_action_ref")).get("action_id") or ""
+            )
+            role_action = self.state.issued_actions.get(role_action_id)
+            if (
+                role_action is None
+                or role_action.sequence != self.state.next_observation_sequence + offset
+                or role_action.action_id in self.state.reduced_action_ids
+            ):
+                return {}
+            pending_leases.append(
+                {
+                    "lease_id": lease.get("lease_id"),
+                    "role_action_id": role_action_id,
+                }
+            )
         return {
-            "lease_id": lease.get("lease_id"),
-            "role_action_id": role_action_id,
+            "pending_leases": pending_leases,
         }
 
     def _commit_multicomponent_authority_supersession(
@@ -4294,52 +4302,57 @@ class RunKernel:
         if not pending:
             return
         candidate = _safe_mapping(scheduler)
-        lease = next(
-            (
-                _safe_mapping(item)
-                for item in candidate.get("lease_history") or ()
-                if _safe_mapping(item).get("lease_id") == pending.get("lease_id")
-            ),
-            {},
-        )
-        role_action = self.state.issued_actions.get(
-            str(pending.get("role_action_id") or "")
-        )
-        if lease.get("status") != LEASE_STALE or role_action is None:
-            raise RunKernelTransitionError(
-                "unrelated authority transition cannot supersede active semantic work"
+        resolved: list[tuple[dict[str, Any], AuthorizedAction]] = []
+        for pending_lease in pending.get("pending_leases") or ():
+            lease = next(
+                (
+                    _safe_mapping(item)
+                    for item in candidate.get("lease_history") or ()
+                    if _safe_mapping(item).get("lease_id")
+                    == _safe_mapping(pending_lease).get("lease_id")
+                ),
+                {},
             )
-        failure_kind = "canonical_authority_changed_before_role_observation"
-        synthetic = Observation.from_action(
-            role_action,
-            observation_type=role_action.expected_observation_type,
-            status=RunStageStatus.FAILED,
-            payload={
-                "lease_settlement": LEASE_STALE,
+            role_action = self.state.issued_actions.get(
+                str(_safe_mapping(pending_lease).get("role_action_id") or "")
+            )
+            if lease.get("status") != LEASE_STALE or role_action is None:
+                raise RunKernelTransitionError(
+                    "unrelated authority transition cannot supersede active semantic work"
+                )
+            resolved.append((lease, role_action))
+        for lease, role_action in resolved:
+            failure_kind = "canonical_authority_changed_before_role_observation"
+            synthetic = Observation.from_action(
+                role_action,
+                observation_type=role_action.expected_observation_type,
+                status=RunStageStatus.FAILED,
+                payload={
+                    "lease_settlement": LEASE_STALE,
+                    "failure_kind": failure_kind,
+                },
+            )
+            self.state.reduced_action_ids.add(role_action.action_id)
+            self.state.action_statuses[role_action.action_id] = RunStageStatus.FAILED
+            self.state.stage_statuses[role_action.stage] = RunStageStatus.FAILED
+            self.state.projections[role_action.stage] = {
+                "schema_version": "multicomponent_semantic_role_failure_v1",
+                "owner": "RunKernel.MulticomponentGraphScheduler",
+                "canonical_state": True,
+                "role": role_action.inputs.get("role"),
+                "logical_evaluation_key": role_action.inputs.get(
+                    "logical_evaluation_key"
+                ),
+                "work_id": role_action.inputs.get("work_id"),
+                "lease_id": role_action.inputs.get("lease_id"),
+                "settlement": LEASE_STALE,
                 "failure_kind": failure_kind,
-            },
-        )
-        self.state.reduced_action_ids.add(role_action.action_id)
-        self.state.action_statuses[role_action.action_id] = RunStageStatus.FAILED
-        self.state.stage_statuses[role_action.stage] = RunStageStatus.FAILED
-        self.state.projections[role_action.stage] = {
-            "schema_version": "multicomponent_semantic_role_failure_v1",
-            "owner": "RunKernel.MulticomponentGraphScheduler",
-            "canonical_state": True,
-            "role": role_action.inputs.get("role"),
-            "logical_evaluation_key": role_action.inputs.get(
-                "logical_evaluation_key"
-            ),
-            "work_id": role_action.inputs.get("work_id"),
-            "lease_id": role_action.inputs.get("lease_id"),
-            "settlement": LEASE_STALE,
-            "failure_kind": failure_kind,
-            "semantic_artifact_admitted": False,
-            "raw_model_response_retained": False,
-            "raw_provider_payload_retained": False,
-        }
-        self.state.observations.append(synthetic)
-        self.state.next_observation_sequence += 1
+                "semantic_artifact_admitted": False,
+                "raw_model_response_retained": False,
+                "raw_provider_payload_retained": False,
+            }
+            self.state.observations.append(synthetic)
+            self.state.next_observation_sequence += 1
 
     def _commit_deferred_authority_action(
         self,
@@ -18215,6 +18228,24 @@ class RunKernel:
                             "failure_kind": _clean_text(
                                 observation.payload.get("failure_kind"), limit=100
                             ),
+                            "transport_submitted": observation.payload.get(
+                                "transport_submitted"
+                            )
+                            is True,
+                            "transport_started": observation.payload.get(
+                                "transport_started"
+                            )
+                            is True,
+                            "transport_completed": observation.payload.get(
+                                "transport_completed"
+                            )
+                            is True,
+                            "observed_batch_max_in_flight": int(
+                                observation.payload.get(
+                                    "observed_batch_max_in_flight"
+                                )
+                                or 0
+                            ),
                         },
                         settlement=settlement,
                     )
@@ -18270,6 +18301,10 @@ class RunKernel:
                 )
             if artifact and scheduler_active:
                 for key in (
+                    "batch_id",
+                    "batch_digest",
+                    "batch_index",
+                    "descriptor_digest",
                     "lease_id",
                     "lease_digest",
                     "work_id",
@@ -18296,7 +18331,27 @@ class RunKernel:
                 self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
                     settle_role_lease(
                         state=self.state,
-                        action_inputs=action.inputs,
+                        action_inputs={
+                            **dict(action.inputs),
+                            "transport_submitted": observation.payload.get(
+                                "transport_submitted"
+                            )
+                            is True,
+                            "transport_started": observation.payload.get(
+                                "transport_started"
+                            )
+                            is True,
+                            "transport_completed": observation.payload.get(
+                                "transport_completed"
+                            )
+                            is True,
+                            "observed_batch_max_in_flight": int(
+                                observation.payload.get(
+                                    "observed_batch_max_in_flight"
+                                )
+                                or 0
+                            ),
+                        },
                         settlement=LEASE_COMPLETED,
                     )
                 )

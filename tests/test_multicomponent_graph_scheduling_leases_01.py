@@ -622,20 +622,24 @@ def test_21_product_driver_dispatches_only_scheduler_selected_work(
 ) -> None:
     import core.ordinary_multicomponent_synthesis_runtime as runtime
 
-    original = runtime._execute_multicomponent_role_transport
+    original = runtime.execute_prepared_multicomponent_transport
     observed: list[tuple[str, str, str, str]] = []
 
-    def exact_dispatch(**kwargs):
-        kernel = kwargs["run_kernel"]
-        lease = _scheduler(kernel)["lease_history"][-1]
+    def exact_dispatch(prepared):
+        kernel = captured_kernel["value"]
+        lease = next(
+            item
+            for item in _scheduler(kernel)["lease_history"]
+            if item["lease_id"] == prepared.lease_id
+        )
         work = lease["work"]
-        assert kwargs["lease_id"] == lease["lease_id"]
-        assert kwargs["role"] == work["role"]
-        assert kwargs["logical_evaluation_key"] == work["logical_evaluation_key"]
-        assert safe_packet_digest(kwargs["input_packet"]) == work[
+        assert prepared.lease_id == lease["lease_id"]
+        assert prepared.role == work["role"]
+        assert prepared.logical_evaluation_key == work["logical_evaluation_key"]
+        assert safe_packet_digest(prepared.input_packet) == work[
             "input_packet_digest"
         ]
-        assert kwargs.get("output_schema_variant") == work.get(
+        assert prepared.output_schema_variant == work.get(
             "output_schema_variant"
         )
         observed.append(
@@ -646,9 +650,17 @@ def test_21_product_driver_dispatches_only_scheduler_selected_work(
                 str(work["logical_evaluation_key"]),
             )
         )
-        return original(**kwargs)
+        return original(prepared)
 
-    monkeypatch.setattr(runtime, "_execute_multicomponent_role_transport", exact_dispatch)
+    captured_kernel: dict[str, Any] = {"value": None}
+    original_commit = RunKernel.commit_multicomponent_batch_dispatch
+
+    def capture_commit(self: RunKernel, **kwargs):
+        captured_kernel["value"] = self
+        return original_commit(self, **kwargs)
+
+    monkeypatch.setattr(RunKernel, "commit_multicomponent_batch_dispatch", capture_commit)
+    monkeypatch.setattr(runtime, "execute_prepared_multicomponent_transport", exact_dispatch)
     _outcome, kernel, _captured, _harness = _run_product(tmp_path)
     assert len(observed) == len(_scheduler(kernel)["lease_history"])
 

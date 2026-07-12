@@ -8,8 +8,10 @@ chooses between competing outputs.
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
+from threading import Lock
 from typing import Any, Mapping
 
 from core.component_work_graph_v1 import (
@@ -56,6 +58,11 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
+    SafeMulticomponentWorkerResult,
+    execute_prepared_multicomponent_transport,
+    failed_unstarted_multicomponent_worker_result,
+    prepare_multicomponent_transport_call,
+    reduce_multicomponent_worker_result,
     safe_packet_digest,
 )
 from core.multicomponent_role_runtime import (
@@ -1598,6 +1605,242 @@ def _consume_scheduler_selected_artifact(
     )
 
 
+def _execute_run_kernel_selected_batch(
+    *,
+    run_kernel: Any,
+    role_kwargs: Mapping[str, Any],
+    drive_context: dict[str, Any],
+) -> None:
+    """Execute one exact V2 wave and reduce it only in canonical action order."""
+
+    from core.multicomponent_graph_scheduling import (
+        LEASE_DENIED_EXHAUSTED,
+        MULTICOMPONENT_SCHEDULER_STAGE,
+    )
+    from core.run_kernel import Observation, RunStageStatus
+
+    batch = run_kernel.grant_next_multicomponent_work_batch()
+    if batch.get("status") == LEASE_DENIED_EXHAUSTED:
+        raise _ScheduledSemanticWorkBlocked(
+            "required semantic work denied by the compatibility envelope"
+        )
+    scheduler = _safe_mapping(
+        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+    )
+    leases_by_id = {
+        str(_safe_mapping(item).get("lease_id") or ""): _safe_mapping(item)
+        for item in scheduler.get("lease_history") or ()
+    }
+    leases = [
+        leases_by_id[str(_safe_mapping(ref).get("lease_id") or "")]
+        for ref in batch.get("ordered_lease_refs") or ()
+    ]
+    works = [_safe_mapping(lease.get("work")) for lease in leases]
+    try:
+        packets = [
+            _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
+            for work in works
+        ]
+    except Exception:
+        run_kernel.cancel_multicomponent_work_batch(
+            batch_id=str(batch.get("batch_id") or ""),
+            reason="exact_batch_packet_reconstruction_failed",
+        )
+        raise
+    packet_digests = [safe_packet_digest(packet) for packet in packets]
+    actions = run_kernel.commit_multicomponent_batch_dispatch(
+        batch_id=str(batch.get("batch_id") or ""),
+        packet_digests=packet_digests,
+    )
+    try:
+        prepared_calls = [
+            prepare_multicomponent_transport_call(
+                action=action,
+                input_packet=packet,
+                **dict(role_kwargs),
+            )
+            for action, packet in zip(actions, packets, strict=True)
+        ]
+    except Exception as exc:
+        for action in actions:
+            run_kernel.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.FAILED,
+                    payload={
+                        "lease_settlement": "failed_spent",
+                        "failure_kind": "prepared_transport_construction_failure",
+                        "transport_submitted": False,
+                        "transport_started": False,
+                        "transport_completed": False,
+                        "observed_batch_max_in_flight": 0,
+                    },
+                )
+            )
+        raise _ScheduledSemanticWorkBlocked(
+            "committed batch transport preparation failed"
+        ) from exc
+
+    active_count = 0
+    maximum_in_flight = 0
+    counter_lock = Lock()
+
+    def execute_with_diagnostics(prepared):
+        nonlocal active_count, maximum_in_flight
+        with counter_lock:
+            active_count += 1
+            maximum_in_flight = max(maximum_in_flight, active_count)
+        try:
+            return execute_prepared_multicomponent_transport(prepared)
+        finally:
+            with counter_lock:
+                active_count -= 1
+
+    results: list[SafeMulticomponentWorkerResult | None] = [
+        None for _ in prepared_calls
+    ]
+    effective_width = int(scheduler.get("effective_width") or 1)
+    if len(prepared_calls) == 1 or effective_width == 1:
+        results[0] = execute_with_diagnostics(prepared_calls[0])
+    else:
+        executor: ThreadPoolExecutor | None = None
+        futures: dict[int, Future[SafeMulticomponentWorkerResult]] = {}
+        try:
+            executor = ThreadPoolExecutor(
+                max_workers=min(effective_width, len(prepared_calls)),
+                thread_name_prefix="scryraven-component-wave",
+            )
+        except Exception:
+            results = [
+                failed_unstarted_multicomponent_worker_result(
+                    prepared,
+                    failure_kind="executor_initialization_failure",
+                )
+                for prepared in prepared_calls
+            ]
+        else:
+            submission_failed = False
+            for index, prepared in enumerate(prepared_calls):
+                if submission_failed:
+                    results[index] = failed_unstarted_multicomponent_worker_result(
+                        prepared,
+                        failure_kind="failed_submission",
+                    )
+                    continue
+                try:
+                    futures[index] = executor.submit(
+                        execute_with_diagnostics,
+                        prepared,
+                    )
+                except Exception:
+                    submission_failed = True
+                    results[index] = failed_unstarted_multicomponent_worker_result(
+                        prepared,
+                        failure_kind="failed_submission",
+                    )
+            try:
+                for index, future in futures.items():
+                    try:
+                        results[index] = future.result()
+                    except Exception:
+                        results[index] = failed_unstarted_multicomponent_worker_result(
+                            prepared_calls[index],
+                            failure_kind="model_transport_failure",
+                            transport_submitted=True,
+                            transport_started=True,
+                            transport_completed=True,
+                        )
+            finally:
+                executor.shutdown(wait=True, cancel_futures=False)
+
+    if any(result is None for result in results):
+        raise OrdinaryMulticomponentRuntimeError(
+            "committed batch did not produce one safe outcome per child"
+        )
+    artifacts: list[dict[str, Any] | None] = []
+    for action, result in zip(actions, results, strict=True):
+        assert result is not None
+        try:
+            artifact = reduce_multicomponent_worker_result(
+                run_kernel=run_kernel,
+                action=action,
+                result=result,
+                observed_batch_max_in_flight=maximum_in_flight,
+            )
+        except Exception:
+            if action.action_id not in run_kernel.state.reduced_action_ids:
+                run_kernel.reduce(
+                    Observation.from_action(
+                        action,
+                        observation_type=action.expected_observation_type,
+                        status=RunStageStatus.FAILED,
+                        payload={
+                            "lease_settlement": "failed_spent",
+                            "failure_kind": "artifact_construction_failure",
+                            "transport_submitted": result.transport_submitted,
+                            "transport_started": result.transport_started,
+                            "transport_completed": result.transport_completed,
+                            "observed_batch_max_in_flight": maximum_in_flight,
+                        },
+                    )
+                )
+            artifact = None
+        artifacts.append(artifact)
+    for work, artifact in zip(works, artifacts, strict=True):
+        if artifact is not None:
+            try:
+                _consume_scheduler_selected_artifact(
+                    run_kernel=run_kernel,
+                    work=work,
+                    artifact=artifact,
+                    drive_context=drive_context,
+                )
+            except Exception as exc:
+                if drive_context.get("recovery_graph"):
+                    recovery = dict(
+                        run_kernel.state.projections.get(
+                            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+                            {},
+                        )
+                    )
+                    recovery.update(
+                        {
+                            "status": RECOVERY_STATUS_BLOCKED,
+                            "blocker": (
+                                "selective recomputation authority could not be proven"
+                            ),
+                            "selective_failure_type": type(exc).__name__,
+                            "pending_recovery_disposition": (
+                                RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
+                            ),
+                            "whole_graph_fallback_invoked": False,
+                        }
+                    )
+                    run_kernel.state.projections[
+                        MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
+                    ] = recovery
+                    if not run_kernel.state.projections.get(
+                        "multicomponent_recovery_outcome"
+                    ):
+                        reduce_recovery_outcome(
+                            run_kernel=run_kernel,
+                            disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
+                            observed_provider_identities=tuple(
+                                drive_context.get("observed_provider_identities") or ()
+                            ),
+                            blocker_reason=str(recovery["blocker"]),
+                        )
+                raise
+    current = _safe_mapping(
+        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+    )
+    if str(current.get("status") or "").startswith("blocked_"):
+        raise _ScheduledSemanticWorkBlocked(
+            "required scheduled semantic work did not complete"
+        )
+
+
 def _drive_run_kernel_selected_semantic_work(
     *,
     run_kernel: Any,
@@ -1607,10 +1850,7 @@ def _drive_run_kernel_selected_semantic_work(
 ) -> None:
     """Drive qualifying semantic work exclusively from RunKernel leases."""
 
-    from core.multicomponent_graph_scheduling import (
-        LEASE_DENIED_EXHAUSTED,
-        MULTICOMPONENT_SCHEDULER_STAGE,
-    )
+    from core.multicomponent_graph_scheduling import MULTICOMPONENT_SCHEDULER_STAGE
 
     mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
     drive_context: dict[str, Any] = {
@@ -1647,30 +1887,11 @@ def _drive_run_kernel_selected_semantic_work(
             raise OrdinaryMulticomponentRuntimeError(
                 "active scheduler has no semantic work or deterministic completion"
             )
-        lease = run_kernel.grant_next_multicomponent_work_lease()
-        if lease.get("status") == LEASE_DENIED_EXHAUSTED:
-            raise _ScheduledSemanticWorkBlocked(
-                "required semantic work denied by the compatibility envelope"
-            )
-        work = _safe_mapping(lease.get("work"))
-        if not run_kernel.multicomponent_work_lease_is_current(
-            str(lease.get("lease_id") or "")
-        ):
-            raise OrdinaryMulticomponentRuntimeError(
-                "RunKernel granted non-current semantic work"
-            )
-        packet = _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
         try:
-            artifact = _execute_multicomponent_role_transport(
+            _execute_run_kernel_selected_batch(
                 run_kernel=run_kernel,
-                role=str(work.get("role") or ""),
-                input_packet=packet,
-                logical_evaluation_key=str(
-                    work.get("logical_evaluation_key") or ""
-                ),
-                output_schema_variant=work.get("output_schema_variant"),
-                lease_id=str(lease.get("lease_id") or ""),
-                **role_kwargs,
+                role_kwargs=role_kwargs,
+                drive_context=drive_context,
             )
         except Exception as exc:
             current = _safe_mapping(
@@ -1680,49 +1901,6 @@ def _drive_run_kernel_selected_semantic_work(
                 raise _ScheduledSemanticWorkBlocked(
                     "required scheduled semantic work did not complete"
                 ) from exc
-            raise
-        try:
-            _consume_scheduler_selected_artifact(
-                run_kernel=run_kernel,
-                work=work,
-                artifact=artifact,
-                drive_context=drive_context,
-            )
-        except Exception as exc:
-            if drive_context.get("recovery_graph"):
-                recovery = dict(
-                    run_kernel.state.projections.get(
-                        MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
-                        {},
-                    )
-                )
-                recovery.update(
-                    {
-                        "status": RECOVERY_STATUS_BLOCKED,
-                        "blocker": (
-                            "selective recomputation authority could not be proven"
-                        ),
-                        "selective_failure_type": type(exc).__name__,
-                        "pending_recovery_disposition": (
-                            RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
-                        ),
-                        "whole_graph_fallback_invoked": False,
-                    }
-                )
-                run_kernel.state.projections[
-                    MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
-                ] = recovery
-                if not run_kernel.state.projections.get(
-                    "multicomponent_recovery_outcome"
-                ):
-                    reduce_recovery_outcome(
-                        run_kernel=run_kernel,
-                        disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
-                        observed_provider_identities=tuple(
-                            drive_context.get("observed_provider_identities") or ()
-                        ),
-                        blocker_reason=str(recovery["blocker"]),
-                    )
             raise
 
 

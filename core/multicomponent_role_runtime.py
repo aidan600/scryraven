@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from copy import deepcopy
+from dataclasses import dataclass
 from hashlib import sha256
+from threading import get_ident
 from typing import Any, Callable, Mapping, Sequence
 
 SUPPORTED_QUERY_CLASS = "ordinary-bounded-multicomponent-factual-synthesis-v1"
@@ -134,6 +138,68 @@ _FORBIDDEN_MATERIAL_KEYS = frozenset(
 
 class MulticomponentRoleRuntimeError(ValueError):
     """Raised when an authorized semantic role fails closed."""
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedMulticomponentTransportCall:
+    """Immutable transient worker input; never retained in canonical state."""
+
+    schema_version: str
+    batch_index: int
+    batch_id: str
+    batch_digest: str
+    work_id: str
+    work_digest: str
+    lease_id: str
+    lease_digest: str
+    action_id: str
+    action_sequence: int
+    role: str
+    logical_evaluation_key: str
+    input_packet: Mapping[str, Any]
+    input_packet_digest: str
+    output_schema_variant: str | None
+    provider: str
+    model: str
+    base_url: str
+    api_key: str
+    use_reasoning: bool
+    ask_model: Callable[..., Any]
+    clean_json_response: Callable[[str], str] | None
+    raw_retention: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SafeMulticomponentWorkerResult:
+    """Pure normalized worker outcome with no canonical artifact authority."""
+
+    schema_version: str
+    batch_index: int
+    batch_id: str
+    batch_digest: str
+    work_id: str
+    work_digest: str
+    lease_id: str
+    lease_digest: str
+    action_id: str
+    action_sequence: int
+    role: str
+    logical_evaluation_key: str
+    input_packet_digest: str
+    output_schema_variant: str | None
+    provider: str
+    model: str
+    normalized_semantic_output: Mapping[str, Any] | None
+    failure_kind: str | None
+    transport_submitted: bool
+    transport_started: bool
+    transport_completed: bool
+    worker_thread_id: int | None
+    duration_seconds: float
+    raw_prompt_retained: bool = False
+    raw_model_response_retained: bool = False
+    raw_provider_payload_retained: bool = False
+    exception_text_retained: bool = False
 
 
 def _normalize_key(value: Any) -> str:
@@ -565,6 +631,325 @@ def validate_multicomponent_role_artifact(
     return _json_safe(normalized)
 
 
+def prepare_multicomponent_transport_call(
+    *,
+    action: Any,
+    input_packet: Mapping[str, Any],
+    ask_model: Callable[..., Any],
+    clean_json_response: Callable[[str], str] | None,
+    provider: str,
+    model: str,
+    base_url: str,
+    api_key: str,
+    use_reasoning: bool,
+) -> PreparedMulticomponentTransportCall:
+    """Bind one committed child action to its exact transient transport input."""
+
+    from core.multicomponent_graph_scheduling import (
+        MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
+    )
+
+    inputs = _safe_mapping(getattr(action, "inputs", {}))
+    safe_input = _json_safe(input_packet)
+    if not isinstance(safe_input, Mapping):
+        raise MulticomponentRoleRuntimeError("prepared transport input must be a mapping")
+    input_digest = _digest(safe_input)
+    required = (
+        "batch_id",
+        "batch_digest",
+        "work_id",
+        "work_digest",
+        "lease_id",
+        "lease_digest",
+        "role",
+        "logical_evaluation_key",
+    )
+    if (
+        any(not inputs.get(key) for key in required)
+        or inputs.get("input_packet_digest") != input_digest
+        or int(inputs.get("batch_index") if inputs.get("batch_index") is not None else -1)
+        < 0
+    ):
+        raise MulticomponentRoleRuntimeError(
+            "prepared transport does not match committed child action"
+        )
+    return PreparedMulticomponentTransportCall(
+        schema_version=MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
+        batch_index=int(inputs["batch_index"]),
+        batch_id=str(inputs["batch_id"]),
+        batch_digest=str(inputs["batch_digest"]),
+        work_id=str(inputs["work_id"]),
+        work_digest=str(inputs["work_digest"]),
+        lease_id=str(inputs["lease_id"]),
+        lease_digest=str(inputs["lease_digest"]),
+        action_id=str(action.action_id),
+        action_sequence=int(action.sequence),
+        role=str(inputs["role"]),
+        logical_evaluation_key=str(inputs["logical_evaluation_key"]),
+        input_packet=deepcopy(dict(safe_input)),
+        input_packet_digest=input_digest,
+        output_schema_variant=_clean_text(inputs.get("output_schema_variant"), limit=80),
+        provider=str(provider or ""),
+        model=str(model or ""),
+        base_url=str(base_url or ""),
+        api_key=str(api_key or ""),
+        use_reasoning=bool(use_reasoning),
+        ask_model=ask_model,
+        clean_json_response=clean_json_response,
+    )
+
+
+def execute_prepared_multicomponent_transport(
+    prepared: PreparedMulticomponentTransportCall,
+) -> SafeMulticomponentWorkerResult:
+    """Execute transport plus pure parsing/normalization with bounded failures."""
+
+    from core.multicomponent_graph_scheduling import (
+        MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
+    )
+
+    started_at = time.perf_counter()
+    thread_id = get_ident()
+    try:
+        system_prompt = (
+            SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
+            if prepared.output_schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+            else ROLE_SYSTEM_PROMPTS[prepared.role]
+        )
+        raw = prepared.ask_model(
+            json.dumps(prepared.input_packet, sort_keys=True),
+            system_prompt,
+            provider=prepared.provider,
+            model=prepared.model,
+            effort="high",
+            base_url=prepared.base_url,
+            api_key=prepared.api_key,
+            require_json=True,
+            use_reasoning=prepared.use_reasoning,
+        )
+        normalized = _normalize_semantic_output(
+            prepared.role,
+            _parse_role_output(
+                raw,
+                clean_json_response=prepared.clean_json_response,
+            ),
+            output_schema_variant=prepared.output_schema_variant,
+        )
+        failure_kind = None
+    except Exception as exc:
+        normalized = None
+        failure_kind = (
+            "output_validation_failure"
+            if isinstance(exc, (MulticomponentRoleRuntimeError, json.JSONDecodeError))
+            else "model_transport_failure"
+        )
+    return SafeMulticomponentWorkerResult(
+        schema_version=MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
+        batch_index=prepared.batch_index,
+        batch_id=prepared.batch_id,
+        batch_digest=prepared.batch_digest,
+        work_id=prepared.work_id,
+        work_digest=prepared.work_digest,
+        lease_id=prepared.lease_id,
+        lease_digest=prepared.lease_digest,
+        action_id=prepared.action_id,
+        action_sequence=prepared.action_sequence,
+        role=prepared.role,
+        logical_evaluation_key=prepared.logical_evaluation_key,
+        input_packet_digest=prepared.input_packet_digest,
+        output_schema_variant=prepared.output_schema_variant,
+        provider=prepared.provider,
+        model=prepared.model,
+        normalized_semantic_output=normalized,
+        failure_kind=failure_kind,
+        transport_submitted=True,
+        transport_started=True,
+        transport_completed=True,
+        worker_thread_id=thread_id,
+        duration_seconds=max(0.0, time.perf_counter() - started_at),
+    )
+
+
+def failed_unstarted_multicomponent_worker_result(
+    prepared: PreparedMulticomponentTransportCall,
+    *,
+    failure_kind: str,
+    transport_submitted: bool = False,
+    transport_started: bool = False,
+    transport_completed: bool = False,
+) -> SafeMulticomponentWorkerResult:
+    """Create a bounded main-thread result for executor/submission failure."""
+
+    from core.multicomponent_graph_scheduling import (
+        MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
+    )
+
+    return SafeMulticomponentWorkerResult(
+        schema_version=MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
+        batch_index=prepared.batch_index,
+        batch_id=prepared.batch_id,
+        batch_digest=prepared.batch_digest,
+        work_id=prepared.work_id,
+        work_digest=prepared.work_digest,
+        lease_id=prepared.lease_id,
+        lease_digest=prepared.lease_digest,
+        action_id=prepared.action_id,
+        action_sequence=prepared.action_sequence,
+        role=prepared.role,
+        logical_evaluation_key=prepared.logical_evaluation_key,
+        input_packet_digest=prepared.input_packet_digest,
+        output_schema_variant=prepared.output_schema_variant,
+        provider=prepared.provider,
+        model=prepared.model,
+        normalized_semantic_output=None,
+        failure_kind=str(failure_kind or "failed_submission")[:100],
+        transport_submitted=transport_submitted,
+        transport_started=transport_started,
+        transport_completed=transport_completed,
+        worker_thread_id=None,
+        duration_seconds=0.0,
+    )
+
+
+def reduce_multicomponent_worker_result(
+    *,
+    run_kernel: Any,
+    action: Any,
+    result: SafeMulticomponentWorkerResult,
+    observed_batch_max_in_flight: int,
+) -> dict[str, Any] | None:
+    """Construct and reduce canonical artifact authority on the main thread."""
+
+    from core.multicomponent_graph_scheduling import (
+        LEASE_FAILED,
+        LEASE_STALE,
+        MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
+    )
+    from core.run_kernel import Observation, RunStageStatus
+
+    inputs = _safe_mapping(getattr(action, "inputs", {}))
+    expected = {
+        "batch_index": inputs.get("batch_index"),
+        "batch_id": inputs.get("batch_id"),
+        "batch_digest": inputs.get("batch_digest"),
+        "work_id": inputs.get("work_id"),
+        "work_digest": inputs.get("work_digest"),
+        "lease_id": inputs.get("lease_id"),
+        "lease_digest": inputs.get("lease_digest"),
+        "action_id": action.action_id,
+        "action_sequence": action.sequence,
+        "role": inputs.get("role"),
+        "logical_evaluation_key": inputs.get("logical_evaluation_key"),
+        "input_packet_digest": inputs.get("input_packet_digest"),
+        "output_schema_variant": inputs.get("output_schema_variant"),
+    }
+    if result.schema_version != MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION or any(
+        getattr(result, key) != value for key, value in expected.items()
+    ):
+        raise MulticomponentRoleRuntimeError(
+            "safe worker result does not match its exact child action"
+        )
+    transport_facts = {
+        "transport_submitted": result.transport_submitted,
+        "transport_started": result.transport_started,
+        "transport_completed": result.transport_completed,
+        "observed_batch_max_in_flight": max(0, int(observed_batch_max_in_flight)),
+    }
+    if result.failure_kind:
+        run_kernel.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.FAILED,
+                payload={
+                    "lease_settlement": LEASE_FAILED,
+                    "failure_kind": result.failure_kind,
+                    **transport_facts,
+                },
+            )
+        )
+        return None
+    if not run_kernel.multicomponent_work_lease_is_current(result.lease_id):
+        run_kernel.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.FAILED,
+                payload={
+                    "lease_settlement": LEASE_STALE,
+                    "failure_kind": "semantic_authority_changed_after_dispatch",
+                    **transport_facts,
+                },
+            )
+        )
+        return None
+    artifact_core = {
+        "schema_version": "multicomponent_semantic_role_artifact_v1",
+        "role": result.role,
+        "artifact_id": f"{result.role}:{action.action_id}",
+        "run_id": action.run_id,
+        "request_id": run_kernel.state.request_id,
+        "input_packet_digest": result.input_packet_digest,
+        "logical_evaluation_key": result.logical_evaluation_key,
+        "logical_evaluations": 1,
+        "physical_calls": 1,
+        "configured_model_route": {
+            "provider": result.provider,
+            "model": result.model,
+            "role": "SmartModel",
+        },
+        "authorized_action_ref": {
+            "action_id": action.action_id,
+            "stage": action.stage,
+            "sequence": action.sequence,
+            "observation_type": action.expected_observation_type.value,
+        },
+        "semantic_output": deepcopy(dict(result.normalized_semantic_output or {})),
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+    }
+    for key in (
+        "batch_id",
+        "batch_digest",
+        "batch_index",
+        "descriptor_digest",
+        "lease_id",
+        "lease_digest",
+        "work_id",
+        "work_digest",
+        "grant_action_ref",
+        "dispatch_action_ref",
+        "accepted_contract_ref",
+        "graph_ref",
+        "target_kind",
+        "component_id",
+        "synthesis_key",
+        "node_ref",
+        "recovery_authorization_ref",
+        "contract_amendment_admission_ref",
+        "contract_amendment_application_ref",
+        "selective_closure_ref",
+        "scheduler_revision_at_grant",
+        "output_schema_variant",
+    ):
+        artifact_core[key] = _json_safe(inputs.get(key))
+    artifact = {**artifact_core, "artifact_digest": _digest(artifact_core)}
+    validate_multicomponent_role_artifact(artifact, expected_role=result.role)
+    run_kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "semantic_role_artifact": artifact,
+                **transport_facts,
+            },
+        )
+    )
+    return validate_multicomponent_role_artifact(artifact, expected_role=result.role)
+
+
 def execute_multicomponent_role_call(
     *,
     run_kernel: Any,
@@ -810,7 +1195,13 @@ __all__ = [
     "SELECTIVE_CROSS_COMPONENT_SCHEMA",
     "SUPPORTED_QUERY_CLASS",
     "MulticomponentRoleRuntimeError",
+    "PreparedMulticomponentTransportCall",
+    "SafeMulticomponentWorkerResult",
     "execute_multicomponent_role_call",
+    "execute_prepared_multicomponent_transport",
+    "failed_unstarted_multicomponent_worker_result",
+    "prepare_multicomponent_transport_call",
+    "reduce_multicomponent_worker_result",
     "reject_model_authority_claims",
     "role_artifact_ref",
     "safe_packet_digest",

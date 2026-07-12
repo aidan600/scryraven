@@ -489,7 +489,7 @@ def _completed_artifact(state: Any, role: str, evaluation_key: str) -> dict[str,
     raw = _mapping(
         state.projections.get(f"multicomponent_role:{role}:{evaluation_key}")
     )
-    if not raw:
+    if raw.get("schema_version") != "multicomponent_semantic_role_artifact_v1":
         return {}
     return validate_multicomponent_role_artifact(raw, expected_role=role)
 
@@ -610,7 +610,10 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if scheduler.get("status") != "active":
+    if scheduler.get("status") != "active" and not (
+        allow_active_lease
+        and scheduler.get("status") == "draining_required_work_failed"
+    ):
         return []
     if not allow_active_lease and any(
         _mapping(lease).get("status") in _ACTIVE_STATUSES
@@ -956,7 +959,9 @@ def derive_ready_batch_work(state: Any) -> list[dict[str, Any]]:
         duplicate = False
         for key in seen:
             value = str(candidate.get(key) or "")
-            if not value or value in seen[key]:
+            if (not value and key != "component_id") or (
+                value and value in seen[key]
+            ):
                 duplicate = True
                 break
         if duplicate:
@@ -965,7 +970,9 @@ def derive_ready_batch_work(state: Any) -> list[dict[str, Any]]:
             )
         selected.append(deepcopy(candidate))
         for key in seen:
-            seen[key].add(str(candidate.get(key)))
+            value = str(candidate.get(key) or "")
+            if value:
+                seen[key].add(value)
     return selected
 
 
@@ -1030,6 +1037,39 @@ def grant_next_batch(
     }
     leases: list[dict[str, Any]] = []
     if exhausted:
+        lease_core = {
+            "schema_version": MULTICOMPONENT_LEASE_V2_SCHEMA_VERSION,
+            "run_id": state.run_id,
+            "request_id": state.request_id,
+            "batch_id": batch_id,
+            "batch_digest": batch_digest,
+            "batch_index": 0,
+            "work": deepcopy(first),
+            "grant_action_ref": deepcopy(dict(action_ref)),
+            "scheduler_revision_at_derivation": first.get("scheduler_revision"),
+            "scheduler_revision_at_grant": next_revision,
+            "reservation_units": 0,
+            "status": LEASE_DENIED_EXHAUSTED,
+            "dispatch_action_ref": {},
+            "role_action_ref": {},
+            "settlement_reason": "compatibility_envelope_exhausted",
+        }
+        lease_digest = _digest(lease_core)
+        denied_lease = {
+            **lease_core,
+            "lease_id": f"multicomponent-lease:{lease_digest[:24]}",
+            "lease_digest": lease_digest,
+        }
+        denied_ref = {
+            "lease_id": denied_lease["lease_id"],
+            "lease_digest": denied_lease["lease_digest"],
+            "batch_index": 0,
+            "work_id": first.get("work_id"),
+            "work_digest": first.get("work_digest"),
+        }
+        batch["ordered_lease_refs"] = [deepcopy(denied_ref)]
+        batch["lease_group"]["ordered_lease_refs"] = [deepcopy(denied_ref)]
+        scheduler["lease_history"].append(denied_lease)
         scheduler["status"] = "blocked_exhausted"
         scheduler["terminal_posture"] = "blocked_exhausted"
         scheduler["exhausted_required_work_ref"] = _work_ref(first)
@@ -1449,6 +1489,9 @@ def settle_role_lease(
     if lease.get("status") != LEASE_EXECUTION_STARTED:
         raise MulticomponentGraphSchedulingError("lease is not awaiting settlement")
     for key in (
+        "batch_id",
+        "batch_digest",
+        "batch_index",
         "lease_digest",
         "work_id",
         "work_digest",
@@ -1456,7 +1499,11 @@ def settle_role_lease(
         "logical_evaluation_key",
         "input_packet_digest",
     ):
-        expected = lease.get(key) if key == "lease_digest" else work.get(key)
+        expected = (
+            lease.get(key)
+            if key in {"batch_id", "batch_digest", "batch_index", "lease_digest"}
+            else work.get(key)
+        )
         if inputs.get(key) != expected:
             raise MulticomponentGraphSchedulingError(
                 "role action settlement binding mismatch"
@@ -1483,14 +1530,104 @@ def settle_role_lease(
             "role": work.get("role"),
         }
     )
+    if (
+        scheduler.get("schema_version") == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+        and inputs.get("batch_id")
+    ):
+        submitted = inputs.get("transport_submitted") is True
+        started = inputs.get("transport_started") is True
+        completed = inputs.get("transport_completed") is True
+        if started and not submitted or completed and not started:
+            raise MulticomponentGraphSchedulingError(
+                "transport accounting facts are not monotonic"
+            )
+        counters = _mapping(scheduler.get("accounting_counters"))
+        counters["transport_submission_count"] = int(
+            counters.get("transport_submission_count") or 0
+        ) + int(submitted)
+        counters["transport_started_count"] = int(
+            counters.get("transport_started_count") or 0
+        ) + int(started)
+        counters["transport_completed_count"] = int(
+            counters.get("transport_completed_count") or 0
+        ) + int(completed)
+        if settlement == LEASE_COMPLETED:
+            outcome_key = "successful_artifact_count"
+        elif settlement == LEASE_STALE:
+            outcome_key = "stale_result_count"
+        elif inputs.get("failure_kind") in {
+            "executor_initialization_failure",
+            "failed_submission",
+        }:
+            outcome_key = "failed_submission_count"
+        else:
+            outcome_key = "failed_transport_count"
+        counters[outcome_key] = int(counters.get(outcome_key) or 0) + 1
+        observed_max = max(0, int(inputs.get("observed_batch_max_in_flight") or 0))
+        counters["maximum_observed_in_flight_transports"] = max(
+            int(counters.get("maximum_observed_in_flight_transports") or 0),
+            observed_max,
+        )
+        counters["physical_overlap_observed"] = (
+            counters.get("maximum_observed_in_flight_transports", 0) > 1
+        )
+        scheduler["accounting_counters"] = counters
+        batch_id = str(inputs.get("batch_id") or "")
+        batch_index = _batch_index(scheduler, batch_id)
+        batch = _mapping(scheduler["batch_history"][batch_index])
+        summary = _mapping(batch.get("safe_accounting_summary"))
+        summary["transport_submission_count"] = int(
+            summary.get("transport_submission_count") or 0
+        ) + int(submitted)
+        summary["transport_started_count"] = int(
+            summary.get("transport_started_count") or 0
+        ) + int(started)
+        summary["transport_completed_count"] = int(
+            summary.get("transport_completed_count") or 0
+        ) + int(completed)
+        summary[outcome_key] = int(summary.get(outcome_key) or 0) + 1
+        batch["safe_accounting_summary"] = summary
+        batch_leases = [
+            _mapping(scheduler["lease_history"][_lease_index(scheduler, str(ref["lease_id"]))])
+            for ref in batch.get("ordered_lease_refs") or ()
+        ]
+        batch_active = [
+            item for item in batch_leases if item.get("status") in _ACTIVE_STATUSES
+        ]
+        if batch_active:
+            batch["status"] = "draining"
+        else:
+            settlements = [str(item.get("status") or "") for item in batch_leases]
+            batch["status"] = "settled"
+            batch["terminal_settlement_summary"] = {
+                "lease_count": len(batch_leases),
+                "ordered_settlements": settlements,
+                "all_leases_terminal": all(
+                    status in _TERMINAL_STATUSES for status in settlements
+                ),
+            }
+        scheduler["batch_history"][batch_index] = batch
     if settlement in {LEASE_FAILED, LEASE_STALE}:
-        scheduler["status"] = "blocked_required_work_failed"
         scheduler["failed_required_work_ref"] = {
             "work_id": work.get("work_id"),
             "work_digest": work.get("work_digest"),
             "role": work.get("role"),
             "settlement": settlement,
         }
+    active_after = [
+        item
+        for item in scheduler["lease_history"]
+        if _mapping(item).get("status") in _ACTIVE_STATUSES
+    ]
+    if scheduler.get("failed_required_work_ref"):
+        scheduler["status"] = (
+            "draining_required_work_failed"
+            if active_after
+            else "blocked_required_work_failed"
+        )
+        scheduler["terminal_posture"] = (
+            None if active_after else "blocked_required_work_failed"
+        )
     return _refresh_scheduler(scheduler)
 
 
@@ -1519,6 +1656,9 @@ def validate_role_lease_settlement(
             "role settlement requires the exact active spent lease"
         )
     for key in (
+        "batch_id",
+        "batch_digest",
+        "batch_index",
         "lease_digest",
         "work_id",
         "work_digest",
@@ -1526,7 +1666,11 @@ def validate_role_lease_settlement(
         "logical_evaluation_key",
         "input_packet_digest",
     ):
-        expected = lease.get(key) if key == "lease_digest" else work.get(key)
+        expected = (
+            lease.get(key)
+            if key in {"batch_id", "batch_digest", "batch_index", "lease_digest"}
+            else work.get(key)
+        )
         if inputs.get(key) != expected:
             raise MulticomponentGraphSchedulingError(
                 "role action and active lease settlement binding disagree"
@@ -1553,6 +1697,10 @@ def validate_role_lease_settlement(
         "request_id",
         "input_packet_digest",
         "logical_evaluation_key",
+        "batch_id",
+        "batch_digest",
+        "batch_index",
+        "descriptor_digest",
         "lease_id",
         "lease_digest",
         "work_id",
@@ -1696,41 +1844,118 @@ def _settle_for_canonical_authority_transition(
         for index, item in enumerate(scheduler.get("lease_history") or ())
         if _mapping(item).get("status") in _ACTIVE_STATUSES
     ]
-    affected = False
-    if active:
-        index, lease = active[0]
-        work = _mapping(lease.get("work"))
-        affected = not work_is_current(state, work)
-    if active and affected:
+    affected = [
+        (index, lease)
+        for index, lease in active
+        if not work_is_current(state, _mapping(lease.get("work")))
+    ]
+    granted_affected = [item for item in affected if item[1].get("status") == LEASE_GRANTED]
+    if granted_affected and scheduler.get("schema_version") == (
+        MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+    ) and all(lease.get("batch_id") for _, lease in active):
+        batch_ids = {str(lease.get("batch_id") or "") for _, lease in active}
+        if len(batch_ids) != 1 or any(
+            lease.get("status") != LEASE_GRANTED for _, lease in active
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "predispatch authority change cannot partially cancel a V2 batch"
+            )
         scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
-        if lease.get("status") == LEASE_GRANTED:
+        for index, lease in active:
             lease["status"] = LEASE_CANCELLED
-            envelope = _mapping(scheduler.get("compatibility_envelope"))
-            envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
-            envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
-            scheduler["compatibility_envelope"] = envelope
-            settlement = LEASE_CANCELLED
-        else:
-            lease["status"] = LEASE_STALE
-            settlement = LEASE_STALE
-        lease["settlement_reason"] = transition
-        scheduler["lease_history"][index] = lease
+            lease["settlement_reason"] = transition
+            scheduler["lease_history"][index] = lease
+        envelope = _mapping(scheduler.get("compatibility_envelope"))
+        envelope["remaining_units"] = int(envelope["remaining_units"]) + len(active)
+        envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(active)
+        scheduler["compatibility_envelope"] = envelope
+        batch_id = next(iter(batch_ids))
+        batch_index = _batch_index(scheduler, batch_id)
+        batch = _mapping(scheduler["batch_history"][batch_index])
+        batch["status"] = LEASE_CANCELLED
+        batch["terminal_settlement_summary"] = {
+            "settlement": LEASE_CANCELLED,
+            "lease_count": len(active),
+            "authority_change_settlement": True,
+        }
+        scheduler["batch_history"][batch_index] = batch
         scheduler["transition_history"].append(
             {
-                "transition": settlement,
+                "transition": LEASE_CANCELLED,
                 "scheduler_revision": scheduler["scheduler_revision"],
-                "lease_id": lease.get("lease_id"),
-                "work_id": work.get("work_id"),
+                "batch_id": batch_id,
+                "ordered_lease_ids": [lease.get("lease_id") for _, lease in active],
                 "authority_change_settlement": True,
             }
         )
+    else:
+        for index, lease in affected:
+            scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+            work = _mapping(lease.get("work"))
+            if lease.get("status") == LEASE_GRANTED:
+                lease["status"] = LEASE_CANCELLED
+                envelope = _mapping(scheduler.get("compatibility_envelope"))
+                envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
+                envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
+                scheduler["compatibility_envelope"] = envelope
+                settlement = LEASE_CANCELLED
+            else:
+                lease["status"] = LEASE_STALE
+                settlement = LEASE_STALE
+                if scheduler.get("schema_version") == (
+                    MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+                ):
+                    counters = _mapping(scheduler.get("accounting_counters"))
+                    counters["stale_result_count"] = int(
+                        counters.get("stale_result_count") or 0
+                    ) + 1
+                    scheduler["accounting_counters"] = counters
+            lease["settlement_reason"] = transition
+            scheduler["lease_history"][index] = lease
+            scheduler["transition_history"].append(
+                {
+                    "transition": settlement,
+                    "scheduler_revision": scheduler["scheduler_revision"],
+                    "lease_id": lease.get("lease_id"),
+                    "work_id": work.get("work_id"),
+                    "authority_change_settlement": True,
+                }
+            )
+        if affected and scheduler.get("schema_version") == (
+            MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+        ):
+            affected_batch_ids = {
+                str(lease.get("batch_id") or "")
+                for _, lease in affected
+                if lease.get("batch_id")
+            }
+            for batch_id in affected_batch_ids:
+                batch_index = _batch_index(scheduler, batch_id)
+                batch = _mapping(scheduler["batch_history"][batch_index])
+                batch_leases = [
+                    _mapping(
+                        scheduler["lease_history"][
+                            _lease_index(scheduler, str(_mapping(ref).get("lease_id") or ""))
+                        ]
+                    )
+                    for ref in batch.get("ordered_lease_refs") or ()
+                ]
+                if all(item.get("status") in _TERMINAL_STATUSES for item in batch_leases):
+                    batch["status"] = "settled"
+                    batch["terminal_settlement_summary"] = {
+                        "lease_count": len(batch_leases),
+                        "ordered_settlements": [item.get("status") for item in batch_leases],
+                        "all_leases_terminal": True,
+                    }
+                scheduler["batch_history"][batch_index] = batch
     scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
     scheduler["transition_history"].append(
         {
             "transition": transition,
             "scheduler_revision": scheduler["scheduler_revision"],
             "authority_ref": _canonical_authority_ref(state, transition),
-            "affected_active_lease": affected,
+            "affected_active_lease": bool(affected),
+            "affected_active_lease_count": len(affected),
         }
     )
     scheduler["last_ready_work"] = []
