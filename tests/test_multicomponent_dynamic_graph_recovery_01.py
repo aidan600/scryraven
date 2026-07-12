@@ -2015,8 +2015,10 @@ def test_adapter_projection_or_missing_canonical_cannot_authorize_partial_output
         mutate=remove_canonical,
         suffix=posture,
     )
-    assert outcome is None
-    assert isinstance(error, orchestrator.PipelineError)
+    assert error is None
+    assert outcome is not None
+    assert outcome.failure_card["blocked_fap"] is True
+    assert outcome.failure_card["author_called"] is False
     assert captured["sufficiency_projection"]["final_answer_allowed"] is False
 
 
@@ -2087,8 +2089,10 @@ def test_stale_or_cross_bound_canonical_outcome_cannot_authorize_partial_output(
         mutate=forge_canonical,
         suffix=case,
     )
-    assert outcome is None
-    assert isinstance(error, orchestrator.PipelineError)
+    assert error is None
+    assert outcome is not None
+    assert outcome.failure_card["blocked_fap"] is True
+    assert outcome.failure_card["author_called"] is False
     assert captured["sufficiency_projection"]["final_answer_allowed"] is False
 
 

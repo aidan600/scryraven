@@ -579,6 +579,7 @@ def execute_multicomponent_role_call(
     use_reasoning: bool,
     logical_evaluation_key: str,
     output_schema_variant: str | None = None,
+    lease_id: str | None = None,
 ) -> dict[str, Any]:
     """Authorize, execute, parse, bind, and reduce one semantic role call."""
 
@@ -597,32 +598,80 @@ def execute_multicomponent_role_call(
     if not isinstance(safe_input, Mapping):
         raise MulticomponentRoleRuntimeError("semantic role input must be a mapping")
     input_digest = _digest(safe_input)
-    action = run_kernel.authorize_multicomponent_role_call(
-        role=normalized_role,
-        input_packet_digest=input_digest,
-        logical_evaluation_key=logical_evaluation_key,
+    from core.multicomponent_graph_scheduling import (
+        LEASE_FAILED,
+        LEASE_STALE,
+        MULTICOMPONENT_SCHEDULER_STAGE,
     )
+
+    scheduler_active = bool(
+        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+    )
+    if scheduler_active:
+        if not lease_id:
+            raise MulticomponentRoleRuntimeError(
+                "scheduler-active semantic transport requires an exact lease"
+            )
+        action = run_kernel.prepare_multicomponent_role_dispatch(
+            lease_id=lease_id,
+            role=normalized_role,
+            input_packet_digest=input_digest,
+            logical_evaluation_key=logical_evaluation_key,
+            output_schema_variant=schema_variant,
+        )
+    else:
+        if lease_id:
+            raise MulticomponentRoleRuntimeError(
+                "caller-authored lease is forbidden without scheduler authority"
+            )
+        action = run_kernel.authorize_multicomponent_role_call(
+            role=normalized_role,
+            input_packet_digest=input_digest,
+            logical_evaluation_key=logical_evaluation_key,
+        )
     system_prompt = (
         SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
         if schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
         else ROLE_SYSTEM_PROMPTS[normalized_role]
     )
-    raw = ask_model(
-        json.dumps(safe_input, sort_keys=True),
-        system_prompt,
-        provider=provider,
-        model=model,
-        effort="high",
-        base_url=base_url,
-        api_key=api_key,
-        require_json=True,
-        use_reasoning=use_reasoning,
-    )
-    semantic_output = _normalize_semantic_output(
-        normalized_role,
-        _parse_role_output(raw, clean_json_response=clean_json_response),
-        output_schema_variant=schema_variant,
-    )
+    from core.run_kernel import Observation, RunStageStatus
+
+    try:
+        raw = ask_model(
+            json.dumps(safe_input, sort_keys=True),
+            system_prompt,
+            provider=provider,
+            model=model,
+            effort="high",
+            base_url=base_url,
+            api_key=api_key,
+            require_json=True,
+            use_reasoning=use_reasoning,
+        )
+        semantic_output = _normalize_semantic_output(
+            normalized_role,
+            _parse_role_output(raw, clean_json_response=clean_json_response),
+            output_schema_variant=schema_variant,
+        )
+    except Exception as exc:
+        if scheduler_active:
+            failure_kind = (
+                "model_transport_failure"
+                if not isinstance(exc, MulticomponentRoleRuntimeError)
+                else "invalid_role_output"
+            )
+            run_kernel.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.FAILED,
+                    payload={
+                        "lease_settlement": LEASE_FAILED,
+                        "failure_kind": failure_kind,
+                    },
+                )
+            )
+        raise
     artifact_core = {
         "schema_version": "multicomponent_semantic_role_artifact_v1",
         "role": normalized_role,
@@ -649,12 +698,68 @@ def execute_multicomponent_role_call(
         "raw_model_response_retained": False,
         "raw_provider_payload_retained": False,
     }
+    if scheduler_active:
+        for key in (
+            "lease_id",
+            "lease_digest",
+            "work_id",
+            "work_digest",
+            "grant_action_ref",
+            "dispatch_action_ref",
+            "accepted_contract_ref",
+            "graph_ref",
+            "target_kind",
+            "component_id",
+            "synthesis_key",
+            "node_ref",
+            "recovery_authorization_ref",
+            "contract_amendment_admission_ref",
+            "contract_amendment_application_ref",
+            "selective_closure_ref",
+            "scheduler_revision_at_grant",
+            "output_schema_variant",
+        ):
+            artifact_core[key] = _json_safe(action.inputs.get(key))
     if schema_variant:
         artifact_core["output_schema_variant"] = schema_variant
     artifact = {**artifact_core, "artifact_digest": _digest(artifact_core)}
 
-    from core.run_kernel import Observation, RunStageStatus
-
+    try:
+        validate_multicomponent_role_artifact(
+            artifact,
+            expected_role=normalized_role,
+        )
+    except Exception:
+        if scheduler_active:
+            run_kernel.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.FAILED,
+                    payload={
+                        "lease_settlement": LEASE_FAILED,
+                        "failure_kind": "artifact_validation_failure",
+                    },
+                )
+            )
+        raise
+    if scheduler_active and not run_kernel.multicomponent_work_lease_is_current(
+        str(lease_id)
+    ):
+        run_kernel.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.FAILED,
+                payload={
+                    "lease_settlement": LEASE_STALE,
+                    "failure_kind": "semantic_authority_changed_after_dispatch",
+                },
+            )
+        )
+        raise MulticomponentRoleRuntimeError(
+            "semantic role result rejected because its lease authority is stale"
+        )
     observation = Observation.from_action(
         action,
         observation_type=action.expected_observation_type,

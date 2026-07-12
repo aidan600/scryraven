@@ -333,6 +333,7 @@ class RunSufficiencyJudgmentInput:
     multicomponent_recovery_authorization_state: Mapping[str, Any] = field(
         default_factory=dict
     )
+    multicomponent_scheduler_state: Mapping[str, Any] = field(default_factory=dict)
     run_identity: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
@@ -412,12 +413,30 @@ class RunSufficiencyJudgmentInput:
             "multicomponent_recovery_authorization_ref": (
                 self._multicomponent_recovery_authorization_model_ref()
             ),
+            "multicomponent_scheduler_ref": self._multicomponent_scheduler_model_ref(),
             "run_ref": {
                 "run_id": clean_token(_safe_mapping(self.run_identity).get("run_id")),
                 "request_id": clean_token(
                     _safe_mapping(self.run_identity).get("request_id")
                 ),
             },
+        }
+
+    def _multicomponent_scheduler_model_ref(self) -> dict[str, Any]:
+        scheduler = _safe_mapping(self.multicomponent_scheduler_state)
+        envelope = _safe_mapping(scheduler.get("compatibility_envelope"))
+        exhausted = _safe_mapping(scheduler.get("exhausted_required_work_ref"))
+        failed = _safe_mapping(scheduler.get("failed_required_work_ref"))
+        return {
+            "schema_version": clean_token(scheduler.get("schema_version")),
+            "owner": clean_token(scheduler.get("owner")),
+            "canonical_state": scheduler.get("canonical_state") is True,
+            "status": clean_token(scheduler.get("status")),
+            "runtime_parallelism": scheduler.get("runtime_parallelism") is True,
+            "remaining_units": envelope.get("remaining_units"),
+            "spent_units": envelope.get("spent_units"),
+            "exhausted_required_work_ref": exhausted,
+            "failed_required_work_ref": failed,
         }
 
     def _multicomponent_recovery_model_ref(self) -> dict[str, Any]:

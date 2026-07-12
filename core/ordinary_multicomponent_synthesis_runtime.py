@@ -56,7 +56,10 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
-    execute_multicomponent_role_call,
+    safe_packet_digest,
+)
+from core.multicomponent_role_runtime import (
+    execute_multicomponent_role_call as _execute_multicomponent_role_transport,
 )
 from core.ordinary_semantic_producer_runtime import (
     OrdinarySemanticProducerHandoffResult,
@@ -96,8 +99,80 @@ class OrdinaryMulticomponentRuntimeError(RuntimeError):
     """Raised when a selected typed lane cannot complete without fallback."""
 
 
+class _ScheduledSemanticWorkBlocked(RuntimeError):
+    """Internal control transfer from canonical scheduler blockage to FAP."""
+
+
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def execute_multicomponent_role_call(
+    *,
+    run_kernel: Any,
+    role: str,
+    input_packet: Mapping[str, Any],
+    logical_evaluation_key: str,
+    output_schema_variant: str | None = None,
+    **runtime_kwargs: Any,
+) -> dict[str, Any]:
+    """Consume only the first exact RunKernel-ready work item and its lease."""
+
+    from core.multicomponent_graph_scheduling import (
+        LEASE_DENIED_EXHAUSTED,
+        MULTICOMPONENT_SCHEDULER_STAGE,
+    )
+
+    if not run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+        # Historical/component tests without a qualifying product scheduler keep
+        # their established direct RunKernel role authorization contract.
+        return _execute_multicomponent_role_transport(
+            run_kernel=run_kernel,
+            role=role,
+            input_packet=input_packet,
+            logical_evaluation_key=logical_evaluation_key,
+            output_schema_variant=output_schema_variant,
+            **runtime_kwargs,
+        )
+    lease = run_kernel.grant_next_multicomponent_work_lease()
+    work = _safe_mapping(lease.get("work"))
+    if lease.get("status") == LEASE_DENIED_EXHAUSTED:
+        raise _ScheduledSemanticWorkBlocked(
+            "required semantic work denied by the compatibility envelope"
+        )
+    if (
+        work.get("role") != role
+        or work.get("logical_evaluation_key") != logical_evaluation_key
+        or work.get("input_packet_digest") != safe_packet_digest(input_packet)
+        or work.get("output_schema_variant") != output_schema_variant
+    ):
+        run_kernel.cancel_multicomponent_work_lease(
+            lease_id=str(lease.get("lease_id") or ""),
+            reason="deterministic_consumer_did_not_match_scheduler_ready_work",
+        )
+        raise OrdinaryMulticomponentRuntimeError(
+            "ordinary deterministic transition requested work other than the "
+            "RunKernel-selected first ready item"
+        )
+    try:
+        return _execute_multicomponent_role_transport(
+            run_kernel=run_kernel,
+            role=role,
+            input_packet=input_packet,
+            logical_evaluation_key=logical_evaluation_key,
+            output_schema_variant=output_schema_variant,
+            lease_id=str(lease["lease_id"]),
+            **runtime_kwargs,
+        )
+    except Exception as exc:
+        scheduler = _safe_mapping(
+            run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        if str(scheduler.get("status") or "").startswith("blocked_"):
+            raise _ScheduledSemanticWorkBlocked(
+                "required scheduled semantic work did not complete"
+            ) from exc
+        raise
 
 
 def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
@@ -706,6 +781,32 @@ def _attempt_dynamic_recovery(
         component_ref=component_ref,
         evidence_input=_evidence_input(acquisition.bindable),
     )
+    authorization = run_kernel.state.projections[authorization_action.stage]
+    application = run_kernel.state.contract_amendment_application_projection
+    application_ref = {
+        "application_digest": application.get("application_digest"),
+        "authorized_action_id": application.get("authorized_action_id"),
+        "amendment_record_id": application.get("amendment_record_id"),
+    }
+    amendment_admission = run_kernel.state.contract_amendment_admission_projection
+    amendment_admission_ref = {
+        "amendment_record_id": amendment_admission.get("amendment_record_id"),
+        "amendment_record_digest": amendment_admission.get(
+            "amendment_record_digest"
+        ),
+        "authorized_action_id": amendment_admission.get("authorized_action_id"),
+        "admission_digest": amendment_admission.get("admission_digest"),
+    }
+    run_kernel.register_multicomponent_recovery_scheduler_context(
+        component_id=component_id,
+        analyst_input_packet=analyst_input,
+        recovery_authorization_ref={
+            "authorization_id": authorization.get("authorization_id"),
+            "authorization_digest": authorization.get("authorization_digest"),
+        },
+        contract_amendment_admission_ref=amendment_admission_ref,
+        contract_amendment_application_ref=application_ref,
+    )
     analyst_artifact = execute_multicomponent_role_call(
         run_kernel=run_kernel,
         role=ROLE_COMPONENT_ANALYST,
@@ -771,22 +872,6 @@ def _attempt_dynamic_recovery(
         accepted_component_ref=component_ref,
         component_admission_ref=component_admission_ref,
     )
-    authorization = run_kernel.state.projections[authorization_action.stage]
-    application = run_kernel.state.contract_amendment_application_projection
-    application_ref = {
-        "application_digest": application.get("application_digest"),
-        "authorized_action_id": application.get("authorized_action_id"),
-        "amendment_record_id": application.get("amendment_record_id"),
-    }
-    amendment_admission = run_kernel.state.contract_amendment_admission_projection
-    amendment_admission_ref = {
-        "amendment_record_id": amendment_admission.get("amendment_record_id"),
-        "amendment_record_digest": amendment_admission.get(
-            "amendment_record_digest"
-        ),
-        "authorized_action_id": amendment_admission.get("authorized_action_id"),
-        "admission_digest": amendment_admission.get("admission_digest"),
-    }
     current_contract_ref = _accepted_contract_ref(
         run_kernel.state.current_answer_contract
     )
@@ -854,6 +939,11 @@ def _attempt_dynamic_recovery(
                 ),
                 blocker_reason=str(recovery_projection["blocker"]),
             )
+        if not isinstance(exc, _ScheduledSemanticWorkBlocked):
+            # A deterministic graph/authority defect is not an ordinary
+            # scheduler blockage and must retain the installed fail-closed
+            # invariant behavior.
+            raise
         return amended
     if final_graph.get("graph_status") not in {"ready", "ready_with_caveats"}:
         recovery_projection = dict(
@@ -887,6 +977,7 @@ def _attempt_dynamic_recovery(
                 acquisition.observed_provider_identities
             ),
         )
+    run_kernel.complete_multicomponent_graph_scheduler()
     return final_graph
 
 
@@ -915,6 +1006,724 @@ def _reduce_pending_recovery_outcome(run_kernel: Any) -> None:
         ),
         blocker_reason=_clean_text(trace.get("blocker"), limit=300),
     )
+
+
+def _scheduler_work_input_packet(
+    *, run_kernel: Any, work: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Reconstruct the exact canonical packet named by scheduler-selected work."""
+
+    from core.component_work_graph_v1 import (
+        COMPONENT_WORK_GRAPH_V1_STAGE,
+        MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
+        validate_component_work_graph_v1,
+        validate_selective_recomputation_closure,
+    )
+    from core.multicomponent_component_admission import (
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+    )
+
+    role = str(work.get("role") or "")
+    component_id = _clean_text(work.get("component_id"), limit=180)
+    synthesis_key = _clean_text(work.get("synthesis_key"), limit=180)
+    context = _safe_mapping(run_kernel.state.multicomponent_scheduler_context)
+    analyst_inputs = {
+        str(key): _safe_mapping(value)
+        for key, value in _safe_mapping(
+            context.get("component_analyst_input_packets")
+        ).items()
+    }
+    if role == ROLE_COMPONENT_ANALYST and component_id:
+        packet = analyst_inputs.get(component_id, {})
+    elif role == ROLE_COMPONENT_DPRIME and component_id:
+        analyst = _safe_mapping(
+            run_kernel.state.projections.get(
+                f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+            )
+        )
+        analyst_input = analyst_inputs.get(component_id, {})
+        packet = (
+            component_dprime_input_packet(
+                analyst_artifact=analyst,
+                analyst_input_packet=analyst_input,
+            )
+            if analyst and analyst_input
+            else {}
+        )
+    else:
+        graph_raw = _safe_mapping(
+            run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+        )
+        if role == ROLE_CROSS_COMPONENT_ANALYST and not graph_raw:
+            accepted = (
+                run_kernel.state.current_answer_contract
+                or run_kernel.state.initial_answer_contract
+            )
+            component_refs = [
+                _safe_mapping(item)
+                for item in accepted.get("accepted_answer_component_refs") or ()
+            ]
+            admissions_projection = _safe_mapping(
+                run_kernel.state.projections.get(
+                    MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                )
+            )
+            admissions = {
+                str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(
+                    item
+                )
+                for item in admissions_projection.get("component_admission_refs")
+                or ()
+            }
+            if not component_refs or any(
+                str(item.get("component_id") or "") not in admissions
+                for item in component_refs
+            ):
+                packet = {}
+            else:
+                nodes = [
+                    component_work_node_v1_from_admitted_component(
+                        run_id=run_kernel.state.run_id,
+                        request_id=run_kernel.state.request_id,
+                        accepted_component_ref=component_ref,
+                        component_admission_ref=admissions[
+                            str(component_ref["component_id"])
+                        ],
+                    )
+                    for component_ref in component_refs
+                ]
+                packet = cross_component_input_packet(
+                    component_nodes=nodes,
+                    accepted_contract_ref=_accepted_contract_ref(accepted),
+                    requested_synthesis_directive=str(
+                        context.get("requested_synthesis_directive") or ""
+                    ),
+                )
+        elif graph_raw:
+            graph = validate_component_work_graph_v1(graph_raw)
+            if role == ROLE_CROSS_COMPONENT_ANALYST:
+                closure = validate_selective_recomputation_closure(
+                    _safe_mapping(
+                        run_kernel.state.projections.get(
+                            MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
+                        )
+                    )
+                )
+                packet = selective_cross_component_input_packet(
+                    graph,
+                    closure=closure,
+                )
+            elif role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
+                packet = synthesis_dprime_input_packet(
+                    graph,
+                    synthesis_key=synthesis_key,
+                )
+            elif role == ROLE_SCRUTINEER:
+                packet = scrutineer_input_packet(graph)
+            else:
+                packet = {}
+        else:
+            packet = {}
+    if (
+        not packet
+        or safe_packet_digest(packet) != work.get("input_packet_digest")
+    ):
+        raise OrdinaryMulticomponentRuntimeError(
+            "scheduler-selected work packet could not be reconstructed exactly"
+        )
+    return packet
+
+
+def _begin_scheduler_dynamic_recovery(
+    *,
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    graph: Mapping[str, Any],
+    scrutineer_artifact: Mapping[str, Any],
+    drive_context: dict[str, Any],
+) -> bool:
+    """Apply deterministic recovery authority and expose its next scheduler work."""
+
+    output = _safe_mapping(scrutineer_artifact.get("semantic_output"))
+    proposals = [
+        _safe_mapping(item)
+        for item in output.get("missing_component_proposals") or ()
+        if isinstance(item, Mapping)
+    ]
+    if not proposals:
+        return False
+    if len(proposals) != 1:
+        raise OrdinaryMulticomponentRuntimeError(
+            "ordinary dynamic recovery can consume exactly one proposal"
+        )
+    from core.run_kernel import Observation, RunStageStatus
+
+    authorization_action = (
+        run_kernel.authorize_multicomponent_missing_component_recovery(
+            proposal_key=str(proposals[0]["proposal_key"])
+        )
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            authorization_action,
+            observation_type=authorization_action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={},
+        )
+    )
+    authorization = run_kernel.state.projections[authorization_action.stage]
+    if authorization.get("search_authorized") is not True:
+        blocker = "missing component proposal requires user confirmation"
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = {
+            "schema_version": "multicomponent_dynamic_recovery_v1",
+            "owner": "OrdinaryMulticomponent.DynamicRecoveryAdapter",
+            "trace_only": True,
+            "canonical_state": False,
+            "final_answer_authority": False,
+            "run_id": run_kernel.state.run_id,
+            "request_id": run_kernel.state.request_id,
+            "status": RECOVERY_STATUS_BLOCKED,
+            "blocker": blocker,
+            "requires_user_confirmation": True,
+            "ordinary_acquisition_attempt_count": 0,
+            "direct_semantic_producer_used": False,
+            "runtime_parallelism": False,
+            "pending_recovery_disposition": (
+                RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION
+            ),
+        }
+        return False
+    amendment = apply_recovered_component_amendment(run_kernel=run_kernel)
+    acquisition = execute_recovery_acquisition(
+        run_kernel=run_kernel,
+        runtime_scope=runtime_scope,
+        component_ref=amendment.component_ref,
+    )
+    if not acquisition.acquired or acquisition.bindable is None:
+        return False
+    component_ref = amendment.component_ref
+    component_id = str(component_ref["component_id"])
+    analyst_input = component_analyst_input_packet(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        accepted_contract=run_kernel.state.current_answer_contract,
+        component_ref=component_ref,
+        evidence_input=_evidence_input(acquisition.bindable),
+    )
+    application = run_kernel.state.contract_amendment_application_projection
+    application_ref = {
+        "application_digest": application.get("application_digest"),
+        "authorized_action_id": application.get("authorized_action_id"),
+        "amendment_record_id": application.get("amendment_record_id"),
+    }
+    amendment_admission = run_kernel.state.contract_amendment_admission_projection
+    amendment_admission_ref = {
+        "amendment_record_id": amendment_admission.get("amendment_record_id"),
+        "amendment_record_digest": amendment_admission.get(
+            "amendment_record_digest"
+        ),
+        "authorized_action_id": amendment_admission.get("authorized_action_id"),
+        "admission_digest": amendment_admission.get("admission_digest"),
+    }
+    run_kernel.register_multicomponent_recovery_scheduler_context(
+        component_id=component_id,
+        analyst_input_packet=analyst_input,
+        recovery_authorization_ref={
+            "authorization_id": authorization.get("authorization_id"),
+            "authorization_digest": authorization.get("authorization_digest"),
+        },
+        contract_amendment_admission_ref=amendment_admission_ref,
+        contract_amendment_application_ref=application_ref,
+    )
+    drive_context["selected_bindables"][component_id] = acquisition.bindable
+    drive_context["recovery_graph"] = dict(graph)
+    drive_context["recovery_authorization_ref"] = dict(authorization)
+    drive_context["contract_amendment_admission_ref"] = amendment_admission_ref
+    drive_context["contract_amendment_application_ref"] = application_ref
+    drive_context["observed_provider_identities"] = tuple(
+        acquisition.observed_provider_identities
+    )
+    return True
+
+
+def _admit_scheduler_validated_synthesis(run_kernel: Any) -> dict[str, Any]:
+    """Admit deterministic validated leaves after whole-case scrutiny."""
+
+    graph = _safe_mapping(
+        run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+    )
+    scrutiny_allows_admission = (
+        graph.get("scrutineer_required") is not True
+        or graph.get("scrutineer_status") in {"passed", "passed_with_caveats"}
+    )
+    if not scrutiny_allows_admission:
+        return graph
+    for synthesis_key in graph.get("synthesis_topological_order") or ():
+        node = next(
+            item
+            for item in graph.get("synthesis_nodes") or ()
+            if item.get("synthesis_key") == synthesis_key
+        )
+        if node.get("status") == "validated":
+            graph = admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=str(synthesis_key),
+            )
+    return graph
+
+
+def _finalize_scheduler_graph(
+    *, run_kernel: Any, drive_context: Mapping[str, Any]
+) -> None:
+    graph = _admit_scheduler_validated_synthesis(run_kernel)
+    logical, physical = derive_multicomponent_role_call_accounting(
+        run_kernel.state.projections,
+        issued_actions=run_kernel.state.issued_actions,
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="accounting",
+        graph_candidate=graph_with_accounting(
+            graph,
+            logical_accounting=logical,
+            physical_call_accounting=physical,
+        ),
+    )
+    final_graph = reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+    if drive_context.get("recovery_graph"):
+        if final_graph.get("graph_status") in {"ready", "ready_with_caveats"}:
+            disposition = RECOVERY_DISPOSITION_ACQUIRED
+            blocker = None
+        else:
+            disposition = RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
+            blocker = "selective recomputation did not reach ready posture"
+        reduce_recovery_outcome(
+            run_kernel=run_kernel,
+            disposition=disposition,
+            observed_provider_identities=tuple(
+                drive_context.get("observed_provider_identities") or ()
+            ),
+            blocker_reason=blocker,
+        )
+    run_kernel.complete_multicomponent_graph_scheduler()
+    _reduce_pending_recovery_outcome(run_kernel)
+
+
+def _consume_scheduler_selected_artifact(
+    *,
+    run_kernel: Any,
+    work: Mapping[str, Any],
+    artifact: Mapping[str, Any],
+    drive_context: dict[str, Any],
+) -> None:
+    """Route one selected artifact to its installed deterministic owner."""
+
+    from core.component_work_graph_v1 import (
+        MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
+        validate_component_work_graph_v1,
+        validate_selective_recomputation_closure,
+    )
+
+    role = str(work.get("role") or "")
+    component_id = _clean_text(work.get("component_id"), limit=180)
+    synthesis_key = _clean_text(work.get("synthesis_key"), limit=180)
+    evaluation_key = str(work.get("logical_evaluation_key") or "")
+    if role == ROLE_COMPONENT_ANALYST:
+        return
+    if role == ROLE_COMPONENT_DPRIME and component_id:
+        accepted = (
+            run_kernel.state.current_answer_contract
+            or run_kernel.state.initial_answer_contract
+        )
+        component_ref = next(
+            _safe_mapping(item)
+            for item in accepted.get("accepted_answer_component_refs") or ()
+            if _safe_mapping(item).get("component_id") == component_id
+        )
+        analyst_input = _safe_mapping(
+            _safe_mapping(run_kernel.state.multicomponent_scheduler_context)
+            .get("component_analyst_input_packets", {})
+            .get(component_id)
+        )
+        analyst_artifact = _safe_mapping(
+            run_kernel.state.projections.get(
+                f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+            )
+        )
+        bindable = drive_context["selected_bindables"].get(component_id)
+        if bindable is None:
+            raise OrdinaryMulticomponentRuntimeError(
+                "scheduler-selected component lost its evidence binding"
+            )
+        observation, content_refs, coverage = _semantic_material(
+            run_kernel=run_kernel,
+            component_ref=component_ref,
+            bindable=bindable,
+            analyst_artifact=analyst_artifact,
+            dprime_artifact=artifact,
+            query=str(drive_context["query"]),
+        )
+        component_admission_ref = execute_multicomponent_component_admission(
+            run_kernel=run_kernel,
+            component_id=component_id,
+            analyst_artifact=analyst_artifact,
+            dprime_artifact=artifact,
+            analyst_input_packet=analyst_input,
+            semantic_observation=observation,
+            sanitized_content_references=content_refs,
+            component_coverage_record=coverage,
+        )
+        if work.get("recovery_authorization_ref"):
+            if component_admission_ref.get("admission_status") not in {
+                "admitted",
+                "admitted_with_caveats",
+            }:
+                raise _ScheduledSemanticWorkBlocked(
+                    "recovered component did not pass typed admission"
+                )
+            source_graph = validate_component_work_graph_v1(
+                _safe_mapping(drive_context.get("recovery_graph"))
+            )
+            recovered_node = component_work_node_v1_from_admitted_component(
+                run_id=run_kernel.state.run_id,
+                request_id=run_kernel.state.request_id,
+                accepted_component_ref=component_ref,
+                component_admission_ref=component_admission_ref,
+            )
+            current_contract_ref = _accepted_contract_ref(
+                run_kernel.state.current_answer_contract
+            )
+            closure_candidate = derive_selective_recomputation_closure(
+                source_graph,
+                recovery_authorization_ref=drive_context[
+                    "recovery_authorization_ref"
+                ],
+                current_contract_ref=current_contract_ref,
+                contract_amendment_admission_ref=drive_context[
+                    "contract_amendment_admission_ref"
+                ],
+                contract_amendment_application_ref=drive_context[
+                    "contract_amendment_application_ref"
+                ],
+                recovered_component_admission_ref=component_admission_ref,
+            )
+            closure = reduce_selective_recomputation_closure(
+                run_kernel=run_kernel,
+                closure_candidate=closure_candidate,
+            )
+            reduce_selective_invalidation_via_runkernel(
+                run_kernel=run_kernel,
+                graph=source_graph,
+                closure=closure,
+                recovered_component_node=recovered_node,
+                current_contract_ref=current_contract_ref,
+                recovery_authorization_ref=drive_context[
+                    "recovery_authorization_ref"
+                ],
+                contract_amendment_admission_ref=drive_context[
+                    "contract_amendment_admission_ref"
+                ],
+                amendment_application_ref=drive_context[
+                    "contract_amendment_application_ref"
+                ],
+            )
+        return
+    if role == ROLE_CROSS_COMPONENT_ANALYST:
+        graph_raw = _safe_mapping(
+            run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+        )
+        if not graph_raw:
+            from core.multicomponent_component_admission import (
+                MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+            )
+
+            packet = _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
+            accepted = (
+                run_kernel.state.current_answer_contract
+                or run_kernel.state.initial_answer_contract
+            )
+            component_refs = [
+                _safe_mapping(item)
+                for item in accepted.get("accepted_answer_component_refs") or ()
+            ]
+            admissions = {
+                str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(
+                    item
+                )
+                for item in _safe_mapping(
+                    run_kernel.state.projections.get(
+                        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                    )
+                ).get("component_admission_refs")
+                or ()
+            }
+            component_nodes = [
+                component_work_node_v1_from_admitted_component(
+                    run_id=run_kernel.state.run_id,
+                    request_id=run_kernel.state.request_id,
+                    accepted_component_ref=component_ref,
+                    component_admission_ref=admissions[
+                        str(component_ref["component_id"])
+                    ],
+                )
+                for component_ref in component_refs
+            ]
+            candidate = component_work_graph_v1_from_cross_component_artifact(
+                run_id=run_kernel.state.run_id,
+                request_id=run_kernel.state.request_id,
+                accepted_contract_ref=_safe_mapping(
+                    packet.get("accepted_contract_ref")
+                ),
+                requested_synthesis_directive=str(
+                    packet.get("requested_synthesis_directive") or ""
+                ),
+                component_nodes=component_nodes,
+                cross_component_artifact=artifact,
+                additional_scrutineer_trigger_reasons=tuple(
+                    drive_context.get("additional_scrutineer_trigger_reasons")
+                    or ()
+                ),
+            )
+            reduce_component_work_graph_v1(
+                run_kernel=run_kernel,
+                operation="structure",
+                graph_candidate=candidate,
+            )
+        elif work.get("output_schema_variant") == SELECTIVE_CROSS_COMPONENT_SCHEMA:
+            graph = validate_component_work_graph_v1(graph_raw)
+            closure = validate_selective_recomputation_closure(
+                _safe_mapping(
+                    run_kernel.state.projections.get(
+                        MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
+                    )
+                )
+            )
+            candidate = (
+                component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+                    graph,
+                    closure=closure,
+                    cross_component_artifact=artifact,
+                )
+            )
+            reduce_component_work_graph_v1(
+                run_kernel=run_kernel,
+                operation="selective_resynthesis_structure",
+                graph_candidate=candidate,
+                role_evaluation_key=evaluation_key,
+            )
+        else:
+            graph = validate_component_work_graph_v1(graph_raw)
+            candidate = component_work_graph_v1_resynthesis_from_cross_component_artifact(
+                graph,
+                accepted_contract_ref=_accepted_contract_ref(
+                    run_kernel.state.current_answer_contract
+                ),
+                cross_component_artifact=artifact,
+            )
+            reduce_component_work_graph_v1(
+                run_kernel=run_kernel,
+                operation="resynthesis_structure",
+                graph_candidate=candidate,
+                role_evaluation_key=evaluation_key,
+            )
+        return
+    if role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
+        graph = validate_component_work_graph_v1(
+            _safe_mapping(
+                run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+            )
+        )
+        graph = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="synthesis_validation",
+            synthesis_key=synthesis_key,
+            role_evaluation_key=evaluation_key,
+            graph_candidate=graph_with_synthesis_validation(
+                graph,
+                synthesis_key=synthesis_key,
+                dprime_artifact=artifact,
+            ),
+        )
+        node = next(
+            item
+            for item in graph["synthesis_nodes"]
+            if item["synthesis_key"] == synthesis_key
+        )
+        node_is_upstream = any(
+            ref.get("node_id") == node.get("node_id")
+            for candidate in graph["synthesis_nodes"]
+            if candidate.get("synthesis_key") != synthesis_key
+            for ref in candidate.get("input_node_refs") or ()
+        )
+        if node.get("status") == "validated" and node_is_upstream:
+            admit_synthesis_node_via_runkernel(
+                run_kernel=run_kernel,
+                synthesis_key=synthesis_key,
+            )
+        return
+    if role == ROLE_SCRUTINEER:
+        graph = validate_component_work_graph_v1(
+            _safe_mapping(
+                run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+            )
+        )
+        graph = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="scrutiny",
+            role_evaluation_key=evaluation_key,
+            graph_candidate=graph_with_scrutineer(
+                graph,
+                scrutineer_artifact=artifact,
+            ),
+        )
+        if _begin_scheduler_dynamic_recovery(
+            run_kernel=run_kernel,
+            runtime_scope=drive_context["runtime_scope"],
+            graph=graph,
+            scrutineer_artifact=artifact,
+            drive_context=drive_context,
+        ):
+            return
+        _finalize_scheduler_graph(
+            run_kernel=run_kernel,
+            drive_context=drive_context,
+        )
+        return
+    raise OrdinaryMulticomponentRuntimeError(
+        "scheduler selected unsupported semantic work descriptor"
+    )
+
+
+def _drive_run_kernel_selected_semantic_work(
+    *,
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    selected_bindables: Mapping[str, Any],
+    query: str,
+) -> None:
+    """Drive qualifying semantic work exclusively from RunKernel leases."""
+
+    from core.multicomponent_graph_scheduling import (
+        LEASE_DENIED_EXHAUSTED,
+        MULTICOMPONENT_SCHEDULER_STAGE,
+    )
+
+    mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
+    drive_context: dict[str, Any] = {
+        "runtime_scope": runtime_scope,
+        "selected_bindables": dict(selected_bindables),
+        "query": query,
+        "additional_scrutineer_trigger_reasons": (
+            *(("deep_mode",) if mode.casefold() == "deep" else ()),
+            *(("high_stakes_quantitative_posture",) if _safe_mapping(
+                runtime_scope.get("economist_safety_telemetry")
+            ).get("high_stakes_quant_detected") is True else ()),
+        ),
+    }
+    role_kwargs = _role_runtime_kwargs(runtime_scope)
+    while True:
+        scheduler = _safe_mapping(
+            run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        status = str(scheduler.get("status") or "")
+        if status == "completed":
+            return
+        if status.startswith("blocked_"):
+            raise _ScheduledSemanticWorkBlocked(
+                "required scheduled semantic work did not complete"
+            )
+        ready = run_kernel.derive_current_multicomponent_ready_work()
+        if not ready:
+            if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
+                _finalize_scheduler_graph(
+                    run_kernel=run_kernel,
+                    drive_context=drive_context,
+                )
+                continue
+            raise OrdinaryMulticomponentRuntimeError(
+                "active scheduler has no semantic work or deterministic completion"
+            )
+        lease = run_kernel.grant_next_multicomponent_work_lease()
+        if lease.get("status") == LEASE_DENIED_EXHAUSTED:
+            raise _ScheduledSemanticWorkBlocked(
+                "required semantic work denied by the compatibility envelope"
+            )
+        work = _safe_mapping(lease.get("work"))
+        if not run_kernel.multicomponent_work_lease_is_current(
+            str(lease.get("lease_id") or "")
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "RunKernel granted non-current semantic work"
+            )
+        packet = _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
+        try:
+            artifact = _execute_multicomponent_role_transport(
+                run_kernel=run_kernel,
+                role=str(work.get("role") or ""),
+                input_packet=packet,
+                logical_evaluation_key=str(
+                    work.get("logical_evaluation_key") or ""
+                ),
+                output_schema_variant=work.get("output_schema_variant"),
+                lease_id=str(lease.get("lease_id") or ""),
+                **role_kwargs,
+            )
+        except Exception as exc:
+            current = _safe_mapping(
+                run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+            )
+            if str(current.get("status") or "").startswith("blocked_"):
+                raise _ScheduledSemanticWorkBlocked(
+                    "required scheduled semantic work did not complete"
+                ) from exc
+            raise
+        try:
+            _consume_scheduler_selected_artifact(
+                run_kernel=run_kernel,
+                work=work,
+                artifact=artifact,
+                drive_context=drive_context,
+            )
+        except Exception as exc:
+            if drive_context.get("recovery_graph"):
+                recovery = dict(
+                    run_kernel.state.projections.get(
+                        MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE,
+                        {},
+                    )
+                )
+                recovery.update(
+                    {
+                        "status": RECOVERY_STATUS_BLOCKED,
+                        "blocker": (
+                            "selective recomputation authority could not be proven"
+                        ),
+                        "selective_failure_type": type(exc).__name__,
+                        "pending_recovery_disposition": (
+                            RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
+                        ),
+                        "whole_graph_fallback_invoked": False,
+                    }
+                )
+                run_kernel.state.projections[
+                    MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
+                ] = recovery
+                if not run_kernel.state.projections.get(
+                    "multicomponent_recovery_outcome"
+                ):
+                    reduce_recovery_outcome(
+                        run_kernel=run_kernel,
+                        disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
+                        observed_provider_identities=tuple(
+                            drive_context.get("observed_provider_identities") or ()
+                        ),
+                        blocker_reason=str(recovery["blocker"]),
+                    )
+            raise
 
 
 def _execute_selected_lane(
@@ -985,225 +1794,29 @@ def _execute_selected_lane(
             "selected multi-component lane lacks legitimate current evidence custody "
             "for: " + ",".join(missing_component_ids)
         )
-    role_kwargs = _role_runtime_kwargs(runtime_scope)
     query = str(runtime_scope.get("query") or "")
-    component_admission_refs: list[dict[str, Any]] = []
-    for component_ref in component_refs:
-        component_id = str(component_ref["component_id"])
-        bindable = selected.get(component_id)
-        analyst_input = component_analyst_input_packet(
+    analyst_inputs = {
+        str(component_ref["component_id"]): component_analyst_input_packet(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             accepted_contract=accepted,
             component_ref=component_ref,
-            evidence_input=_evidence_input(bindable),
-        )
-        analyst_artifact = execute_multicomponent_role_call(
-            run_kernel=run_kernel,
-            role=ROLE_COMPONENT_ANALYST,
-            input_packet=analyst_input,
-            logical_evaluation_key=component_id,
-            **role_kwargs,
-        )
-        dprime_input = component_dprime_input_packet(
-            analyst_artifact=analyst_artifact,
-            analyst_input_packet=analyst_input,
-        )
-        dprime_artifact = execute_multicomponent_role_call(
-            run_kernel=run_kernel,
-            role=ROLE_COMPONENT_DPRIME,
-            input_packet=dprime_input,
-            logical_evaluation_key=component_id,
-            **role_kwargs,
-        )
-        observation, content_refs, coverage = _semantic_material(
-            run_kernel=run_kernel,
-            component_ref=component_ref,
-            bindable=bindable,
-            analyst_artifact=analyst_artifact,
-            dprime_artifact=dprime_artifact,
-            query=query,
-        )
-        component_admission_refs.append(
-            execute_multicomponent_component_admission(
-                run_kernel=run_kernel,
-                component_id=component_id,
-                analyst_artifact=analyst_artifact,
-                dprime_artifact=dprime_artifact,
-                analyst_input_packet=analyst_input,
-                semantic_observation=observation,
-                sanitized_content_references=content_refs,
-                component_coverage_record=coverage,
-            )
-        )
-
-    admission_by_id = {
-        item["component_id"]: item for item in component_admission_refs
-    }
-    component_nodes = [
-        component_work_node_v1_from_admitted_component(
-            run_id=run_kernel.state.run_id,
-            request_id=run_kernel.state.request_id,
-            accepted_component_ref=component_ref,
-            component_admission_ref=admission_by_id[component_ref["component_id"]],
+            evidence_input=_evidence_input(
+                selected.get(str(component_ref["component_id"]))
+            ),
         )
         for component_ref in component_refs
-    ]
-    contract_ref = _accepted_contract_ref(accepted)
-    cross_input = cross_component_input_packet(
-        component_nodes=component_nodes,
-        accepted_contract_ref=contract_ref,
+    }
+    run_kernel.initialize_multicomponent_graph_scheduler(
+        component_analyst_input_packets=analyst_inputs,
         requested_synthesis_directive=requested_synthesis_directive,
     )
-    cross_artifact = execute_multicomponent_role_call(
+    _drive_run_kernel_selected_semantic_work(
         run_kernel=run_kernel,
-        role=ROLE_CROSS_COMPONENT_ANALYST,
-        input_packet=cross_input,
-        logical_evaluation_key="graph-v1",
-        **role_kwargs,
+        runtime_scope=runtime_scope,
+        selected_bindables=selected,
+        query=query,
     )
-    graph_candidate = component_work_graph_v1_from_cross_component_artifact(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        accepted_contract_ref=contract_ref,
-        requested_synthesis_directive=requested_synthesis_directive,
-        component_nodes=component_nodes,
-        cross_component_artifact=cross_artifact,
-        additional_scrutineer_trigger_reasons=(
-            *(
-                ("deep_mode",)
-                if str(
-                    runtime_scope.get("strategy")
-                    or runtime_scope.get("mode")
-                    or ""
-                ).casefold()
-                == "deep"
-                else ()
-            ),
-            *(
-                ("high_stakes_quantitative_posture",)
-                if _safe_mapping(
-                    runtime_scope.get("economist_safety_telemetry")
-                ).get("high_stakes_quant_detected")
-                is True
-                else ()
-            ),
-        ),
-    )
-    graph = reduce_component_work_graph_v1(
-        run_kernel=run_kernel,
-        operation="structure",
-        graph_candidate=graph_candidate,
-    )
-
-    deferred_admission_keys: list[str] = []
-    for synthesis_key in list(graph["synthesis_topological_order"]):
-        dprime_input = synthesis_dprime_input_packet(
-            graph,
-            synthesis_key=synthesis_key,
-        )
-        dprime_artifact = execute_multicomponent_role_call(
-            run_kernel=run_kernel,
-            role=ROLE_SYNTHESIS_DPRIME,
-            input_packet=dprime_input,
-            logical_evaluation_key=synthesis_key,
-            **role_kwargs,
-        )
-        graph = reduce_component_work_graph_v1(
-            run_kernel=run_kernel,
-            operation="synthesis_validation",
-            synthesis_key=synthesis_key,
-            graph_candidate=graph_with_synthesis_validation(
-                graph,
-                synthesis_key=synthesis_key,
-                dprime_artifact=dprime_artifact,
-            ),
-        )
-        node = next(
-            item
-            for item in graph["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
-        if node.get("status") != "validated":
-            break
-        node_is_upstream = any(
-            ref.get("node_id") == node.get("node_id")
-            for candidate in graph["synthesis_nodes"]
-            if candidate.get("synthesis_key") != synthesis_key
-            for ref in candidate.get("input_node_refs") or ()
-        )
-        if node_is_upstream:
-            graph = admit_synthesis_node_via_runkernel(
-                run_kernel=run_kernel,
-                synthesis_key=synthesis_key,
-            )
-        else:
-            deferred_admission_keys.append(synthesis_key)
-
-    if graph.get("scrutineer_required") is True:
-        scrutineer_artifact = execute_multicomponent_role_call(
-            run_kernel=run_kernel,
-            role=ROLE_SCRUTINEER,
-            input_packet=scrutineer_input_packet(graph),
-            logical_evaluation_key="full-case",
-            **role_kwargs,
-        )
-        graph = reduce_component_work_graph_v1(
-            run_kernel=run_kernel,
-            operation="scrutiny",
-            graph_candidate=graph_with_scrutineer(
-                graph,
-                scrutineer_artifact=scrutineer_artifact,
-            ),
-        )
-        recovered_graph = _attempt_dynamic_recovery(
-            run_kernel=run_kernel,
-            runtime_scope=runtime_scope,
-            graph=graph,
-            scrutineer_artifact=scrutineer_artifact,
-            requested_synthesis_directive=requested_synthesis_directive,
-            role_kwargs=role_kwargs,
-            query=query,
-        )
-        if recovered_graph is not None:
-            return
-
-    for synthesis_key in deferred_admission_keys:
-        node = next(
-            item
-            for item in graph["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
-        scrutiny_allows_admission = (
-            graph.get("scrutineer_required") is not True
-            or graph.get("scrutineer_status")
-            in {"passed", "passed_with_caveats"}
-        )
-        if node.get("status") == "validated" and scrutiny_allows_admission:
-            graph = admit_synthesis_node_via_runkernel(
-                run_kernel=run_kernel,
-                synthesis_key=synthesis_key,
-            )
-
-    logical, physical = derive_multicomponent_role_call_accounting(
-        run_kernel.state.projections,
-        issued_actions=run_kernel.state.issued_actions,
-    )
-    graph = reduce_component_work_graph_v1(
-        run_kernel=run_kernel,
-        operation="accounting",
-        graph_candidate=graph_with_accounting(
-            graph,
-            logical_accounting=logical,
-            physical_call_accounting=physical,
-        ),
-    )
-    reduce_component_work_graph_v1(
-        run_kernel=run_kernel,
-        operation="finalize",
-        graph_candidate=finalize_component_work_graph_v1(graph),
-    )
-    _reduce_pending_recovery_outcome(run_kernel)
 
 
 def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
@@ -1235,6 +1848,13 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         return OrdinaryMulticomponentResult(
             status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
         )
+    scheduler_state = _safe_mapping(
+        run_kernel.state.projections.get("multicomponent_graph_scheduler")
+    )
+    if str(scheduler_state.get("status") or "").startswith("blocked_"):
+        return OrdinaryMulticomponentResult(
+            status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
+        )
     if run_kernel.state.initial_answer_contract:
         accepted = run_kernel.state.initial_answer_contract
         metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
@@ -1248,11 +1868,16 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 limit=360,
             )
             assert requested_synthesis_directive is not None
-            _execute_selected_lane(
-                run_kernel=run_kernel,
-                runtime_scope=runtime_scope,
-                requested_synthesis_directive=requested_synthesis_directive,
-            )
+            try:
+                _execute_selected_lane(
+                    run_kernel=run_kernel,
+                    runtime_scope=runtime_scope,
+                    requested_synthesis_directive=requested_synthesis_directive,
+                )
+            except _ScheduledSemanticWorkBlocked:
+                # Canonical exhaustion/failure is ordinary readiness input.  Do
+                # not escape the selected lane or invoke the direct producer.
+                pass
             return OrdinaryMulticomponentResult(
                 status=OrdinaryMulticomponentStatus.COMPLETED
             )
