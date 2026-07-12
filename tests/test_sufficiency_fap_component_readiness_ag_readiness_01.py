@@ -1,6 +1,5 @@
 import ast
 import json
-import subprocess
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -546,14 +545,32 @@ def test_static_closed_surface_guard_for_component_readiness_phase() -> None:
         assert imported_names.isdisjoint(forbidden_import_roots)
         assert called_names.isdisjoint(forbidden_calls)
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", "core/pipeline_orchestrator.py"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+    orchestrator_source = (ROOT / "core" / "pipeline_orchestrator.py").read_text(
+        encoding="utf-8"
     )
-    assert diff.stdout.strip() == ""
+    assert "if final_answer_packet_handoff.author_input_blocked:" in orchestrator_source
+    assert "build_blocked_fap_terminal_report" in orchestrator_source
+    assert "build_blocked_fap_terminal_trace_fragment" in orchestrator_source
+    assert "execute_author_handoff_from_scope" in orchestrator_source
+    assert (
+        'raise PipelineError("FinalAnswerPacket did not produce Author input")'
+        in orchestrator_source
+    )
+    # Blocked FAP must still skip Author execution; terminal packaging is the
+    # licensed AG-BLOCKED-FAP-SAFE-TERMINAL-OUTCOME-01 exception to the old raise.
+    blocked_branch_index = orchestrator_source.index(
+        "if final_answer_packet_handoff.author_input_blocked:"
+    )
+    author_call_index = orchestrator_source.index(
+        "execute_author_handoff_from_scope(",
+        blocked_branch_index,
+    )
+    else_index = orchestrator_source.index(
+        "else:",
+        blocked_branch_index,
+        author_call_index,
+    )
+    assert else_index < author_call_index
 
 
 def test_docs_use_merge_stable_component_readiness_posture() -> None:

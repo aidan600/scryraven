@@ -87,6 +87,30 @@ Author must not:
 - generate, repair, or validate synthesis, including glue between component
   outputs that upstream roles did not admit.
 
+## Blocked FAP Terminal Outcome
+
+When FinalAnswerPacket readiness is BLOCKED, Author must not run.
+
+`author_input_blocked` preserves the FAP→Author hard stop: no Author payload is
+derived and no Author model call is made. The ordinary product path returns a
+deterministic sanitized non-Author terminal `RunOutcome` instead of raising
+`PipelineError` for that blocked readiness case.
+
+Rules:
+
+- Exported terminal posture is blocked/insufficient whenever FAP is blocked.
+- Safe terminal text may name sanitized readiness reasons, missing obligations,
+  component counts, or evidence posture from `build_safe_blocked_fap_summary`.
+- Safe terminal text must not contain prompts, provider/model payloads, raw
+  evidence, private logs, full traces, chain of thought, or unsupported answer
+  claims.
+- If Sufficiency lineage says `partial_answer_authorized` while FAP is blocked,
+  preserve that lineage only as diagnostics. Do not export it as the final
+  `RunOutcome` posture.
+- Pre-FAP execution-trace facts (recovery, conflict, weak-corpus, source-class)
+  remain available on the returned outcome.
+- Malformed or invariant failures outside blocked FAP readiness still raise.
+
 ## Source Gateway Doctrine
 
 Future answers should make claims inspectable through this chain:
@@ -106,11 +130,8 @@ source-obligation satisfaction path.
 
 ## Current Status
 
-This document is doctrine only.
-
-This phase does not modify FAP or Author behavior, implement source gateway UI,
-redesign FAP, redesign Author, implement query planning, implement model
-routing, run live validation, or change product behavior.
+This document records FAP/Author boundary doctrine, including the blocked-FAP
+safe terminal outcome rule above.
 
 Product correctness remains unclaimed. ScryRaven is not friend-level MVP and is
 not a general supported-query MVP.

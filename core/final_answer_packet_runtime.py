@@ -566,6 +566,99 @@ def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+BLOCKED_FAP_TERMINAL_TRACE_KEY = "blocked_fap_terminal"
+BLOCKED_FAP_TERMINAL_SCHEMA_VERSION = "blocked_fap_terminal_outcome_v1"
+BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE = "blocked"
+
+
+def build_blocked_fap_terminal_report(
+    blocked_fap_summary: Mapping[str, Any] | None,
+) -> str:
+    """Return a deterministic sanitized non-Author terminal message.
+
+    Uses only safe blocked-FAP summary fields. Never includes prompts, provider
+    payloads, raw evidence, private logs, full traces, or unsupported answers.
+    """
+
+    summary = _safe_mapping(blocked_fap_summary)
+    lines = [
+        "ScryRaven could not produce a supported answer.",
+        "FinalAnswerPacket readiness is blocked, so Author was not invoked.",
+    ]
+    posture = _safe_text(summary.get("final_answer_posture"), limit=120)
+    if posture:
+        lines.append(f"Evidence posture: {posture}.")
+    reasons = _safe_text_list(summary.get("readiness_reasons"), limit=160)
+    if reasons:
+        lines.append("Readiness reasons: " + "; ".join(reasons[:12]) + ".")
+    missing = summary.get("missing_source_obligation_count")
+    satisfied = summary.get("satisfied_source_obligation_count")
+    if isinstance(missing, int) or isinstance(satisfied, int):
+        lines.append(
+            "Source obligations: "
+            f"missing={int(missing or 0)}, satisfied={int(satisfied or 0)}."
+        )
+    unknown = summary.get("source_bound_numeric_unknown_count")
+    if isinstance(unknown, int) and unknown > 0:
+        lines.append(f"Source-bound numeric unknowns: {unknown}.")
+    component_summary = _safe_mapping(summary.get("component_blocked_summary"))
+    if component_summary.get("component_summary_available") is True:
+        expected = int(component_summary.get("expected_component_count") or 0)
+        missing_components = int(component_summary.get("missing_component_count") or 0)
+        supported = int(component_summary.get("supported_component_count") or 0)
+        lines.append(
+            "Component readiness: "
+            f"expected={expected}, supported={supported}, missing={missing_components}."
+        )
+        blocker_codes: list[str] = []
+        for component in component_summary.get("components") or ():
+            if not isinstance(component, Mapping):
+                continue
+            blocker_codes.extend(
+                _safe_text_list(component.get("blocker_reason_codes"), limit=120)
+            )
+        unique_blockers = list(dict.fromkeys(blocker_codes))
+        if unique_blockers:
+            lines.append(
+                "Component blockers: " + "; ".join(unique_blockers[:12]) + "."
+            )
+    lines.append("No Author payload was derived and no Author model call was made.")
+    return "\n".join(lines)
+
+
+def build_blocked_fap_terminal_trace_fragment(
+    blocked_fap_summary: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Return execution-trace fragment for a blocked FAP terminal outcome.
+
+    Exported terminal posture is always blocked/insufficient when FAP is blocked.
+    Sufficiency lineage such as partial_answer_authorized is preserved only as
+    diagnostic lineage and must not become the final RunOutcome posture.
+    """
+
+    summary = _safe_mapping(blocked_fap_summary)
+    sufficiency_lineage = _safe_text(summary.get("sufficiency_decision"), limit=120)
+    partial_candidate_not_fap_safe = (
+        sufficiency_lineage == "partial_answer_authorized"
+    )
+    return {
+        BLOCKED_FAP_TERMINAL_TRACE_KEY: {
+            "schema_version": BLOCKED_FAP_TERMINAL_SCHEMA_VERSION,
+            "blocked_fap": True,
+            "author_input_blocked": True,
+            "author_called": False,
+            "author_payload_derived": False,
+            "exported_terminal_posture": BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE,
+            "answer_class": "no_evidence_found",
+            "response_displayable": False,
+            "evidence_sufficient": False,
+            "sufficiency_decision_lineage": sufficiency_lineage or None,
+            "partial_candidate_not_fap_safe": partial_candidate_not_fap_safe,
+            "blocked_fap_summary": dict(summary),
+        }
+    }
+
+
 def build_safe_blocked_fap_summary(
     final_answer_authority_projection: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -1121,6 +1214,11 @@ __all__ = [
     "FinalAnswerPacketPreparationResult",
     "SAFE_BLOCKED_FAP_SUMMARY_SCHEMA_VERSION",
     "COMPONENT_BLOCKED_SUMMARY_SCHEMA_VERSION",
+    "BLOCKED_FAP_TERMINAL_TRACE_KEY",
+    "BLOCKED_FAP_TERMINAL_SCHEMA_VERSION",
+    "BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE",
+    "build_blocked_fap_terminal_report",
+    "build_blocked_fap_terminal_trace_fragment",
     "build_safe_blocked_fap_summary",
     "execute_final_answer_packet_prepare_action",
     "execute_final_answer_packet_prepare_action_from_scope",

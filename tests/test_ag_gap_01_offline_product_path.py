@@ -77,18 +77,20 @@ def test_ag_gap_01_offline_path_records_one_gap_authorized_query_without_executi
         capture_stages=(HANDOFF_SEMANTIC, HANDOFF_PACKET),
     )
 
-    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-06-24",
-                session_id="ag-gap-01-session",
-                run_id="ag-gap-01-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-gap-01-session",
+            run_id="ag-gap-01-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    terminal = (outcome.execution_trace or {}).get("blocked_fap_terminal") or {}
+    assert terminal.get("blocked_fap") is True
+    assert terminal.get("author_called") is False
 
     assert harness.forbidden_live_calls == []
     assert harness.author_prompts == []
