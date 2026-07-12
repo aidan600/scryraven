@@ -800,7 +800,10 @@ def _attempt_dynamic_recovery(
     run_kernel.register_multicomponent_recovery_scheduler_context(
         component_id=component_id,
         analyst_input_packet=analyst_input,
-        recovery_authorization_ref=authorization,
+        recovery_authorization_ref={
+            "authorization_id": authorization.get("authorization_id"),
+            "authorization_digest": authorization.get("authorization_digest"),
+        },
         contract_amendment_admission_ref=amendment_admission_ref,
         contract_amendment_application_ref=application_ref,
     )
@@ -1225,7 +1228,10 @@ def _begin_scheduler_dynamic_recovery(
     run_kernel.register_multicomponent_recovery_scheduler_context(
         component_id=component_id,
         analyst_input_packet=analyst_input,
-        recovery_authorization_ref=authorization,
+        recovery_authorization_ref={
+            "authorization_id": authorization.get("authorization_id"),
+            "authorization_digest": authorization.get("authorization_digest"),
+        },
         contract_amendment_admission_ref=amendment_admission_ref,
         contract_amendment_application_ref=application_ref,
     )

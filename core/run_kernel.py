@@ -3955,20 +3955,76 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "recovery scheduler context is not current contract authority"
             )
+        authorization = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE)
+        )
+        amendment_admission = _safe_mapping(
+            self.state.contract_amendment_admission_projection
+        )
+        amendment_application = _safe_mapping(
+            self.state.contract_amendment_application_projection
+        )
+        expected_recovery_authorization_ref = {
+            "authorization_id": authorization.get("authorization_id"),
+            "authorization_digest": authorization.get("authorization_digest"),
+        }
+        expected_contract_amendment_admission_ref = {
+            "amendment_record_id": amendment_admission.get("amendment_record_id"),
+            "amendment_record_digest": amendment_admission.get(
+                "amendment_record_digest"
+            ),
+            "authorized_action_id": amendment_admission.get("authorized_action_id"),
+            "admission_digest": amendment_admission.get("admission_digest"),
+        }
+        expected_contract_amendment_application_ref = {
+            "amendment_record_id": amendment_application.get("amendment_record_id"),
+            "authorized_action_id": amendment_application.get(
+                "authorized_action_id"
+            ),
+            "application_digest": amendment_application.get("application_digest"),
+        }
+        if (
+            not expected_recovery_authorization_ref["authorization_id"]
+            or not expected_recovery_authorization_ref["authorization_digest"]
+            or not expected_contract_amendment_admission_ref["admission_digest"]
+            or not expected_contract_amendment_application_ref["application_digest"]
+            or _safe_mapping(recovery_authorization_ref)
+            != expected_recovery_authorization_ref
+            or _safe_mapping(contract_amendment_admission_ref)
+            != expected_contract_amendment_admission_ref
+            or _safe_mapping(contract_amendment_application_ref)
+            != expected_contract_amendment_application_ref
+        ):
+            raise RunKernelTransitionError(
+                "recovery scheduler context refs must match canonical "
+                "RunKernel projections"
+            )
         packets = _safe_mapping(context.get("component_analyst_input_packets"))
-        packets[component_id] = deepcopy(packet)
         recoveries = _safe_mapping(context.get("recovery_bindings"))
-        recoveries[component_id] = {
+        proposed_packet = deepcopy(packet)
+        proposed_recovery = {
             "recovery_authorization_ref": deepcopy(
-                dict(recovery_authorization_ref)
+                expected_recovery_authorization_ref
             ),
             "contract_amendment_admission_ref": deepcopy(
-                dict(contract_amendment_admission_ref)
+                expected_contract_amendment_admission_ref
             ),
             "contract_amendment_application_ref": deepcopy(
-                dict(contract_amendment_application_ref)
+                expected_contract_amendment_application_ref
             ),
         }
+        if component_id in recoveries:
+            if (
+                _safe_mapping(packets.get(component_id)) == proposed_packet
+                and _safe_mapping(recoveries.get(component_id)) == proposed_recovery
+            ):
+                return
+            raise RunKernelTransitionError(
+                "recovery scheduler context rejects changed duplicate "
+                "component registration"
+            )
+        packets[component_id] = proposed_packet
+        recoveries[component_id] = proposed_recovery
         context["component_analyst_input_packets"] = packets
         context["recovery_bindings"] = recoveries
         scheduler = self._scheduler_after_canonical_authority_transition(
