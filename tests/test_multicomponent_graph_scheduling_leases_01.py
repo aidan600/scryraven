@@ -21,6 +21,11 @@ import pytest
 
 import core.multicomponent_graph_scheduling as scheduling
 import core.pipeline_orchestrator as orchestrator
+from core.component_work_graph_v1 import (
+    finalize_component_work_graph_v1,
+    reduce_component_work_graph_v1,
+    reduce_selective_recomputation_closure,
+)
 from core.cost_accounting import CostAccumulator
 from core.evidence_ledger import EvidenceCandidate
 from core.multicomponent_component_admission import component_analyst_input_packet
@@ -65,6 +70,9 @@ from tests.helpers.offline_ordinary_pipeline import (
     offline_balanced_run_config,
     scrub_offline_runtime,
 )
+from tests.test_multicomponent_component_work_graph_v1 import (
+    _structured_graph,
+)
 from tests.test_multicomponent_dynamic_graph_recovery_01 import (
     DynamicNorthstarHarness,
     _forbid_direct_semantic_producer,
@@ -72,6 +80,9 @@ from tests.test_multicomponent_dynamic_graph_recovery_01 import (
 from tests.test_multicomponent_ordinary_end_to_end_synthesis_01 import (
     NORTHSTAR_REPORT,
     NorthstarHarness,
+)
+from tests.test_multicomponent_selective_recomputation_01 import (
+    _closure_fixture,
 )
 
 
@@ -186,6 +197,57 @@ def _scheduler_kernel() -> tuple[RunKernel, dict[str, dict[str, Any]]]:
         requested_synthesis_directive="Explain how these facts relate.",
     )
     return kernel, packets
+
+
+def _initialize_existing_graph_scheduler(
+    kernel: RunKernel,
+    *,
+    requested_synthesis_directive: str,
+) -> dict[str, dict[str, Any]]:
+    contract = dict(
+        kernel.state.current_answer_contract
+        or kernel.state.initial_answer_contract
+    )
+    contract["accepted_answer_component_count"] = len(
+        contract.get("accepted_answer_component_refs") or ()
+    )
+    contract["question_meaning_metadata"] = {
+        "explicit_factual_component_list": True,
+        "requested_synthesis_directive": requested_synthesis_directive,
+    }
+    if kernel.state.current_answer_contract:
+        kernel.state.current_answer_contract = contract
+    else:
+        kernel.state.initial_answer_contract = contract
+    packets: dict[str, dict[str, Any]] = {}
+    for component in contract["accepted_answer_component_refs"]:
+        component_id = str(component["component_id"])
+        candidate = EvidenceCandidate(
+            candidate_id=(
+                "scheduler_authority_"
+                + component_id.replace(":", "_").replace("-", "_")
+            ),
+            readable_status="readable",
+        )
+        candidate_id = candidate.candidate_id
+        kernel.state.evidence_ledger.candidates[candidate_id] = candidate
+        packets[component_id] = component_analyst_input_packet(
+            run_id=kernel.state.run_id,
+            request_id=kernel.state.request_id,
+            accepted_contract=contract,
+            component_ref=component,
+            evidence_input={
+                "evidence_status": "available",
+                "evidence_ref_id": candidate_id,
+                "bounded_text": "A bounded scheduler authority fixture fact.",
+                "candidate_custody_ref": {"candidate_id": candidate_id},
+            },
+        )
+    kernel.initialize_multicomponent_graph_scheduler(
+        component_analyst_input_packets=packets,
+        requested_synthesis_directive=requested_synthesis_directive,
+    )
+    return packets
 
 
 def _role_kwargs(*, ask_model):
@@ -686,51 +748,62 @@ def test_25_forged_terminal_scheduler_with_active_lease_is_rejected() -> None:
         scheduling.validate_scheduler_state(forged)
 
 
-def test_26_authorized_predispatch_authority_change_refunds_once() -> None:
-    kernel, _packets = _scheduler_kernel()
+def test_26_real_graph_transition_refunds_affected_granted_lease_once() -> None:
+    kernel, graph = _structured_graph()
+    _initialize_existing_graph_scheduler(
+        kernel,
+        requested_synthesis_directive=str(graph["requested_synthesis_directive"]),
+    )
     lease = kernel.grant_next_multicomponent_work_lease()
     after_grant = deepcopy(_scheduler(kernel)["compatibility_envelope"])
-    kernel.apply_multicomponent_scheduler_authority_change(
-        transition="contract_authority_changed",
-        authority_ref={"accepted_contract_digest": "next-contract-digest"},
+    next_graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
     )
     scheduler = _scheduler(kernel)
     envelope = scheduler["compatibility_envelope"]
+    assert next_graph["graph_digest"] != graph["graph_digest"]
+    assert kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ] == next_graph
     assert scheduler["lease_history"][-1]["status"] == LEASE_CANCELLED
     assert envelope["remaining_units"] == after_grant["remaining_units"] + 1
     assert envelope["returned_units"] == after_grant["returned_units"] + 1
-    kernel.apply_multicomponent_scheduler_authority_change(
-        transition="target_authority_changed",
-        authority_ref={"target_digest": "next-target-digest"},
+    ready = kernel.derive_current_multicomponent_ready_work()
+    assert ready
+    assert ready[0]["graph_ref"]["graph_digest"] == next_graph["graph_digest"]
+    assert ready[0]["graph_ref"] != lease["work"]["graph_ref"]
+
+
+def test_27_real_postdispatch_graph_transition_rejects_late_observation() -> None:
+    kernel, graph = _structured_graph()
+    _initialize_existing_graph_scheduler(
+        kernel,
+        requested_synthesis_directive=str(graph["requested_synthesis_directive"]),
     )
-    assert _scheduler(kernel)["compatibility_envelope"]["returned_units"] == 1
-    assert _scheduler(kernel)["lease_history"][-1]["lease_id"] == lease["lease_id"]
-
-
-def test_27_authorized_postdispatch_change_rejects_late_observation() -> None:
-    kernel, packets = _scheduler_kernel()
     lease = kernel.grant_next_multicomponent_work_lease()
     work = lease["work"]
     role_action = kernel.prepare_multicomponent_role_dispatch(
         lease_id=lease["lease_id"],
         role=work["role"],
-        input_packet_digest=safe_packet_digest(
-            packets[str(work["component_id"])]
-        ),
+        input_packet_digest=str(work["input_packet_digest"]),
         logical_evaluation_key=work["logical_evaluation_key"],
     )
-    kernel.apply_multicomponent_scheduler_authority_change(
-        transition="graph_authority_changed",
-        authority_ref={"graph_digest": "next-graph-digest"},
+    next_graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
     )
     scheduler = _scheduler(kernel)
+    assert next_graph["graph_digest"] != graph["graph_digest"]
     assert scheduler["lease_history"][-1]["status"] == LEASE_STALE
     assert scheduler["compatibility_envelope"]["spent_units"] == 1
+    assert kernel.state.projections[role_action.stage][
+        "semantic_artifact_admitted"
+    ] is False
     before_late_result = deepcopy(scheduler)
-    with pytest.raises(
-        MulticomponentGraphSchedulingError,
-        match="exact active spent lease",
-    ):
+    with pytest.raises(RunKernelTransitionError, match="already reduced"):
         kernel.reduce(
             Observation.from_action(
                 role_action,
@@ -740,10 +813,68 @@ def test_27_authorized_postdispatch_change_rejects_late_observation() -> None:
             )
         )
     assert _scheduler(kernel) == before_late_result
-    assert role_action.stage not in kernel.state.projections
+    assert kernel.state.projections[role_action.stage]["settlement"] == LEASE_STALE
 
 
-def test_28_no_scrutiny_graph_reaches_deterministic_completion(
+def test_28_unrelated_selective_closure_does_not_cancel_current_lease() -> None:
+    kernel, graph, closure = _closure_fixture()
+    _initialize_existing_graph_scheduler(
+        kernel,
+        requested_synthesis_directive=str(graph["requested_synthesis_directive"]),
+    )
+    lease = kernel.grant_next_multicomponent_work_lease()
+    before = deepcopy(_scheduler(kernel)["compatibility_envelope"])
+    canonical_closure = reduce_selective_recomputation_closure(
+        run_kernel=kernel,
+        closure_candidate=closure,
+    )
+    scheduler = _scheduler(kernel)
+    assert canonical_closure["closure_digest"] == closure["closure_digest"]
+    assert scheduler["lease_history"][-1]["lease_id"] == lease["lease_id"]
+    assert scheduler["lease_history"][-1]["status"] == LEASE_GRANTED
+    assert scheduler["compatibility_envelope"] == before
+    assert kernel.multicomponent_work_lease_is_current(lease["lease_id"]) is True
+
+
+def test_29_failed_real_graph_transition_preserves_graph_and_scheduler() -> None:
+    kernel, graph = _structured_graph()
+    _initialize_existing_graph_scheduler(
+        kernel,
+        requested_synthesis_directive=str(graph["requested_synthesis_directive"]),
+    )
+    lease = kernel.grant_next_multicomponent_work_lease()
+    work = lease["work"]
+    role_action = kernel.prepare_multicomponent_role_dispatch(
+        lease_id=lease["lease_id"],
+        role=work["role"],
+        input_packet_digest=str(work["input_packet_digest"]),
+        logical_evaluation_key=work["logical_evaluation_key"],
+    )
+    before_graph = deepcopy(
+        kernel.state.projections["multicomponent_component_work_graph_v1"]
+    )
+    before_scheduler = deepcopy(_scheduler(kernel))
+    with pytest.raises(RunKernelTransitionError):
+        reduce_component_work_graph_v1(
+            run_kernel=kernel,
+            operation="accounting",
+            graph_candidate=graph,
+        )
+    assert kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ] == before_graph
+    assert _scheduler(kernel) == before_scheduler
+    assert role_action.action_id not in kernel.state.reduced_action_ids
+    assert kernel.state.next_observation_sequence == role_action.sequence
+
+
+def test_30_callers_have_no_authority_change_label_or_digest_api() -> None:
+    kernel, _packets = _scheduler_kernel()
+    assert not hasattr(kernel, "apply_multicomponent_scheduler_authority_change")
+    assert not hasattr(scheduling, "record_scheduler_authority_change")
+
+
+def test_31_no_scrutiny_graph_reaches_deterministic_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -789,3 +920,69 @@ def test_28_no_scrutiny_graph_reaches_deterministic_completion(
         for lease in _scheduler(kernel)["lease_history"]
         if lease["work"]["role"] == ROLE_SCRUTINEER
     ]
+
+
+def test_32_recovery_and_selective_transitions_record_canonical_bindings(
+    dynamic_product,
+) -> None:
+    _outcome, kernel, _captured, _harness = dynamic_product
+    transitions = _scheduler(kernel)["transition_history"]
+    contract_transition = next(
+        item
+        for item in transitions
+        if item["transition"] == "contract_amendment_applied"
+    )
+    assert (
+        kernel.state.current_answer_contract["accepted_contract_digest"]
+        != kernel.state.initial_answer_contract["accepted_contract_digest"]
+    )
+    assert kernel.state.contract_amendment_application_projection[
+        "current_answer_contract_projection"
+    ]["accepted_contract_digest"] == kernel.state.current_answer_contract[
+        "accepted_contract_digest"
+    ]
+    assert contract_transition["authority_ref"]["contract_ref"][
+        "accepted_contract_digest"
+    ] == kernel.state.current_answer_contract["accepted_contract_digest"]
+    closure = kernel.state.projections[
+        "multicomponent_selective_recomputation_closure"
+    ]
+    closure_transition = next(
+        item
+        for item in transitions
+        if item["transition"] == "selective_closure_installed"
+    )
+    assert closure_transition["authority_ref"]["selective_closure_ref"] == {
+        "closure_id": closure["closure_id"],
+        "closure_digest": closure["closure_digest"],
+    }
+    graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
+    graph_transitions = [
+        item
+        for item in transitions
+        if item["transition"] == "component_work_graph_reduced"
+    ]
+    assert graph_transitions[-1]["authority_ref"]["graph_ref"][
+        "graph_digest"
+    ] == graph["graph_digest"]
+    assert any(
+        item["transition"] == "recovery_scheduler_context_registered"
+        for item in transitions
+    )
+    recovery_work = [
+        lease["work"]
+        for lease in _scheduler(kernel)["lease_history"]
+        if lease["work"].get("recovery_authorization_ref")
+    ]
+    selective_work = [
+        lease["work"]
+        for lease in _scheduler(kernel)["lease_history"]
+        if lease["work"].get("selective_closure_ref")
+    ]
+    assert recovery_work
+    assert selective_work
+    assert all(
+        work["selective_closure_ref"]["closure_digest"]
+        == closure["closure_digest"]
+        for work in selective_work
+    )

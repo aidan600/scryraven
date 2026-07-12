@@ -313,9 +313,14 @@ installed safe non-Author terminal RunOutcome.
 Completed and blocked scheduler projections require zero active physical
 leases. Completion rejects either a granted reservation or a dispatch-committed
 lease before checking readiness and leaves scheduler, lease, and budget state
-unchanged. A RunKernel-owned semantic-authority change cancels and refunds an
-exact granted lease once, or marks an exact dispatch-committed lease stale while
-retaining its spent unit and rejecting any late successful observation.
+unchanged. Lease invalidation is derived only inside the RunKernel reducers that
+independently construct and install a canonical AnswerContract, Graph V1, target,
+or selective-closure revision. The reducer tests the exact leased work against
+its validated candidate state: affected granted work is cancelled and refunded
+once; affected dispatch-committed work is marked stale while retaining its spent
+unit and rejecting any late successful observation; unrelated work remains
+active. No caller-authored transition label or digest can create cancellation
+authority.
 
 The remaining committed direction is:
 

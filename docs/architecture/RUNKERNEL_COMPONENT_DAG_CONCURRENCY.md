@@ -157,9 +157,12 @@ physical concurrency.
 
 Scheduler completion and every blocked terminal require zero active leases.
 Invalid completion with either a granted or dispatch-committed lease is a
-non-mutating error. An authorized contract, graph, target, or selective-closure
-authority change settles its exact lease atomically: granted work is cancelled
-and refunded once; dispatch-committed work is stale-rejected and remains spent.
+non-mutating error. Canonical contract, graph, target, and selective-closure
+reducers derive settlement by comparing the exact lease with the independently
+validated next authority state. Affected granted work is cancelled and refunded
+once; affected dispatch-committed work is stale-rejected and remains spent;
+unrelated leased work remains current. Callers cannot submit authority-change
+classifications or authority digests to trigger these transitions.
 
 ## Mode Doctrine
 

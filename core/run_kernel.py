@@ -13,6 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from hashlib import sha256
+from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
 from core.author_prose_finalization_runtime import (
@@ -3748,6 +3749,160 @@ class RunKernel:
             self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         )
 
+    def _scheduler_after_canonical_authority_transition(
+        self,
+        *,
+        transition: str,
+        projection_update: tuple[str, Mapping[str, Any]] | None = None,
+        current_answer_contract: Mapping[str, Any] | None = None,
+        scheduler_context: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            _settle_for_canonical_authority_transition,
+        )
+
+        if not self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+            return None
+        projections = dict(self.state.projections)
+        if projection_update is not None:
+            stage, projection = projection_update
+            projections[stage] = deepcopy(dict(projection))
+        candidate_state = SimpleNamespace(
+            run_id=self.state.run_id,
+            request_id=self.state.request_id,
+            projections=projections,
+            initial_answer_contract=self.state.initial_answer_contract,
+            current_answer_contract=(
+                dict(current_answer_contract)
+                if current_answer_contract is not None
+                else self.state.current_answer_contract
+            ),
+            multicomponent_scheduler_context=(
+                dict(scheduler_context)
+                if scheduler_context is not None
+                else self.state.multicomponent_scheduler_context
+            ),
+        )
+        return _settle_for_canonical_authority_transition(
+            state=candidate_state,
+            transition=transition,
+        )
+
+    def _pending_multicomponent_authority_supersession(
+        self, action: AuthorizedAction
+    ) -> dict[str, Any]:
+        from core.multicomponent_graph_scheduling import (
+            LEASE_EXECUTION_STARTED,
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            validate_scheduler_state,
+        )
+
+        if action.action_type not in {
+            ActionType.CONTRACT_AMENDMENT_APPLY,
+            ActionType.MULTICOMPONENT_GRAPH_REDUCE,
+        } or action.sequence != self.state.next_observation_sequence + 1:
+            return {}
+        scheduler_raw = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        if not scheduler_raw:
+            return {}
+        scheduler = validate_scheduler_state(scheduler_raw)
+        active = [
+            _safe_mapping(item)
+            for item in scheduler.get("lease_history") or ()
+            if _safe_mapping(item).get("status") == LEASE_EXECUTION_STARTED
+        ]
+        if len(active) != 1:
+            return {}
+        lease = active[0]
+        role_action_id = str(
+            _safe_mapping(lease.get("role_action_ref")).get("action_id") or ""
+        )
+        role_action = self.state.issued_actions.get(role_action_id)
+        if (
+            role_action is None
+            or role_action.sequence != self.state.next_observation_sequence
+            or role_action.action_id in self.state.reduced_action_ids
+        ):
+            return {}
+        return {
+            "lease_id": lease.get("lease_id"),
+            "role_action_id": role_action_id,
+        }
+
+    def _commit_multicomponent_authority_supersession(
+        self,
+        *,
+        pending: Mapping[str, Any],
+        scheduler: Mapping[str, Any] | None,
+    ) -> None:
+        from core.multicomponent_graph_scheduling import LEASE_STALE
+
+        if not pending:
+            return
+        candidate = _safe_mapping(scheduler)
+        lease = next(
+            (
+                _safe_mapping(item)
+                for item in candidate.get("lease_history") or ()
+                if _safe_mapping(item).get("lease_id") == pending.get("lease_id")
+            ),
+            {},
+        )
+        role_action = self.state.issued_actions.get(
+            str(pending.get("role_action_id") or "")
+        )
+        if lease.get("status") != LEASE_STALE or role_action is None:
+            raise RunKernelTransitionError(
+                "unrelated authority transition cannot supersede active semantic work"
+            )
+        failure_kind = "canonical_authority_changed_before_role_observation"
+        synthetic = Observation.from_action(
+            role_action,
+            observation_type=role_action.expected_observation_type,
+            status=RunStageStatus.FAILED,
+            payload={
+                "lease_settlement": LEASE_STALE,
+                "failure_kind": failure_kind,
+            },
+        )
+        self.state.reduced_action_ids.add(role_action.action_id)
+        self.state.action_statuses[role_action.action_id] = RunStageStatus.FAILED
+        self.state.stage_statuses[role_action.stage] = RunStageStatus.FAILED
+        self.state.projections[role_action.stage] = {
+            "schema_version": "multicomponent_semantic_role_failure_v1",
+            "owner": "RunKernel.MulticomponentGraphScheduler",
+            "canonical_state": True,
+            "role": role_action.inputs.get("role"),
+            "logical_evaluation_key": role_action.inputs.get(
+                "logical_evaluation_key"
+            ),
+            "work_id": role_action.inputs.get("work_id"),
+            "lease_id": role_action.inputs.get("lease_id"),
+            "settlement": LEASE_STALE,
+            "failure_kind": failure_kind,
+            "semantic_artifact_admitted": False,
+            "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+        }
+        self.state.observations.append(synthetic)
+        self.state.next_observation_sequence += 1
+
+    def _commit_deferred_authority_action(
+        self,
+        *,
+        action: AuthorizedAction,
+        observation: Observation,
+        pending: Mapping[str, Any],
+    ) -> None:
+        if not pending:
+            return
+        self.state.reduced_action_ids.add(action.action_id)
+        self.state.action_statuses[action.action_id] = observation.status
+        self.state.stage_statuses[action.stage] = observation.status
+
     def register_multicomponent_recovery_scheduler_context(
         self,
         *,
@@ -3759,7 +3914,6 @@ class RunKernel:
     ) -> None:
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
-            record_scheduler_authority_change,
         )
 
         context = _safe_mapping(self.state.multicomponent_scheduler_context)
@@ -3817,56 +3971,13 @@ class RunKernel:
         }
         context["component_analyst_input_packets"] = packets
         context["recovery_bindings"] = recoveries
-        scheduler = record_scheduler_authority_change(
-            state=self.state,
-            transition="recovery_contract_authority_registered",
-            authority_ref={
-                "component_id": component_id,
-                "recovery_authorization_id": recovery_authorization_ref.get(
-                    "authorization_id"
-                ),
-                "recovery_authorization_digest": recovery_authorization_ref.get(
-                    "authorization_digest"
-                ),
-                "amendment_record_id": contract_amendment_admission_ref.get(
-                    "amendment_record_id"
-                ),
-                "application_digest": contract_amendment_application_ref.get(
-                    "application_digest"
-                ),
-            },
+        scheduler = self._scheduler_after_canonical_authority_transition(
+            transition="recovery_scheduler_context_registered",
+            scheduler_context=context,
         )
         self.state.multicomponent_scheduler_context = context
-        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
-
-    def apply_multicomponent_scheduler_authority_change(
-        self, *, transition: str, authority_ref: Mapping[str, Any]
-    ) -> dict[str, Any]:
-        """Atomically settle a lease and install changed semantic authority."""
-
-        from core.multicomponent_graph_scheduling import (
-            MULTICOMPONENT_SCHEDULER_STAGE,
-            record_scheduler_authority_change,
-        )
-
-        transition_name = _clean_text(transition, limit=100)
-        allowed = {
-            "contract_authority_changed",
-            "graph_authority_changed",
-            "target_authority_changed",
-            "selective_closure_authority_changed",
-        }
-        if transition_name not in allowed or not _safe_mapping(authority_ref):
-            raise RunKernelTransitionError(
-                "scheduler authority transition requires a canonical authority ref"
-            )
-        scheduler = record_scheduler_authority_change(
-            state=self.state,
-            transition=transition_name,
-            authority_ref=_safe_mapping(authority_ref),
-        )
-        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
-        return deepcopy(scheduler)
+        if scheduler is not None:
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
 
     def complete_multicomponent_graph_scheduler(self) -> dict[str, Any]:
         from core.multicomponent_graph_scheduling import (
@@ -11022,7 +11133,13 @@ class RunKernel:
             raise RunKernelTransitionError("observation sequence does not match action sequence")
         if action.action_id in self.state.reduced_action_ids:
             raise RunKernelTransitionError("authorized action was already reduced")
-        if observation.sequence != self.state.next_observation_sequence:
+        authority_supersession = (
+            self._pending_multicomponent_authority_supersession(action)
+        )
+        if (
+            observation.sequence != self.state.next_observation_sequence
+            and not authority_supersession
+        ):
             raise RunKernelTransitionError(
                 "observation reduced out of order: "
                 f"expected sequence {self.state.next_observation_sequence}, "
@@ -12980,9 +13097,10 @@ class RunKernel:
                 observation_payload=observation.payload,
             )
 
-        self.state.reduced_action_ids.add(action.action_id)
-        self.state.action_statuses[action.action_id] = observation.status
-        self.state.stage_statuses[action.stage] = observation.status
+        if not authority_supersession:
+            self.state.reduced_action_ids.add(action.action_id)
+            self.state.action_statuses[action.action_id] = observation.status
+            self.state.stage_statuses[action.stage] = observation.status
         if action.action_type is ActionType.RUN_CONTRACT_SYNTHESIZE:
             contract_projection = _safe_mapping(
                 observation.payload.get("contract_projection")
@@ -13918,6 +14036,19 @@ class RunKernel:
             current_projection = _safe_mapping(
                 application_projection.get("current_answer_contract_projection")
             )
+            scheduler = self._scheduler_after_canonical_authority_transition(
+                transition="contract_amendment_applied",
+                current_answer_contract=current_contract,
+            )
+            self._commit_multicomponent_authority_supersession(
+                pending=authority_supersession,
+                scheduler=scheduler,
+            )
+            self._commit_deferred_authority_action(
+                action=action,
+                observation=observation,
+                pending=authority_supersession,
+            )
             self.state.contract_amendment_application_state = application_state
             self.state.contract_amendment_application_projection = (
                 application_projection
@@ -13931,6 +14062,8 @@ class RunKernel:
                 deepcopy(current_projection)
             )
             self.state.projections[action.stage] = deepcopy(application_projection)
+            if scheduler is not None:
+                self.state.projections["multicomponent_graph_scheduler"] = scheduler
         elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
             construction_result = _safe_mapping(
                 observation.payload.get("construction_result")
@@ -17859,7 +17992,24 @@ class RunKernel:
                     raise RunKernelTransitionError(
                         "selective closure candidate does not equal RunKernel derivation"
                     )
+                scheduler = self._scheduler_after_canonical_authority_transition(
+                    transition="selective_closure_installed",
+                    projection_update=(action.stage, expected),
+                )
+                self._commit_multicomponent_authority_supersession(
+                    pending=authority_supersession,
+                    scheduler=scheduler,
+                )
+                self._commit_deferred_authority_action(
+                    action=action,
+                    observation=observation,
+                    pending=authority_supersession,
+                )
                 self.state.projections[action.stage] = deepcopy(expected)
+                if scheduler is not None:
+                    self.state.projections[
+                        "multicomponent_graph_scheduler"
+                    ] = scheduler
                 self.state.projections[f"{action.stage}_history"] = {
                     "schema_version": (
                         "multicomponent_selective_recomputation_closure_history_v1"
@@ -18365,7 +18515,22 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "Graph V1 candidate does not equal the exact rederived transition"
                 )
+            scheduler = self._scheduler_after_canonical_authority_transition(
+                transition="component_work_graph_reduced",
+                projection_update=(action.stage, graph),
+            )
+            self._commit_multicomponent_authority_supersession(
+                pending=authority_supersession,
+                scheduler=scheduler,
+            )
+            self._commit_deferred_authority_action(
+                action=action,
+                observation=observation,
+                pending=authority_supersession,
+            )
             self.state.projections[action.stage] = deepcopy(graph)
+            if scheduler is not None:
+                self.state.projections["multicomponent_graph_scheduler"] = scheduler
             if operation == "selective_invalidation":
                 carry_projection = build_synthesis_carry_forward_projection(
                     prior_graph=current_graph,

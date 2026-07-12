@@ -987,20 +987,86 @@ def cancel_lease(*, state: Any, lease_id: str, reason: str) -> dict[str, Any]:
     return _refresh_scheduler(scheduler)
 
 
-def record_scheduler_authority_change(
-    *, state: Any, transition: str, authority_ref: Mapping[str, Any]
+_AUTHORITY_TRANSITION_CONTRACT = "contract_amendment_applied"
+_AUTHORITY_TRANSITION_GRAPH = "component_work_graph_reduced"
+_AUTHORITY_TRANSITION_CLOSURE = "selective_closure_installed"
+_AUTHORITY_TRANSITION_RECOVERY_CONTEXT = "recovery_scheduler_context_registered"
+_AUTHORITY_TRANSITIONS = frozenset(
+    {
+        _AUTHORITY_TRANSITION_CONTRACT,
+        _AUTHORITY_TRANSITION_GRAPH,
+        _AUTHORITY_TRANSITION_CLOSURE,
+        _AUTHORITY_TRANSITION_RECOVERY_CONTEXT,
+    }
+)
+
+
+def _canonical_authority_ref(state: Any, transition: str) -> dict[str, Any]:
+    if transition == _AUTHORITY_TRANSITION_CONTRACT:
+        return {"contract_ref": _contract_ref(state.current_answer_contract)}
+    if transition == _AUTHORITY_TRANSITION_GRAPH:
+        return {
+            "graph_ref": _graph_ref(
+                _mapping(
+                    state.projections.get(
+                        "multicomponent_component_work_graph_v1"
+                    )
+                )
+            )
+        }
+    if transition == _AUTHORITY_TRANSITION_CLOSURE:
+        closure = _mapping(
+            state.projections.get(
+                "multicomponent_selective_recomputation_closure"
+            )
+        )
+        return {
+            "selective_closure_ref": {
+                "closure_id": closure.get("closure_id"),
+                "closure_digest": closure.get("closure_digest"),
+            }
+        }
+    if transition == _AUTHORITY_TRANSITION_RECOVERY_CONTEXT:
+        context = _mapping(state.multicomponent_scheduler_context)
+        packets = _mapping(context.get("component_analyst_input_packets"))
+        recoveries = _mapping(context.get("recovery_bindings"))
+        return {
+            "component_input_packet_digests": {
+                str(key): safe_packet_digest(_mapping(value))
+                for key, value in sorted(packets.items())
+            },
+            "recovery_component_ids": sorted(str(key) for key in recoveries),
+        }
+    raise MulticomponentGraphSchedulingError(
+        "scheduler authority transition is not an internal canonical transition"
+    )
+
+
+def _settle_for_canonical_authority_transition(
+    *, state: Any, transition: str
 ) -> dict[str, Any]:
+    """Settle exact stale work against a reducer-constructed candidate state."""
+
+    if transition not in _AUTHORITY_TRANSITIONS:
+        raise MulticomponentGraphSchedulingError(
+            "scheduler authority transition is not an internal canonical transition"
+        )
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
+    if scheduler.get("status") != "active":
+        return scheduler
     active = [
         (index, _mapping(item))
         for index, item in enumerate(scheduler.get("lease_history") or ())
         if _mapping(item).get("status") in _ACTIVE_STATUSES
     ]
+    affected = False
     if active:
         index, lease = active[0]
         work = _mapping(lease.get("work"))
+        affected = not work_is_current(state, work)
+    if active and affected:
         scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
         if lease.get("status") == LEASE_GRANTED:
             lease["status"] = LEASE_CANCELLED
@@ -1012,7 +1078,7 @@ def record_scheduler_authority_change(
         else:
             lease["status"] = LEASE_STALE
             settlement = LEASE_STALE
-        lease["settlement_reason"] = "canonical_semantic_authority_changed"
+        lease["settlement_reason"] = transition
         scheduler["lease_history"][index] = lease
         scheduler["transition_history"].append(
             {
@@ -1026,9 +1092,10 @@ def record_scheduler_authority_change(
     scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
     scheduler["transition_history"].append(
         {
-            "transition": str(transition or "canonical_authority_changed")[:100],
+            "transition": transition,
             "scheduler_revision": scheduler["scheduler_revision"],
-            "authority_ref": _json_safe(authority_ref),
+            "authority_ref": _canonical_authority_ref(state, transition),
+            "affected_active_lease": affected,
         }
     )
     scheduler["last_ready_work"] = []
@@ -1094,7 +1161,6 @@ __all__ = [
     "dispatch_lease",
     "grant_next_lease",
     "initialize_scheduler_state",
-    "record_scheduler_authority_change",
     "scheduler_trace_projection",
     "settle_role_lease",
     "validate_scheduler_state",
