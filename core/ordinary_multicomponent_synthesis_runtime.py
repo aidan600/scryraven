@@ -1810,6 +1810,7 @@ def _execute_selected_lane(
     run_kernel.initialize_multicomponent_graph_scheduler(
         component_analyst_input_packets=analyst_inputs,
         requested_synthesis_directive=requested_synthesis_directive,
+        configured_provider=str(runtime_scope.get("smart_provider") or ""),
     )
     _drive_run_kernel_selected_semantic_work(
         run_kernel=run_kernel,

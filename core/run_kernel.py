@@ -3490,11 +3490,13 @@ class RunKernel:
         *,
         component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
         requested_synthesis_directive: str,
+        configured_provider: str = "OpenAI",
     ) -> dict[str, Any]:
-        """Initialize the qualifying lane's RunKernel-owned serial scheduler."""
+        """Initialize the qualifying lane's RunKernel-owned V2 scheduler."""
 
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
+            derive_multicomponent_transport_profile,
         )
         from core.multicomponent_role_runtime import safe_packet_digest
 
@@ -3562,11 +3564,14 @@ class RunKernel:
             "requested_synthesis_directive": directive,
             "component_analyst_input_packets": deepcopy(packets),
             "recovery_bindings": {},
+            "configured_provider_class": derive_multicomponent_transport_profile(
+                configured_provider
+            )["configured_provider_class"],
         }
         action = self.authorize(
             stage=MULTICOMPONENT_SCHEDULER_STAGE,
             action_type=ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE,
-            reason="ordinary_multicomponent_serial_scheduler_initialize",
+            reason="ordinary_multicomponent_v2_scheduler_initialize",
             inputs={
                 "component_input_packet_digests": {
                     key: safe_packet_digest(value) for key, value in packets.items()
@@ -3574,6 +3579,9 @@ class RunKernel:
                 "requested_synthesis_directive_digest": safe_packet_digest(
                     {"requested_synthesis_directive": directive}
                 ),
+                "configured_provider_class": self.state.multicomponent_scheduler_context[
+                    "configured_provider_class"
+                ],
             },
             expected_observation_type=(
                 ObservationType.MULTICOMPONENT_SCHEDULER_INITIALIZED
@@ -17448,7 +17456,7 @@ class RunKernel:
         elif action.action_type is ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE:
             from core.multicomponent_graph_scheduling import (
                 MULTICOMPONENT_SCHEDULER_STAGE,
-                initialize_scheduler_state,
+                initialize_scheduler_v2_state,
             )
             from core.multicomponent_role_runtime import safe_packet_digest
 
@@ -17464,14 +17472,17 @@ class RunKernel:
                 != expected_digests
                 or action.inputs.get("requested_synthesis_directive_digest")
                 != safe_packet_digest({"requested_synthesis_directive": directive})
+                or action.inputs.get("configured_provider_class")
+                != context.get("configured_provider_class")
             ):
                 raise RunKernelTransitionError(
                     "scheduler initialization action does not bind private canonical context"
                 )
             self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
-                initialize_scheduler_state(
+                initialize_scheduler_v2_state(
                     run_id=self.state.run_id,
                     request_id=self.state.request_id,
+                    configured_provider=context.get("configured_provider_class"),
                 )
             )
         elif action.action_type is ActionType.MULTICOMPONENT_LEASE_GRANT:

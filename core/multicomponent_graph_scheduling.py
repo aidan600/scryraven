@@ -29,8 +29,33 @@ from core.multicomponent_role_runtime import (
 MULTICOMPONENT_SCHEDULER_STAGE = "multicomponent_graph_scheduler"
 MULTICOMPONENT_SCHEDULER_OWNER = "RunKernel.MulticomponentGraphScheduler"
 MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION = "multicomponent_graph_scheduler_v1"
+MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION = "multicomponent_graph_scheduler_v2"
 MULTICOMPONENT_LEASE_SCHEMA_VERSION = "multicomponent_semantic_work_lease_v1"
 MULTICOMPONENT_WORK_SCHEMA_VERSION = "multicomponent_semantic_work_v1"
+MULTICOMPONENT_BATCH_SCHEMA_VERSION = "multicomponent_semantic_work_batch_v1"
+MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION = (
+    "multicomponent_semantic_batch_lease_group_v1"
+)
+MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION = (
+    "multicomponent_private_child_action_descriptor_v1"
+)
+MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION = (
+    "multicomponent_prepared_transport_call_v1"
+)
+MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION = (
+    "multicomponent_safe_worker_result_v1"
+)
+MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION = (
+    "multicomponent_batch_accounting_summary_v1"
+)
+
+BACKEND_HOSTED_API = "hosted_api"
+BACKEND_LOCAL_OPENAI_COMPATIBLE = "local_openai_compatible"
+BACKEND_CONSERVATIVE_UNKNOWN = "conservative_unknown"
+
+PARALLEL_INITIAL_COMPONENT_ANALYST = "parallel_initial_component_analyst"
+PARALLEL_INITIAL_COMPONENT_DPRIME = "parallel_initial_component_dprime"
+PARALLEL_SERIAL_ONLY = "serial_only"
 
 # This is the one authoritative compatibility mapping.  The existing role-call
 # authorization and the Phase 4 scheduler both consume it.
@@ -74,6 +99,37 @@ def derive_multicomponent_compatibility_envelope() -> int:
     """Return the internal compatibility envelope derived from shared caps."""
 
     return sum(MULTICOMPONENT_ROLE_CALL_LIMITS.values())
+
+
+def derive_multicomponent_transport_profile(configured_provider: Any) -> dict[str, Any]:
+    """Derive the RunKernel-owned safe execution profile from product config."""
+
+    from core.strict_accounted_model_route import (
+        PROVIDER_LOCAL,
+        PROVIDER_OPENAI,
+        PROVIDER_OPENROUTER,
+        normalize_fast_model_provider,
+    )
+
+    provider = normalize_fast_model_provider(configured_provider)
+    if provider in {PROVIDER_OPENAI, PROVIDER_OPENROUTER}:
+        backend_class = BACKEND_HOSTED_API
+        effective_width = 2
+    elif provider == PROVIDER_LOCAL:
+        backend_class = BACKEND_LOCAL_OPENAI_COMPATIBLE
+        effective_width = 1
+    else:
+        backend_class = BACKEND_CONSERVATIVE_UNKNOWN
+        effective_width = 1
+    return {
+        "configured_provider_class": provider,
+        "backend_class": backend_class,
+        "effective_width": effective_width,
+        "hard_cap": effective_width,
+        "runtime_parallelism": effective_width == 2,
+        "serial_scheduling": effective_width == 1,
+        "maximum_active_physical_leases": effective_width,
+    }
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
@@ -183,9 +239,10 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
         raise MulticomponentGraphSchedulingError(
             "scheduler live allocation invariant is invalid"
         )
-    if len(active) > 1:
+    maximum_active = int(current.get("maximum_active_physical_leases") or 0)
+    if len(active) > maximum_active:
         raise MulticomponentGraphSchedulingError(
-            "scheduler permits more than one active physical lease"
+            "scheduler exceeds its maximum active physical leases"
         )
     role_reserved = {role: 0 for role in MULTICOMPONENT_ROLE_CALL_LIMITS}
     role_spent = {role: 0 for role in MULTICOMPONENT_ROLE_CALL_LIMITS}
@@ -218,6 +275,8 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def initialize_scheduler_state(*, run_id: str, request_id: str) -> dict[str, Any]:
+    """Construct the retained historical Phase 4 scheduler V1 projection."""
+
     total = derive_multicomponent_compatibility_envelope()
     caps = dict(MULTICOMPONENT_ROLE_CALL_LIMITS)
     envelope_core = {
@@ -268,15 +327,144 @@ def initialize_scheduler_state(*, run_id: str, request_id: str) -> dict[str, Any
     return _refresh_scheduler(state)
 
 
+def initialize_scheduler_v2_state(
+    *, run_id: str, request_id: str, configured_provider: Any
+) -> dict[str, Any]:
+    """Construct the ordinary Phase 5A scheduler from configured provider only."""
+
+    total = derive_multicomponent_compatibility_envelope()
+    caps = dict(MULTICOMPONENT_ROLE_CALL_LIMITS)
+    profile = derive_multicomponent_transport_profile(configured_provider)
+    envelope_core = {
+        "owner": MULTICOMPONENT_SCHEDULER_OWNER,
+        "role_limits": caps,
+        "total_units": total,
+    }
+    accounting = {
+        "schema_version": MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION,
+        "dispatch_committed_unit_count": 0,
+        "transport_submission_count": 0,
+        "transport_started_count": 0,
+        "transport_completed_count": 0,
+        "successful_artifact_count": 0,
+        "failed_submission_count": 0,
+        "failed_transport_count": 0,
+        "stale_result_count": 0,
+        "batch_count": 0,
+        "parallel_batch_count": 0,
+        "width_1_batch_count": 0,
+        "maximum_observed_in_flight_transports": 0,
+        "physical_overlap_observed": False,
+    }
+    state = {
+        "schema_version": MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION,
+        "owner": MULTICOMPONENT_SCHEDULER_OWNER,
+        "canonical_state": True,
+        "trace_only": False,
+        "run_id": run_id,
+        "request_id": request_id,
+        "supported_query_class": SUPPORTED_QUERY_CLASS,
+        "status": "active",
+        "terminal_posture": None,
+        "scheduler_revision": 1,
+        **profile,
+        "active_physical_lease_count": 0,
+        "compatibility_envelope": {
+            **envelope_core,
+            "envelope_id": f"multicomponent-envelope:{_digest(envelope_core)[:20]}",
+            "envelope_digest": _digest(envelope_core),
+            "remaining_units": total,
+            "reserved_units": 0,
+            "spent_units": 0,
+            "returned_units": 0,
+            "role_reserved_units": {role: 0 for role in caps},
+            "role_spent_units": {role: 0 for role in caps},
+        },
+        "batch_history": [],
+        "lease_history": [],
+        "transition_history": [
+            {
+                "transition": "scheduler_initialized",
+                "scheduler_revision": 1,
+                "runtime_parallelism": profile["runtime_parallelism"],
+                "effective_width": profile["effective_width"],
+                "backend_class": profile["backend_class"],
+            }
+        ],
+        "accounting_counters": accounting,
+        "last_ready_work": [],
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "private_descriptor_retained": False,
+        "prepared_transport_retained": False,
+        "worker_result_retained": False,
+        "private_log_retained": False,
+        "full_trace_retained": False,
+        "local_parallelism_enabled": False,
+        "adaptive_rate_limit_enabled": False,
+        "live_characterization_run": False,
+    }
+    return _refresh_scheduler(state)
+
+
 def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
     state = deepcopy(dict(value))
-    if (
-        state.get("schema_version") != MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION
-        or state.get("owner") != MULTICOMPONENT_SCHEDULER_OWNER
+    schema_version = state.get("schema_version")
+    common_invalid = (
+        state.get("owner") != MULTICOMPONENT_SCHEDULER_OWNER
         or state.get("canonical_state") is not True
-        or state.get("runtime_parallelism") is not False
-        or state.get("maximum_active_physical_leases") != 1
-    ):
+    )
+    if schema_version == MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION:
+        v2_only_fields = {
+            "configured_provider_class",
+            "backend_class",
+            "effective_width",
+            "hard_cap",
+            "batch_history",
+            "accounting_counters",
+            "private_descriptor_retained",
+            "prepared_transport_retained",
+            "worker_result_retained",
+        }
+        invalid = (
+            common_invalid
+            or state.get("runtime_parallelism") is not False
+            or state.get("serial_scheduling") is not True
+            or state.get("maximum_active_physical_leases") != 1
+            or any(field in state for field in v2_only_fields)
+        )
+    elif schema_version == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        profile = derive_multicomponent_transport_profile(
+            state.get("configured_provider_class")
+        )
+        invalid = common_invalid or any(
+            state.get(field) != expected for field, expected in profile.items()
+        )
+        invalid = invalid or (
+            state.get("hard_cap") not in {1, 2}
+            or not isinstance(state.get("batch_history"), list)
+            or not isinstance(state.get("accounting_counters"), Mapping)
+            or any(
+                state.get(flag) is not False
+                for flag in (
+                    "raw_prompt_retained",
+                    "raw_model_response_retained",
+                    "raw_provider_payload_retained",
+                    "private_descriptor_retained",
+                    "prepared_transport_retained",
+                    "worker_result_retained",
+                    "private_log_retained",
+                    "full_trace_retained",
+                    "local_parallelism_enabled",
+                    "adaptive_rate_limit_enabled",
+                    "live_characterization_run",
+                )
+            )
+        )
+    else:
+        invalid = True
+    if invalid:
         raise MulticomponentGraphSchedulingError("scheduler schema or owner mismatch")
     declared = state.pop("scheduler_digest", None)
     refreshed = _refresh_scheduler(state)
@@ -1148,19 +1336,28 @@ __all__ = [
     "LEASE_GRANTED",
     "LEASE_STALE",
     "MULTICOMPONENT_LEASE_SCHEMA_VERSION",
+    "MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION",
+    "MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION",
+    "MULTICOMPONENT_BATCH_SCHEMA_VERSION",
+    "MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION",
+    "MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION",
     "MULTICOMPONENT_ROLE_CALL_LIMITS",
+    "MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_OWNER",
     "MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION",
+    "MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_STAGE",
     "MULTICOMPONENT_WORK_SCHEMA_VERSION",
     "MulticomponentGraphSchedulingError",
     "cancel_lease",
     "complete_scheduler",
     "derive_multicomponent_compatibility_envelope",
+    "derive_multicomponent_transport_profile",
     "derive_ready_work",
     "dispatch_lease",
     "grant_next_lease",
     "initialize_scheduler_state",
+    "initialize_scheduler_v2_state",
     "scheduler_trace_projection",
     "settle_role_lease",
     "validate_scheduler_state",
