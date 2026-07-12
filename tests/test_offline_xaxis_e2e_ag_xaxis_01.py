@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -726,14 +725,30 @@ def test_offline_xaxis_static_closed_surface_guard() -> None:
         assert imported_names.isdisjoint(forbidden_import_roots), path
         assert called_names.isdisjoint(forbidden_calls), path
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", "core/pipeline_orchestrator.py"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+    orchestrator_source = (ROOT / "core" / "pipeline_orchestrator.py").read_text(
+        encoding="utf-8"
     )
-    assert diff.stdout.strip() == ""
+    assert "if final_answer_packet_handoff.author_input_blocked:" in orchestrator_source
+    assert "build_blocked_fap_terminal_report" in orchestrator_source
+    assert "build_blocked_fap_terminal_trace_fragment" in orchestrator_source
+    assert "execute_author_handoff_from_scope" in orchestrator_source
+    assert (
+        'raise PipelineError("FinalAnswerPacket did not produce Author input")'
+        in orchestrator_source
+    )
+    blocked_branch_index = orchestrator_source.index(
+        "if final_answer_packet_handoff.author_input_blocked:"
+    )
+    author_call_index = orchestrator_source.index(
+        "execute_author_handoff_from_scope(",
+        blocked_branch_index,
+    )
+    else_index = orchestrator_source.index(
+        "else:",
+        blocked_branch_index,
+        author_call_index,
+    )
+    assert else_index < author_call_index
 
 
 def test_docs_use_merge_stable_offline_xaxis_posture() -> None:

@@ -87,6 +87,8 @@ from core.failure_card import (
     normalize_force_corpus_state,
 )
 from core.final_answer_packet_runtime import (
+    build_blocked_fap_terminal_report,
+    build_blocked_fap_terminal_trace_fragment,
     build_safe_blocked_fap_summary,
     prepare_final_answer_packet_author_handoff_from_scope,
 )
@@ -3917,16 +3919,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     final_answer_packet_action = final_answer_packet_handoff.action
     final_answer_packet = final_answer_packet_handoff.packet
-    if final_answer_packet_handoff.author_input_blocked:
-        raise PipelineError(
-            "blocked FinalAnswerPacket cannot proceed to Author handoff",
-            blocked_fap_summary=build_safe_blocked_fap_summary(
-                run_kernel.state.final_answer_authority_projection
-            ),
-        )
-    final_answer_author_payload = final_answer_packet_handoff.author_payload
-    if final_answer_author_payload is None:
-        raise PipelineError("FinalAnswerPacket did not produce Author input")
+    blocked_fap_summary: dict[str, Any] | None = None
     author_prompt = final_answer_packet_handoff.author_prompt
     author_system_prompt_key = final_answer_packet_handoff.author_system_prompt_key
     _author_effort = final_answer_packet_handoff.author_effort
@@ -3951,31 +3944,54 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         economist_skip_eligibility_shadow_telemetry,
         economist_skip_shadow_alignment,
     ) = post_analyst_handoff.orchestrator_values()
-    _measure_context_stage(
-        "author",
-        prompt=author_prompt,
-        system_prompt=_author_system,
-        stable_prefix=_author_system,
-        evidence_passages=author_evidence,
-    )
 
-    author_execution_handoff = execute_author_handoff_from_scope(
-        run_kernel,
-        locals(),
-        ask_model=_cap_model_phase(ask_model, "author"),
-        system_prompt_registry=DEFAULT_SYSTEM,
-        base_url=local_url,
-        api_key=or_api_key,
-        stream_display=config.author_stream_display,
-    )
-    report = author_execution_handoff.report
-    author_seconds = author_execution_handoff.author_seconds
-    synthesis_seconds = author_execution_handoff.synthesis_seconds  # noqa: F841
-    quantitative_guard_stream_buffered = author_execution_handoff.quantitative_guard_stream_buffered
-    quantitative_consistency_telemetry = author_execution_handoff.quantitative_consistency_telemetry
-    quantitative_consistency_guard_telemetry = (
-        author_execution_handoff.quantitative_consistency_guard_telemetry
-    )
+    if final_answer_packet_handoff.author_input_blocked:
+        # AG-BLOCKED-FAP-SAFE-TERMINAL-OUTCOME-01: blocked FAP never reaches Author.
+        # Preserve FAP readiness; return a sanitized non-Author RunOutcome instead
+        # of raising PipelineError.
+        blocked_fap_summary = build_safe_blocked_fap_summary(
+            run_kernel.state.final_answer_authority_projection
+        )
+        report = build_blocked_fap_terminal_report(blocked_fap_summary)
+        author_seconds = 0.0
+        synthesis_seconds = 0.0  # noqa: F841
+        quantitative_guard_stream_buffered = False
+        quantitative_consistency_telemetry = {}
+        quantitative_consistency_guard_telemetry = {}
+    else:
+        final_answer_author_payload = final_answer_packet_handoff.author_payload
+        if final_answer_author_payload is None:
+            raise PipelineError("FinalAnswerPacket did not produce Author input")
+        _measure_context_stage(
+            "author",
+            prompt=author_prompt,
+            system_prompt=_author_system,
+            stable_prefix=_author_system,
+            evidence_passages=author_evidence,
+        )
+
+        author_execution_handoff = execute_author_handoff_from_scope(
+            run_kernel,
+            locals(),
+            ask_model=_cap_model_phase(ask_model, "author"),
+            system_prompt_registry=DEFAULT_SYSTEM,
+            base_url=local_url,
+            api_key=or_api_key,
+            stream_display=config.author_stream_display,
+        )
+        report = author_execution_handoff.report
+        author_seconds = author_execution_handoff.author_seconds
+        synthesis_seconds = author_execution_handoff.synthesis_seconds  # noqa: F841
+        quantitative_guard_stream_buffered = (
+            author_execution_handoff.quantitative_guard_stream_buffered
+        )
+        quantitative_consistency_telemetry = (
+            author_execution_handoff.quantitative_consistency_telemetry
+        )
+        quantitative_consistency_guard_telemetry = (
+            author_execution_handoff.quantitative_consistency_guard_telemetry
+        )
+
     authority_citation_survival = build_post_author_citation_survival_handoff(
         report=report,
         economist_safety_telemetry=economist_safety_telemetry,
@@ -4049,6 +4065,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         synth_was_insufficient=bool(synth_was_insufficient),
         empty_entity=bool(empty_entity_flag),
     )
+    if final_answer_packet_handoff.author_input_blocked:
+        # Authoritative exported terminal posture is blocked/insufficient whenever
+        # FAP is blocked. Preserve sufficiency lineage only as diagnostics.
+        useful_content = False
+        useful_content_reason = "blocked_final_answer_packet"
+        response_displayable = False
+        evidence_sufficient = False
+        answer_class = "no_evidence_found"
     authority_citation_outcome_guard = apply_authority_citation_survival_outcome_guard(
         projection=final_authority_citation_survival_projection,
         useful_content=bool(useful_content),
@@ -4064,6 +4088,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     evidence_sufficient = authority_citation_outcome_guard["evidence_sufficient"]
     answer_class = authority_citation_outcome_guard["answer_class"]
     failure_card_payload = authority_citation_outcome_guard["failure_card_payload"]
+    if final_answer_packet_handoff.author_input_blocked:
+        # Citation-survival guard must not reintroduce a displayable/partial
+        # success posture for a blocked FAP terminal.
+        useful_content = False
+        useful_content_reason = "blocked_final_answer_packet"
+        response_displayable = False
+        evidence_sufficient = False
+        answer_class = "no_evidence_found"
+        summary_payload = dict(blocked_fap_summary or {})
+        failure_card_payload = {
+            **dict(failure_card_payload or {}),
+            "show": True,
+            "reason": "blocked_final_answer_packet",
+            "blocked_fap": True,
+            "exported_terminal_posture": "blocked",
+            "blocked_fap_summary": summary_payload,
+            "sufficiency_decision_lineage": summary_payload.get("sufficiency_decision"),
+            "partial_candidate_not_fap_safe": (
+                summary_payload.get("sufficiency_decision")
+                == "partial_answer_authorized"
+            ),
+            "author_called": False,
+            "author_payload_derived": False,
+        }
     weak_failure_gate_contract_state = build_weak_failure_gate_state(
         corpus_state=corpus_state,
         corpus_weak=corpus_weak,
@@ -4101,6 +4149,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     response_displayable = weak_failure_gate_handoff.response_displayable
     evidence_sufficient = weak_failure_gate_handoff.evidence_sufficient
     answer_class = weak_failure_gate_handoff.answer_class
+    if final_answer_packet_handoff.author_input_blocked:
+        useful_content = False
+        useful_content_reason = "blocked_final_answer_packet"
+        response_displayable = False
+        evidence_sufficient = False
+        answer_class = "no_evidence_found"
+        summary_payload = dict(blocked_fap_summary or {})
+        failure_card_payload = {
+            **dict(failure_card_payload or {}),
+            "show": True,
+            "reason": "blocked_final_answer_packet",
+            "blocked_fap": True,
+            "exported_terminal_posture": "blocked",
+            "blocked_fap_summary": summary_payload,
+            "sufficiency_decision_lineage": summary_payload.get("sufficiency_decision"),
+            "partial_candidate_not_fap_safe": (
+                summary_payload.get("sufficiency_decision")
+                == "partial_answer_authorized"
+            ),
+            "author_called": False,
+            "author_payload_derived": False,
+        }
     synth_sufficient_first_pass = bool(synth_sufficient_first_pass_raw and evidence_sufficient)
 
     status.done()
@@ -4161,6 +4231,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         code_version_metadata_builder=current_code_version_metadata,
     )
     execution_trace = post_author_output_packaging.execution_trace
+    if final_answer_packet_handoff.author_input_blocked:
+        execution_trace.update(
+            build_blocked_fap_terminal_trace_fragment(blocked_fap_summary)
+        )
     if config.enable_ordinary_live_main_runkernel_coverage:
         ordinary_live_main_runkernel_coverage = (
             execute_ordinary_live_main_runkernel_coverage(

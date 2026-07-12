@@ -267,13 +267,18 @@ def _run_blocked_offline_path(
         run_id=f"ag-bal-01-{mode.casefold()}-run",
     )
     config.mode = mode
-    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
-        orchestrator.run_pipeline(
-            config,
-            active_harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        config,
+        active_harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    terminal = (outcome.execution_trace or {}).get("blocked_fap_terminal") or {}
+    assert terminal.get("blocked_fap") is True
+    assert terminal.get("author_called") is False
+    assert active_harness.author_prompts == []
+    assert active_harness.author_kwargs == []
+    captured["blocked_outcome"] = outcome
     return active_harness, captured
 
 
@@ -460,18 +465,19 @@ def test_ag_bal_01_fails_closed_without_offline_recovery_adapter(
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-06-24",
-                session_id="ag-bal-01-no-adapter-session",
-                run_id="ag-bal-01-no-adapter-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-01-no-adapter-session",
+            run_id="ag-bal-01-no-adapter-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    assert outcome.execution_trace["blocked_fap_terminal"]["blocked_fap"] is True
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
 
     assert harness.forbidden_live_calls == []
     assert harness.author_prompts == []
@@ -495,18 +501,19 @@ def test_ag_bal_01_fails_closed_when_recovered_evidence_cannot_cover_gap(
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-06-24",
-                session_id="ag-bal-01-weak-evidence-session",
-                run_id="ag-bal-01-weak-evidence-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-01-weak-evidence-session",
+            run_id="ag-bal-01-weak-evidence-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    assert outcome.execution_trace["blocked_fap_terminal"]["blocked_fap"] is True
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
 
     assert harness.forbidden_live_calls == []
     assert harness.author_prompts == []
@@ -641,18 +648,19 @@ def test_ag_bal_harden_01_poisoned_adapter_authority_cannot_promote_failed_cover
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-06-24",
-                session_id="ag-bal-harden-01-poison-weak-session",
-                run_id="ag-bal-harden-01-poison-weak-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-harden-01-poison-weak-session",
+            run_id="ag-bal-harden-01-poison-weak-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    assert outcome.execution_trace["blocked_fap_terminal"]["blocked_fap"] is True
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
 
     state = captured["run_kernel"].state
     latest_recovery = state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]["latest"]
@@ -692,18 +700,19 @@ def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_obs
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-06-24",
-                session_id="ag-bal-01-invalid-coverage-session",
-                run_id="ag-bal-01-invalid-coverage-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-01-invalid-coverage-session",
+            run_id="ag-bal-01-invalid-coverage-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    assert outcome.execution_trace["blocked_fap_terminal"]["blocked_fap"] is True
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
 
     state = captured["run_kernel"].state
     latest_recovery = state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]["latest"]

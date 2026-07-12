@@ -173,24 +173,29 @@ def _run_multipart(
     )
     if allow_blocked_packet:
         captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
-        try:
-            outcome = orchestrator.run_pipeline(
-                offline_balanced_run_config(
-                    query=harness.query,
-                    current_date="2026-06-24",
-                    session_id="ag-sem-multi-01-session",
-                    run_id="ag-sem-multi-01-run",
-                ),
-                harness.deps(),
-                NullStatusWriter(),
-                CostAccumulator(),
+        outcome = orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-06-24",
+                session_id="ag-sem-multi-01-session",
+                run_id="ag-sem-multi-01-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+        terminal = (outcome.execution_trace or {}).get("blocked_fap_terminal") or {}
+        if not terminal.get("blocked_fap"):
+            raise AssertionError(
+                "expected blocked FAP safe terminal outcome, "
+                f"got answer_class={outcome.execution_trace.get('answer_class')!r}"
             )
-        except orchestrator.PipelineError as exc:
-            if "blocked FinalAnswerPacket cannot proceed to Author handoff" not in str(exc):
-                raise
-            captured["blocked_pipeline_error"] = str(exc)
-            captured["blocked_pipeline_error_obj"] = exc
-            outcome = None
+        captured["blocked_pipeline_error"] = (
+            "blocked FinalAnswerPacket cannot proceed to Author handoff"
+        )
+        captured["blocked_fap_terminal"] = terminal
+        captured["blocked_fap_summary"] = terminal.get("blocked_fap_summary") or {}
+        captured["blocked_outcome"] = outcome
         return captured, harness, outcome
     captured, outcome = run_offline_ordinary_pipeline(
         harness,
@@ -352,8 +357,16 @@ def test_partial_missing_bounded_n_semantic_path_fails_closed_without_overclaim(
     assert captured["blocked_pipeline_error"] == (
         "blocked FinalAnswerPacket cannot proceed to Author handoff"
     )
-    blocked_error = captured["blocked_pipeline_error_obj"]
-    blocked_summary = blocked_error.blocked_fap_summary
+    blocked_summary = captured["blocked_fap_summary"]
+    blocked_outcome = captured["blocked_outcome"]
+    assert blocked_outcome is not None
+    assert blocked_outcome.failure_card.get("blocked_fap") is True
+    assert blocked_outcome.failure_card.get("exported_terminal_posture") == "blocked"
+    assert blocked_outcome.failure_card.get("author_called") is False
+    assert harness.author_kwargs == []
+    terminal = blocked_outcome.execution_trace["blocked_fap_terminal"]
+    assert terminal["exported_terminal_posture"] == "blocked"
+    assert terminal["partial_candidate_not_fap_safe"] is True
     assert blocked_summary["schema_version"] == (
         "blocked_final_answer_packet_safe_summary_v1"
     )
@@ -406,7 +419,9 @@ def test_partial_missing_bounded_n_semantic_path_fails_closed_without_overclaim(
     assert captured["author_handoff_called"] is False
     assert harness.author_prompts == []
     assert harness.author_kwargs == []
-    assert outcome is None
+    assert outcome is not None
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
+    assert "ScryRaven could not produce a supported answer." in outcome.report
 
 
 def test_component_cap_exceeded_skips_semantic_production_closed(
