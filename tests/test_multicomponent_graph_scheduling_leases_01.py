@@ -11,7 +11,9 @@ arbitrary-query support, permanent mode budgets, or physical parallelism.
 
 from __future__ import annotations
 
+import inspect
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -548,3 +550,193 @@ def test_20_no_parallelism_and_serial_trace(ordinary_product) -> None:
     assert scheduler["runtime_parallelism"] is False
     assert scheduler["serial_scheduling"] is True
     assert scheduler["maximum_active_physical_leases"] == 1
+
+
+def test_21_product_driver_dispatches_only_scheduler_selected_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import core.ordinary_multicomponent_synthesis_runtime as runtime
+
+    original = runtime._execute_multicomponent_role_transport
+    observed: list[tuple[str, str, str, str]] = []
+
+    def exact_dispatch(**kwargs):
+        kernel = kwargs["run_kernel"]
+        lease = _scheduler(kernel)["lease_history"][-1]
+        work = lease["work"]
+        assert kwargs["lease_id"] == lease["lease_id"]
+        assert kwargs["role"] == work["role"]
+        assert kwargs["logical_evaluation_key"] == work["logical_evaluation_key"]
+        assert safe_packet_digest(kwargs["input_packet"]) == work[
+            "input_packet_digest"
+        ]
+        assert kwargs.get("output_schema_variant") == work.get(
+            "output_schema_variant"
+        )
+        observed.append(
+            (
+                str(lease["lease_id"]),
+                str(work["role"]),
+                str(work["component_id"] or work["synthesis_key"] or "whole-case"),
+                str(work["logical_evaluation_key"]),
+            )
+        )
+        return original(**kwargs)
+
+    monkeypatch.setattr(runtime, "_execute_multicomponent_role_transport", exact_dispatch)
+    _outcome, kernel, _captured, _harness = _run_product(tmp_path)
+    assert len(observed) == len(_scheduler(kernel)["lease_history"])
+
+
+def test_22_scheduler_order_overrides_legacy_component_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original = scheduling.derive_ready_work
+
+    def reverse_scheduler_order(state, *, allow_active_lease=False):
+        return list(
+            reversed(
+                original(state, allow_active_lease=allow_active_lease)
+            )
+        )
+
+    monkeypatch.setattr(scheduling, "derive_ready_work", reverse_scheduler_order)
+    _outcome, kernel, _captured, _harness = _run_product(tmp_path)
+    legacy_order = [
+        item["component_id"]
+        for item in kernel.state.initial_answer_contract[
+            "accepted_answer_component_refs"
+        ]
+    ]
+    physical_order = [
+        lease["work"]["component_id"]
+        for lease in _scheduler(kernel)["lease_history"]
+        if lease["work"]["role"] == ROLE_COMPONENT_ANALYST
+    ]
+    assert physical_order == list(reversed(legacy_order))
+    assert physical_order != legacy_order
+
+
+def test_23_selected_product_path_does_not_consume_legacy_semantic_loops(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import core.ordinary_multicomponent_synthesis_runtime as runtime
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("legacy semantic enumeration helper was invoked")
+
+    for name in (
+        "execute_multicomponent_role_call",
+        "_execute_fresh_resynthesis",
+        "_execute_selective_reconstruction",
+        "_execute_selective_resynthesis",
+        "_attempt_dynamic_recovery",
+    ):
+        monkeypatch.setattr(runtime, name, forbidden)
+    outcome, kernel, _captured, _harness = _run_product(tmp_path, dynamic=True)
+    assert outcome.report
+    assert _scheduler(kernel)["status"] == "completed"
+    selected_source = inspect.getsource(runtime._execute_selected_lane)
+    assert "_drive_run_kernel_selected_semantic_work" in selected_source
+    assert "execute_multicomponent_role_call(" not in selected_source
+
+
+@pytest.mark.parametrize("dispatched", [False, True])
+def test_24_completion_rejects_active_lease_without_mutation(
+    dispatched: bool,
+) -> None:
+    kernel, packets = _scheduler_kernel()
+    lease = kernel.grant_next_multicomponent_work_lease()
+    work = lease["work"]
+    if dispatched:
+        kernel.prepare_multicomponent_role_dispatch(
+            lease_id=lease["lease_id"],
+            role=work["role"],
+            input_packet_digest=safe_packet_digest(
+                packets[str(work["component_id"])]
+            ),
+            logical_evaluation_key=work["logical_evaluation_key"],
+        )
+    before = deepcopy(_scheduler(kernel))
+    expected = LEASE_EXECUTION_STARTED if dispatched else LEASE_GRANTED
+    with pytest.raises(
+        MulticomponentGraphSchedulingError,
+        match="cannot complete while a semantic lease is active",
+    ):
+        kernel.complete_multicomponent_graph_scheduler()
+    assert _scheduler(kernel) == before
+    assert _scheduler(kernel)["lease_history"][-1]["status"] == expected
+
+
+def test_25_forged_terminal_scheduler_with_active_lease_is_rejected() -> None:
+    kernel, _packets = _scheduler_kernel()
+    kernel.grant_next_multicomponent_work_lease()
+    forged = deepcopy(_scheduler(kernel))
+    forged["status"] = "completed"
+    forged.pop("scheduler_digest")
+    forged = scheduling._refresh_scheduler(forged)
+    with pytest.raises(
+        MulticomponentGraphSchedulingError,
+        match="terminal scheduler state cannot contain an active semantic lease",
+    ):
+        scheduling.validate_scheduler_state(forged)
+
+
+def test_26_authorized_predispatch_authority_change_refunds_once() -> None:
+    kernel, _packets = _scheduler_kernel()
+    lease = kernel.grant_next_multicomponent_work_lease()
+    after_grant = deepcopy(_scheduler(kernel)["compatibility_envelope"])
+    kernel.apply_multicomponent_scheduler_authority_change(
+        transition="contract_authority_changed",
+        authority_ref={"accepted_contract_digest": "next-contract-digest"},
+    )
+    scheduler = _scheduler(kernel)
+    envelope = scheduler["compatibility_envelope"]
+    assert scheduler["lease_history"][-1]["status"] == LEASE_CANCELLED
+    assert envelope["remaining_units"] == after_grant["remaining_units"] + 1
+    assert envelope["returned_units"] == after_grant["returned_units"] + 1
+    kernel.apply_multicomponent_scheduler_authority_change(
+        transition="target_authority_changed",
+        authority_ref={"target_digest": "next-target-digest"},
+    )
+    assert _scheduler(kernel)["compatibility_envelope"]["returned_units"] == 1
+    assert _scheduler(kernel)["lease_history"][-1]["lease_id"] == lease["lease_id"]
+
+
+def test_27_authorized_postdispatch_change_rejects_late_observation() -> None:
+    kernel, packets = _scheduler_kernel()
+    lease = kernel.grant_next_multicomponent_work_lease()
+    work = lease["work"]
+    role_action = kernel.prepare_multicomponent_role_dispatch(
+        lease_id=lease["lease_id"],
+        role=work["role"],
+        input_packet_digest=safe_packet_digest(
+            packets[str(work["component_id"])]
+        ),
+        logical_evaluation_key=work["logical_evaluation_key"],
+    )
+    kernel.apply_multicomponent_scheduler_authority_change(
+        transition="graph_authority_changed",
+        authority_ref={"graph_digest": "next-graph-digest"},
+    )
+    scheduler = _scheduler(kernel)
+    assert scheduler["lease_history"][-1]["status"] == LEASE_STALE
+    assert scheduler["compatibility_envelope"]["spent_units"] == 1
+    before_late_result = deepcopy(scheduler)
+    with pytest.raises(
+        MulticomponentGraphSchedulingError,
+        match="exact active spent lease",
+    ):
+        kernel.reduce(
+            Observation.from_action(
+                role_action,
+                observation_type=role_action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+    assert _scheduler(kernel) == before_late_result
+    assert role_action.stage not in kernel.state.projections

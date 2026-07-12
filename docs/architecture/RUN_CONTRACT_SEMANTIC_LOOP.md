@@ -158,8 +158,13 @@ dynamic graph / AnswerContract amendment
 ```
 
 Every semantic call in the selected loop requires exact lease authority. The
-compatibility envelope derives from the installed role caps; predispatch
-cancellation returns its reservation and postdispatch failure retains its unit.
+loop grants first, reconstructs the canonical packet from the selected work,
+dispatches that exact lease, routes the artifact to its deterministic consumer,
+and only then rederives readiness. The compatibility envelope derives from the
+installed role caps; predispatch cancellation returns its reservation and
+postdispatch failure retains its unit. Completed and blocked scheduler states
+require zero active leases, and rejected completion attempts do not mutate lease
+or budget arithmetic.
 Logical readiness is not physical concurrency: one physical lease is active at
 a time and `runtime_parallelism=false`. Phase 5 bounded physical dispatch
 parallelism remains deferred, and no permanent Fast/Balanced/Deep semantic-call

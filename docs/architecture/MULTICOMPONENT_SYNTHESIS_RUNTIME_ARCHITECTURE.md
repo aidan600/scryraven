@@ -94,9 +94,12 @@ component requirement and custody facts
 ```
 
 Every semantic role arrow in that selected path is now scheduler-governed.
-RunKernel incrementally derives only exact currently actionable work, grants one
-bounded reservation, commits its spend immediately before transport, and
-atomically completes the lease with successful role-artifact admission. The
+The ordinary runtime first asks RunKernel to derive and grant the exact next
+work item, reconstructs the packet named by that work descriptor, commits its
+spend immediately before transport, and routes the resulting artifact to the
+existing deterministic owner. It then rederives readiness and repeats until
+canonical completion or blockage. The driver does not receive a caller-authored
+role, logical key, or packet as its next-work choice. The
 component Analyst, component D-prime, initial and selective Cross-Component
 Analyst, initial and affected synthesis D-prime, and initial and fresh selective
 Scrutineer calls all require the exact active lease lineage.
@@ -294,7 +297,10 @@ Phases 1 through 4 establish serial correctness, ordinary end-to-end
 consumption, one bounded dynamic recovery, selective recomputation, and
 RunKernel-owned serial scheduling with work/budget leases. The default selected
 ordinary path consumes this scheduler; the old role loops remain only as
-deterministic graph/admission consumers and no longer authorize semantic work.
+historical compatibility helpers. The scheduler driver invokes the existing
+deterministic graph, admission, recovery, closure, accounting, and finalization
+owners after each exact selected artifact; those owners do not nominate the
+next semantic call.
 
 The compatibility envelope is derived from the one existing shared role-cap
 mapping (component Analyst 5, component D-prime 5, Cross 2, synthesis D-prime
@@ -303,6 +309,13 @@ were chosen. A predispatch cancellation returns its reservation exactly once;
 postdispatch failure or stale-result rejection retains the spent unit. Required
 work exhaustion reaches ordinary Sufficiency and FinalAnswerPacket, then the
 installed safe non-Author terminal RunOutcome.
+
+Completed and blocked scheduler projections require zero active physical
+leases. Completion rejects either a granted reservation or a dispatch-committed
+lease before checking readiness and leaves scheduler, lease, and budget state
+unchanged. A RunKernel-owned semantic-authority change cancels and refunds an
+exact granted lease once, or marks an exact dispatch-committed lease stale while
+retaining its spent unit and rejecting any late successful observation.
 
 The remaining committed direction is:
 

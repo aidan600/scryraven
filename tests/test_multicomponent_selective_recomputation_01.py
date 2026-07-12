@@ -1591,7 +1591,7 @@ def test_selective_failure_blocks_without_whole_graph_fallback(
 
     whole_graph_called = False
 
-    def fail_selective(**_kwargs):
+    def fail_selective(*_args, **_kwargs):
         raise ComponentWorkGraphV1Error("forced selective proof failure")
 
     def observe_whole_graph(**_kwargs):
@@ -1599,7 +1599,11 @@ def test_selective_failure_blocks_without_whole_graph_fallback(
         whole_graph_called = True
         raise AssertionError("whole-graph fallback is forbidden")
 
-    monkeypatch.setattr(runtime, "_execute_selective_resynthesis", fail_selective)
+    monkeypatch.setattr(
+        runtime,
+        "component_work_graph_v1_selective_resynthesis_from_cross_artifact",
+        fail_selective,
+    )
     monkeypatch.setattr(runtime, "_execute_fresh_resynthesis", observe_whole_graph)
     _forbid_direct_semantic_producer(monkeypatch)
     harness = DynamicNorthstarHarness(tmp_path)

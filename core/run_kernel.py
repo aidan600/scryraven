@@ -3810,28 +3810,56 @@ class RunKernel:
         }
         context["component_analyst_input_packets"] = packets
         context["recovery_bindings"] = recoveries
-        self.state.multicomponent_scheduler_context = context
-        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
-            record_scheduler_authority_change(
-                state=self.state,
-                transition="recovery_contract_authority_registered",
-                authority_ref={
-                    "component_id": component_id,
-                    "recovery_authorization_id": recovery_authorization_ref.get(
-                        "authorization_id"
-                    ),
-                    "recovery_authorization_digest": recovery_authorization_ref.get(
-                        "authorization_digest"
-                    ),
-                    "amendment_record_id": contract_amendment_admission_ref.get(
-                        "amendment_record_id"
-                    ),
-                    "application_digest": contract_amendment_application_ref.get(
-                        "application_digest"
-                    ),
-                },
-            )
+        scheduler = record_scheduler_authority_change(
+            state=self.state,
+            transition="recovery_contract_authority_registered",
+            authority_ref={
+                "component_id": component_id,
+                "recovery_authorization_id": recovery_authorization_ref.get(
+                    "authorization_id"
+                ),
+                "recovery_authorization_digest": recovery_authorization_ref.get(
+                    "authorization_digest"
+                ),
+                "amendment_record_id": contract_amendment_admission_ref.get(
+                    "amendment_record_id"
+                ),
+                "application_digest": contract_amendment_application_ref.get(
+                    "application_digest"
+                ),
+            },
         )
+        self.state.multicomponent_scheduler_context = context
+        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
+
+    def apply_multicomponent_scheduler_authority_change(
+        self, *, transition: str, authority_ref: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Atomically settle a lease and install changed semantic authority."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            record_scheduler_authority_change,
+        )
+
+        transition_name = _clean_text(transition, limit=100)
+        allowed = {
+            "contract_authority_changed",
+            "graph_authority_changed",
+            "target_authority_changed",
+            "selective_closure_authority_changed",
+        }
+        if transition_name not in allowed or not _safe_mapping(authority_ref):
+            raise RunKernelTransitionError(
+                "scheduler authority transition requires a canonical authority ref"
+            )
+        scheduler = record_scheduler_authority_change(
+            state=self.state,
+            transition=transition_name,
+            authority_ref=_safe_mapping(authority_ref),
+        )
+        self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
+        return deepcopy(scheduler)
 
     def complete_multicomponent_graph_scheduler(self) -> dict[str, Any]:
         from core.multicomponent_graph_scheduling import (
@@ -17910,17 +17938,20 @@ class RunKernel:
                         [],
                     )
                 ]
+                admission_by_component = {
+                    item.get("component_id"): item for item in admission_refs
+                }
                 try:
                     expected_component_nodes = [
                         component_work_node_v1_from_admitted_component(
                             run_id=self.state.run_id,
                             request_id=self.state.request_id,
-                            accepted_component_ref=accepted_components[
-                                item.get("component_id")
+                            accepted_component_ref=accepted_component,
+                            component_admission_ref=admission_by_component[
+                                component_id
                             ],
-                            component_admission_ref=item,
                         )
-                        for item in admission_refs
+                        for component_id, accepted_component in accepted_components.items()
                     ]
                     if not expected_component_nodes:
                         raise RunKernelTransitionError(

@@ -132,7 +132,11 @@ or review-only input and is a named strangler target for the ordinary path.
 ## Installed Phase 4 Budget And Lease Doctrine
 
 The selected ordinary ComponentWorkGraph V1 path uses a parent compatibility
-envelope plus exact semantic-work leases.
+envelope plus exact semantic-work leases. A single serial driver asks RunKernel
+for the first exact ready item before it knows which role will run, reconstructs
+the packet bound by that descriptor, dispatches the exact lease, and sends the
+artifact to the existing deterministic consumer. Caller traversal order cannot
+nominate or override the next semantic call.
 
 Component budgets must be reserved from the parent envelope before concurrent
 work starts. This prevents multi-component work from silently multiplying cost,
@@ -150,6 +154,12 @@ work, and auditable by RunKernel. Failed or stale postdispatch work retains its
 unit. Required exhaustion reaches ordinary Sufficiency/FAP and the safe blocked
 terminal. Phase 4 permits one active physical lease; logical readiness is not
 physical concurrency.
+
+Scheduler completion and every blocked terminal require zero active leases.
+Invalid completion with either a granted or dispatch-committed lease is a
+non-mutating error. An authorized contract, graph, target, or selective-closure
+authority change settles its exact lease atomically: granted work is cancelled
+and refunded once; dispatch-committed work is stale-rejected and remains spent.
 
 ## Mode Doctrine
 

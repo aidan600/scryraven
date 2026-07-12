@@ -61,12 +61,16 @@ Current summary:
   order, runs one fresh whole-case Scrutineer, and returns through ordinary
   Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI output.
 - Multi-component Phase 4 serial scheduling and work/budget leases are
-  installed. The default selected ordinary path incrementally consumes exact
-  RunKernel-derived ready work; every semantic call requires one exact active
-  lease and pretransport spend commitment. The compatibility envelope derives
-  from the shared installed role caps. Predispatch cancellation may return one
-  reservation; postdispatch failure remains spent; required exhaustion reaches
-  ordinary Sufficiency/FAP and the safe non-Author terminal RunOutcome.
+  installed. One grant-first driver owns the default selected ordinary path:
+  it consumes the exact RunKernel work descriptor, reconstructs its canonical
+  packet, dispatches its exact lease, invokes the established deterministic
+  consumer, and rederives readiness. Historical caller-enumerated role loops do
+  not choose semantic work on that path. Every semantic call requires one exact
+  active lease and pretransport spend commitment. The compatibility envelope
+  derives from the shared installed role caps. Predispatch cancellation may
+  return one reservation; postdispatch failure remains spent; terminal states
+  require zero active leases; required exhaustion reaches ordinary
+  Sufficiency/FAP and the safe non-Author terminal RunOutcome.
 - Logical readiness is not physical concurrency. Phase 4 permits one active
   physical lease and records `runtime_parallelism=false`. Phase 5 bounded
   physical dispatch parallelism remains deferred, and no permanent

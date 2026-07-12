@@ -282,6 +282,14 @@ def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
     refreshed = _refresh_scheduler(state)
     if declared != refreshed.get("scheduler_digest"):
         raise MulticomponentGraphSchedulingError("scheduler digest mismatch")
+    if (
+        refreshed.get("status")
+        in {"completed", "blocked_exhausted", "blocked_required_work_failed"}
+        and refreshed.get("active_physical_lease_count") != 0
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "terminal scheduler state cannot contain an active semantic lease"
+        )
     return refreshed
 
 
@@ -985,12 +993,35 @@ def record_scheduler_authority_change(
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if any(
-        _mapping(item).get("status") in _ACTIVE_STATUSES
-        for item in scheduler.get("lease_history") or ()
-    ):
-        raise MulticomponentGraphSchedulingError(
-            "authority context cannot change while a physical lease is active"
+    active = [
+        (index, _mapping(item))
+        for index, item in enumerate(scheduler.get("lease_history") or ())
+        if _mapping(item).get("status") in _ACTIVE_STATUSES
+    ]
+    if active:
+        index, lease = active[0]
+        work = _mapping(lease.get("work"))
+        scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+        if lease.get("status") == LEASE_GRANTED:
+            lease["status"] = LEASE_CANCELLED
+            envelope = _mapping(scheduler.get("compatibility_envelope"))
+            envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
+            envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
+            scheduler["compatibility_envelope"] = envelope
+            settlement = LEASE_CANCELLED
+        else:
+            lease["status"] = LEASE_STALE
+            settlement = LEASE_STALE
+        lease["settlement_reason"] = "canonical_semantic_authority_changed"
+        scheduler["lease_history"][index] = lease
+        scheduler["transition_history"].append(
+            {
+                "transition": settlement,
+                "scheduler_revision": scheduler["scheduler_revision"],
+                "lease_id": lease.get("lease_id"),
+                "work_id": work.get("work_id"),
+                "authority_change_settlement": True,
+            }
         )
     scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
     scheduler["transition_history"].append(
@@ -1010,7 +1041,16 @@ def complete_scheduler(state: Any) -> dict[str, Any]:
     )
     if scheduler.get("status") != "active":
         return scheduler
-    if derive_ready_work(state):
+    active = [
+        lease
+        for lease in scheduler["lease_history"]
+        if lease["status"] in _ACTIVE_STATUSES
+    ]
+    if active:
+        raise MulticomponentGraphSchedulingError(
+            "scheduler cannot complete while a semantic lease is active"
+        )
+    if derive_ready_work(state, allow_active_lease=True):
         raise MulticomponentGraphSchedulingError(
             "scheduler cannot complete while semantic work remains ready"
         )
