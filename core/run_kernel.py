@@ -3622,6 +3622,13 @@ class RunKernel:
         )
         return deepcopy(_safe_mapping((scheduler.get("lease_history") or [{}])[-1]))
 
+    def derive_current_multicomponent_ready_work(self) -> list[dict[str, Any]]:
+        """Return RunKernel's exact current scheduler readiness projection."""
+
+        from core.multicomponent_graph_scheduling import derive_ready_work
+
+        return deepcopy(derive_ready_work(self.state))
+
     def prepare_multicomponent_role_dispatch(
         self,
         *,

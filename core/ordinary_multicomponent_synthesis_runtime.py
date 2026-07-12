@@ -1630,6 +1630,17 @@ def _drive_run_kernel_selected_semantic_work(
             raise _ScheduledSemanticWorkBlocked(
                 "required scheduled semantic work did not complete"
             )
+        ready = run_kernel.derive_current_multicomponent_ready_work()
+        if not ready:
+            if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
+                _finalize_scheduler_graph(
+                    run_kernel=run_kernel,
+                    drive_context=drive_context,
+                )
+                continue
+            raise OrdinaryMulticomponentRuntimeError(
+                "active scheduler has no semantic work or deterministic completion"
+            )
         lease = run_kernel.grant_next_multicomponent_work_lease()
         if lease.get("status") == LEASE_DENIED_EXHAUSTED:
             raise _ScheduledSemanticWorkBlocked(

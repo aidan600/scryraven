@@ -40,6 +40,7 @@ from core.multicomponent_graph_scheduling import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
+    ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
@@ -740,3 +741,51 @@ def test_27_authorized_postdispatch_change_rejects_late_observation() -> None:
         )
     assert _scheduler(kernel) == before_late_result
     assert role_action.stage not in kernel.state.projections
+
+
+def test_28_no_scrutiny_graph_reaches_deterministic_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original = NorthstarHarness.ask_model
+
+    def flat_synthesis(self, prompt, system_prompt, **kwargs):
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
+            payload = json.loads(prompt)
+            component_ids = [
+                item["component_id"] for item in payload["component_nodes"]
+            ]
+            return json.dumps(
+                {
+                    "synthesis_proposals": [
+                        {
+                            "synthesis_key": "flat_summary",
+                            "claim_text": (
+                                "The admitted Northstar facts jointly describe the "
+                                "rebate, deadline, eligibility, and filing routes."
+                            ),
+                            "relationship_type": "bounded_summary",
+                            "component_inputs": component_ids,
+                            "synthesis_inputs": [],
+                            "caveats": [],
+                            "nonclaims": [],
+                            "blockers": [],
+                        }
+                    ]
+                }
+            )
+        return original(self, prompt, system_prompt, **kwargs)
+
+    monkeypatch.setattr(NorthstarHarness, "ask_model", flat_synthesis)
+    outcome, kernel, captured, _harness = _run_product(tmp_path)
+    graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
+    assert outcome.report
+    assert captured["author_handoff_called"] is True
+    assert graph["scrutineer_required"] is False
+    assert graph["graph_status"] in {"ready", "ready_with_caveats"}
+    assert _scheduler(kernel)["status"] == "completed"
+    assert not [
+        lease
+        for lease in _scheduler(kernel)["lease_history"]
+        if lease["work"]["role"] == ROLE_SCRUTINEER
+    ]
