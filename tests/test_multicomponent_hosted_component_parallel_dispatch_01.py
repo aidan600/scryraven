@@ -28,6 +28,7 @@ from core.multicomponent_graph_scheduling import (
     initialize_scheduler_v2_state,
     validate_scheduler_state,
 )
+from core.run_kernel import ActionType, RunKernel, RunKernelTransitionError, RunStageStatus
 from tests.test_multicomponent_graph_scheduling_leases_01 import (
     _scheduler,
     _scheduler_kernel,
@@ -199,3 +200,143 @@ def test_v2_batch_cancellation_cannot_partially_refund() -> None:
         )
 
     assert _scheduler(kernel) == before
+
+
+def test_child_two_private_materialization_failure_publishes_nothing_and_reuses_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel, _packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    packet_digests = [
+        item["input_packet_digest"] for item in batch["ordered_work_refs"]
+    ]
+    original = RunKernel._materialize_multicomponent_child_action
+    calls = 0
+
+    def fail_second(self: RunKernel, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RunKernelTransitionError("forced child two failure")
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(
+        RunKernel,
+        "_materialize_multicomponent_child_action",
+        fail_second,
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="forced child two failure"):
+        kernel.commit_multicomponent_batch_dispatch(
+            batch_id=batch["batch_id"],
+            packet_digests=packet_digests,
+        )
+
+    scheduler = _scheduler(kernel)
+    assert scheduler["batch_history"][-1]["status"] == "cancelled_predispatch_returned"
+    assert scheduler["compatibility_envelope"]["spent_units"] == 0
+    assert scheduler["compatibility_envelope"]["reserved_units"] == 0
+    assert not any(
+        action.action_type
+        in {
+            ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+        }
+        for action in kernel.state.issued_actions.values()
+    )
+
+    monkeypatch.setattr(
+        RunKernel,
+        "_materialize_multicomponent_child_action",
+        original,
+    )
+    later = kernel.grant_next_multicomponent_work_batch()
+    assert [item["logical_evaluation_key"] for item in later["ordered_work_refs"]] == [
+        item["logical_evaluation_key"] for item in batch["ordered_work_refs"]
+    ]
+
+
+def test_atomic_dispatch_publishes_all_children_only_with_commitment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel, _packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    packet_digests = [
+        item["input_packet_digest"] for item in batch["ordered_work_refs"]
+    ]
+    original_dispatch = scheduling.dispatch_batch
+    checked_precommit = False
+
+    def assert_no_children_before_commit(**kwargs):
+        nonlocal checked_precommit
+        checked_precommit = True
+        assert not any(
+            action.action_type
+            is ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE
+            for action in kernel.state.issued_actions.values()
+        )
+        return original_dispatch(**kwargs)
+
+    monkeypatch.setattr(scheduling, "dispatch_batch", assert_no_children_before_commit)
+
+    actions = kernel.commit_multicomponent_batch_dispatch(
+        batch_id=batch["batch_id"],
+        packet_digests=packet_digests,
+    )
+    scheduler = _scheduler(kernel)
+
+    assert checked_precommit is True
+    assert len(actions) == 2
+    assert [action.sequence for action in actions] == list(
+        range(actions[0].sequence, actions[0].sequence + 2)
+    )
+    assert all(action.action_id in kernel.state.issued_actions for action in actions)
+    assert kernel.state.next_observation_sequence == actions[0].sequence
+    assert scheduler["batch_history"][-1]["status"] == "dispatch_committed"
+    assert scheduler["compatibility_envelope"]["reserved_units"] == 0
+    assert scheduler["compatibility_envelope"]["spent_units"] == 2
+    assert scheduler["accounting_counters"]["dispatch_committed_unit_count"] == 2
+    assert scheduler["private_descriptor_retained"] is False
+
+
+def test_issued_dispatch_precommit_failure_closes_action_without_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel, _packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    packet_digests = [
+        item["input_packet_digest"] for item in batch["ordered_work_refs"]
+    ]
+
+    def fail_dispatch(**_kwargs):
+        raise scheduling.MulticomponentGraphSchedulingError("forced reducer failure")
+
+    monkeypatch.setattr(scheduling, "dispatch_batch", fail_dispatch)
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="batch dispatch failed before child publication",
+    ):
+        kernel.commit_multicomponent_batch_dispatch(
+            batch_id=batch["batch_id"],
+            packet_digests=packet_digests,
+        )
+
+    dispatch_actions = [
+        action
+        for action in kernel.state.issued_actions.values()
+        if action.action_type is ActionType.MULTICOMPONENT_BATCH_DISPATCH
+    ]
+    assert len(dispatch_actions) == 1
+    dispatch = dispatch_actions[0]
+    assert kernel.state.action_statuses[dispatch.action_id] is RunStageStatus.FAILED
+    assert dispatch.action_id in kernel.state.reduced_action_ids
+    assert not any(
+        action.action_type
+        is ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE
+        for action in kernel.state.issued_actions.values()
+    )
+    scheduler = _scheduler(kernel)
+    assert scheduler["batch_history"][-1]["status"] == "cancelled_predispatch_returned"
+    assert scheduler["compatibility_envelope"]["spent_units"] == 0
+    assert scheduler["compatibility_envelope"]["reserved_units"] == 0

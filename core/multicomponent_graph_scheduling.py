@@ -40,6 +40,9 @@ MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION = (
 MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION = (
     "multicomponent_private_child_action_descriptor_v1"
 )
+MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION = (
+    "multicomponent_private_child_action_descriptor_set_v1"
+)
 MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION = (
     "multicomponent_prepared_transport_call_v1"
 )
@@ -871,18 +874,20 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
 
 def work_is_current(state: Any, work: Mapping[str, Any]) -> bool:
     target = _mapping(work)
-    def semantic_identity(value: Mapping[str, Any]) -> dict[str, Any]:
-        identity = deepcopy(dict(value))
-        for key in ("work_id", "work_digest", "scheduler_revision"):
-            identity.pop(key, None)
-        return identity
     try:
         return any(
-            semantic_identity(candidate) == semantic_identity(target)
+            _semantic_work_identity(candidate) == _semantic_work_identity(target)
             for candidate in derive_ready_work(state, allow_active_lease=True)
         )
     except MulticomponentGraphSchedulingError:
         return False
+
+
+def _semantic_work_identity(value: Mapping[str, Any]) -> dict[str, Any]:
+    identity = deepcopy(dict(value))
+    for key in ("work_id", "work_digest", "scheduler_revision"):
+        identity.pop(key, None)
+    return identity
 
 
 def _work_ref(work: Mapping[str, Any]) -> dict[str, Any]:
@@ -1144,6 +1149,162 @@ def cancel_batch(
             "batch_id": batch_id,
             "ordered_lease_ids": lease_ids,
             "returned_units": len(leases),
+        }
+    )
+    return _refresh_scheduler(scheduler)
+
+
+def dispatch_batch(
+    *,
+    state: Any,
+    batch_id: str,
+    dispatch_action_ref: Mapping[str, Any],
+    descriptor_set: Mapping[str, Any],
+    child_action_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Atomically spend a V2 batch and bind its canonical child actions."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+        raise MulticomponentGraphSchedulingError("batch dispatch requires scheduler V2")
+    batch_index = _batch_index(scheduler, batch_id)
+    batch = _mapping(scheduler["batch_history"][batch_index])
+    if batch.get("status") != LEASE_GRANTED:
+        raise MulticomponentGraphSchedulingError("batch is not dispatchable")
+    lease_refs = [_mapping(item) for item in batch.get("ordered_lease_refs") or ()]
+    lease_indexes = [
+        _lease_index(scheduler, str(item.get("lease_id") or "")) for item in lease_refs
+    ]
+    leases = [_mapping(scheduler["lease_history"][index]) for index in lease_indexes]
+    if not leases or any(lease.get("status") != LEASE_GRANTED for lease in leases):
+        raise MulticomponentGraphSchedulingError(
+            "batch dispatch requires every exact granted lease"
+        )
+    current_ready = derive_ready_work(state, allow_active_lease=True)
+    if len(current_ready) < len(leases) or any(
+        _semantic_work_identity(current_ready[index])
+        != _semantic_work_identity(_mapping(lease.get("work")))
+        for index, lease in enumerate(leases)
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "batch dispatch membership is not the current contiguous ready prefix"
+        )
+    descriptors = _mapping(descriptor_set)
+    declared_set_digest = descriptors.get("descriptor_set_digest")
+    descriptor_set_core = deepcopy(descriptors)
+    descriptor_set_core.pop("descriptor_set_digest", None)
+    if (
+        descriptors.get("schema_version")
+        != MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION
+        or descriptors.get("batch_id") != batch.get("batch_id")
+        or descriptors.get("batch_digest") != batch.get("batch_digest")
+        or declared_set_digest != _digest(descriptor_set_core)
+    ):
+        raise MulticomponentGraphSchedulingError("descriptor-set identity mismatch")
+    descriptor_items = [
+        _mapping(item) for item in descriptors.get("ordered_descriptors") or ()
+    ]
+    action_refs = [_mapping(item) for item in child_action_refs]
+    if len(descriptor_items) != len(leases) or len(action_refs) != len(leases):
+        raise MulticomponentGraphSchedulingError(
+            "batch dispatch child cardinality mismatch"
+        )
+    expected_action_types = {
+        ROLE_COMPONENT_ANALYST: "multicomponent_component_analyst_execute",
+        ROLE_COMPONENT_DPRIME: "multicomponent_component_dprime_execute",
+        ROLE_CROSS_COMPONENT_ANALYST: "multicomponent_cross_analyst_execute",
+        ROLE_SYNTHESIS_DPRIME: "multicomponent_synthesis_dprime_execute",
+        ROLE_SCRUTINEER: "multicomponent_scrutineer_execute",
+    }
+    seen_keys: set[str] = set()
+    for batch_index_value, (lease, descriptor, action_ref) in enumerate(
+        zip(leases, descriptor_items, action_refs, strict=True)
+    ):
+        work = _mapping(lease.get("work"))
+        descriptor_core = deepcopy(descriptor)
+        declared_descriptor_digest = descriptor_core.pop("descriptor_digest", None)
+        expected = {
+            "schema_version": MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION,
+            "batch_id": batch.get("batch_id"),
+            "batch_digest": batch.get("batch_digest"),
+            "batch_index": batch_index_value,
+            "work_id": work.get("work_id"),
+            "work_digest": work.get("work_digest"),
+            "lease_id": lease.get("lease_id"),
+            "lease_digest": lease.get("lease_digest"),
+            "role": work.get("role"),
+            "action_type": expected_action_types[str(work.get("role") or "")],
+            "logical_evaluation_key": work.get("logical_evaluation_key"),
+            "input_packet_digest": work.get("input_packet_digest"),
+            "output_schema_variant": work.get("output_schema_variant"),
+        }
+        if any(descriptor_core.get(key) != value for key, value in expected.items()):
+            raise MulticomponentGraphSchedulingError(
+                "private child descriptor and granted lease disagree"
+            )
+        if declared_descriptor_digest != _digest(descriptor_core):
+            raise MulticomponentGraphSchedulingError("private child descriptor digest mismatch")
+        logical_key = str(work.get("logical_evaluation_key") or "")
+        if logical_key in seen_keys:
+            raise MulticomponentGraphSchedulingError("descriptor logical key is duplicate")
+        seen_keys.add(logical_key)
+        expected_ref = {
+            "batch_index": batch_index_value,
+            "role": work.get("role"),
+            "logical_evaluation_key": logical_key,
+            "input_packet_digest": work.get("input_packet_digest"),
+            "lease_id": lease.get("lease_id"),
+            "lease_digest": lease.get("lease_digest"),
+            "work_id": work.get("work_id"),
+            "work_digest": work.get("work_digest"),
+        }
+        if any(action_ref.get(key) != value for key, value in expected_ref.items()):
+            raise MulticomponentGraphSchedulingError(
+                "child action ref and descriptor binding disagree"
+            )
+    child_sequences = [int(item.get("sequence") or 0) for item in action_refs]
+    if child_sequences != list(range(child_sequences[0], child_sequences[0] + len(leases))):
+        raise MulticomponentGraphSchedulingError("child action sequences are not contiguous")
+    for index, (lease_index, lease, action_ref) in enumerate(
+        zip(lease_indexes, leases, action_refs, strict=True)
+    ):
+        lease["status"] = LEASE_EXECUTION_STARTED
+        lease["dispatch_action_ref"] = deepcopy(dict(dispatch_action_ref))
+        lease["role_action_ref"] = deepcopy(action_ref)
+        scheduler["lease_history"][lease_index] = lease
+    next_revision = int(scheduler["scheduler_revision"]) + 1
+    batch["status"] = "dispatch_committed"
+    batch["dispatch_action_ref"] = deepcopy(dict(dispatch_action_ref))
+    batch["descriptor_set_digest"] = declared_set_digest
+    batch["ordered_child_action_refs"] = deepcopy(action_refs)
+    batch["safe_accounting_summary"] = {
+        "schema_version": MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION,
+        "dispatch_committed_unit_count": len(leases),
+        "transport_submission_count": 0,
+        "transport_started_count": 0,
+        "transport_completed_count": 0,
+        "successful_artifact_count": 0,
+        "failed_submission_count": 0,
+        "failed_transport_count": 0,
+        "stale_result_count": 0,
+    }
+    scheduler["batch_history"][batch_index] = batch
+    counters = _mapping(scheduler.get("accounting_counters"))
+    counters["dispatch_committed_unit_count"] = int(
+        counters.get("dispatch_committed_unit_count") or 0
+    ) + len(leases)
+    scheduler["accounting_counters"] = counters
+    scheduler["scheduler_revision"] = next_revision
+    scheduler["transition_history"].append(
+        {
+            "transition": "batch_dispatch_committed",
+            "scheduler_revision": next_revision,
+            "batch_id": batch_id,
+            "dispatch_action_id": _mapping(dispatch_action_ref).get("action_id"),
+            "ordered_child_action_ids": [item.get("action_id") for item in action_refs],
+            "dispatch_committed_unit_count": len(leases),
         }
     )
     return _refresh_scheduler(scheduler)
@@ -1627,6 +1788,7 @@ __all__ = [
     "MULTICOMPONENT_BATCH_LEASE_GROUP_SCHEMA_VERSION",
     "MULTICOMPONENT_BATCH_SCHEMA_VERSION",
     "MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SCHEMA_VERSION",
+    "MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION",
     "MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION",
     "MULTICOMPONENT_ROLE_CALL_LIMITS",
     "MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION",
@@ -1645,6 +1807,7 @@ __all__ = [
     "derive_ready_work",
     "derive_ready_batch_work",
     "dispatch_lease",
+    "dispatch_batch",
     "grant_next_lease",
     "grant_next_batch",
     "initialize_scheduler_state",
