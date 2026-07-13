@@ -75,6 +75,13 @@ The scheduler never skips intervening work to create a larger batch, never
 mixes roles in a batch, and never introduces an all-Analyst or all-D-prime stage
 barrier. Physical completion order cannot choose canonical work order.
 
+Scheduler V3 is the same RunKernel scheduler with a separate deterministic
+Specialist compatibility pool. It is selected only for runs with an injected
+Specialist registry and execution policy; ordinary closed-default runs remain
+V2. Specialist work is always serial, maximum one in flight, nonrecursive, and
+excluded from semantic role caps, provider transport accounting, and the
+22-unit compatibility envelope.
+
 ## Lease And Budget Authority
 
 Every semantic call carries an exact RunKernel lease bound to current work,
@@ -183,7 +190,7 @@ or semantic-call budgets.
 
 This contract does not prove live provider capacity, adaptive concurrency,
 Local parallelism, graph-bound parallelism, arbitrary-query scheduling,
-Specialist scheduling, model quality, or product correctness. It does not
+product Specialist capability quality, or product correctness. It does not
 authorize new providers, endpoint changes, mode-budget selection, or live
 calls.
 

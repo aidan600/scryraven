@@ -33,6 +33,7 @@ CONCERN_OWNERS = {
     "canonical:bounded-multicomponent-runtime": (
         ARCH / "MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md"
     ),
+    "canonical:specialist-graph-substrate": ARCH / "SPECIALIST_GRAPH_SUBSTRATE.md",
 }
 DEFAULT_SPINE = (GUIDANCE, CURRENT_STATE, ROADMAP)
 MARKERS = (
@@ -44,6 +45,7 @@ MARKERS = (
     "MC-P5A-STRICT-ONE-SHOT",
     "MC-P5A-SAMPLING-COMPAT",
     "MC-P5A-MAIN-THREAD-COST",
+    "SPECIALIST-S0-GENERIC",
 )
 
 
@@ -84,12 +86,17 @@ def test_concern_authorities_are_unique_current_and_default_no() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
     for authority, owner in CONCERN_OWNERS.items():
         text = _read(owner)
+        verified_runtime = (
+            "46f4fc998f1aae338aff24e9a7033f32ee90c78a"  # pragma: allowlist secret
+            if authority == "canonical:specialist-graph-substrate"
+            else "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
+        )
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
         assert "Status: current" in text
         assert "Default-read: no" in text
-        assert "Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1" in text
+        assert f"Verified-against-runtime: {verified_runtime}" in text
 
 
 def test_quarantine_is_narrow_routed_support_not_temporal_authority() -> None:
@@ -154,10 +161,12 @@ def test_current_state_has_all_installed_capability_markers() -> None:
         assert current.count(f"`{marker}`") == 1
 
 
-def test_roadmap_orders_s0_before_s1_without_installation_claims() -> None:
+def test_roadmap_records_installed_s0_before_active_s1() -> None:
     roadmap = _read(ROADMAP)
-    assert roadmap.index("## Active Next: S0") < roadmap.index("## Committed Next: S1")
-    assert "no product Specialist activation yet" in roadmap
+    assert roadmap.index("## Installed Foundation: S0") < roadmap.index(
+        "## Active Next: S1"
+    )
+    assert "no product Specialist activation" in roadmap
     assert "claims that planned capabilities are installed" in roadmap
     for marker in MARKERS:
         assert marker not in roadmap

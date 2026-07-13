@@ -100,12 +100,13 @@ def component_dprime_input_packet(
     *,
     analyst_artifact: Mapping[str, Any],
     analyst_input_packet: Mapping[str, Any],
+    specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     analyst = validate_multicomponent_role_artifact(
         analyst_artifact,
         expected_role=ROLE_COMPONENT_ANALYST,
     )
-    return {
+    packet = {
         "supported_query_class": (
             "ordinary-bounded-multicomponent-factual-synthesis-v1"
         ),
@@ -122,6 +123,33 @@ def component_dprime_input_packet(
             analyst_input_packet
         ),
     }
+    if specialist_result_artifact:
+        from core.specialist_graph_runtime import (
+            specialist_result_ref,
+            validate_specialist_result_artifact,
+        )
+
+        result = validate_specialist_result_artifact(specialist_result_artifact)
+        target = _safe_mapping(result.get("canonical_target_ref"))
+        component_id = _safe_mapping(
+            analyst_input_packet.get("component_ref")
+        ).get("component_id")
+        if (
+            target.get("target_kind") != "component"
+            or target.get("target_key") != component_id
+            or result.get("dprime_route") != "component_dprime"
+        ):
+            raise ValueError("component D-prime Specialist result target mismatch")
+        packet["specialist_result_inputs"] = {
+            "namespace": "specialist_result_inputs",
+            "result_ref": specialist_result_ref(result),
+            "bounded_result": deepcopy(result.get("bounded_result") or {}),
+            "assumptions": list(result.get("assumptions") or ()),
+            "caveats": list(result.get("caveats") or ()),
+            "blockers": list(result.get("blockers") or ()),
+            "execution_posture": result.get("execution_posture"),
+        }
+    return packet
 
 
 def _typed_lane_custody_gap_exception_authorized(
@@ -159,6 +187,7 @@ def stage_multicomponent_component_admission(
     semantic_observation: Mapping[str, Any] | None,
     sanitized_content_references: Sequence[Mapping[str, Any]],
     component_coverage_record: Mapping[str, Any] | None,
+    specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate owner execution and stage semantic/coverage state atomically."""
 
@@ -198,6 +227,7 @@ def stage_multicomponent_component_admission(
     expected_dprime_input = component_dprime_input_packet(
         analyst_artifact=analyst,
         analyst_input_packet=expected_analyst_input,
+        specialist_result_artifact=specialist_result_artifact,
     )
     if dprime.get("input_packet_digest") != safe_packet_digest(
         expected_dprime_input
@@ -475,6 +505,7 @@ def execute_multicomponent_component_admission(
     semantic_observation: Mapping[str, Any] | None,
     sanitized_content_references: Sequence[Mapping[str, Any]],
     component_coverage_record: Mapping[str, Any] | None,
+    specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Stage then atomically reduce one component through RunKernel."""
 
@@ -531,6 +562,7 @@ def execute_multicomponent_component_admission(
         semantic_observation=semantic_observation,
         sanitized_content_references=sanitized_content_references,
         component_coverage_record=component_coverage_record,
+        specialist_result_artifact=specialist_result_artifact,
     )
     component_ref = staged["component_admission_ref"]
     prior = _safe_mapping(

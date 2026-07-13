@@ -757,6 +757,9 @@ class ActionType(str, Enum):
         "multicomponent_synthesis_dprime_execute"
     )
     MULTICOMPONENT_SCRUTINEER_EXECUTE = "multicomponent_scrutineer_execute"
+    SPECIALIST_PROPOSAL_BIND = "specialist_proposal_bind"
+    SPECIALIST_CAPABILITY_EXECUTE = "specialist_capability_execute"
+    SPECIALIST_VALIDATOR_CONSUME = "specialist_validator_consume"
     MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE = (
         "multicomponent_component_admission_reduce"
     )
@@ -882,6 +885,9 @@ class ObservationType(str, Enum):
         "multicomponent_synthesis_dprime_completed"
     )
     MULTICOMPONENT_SCRUTINEER_COMPLETED = "multicomponent_scrutineer_completed"
+    SPECIALIST_PROPOSAL_BOUND = "specialist_proposal_bound"
+    SPECIALIST_CAPABILITY_COMPLETED = "specialist_capability_completed"
+    SPECIALIST_VALIDATOR_CONSUMED = "specialist_validator_consumed"
     MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED = (
         "multicomponent_component_admission_reduced"
     )
@@ -3497,14 +3503,20 @@ class RunKernel:
         component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
         requested_synthesis_directive: str,
         configured_provider: str = "OpenAI",
+        specialist_capability_registry: Any | None = None,
+        specialist_execution_policy: Any | None = None,
     ) -> dict[str, Any]:
-        """Initialize the qualifying lane's RunKernel-owned V2 scheduler."""
+        """Initialize the qualifying lane's RunKernel-owned V2/V3 scheduler."""
 
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
             derive_multicomponent_transport_profile,
         )
         from core.multicomponent_role_runtime import safe_packet_digest
+        from core.specialist_graph_runtime import (
+            SpecialistCapabilityRegistry,
+            SpecialistExecutionPolicy,
+        )
 
         if self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
             raise RunKernelTransitionError("multi-component scheduler already exists")
@@ -3566,6 +3578,27 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "scheduler synthesis directive is not current contract authority"
             )
+        specialist_injected = (
+            specialist_capability_registry is not None
+            or specialist_execution_policy is not None
+        )
+        if specialist_injected and not (
+            isinstance(specialist_capability_registry, SpecialistCapabilityRegistry)
+            and isinstance(specialist_execution_policy, SpecialistExecutionPolicy)
+        ):
+            raise RunKernelTransitionError(
+                "Specialist scheduler injection requires an exact registry and policy"
+            )
+        registry_projection = (
+            specialist_capability_registry.projection()
+            if specialist_injected
+            else {}
+        )
+        policy_projection = (
+            specialist_execution_policy.projection()
+            if specialist_injected
+            else {}
+        )
         self.state.multicomponent_scheduler_context = {
             "requested_synthesis_directive": directive,
             "component_analyst_input_packets": deepcopy(packets),
@@ -3573,11 +3606,14 @@ class RunKernel:
             "configured_provider_class": derive_multicomponent_transport_profile(
                 configured_provider
             )["configured_provider_class"],
+            "specialist_scheduler_enabled": specialist_injected,
+            "specialist_registry_projection": deepcopy(registry_projection),
+            "specialist_execution_policy_projection": deepcopy(policy_projection),
         }
         action = self.authorize(
             stage=MULTICOMPONENT_SCHEDULER_STAGE,
             action_type=ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE,
-            reason="ordinary_multicomponent_v2_scheduler_initialize",
+            reason="ordinary_multicomponent_scheduler_initialize",
             inputs={
                 "component_input_packet_digests": {
                     key: safe_packet_digest(value) for key, value in packets.items()
@@ -3588,6 +3624,13 @@ class RunKernel:
                 "configured_provider_class": self.state.multicomponent_scheduler_context[
                     "configured_provider_class"
                 ],
+                "specialist_scheduler_enabled": specialist_injected,
+                "specialist_registry_digest": registry_projection.get(
+                    "registry_digest"
+                ),
+                "specialist_execution_policy_digest": policy_projection.get(
+                    "execution_policy_digest"
+                ),
             },
             expected_observation_type=(
                 ObservationType.MULTICOMPONENT_SCHEDULER_INITIALIZED
@@ -3635,7 +3678,150 @@ class RunKernel:
         scheduler = _safe_mapping(
             self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
         )
-        return deepcopy(_safe_mapping((scheduler.get("lease_history") or [{}])[-1]))
+        return deepcopy(dict((scheduler.get("lease_history") or [{}])[-1]))
+
+    def bind_specialist_need_from_role_artifact(
+        self,
+        *,
+        role_artifact: Mapping[str, Any],
+        canonical_target_ref: Mapping[str, Any],
+        specialist_capability_registry: Any,
+        specialist_execution_policy: Any,
+        scrutineer_leaf_target_authorized: bool = False,
+    ) -> dict[str, Any]:
+        """Bind one optional role proposal without delegating authority to it."""
+
+        from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
+        from core.multicomponent_role_runtime import (
+            role_artifact_ref,
+            validate_multicomponent_role_artifact,
+        )
+        from core.specialist_graph_runtime import (
+            SpecialistCapabilityRegistry,
+            SpecialistExecutionPolicy,
+            bind_specialist_need_proposal,
+        )
+
+        artifact = validate_multicomponent_role_artifact(role_artifact)
+        proposal = _safe_mapping(
+            _safe_mapping(artifact.get("semantic_output")).get(
+                "specialist_need_proposal"
+            )
+        )
+        if not proposal:
+            return {}
+        if not isinstance(
+            specialist_capability_registry, SpecialistCapabilityRegistry
+        ) or not isinstance(specialist_execution_policy, SpecialistExecutionPolicy):
+            raise RunKernelTransitionError(
+                "Specialist proposal binding requires injected registry and policy"
+            )
+        context = _safe_mapping(self.state.multicomponent_scheduler_context)
+        registry_projection = specialist_capability_registry.projection()
+        policy_projection = specialist_execution_policy.projection()
+        if (
+            context.get("specialist_scheduler_enabled") is not True
+            or _safe_mapping(context.get("specialist_registry_projection"))
+            != registry_projection
+            or _safe_mapping(context.get("specialist_execution_policy_projection"))
+            != policy_projection
+        ):
+            raise RunKernelTransitionError(
+                "Specialist proposal binding registry/policy is not scheduler authority"
+            )
+        contract = _safe_mapping(
+            self.state.current_answer_contract or self.state.initial_answer_contract
+        )
+        contract_ref = {
+            "run_id": self.state.run_id,
+            "request_id": self.state.request_id,
+            "accepted_contract_version": contract.get("accepted_contract_version"),
+            "accepted_contract_digest": contract.get("accepted_contract_digest"),
+        }
+        graph = _safe_mapping(
+            self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+        )
+        graph_ref = (
+            {
+                "graph_id": graph.get("graph_id"),
+                "graph_revision": graph.get("graph_revision"),
+                "graph_digest": graph.get("graph_digest"),
+            }
+            if graph
+            else {}
+        )
+        bound = bind_specialist_need_proposal(
+            run_id=self.state.run_id,
+            request_id=self.state.request_id,
+            origin_role=str(artifact.get("role") or ""),
+            origin_action_ref=_safe_mapping(artifact.get("authorized_action_ref")),
+            origin_artifact_ref=role_artifact_ref(artifact),
+            proposal=proposal,
+            canonical_target_ref=canonical_target_ref,
+            accepted_contract_ref=contract_ref,
+            graph_ref=graph_ref,
+            registry=specialist_capability_registry,
+            policy=specialist_execution_policy,
+            scrutineer_leaf_target_authorized=scrutineer_leaf_target_authorized,
+        )
+        action = self.authorize(
+            stage=f"specialist_proposal:{bound['proposal_id']}",
+            action_type=ActionType.SPECIALIST_PROPOSAL_BIND,
+            reason="runkernel_bind_specialist_need_proposal",
+            inputs={
+                "proposal_id": bound["proposal_id"],
+                "proposal_digest": bound["proposal_digest"],
+                "origin_action_id": _safe_mapping(
+                    artifact.get("authorized_action_ref")
+                ).get("action_id"),
+                "registry_digest": registry_projection["registry_digest"],
+                "execution_policy_digest": policy_projection[
+                    "execution_policy_digest"
+                ],
+            },
+            expected_observation_type=ObservationType.SPECIALIST_PROPOSAL_BOUND,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={"bound_specialist_proposal": bound},
+            )
+        )
+        return deepcopy(bound)
+
+    def consume_specialist_result_by_dprime(
+        self,
+        *,
+        result_id: str,
+        route: str,
+        validation_status: str,
+        dprime_artifact_ref: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        action = self.authorize(
+            stage=f"specialist_validator_consumption:{result_id}",
+            action_type=ActionType.SPECIALIST_VALIDATOR_CONSUME,
+            reason="relevant_dprime_consume_exact_specialist_result",
+            inputs={
+                "result_id": result_id,
+                "route": route,
+                "validation_status": validation_status,
+                "dprime_artifact_ref": deepcopy(dict(dprime_artifact_ref)),
+            },
+            expected_observation_type=ObservationType.SPECIALIST_VALIDATOR_CONSUMED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        from core.specialist_graph_runtime import SPECIALIST_WORK_PLANE_STAGE
+
+        return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
 
     def derive_current_multicomponent_ready_work(self) -> list[dict[str, Any]]:
         """Return RunKernel's exact current scheduler readiness projection."""
@@ -3681,7 +3867,7 @@ class RunKernel:
         scheduler = _safe_mapping(
             self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
         )
-        return deepcopy(_safe_mapping((scheduler.get("batch_history") or [{}])[-1]))
+        return deepcopy(dict((scheduler.get("batch_history") or [{}])[-1]))
 
     def cancel_multicomponent_work_batch(
         self,
@@ -3739,6 +3925,10 @@ class RunKernel:
             "scrutineer": (
                 ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
                 ObservationType.MULTICOMPONENT_SCRUTINEER_COMPLETED,
+            ),
+            "specialist_capability": (
+                ActionType.SPECIALIST_CAPABILITY_EXECUTE,
+                ObservationType.SPECIALIST_CAPABILITY_COMPLETED,
             ),
         }
         try:
@@ -3800,8 +3990,12 @@ class RunKernel:
                 "selective_closure_ref": deepcopy(work.get("selective_closure_ref")),
             },
             "expected_action_stage_seed": (
-                f"multicomponent_role:{work.get('role')}:"
-                f"{work.get('logical_evaluation_key')}"
+                f"specialist_capability:{work.get('logical_evaluation_key')}"
+                if work.get("role") == "specialist_capability"
+                else (
+                    f"multicomponent_role:{work.get('role')}:"
+                    f"{work.get('logical_evaluation_key')}"
+                )
             ),
         }
         return {
@@ -3828,26 +4022,26 @@ class RunKernel:
         from core.multicomponent_role_runtime import safe_packet_digest
 
         scheduler = validate_scheduler_state(
-            _safe_mapping(self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         )
         batch = next(
             (
-                _safe_mapping(item)
+                deepcopy(dict(item))
                 for item in scheduler.get("batch_history") or ()
-                if _safe_mapping(item).get("batch_id") == batch_id
+                if dict(item).get("batch_id") == batch_id
             ),
             {},
         )
         if batch.get("status") != LEASE_GRANTED:
             raise RunKernelTransitionError("scheduler batch is not granted")
         lease_refs = [
-            _safe_mapping(item) for item in batch.get("ordered_lease_refs") or ()
+            deepcopy(dict(item)) for item in batch.get("ordered_lease_refs") or ()
         ]
         leases = [
             next(
-                _safe_mapping(item)
+                deepcopy(dict(item))
                 for item in scheduler.get("lease_history") or ()
-                if _safe_mapping(item).get("lease_id") == ref.get("lease_id")
+                if dict(item).get("lease_id") == ref.get("lease_id")
             )
             for ref in lease_refs
         ]
@@ -3864,7 +4058,7 @@ class RunKernel:
         for batch_index, (lease, packet_digest) in enumerate(
             zip(leases, packet_digests, strict=True)
         ):
-            work = _safe_mapping(lease.get("work"))
+            work = deepcopy(dict(lease.get("work") or {}))
             role = str(work.get("role") or "")
             action_type, _observation_type = self._multicomponent_role_action_contract(role)
             key = str(work.get("logical_evaluation_key") or "")
@@ -3891,7 +4085,11 @@ class RunKernel:
                     )
                 prior_counts[role] = len(prior)
             batch_counts[role] = batch_counts.get(role, 0) + 1
-            if prior_counts[role] + batch_counts[role] > MULTICOMPONENT_ROLE_CALL_LIMITS[role]:
+            if (
+                role != "specialist_capability"
+                and prior_counts[role] + batch_counts[role]
+                > MULTICOMPONENT_ROLE_CALL_LIMITS[role]
+            ):
                 raise RunKernelTransitionError(
                     "multi-component batch exceeds the shared role cap"
                 )
@@ -3921,16 +4119,58 @@ class RunKernel:
         dispatch_action_ref: Mapping[str, Any],
         sequence: int,
     ) -> AuthorizedAction:
-        work = _safe_mapping(lease.get("work"))
+        work = deepcopy(dict(lease.get("work") or {}))
         role = str(work.get("role") or "")
         action_type, observation_type = self._multicomponent_role_action_contract(role)
         stage = str(descriptor.get("expected_action_stage_seed") or "")
+        action_id = f"{self.state.run_id}:action:{sequence}:{action_type.value}"
+        specialist_work_node = deepcopy(work.get("specialist_work_node"))
+        if role == "specialist_capability":
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+            )
+            from core.specialist_graph_runtime import (
+                bind_specialist_work_authority,
+            )
+
+            pool = _safe_mapping(
+                _safe_mapping(
+                    self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+                ).get("specialist_compatibility_pool")
+            )
+            specialist_work_node = bind_specialist_work_authority(
+                _safe_mapping(specialist_work_node),
+                authorization_action_ref={
+                    "action_id": action_id,
+                    "stage": stage,
+                    "sequence": sequence,
+                    "observation_type": observation_type.value,
+                },
+                grant_action_ref=_safe_mapping(lease.get("grant_action_ref")),
+                dispatch_action_ref=dispatch_action_ref,
+                lease_ref={
+                    "lease_id": lease.get("lease_id"),
+                    "lease_digest": lease.get("lease_digest"),
+                    "batch_id": lease.get("batch_id"),
+                    "batch_digest": lease.get("batch_digest"),
+                },
+                specialist_budget_ref={
+                    "specialist_work_item_limit": pool.get(
+                        "specialist_work_item_limit"
+                    ),
+                    "specialist_total": pool.get("specialist_total"),
+                },
+            )
         return AuthorizedAction(
-            action_id=f"{self.state.run_id}:action:{sequence}:{action_type.value}",
+            action_id=action_id,
             run_id=self.state.run_id,
             stage=stage,
             action_type=action_type,
-            reason="ordinary_multicomponent_semantic_role_execution",
+            reason=(
+                "ordinary_multicomponent_registered_deterministic_specialist_execution"
+                if role == "specialist_capability"
+                else "ordinary_multicomponent_semantic_role_execution"
+            ),
             inputs={
                 "role": role,
                 "input_packet_digest": work.get("input_packet_digest"),
@@ -3968,6 +4208,18 @@ class RunKernel:
                     "scheduler_revision_at_grant"
                 ),
                 "output_schema_variant": work.get("output_schema_variant"),
+                "work_kind": work.get("work_kind"),
+                "resource_class": work.get("resource_class"),
+                "executor_class": work.get("executor_class"),
+                "capability_id": work.get("capability_id"),
+                "capability_version": work.get("capability_version"),
+                "capability_descriptor_digest": work.get(
+                    "capability_descriptor_digest"
+                ),
+                "specialist_proposal_ref": deepcopy(
+                    work.get("specialist_proposal_ref")
+                ),
+                "specialist_work_node": specialist_work_node,
             },
             expected_observation_type=observation_type,
             sequence=sequence,
@@ -3992,17 +4244,15 @@ class RunKernel:
                 packet_digests=packet_digests,
             )
             scheduler = validate_scheduler_state(
-                _safe_mapping(
-                    self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-                )
+                self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
             )
             batch = next(
-                _safe_mapping(item)
+                deepcopy(dict(item))
                 for item in scheduler.get("batch_history") or ()
-                if _safe_mapping(item).get("batch_id") == batch_id
+                if dict(item).get("batch_id") == batch_id
             )
             leases_by_id = {
-                str(_safe_mapping(item).get("lease_id") or ""): _safe_mapping(item)
+                str(dict(item).get("lease_id") or ""): deepcopy(dict(item))
                 for item in scheduler.get("lease_history") or ()
             }
             dispatch_sequence = self.state.next_action_sequence
@@ -4099,7 +4349,7 @@ class RunKernel:
         )
 
         scheduler = validate_scheduler_state(
-            _safe_mapping(self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         )
         lease = next(
             (
@@ -4254,9 +4504,7 @@ class RunKernel:
             ActionType.MULTICOMPONENT_GRAPH_REDUCE,
         }:
             return {}
-        scheduler_raw = _safe_mapping(
-            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-        )
+        scheduler_raw = self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         if not scheduler_raw:
             return {}
         scheduler = validate_scheduler_state(scheduler_raw)
@@ -4518,17 +4766,20 @@ class RunKernel:
         )
 
         scheduler = validate_scheduler_state(
-            _safe_mapping(self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         )
         lease = next(
             (
-                _safe_mapping(item)
+                deepcopy(dict(item))
                 for item in scheduler.get("lease_history") or ()
-                if _safe_mapping(item).get("lease_id") == lease_id
+                if dict(item).get("lease_id") == lease_id
             ),
             {},
         )
-        return bool(lease and work_is_current(self.state, _safe_mapping(lease.get("work"))))
+        return bool(
+            lease
+            and work_is_current(self.state, deepcopy(dict(lease.get("work") or {})))
+        )
 
     def authorize_multicomponent_role_call(
         self,
@@ -4598,9 +4849,7 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "multi-component role call exceeds the shared compatibility mapping Phase 1 cap"
             )
-        scheduler_raw = _safe_mapping(
-            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-        )
+        scheduler_raw = self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         lease_inputs: dict[str, Any] = {}
         if scheduler_raw:
             scheduler = validate_scheduler_state(scheduler_raw)
@@ -4742,6 +4991,7 @@ class RunKernel:
             "resynthesis_structure",
             "selective_invalidation",
             "selective_resynthesis_structure",
+            "specialist_remediation",
         }:
             raise RunKernelTransitionError("unknown Graph V1 reduction operation")
         current_graph = _safe_mapping(
@@ -17909,12 +18159,175 @@ class RunKernel:
                 "outcome_count": 1,
                 "outcomes": [deepcopy(outcome_projection)],
             }
+        elif action.action_type is ActionType.SPECIALIST_PROPOSAL_BIND:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                block_required_specialist_proposal,
+            )
+            from core.specialist_graph_runtime import (
+                PROPOSAL_ACCEPTED,
+                SPECIALIST_WORK_PLANE_STAGE,
+                append_bound_proposal,
+                validate_bound_specialist_proposal,
+            )
+
+            proposal = validate_bound_specialist_proposal(
+                _safe_mapping(observation.payload.get("bound_specialist_proposal"))
+            )
+            origin_action_id = str(action.inputs.get("origin_action_id") or "")
+            if (
+                action.inputs.get("proposal_id") != proposal.get("proposal_id")
+                or action.inputs.get("proposal_digest")
+                != proposal.get("proposal_digest")
+                or _safe_mapping(proposal.get("origin_action_ref")).get(
+                    "action_id"
+                )
+                != origin_action_id
+                or origin_action_id not in self.state.reduced_action_ids
+                or action.inputs.get("registry_digest")
+                != proposal.get("registry_digest")
+                or action.inputs.get("execution_policy_digest")
+                != proposal.get("execution_policy_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist proposal binding lacks exact current authority"
+                )
+            plane = append_bound_proposal(
+                _safe_mapping(
+                    self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                ),
+                proposal,
+            )
+            self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
+            self.state.projections[action.stage] = deepcopy(proposal)
+            if (
+                proposal.get("posture") == "required"
+                and proposal.get("proposal_authority") != PROPOSAL_ACCEPTED
+            ):
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    block_required_specialist_proposal(
+                        state=self.state,
+                        proposal=proposal,
+                    )
+                )
+        elif action.action_type is ActionType.SPECIALIST_CAPABILITY_EXECUTE:
+            from core.multicomponent_graph_scheduling import (
+                LEASE_BLOCKED,
+                LEASE_COMPLETED,
+                LEASE_CONTESTED,
+                LEASE_FAILED,
+                LEASE_STALE,
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                settle_specialist_lease,
+            )
+            from core.specialist_graph_runtime import (
+                EXECUTION_BLOCKED,
+                EXECUTION_COMPLETED,
+                EXECUTION_CONTESTED,
+                EXECUTION_FAILED,
+                EXECUTION_STALE,
+                SPECIALIST_WORK_PLANE_STAGE,
+                append_specialist_result,
+                validate_specialist_result_artifact,
+                validate_specialist_work_node,
+            )
+
+            work_node = validate_specialist_work_node(
+                _safe_mapping(action.inputs.get("specialist_work_node"))
+            )
+            result = validate_specialist_result_artifact(
+                _safe_mapping(observation.payload.get("specialist_result_artifact"))
+            )
+            action_ref = _safe_mapping(result.get("authorization_action_ref"))
+            lease_ref = _safe_mapping(result.get("lease_ref"))
+            if (
+                action_ref.get("action_id") != action.action_id
+                or _safe_mapping(result.get("work_ref")).get("node_digest")
+                != work_node.get("node_digest")
+                or lease_ref.get("lease_id") != action.inputs.get("lease_id")
+                or lease_ref.get("lease_digest") != action.inputs.get("lease_digest")
+                or result.get("capability_id") != action.inputs.get("capability_id")
+                or result.get("capability_version")
+                != action.inputs.get("capability_version")
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist result does not match authorized work and lease"
+                )
+            posture = str(result.get("execution_posture") or "")
+            settlements = {
+                EXECUTION_COMPLETED: LEASE_COMPLETED,
+                EXECUTION_FAILED: LEASE_FAILED,
+                EXECUTION_BLOCKED: LEASE_BLOCKED,
+                EXECUTION_CONTESTED: LEASE_CONTESTED,
+                EXECUTION_STALE: LEASE_STALE,
+            }
+            if posture not in settlements:
+                raise RunKernelTransitionError(
+                    "Specialist result names an unsupported execution posture"
+                )
+            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                settle_specialist_lease(
+                    state=self.state,
+                    action_inputs=dict(action.inputs),
+                    settlement=settlements[posture],
+                )
+            )
+            self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
+                append_specialist_result(
+                    _safe_mapping(
+                        self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                    ),
+                    work_node=work_node,
+                    result=result,
+                )
+            )
+            self.state.projections[action.stage] = deepcopy(result)
+        elif action.action_type is ActionType.SPECIALIST_VALIDATOR_CONSUME:
+            from core.specialist_graph_runtime import (
+                SPECIALIST_WORK_PLANE_STAGE,
+                mark_validator_consumption,
+            )
+
+            dprime_ref = _safe_mapping(action.inputs.get("dprime_artifact_ref"))
+            dprime_action_id = str(
+                dprime_ref.get("action_id")
+                or _safe_mapping(dprime_ref.get("authorized_action_ref")).get(
+                    "action_id"
+                )
+                or ""
+            )
+            if dprime_action_id not in self.state.reduced_action_ids:
+                raise RunKernelTransitionError(
+                    "Specialist validator consumption requires completed D-prime"
+                )
+            self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
+                mark_validator_consumption(
+                    _safe_mapping(
+                        self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                    ),
+                    result_id=str(action.inputs.get("result_id") or ""),
+                    route=str(action.inputs.get("route") or ""),
+                    validation_status=str(
+                        action.inputs.get("validation_status") or ""
+                    ),
+                )
+            )
+            self.state.projections[action.stage] = {
+                "result_id": action.inputs.get("result_id"),
+                "route": action.inputs.get("route"),
+                "dprime_artifact_ref": deepcopy(dprime_ref),
+            }
         elif action.action_type is ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE:
             from core.multicomponent_graph_scheduling import (
                 MULTICOMPONENT_SCHEDULER_STAGE,
                 initialize_scheduler_v2_state,
+                initialize_scheduler_v3_state,
             )
             from core.multicomponent_role_runtime import safe_packet_digest
+            from core.specialist_graph_runtime import (
+                SPECIALIST_WORK_PLANE_STAGE,
+                initialize_specialist_work_plane_from_projections,
+            )
 
             context = _safe_mapping(self.state.multicomponent_scheduler_context)
             packets = _safe_mapping(context.get("component_analyst_input_packets"))
@@ -17923,6 +18336,13 @@ class RunKernel:
                 for key, value in packets.items()
             }
             directive = str(context.get("requested_synthesis_directive") or "")
+            specialist_enabled = context.get("specialist_scheduler_enabled") is True
+            registry_projection = _safe_mapping(
+                context.get("specialist_registry_projection")
+            )
+            policy_projection = _safe_mapping(
+                context.get("specialist_execution_policy_projection")
+            )
             if (
                 action.inputs.get("component_input_packet_digests")
                 != expected_digests
@@ -17930,17 +18350,47 @@ class RunKernel:
                 != safe_packet_digest({"requested_synthesis_directive": directive})
                 or action.inputs.get("configured_provider_class")
                 != context.get("configured_provider_class")
+                or action.inputs.get("specialist_scheduler_enabled")
+                is not specialist_enabled
+                or action.inputs.get("specialist_registry_digest")
+                != registry_projection.get("registry_digest")
+                or action.inputs.get("specialist_execution_policy_digest")
+                != policy_projection.get("execution_policy_digest")
             ):
                 raise RunKernelTransitionError(
                     "scheduler initialization action does not bind private canonical context"
                 )
-            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
-                initialize_scheduler_v2_state(
+            if specialist_enabled:
+                self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
+                    initialize_specialist_work_plane_from_projections(
+                        registry_projection=registry_projection,
+                        policy_projection=policy_projection,
+                    )
+                )
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    initialize_scheduler_v3_state(
+                        run_id=self.state.run_id,
+                        request_id=self.state.request_id,
+                        configured_provider=context.get("configured_provider_class"),
+                        specialist_work_item_limit=int(
+                            policy_projection.get("specialist_work_item_limit") or 0
+                        ),
+                        specialist_registry_digest=str(
+                            registry_projection.get("registry_digest") or ""
+                        ),
+                        specialist_execution_policy_digest=str(
+                            policy_projection.get("execution_policy_digest") or ""
+                        ),
+                    )
+                )
+            else:
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    initialize_scheduler_v2_state(
                     run_id=self.state.run_id,
                     request_id=self.state.request_id,
                     configured_provider=context.get("configured_provider_class"),
+                    )
                 )
-            )
         elif action.action_type is ActionType.MULTICOMPONENT_BATCH_GRANT:
             from core.multicomponent_graph_scheduling import (
                 MULTICOMPONENT_SCHEDULER_STAGE,
@@ -18811,6 +19261,7 @@ class RunKernel:
             physical_call_accounting = None
             structure_graph = None
             transition_graph = None
+            specialist_result_artifact = None
             if operation == "structure":
                 if current_graph or int(graph.get("graph_revision") or 0) != 1:
                     raise RunKernelTransitionError(
@@ -18960,6 +19411,20 @@ class RunKernel:
                         raise RunKernelTransitionError(
                             "Graph V1 synthesis validation lacks completed D-prime artifact"
                         )
+                    from core.specialist_graph_runtime import (
+                        SPECIALIST_WORK_PLANE_STAGE,
+                        result_for_target,
+                    )
+
+                    specialist_plane = self.state.projections.get(
+                        SPECIALIST_WORK_PLANE_STAGE
+                    )
+                    if specialist_plane:
+                        specialist_result_artifact = result_for_target(
+                            specialist_plane,
+                            target_kind="synthesis",
+                            target_key=str(synthesis_key or ""),
+                        ) or None
                 elif operation == "scrutiny":
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
@@ -18972,6 +19437,34 @@ class RunKernel:
                         raise RunKernelTransitionError(
                             "Graph V1 scrutiny lacks completed Scrutineer artifact"
                         )
+                elif operation == "specialist_remediation":
+                    from core.component_work_graph_v1 import (
+                        graph_with_specialist_leaf_remediation,
+                    )
+                    from core.specialist_graph_runtime import (
+                        SPECIALIST_WORK_PLANE_STAGE,
+                        result_for_target,
+                    )
+
+                    specialist_result = result_for_target(
+                        self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE, {}),
+                        target_kind="synthesis",
+                        target_key=str(synthesis_key or ""),
+                    )
+                    if (
+                        not specialist_result
+                        or _safe_mapping(specialist_result.get("graph_ref")).get(
+                            "graph_digest"
+                        )
+                        != current_graph.get("graph_digest")
+                    ):
+                        raise RunKernelTransitionError(
+                            "Specialist remediation lacks an exact current result"
+                        )
+                    transition_graph = graph_with_specialist_leaf_remediation(
+                        current_graph,
+                        specialist_result_artifact=specialist_result,
+                    )
                 elif operation == "accounting":
                     try:
                         logical_accounting, physical_call_accounting = (
@@ -19272,6 +19765,7 @@ class RunKernel:
                     physical_call_accounting=physical_call_accounting,
                     structure_graph=structure_graph,
                     transition_graph=transition_graph,
+                    specialist_result_artifact=specialist_result_artifact,
                 )
             except ValueError as exc:
                 raise RunKernelTransitionError(

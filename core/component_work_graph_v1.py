@@ -257,6 +257,7 @@ def synthesis_dprime_input_packet(
     graph: Mapping[str, Any],
     *,
     synthesis_key: str,
+    specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     validated = validate_component_work_graph_v1(graph)
     node = _synthesis_node(validated, synthesis_key)
@@ -278,7 +279,7 @@ def synthesis_dprime_input_packet(
             raise ComponentWorkGraphV1Error(
                 "synthesis D-prime input is stale or not current"
             )
-    return {
+    packet = {
         "supported_query_class": SUPPORTED_QUERY_CLASS,
         "graph_ref": {
             "graph_id": validated["graph_id"],
@@ -301,6 +302,32 @@ def synthesis_dprime_input_packet(
             _bounded_semantic_role_input_from_node(item) for item in input_nodes
         ],
     }
+    if specialist_result_artifact:
+        from core.specialist_graph_runtime import (
+            specialist_result_ref,
+            validate_specialist_result_artifact,
+        )
+
+        result = validate_specialist_result_artifact(specialist_result_artifact)
+        target = _safe_mapping(result.get("canonical_target_ref"))
+        if (
+            target.get("target_kind") != "synthesis"
+            or target.get("target_key") != synthesis_key
+            or result.get("dprime_route") != "synthesis_dprime"
+        ):
+            raise ComponentWorkGraphV1Error(
+                "synthesis D-prime Specialist result target mismatch"
+            )
+        packet["specialist_result_inputs"] = {
+            "namespace": "specialist_result_inputs",
+            "result_ref": specialist_result_ref(result),
+            "bounded_result": deepcopy(result.get("bounded_result") or {}),
+            "assumptions": list(result.get("assumptions") or ()),
+            "caveats": list(result.get("caveats") or ()),
+            "blockers": list(result.get("blockers") or ()),
+            "execution_posture": result.get("execution_posture"),
+        }
+    return packet
 
 
 def scrutineer_input_packet(graph: Mapping[str, Any]) -> dict[str, Any]:
@@ -1903,13 +1930,18 @@ def graph_with_synthesis_validation(
     *,
     synthesis_key: str,
     dprime_artifact: Mapping[str, Any],
+    specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     current = validate_component_work_graph_v1(graph)
     artifact = validate_multicomponent_role_artifact(
         dprime_artifact,
         expected_role=ROLE_SYNTHESIS_DPRIME,
     )
-    expected_input = synthesis_dprime_input_packet(current, synthesis_key=synthesis_key)
+    expected_input = synthesis_dprime_input_packet(
+        current,
+        synthesis_key=synthesis_key,
+        specialist_result_artifact=specialist_result_artifact,
+    )
     if artifact["input_packet_digest"] != _digest(expected_input):
         raise ComponentWorkGraphV1Error("synthesis D-prime input binding mismatch")
     node = _synthesis_node(current, synthesis_key)
@@ -2309,6 +2341,69 @@ def graph_with_accounting(
     return _next_revision(current)
 
 
+def graph_with_specialist_leaf_remediation(
+    graph: Mapping[str, Any],
+    *,
+    specialist_result_artifact: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Reopen one exact challenged leaf synthesis for D-prime revalidation."""
+
+    from core.specialist_graph_runtime import (
+        specialist_result_ref,
+        validate_specialist_result_artifact,
+    )
+
+    current = validate_component_work_graph_v1(graph)
+    result = validate_specialist_result_artifact(specialist_result_artifact)
+    target = _safe_mapping(result.get("canonical_target_ref"))
+    if (
+        target.get("target_kind") != "synthesis"
+        or result.get("execution_posture") != "completed"
+    ):
+        raise ComponentWorkGraphV1Error(
+            "S0 Specialist remediation requires a completed synthesis result"
+        )
+    node = _synthesis_node(current, str(target.get("target_key") or ""))
+    if any(
+        _safe_mapping(ref).get("node_id") == node.get("node_id")
+        for candidate in current.get("synthesis_nodes") or ()
+        if _safe_mapping(candidate).get("node_id") != node.get("node_id")
+        for ref in _safe_mapping(candidate).get("input_node_refs") or ()
+    ):
+        raise ComponentWorkGraphV1Error(
+            "S0 Specialist remediation target must be an exact leaf synthesis"
+        )
+    node["node_revision"] = int(node.get("node_revision") or 0) + 1
+    node["status"] = "proposed"
+    node["current"] = True
+    node["stale"] = False
+    node["specialist_result_ref"] = specialist_result_ref(result)
+    _clear_synthesis_validation_and_admission(node)
+    _refresh_node_digest(node)
+    current["challenge_refs"] = [
+        deepcopy(item)
+        for item in current.get("challenge_refs") or ()
+        if not (
+            _safe_mapping(item).get("target_kind") == "synthesis"
+            and _safe_mapping(item).get("target_key") == node.get("synthesis_key")
+        )
+    ]
+    current["scrutineer_status"] = "not_run"
+    current["scrutineer_ref"] = {}
+    current["scrutineer_required"] = True
+    current["scrutineer_trigger_reasons"] = list(
+        dict.fromkeys(
+            [
+                *(current.get("scrutineer_trigger_reasons") or ()),
+                "specialist_leaf_remediation_requires_fresh_whole_case_review",
+            ]
+        )
+    )
+    current["graph_status"] = "specialist_leaf_remediation_pending_dprime"
+    current["specialist_result_refs"] = [specialist_result_ref(result)]
+    return _next_revision(current)
+
+
 def expected_graph_after_transition(
     current_graph: Mapping[str, Any] | None,
     *,
@@ -2320,6 +2415,7 @@ def expected_graph_after_transition(
     physical_call_accounting: Mapping[str, Any] | None = None,
     structure_graph: Mapping[str, Any] | None = None,
     transition_graph: Mapping[str, Any] | None = None,
+    specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Rederive the unique next canonical graph for one Graph V1 operation."""
 
@@ -2334,6 +2430,7 @@ def expected_graph_after_transition(
         "resynthesis_structure",
         "selective_invalidation",
         "selective_resynthesis_structure",
+        "specialist_remediation",
     }:
         if not isinstance(transition_graph, Mapping):
             raise ComponentWorkGraphV1Error(
@@ -2350,6 +2447,7 @@ def expected_graph_after_transition(
             current,
             synthesis_key=synthesis_key,
             dprime_artifact=role_artifact,
+            specialist_result_artifact=specialist_result_artifact,
         )
     elif operation == "scrutiny":
         if role_artifact is None:
@@ -2982,6 +3080,7 @@ __all__ = [
     "expected_graph_after_transition",
     "finalize_component_work_graph_v1",
     "graph_with_accounting",
+    "graph_with_specialist_leaf_remediation",
     "graph_with_recovered_component",
     "graph_with_selective_invalidation",
     "graph_with_scrutineer",

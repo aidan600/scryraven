@@ -314,6 +314,21 @@ def _local_key(value: Any) -> str:
     return text
 
 
+def _with_specialist_need(
+    normalized: dict[str, Any], payload: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Preserve one optional proposal-only Specialist need from role output."""
+
+    if "specialist_need_proposal" not in payload:
+        return normalized
+    from core.specialist_graph_runtime import normalize_specialist_need_proposal
+
+    normalized["specialist_need_proposal"] = normalize_specialist_need_proposal(
+        _safe_mapping(payload.get("specialist_need_proposal"))
+    )
+    return normalized
+
+
 def _normalize_semantic_output(
     role: str,
     output: Mapping[str, Any],
@@ -328,13 +343,13 @@ def _normalize_semantic_output(
             raise MulticomponentRoleRuntimeError(
                 "component Analyst output requires claim_text and valid support_status"
             )
-        return {
+        return _with_specialist_need({
             "claim_text": claim_text,
             "support_status": status,
             "caveats": _text_list(payload.get("caveats")),
             "nonclaims": _text_list(payload.get("nonclaims")),
             "blockers": _text_list(payload.get("blockers")),
-        }
+        }, payload)
     if role in {ROLE_COMPONENT_DPRIME, ROLE_SYNTHESIS_DPRIME}:
         if _clean_text(payload.get("claim_text")) or _clean_text(
             payload.get("replacement_claim")
@@ -429,7 +444,7 @@ def _normalize_semantic_output(
             )
         if len({item["synthesis_key"] for item in proposals}) != len(proposals):
             raise MulticomponentRoleRuntimeError("duplicate synthesis_key")
-        return {"synthesis_proposals": proposals}
+        return _with_specialist_need({"synthesis_proposals": proposals}, payload)
     if role == ROLE_SCRUTINEER:
         status = _normalize_key(payload.get("challenge_status"))
         if status not in _ROLE_STATUSES[role]:
@@ -584,7 +599,7 @@ def _normalize_semantic_output(
             normalized_scrutineer["missing_component_proposals"] = (
                 missing_component_proposals
             )
-        return normalized_scrutineer
+        return _with_specialist_need(normalized_scrutineer, payload)
     raise MulticomponentRoleRuntimeError(f"unknown semantic role: {role}")
 
 

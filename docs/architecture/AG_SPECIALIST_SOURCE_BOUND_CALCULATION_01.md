@@ -13,8 +13,10 @@ FinalAnswerPacket, Author, citation, source-obligation satisfaction,
 ## Result
 
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` introduces Specialist as
-source-bound deterministic calculation only. Specialist is not product
-authority. It records whether already source-bound numeric inputs can support a
+source-bound deterministic calculation only.
+
+Specialist is not product authority. It records whether already source-bound
+numeric inputs can support a
 small deterministic calculation, and it preserves exact input lineage, formula
 lineage, units, assumptions, caveats, blockers, and closed downstream flags.
 

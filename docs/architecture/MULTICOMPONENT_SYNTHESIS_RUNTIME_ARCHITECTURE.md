@@ -4,7 +4,7 @@ Status: current
 Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
-Does-not-authorize: arbitrary-query claims, live calls, width expansion, Specialist activation, or roadmap execution
+Does-not-authorize: arbitrary-query claims, live calls, width expansion, product Specialist activation, or roadmap execution
 Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
@@ -168,10 +168,16 @@ Balanced may skip full Scrutineer only when no trigger applies.
 
 ## Scheduling, Leases, And Concurrency
 
-Every semantic call is Scheduler V2-governed. RunKernel derives canonical ready
+Every semantic call is RunKernel-scheduler-governed. RunKernel derives canonical ready
 work and atomically grants the exact contiguous next batch. The driver does not
 provide a role, logical key, packet, backend class, or width as its next-work
 choice.
+
+Runs with an explicitly injected Specialist registry and execution policy use
+Scheduler V3. V3 preserves the same semantic ready-work owner and 22-unit
+envelope while adding a separate zero-or-one deterministic Specialist pool.
+Specialist work is inserted after its bound role proposal and before the exact
+component or synthesis D-prime review. Closed-default runs remain V2-identical.
 
 The compatibility envelope is the sum of the shared role caps. Every work item
 has an exact budget/work lease bound to current contract, graph, input packet,
@@ -255,6 +261,8 @@ production traffic stability, more than one recovery, permanent mode budgets,
 Local or graph-bound parallelism, citation correctness, answer quality, or
 product correctness.
 
-Capacity characterization and Specialist work are routed to
-[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). This contract neither designs
-nor activates the planned Specialist graph and does not execute roadmap work.
+Product capability activation and capacity characterization are routed to
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). The installed generic
+Specialist substrate is owned by
+[Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md); this contract does
+not register a product capability or execute roadmap work.

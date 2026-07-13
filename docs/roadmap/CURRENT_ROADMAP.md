@@ -15,10 +15,10 @@ approved direction without installing a capability or licensing implementation.
 Current installed behavior is owned separately by
 [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 
-## Active Next: S0
+## Installed Foundation: S0
 
 **Generic Specialist graph doctrine, runtime substrate, and inert generic
-substrate validation.**
+substrate validation are installed.**
 
 The high-level goal is to establish:
 
@@ -27,9 +27,9 @@ The high-level goal is to establish:
 - component and synthesis derivation points;
 - exact input/output lineage;
 - inert generic capability validation proving substrate reuse;
-- no product Specialist activation yet.
+- no product Specialist activation.
 
-## Committed Next: S1
+## Active Next: S1
 
 **Quantitative Specialist ordinary product activation.**
 

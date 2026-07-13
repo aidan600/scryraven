@@ -63,10 +63,11 @@ completed-phase chronology into phase briefs.
 | Component DAG, scheduling, leases, and concurrency (`canonical:component-dag-scheduling-concurrency`) | [RunKernel Component DAG, Scheduling, And Concurrency](../architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) |
 | FAP packaging, Author rendering, and blocked terminal (`canonical:fap-author-boundary`) | [FinalAnswerPacket / Author Boundary](../architecture/FAP_AUTHOR_BOUNDARY.md) |
 | Installed bounded ordinary multi-component runtime (`canonical:bounded-multicomponent-runtime`) | [Multi-Component Synthesis Runtime Architecture](../architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) |
+| Generic Specialist graph substrate (`canonical:specialist-graph-substrate`) | [Specialist Graph Substrate](../architecture/SPECIALIST_GRAPH_SUBSTRATE.md) |
 | Cross-component Analyst proposal contract | [Cross-Component Analyst Workbench](../architecture/CROSS_COMPONENT_ANALYST_WORKBENCH.md) |
 | Analyst Workbench | [Analyst Workbench Full Slice](../architecture/ANALYST_WORKBENCH_FULL_SLICE.md) |
 | Scrutineer | [Scrutineer Review](../architecture/AG_SCRUTINEER_REVIEW_01.md) |
-| Specialist calculation | [Specialist Source-Bound Calculation](../architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) |
+| Source-bound quantitative calculation capability | [Specialist Source-Bound Calculation](../architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) |
 | SufficiencyReadiness | [Sufficiency Partial-Answer Readiness](../architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md) |
 | Hardened FinalAnswerPacket | [Final Answer Packet Hardening](../architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md) |
 | Author prose finalization | [Author Prose-Only Finalization](../architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md) |
