@@ -5,7 +5,7 @@ Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
 Does-not-authorize: product capability registration, calculator activation, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: 46f4fc998f1aae338aff24e9a7033f32ee90c78a
+Verified-against-runtime: 4292320b5583772f3f31ce2dab4c6f0e2c989ed8
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
@@ -31,9 +31,9 @@ role artifact with optional Specialist need proposal
 -> RunKernel proposal normalization and current-target binding
 -> registry resolution plus execution-policy decision
 -> Scheduler V3 Specialist lease in a separate compatibility pool
--> one registered deterministic capability execution
--> immutable Specialist result identity plus validator lifecycle
--> namespaced component or synthesis D-prime input
+-> either one registered deterministic capability execution or a typed nonexecution disposition
+-> immutable proposal disposition and optional result identity plus validator lifecycle
+-> one `specialist_need_handoff` component or synthesis D-prime input
 -> ordinary RunKernel graph/admission flow
 ```
 
@@ -79,12 +79,23 @@ Specialist work uses its own compatibility pool:
 - no consumption of the five semantic role caps or their 22-unit envelope.
 
 The Specialist work node binds the accepted proposal, canonical target,
-contract and graph refs, capability descriptor, bounded input digest, exact
-RunKernel authorization action, batch/lease lineage, and Specialist budget ref.
+contract and graph refs, capability descriptor, exact RunKernel authorization
+action, batch/lease lineage, and Specialist budget ref. It retains only the
+bounded-input digest, input-schema ref, lineage refs, and reconstruction ref;
+the component or synthesis input packet itself is not retained.
 Grant, cancellation, dispatch, staleness, failure, blocked, contested, and
 completion postures remain RunKernel-governed and terminally accounted.
 
-## Result And Validator Lifecycle
+## Disposition, Result, And Validator Lifecycle
+
+Every terminal proposal receives an immutable sibling disposition. The
+disposition preserves the original proposal digest, origin and exact target,
+required/optional posture, capability and policy resolution, availability,
+assumptions, caveats, nonclaims, and any typed nonexecution reason. Availability
+postures are result available, unavailable by policy/capability/target/budget,
+failed, blocked, or contested. Optional pool exhaustion creates no second
+lease, adapter call, model call, or accounting unit; required exhaustion still
+blocks the ordinary path.
 
 A Specialist result contains only bounded output, assumptions, caveats,
 blockers, confidence and execution posture, exact work/proposal/capability
@@ -92,16 +103,20 @@ lineage, and explicit zero-authority declarations. It has no component or
 synthesis admission, SemanticObservation, ComponentCoverage, Sufficiency,
 FinalAnswerPacket, Author, citation, or source-obligation authority.
 
-Result identity is immutable. Validator-consumption fields carry a separate
-lifecycle on the retained work-plane record: pending, consumed by component
-D-prime, consumed by synthesis D-prime, contested, or rejected. Stable result
-refs and the result digest do not include that mutable lifecycle.
+Disposition and result identities are immutable. Validator-consumption fields
+carry a separate lifecycle on the disposition, unified handoff, and any result:
+pending, consumed by component D-prime, consumed by synthesis D-prime,
+contested, or rejected. Stable refs and identity digests do not include that
+mutable lifecycle.
 
 Component and synthesis D-prime receive Specialist material only under the
-separate `specialist_result_inputs` namespace. Ordinary nominated claims,
-evidence, component refs, graph refs, and admitted input refs remain unchanged.
-D-prime still validates the semantic proposal, and RunKernel still owns every
-admission or block.
+single top-level `specialist_need_handoff` namespace. It carries either a
+bounded result or the typed reason the proposed need was unavailable. Only the
+absence of a proposal omits the handoff. Ordinary nominated claims, evidence,
+component refs, graph refs, and admitted input refs remain unchanged. RunKernel
+independently rederives the current D-prime role, action, artifact, target, and
+exact handoff-bearing input digest before allowing exactly-once consumption;
+caller-supplied route or validation status is not trusted.
 
 ## Scrutineer Boundary
 
@@ -115,11 +130,17 @@ silent fallback.
 
 ## Privacy And Authority Boundaries
 
-Retained Specialist artifacts are bounded projections only. Raw prompts, raw
-model or provider payloads, private logs, full traces, database rows, caches,
-secrets, and private artifacts are neither accepted nor retained. Capability
-adapters stay in injected runtime scope and are not serialized into RunKernel
-state.
+Retained Specialist artifacts are bounded projections only. Immediately before
+dispatch commitment, the driver reconstructs the exact component or synthesis
+input from current canonical owners and verifies its digest. Reconstruction
+failure cancels and refunds the reservation exactly once, creates no result,
+and never starts the adapter. The transient packet exists only in driver-local
+execution scope. It is absent from RunKernel, scheduler leases/batches/actions,
+the Specialist work plane, observations, graphs, logs, and traces. Raw prompts,
+raw model or provider payloads, private logs, full traces, database rows,
+caches, secrets, and private artifacts are neither accepted nor retained.
+Capability adapters stay in injected runtime scope and are not serialized into
+RunKernel state.
 
 The substrate grants no provider, model, search, fetch/read, retrieval, or
 publication authority. It introduces no hidden fallback, recursive Specialist

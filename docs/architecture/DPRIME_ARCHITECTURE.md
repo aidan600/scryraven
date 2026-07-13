@@ -5,7 +5,7 @@ Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, or product Specialist activation
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: 4292320b5583772f3f31ce2dab4c6f0e2c989ed8
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -137,11 +137,17 @@ Sufficiency, package claims, create citation eligibility, render citations,
 write prose, or claim correctness. Those downstream owners consume only
 RunKernel-admitted state.
 
-The generic Specialist graph substrate may provide a bounded result to
-component or synthesis D-prime under the separate `specialist_result_inputs`
-namespace. The nominated claim, evidence, component, graph, and admitted input
-bindings remain ordinary D-prime inputs. A Specialist result preserves exact
-lineage, cannot validate itself, and cannot bypass D-prime or RunKernel.
+The generic Specialist graph substrate provides the outcome of a proposed need
+to component or synthesis D-prime under one top-level
+`specialist_need_handoff` namespace. The handoff carries either a bounded
+result or a typed policy, capability, target, budget, failure, blocked, or
+contested availability posture. Only no proposal omits it. The nominated claim,
+evidence, component, graph, and admitted input bindings remain ordinary
+D-prime inputs. RunKernel independently rederives the exact current D-prime
+role, action, artifact, target, and handoff-bearing input digest before
+exactly-once consumption; it does not trust a caller-supplied route or status.
+A Specialist outcome preserves exact lineage, cannot validate itself, and
+cannot bypass D-prime or RunKernel.
 
 The deterministic source-bound calculator remains an installed bounded
 supporting capability. It is not registered or activated as an ordinary

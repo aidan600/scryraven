@@ -87,8 +87,12 @@ def test_concern_authorities_are_unique_current_and_default_no() -> None:
     for authority, owner in CONCERN_OWNERS.items():
         text = _read(owner)
         verified_runtime = (
-            "46f4fc998f1aae338aff24e9a7033f32ee90c78a"  # pragma: allowlist secret
-            if authority == "canonical:specialist-graph-substrate"
+            "4292320b5583772f3f31ce2dab4c6f0e2c989ed8"  # pragma: allowlist secret
+            if authority
+            in {
+                "canonical:dprime-role-contract",
+                "canonical:specialist-graph-substrate",
+            }
             else "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
         )
         claim = f"Authority: {authority}"
