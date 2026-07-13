@@ -1,0 +1,2753 @@
+{
+  "schema": "scryraven-doc-history-manifest-v1",
+  "batches": {
+    "D3A": [
+      {
+        "original_path": "docs/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md",
+        "archived_path": "docs/history/roadmaps/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md",
+        "category": "roadmap",
+        "filename": "RETRIEVAL_AND_FAILURE_UX_ROADMAP.md",
+        "prior_status": null,
+        "current_route": "docs/roadmap/CURRENT_ROADMAP.md",
+        "migration_batch": "D3A",
+        "content_sha256": "c4ca34ab8d3accfd236aec8fc64e7824a8655df54dcbb021cb396d9490367465"
+      },
+      {
+        "original_path": "docs/ROADMAP_IMPLEMENTATION_NOTES.md",
+        "archived_path": "docs/history/roadmaps/ROADMAP_IMPLEMENTATION_NOTES.md",
+        "category": "roadmap",
+        "filename": "ROADMAP_IMPLEMENTATION_NOTES.md",
+        "prior_status": null,
+        "current_route": "docs/roadmap/CURRENT_ROADMAP.md",
+        "migration_batch": "D3A",
+        "content_sha256": "3e34a958dd49ff664ea886c3ce30c6df9991cb7f640ae9a5cd5af88b8f24093e"
+      },
+      {
+        "original_path": "docs/phase14_checkpoint_handoff_6f7cc76.md",
+        "archived_path": "docs/history/handoffs/phase14_checkpoint_handoff_6f7cc76.md",
+        "category": "handoff",
+        "filename": "phase14_checkpoint_handoff_6f7cc76.md",
+        "prior_status": null,
+        "current_route": null,
+        "migration_batch": "D3A",
+        "content_sha256": "87d4c90fad8b0525fb9176e5d830406e5516d1a447ec8e18e6accd7041f53a50"
+      },
+      {
+        "original_path": "docs/phase15_checkpoint_handoff_5e72fcc.md",
+        "archived_path": "docs/history/handoffs/phase15_checkpoint_handoff_5e72fcc.md",
+        "category": "handoff",
+        "filename": "phase15_checkpoint_handoff_5e72fcc.md",
+        "prior_status": null,
+        "current_route": null,
+        "migration_batch": "D3A",
+        "content_sha256": "1e1e4000c9cb8049da79d2d380c10f404b4206589a3965d41c0b4a8bcc5cd35a"
+      },
+      {
+        "original_path": "docs/source_refresh_phase14_draft.md",
+        "archived_path": "docs/history/drafts/source_refresh_phase14_draft.md",
+        "category": "draft",
+        "filename": "source_refresh_phase14_draft.md",
+        "prior_status": null,
+        "current_route": null,
+        "migration_batch": "D3A",
+        "content_sha256": "fc9edc8a119ced488d2d7287b0b50471d708660da4a121b52c7a332d7fc1bc44"
+      },
+      {
+        "original_path": "outputs/local_only/ag94c_project_source_candidates/02_SCRYRAVEN_CURRENT_ARCHITECTURE_AND_RUNAUTHORITY_STATE_v4.md",
+        "archived_path": "docs/history/project-source-candidates/02_SCRYRAVEN_CURRENT_ARCHITECTURE_AND_RUNAUTHORITY_STATE_v4.md",
+        "category": "project-source-candidate",
+        "filename": "02_SCRYRAVEN_CURRENT_ARCHITECTURE_AND_RUNAUTHORITY_STATE_v4.md",
+        "prior_status": null,
+        "current_route": null,
+        "migration_batch": "D3A",
+        "content_sha256": "6f3141cdfe73122bbea65d6e2c66b4f42f964755057e9b6c957f660ad7422fd1"
+      },
+      {
+        "original_path": "outputs/local_only/ag94c_project_source_candidates/03_SCRYRAVEN_SOURCE_HIERARCHY_RUNAUTHORITY_AND_EVIDENCE_POSTURE_v4.md",
+        "archived_path": "docs/history/project-source-candidates/03_SCRYRAVEN_SOURCE_HIERARCHY_RUNAUTHORITY_AND_EVIDENCE_POSTURE_v4.md",
+        "category": "project-source-candidate",
+        "filename": "03_SCRYRAVEN_SOURCE_HIERARCHY_RUNAUTHORITY_AND_EVIDENCE_POSTURE_v4.md",
+        "prior_status": null,
+        "current_route": null,
+        "migration_batch": "D3A",
+        "content_sha256": "11e1c1efafed1345d943a6b51e63ad1078f30699feefc19e3ae316ebc9b0ce15"
+      },
+      {
+        "original_path": "outputs/local_only/ag94c_project_source_candidates/05_SCRYRAVEN_PRODUCTIZATION_ROADMAP_v11_AUTHORITY_DOCTRINE_AND_OFFICIAL_ACQUISITION.md",
+        "archived_path": "docs/history/project-source-candidates/05_SCRYRAVEN_PRODUCTIZATION_ROADMAP_v11_AUTHORITY_DOCTRINE_AND_OFFICIAL_ACQUISITION.md",
+        "category": "project-source-candidate",
+        "filename": "05_SCRYRAVEN_PRODUCTIZATION_ROADMAP_v11_AUTHORITY_DOCTRINE_AND_OFFICIAL_ACQUISITION.md",
+        "prior_status": null,
+        "current_route": null,
+        "migration_batch": "D3A",
+        "content_sha256": "f5bc1164be9aeea7bd77e866fa9d88fb66f4d317dcabb847429df80c4df42c5b"
+      }
+    ],
+    "D3B": {
+      "architecture": [
+        {
+          "original_path": "docs/architecture/ACTIVE_GATE_INVARIANTS_AG35.md",
+          "archived_path": "docs/history/architecture/phases/ACTIVE_GATE_INVARIANTS_AG35.md",
+          "category": "architecture-phase",
+          "filename": "ACTIVE_GATE_INVARIANTS_AG35.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9fbce70df847256897a97497e24bb9d68bd46851fc2947f66e7c52e3019cde0f"
+        },
+        {
+          "original_path": "docs/architecture/ACTIVE_TERMINAL_STOP_GATE_AG34.md",
+          "archived_path": "docs/history/architecture/phases/ACTIVE_TERMINAL_STOP_GATE_AG34.md",
+          "category": "architecture-phase",
+          "filename": "ACTIVE_TERMINAL_STOP_GATE_AG34.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "16d3f699868bdf64c6342a0ecaf4f79dae218d02f1f71d597015dca4eb22f4a3"
+        },
+        {
+          "original_path": "docs/architecture/AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md",
+          "archived_path": "docs/history/architecture/phases/AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md",
+          "category": "architecture-phase",
+          "filename": "AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "74a99fc9c92cc5dd9c933c3f71034a7b8774db9189e767823307c0bfbbcd2552"
+        },
+        {
+          "original_path": "docs/architecture/AG74A_CONTROLLER_EVIDENCE_LEDGER_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG74A_CONTROLLER_EVIDENCE_LEDGER_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG74A_CONTROLLER_EVIDENCE_LEDGER_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8bc6b36839b3e02f0cf2a07480e8d35988f771855756402b0d83d862751e11b1"
+        },
+        {
+          "original_path": "docs/architecture/AG74B_CONTROLLER_AUTHORITY_DISPOSITION.md",
+          "archived_path": "docs/history/architecture/phases/AG74B_CONTROLLER_AUTHORITY_DISPOSITION.md",
+          "category": "architecture-phase",
+          "filename": "AG74B_CONTROLLER_AUTHORITY_DISPOSITION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7ce7e06a54eda205cd92b843b20927fae44f42b523d94a8c326e4835eefee2a6"
+        },
+        {
+          "original_path": "docs/architecture/AG74C_LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION.md",
+          "archived_path": "docs/history/architecture/phases/AG74C_LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION.md",
+          "category": "architecture-phase",
+          "filename": "AG74C_LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "852a51b292e51d8bfa886bffff580b1eaa2f08b024591f154f14142e6e1a1716"
+        },
+        {
+          "original_path": "docs/architecture/AG74D_CONTROLLER_RECOVERY_RETRY_STOP_LOOP.md",
+          "archived_path": "docs/history/architecture/phases/AG74D_CONTROLLER_RECOVERY_RETRY_STOP_LOOP.md",
+          "category": "architecture-phase",
+          "filename": "AG74D_CONTROLLER_RECOVERY_RETRY_STOP_LOOP.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "cfe4fdb30f816cc9233d034fe90d3c281e68acc67a531b773129798135d672b0"
+        },
+        {
+          "original_path": "docs/architecture/AG74D_V_RECOVERY_LANE_SUCCESS_VOCABULARY_RETIREMENT.md",
+          "archived_path": "docs/history/architecture/phases/AG74D_V_RECOVERY_LANE_SUCCESS_VOCABULARY_RETIREMENT.md",
+          "category": "architecture-phase",
+          "filename": "AG74D_V_RECOVERY_LANE_SUCCESS_VOCABULARY_RETIREMENT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "99e34dc6c095bda9fb4e919a4f8cddd156c49b40404e1440d55d0ae873955a12"
+        },
+        {
+          "original_path": "docs/architecture/AG74E_RECOVERY_EXECUTOR_ORCHESTRATOR_PLUMBING_CHECKPOINT.md",
+          "archived_path": "docs/history/architecture/phases/AG74E_RECOVERY_EXECUTOR_ORCHESTRATOR_PLUMBING_CHECKPOINT.md",
+          "category": "architecture-phase",
+          "filename": "AG74E_RECOVERY_EXECUTOR_ORCHESTRATOR_PLUMBING_CHECKPOINT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "982f3879f0af8835f182dc182b500d7aeeb1190f89954a649b34a4dc621ab826"
+        },
+        {
+          "original_path": "docs/architecture/AG74F_RECOVERY_RUNNER_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG74F_RECOVERY_RUNNER_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG74F_RECOVERY_RUNNER_EXTRACTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "e1fffdb17d078e0475a9d740d776c6847b9f5dd88b68a19dc1c616b30209dbc5"
+        },
+        {
+          "original_path": "docs/architecture/AG75A_CONTROLLER_PROVIDER_SEARCH_ALLOCATION_GATE.md",
+          "archived_path": "docs/history/architecture/phases/AG75A_CONTROLLER_PROVIDER_SEARCH_ALLOCATION_GATE.md",
+          "category": "architecture-phase",
+          "filename": "AG75A_CONTROLLER_PROVIDER_SEARCH_ALLOCATION_GATE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "de1cff8925048b1306670a340d987e5aa5cac0247fe97d6305ab54ca41f6deaa"
+        },
+        {
+          "original_path": "docs/architecture/AG75A_X_CONTROLLER_AUTHORIZED_EXISTING_PROVIDER_ALLOCATION_EXECUTION.md",
+          "archived_path": "docs/history/architecture/phases/AG75A_X_CONTROLLER_AUTHORIZED_EXISTING_PROVIDER_ALLOCATION_EXECUTION.md",
+          "category": "architecture-phase",
+          "filename": "AG75A_X_CONTROLLER_AUTHORIZED_EXISTING_PROVIDER_ALLOCATION_EXECUTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "830033255957b28f7de67e83ad6b34eca0b0cb55c649a3253fdc0e510607b35a"
+        },
+        {
+          "original_path": "docs/architecture/AG75A_Y_ALLOCATION_RESULT_CANDIDATE_CUSTODY.md",
+          "archived_path": "docs/history/architecture/phases/AG75A_Y_ALLOCATION_RESULT_CANDIDATE_CUSTODY.md",
+          "category": "architecture-phase",
+          "filename": "AG75A_Y_ALLOCATION_RESULT_CANDIDATE_CUSTODY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1d16646c64f8c9fcf7ddc26a604b575ef2e8d066bfe7766639453ad3fad163fa"
+        },
+        {
+          "original_path": "docs/architecture/AG75A_Z_ALLOCATION_CANDIDATE_DISPOSITION_SELECTION.md",
+          "archived_path": "docs/history/architecture/phases/AG75A_Z_ALLOCATION_CANDIDATE_DISPOSITION_SELECTION.md",
+          "category": "architecture-phase",
+          "filename": "AG75A_Z_ALLOCATION_CANDIDATE_DISPOSITION_SELECTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "3113864e5c45630ebbccfeca18a41937dbfa3d67429fa4fdc44cc9031344acfd"
+        },
+        {
+          "original_path": "docs/architecture/AG75C_LOCAL_AUTHORITY_GATE_RETIREMENT_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG75C_LOCAL_AUTHORITY_GATE_RETIREMENT_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG75C_LOCAL_AUTHORITY_GATE_RETIREMENT_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5a2fea1056229b2ab6797982ce4c5987154b5bd6fe39d4ec005a5b7208d2ce50"
+        },
+        {
+          "original_path": "docs/architecture/AG76B_PIPELINE_DECISION_REGISTRY.md",
+          "archived_path": "docs/history/architecture/phases/AG76B_PIPELINE_DECISION_REGISTRY.md",
+          "category": "architecture-phase",
+          "filename": "AG76B_PIPELINE_DECISION_REGISTRY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ae3f8f68530dd9acb1e88f04b13ec4c9bbc5dd9877043bbd7cb3158e001b47db"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_BD_ORCHESTRATOR_BURN_DOWN_REVIEW.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_BD_ORCHESTRATOR_BURN_DOWN_REVIEW.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_BD_ORCHESTRATOR_BURN_DOWN_REVIEW.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ea49bfb864cab6771366373cf3e85e3bf7bed87f488e0bf4b81b4df6864681fa"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_BD_R2_POST_RT_OP_PE_BURNDOWN.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_BD_R2_POST_RT_OP_PE_BURNDOWN.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_BD_R2_POST_RT_OP_PE_BURNDOWN.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9f906a6463d2ee6e90091189d62f9ef8829a928eafd5ecb9990bbd3f04681d14"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_CS_RUNNER_OWNED_RECOVERED_CANDIDATE_STREAM.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_CS_RUNNER_OWNED_RECOVERED_CANDIDATE_STREAM.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_CS_RUNNER_OWNED_RECOVERED_CANDIDATE_STREAM.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6e2c4b2d01197ca0b17ebae5ccc3e1dd8ad422849091d277e2e23526d22159b7"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_DP_DIAGNOSTICS_PROJECTION_HANDOFF_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_DP_DIAGNOSTICS_PROJECTION_HANDOFF_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_DP_DIAGNOSTICS_PROJECTION_HANDOFF_EXTRACTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8b98a9de4b20ade5e7a7f26e30207143b1d8dafdc4d628f2666cedef6dc11104"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_FE_FINAL_EVIDENCE_BUNDLE_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_FE_FINAL_EVIDENCE_BUNDLE_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_FE_FINAL_EVIDENCE_BUNDLE_EXTRACTION.md",
+          "prior_status": "historical phase note, demoted by AG-95U.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7bb06c03ae3081aa5b3cd493566e8d21dd3670b0d247c4c881d5dee319cfd186"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_KB_C_KB_REVIEW_PERSISTENCE_CONTEXT.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_KB_C_KB_REVIEW_PERSISTENCE_CONTEXT.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_KB_C_KB_REVIEW_PERSISTENCE_CONTEXT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "419eea10313ee2aa6e36c7ca89a9ec6d3fe75ad6f150e909aad4dff9b3a4db93"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_OP_OUTCOME_PERSISTENCE_PACKAGING.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_OP_OUTCOME_PERSISTENCE_PACKAGING.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_OP_OUTCOME_PERSISTENCE_PACKAGING.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5222469ee7c24889c2b38d11dc38f60e1565746bc5e772c7ee1e5ca40a25bf89"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_PE_PERSISTENCE_SIDE_EFFECT_EXECUTION.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_PE_PERSISTENCE_SIDE_EFFECT_EXECUTION.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_PE_PERSISTENCE_SIDE_EFFECT_EXECUTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1bf344a0f1dad40c584142896d222dd6397ee503fa70a8d5971d5d7dbd4573f8"
+        },
+        {
+          "original_path": "docs/architecture/AG76C_RT_RUNTIME_TRACE_EXPORT_ATTACHMENT.md",
+          "archived_path": "docs/history/architecture/phases/AG76C_RT_RUNTIME_TRACE_EXPORT_ATTACHMENT.md",
+          "category": "architecture-phase",
+          "filename": "AG76C_RT_RUNTIME_TRACE_EXPORT_ATTACHMENT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "708d074f90cd9aead642c82afc0033030566f1948f6b1fa811f3be8a32a49e9b"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_AA_CONTROLLER_OWNED_ANALYST_AUTHOR_HANDOFF_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_AA_CONTROLLER_OWNED_ANALYST_AUTHOR_HANDOFF_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_AA_CONTROLLER_OWNED_ANALYST_AUTHOR_HANDOFF_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "91adac5d053e59c5f93996736992873fc5df31676eb18f591c424428d6b67748"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_BD_CONTROLLER_AUTHORITY_TRANSFER_BURNDOWN.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_BD_CONTROLLER_AUTHORITY_TRANSFER_BURNDOWN.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_BD_CONTROLLER_AUTHORITY_TRANSFER_BURNDOWN.md",
+          "prior_status": "Review complete; docs-only decision record",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "dee22ad7b53a6ac88b49ab1a5f562321a5af75d9af6a37b68a5fdeda8d5a510b"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_CIT_CONTROLLER_OWNED_CITATION_SOURCE_HANDOFF_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_CIT_CONTROLLER_OWNED_CITATION_SOURCE_HANDOFF_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_CIT_CONTROLLER_OWNED_CITATION_SOURCE_HANDOFF_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7b56e78bfe1d7aae44b6acdecef9b88fed44b8ec037e4b41a94b1678968fa15b"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_ECO_CONTROLLER_OWNED_ECONOMIST_HANDOFF_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_ECO_CONTROLLER_OWNED_ECONOMIST_HANDOFF_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_ECO_CONTROLLER_OWNED_ECONOMIST_HANDOFF_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a27c2d878050fe82f4bd43d3c4e17a4931ee138311bfdeec80612455d9640e65"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_FU_FOLLOWUP_AS_CONTROLLER_INITIAL_STATE.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_FU_FOLLOWUP_AS_CONTROLLER_INITIAL_STATE.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_FU_FOLLOWUP_AS_CONTROLLER_INITIAL_STATE.md",
+          "prior_status": "Production-active narrow authority transfer for follow-up initial state",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ed7946cdc972570d99ea7e42181e90103d83ccf8733fe2ac9ff60e9fd65b9ded"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_RL_CONTROLLER_OWNED_RETRIEVAL_LOOP_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_RL_CONTROLLER_OWNED_RETRIEVAL_LOOP_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_RL_CONTROLLER_OWNED_RETRIEVAL_LOOP_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c4b40280ba48d153243dcf0b0b753e569f187eeb29022be3569575550576680a"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_RQ_ROUTER_QUERY_PREPARATION_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_RQ_ROUTER_QUERY_PREPARATION_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_RQ_ROUTER_QUERY_PREPARATION_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "83c78e224cffa13c11cf7b5c25e3e7dda290bdf549219d44641621c5050fdbac"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_SCR_CONTROLLER_OWNED_SCRUTINEER_REMEDIATION_HANDOFF.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_SCR_CONTROLLER_OWNED_SCRUTINEER_REMEDIATION_HANDOFF.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_SCR_CONTROLLER_OWNED_SCRUTINEER_REMEDIATION_HANDOFF.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c5e3d98ff48b04721b1a8f0a43c0fd30f9e08815360059ddc361625b13058013"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_SES_CONTROLLER_OWNED_SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_SES_CONTROLLER_OWNED_SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_SES_CONTROLLER_OWNED_SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF.md",
+          "prior_status": "AG-76D-SES-R1 implemented/readiness for review. AG-76D-SES introduced the passive Controller-owned handoff contract; AG-76D-SES-R1 wires the existing runtime path through that contract using already-computed legacy facts only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "33b8f72abb860feb9c681fbeb4fbc5de4b473cbebf18da57aa30bdff450d4f7a"
+        },
+        {
+          "original_path": "docs/architecture/AG76D_WG_CONTROLLER_OWNED_WEAK_FAILURE_GATE_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG76D_WG_CONTROLLER_OWNED_WEAK_FAILURE_GATE_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG76D_WG_CONTROLLER_OWNED_WEAK_FAILURE_GATE_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b8b5b1d9b52ff60206b737fbf846d8b9aa06390127bb300f5a75c0fed6f9efc4"
+        },
+        {
+          "original_path": "docs/architecture/AG77A_SOURCE_CONFLICT_REPRESENTATION_MODEL.md",
+          "archived_path": "docs/history/architecture/phases/AG77A_SOURCE_CONFLICT_REPRESENTATION_MODEL.md",
+          "category": "architecture-phase",
+          "filename": "AG77A_SOURCE_CONFLICT_REPRESENTATION_MODEL.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "0db7d890c93d2252ef6698a4d52e6d7127baa38382f993a818ece9243347bd2e"
+        },
+        {
+          "original_path": "docs/architecture/AG77B_CONTROLLER_OWNED_CONFLICT_ARBITRATION.md",
+          "archived_path": "docs/history/architecture/phases/AG77B_CONTROLLER_OWNED_CONFLICT_ARBITRATION.md",
+          "category": "architecture-phase",
+          "filename": "AG77B_CONTROLLER_OWNED_CONFLICT_ARBITRATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d0e088315218669e36edcb8debb14c779099f6b27a7d4aaf4c2cb1f2dcb6ffb5"
+        },
+        {
+          "original_path": "docs/architecture/AG77C_CONFLICT_ARBITRATION_RUNTIME_ANSWERCONTRACT_INTEGRATION.md",
+          "archived_path": "docs/history/architecture/phases/AG77C_CONFLICT_ARBITRATION_RUNTIME_ANSWERCONTRACT_INTEGRATION.md",
+          "category": "architecture-phase",
+          "filename": "AG77C_CONFLICT_ARBITRATION_RUNTIME_ANSWERCONTRACT_INTEGRATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "4b7478da1c3ea2828177b9028ff8f29a6195c4cb62a73a2175afe5b07ae88ff5"
+        },
+        {
+          "original_path": "docs/architecture/AG77D_CONFLICT_ARBITRATION_ANSWER_POSTURE_ACTIVATION.md",
+          "archived_path": "docs/history/architecture/phases/AG77D_CONFLICT_ARBITRATION_ANSWER_POSTURE_ACTIVATION.md",
+          "category": "architecture-phase",
+          "filename": "AG77D_CONFLICT_ARBITRATION_ANSWER_POSTURE_ACTIVATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6a65e25290ad4ac55861d7526925ca17075228d1f33d726f983ccf6562980324"
+        },
+        {
+          "original_path": "docs/architecture/AG78A_INDIRECT_EVIDENCE_INFERENCE_POSTURE_DESIGN.md",
+          "archived_path": "docs/history/architecture/phases/AG78A_INDIRECT_EVIDENCE_INFERENCE_POSTURE_DESIGN.md",
+          "category": "architecture-phase",
+          "filename": "AG78A_INDIRECT_EVIDENCE_INFERENCE_POSTURE_DESIGN.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "057407de8c71ca00be91f29a47264a6ce2697f12d256371955027d92388c1fab"
+        },
+        {
+          "original_path": "docs/architecture/AG78B_MINIMAL_INDIRECT_INFERENCE_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG78B_MINIMAL_INDIRECT_INFERENCE_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG78B_MINIMAL_INDIRECT_INFERENCE_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7d64769e8befafefa2c7f3482590dd25e468ff89367ffe31c2c7afbad514ffd1"
+        },
+        {
+          "original_path": "docs/architecture/AG78C_INDIRECT_INFERENCE_RUNTIME_ANSWERCONTRACT_VISIBILITY.md",
+          "archived_path": "docs/history/architecture/phases/AG78C_INDIRECT_INFERENCE_RUNTIME_ANSWERCONTRACT_VISIBILITY.md",
+          "category": "architecture-phase",
+          "filename": "AG78C_INDIRECT_INFERENCE_RUNTIME_ANSWERCONTRACT_VISIBILITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "02350f07cf3974c8d57861f90d8e01b41ecfeaa5cf3daa3c86b408d49c1a081b"
+        },
+        {
+          "original_path": "docs/architecture/AG78D_INDIRECT_INFERENCE_ANSWER_POSTURE_ACTIVATION.md",
+          "archived_path": "docs/history/architecture/phases/AG78D_INDIRECT_INFERENCE_ANSWER_POSTURE_ACTIVATION.md",
+          "category": "architecture-phase",
+          "filename": "AG78D_INDIRECT_INFERENCE_ANSWER_POSTURE_ACTIVATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "4434461d08e3c10ad7c66db52e4c7a477d1488490c3faf01563be430b28b9533"
+        },
+        {
+          "original_path": "docs/architecture/AG78E_AUTHOR_PRESENTATION_INFERRED_VS_DIRECT_CLAIMS.md",
+          "archived_path": "docs/history/architecture/phases/AG78E_AUTHOR_PRESENTATION_INFERRED_VS_DIRECT_CLAIMS.md",
+          "category": "architecture-phase",
+          "filename": "AG78E_AUTHOR_PRESENTATION_INFERRED_VS_DIRECT_CLAIMS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8abf268497f73441afd54719fafffd219b4e60c2636030a388dc81f29b7d746e"
+        },
+        {
+          "original_path": "docs/architecture/AG78F_INDIRECT_INFERENCE_PRESENTATION_BURNDOWN_DOGFOOD_PREP.md",
+          "archived_path": "docs/history/architecture/phases/AG78F_INDIRECT_INFERENCE_PRESENTATION_BURNDOWN_DOGFOOD_PREP.md",
+          "category": "architecture-phase",
+          "filename": "AG78F_INDIRECT_INFERENCE_PRESENTATION_BURNDOWN_DOGFOOD_PREP.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9f9dcab5138e0a069cf75694181ea2f47d04761ec63a4cc04b9120b8626a3b58"
+        },
+        {
+          "original_path": "docs/architecture/AG79A_PASSIVE_TO_ACTIVE_CONTROLLER_AUTHORITY_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG79A_PASSIVE_TO_ACTIVE_CONTROLLER_AUTHORITY_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG79A_PASSIVE_TO_ACTIVE_CONTROLLER_AUTHORITY_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6a68be73e82795e584fb151f08814553b8504b9f4dcc6a6510ebd2a72af2f79e"
+        },
+        {
+          "original_path": "docs/architecture/AG79B_CONTROLLER_GOVERNED_PROVIDER_SEARCH_FINAL_ASSEMBLY_BOUNDARY.md",
+          "archived_path": "docs/history/architecture/phases/AG79B_CONTROLLER_GOVERNED_PROVIDER_SEARCH_FINAL_ASSEMBLY_BOUNDARY.md",
+          "category": "architecture-phase",
+          "filename": "AG79B_CONTROLLER_GOVERNED_PROVIDER_SEARCH_FINAL_ASSEMBLY_BOUNDARY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "84fdeb4f6f59273b2f3dbea9df650f0b579d45a0fa33d426ebd8a2c0a98885c7"
+        },
+        {
+          "original_path": "docs/architecture/AG79C_ORCHESTRATOR_DECISION_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG79C_ORCHESTRATOR_DECISION_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG79C_ORCHESTRATOR_DECISION_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a3e9e8a864c6569657bd41ab9a0704950cd959110d086d2292224773e1a2e666"
+        },
+        {
+          "original_path": "docs/architecture/AG79D_TARGETED_ORCHESTRATOR_AUTHORITY_CLOSURE.md",
+          "archived_path": "docs/history/architecture/phases/AG79D_TARGETED_ORCHESTRATOR_AUTHORITY_CLOSURE.md",
+          "category": "architecture-phase",
+          "filename": "AG79D_TARGETED_ORCHESTRATOR_AUTHORITY_CLOSURE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "cca437b61022ff3f6d122640931283b5a2a1f5aa2409daff742deba08d4f7b6e"
+        },
+        {
+          "original_path": "docs/architecture/AG89A_RUN_KERNEL_ORCHESTRATOR_RETIREMENT_ACCOUNTABILITY_INVENTORY.md",
+          "archived_path": "docs/history/architecture/phases/AG89A_RUN_KERNEL_ORCHESTRATOR_RETIREMENT_ACCOUNTABILITY_INVENTORY.md",
+          "category": "architecture-phase",
+          "filename": "AG89A_RUN_KERNEL_ORCHESTRATOR_RETIREMENT_ACCOUNTABILITY_INVENTORY.md",
+          "prior_status": "architecture inventory / migration charter; docs-only; no runtime behavior change; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "0059d7813a1a6be6afc7d6074f34a991ab62d0dc3bc12ef922305379ff967169"
+        },
+        {
+          "original_path": "docs/architecture/AG89C_QUERYPLAN_AUTHORITY_COLLAPSE.md",
+          "archived_path": "docs/history/architecture/phases/AG89C_QUERYPLAN_AUTHORITY_COLLAPSE.md",
+          "category": "architecture-phase",
+          "filename": "AG89C_QUERYPLAN_AUTHORITY_COLLAPSE.md",
+          "prior_status": "bounded implementation; behavior-preserving query authority seam; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "e763b194b677b7c661a411ff285c445de7ce84d901886e1d1633206a9aa2df86"
+        },
+        {
+          "original_path": "docs/architecture/AG89D_FINAL_ANSWER_PACKET_AUTHORITY_COLLAPSE.md",
+          "archived_path": "docs/history/architecture/phases/AG89D_FINAL_ANSWER_PACKET_AUTHORITY_COLLAPSE.md",
+          "category": "architecture-phase",
+          "filename": "AG89D_FINAL_ANSWER_PACKET_AUTHORITY_COLLAPSE.md",
+          "prior_status": "historical phase note, demoted by AG-95U.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ea14822bfd7b1652ea2b5475eba881b596e971a0a78d88da1ddf5c7dc19d4263"
+        },
+        {
+          "original_path": "docs/architecture/AG89E_TRACE_WRAPPER_COLLAPSE_ORCHESTRATOR_SIMPLIFICATION.md",
+          "archived_path": "docs/history/architecture/phases/AG89E_TRACE_WRAPPER_COLLAPSE_ORCHESTRATOR_SIMPLIFICATION.md",
+          "category": "architecture-phase",
+          "filename": "AG89E_TRACE_WRAPPER_COLLAPSE_ORCHESTRATOR_SIMPLIFICATION.md",
+          "prior_status": "bounded subtractive implementation; behavior-preserving trace/projection cleanup; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "328c8086dc5554ea0ac138ab17998619c125fc855fe93cc64533aee54bcd07d0"
+        },
+        {
+          "original_path": "docs/architecture/AG90A_ORCHESTRATOR_BURNDOWN_COMPATIBILITY_SHELL_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG90A_ORCHESTRATOR_BURNDOWN_COMPATIBILITY_SHELL_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG90A_ORCHESTRATOR_BURNDOWN_COMPATIBILITY_SHELL_EXTRACTION.md",
+          "prior_status": "implementation complete; behavior-preserving; no live validation; no provider/model/search calls.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "3de90478efff851a17a288d9a2ba041e4f6f4c4d64788a9e20c2cf40860e137c"
+        },
+        {
+          "original_path": "docs/architecture/AG90B_FINAL_ANSWER_AUTHOR_CITATION_RUNTIME_SEAM_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG90B_FINAL_ANSWER_AUTHOR_CITATION_RUNTIME_SEAM_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG90B_FINAL_ANSWER_AUTHOR_CITATION_RUNTIME_SEAM_EXTRACTION.md",
+          "prior_status": "historical phase note, demoted by AG-95U.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "e79a7d161f81013ad9ad1b3ee5f4ba7fd1cea4aa039fe9ba37b7d91d5b8c9c17"
+        },
+        {
+          "original_path": "docs/architecture/AG90C_PROMPT_ASSEMBLY_EXTRACTION_INVARIANCE_BURNDOWN.md",
+          "archived_path": "docs/history/architecture/phases/AG90C_PROMPT_ASSEMBLY_EXTRACTION_INVARIANCE_BURNDOWN.md",
+          "category": "architecture-phase",
+          "filename": "AG90C_PROMPT_ASSEMBLY_EXTRACTION_INVARIANCE_BURNDOWN.md",
+          "prior_status": "behavior-preserving extraction; no live validation; no provider/model/search calls",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "fe0e01602415923fe4d4ea26d585b757387abc0c6036753ccd0834857661b026"
+        },
+        {
+          "original_path": "docs/architecture/AG90D_RETRIEVAL_DISPATCH_PASS_RECORD_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG90D_RETRIEVAL_DISPATCH_PASS_RECORD_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG90D_RETRIEVAL_DISPATCH_PASS_RECORD_EXTRACTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "0bad8bdc54cef849452a09a5986beda8aa4a4520d3f88b911ec1537d917f22d9"
+        },
+        {
+          "original_path": "docs/architecture/AG90E_LEGACY_STAGE_RUNTIME_SEAM_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG90E_LEGACY_STAGE_RUNTIME_SEAM_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG90E_LEGACY_STAGE_RUNTIME_SEAM_EXTRACTION.md",
+          "prior_status": "behavior-preserving extraction; no live validation; no provider/model/search calls during development/testing",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "494691a105852bc39856b200b9b1f7f16824838b709a18e0f93fe879a8279ff3"
+        },
+        {
+          "original_path": "docs/architecture/AG90F_ANALYST_GATE_FIRST_ANALYST_RUNTIME_SEAM_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG90F_ANALYST_GATE_FIRST_ANALYST_RUNTIME_SEAM_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG90F_ANALYST_GATE_FIRST_ANALYST_RUNTIME_SEAM_EXTRACTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "95e18a30a6f889d74e8fc2fe27ee966065f259edeeb279304ab2e2f605a48087"
+        },
+        {
+          "original_path": "docs/architecture/AG90G_POST_ANALYST_HANDOFF_PACKAGING_SEAM.md",
+          "archived_path": "docs/history/architecture/phases/AG90G_POST_ANALYST_HANDOFF_PACKAGING_SEAM.md",
+          "category": "architecture-phase",
+          "filename": "AG90G_POST_ANALYST_HANDOFF_PACKAGING_SEAM.md",
+          "prior_status": "historical phase note, demoted by AG-95U.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2019547761b55d52f8f6fbbcfb8262af5daa18f33618e3d41e5b068b9cf07550"
+        },
+        {
+          "original_path": "docs/architecture/AG90H_POST_AUTHOR_TRACE_OUTCOME_PROJECTION_BURNDOWN.md",
+          "archived_path": "docs/history/architecture/phases/AG90H_POST_AUTHOR_TRACE_OUTCOME_PROJECTION_BURNDOWN.md",
+          "category": "architecture-phase",
+          "filename": "AG90H_POST_AUTHOR_TRACE_OUTCOME_PROJECTION_BURNDOWN.md",
+          "prior_status": "historical phase note, demoted by AG-95U.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "cdd86ef9400d96732988526a86e4b11110503258e422476ad01fe88b87fc3b3e"
+        },
+        {
+          "original_path": "docs/architecture/AG90I_REMAINING_ORCHESTRATOR_SURFACE_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG90I_REMAINING_ORCHESTRATOR_SURFACE_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG90I_REMAINING_ORCHESTRATOR_SURFACE_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a60068490fb50811be524b336040b60e74c5530b5983c9094da7f667412bf6ca"
+        },
+        {
+          "original_path": "docs/architecture/AG90J_RETRIEVAL_STOP_CONTINUATION_TRACE_PROJECTION.md",
+          "archived_path": "docs/history/architecture/phases/AG90J_RETRIEVAL_STOP_CONTINUATION_TRACE_PROJECTION.md",
+          "category": "architecture-phase",
+          "filename": "AG90J_RETRIEVAL_STOP_CONTINUATION_TRACE_PROJECTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1361e44525e7403f9c6b6c6a312b13d4e3f7749fe4e612bf9af08fcddd0bf634"
+        },
+        {
+          "original_path": "docs/architecture/AG90K_LIFECYCLE_FACT_PROJECTION_SLICE.md",
+          "archived_path": "docs/history/architecture/phases/AG90K_LIFECYCLE_FACT_PROJECTION_SLICE.md",
+          "category": "architecture-phase",
+          "filename": "AG90K_LIFECYCLE_FACT_PROJECTION_SLICE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2c29e7513d50a4dc5808221458863fe3fde67e33908177a00fa1d69689764f3a"
+        },
+        {
+          "original_path": "docs/architecture/AG90_POST_BURNDOWN_CURRENT_STATE.md",
+          "archived_path": "docs/history/architecture/phases/AG90_POST_BURNDOWN_CURRENT_STATE.md",
+          "category": "architecture-phase",
+          "filename": "AG90_POST_BURNDOWN_CURRENT_STATE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2951b0167ee2f6a28022a827082f164f26445281e8e934f83fe28c8772172cac"
+        },
+        {
+          "original_path": "docs/architecture/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md",
+          "archived_path": "docs/history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md",
+          "category": "architecture-phase",
+          "filename": "AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md",
+          "prior_status": "docs-first architecture/static audit; no runtime behavior change; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "57aaf31bc16a693444efdd0c5dd2e1db1bc30fa928929f53adea52ac334988dd"
+        },
+        {
+          "original_path": "docs/architecture/AG91B_QUERYPLAN_PRE_RETRIEVAL_BOUNDARY_TIGHTENING.md",
+          "archived_path": "docs/history/architecture/phases/AG91B_QUERYPLAN_PRE_RETRIEVAL_BOUNDARY_TIGHTENING.md",
+          "category": "architecture-phase",
+          "filename": "AG91B_QUERYPLAN_PRE_RETRIEVAL_BOUNDARY_TIGHTENING.md",
+          "prior_status": "implementation phase; behavior-preserving authority-boundary tightening; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b78920d37722a7e2d5082fb903c1a2f0ad1f457e091ff2995988635e623e0550"
+        },
+        {
+          "original_path": "docs/architecture/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md",
+          "archived_path": "docs/history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md",
+          "category": "architecture-phase",
+          "filename": "AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md",
+          "prior_status": "behavior-preserving authority-boundary seed; no live validation; no provider/model/search/embedding calls",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c369946d6b0028897cf6bf26f6649d72f9cf2b65c7b5d1f8b83f394640b3b29d"
+        },
+        {
+          "original_path": "docs/architecture/AG91C_R1_PROVIDERPLAN_CONTINUATION_PROVIDER_INPUTS.md",
+          "archived_path": "docs/history/architecture/phases/AG91C_R1_PROVIDERPLAN_CONTINUATION_PROVIDER_INPUTS.md",
+          "category": "architecture-phase",
+          "filename": "AG91C_R1_PROVIDERPLAN_CONTINUATION_PROVIDER_INPUTS.md",
+          "prior_status": "behavior-preserving ProviderPlan authority-boundary follow-up; no live validation; no provider/model/search/embedding calls",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6c882d2fd572ec6e5d07c38714601fbfc14e5e6252f49e6273a054d7fa726c3e"
+        },
+        {
+          "original_path": "docs/architecture/AG91D_BUNDLE_PRE_RETRIEVAL_AUTHORITY_COMPLETION.md",
+          "archived_path": "docs/history/architecture/phases/AG91D_BUNDLE_PRE_RETRIEVAL_AUTHORITY_COMPLETION.md",
+          "category": "architecture-phase",
+          "filename": "AG91D_BUNDLE_PRE_RETRIEVAL_AUTHORITY_COMPLETION.md",
+          "prior_status": "implementation complete; behavior-preserving; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "70c259e2cea405823b89df6f4cb8cf60c920de13d5378910094ea18363a40fd2"
+        },
+        {
+          "original_path": "docs/architecture/AG91H_RUN_KERNEL_SPINE_BOOTSTRAP.md",
+          "archived_path": "docs/history/architecture/phases/AG91H_RUN_KERNEL_SPINE_BOOTSTRAP.md",
+          "category": "architecture-phase",
+          "filename": "AG91H_RUN_KERNEL_SPINE_BOOTSTRAP.md",
+          "prior_status": "implementation complete; behavior-preserving; no live validation.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d0ba4a22d85c7b4530a0d91b3bc432954a89179323c355ea9b34bd1f7ea3617d"
+        },
+        {
+          "original_path": "docs/architecture/AG91I_QUERY_PRODUCTION_EXECUTOR_UNDER_RUNKERNEL.md",
+          "archived_path": "docs/history/architecture/phases/AG91I_QUERY_PRODUCTION_EXECUTOR_UNDER_RUNKERNEL.md",
+          "category": "architecture-phase",
+          "filename": "AG91I_QUERY_PRODUCTION_EXECUTOR_UNDER_RUNKERNEL.md",
+          "prior_status": "implementation complete; behavior-preserving; no live validation.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6e8ba4b902e5a3570c65d040133f6acf49da8cb8ea18392dad81b6a617fc5e3f"
+        },
+        {
+          "original_path": "docs/architecture/AG91J_EVIDENCE_LEDGER_SOURCE_CUSTODY_UNDER_RUNKERNEL.md",
+          "archived_path": "docs/history/architecture/phases/AG91J_EVIDENCE_LEDGER_SOURCE_CUSTODY_UNDER_RUNKERNEL.md",
+          "category": "architecture-phase",
+          "filename": "AG91J_EVIDENCE_LEDGER_SOURCE_CUSTODY_UNDER_RUNKERNEL.md",
+          "prior_status": "implementation complete; high-custody authority migration; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "cad60fe4ab4be7097ef8237b63c05a8ddd472fdf1aaf79a73d1b362b9ab7eb12"
+        },
+        {
+          "original_path": "docs/architecture/AG91K_FINAL_ANSWER_PACKET_AUTHOR_EXECUTOR_UNDER_RUNKERNEL.md",
+          "archived_path": "docs/history/architecture/phases/AG91K_FINAL_ANSWER_PACKET_AUTHOR_EXECUTOR_UNDER_RUNKERNEL.md",
+          "category": "architecture-phase",
+          "filename": "AG91K_FINAL_ANSWER_PACKET_AUTHOR_EXECUTOR_UNDER_RUNKERNEL.md",
+          "prior_status": "historical phase note, demoted by AG-95U.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "bdd1d25a5b07e71f34b161b0f4a65754a7c7f4d552075b9b51af7ccd3ac8fb27"
+        },
+        {
+          "original_path": "docs/architecture/AG92A_RUNAUTHORITY_PROMPT_AND_CONTRACT_SYNTHESIS.md",
+          "archived_path": "docs/history/architecture/phases/AG92A_RUNAUTHORITY_PROMPT_AND_CONTRACT_SYNTHESIS.md",
+          "category": "architecture-phase",
+          "filename": "AG92A_RUNAUTHORITY_PROMPT_AND_CONTRACT_SYNTHESIS.md",
+          "prior_status": "implemented on `codex/ag92a-runauthority-contract-synthesis`.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5dc91a6ec820124ea885319b245584c25f02baec3fd6a9b36226599134d702a4"
+        },
+        {
+          "original_path": "docs/architecture/AG92B_RUNAUTHORITY_ITERATIVE_SEARCH_JUDGMENT.md",
+          "archived_path": "docs/history/architecture/phases/AG92B_RUNAUTHORITY_ITERATIVE_SEARCH_JUDGMENT.md",
+          "category": "architecture-phase",
+          "filename": "AG92B_RUNAUTHORITY_ITERATIVE_SEARCH_JUDGMENT.md",
+          "prior_status": "implemented as a bounded RunAuthority behavior activation.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "dfb638545670f57eb510f234aab153eaf69a7f944d65d5ad168c4c1a61e2b436"
+        },
+        {
+          "original_path": "docs/architecture/AG92C_RUNAUTHORITY_SUFFICIENCY_JUDGE.md",
+          "archived_path": "docs/history/architecture/phases/AG92C_RUNAUTHORITY_SUFFICIENCY_JUDGE.md",
+          "category": "architecture-phase",
+          "filename": "AG92C_RUNAUTHORITY_SUFFICIENCY_JUDGE.md",
+          "prior_status": "implemented as RunAuthority behavior activation; no live validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9fdd385aea014a71b26623b259bb70961aa9ed750ec13a14fa4d616266319349"
+        },
+        {
+          "original_path": "docs/architecture/AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md",
+          "prior_status": "Audit complete",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "fe477b259ed3161193b134ae746c2f606d7d1f8e8f987148e85849fbca880819"
+        },
+        {
+          "original_path": "docs/architecture/AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md",
+          "archived_path": "docs/history/architecture/phases/AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md",
+          "category": "architecture-phase",
+          "filename": "AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md",
+          "prior_status": "implemented as a behavior-preserving consolidation pass",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "3ca10d09447a1288d6f83ab204bcd8b175aad4ec6a3e2dd3e9d061fc013e9101"
+        },
+        {
+          "original_path": "docs/architecture/AG94D_OFFICIAL_SOURCE_ACQUISITION_QUALITY_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG94D_OFFICIAL_SOURCE_ACQUISITION_QUALITY_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG94D_OFFICIAL_SOURCE_ACQUISITION_QUALITY_AUDIT.md",
+          "prior_status": "implemented as an offline audit with fixture-backed diagnostics and",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2b5f25d740cfc3620c86d23031cbec2c98cdc03e65369eaa2345873e0afd85c5"
+        },
+        {
+          "original_path": "docs/architecture/AG94E_GENERIC_OFFICIAL_AUTHORITY_ACQUISITION_BENCHMARK.md",
+          "archived_path": "docs/history/architecture/phases/AG94E_GENERIC_OFFICIAL_AUTHORITY_ACQUISITION_BENCHMARK.md",
+          "category": "architecture-phase",
+          "filename": "AG94E_GENERIC_OFFICIAL_AUTHORITY_ACQUISITION_BENCHMARK.md",
+          "prior_status": "implemented as an offline multi-family benchmark with one bounded",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "92bb5b145313ca862c7e52eed37f4ce6081533bfc15f33615111985611333199"
+        },
+        {
+          "original_path": "docs/architecture/AG94F_R1_WEAK_CORPUS_OFFICIAL_AUTHORITY_RECOVERY_ADMISSION.md",
+          "archived_path": "docs/history/architecture/phases/AG94F_R1_WEAK_CORPUS_OFFICIAL_AUTHORITY_RECOVERY_ADMISSION.md",
+          "category": "architecture-phase",
+          "filename": "AG94F_R1_WEAK_CORPUS_OFFICIAL_AUTHORITY_RECOVERY_ADMISSION.md",
+          "prior_status": "implemented as an offline fixture-backed behavior repair.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "01d1c175a50c73c75acf69373e9a4a928feb7f52ff6fb4cbdff2fb690dbdb002"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_A_AUTHORITY_RECOVERY_BLOCKER_TRACE_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_A_AUTHORITY_RECOVERY_BLOCKER_TRACE_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_A_AUTHORITY_RECOVERY_BLOCKER_TRACE_AUDIT.md",
+          "prior_status": "audit complete.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "49bc714d15ee3d5ea78ddbc14abd625b0d467132a69ee0a7bcada50fa2e531f1"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_B_AUTHORITY_RECOVERY_LIFECYCLE_REPAIR.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_B_AUTHORITY_RECOVERY_LIFECYCLE_REPAIR.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_B_AUTHORITY_RECOVERY_LIFECYCLE_REPAIR.md",
+          "prior_status": "implemented as an offline fixture-backed behavior repair.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "90c7495ce3d5b440cccaf9745cf35c7e660ed760f22f478d24dc37e633b8df6e"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_C_RECOVERY_EXECUTOR_DISPATCH_AUTHORIZATION_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_C_RECOVERY_EXECUTOR_DISPATCH_AUTHORIZATION_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_C_RECOVERY_EXECUTOR_DISPATCH_AUTHORIZATION_AUDIT.md",
+          "prior_status": "audit complete.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5382a23438dfe62e2f474713119d007bc36e9d727430be07f3ba0ac043945b25"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_D_RECOVERY_DISPATCH_AUTHORIZATION_REPAIR.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_D_RECOVERY_DISPATCH_AUTHORIZATION_REPAIR.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_D_RECOVERY_DISPATCH_AUTHORIZATION_REPAIR.md",
+          "prior_status": "implemented as a focused offline behavior repair.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "70743cfae6a5e17df21a74c5fb881b99dd1cd3723beef8ff0d902efe009d50d8"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_E_AUTHORITY_LIFECYCLE_SOURCE_CLASS_PARITY_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_E_AUTHORITY_LIFECYCLE_SOURCE_CLASS_PARITY_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_E_AUTHORITY_LIFECYCLE_SOURCE_CLASS_PARITY_AUDIT.md",
+          "prior_status": "audit complete, offline reproduction added.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2c82cdcb1d82e18b1396a932cc0f98ae4ba7e21b05b4a1de31b8986630b85c90"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_F_AUTHORITY_CUSTODY_SEMANTICS_REPAIR.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_F_AUTHORITY_CUSTODY_SEMANTICS_REPAIR.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_F_AUTHORITY_CUSTODY_SEMANTICS_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5a0fc3c0bc719762fc59e20a0dcf9cb1af0fd0dba6fbf39a365bd004d62e702a"
+        },
+        {
+          "original_path": "docs/architecture/AG94H_G_FINAL_AUTHORITY_CITATION_SURVIVAL_REPAIR.md",
+          "archived_path": "docs/history/architecture/phases/AG94H_G_FINAL_AUTHORITY_CITATION_SURVIVAL_REPAIR.md",
+          "category": "architecture-phase",
+          "filename": "AG94H_G_FINAL_AUTHORITY_CITATION_SURVIVAL_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9c07a365348604761e2a8e6b93ea83a7af1e5c17e1c930775e41198f72c20c1b"
+        },
+        {
+          "original_path": "docs/architecture/AG95A_AUTHORITY_SURFACE_INVENTORY_AND_DEMOLITION_PLAN.md",
+          "archived_path": "docs/history/architecture/phases/AG95A_AUTHORITY_SURFACE_INVENTORY_AND_DEMOLITION_PLAN.md",
+          "category": "architecture-phase",
+          "filename": "AG95A_AUTHORITY_SURFACE_INVENTORY_AND_DEMOLITION_PLAN.md",
+          "prior_status": "superseded historical inventory.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7d9c49c03fcfacc097ec12936bc646a19eeaa56887fd825a846d2bd18219a35f"
+        },
+        {
+          "original_path": "docs/architecture/AG95C_CANONICAL_RECOVERY_PERMISSION_DISPATCH_CONSOLIDATION.md",
+          "archived_path": "docs/history/architecture/phases/AG95C_CANONICAL_RECOVERY_PERMISSION_DISPATCH_CONSOLIDATION.md",
+          "category": "architecture-phase",
+          "filename": "AG95C_CANONICAL_RECOVERY_PERMISSION_DISPATCH_CONSOLIDATION.md",
+          "prior_status": "implemented as offline authority cleanup. No live ScryRaven/proplex",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d507f15375b62d1f46623e242ff5f28d630676229cefbae762253c478416de26"
+        },
+        {
+          "original_path": "docs/architecture/AG95D_RECOVERY_DISPATCH_SANITY_AUDIT_AND_CLEANUP_TARGET_SWEEP.md",
+          "archived_path": "docs/history/architecture/phases/AG95D_RECOVERY_DISPATCH_SANITY_AUDIT_AND_CLEANUP_TARGET_SWEEP.md",
+          "category": "architecture-phase",
+          "filename": "AG95D_RECOVERY_DISPATCH_SANITY_AUDIT_AND_CLEANUP_TARGET_SWEEP.md",
+          "prior_status": "PASS. Offline audit only. No live ScryRaven/proplex provider, model,",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b17a9fab2c19bbce1f57b76a5c384037a993e4bf8de1ef1b8cca1dd76b7970c4"
+        },
+        {
+          "original_path": "docs/architecture/AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md",
+          "archived_path": "docs/history/architecture/phases/AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md",
+          "category": "architecture-phase",
+          "filename": "AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md",
+          "prior_status": "implemented as offline fixture, static-guard, and documentation cleanup.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2d3b07745f10ac1d11a886dff9b662c056b7069d94ccde24c6e29ebb86845791"
+        },
+        {
+          "original_path": "docs/architecture/AG95F_CONTROLLER_LOOP_SPINE_SOURCE_CLASS_TRACE_DEMOTION.md",
+          "archived_path": "docs/history/architecture/phases/AG95F_CONTROLLER_LOOP_SPINE_SOURCE_CLASS_TRACE_DEMOTION.md",
+          "category": "architecture-phase",
+          "filename": "AG95F_CONTROLLER_LOOP_SPINE_SOURCE_CLASS_TRACE_DEMOTION.md",
+          "prior_status": "historical setup for the AG-95I packet-field diet.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9d84b660a4af5be6befb6a7cd307454820cdcfac673987db77ee24272d1657de"
+        },
+        {
+          "original_path": "docs/architecture/AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md",
+          "archived_path": "docs/history/architecture/phases/AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md",
+          "category": "architecture-phase",
+          "filename": "AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md",
+          "prior_status": "historical consumer-audit step superseded by AG-95I.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "07f98c71be40a73cb36d67150fca02fb9156633e5576b3ae8adb33174622b036"
+        },
+        {
+          "original_path": "docs/architecture/AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md",
+          "archived_path": "docs/history/architecture/phases/AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md",
+          "category": "architecture-phase",
+          "filename": "AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md",
+          "prior_status": "historical product-callsite cleanup step superseded by AG-95I.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "787cade74881000cfd634a09d811c213673db61b0200fac6664834ce04b63ad9"
+        },
+        {
+          "original_path": "docs/architecture/AG95I_CONTROLLER_LOOP_SPINE_PACKET_FIELD_DIET.md",
+          "archived_path": "docs/history/architecture/phases/AG95I_CONTROLLER_LOOP_SPINE_PACKET_FIELD_DIET.md",
+          "category": "architecture-phase",
+          "filename": "AG95I_CONTROLLER_LOOP_SPINE_PACKET_FIELD_DIET.md",
+          "prior_status": "implemented as offline runtime/test/doc cleanup. No live",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7f2aff29a8ade512db61fb548ea35b3be3f12e1b63bdc5a776e51421633bfe45"
+        },
+        {
+          "original_path": "docs/architecture/AG95J_K_ACTIVE_GATE_AND_LIFECYCLE_BOOLEAN_DIET.md",
+          "archived_path": "docs/history/architecture/phases/AG95J_K_ACTIVE_GATE_AND_LIFECYCLE_BOOLEAN_DIET.md",
+          "category": "architecture-phase",
+          "filename": "AG95J_K_ACTIVE_GATE_AND_LIFECYCLE_BOOLEAN_DIET.md",
+          "prior_status": "implemented as offline runtime/test/doc cleanup. No live",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8bb3bd0c5775edd51fa9eed3fd9a184afb772423a365e0ba7872460e6350c677"
+        },
+        {
+          "original_path": "docs/architecture/AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md",
+          "archived_path": "docs/history/architecture/phases/AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md",
+          "category": "architecture-phase",
+          "filename": "AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md",
+          "prior_status": "implemented as offline runtime/test/doc cleanup. No live",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "06646a6bf5ee5e884c686fdeb69b2fc1469b7f4ee5b4dd13810993475814eae9"
+        },
+        {
+          "original_path": "docs/architecture/AG95M_PIPELINE_ORCHESTRATOR_SOURCE_CLASS_AUTHORITY_HELPER_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG95M_PIPELINE_ORCHESTRATOR_SOURCE_CLASS_AUTHORITY_HELPER_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG95M_PIPELINE_ORCHESTRATOR_SOURCE_CLASS_AUTHORITY_HELPER_EXTRACTION.md",
+          "prior_status": "implemented as offline runtime/test/doc cleanup. No live",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7b8db053629b3c47c8344c019765d7addbd197e8df531275dbbe26351c3c1ef6"
+        },
+        {
+          "original_path": "docs/architecture/AG95N_O_P_FINAL_AUTHORITY_VISIBILITY_RECOVERY_DECISION_PROJECTION_BURNDOWN.md",
+          "archived_path": "docs/history/architecture/phases/AG95N_O_P_FINAL_AUTHORITY_VISIBILITY_RECOVERY_DECISION_PROJECTION_BURNDOWN.md",
+          "category": "architecture-phase",
+          "filename": "AG95N_O_P_FINAL_AUTHORITY_VISIBILITY_RECOVERY_DECISION_PROJECTION_BURNDOWN.md",
+          "prior_status": "implemented as offline runtime/test/doc cleanup. No live ScryRaven or",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9fd494bb8590d358440af4273e03e0817318a47fcc19eea16ef5b0d22c90e58b"
+        },
+        {
+          "original_path": "docs/architecture/AG95R_S_T_ORCHESTRATOR_STAGE_ISLAND_BURNDOWN.md",
+          "archived_path": "docs/history/architecture/phases/AG95R_S_T_ORCHESTRATOR_STAGE_ISLAND_BURNDOWN.md",
+          "category": "architecture-phase",
+          "filename": "AG95R_S_T_ORCHESTRATOR_STAGE_ISLAND_BURNDOWN.md",
+          "prior_status": "completed implementation note.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "fe5888c45427ae142c697c37072c224bf79f6ab9924dd2207f3f7e190437da45"
+        },
+        {
+          "original_path": "docs/architecture/AG95U_FINAL_EVIDENCE_AUTHOR_HANDOFF_EXTRACTION.md",
+          "archived_path": "docs/history/architecture/phases/AG95U_FINAL_EVIDENCE_AUTHOR_HANDOFF_EXTRACTION.md",
+          "category": "architecture-phase",
+          "filename": "AG95U_FINAL_EVIDENCE_AUTHOR_HANDOFF_EXTRACTION.md",
+          "prior_status": "implemented offline. No live ScryRaven/proplex provider, model, search,",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "34fc704aa4b2d087958f0556daf4675e2f5444d8026fe901e32bf8eeb93e5f4e"
+        },
+        {
+          "original_path": "docs/architecture/AG96A0_DOGFOOD_SEARCH_COST_METRICS.md",
+          "archived_path": "docs/history/architecture/phases/AG96A0_DOGFOOD_SEARCH_COST_METRICS.md",
+          "category": "architecture-phase",
+          "filename": "AG96A0_DOGFOOD_SEARCH_COST_METRICS.md",
+          "prior_status": "implemented as sanitized diagnostics-only report/trace instrumentation.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7b6a5d58a0b5e7352d0b5ba6fb46afe99960bd4f26726efff01d080a03034e04"
+        },
+        {
+          "original_path": "docs/architecture/AG96A2_AUTHORITY_ACQUISITION_POLICY.md",
+          "archived_path": "docs/history/architecture/phases/AG96A2_AUTHORITY_ACQUISITION_POLICY.md",
+          "category": "architecture-phase",
+          "filename": "AG96A2_AUTHORITY_ACQUISITION_POLICY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7584d3c192ba158c52b8591ddebd4f2be3c0caf90b660c546de187ab56ea7931"
+        },
+        {
+          "original_path": "docs/architecture/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md",
+          "archived_path": "docs/history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md",
+          "category": "architecture-phase",
+          "filename": "AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md",
+          "prior_status": "architecture/design doctrine plus static adapter inventory.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "424d9eb76bfcdf16544e1b806faec6f751781da3be7017085c9b5a98707b5d42"
+        },
+        {
+          "original_path": "docs/architecture/AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md",
+          "archived_path": "docs/history/architecture/phases/AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md",
+          "category": "architecture-phase",
+          "filename": "AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md",
+          "prior_status": "architecture/design doctrine only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "882ac68e3e266558cda50eaf58dbb2a8a82a03b98e578532adce479671727853"
+        },
+        {
+          "original_path": "docs/architecture/AG96C10_CONSOLIDATED_SEARCHWORK_SHADOW_LANE.md",
+          "archived_path": "docs/history/architecture/phases/AG96C10_CONSOLIDATED_SEARCHWORK_SHADOW_LANE.md",
+          "category": "architecture-phase",
+          "filename": "AG96C10_CONSOLIDATED_SEARCHWORK_SHADOW_LANE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7c1e0754ef39d17ce635ae05c7d782c387fa0aa6f7075b8a22642382315baf38"
+        },
+        {
+          "original_path": "docs/architecture/AG96C1_SPECIALIST_JOB_SEARCHWORKPLAN_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG96C1_SPECIALIST_JOB_SEARCHWORKPLAN_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG96C1_SPECIALIST_JOB_SEARCHWORKPLAN_AUDIT.md",
+          "prior_status": "static architecture audit/design only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "577a1dac61e9d84ce7c10bfafbadd8b30d9317e807c9c0b233e83e537a490ec2"
+        },
+        {
+          "original_path": "docs/architecture/AG96C2_SEARCHWORKPLAN_PASSIVE_CONTRACT.md",
+          "archived_path": "docs/history/architecture/phases/AG96C2_SEARCHWORKPLAN_PASSIVE_CONTRACT.md",
+          "category": "architecture-phase",
+          "filename": "AG96C2_SEARCHWORKPLAN_PASSIVE_CONTRACT.md",
+          "prior_status": "passive contract and data model only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7ac0f7c550e31b28828a9676226bc9b5bc3c73976263444c53ae5c9a5323a3bd"
+        },
+        {
+          "original_path": "docs/architecture/AG96C3_QUERY_SHAPE_CONTRACT_RESOLUTION_DESIGN.md",
+          "archived_path": "docs/history/architecture/phases/AG96C3_QUERY_SHAPE_CONTRACT_RESOLUTION_DESIGN.md",
+          "category": "architecture-phase",
+          "filename": "AG96C3_QUERY_SHAPE_CONTRACT_RESOLUTION_DESIGN.md",
+          "prior_status": "architecture/design only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ef505b0f2e454cb5b4a3e1ced1496a07ae7c52a597aaa21d408832404209f65a"
+        },
+        {
+          "original_path": "docs/architecture/AG96C4_QUERY_SHAPE_CONTRACT_RESOLUTION_PASSIVE_RECORDS.md",
+          "archived_path": "docs/history/architecture/phases/AG96C4_QUERY_SHAPE_CONTRACT_RESOLUTION_PASSIVE_RECORDS.md",
+          "category": "architecture-phase",
+          "filename": "AG96C4_QUERY_SHAPE_CONTRACT_RESOLUTION_PASSIVE_RECORDS.md",
+          "prior_status": "passive records and construction design only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "09bb0a3237a5c5d073747b302950f2a363765474dc2a9c80c289773aaa37f5bc"
+        },
+        {
+          "original_path": "docs/architecture/AG96C5_SEARCHWORKPLAN_RUNTIME_CONSTRUCTION_DESIGN.md",
+          "archived_path": "docs/history/architecture/phases/AG96C5_SEARCHWORKPLAN_RUNTIME_CONSTRUCTION_DESIGN.md",
+          "category": "architecture-phase",
+          "filename": "AG96C5_SEARCHWORKPLAN_RUNTIME_CONSTRUCTION_DESIGN.md",
+          "prior_status": "design/static only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7ca0bdfda2fc183f1f8fecba03dc08736f0dd89666d2e7dc8eba857cc5a3fd9e"
+        },
+        {
+          "original_path": "docs/architecture/AG96C6_SEARCHWORKPLAN_CONSTRUCTION_ADAPTER_SKELETON.md",
+          "archived_path": "docs/history/architecture/phases/AG96C6_SEARCHWORKPLAN_CONSTRUCTION_ADAPTER_SKELETON.md",
+          "category": "architecture-phase",
+          "filename": "AG96C6_SEARCHWORKPLAN_CONSTRUCTION_ADAPTER_SKELETON.md",
+          "prior_status": "passive adapter skeleton only, not runtime-consumed.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "0062b37161fddf1f5918a876e9432183dadd9aa225cf9cb4c8fb72ef88d28837"
+        },
+        {
+          "original_path": "docs/architecture/AG96C7_RUNKERNEL_SHADOW_SEARCHWORKPLAN_CONSTRUCTION.md",
+          "archived_path": "docs/history/architecture/phases/AG96C7_RUNKERNEL_SHADOW_SEARCHWORKPLAN_CONSTRUCTION.md",
+          "category": "architecture-phase",
+          "filename": "AG96C7_RUNKERNEL_SHADOW_SEARCHWORKPLAN_CONSTRUCTION.md",
+          "prior_status": "RunKernel-authorized shadow construction only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7fd7f6b36ba4b738108f44c8c2bbd7731922b2019e2dc24209d9b32af05702e9"
+        },
+        {
+          "original_path": "docs/architecture/AG96C8_RUNTIME_SHADOW_SEARCHWORKPLAN_CALLSITE.md",
+          "archived_path": "docs/history/architecture/phases/AG96C8_RUNTIME_SHADOW_SEARCHWORKPLAN_CALLSITE.md",
+          "category": "architecture-phase",
+          "filename": "AG96C8_RUNTIME_SHADOW_SEARCHWORKPLAN_CALLSITE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d49e90bab43680385c05708c6002c34c5536b59ea5bf55e6d46f070644edce8c"
+        },
+        {
+          "original_path": "docs/architecture/AG96C9_QUERYPLAN_SHADOW_SEARCHWORKPLAN_ADAPTER.md",
+          "archived_path": "docs/history/architecture/phases/AG96C9_QUERYPLAN_SHADOW_SEARCHWORKPLAN_ADAPTER.md",
+          "category": "architecture-phase",
+          "filename": "AG96C9_QUERYPLAN_SHADOW_SEARCHWORKPLAN_ADAPTER.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6e25fd74bb0df143ec909469f41028e8de8d37121152e1233e48a0cc8d6e6d8e"
+        },
+        {
+          "original_path": "docs/architecture/AG96D0_SEARCHWORKPLAN_OFFICIAL_CURRENT_HANDOFF.md",
+          "archived_path": "docs/history/architecture/phases/AG96D0_SEARCHWORKPLAN_OFFICIAL_CURRENT_HANDOFF.md",
+          "category": "architecture-phase",
+          "filename": "AG96D0_SEARCHWORKPLAN_OFFICIAL_CURRENT_HANDOFF.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c4b494dfcef2821bbb7993866e5640c83c1671b04f3b03588a413e40376a084b"
+        },
+        {
+          "original_path": "docs/architecture/AG96D1_OFFICIAL_CURRENT_HANDOFF_SHADOW_LANE.md",
+          "archived_path": "docs/history/architecture/phases/AG96D1_OFFICIAL_CURRENT_HANDOFF_SHADOW_LANE.md",
+          "category": "architecture-phase",
+          "filename": "AG96D1_OFFICIAL_CURRENT_HANDOFF_SHADOW_LANE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "0aea90bd7153474770f00ef8767d7db7f569008e96e3577775bff0ed6fcd0f16"
+        },
+        {
+          "original_path": "docs/architecture/AG96D2_OFFICIAL_CURRENT_RECOVERY_BRIDGE_AND_FAST_LANE_DEMOTION.md",
+          "archived_path": "docs/history/architecture/phases/AG96D2_OFFICIAL_CURRENT_RECOVERY_BRIDGE_AND_FAST_LANE_DEMOTION.md",
+          "category": "architecture-phase",
+          "filename": "AG96D2_OFFICIAL_CURRENT_RECOVERY_BRIDGE_AND_FAST_LANE_DEMOTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "332151b51df11704e0493b8a165d6826f4e0d6fe50eb552db6ae1d17ae0ad1b9"
+        },
+        {
+          "original_path": "docs/architecture/AG96D3_GATED_OFFICIAL_CURRENT_RECOVERY_ACTIVATION.md",
+          "archived_path": "docs/history/architecture/phases/AG96D3_GATED_OFFICIAL_CURRENT_RECOVERY_ACTIVATION.md",
+          "category": "architecture-phase",
+          "filename": "AG96D3_GATED_OFFICIAL_CURRENT_RECOVERY_ACTIVATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "aafdae23d44ea629617c9cd2c47bc7f9c60984cb47486f81fb1c869e82012db2"
+        },
+        {
+          "original_path": "docs/architecture/AG96E1_REAL_QUERYSHAPE_CONTRACT_RESOLUTION.md",
+          "archived_path": "docs/history/architecture/phases/AG96E1_REAL_QUERYSHAPE_CONTRACT_RESOLUTION.md",
+          "category": "architecture-phase",
+          "filename": "AG96E1_REAL_QUERYSHAPE_CONTRACT_RESOLUTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "696bccb8bfefd8c9946becb42431031b7ff99f9292ed321826e3f7a8aaeecb59"
+        },
+        {
+          "original_path": "docs/architecture/AG96E2_COMPONENT_AWARE_QUERYPLAN_CONSUMPTION.md",
+          "archived_path": "docs/history/architecture/phases/AG96E2_COMPONENT_AWARE_QUERYPLAN_CONSUMPTION.md",
+          "category": "architecture-phase",
+          "filename": "AG96E2_COMPONENT_AWARE_QUERYPLAN_CONSUMPTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7bd5e07fa5dd33196d42bbb1819bfde3437bca8449c925c8697c5a9a246ab493"
+        },
+        {
+          "original_path": "docs/architecture/AG96F1_PROVIDER_JOB_EXECUTION_RECORDS.md",
+          "archived_path": "docs/history/architecture/phases/AG96F1_PROVIDER_JOB_EXECUTION_RECORDS.md",
+          "category": "architecture-phase",
+          "filename": "AG96F1_PROVIDER_JOB_EXECUTION_RECORDS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6fc51c9582b9cf5eb20a3d19b76013f418ba415a148e08cd103a5e136bb73181"
+        },
+        {
+          "original_path": "docs/architecture/AG96G1_PROVIDER_JOB_EVIDENCE_LEDGER_CUSTODY.md",
+          "archived_path": "docs/history/architecture/phases/AG96G1_PROVIDER_JOB_EVIDENCE_LEDGER_CUSTODY.md",
+          "category": "architecture-phase",
+          "filename": "AG96G1_PROVIDER_JOB_EVIDENCE_LEDGER_CUSTODY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "4f6f858114d48eefe3d6acd6bb7697de3a03f88c9d0dd9df9b06b28e797f70c1"
+        },
+        {
+          "original_path": "docs/architecture/AG96G2_PROVIDER_JOB_SUFFICIENCY_CLOSURE.md",
+          "archived_path": "docs/history/architecture/phases/AG96G2_PROVIDER_JOB_SUFFICIENCY_CLOSURE.md",
+          "category": "architecture-phase",
+          "filename": "AG96G2_PROVIDER_JOB_SUFFICIENCY_CLOSURE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c0d9c2fa0e3e4a0308d615e938c8593b0c12f0872f5b6d4005dd9ae4905f710e"
+        },
+        {
+          "original_path": "docs/architecture/AG96G3_G4_FINAL_ANSWER_CLOSURE_E2E_TRIPWIRES.md",
+          "archived_path": "docs/history/architecture/phases/AG96G3_G4_FINAL_ANSWER_CLOSURE_E2E_TRIPWIRES.md",
+          "category": "architecture-phase",
+          "filename": "AG96G3_G4_FINAL_ANSWER_CLOSURE_E2E_TRIPWIRES.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "faafbad05e5c18d6e2ad1b038e1fb4cc0555eba9114f32a2e64f982a24c54843"
+        },
+        {
+          "original_path": "docs/architecture/AG96H1_SOURCE_BOUND_QUANTWORK_ACTIVATION.md",
+          "archived_path": "docs/history/architecture/phases/AG96H1_SOURCE_BOUND_QUANTWORK_ACTIVATION.md",
+          "category": "architecture-phase",
+          "filename": "AG96H1_SOURCE_BOUND_QUANTWORK_ACTIVATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "85ab51515c7273d10eef8302d7e8ac376dd09b2302b5566f96777f4719ef0130"
+        },
+        {
+          "original_path": "docs/architecture/AG96I1_BOUNDED_FOLLOWUP_DELIBERATION_RECORDS.md",
+          "archived_path": "docs/history/architecture/phases/AG96I1_BOUNDED_FOLLOWUP_DELIBERATION_RECORDS.md",
+          "category": "architecture-phase",
+          "filename": "AG96I1_BOUNDED_FOLLOWUP_DELIBERATION_RECORDS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "aae9e43892850d2afc255b6b5ab659b738fa2331adcc5c4e51d21d0c85df681f"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2A_FOLLOWUP_AUTHORIZATION_SEALING.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2A_FOLLOWUP_AUTHORIZATION_SEALING.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2A_FOLLOWUP_AUTHORIZATION_SEALING.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9757c9b68bc6919696c156aa8620e839c73aa8193f06b981b73bd45f88a3042f"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2B_FOLLOWUP_FIXTURE_DISPATCH.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2B_FOLLOWUP_FIXTURE_DISPATCH.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2B_FOLLOWUP_FIXTURE_DISPATCH.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "86c3189f542c788121d221eca1c856ecc7dff552a95083f82546f11733afda44"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2C_FOLLOWUP_EVIDENCE_INTAKE.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2C_FOLLOWUP_EVIDENCE_INTAKE.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2C_FOLLOWUP_EVIDENCE_INTAKE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2a7998b7e0d91c908d9b73491551f918c25efa3e2a400b02bc561ae2b6466d50"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2D_FOLLOWUP_SUFFICIENCY_RECHECK.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2D_FOLLOWUP_SUFFICIENCY_RECHECK.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2D_FOLLOWUP_SUFFICIENCY_RECHECK.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "98eb8acdb56936179e9cf8db0669859e9dce5fd22458849e4680f0383fe87fe6"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2E_FOLLOWUP_FINAL_ANSWER_PACKET.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2E_FOLLOWUP_FINAL_ANSWER_PACKET.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2E_FOLLOWUP_FINAL_ANSWER_PACKET.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "61fcfaf2fabfc3e5108cb44e3a780f3b18d9daf008691d82ad2810ee92875dba"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2F_FOLLOWUP_AUTHOR_GATE.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2F_FOLLOWUP_AUTHOR_GATE.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2F_FOLLOWUP_AUTHOR_GATE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9c41f0e84733b86fddf33296772f31dfb1824bb75a2f0510c6aa03c2e11da471"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2G_FOLLOWUP_SPINE_CLEANUP_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2G_FOLLOWUP_SPINE_CLEANUP_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2G_FOLLOWUP_SPINE_CLEANUP_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1d0363b54cf07981b24ccd939af1561274b6565cfbb3b62dd61a0352a3fba167"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2H_FOLLOWUP_AUTHOR_OBSERVATION.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2H_FOLLOWUP_AUTHOR_OBSERVATION.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2H_FOLLOWUP_AUTHOR_OBSERVATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8180bebb3e3e6a0ba5560d363916cfe84dbb2cb32ba7bdf23e061c5e6ea7a896"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2I_FOLLOWUP_RUNKERNEL_MAINTAINABILITY_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2I_FOLLOWUP_RUNKERNEL_MAINTAINABILITY_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2I_FOLLOWUP_RUNKERNEL_MAINTAINABILITY_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "947e1eb2b57894f294acbcadb8340b48674e618fb3226eb7b0538b8b2ac31fda"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2J_FOLLOWUP_FOCUSED_TEST_FIXTURE_HELPER_DIET.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2J_FOLLOWUP_FOCUSED_TEST_FIXTURE_HELPER_DIET.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2J_FOLLOWUP_FOCUSED_TEST_FIXTURE_HELPER_DIET.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "765391c6ed155f51c9d649e53f63d22793a81c2b790149bad576b45bdd3e9e88"
+        },
+        {
+          "original_path": "docs/architecture/AG96I2K_LIVE_FOLLOWUP_EXECUTION_READINESS_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG96I2K_LIVE_FOLLOWUP_EXECUTION_READINESS_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG96I2K_LIVE_FOLLOWUP_EXECUTION_READINESS_AUDIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "313def0d4721ab96e8dd2437e01bfcb28b144d5a57a28c9f13f62ef654cd281a"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3AF6A_BROKER_ALIGNMENT_OPERATOR_SNIPPET.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3AF6A_BROKER_ALIGNMENT_OPERATOR_SNIPPET.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3AF6A_BROKER_ALIGNMENT_OPERATOR_SNIPPET.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "be96190588a5e11431f001b5f482eb2f946df7f2a34350c45e8bf585a84ead92"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3A_OFFLINE_LIVE_SHAPED_FOLLOWUP_RECOVERY_EXECUTOR.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3A_OFFLINE_LIVE_SHAPED_FOLLOWUP_RECOVERY_EXECUTOR.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3A_OFFLINE_LIVE_SHAPED_FOLLOWUP_RECOVERY_EXECUTOR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "126f8125790422464571d00dceb93548418de4b298ec1cd069d42405757de4a1"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3B_LIVE_GATED_OFFICIAL_CURRENT_FOLLOWUP_VALIDATION.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3B_LIVE_GATED_OFFICIAL_CURRENT_FOLLOWUP_VALIDATION.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3B_LIVE_GATED_OFFICIAL_CURRENT_FOLLOWUP_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2d1168057bc11c2b15ea5f1efad30b39f679341cbe9b69caa2b6d9e47b0534d2"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3D0_BROKERED_LIVE_VALIDATION_WORKFLOW.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3D0_BROKERED_LIVE_VALIDATION_WORKFLOW.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3D0_BROKERED_LIVE_VALIDATION_WORKFLOW.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "75cf45dd647aa32c3879c76b1e1eff7f5e3603b82cf7a262bb4a392c19bf9ac0"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3D_PROVIDER_NEUTRAL_OFFICIAL_CURRENT_DISCOVERY_DIAGNOSTICS.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3D_PROVIDER_NEUTRAL_OFFICIAL_CURRENT_DISCOVERY_DIAGNOSTICS.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3D_PROVIDER_NEUTRAL_OFFICIAL_CURRENT_DISCOVERY_DIAGNOSTICS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "37c57d575c37568323b2f75641658c4e3132d0289c27c4bc48fbcdb542838a83"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3E_BROKERED_PROVIDER_NEUTRAL_LIVE_DISCOVERY_RUNNER.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3E_BROKERED_PROVIDER_NEUTRAL_LIVE_DISCOVERY_RUNNER.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3E_BROKERED_PROVIDER_NEUTRAL_LIVE_DISCOVERY_RUNNER.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d5a8d4f86e35c1a60929ce0b3abf111c291be8aa55a01b1517910872027b3574"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3F_PROVIDER_NEUTRAL_OFFICIAL_CURRENT_QUERY_SHAPING.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3F_PROVIDER_NEUTRAL_OFFICIAL_CURRENT_QUERY_SHAPING.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3F_PROVIDER_NEUTRAL_OFFICIAL_CURRENT_QUERY_SHAPING.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "4abec101b98d59752fd577746597db1d2a4f21c869a323b0f1cc5c683b4860e6"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8310692d44459fb84d1f88616f724d2ca533711ea4c1f317eac2b9c1c2537110"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3H_SERPER_CHEAP_SCOUT_DIAGNOSTIC_ADAPTER.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3H_SERPER_CHEAP_SCOUT_DIAGNOSTIC_ADAPTER.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3H_SERPER_CHEAP_SCOUT_DIAGNOSTIC_ADAPTER.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8cd66fe1ec3e833ebf80ebda31003a45c4b5d6b8fad322278b703edfaae70e3a"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3I_SCOUT_TO_ACQUISITION_HANDOFF_DIAGNOSTICS.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3I_SCOUT_TO_ACQUISITION_HANDOFF_DIAGNOSTICS.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3I_SCOUT_TO_ACQUISITION_HANDOFF_DIAGNOSTICS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "728762fb86da3186cf707fdcbc25da57d80fb8653e2f0f4e4cc53547ffb34438"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3J_OFFLINE_FETCH_READ_CURRENTNESS_VERIFICATION.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3J_OFFLINE_FETCH_READ_CURRENTNESS_VERIFICATION.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3J_OFFLINE_FETCH_READ_CURRENTNESS_VERIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "84e20b97143774ee34edb75d74211a5c253cab89783618438e04a62b5f5840a4"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3K_SANITIZED_READ_OBSERVATION_ADAPTER.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3K_SANITIZED_READ_OBSERVATION_ADAPTER.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3K_SANITIZED_READ_OBSERVATION_ADAPTER.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7435af999f074fb5eb9291af486fcaf99709ade4d23bce3d480456202aa5fa6f"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3L_EVIDENCE_LEDGER_ADMISSION_REVIEW_DIAGNOSTICS.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3L_EVIDENCE_LEDGER_ADMISSION_REVIEW_DIAGNOSTICS.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3L_EVIDENCE_LEDGER_ADMISSION_REVIEW_DIAGNOSTICS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "62334f1d4ee70750737aae7ebea09e67e4f5d9d97eb2410e25518e185772bc38"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3M1_EVIDENCE_LEDGER_INTAKE_ADAPTER.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3M1_EVIDENCE_LEDGER_INTAKE_ADAPTER.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3M1_EVIDENCE_LEDGER_INTAKE_ADAPTER.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ca57833bae220170d91962826ae0a67e054be06803199a55b4fbaa0c7d65c9d4"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3N_FOLLOWUP_SUFFICIENCY_RECHECK_AFTER_M2_INTAKE.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3N_FOLLOWUP_SUFFICIENCY_RECHECK_AFTER_M2_INTAKE.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3N_FOLLOWUP_SUFFICIENCY_RECHECK_AFTER_M2_INTAKE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f37a5574015f03f3529538bc5c212b648d349cdf0071e4b801b6b653fabebf80"
+        },
+        {
+          "original_path": "docs/architecture/AG96I3O1_FINAL_ANSWER_PACKET_READINESS.md",
+          "archived_path": "docs/history/architecture/phases/AG96I3O1_FINAL_ANSWER_PACKET_READINESS.md",
+          "category": "architecture-phase",
+          "filename": "AG96I3O1_FINAL_ANSWER_PACKET_READINESS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "e62fbdbcb50a9a6b10c4a269532fc54c3e99259ddb8784f7405bc3028ea93565"
+        },
+        {
+          "original_path": "docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md",
+          "archived_path": "docs/history/architecture/phases/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md",
+          "category": "architecture-phase",
+          "filename": "AG96_CURRENT_STATE_AND_NEXT_CHOICES.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "82801cd5335e41e8f6b2ee533aacd8cd66427d3497c7c55e625c7102e6edcf85"
+        },
+        {
+          "original_path": "docs/architecture/AG96_PROJECT_SOURCE_REFRESH_PACKET.md",
+          "archived_path": "docs/history/architecture/phases/AG96_PROJECT_SOURCE_REFRESH_PACKET.md",
+          "category": "architecture-phase",
+          "filename": "AG96_PROJECT_SOURCE_REFRESH_PACKET.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c23ff3609ab4eb8e4a02fd524a193434a1cfbcb59a6af0917248fa4a3d025393"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_01_PASSIVE_SEMANTIC_CONTRACT_FOUNDATION.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_01_PASSIVE_SEMANTIC_CONTRACT_FOUNDATION.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_01_PASSIVE_SEMANTIC_CONTRACT_FOUNDATION.md",
+          "prior_status": "Passive schema/design record.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f881368171073015431eef421e5ee122d94efb14ac63c0160bf9fb39b7fb8378"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_02_SANITIZED_CONTENT_REFERENCE_AND_SEMANTIC_OBSERVATION.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_02_SANITIZED_CONTENT_REFERENCE_AND_SEMANTIC_OBSERVATION.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_02_SANITIZED_CONTENT_REFERENCE_AND_SEMANTIC_OBSERVATION.md",
+          "prior_status": "Passive schema/design record.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "83ca4b9e740eb5133eabcfe2453128e07ef6da6978675a3c1c3e8b4f6e43e8d2"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_03_COMPONENT_COVERAGE_RECORD.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_03_COMPONENT_COVERAGE_RECORD.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_03_COMPONENT_COVERAGE_RECORD.md",
+          "prior_status": "Passive schema/design record.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1283397b8be24e4aa22b8659492850df26bdc31cb668b035662f3cc68bf5f203"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_04_CONTRACT_AMENDMENT_RECORD.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_04_CONTRACT_AMENDMENT_RECORD.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_04_CONTRACT_AMENDMENT_RECORD.md",
+          "prior_status": "Passive schema/design record.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "31ed27ac1d2e631e7022ddfec7577bb0ca736ff55853a87e492c57166f8f3987"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md",
+          "prior_status": "Semantic completion checkpoint after AG-SEM-10 and PR #275.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7ddf4540bdc56ee36361a12bc1eae1718253cc1242c81184793d2504033a4265"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_05_INITIAL_ANSWER_CONTRACT_ACCEPTANCE.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_05_INITIAL_ANSWER_CONTRACT_ACCEPTANCE.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_05_INITIAL_ANSWER_CONTRACT_ACCEPTANCE.md",
+          "prior_status": "Canonical authority bridge. First canonical semantic authority bridge.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5de64a93f3a4996bed79cc056cbcb7c717d3bb8abe072e9a34ed3469c5fb864b"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_06_SEMANTIC_OBSERVATION_ADMISSION.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_06_SEMANTIC_OBSERVATION_ADMISSION.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_06_SEMANTIC_OBSERVATION_ADMISSION.md",
+          "prior_status": "Canonical authority bridge. Second canonical semantic authority bridge.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1b0a41b9a9614e2e9a5cdea0594091652d244045e2227db7bc7623bfb5a125bf"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_07_COMPONENT_COVERAGE_REDUCTION.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_07_COMPONENT_COVERAGE_REDUCTION.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_07_COMPONENT_COVERAGE_REDUCTION.md",
+          "prior_status": "Canonical authority bridge. Third canonical semantic authority bridge.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "57c1e7526f3724760734459eab0fa67ae966ca558457f0a221ebc0e89e17e08e"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_08_CONTRACT_AMENDMENT_ADMISSION.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_08_CONTRACT_AMENDMENT_ADMISSION.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_08_CONTRACT_AMENDMENT_ADMISSION.md",
+          "prior_status": "Canonical authority bridge. Fourth canonical semantic authority bridge.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c575a890e88cd964241e27536c1db89894c6817ac654aeed21a9a6dad2e1fd24"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_09_SUFFICIENCY_SEMANTIC_CONSUMPTION.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_09_SUFFICIENCY_SEMANTIC_CONSUMPTION.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_09_SUFFICIENCY_SEMANTIC_CONSUMPTION.md",
+          "prior_status": "Canonical authority consumption. Fifth canonical semantic authority bridge.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2d9326a229aa9a4994e28b14eba8336bc9b6e2bdde5084b5198952bd99ec40bf"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md",
+          "prior_status": "Hardening phase after AG-SEM-11 (PR #277).",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "920d690dc1b4cc5735f6a89e7d26df6f22e5deeca04707f9d0647fbf89cd9479"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_11_ORDINARY_SEMANTIC_PRODUCER_VERTICAL_SLICE.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_11_ORDINARY_SEMANTIC_PRODUCER_VERTICAL_SLICE.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_11_ORDINARY_SEMANTIC_PRODUCER_VERTICAL_SLICE.md",
+          "prior_status": "Narrow ordinary product-path activation for a single offline fixture.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f6a8569828a5c4301541242aeefa45d41a6d260b5fb994b36a34e01822863223"
+        },
+        {
+          "original_path": "docs/architecture/AG_SEM_TXN_CLEAN_01_TEST_HELPER_AUDIT.md",
+          "archived_path": "docs/history/architecture/phases/AG_SEM_TXN_CLEAN_01_TEST_HELPER_AUDIT.md",
+          "category": "architecture-phase",
+          "filename": "AG_SEM_TXN_CLEAN_01_TEST_HELPER_AUDIT.md",
+          "prior_status": "implementation and focused-fix audit for semantic producer atomicity.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a448659735ea3605af6f56bf9a49919859412cf0a9de8a8e53d341a8c9fbb3c4"
+        },
+        {
+          "original_path": "docs/architecture/CONFLICT_RESOLUTION_GATE_AG37B.md",
+          "archived_path": "docs/history/architecture/phases/CONFLICT_RESOLUTION_GATE_AG37B.md",
+          "category": "architecture-phase",
+          "filename": "CONFLICT_RESOLUTION_GATE_AG37B.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ae93b928d78cf01be80c29e87d4dd447e6542c6a8625e520fc85116679e3393f"
+        },
+        {
+          "original_path": "docs/architecture/CONFLICT_STATE_PRODUCTION_AG39.md",
+          "archived_path": "docs/history/architecture/phases/CONFLICT_STATE_PRODUCTION_AG39.md",
+          "category": "architecture-phase",
+          "filename": "CONFLICT_STATE_PRODUCTION_AG39.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "71827272d87f7071371b6e56728e4f8fdd74d38b94185e12590684136d56df73"
+        },
+        {
+          "original_path": "docs/architecture/CONTROLLER_ACTION_ENVELOPE_AG25.md",
+          "archived_path": "docs/history/architecture/phases/CONTROLLER_ACTION_ENVELOPE_AG25.md",
+          "category": "architecture-phase",
+          "filename": "CONTROLLER_ACTION_ENVELOPE_AG25.md",
+          "prior_status": "M2 / AG-25 architecture interface. Classification: pure/offline",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "73b163c6644bb4f1c999768c2cf5380010fd0de4e83665a2375068c349d8a289"
+        },
+        {
+          "original_path": "docs/architecture/CONTROLLER_ACTION_LOOP_PARITY_AG26.md",
+          "archived_path": "docs/history/architecture/phases/CONTROLLER_ACTION_LOOP_PARITY_AG26.md",
+          "category": "architecture-phase",
+          "filename": "CONTROLLER_ACTION_LOOP_PARITY_AG26.md",
+          "prior_status": "M3 / AG-26 architecture harness. Classification: pure/offline",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "91af815a98311dc3bbd30bd07d6e485b169d8b3a7575e68876d71689128e9d79"
+        },
+        {
+          "original_path": "docs/architecture/CONTROLLER_BUDGET_SEMANTICS_AG31.md",
+          "archived_path": "docs/history/architecture/phases/CONTROLLER_BUDGET_SEMANTICS_AG31.md",
+          "category": "architecture-phase",
+          "filename": "CONTROLLER_BUDGET_SEMANTICS_AG31.md",
+          "prior_status": "M4 / AG-31 architecture contract. Classification: pure/offline",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6ac2fbed69233be3a592a53fdbffec88f5882e891bea5254168233f41f1a9a38"
+        },
+        {
+          "original_path": "docs/architecture/CONTROLLER_RUNTIME_PROMOTION_READINESS_AG28.md",
+          "archived_path": "docs/history/architecture/phases/CONTROLLER_RUNTIME_PROMOTION_READINESS_AG28.md",
+          "category": "architecture-phase",
+          "filename": "CONTROLLER_RUNTIME_PROMOTION_READINESS_AG28.md",
+          "prior_status": "M4 / AG-28 readiness gate. Classification: pure/offline",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7b6e4757c02b1bdb78de40706fe9f540be779095c9d39d2dc941fa9aca1a6b0d"
+        },
+        {
+          "original_path": "docs/architecture/CONTROLLER_STATE_MAP_AG23.md",
+          "archived_path": "docs/history/architecture/phases/CONTROLLER_STATE_MAP_AG23.md",
+          "category": "architecture-phase",
+          "filename": "CONTROLLER_STATE_MAP_AG23.md",
+          "prior_status": "M1 / AG-23 architecture map. Classification: docs-only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5432ad9a88e5fa8ec8440b72dde52d30ed036c85e0eb1146e9e927f207d21a24"
+        },
+        {
+          "original_path": "docs/architecture/CONTROLLER_STATE_REDUCER_EXECUTOR_BUDGET_AG27.md",
+          "archived_path": "docs/history/architecture/phases/CONTROLLER_STATE_REDUCER_EXECUTOR_BUDGET_AG27.md",
+          "category": "architecture-phase",
+          "filename": "CONTROLLER_STATE_REDUCER_EXECUTOR_BUDGET_AG27.md",
+          "prior_status": "M4 / AG-27 architecture contract. Classification: pure/offline",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "07a20f0ba96ce79c252c224f44099ea391d44a0aae449d6321eaabb909cf0b4c"
+        },
+        {
+          "original_path": "docs/architecture/DOCUMENTATION_ROLES_AND_CONTROLLER_STATE_AG46C.md",
+          "archived_path": "docs/history/architecture/phases/DOCUMENTATION_ROLES_AND_CONTROLLER_STATE_AG46C.md",
+          "category": "architecture-phase",
+          "filename": "DOCUMENTATION_ROLES_AND_CONTROLLER_STATE_AG46C.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5f469f235f8b52b50dbdd7fb0a0fe287064000b0c2665fcbcf77b7c925e129c1"
+        },
+        {
+          "original_path": "docs/architecture/EVIDENCE_INTEGRATION_CHECKPOINT_AG32.md",
+          "archived_path": "docs/history/architecture/phases/EVIDENCE_INTEGRATION_CHECKPOINT_AG32.md",
+          "category": "architecture-phase",
+          "filename": "EVIDENCE_INTEGRATION_CHECKPOINT_AG32.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2acc64725e11c2f087f3ad268acc740f7de3ed2a1a8b814d5c4d0b8c51a8657d"
+        },
+        {
+          "original_path": "docs/architecture/SOURCE_CLASS_CONTROLLER_GATE_AG33.md",
+          "archived_path": "docs/history/architecture/phases/SOURCE_CLASS_CONTROLLER_GATE_AG33.md",
+          "category": "architecture-phase",
+          "filename": "SOURCE_CLASS_CONTROLLER_GATE_AG33.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "495e1255f7d7542eb858f74b2278046ea661683994a8b71c99915d0fa59ff7ae"
+        },
+        {
+          "original_path": "docs/architecture/WEAK_CORPUS_ACTIVE_GATE_AG36.md",
+          "archived_path": "docs/history/architecture/phases/WEAK_CORPUS_ACTIVE_GATE_AG36.md",
+          "category": "architecture-phase",
+          "filename": "WEAK_CORPUS_ACTIVE_GATE_AG36.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "64a222d6062dbddf5b318c8c42f82b273ad3c70f966836f44c76ddd688d0c407"
+        },
+        {
+          "original_path": "docs/architecture/historical/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md",
+          "archived_path": "docs/history/architecture/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md",
+          "category": "architecture-controller-era",
+          "filename": "SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md",
+          "prior_status": "complete/readiness for review. AG-80A adds `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` as a documentation-only implementation guide for future Codex phases after the Controller-authority closure line. No runtime code, prompt, provider/search/retrieval, citation, Author, DB/session/RunOutcome, cache, or live-validation behavior changes are authorized or made by this phase.",
+          "current_route": "docs/architecture/SCRYRAVEN_CURRENT_STATE.md",
+          "migration_batch": "D3B",
+          "content_sha256": "8d099717f99facd066a364135f4acab2cc62754809171a11c311539ff4fac721"
+        },
+        {
+          "original_path": "docs/architecture/source_hierarchy_answer_contract_invariants.md",
+          "archived_path": "docs/history/architecture/phases/source_hierarchy_answer_contract_invariants.md",
+          "category": "architecture-phase",
+          "filename": "source_hierarchy_answer_contract_invariants.md",
+          "prior_status": "AG-57A invariant baseline. This is an engineering contract and test",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7ca3e4fbd4bcf9d5050dc261223cef51c89f036f8c6fef658958fd756c8a44d9"
+        }
+      ],
+      "validation": [
+        {
+          "original_path": "docs/validation/AG10_SOURCE_CLASS_FULFILLMENT_CONSISTENCY.md",
+          "archived_path": "docs/history/validation/AG10_SOURCE_CLASS_FULFILLMENT_CONSISTENCY.md",
+          "category": "validation",
+          "filename": "AG10_SOURCE_CLASS_FULFILLMENT_CONSISTENCY.md",
+          "prior_status": "offline calibration revision implemented; targeted tests passed.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f94bfcab1988f84b52081e2e647057765a8d92203f2e58925291bbefbc294e00"
+        },
+        {
+          "original_path": "docs/validation/AG11_ACTIVE_OFFICIAL_SOURCE_CLASS_RECOVERY_PILOT.md",
+          "archived_path": "docs/history/validation/AG11_ACTIVE_OFFICIAL_SOURCE_CLASS_RECOVERY_PILOT.md",
+          "category": "validation",
+          "filename": "AG11_ACTIVE_OFFICIAL_SOURCE_CLASS_RECOVERY_PILOT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "86ef4d605ecfb84cb22e286c58ed031793e5234be837cad7e371109c82bb7e7f"
+        },
+        {
+          "original_path": "docs/validation/AG12_ACTIVE_SOURCE_CLASS_RECOVERY_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG12_ACTIVE_SOURCE_CLASS_RECOVERY_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG12_ACTIVE_SOURCE_CLASS_RECOVERY_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9cff1f52d9c15948c1b8de32a853810e7a0f0bc2304ea9e5922c54622c9abed3"
+        },
+        {
+          "original_path": "docs/validation/AG13_ACTIVE_RECOVERY_TIMING_BLOCKERS.md",
+          "archived_path": "docs/history/validation/AG13_ACTIVE_RECOVERY_TIMING_BLOCKERS.md",
+          "category": "validation",
+          "filename": "AG13_ACTIVE_RECOVERY_TIMING_BLOCKERS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ba1de92a218b985878c64adbabe029fe2a9fdbaaff7a534f9eb3135615dbfa07"
+        },
+        {
+          "original_path": "docs/validation/AG14_REVISED_ACTIVE_SOURCE_CLASS_RECOVERY_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG14_REVISED_ACTIVE_SOURCE_CLASS_RECOVERY_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG14_REVISED_ACTIVE_SOURCE_CLASS_RECOVERY_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9e346f8430cff3a00e1d9ef63d95515bc52f134df880200df59becc72dfdf341"
+        },
+        {
+          "original_path": "docs/validation/AG15_SOURCE_CLASS_RECOVERY_QUALITY_DIAGNOSTICS.md",
+          "archived_path": "docs/history/validation/AG15_SOURCE_CLASS_RECOVERY_QUALITY_DIAGNOSTICS.md",
+          "category": "validation",
+          "filename": "AG15_SOURCE_CLASS_RECOVERY_QUALITY_DIAGNOSTICS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "37dd7dcbebf1a2161e1162b89efc7bd5d3bab3b348934516dca7283f97c31b8e"
+        },
+        {
+          "original_path": "docs/validation/AG16_SOURCE_RECOVERY_QUALITY_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG16_SOURCE_RECOVERY_QUALITY_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG16_SOURCE_RECOVERY_QUALITY_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ae73dea9322212e67f4f16a170d70254409fd2a082d8af29110eb6eb77a77297"
+        },
+        {
+          "original_path": "docs/validation/AG17_RECOVERED_EVIDENCE_VISIBILITY_BOUNDARY.md",
+          "archived_path": "docs/history/validation/AG17_RECOVERED_EVIDENCE_VISIBILITY_BOUNDARY.md",
+          "category": "validation",
+          "filename": "AG17_RECOVERED_EVIDENCE_VISIBILITY_BOUNDARY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "ac75125e6c80d39cf4f8216c3786a519fb58e4ab86da84515ba9b611700f5c4e"
+        },
+        {
+          "original_path": "docs/validation/AG18_QUANTITATIVE_CONTRADICTION_GUARD.md",
+          "archived_path": "docs/history/validation/AG18_QUANTITATIVE_CONTRADICTION_GUARD.md",
+          "category": "validation",
+          "filename": "AG18_QUANTITATIVE_CONTRADICTION_GUARD.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "65aa2247ed6210efb0cb5ee7ebce87fb2747f8f5542bba67fe1edf94ee59be92"
+        },
+        {
+          "original_path": "docs/validation/AG19_RECOVERED_EVIDENCE_VISIBILITY_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG19_RECOVERED_EVIDENCE_VISIBILITY_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG19_RECOVERED_EVIDENCE_VISIBILITY_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "dbf05e60736f3fe49906375bc27d2245c57db73bf7e4fd30ab27d2129b6ca717"
+        },
+        {
+          "original_path": "docs/validation/AG20_OFFICIAL_SOURCE_RECOVERY_QUALITY.md",
+          "archived_path": "docs/history/validation/AG20_OFFICIAL_SOURCE_RECOVERY_QUALITY.md",
+          "category": "validation",
+          "filename": "AG20_OFFICIAL_SOURCE_RECOVERY_QUALITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6aeabe4825cab157b198fc1f982e80d76800709907ec23c39f190c7a941f627c"
+        },
+        {
+          "original_path": "docs/validation/AG21_OFFICIAL_SOURCE_RECOVERY_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG21_OFFICIAL_SOURCE_RECOVERY_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG21_OFFICIAL_SOURCE_RECOVERY_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "66463ecf91ad9358d914e5acfbdf2db7dc009bea84d04ab98578548e580867b6"
+        },
+        {
+          "original_path": "docs/validation/AG22_OFFICIAL_SOURCE_DOMAIN_RECOVERY_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG22_OFFICIAL_SOURCE_DOMAIN_RECOVERY_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG22_OFFICIAL_SOURCE_DOMAIN_RECOVERY_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c134a5e6a239e81a48f0bbfe882e461d856505b2e81d76a4ceea4eade76e3499"
+        },
+        {
+          "original_path": "docs/validation/AG47B_ACTIVE_BATCH_OUTPUT_QUALITY_REVIEW_R1.md",
+          "archived_path": "docs/history/validation/AG47B_ACTIVE_BATCH_OUTPUT_QUALITY_REVIEW_R1.md",
+          "category": "validation",
+          "filename": "AG47B_ACTIVE_BATCH_OUTPUT_QUALITY_REVIEW_R1.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "befe79ab6da5a7ec08c5a4bea2efbff986c763b062a5219297ebdfb7cfccb852"
+        },
+        {
+          "original_path": "docs/validation/AG47B_OUTPUT_QUALITY_REVIEW_ADDENDUM.md",
+          "archived_path": "docs/history/validation/AG47B_OUTPUT_QUALITY_REVIEW_ADDENDUM.md",
+          "category": "validation",
+          "filename": "AG47B_OUTPUT_QUALITY_REVIEW_ADDENDUM.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "3a12ab2f94968ab326c40958dbc2fa0153aab37e7a8150ce15c27373af333a6e"
+        },
+        {
+          "original_path": "docs/validation/AG47D_POST_FIX_OUTPUT_TRACE_SANITY_REVIEW_R1.md",
+          "archived_path": "docs/history/validation/AG47D_POST_FIX_OUTPUT_TRACE_SANITY_REVIEW_R1.md",
+          "category": "validation",
+          "filename": "AG47D_POST_FIX_OUTPUT_TRACE_SANITY_REVIEW_R1.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f254b9b279776cb34e39428fb5cd0ccb9a9f693297505d056d7eb9e77e10767d"
+        },
+        {
+          "original_path": "docs/validation/AG48C_OFFICIAL_SOURCE_DIAGNOSTIC_APPLICATION.md",
+          "archived_path": "docs/history/validation/AG48C_OFFICIAL_SOURCE_DIAGNOSTIC_APPLICATION.md",
+          "category": "validation",
+          "filename": "AG48C_OFFICIAL_SOURCE_DIAGNOSTIC_APPLICATION.md",
+          "prior_status": "offline diagnostic application and next-lane decision.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9e226eeb65a5c538e3cfc018a34ad1e765b92193366c20dc46c5a756026fcc6c"
+        },
+        {
+          "original_path": "docs/validation/AG49A_OFFICIAL_SOURCE_SURVIVAL_INSTRUMENTATION_DIAGNOSTIC_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG49A_OFFICIAL_SOURCE_SURVIVAL_INSTRUMENTATION_DIAGNOSTIC_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG49A_OFFICIAL_SOURCE_SURVIVAL_INSTRUMENTATION_DIAGNOSTIC_VALIDATION.md",
+          "prior_status": "completed bounded diagnostic validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "4b2320a9bf66fad20505af9f3a3795a8fa58f62dbf26c1b58fa0604695c85f69"
+        },
+        {
+          "original_path": "docs/validation/AG49B_OFFICIAL_SOURCE_OBLIGATION_CANDIDATE_VISIBILITY_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG49B_OFFICIAL_SOURCE_OBLIGATION_CANDIDATE_VISIBILITY_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG49B_OFFICIAL_SOURCE_OBLIGATION_CANDIDATE_VISIBILITY_VALIDATION.md",
+          "prior_status": "completed bounded diagnostic validation",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "438b69754556b579c9d9341c582e2eafd17e706d218d0f4c0dfcee585ed309b6"
+        },
+        {
+          "original_path": "docs/validation/AG49C_OFFICIAL_CANONICAL_OBLIGATION_RUNTIME_EXPECTATION_BRIDGE.md",
+          "archived_path": "docs/history/validation/AG49C_OFFICIAL_CANONICAL_OBLIGATION_RUNTIME_EXPECTATION_BRIDGE.md",
+          "category": "validation",
+          "filename": "AG49C_OFFICIAL_CANONICAL_OBLIGATION_RUNTIME_EXPECTATION_BRIDGE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "66145d5d14b4bd1c200b4e500dba7ed98d97fbd5d372e992f48c811f4dba0bd2"
+        },
+        {
+          "original_path": "docs/validation/AG50A_OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_REPAIR.md",
+          "archived_path": "docs/history/validation/AG50A_OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_REPAIR.md",
+          "category": "validation",
+          "filename": "AG50A_OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b3cdd5f579903a720e4b1ec76b9b9ed497da4a2cc5c8c91dcb5071bfc9a98f8c"
+        },
+        {
+          "original_path": "docs/validation/AG50B_OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION.md",
+          "archived_path": "docs/history/validation/AG50B_OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION.md",
+          "category": "validation",
+          "filename": "AG50B_OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "733bb5c6ea1900bb9b071199fa28f6e9c8c7454815b0432ba48b80dc5eab6de6"
+        },
+        {
+          "original_path": "docs/validation/AG50C_RECOVERY_EXECUTION_VISIBILITY_ALLOWED_ARTIFACTS.md",
+          "archived_path": "docs/history/validation/AG50C_RECOVERY_EXECUTION_VISIBILITY_ALLOWED_ARTIFACTS.md",
+          "category": "validation",
+          "filename": "AG50C_RECOVERY_EXECUTION_VISIBILITY_ALLOWED_ARTIFACTS.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6e12641f5734d450dea9c69cf7bef68b54b4c1fde5b6ba1d82142ebf51803ffa"
+        },
+        {
+          "original_path": "docs/validation/AG50D_OFFICIAL_CANONICAL_RECOVERY_EXECUTION_DISPATCH_REPAIR.md",
+          "archived_path": "docs/history/validation/AG50D_OFFICIAL_CANONICAL_RECOVERY_EXECUTION_DISPATCH_REPAIR.md",
+          "category": "validation",
+          "filename": "AG50D_OFFICIAL_CANONICAL_RECOVERY_EXECUTION_DISPATCH_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "28bbfbe4f17ae51306e26222e036f0622149e9c0d711a060423f2b68e4dc2a24"
+        },
+        {
+          "original_path": "docs/validation/AG50E_OFFICIAL_CANONICAL_RECOVERY_CANDIDATE_ACQUISITION_REPAIR.md",
+          "archived_path": "docs/history/validation/AG50E_OFFICIAL_CANONICAL_RECOVERY_CANDIDATE_ACQUISITION_REPAIR.md",
+          "category": "validation",
+          "filename": "AG50E_OFFICIAL_CANONICAL_RECOVERY_CANDIDATE_ACQUISITION_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "060714c1de3fb0f220baf6c3aa4dd920a40b6409ac0a3642c29bcbaf0fe2e298"
+        },
+        {
+          "original_path": "docs/validation/AG50F_OFFICIAL_CANONICAL_CANDIDATE_ACQUISITION_LIVE_CLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG50F_OFFICIAL_CANONICAL_CANDIDATE_ACQUISITION_LIVE_CLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG50F_OFFICIAL_CANONICAL_CANDIDATE_ACQUISITION_LIVE_CLASSIFICATION.md",
+          "prior_status": "available and used.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "17caca4f2d7db78fc0605dc680b6ebf1b5a752ad79fbac3ffe47d6b1b09bd69c"
+        },
+        {
+          "original_path": "docs/validation/AG51A_EXISTING_PROVIDER_OFFICIAL_CANONICAL_RECOVERY_ACQUISITION_STRATEGY.md",
+          "archived_path": "docs/history/validation/AG51A_EXISTING_PROVIDER_OFFICIAL_CANONICAL_RECOVERY_ACQUISITION_STRATEGY.md",
+          "category": "validation",
+          "filename": "AG51A_EXISTING_PROVIDER_OFFICIAL_CANONICAL_RECOVERY_ACQUISITION_STRATEGY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "e11a3d9482837028bfd5821b906db9f689c0ca436fb576d6e3e2d446c46e4c88"
+        },
+        {
+          "original_path": "docs/validation/AG51C_CANONICAL_TECHNICAL_DOCUMENTATION_PROMPT_QUERY_POLICY_REPAIR.md",
+          "archived_path": "docs/history/validation/AG51C_CANONICAL_TECHNICAL_DOCUMENTATION_PROMPT_QUERY_POLICY_REPAIR.md",
+          "category": "validation",
+          "filename": "AG51C_CANONICAL_TECHNICAL_DOCUMENTATION_PROMPT_QUERY_POLICY_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "bd236709df5391decfdf9a1c877ca69ab9d474d9292ad364c30bb02119ebe5b9"
+        },
+        {
+          "original_path": "docs/validation/AG51D_POST_POLICY_CANONICAL_TECH_DOCS_LIVE_CLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG51D_POST_POLICY_CANONICAL_TECH_DOCS_LIVE_CLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG51D_POST_POLICY_CANONICAL_TECH_DOCS_LIVE_CLASSIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "920c072e56dc7bbb8d27e0e06c8de9ef6d3e414e4fdb48a3c9e9c14191458c92"
+        },
+        {
+          "original_path": "docs/validation/AG52A_OFFICIAL_CANONICAL_RECOVERY_EVIDENCE_ACCEPTANCE_SOURCE_FIT.md",
+          "archived_path": "docs/history/validation/AG52A_OFFICIAL_CANONICAL_RECOVERY_EVIDENCE_ACCEPTANCE_SOURCE_FIT.md",
+          "category": "validation",
+          "filename": "AG52A_OFFICIAL_CANONICAL_RECOVERY_EVIDENCE_ACCEPTANCE_SOURCE_FIT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "4aae2bad11e04b2e6c993e34f3fb6aa54297a4ec3d6376cf9fa93e3ce197cddd"
+        },
+        {
+          "original_path": "docs/validation/AG52B_OFFICIAL_CANONICAL_RECOVERY_CANDIDATE_VISIBILITY_CLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG52B_OFFICIAL_CANONICAL_RECOVERY_CANDIDATE_VISIBILITY_CLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG52B_OFFICIAL_CANONICAL_RECOVERY_CANDIDATE_VISIBILITY_CLASSIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "75e103f2db8f52070ba8f929907001cf2837d11dc817ce2fc7b1552db39cbfa4"
+        },
+        {
+          "original_path": "docs/validation/AG56A_PROMPT_STACK_EXTERNAL_REVIEW_PACKET.md",
+          "archived_path": "docs/history/validation/AG56A_PROMPT_STACK_EXTERNAL_REVIEW_PACKET.md",
+          "category": "validation",
+          "filename": "AG56A_PROMPT_STACK_EXTERNAL_REVIEW_PACKET.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "803350c0c8a6771705c6303120b20bb7c3f5f7262a49199525bda4b45905f1cc"
+        },
+        {
+          "original_path": "docs/validation/AG57B_ROUTER_RESEARCHER_CANONICAL_ACADEMIC_PROMPT_CONTRACT_REPAIR.md",
+          "archived_path": "docs/history/validation/AG57B_ROUTER_RESEARCHER_CANONICAL_ACADEMIC_PROMPT_CONTRACT_REPAIR.md",
+          "category": "validation",
+          "filename": "AG57B_ROUTER_RESEARCHER_CANONICAL_ACADEMIC_PROMPT_CONTRACT_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "98ad58c7dc1c9495c405deb7115823d746dbd52738ee1f125ffba2def7f89f65"
+        },
+        {
+          "original_path": "docs/validation/AG58A_DETERMINISTIC_SOURCE_OBLIGATION_RECOVERY_ALIGNMENT.md",
+          "archived_path": "docs/history/validation/AG58A_DETERMINISTIC_SOURCE_OBLIGATION_RECOVERY_ALIGNMENT.md",
+          "category": "validation",
+          "filename": "AG58A_DETERMINISTIC_SOURCE_OBLIGATION_RECOVERY_ALIGNMENT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f04c3ca673c5e72cb8190f17a096a6641f38a4ea193ca7b1fe44121a7942b5af"
+        },
+        {
+          "original_path": "docs/validation/AG59AB_CONTROLLER_OWNED_INSUFFICIENCY_ANALYST_AUTHOR_OBEDIENCE.md",
+          "archived_path": "docs/history/validation/AG59AB_CONTROLLER_OWNED_INSUFFICIENCY_ANALYST_AUTHOR_OBEDIENCE.md",
+          "category": "validation",
+          "filename": "AG59AB_CONTROLLER_OWNED_INSUFFICIENCY_ANALYST_AUTHOR_OBEDIENCE.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "87bcb822136b515dc24b93226bc310f1f356361f3440d4d71666800dce9e5f31"
+        },
+        {
+          "original_path": "docs/validation/AG5_ANSWER_CONTRACT_HANDOFF_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG5_ANSWER_CONTRACT_HANDOFF_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG5_ANSWER_CONTRACT_HANDOFF_VALIDATION.md",
+          "prior_status": "offline/replay gate passed; bounded live validation completed.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "15b646508035c4500ef4fde7fab33789992f66bd030d5c8e6b6ddc0a0fd0dc04"
+        },
+        {
+          "original_path": "docs/validation/AG60A_QUANTITATIVE_ECONOMIST_SOURCE_BOUND_HANDOFF_HARDENING.md",
+          "archived_path": "docs/history/validation/AG60A_QUANTITATIVE_ECONOMIST_SOURCE_BOUND_HANDOFF_HARDENING.md",
+          "category": "validation",
+          "filename": "AG60A_QUANTITATIVE_ECONOMIST_SOURCE_BOUND_HANDOFF_HARDENING.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6431f957ff70844de0666015ec067dadf2eaf15a16c9e6bff6e6e1d7fa713586"
+        },
+        {
+          "original_path": "docs/validation/AG61A_FOLLOW_UP_SOURCE_OBLIGATION_REFRESH.md",
+          "archived_path": "docs/history/validation/AG61A_FOLLOW_UP_SOURCE_OBLIGATION_REFRESH.md",
+          "category": "validation",
+          "filename": "AG61A_FOLLOW_UP_SOURCE_OBLIGATION_REFRESH.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7c5108089b3f8c0b9701ec73c17f95689faa7920b98180390714b447e3e67a7f"
+        },
+        {
+          "original_path": "docs/validation/AG63A_BOUNDED_LIVE_DOGFOOD_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG63A_BOUNDED_LIVE_DOGFOOD_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG63A_BOUNDED_LIVE_DOGFOOD_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5f0e8f7fa20e3f9b99b760d81caac31f83533ac73ce8fe855571273de95ef648"
+        },
+        {
+          "original_path": "docs/validation/AG64ABC_CONTROLLER_OWNED_OFFICIAL_CURRENT_RECOVERY_ACTION.md",
+          "archived_path": "docs/history/validation/AG64ABC_CONTROLLER_OWNED_OFFICIAL_CURRENT_RECOVERY_ACTION.md",
+          "category": "validation",
+          "filename": "AG64ABC_CONTROLLER_OWNED_OFFICIAL_CURRENT_RECOVERY_ACTION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5639e22eb13657ab3ab83537a3a76719e0978e87a1b6d44f76798651a1392c81"
+        },
+        {
+          "original_path": "docs/validation/AG64D_FRESH_IRS_DISPATCH_HANDOFF_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG64D_FRESH_IRS_DISPATCH_HANDOFF_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG64D_FRESH_IRS_DISPATCH_HANDOFF_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5aa29f00fc46d505514ab7097f3c021f949d766ab150a8213d9d2fc8089558d1"
+        },
+        {
+          "original_path": "docs/validation/AG67A_FORCED_AUTHORITATIVE_RECOVERY_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG67A_FORCED_AUTHORITATIVE_RECOVERY_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG67A_FORCED_AUTHORITATIVE_RECOVERY_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8ad3350a26852715ac2692db1923193026e14075a0df20bde1b00f9713589c43"
+        },
+        {
+          "original_path": "docs/validation/AG67B_FORCED_CORRIDOR_LIVE_CLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG67B_FORCED_CORRIDOR_LIVE_CLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG67B_FORCED_CORRIDOR_LIVE_CLASSIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1bcab165b956fadd059bfeecfaa626310383e50d04d77b703911207e443b0aaa"
+        },
+        {
+          "original_path": "docs/validation/AG68B_FORCED_CORRIDOR_LIVE_RECLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG68B_FORCED_CORRIDOR_LIVE_RECLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG68B_FORCED_CORRIDOR_LIVE_RECLASSIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7ad30e6c6426da27895346a5e306e37e02bbce510edb1cc2944f61cc3d4ee624"
+        },
+        {
+          "original_path": "docs/validation/AG68D_FORCED_CORRIDOR_LIVE_RECLASSIFICATION_AFTER_DISPATCH.md",
+          "archived_path": "docs/history/validation/AG68D_FORCED_CORRIDOR_LIVE_RECLASSIFICATION_AFTER_DISPATCH.md",
+          "category": "validation",
+          "filename": "AG68D_FORCED_CORRIDOR_LIVE_RECLASSIFICATION_AFTER_DISPATCH.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "636fcb98b8dc8b26cacbf97083dbb9494d51fb61f494e3bf1209e4af386669ae"
+        },
+        {
+          "original_path": "docs/validation/AG68E_LIVE_OFFLINE_DISPATCH_PARITY_REPAIR.md",
+          "archived_path": "docs/history/validation/AG68E_LIVE_OFFLINE_DISPATCH_PARITY_REPAIR.md",
+          "category": "validation",
+          "filename": "AG68E_LIVE_OFFLINE_DISPATCH_PARITY_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c50ad564e137d4bfcf849659d52b753882c85287f0b73b594bbca49764fda7ce"
+        },
+        {
+          "original_path": "docs/validation/AG68F_TWO_CASE_FORCED_CORRIDOR_LIVE_RECLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG68F_TWO_CASE_FORCED_CORRIDOR_LIVE_RECLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG68F_TWO_CASE_FORCED_CORRIDOR_LIVE_RECLASSIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "c76eb66ef5366b66830cae06885c5367a5010055a2bdc6018e40388d16a7d7ca"
+        },
+        {
+          "original_path": "docs/validation/AG68G_LIVE_PRODUCT_DISPATCH_CALLSITE_REPAIR.md",
+          "archived_path": "docs/history/validation/AG68G_LIVE_PRODUCT_DISPATCH_CALLSITE_REPAIR.md",
+          "category": "validation",
+          "filename": "AG68G_LIVE_PRODUCT_DISPATCH_CALLSITE_REPAIR.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "fd044bca5290de5ef0c82c8303e80e63be88dcbd23b02cce9e0981a23f676a25"
+        },
+        {
+          "original_path": "docs/validation/AG68H_LIVE_DISPATCH_RECLASSIFICATION.md",
+          "archived_path": "docs/history/validation/AG68H_LIVE_DISPATCH_RECLASSIFICATION.md",
+          "category": "validation",
+          "filename": "AG68H_LIVE_DISPATCH_RECLASSIFICATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a3ab4babc76a093f536b5344a7e0c298943228d64b77d139193f231dafce473a"
+        },
+        {
+          "original_path": "docs/validation/AG68I_CROSS_CASE_DISPATCH_ARBITRATION_VISIBILITY.md",
+          "archived_path": "docs/history/validation/AG68I_CROSS_CASE_DISPATCH_ARBITRATION_VISIBILITY.md",
+          "category": "validation",
+          "filename": "AG68I_CROSS_CASE_DISPATCH_ARBITRATION_VISIBILITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b46971a97956a6d58a0bab5776cb3d9f3b4247a29111b7feeb846350c0f122b5"
+        },
+        {
+          "original_path": "docs/validation/AG69A_CONTROLLER_AUTHORITY_LIFECYCLE_CONTRACT.md",
+          "archived_path": "docs/history/validation/AG69A_CONTROLLER_AUTHORITY_LIFECYCLE_CONTRACT.md",
+          "category": "validation",
+          "filename": "AG69A_CONTROLLER_AUTHORITY_LIFECYCLE_CONTRACT.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b21bc73df0771a702ad38021b284b1752202bcd26b1d653ecf59dfc82a6bc1be"
+        },
+        {
+          "original_path": "docs/validation/AG69B_CONTROLLER_RUNTIME_ARBITRATION.md",
+          "archived_path": "docs/history/validation/AG69B_CONTROLLER_RUNTIME_ARBITRATION.md",
+          "category": "validation",
+          "filename": "AG69B_CONTROLLER_RUNTIME_ARBITRATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "cc8433297178b2fb369c876ceae01ea28e22293fd07c70668a86022b5574ee58"
+        },
+        {
+          "original_path": "docs/validation/AG69C_RECOVERY_EXECUTION_LIFECYCLE_INTEGRATION.md",
+          "archived_path": "docs/history/validation/AG69C_RECOVERY_EXECUTION_LIFECYCLE_INTEGRATION.md",
+          "category": "validation",
+          "filename": "AG69C_RECOVERY_EXECUTION_LIFECYCLE_INTEGRATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "9138ce19e6385a3aa34b45102a73b6f2f1b129505f73ce5228d419072a24463c"
+        },
+        {
+          "original_path": "docs/validation/AG69D_RECOVERED_CANDIDATE_FIT_VISIBILITY.md",
+          "archived_path": "docs/history/validation/AG69D_RECOVERED_CANDIDATE_FIT_VISIBILITY.md",
+          "category": "validation",
+          "filename": "AG69D_RECOVERED_CANDIDATE_FIT_VISIBILITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "1672eafafb9ebd431e0b2aa09e13a5365dcf33f3594b86d18e3fadd74459a35d"
+        },
+        {
+          "original_path": "docs/validation/AG69E_RETIRE_LOCAL_GATES_PROJECTION_CONTROL.md",
+          "archived_path": "docs/history/validation/AG69E_RETIRE_LOCAL_GATES_PROJECTION_CONTROL.md",
+          "category": "validation",
+          "filename": "AG69E_RETIRE_LOCAL_GATES_PROJECTION_CONTROL.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "0c3dcf91e66fbd6fd90b826f63c073ea9eb77e2b885037ff05241da1d731aaad"
+        },
+        {
+          "original_path": "docs/validation/AG69F_BOUNDED_LIVE_CONTROLLER_LIFECYCLE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG69F_BOUNDED_LIVE_CONTROLLER_LIFECYCLE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG69F_BOUNDED_LIVE_CONTROLLER_LIFECYCLE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "46bb56c4fd6b7a01f6615fa357f6764bc821817f096d12cd2828fd3b6756ff74"
+        },
+        {
+          "original_path": "docs/validation/AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7743eb78a53d85b177a4757292c01a67b415b0d2ece2b634395bac00290f9f61"
+        },
+        {
+          "original_path": "docs/validation/AG6_ANSWER_CONTRACT_CALIBRATION.md",
+          "archived_path": "docs/history/validation/AG6_ANSWER_CONTRACT_CALIBRATION.md",
+          "category": "validation",
+          "filename": "AG6_ANSWER_CONTRACT_CALIBRATION.md",
+          "prior_status": "offline calibration revision implemented; targeted tests passed.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d3fcc03088e652c3700f95a3954abf5ed52f740810e7005615aeb02cf2576c36"
+        },
+        {
+          "original_path": "docs/validation/AG70A_LIVE_FAILURE_SPLIT_DIAGNOSIS_SSA_ADMISSION.md",
+          "archived_path": "docs/history/validation/AG70A_LIVE_FAILURE_SPLIT_DIAGNOSIS_SSA_ADMISSION.md",
+          "category": "validation",
+          "filename": "AG70A_LIVE_FAILURE_SPLIT_DIAGNOSIS_SSA_ADMISSION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "60771db5d3b1f1d4e13dccb71af584bd53ce4d6fbce59c08c065ce56fc70d68e"
+        },
+        {
+          "original_path": "docs/validation/AG70B_IRS_CANDIDATE_FIT_READABLE_VISIBILITY.md",
+          "archived_path": "docs/history/validation/AG70B_IRS_CANDIDATE_FIT_READABLE_VISIBILITY.md",
+          "category": "validation",
+          "filename": "AG70B_IRS_CANDIDATE_FIT_READABLE_VISIBILITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "7572a12f01077aa1181fd826ce98c1e8d240ead51cd21b245538cd5678cbf6aa"
+        },
+        {
+          "original_path": "docs/validation/AG70C_BOUNDED_LIVE_REVALIDATION.md",
+          "archived_path": "docs/history/validation/AG70C_BOUNDED_LIVE_REVALIDATION.md",
+          "category": "validation",
+          "filename": "AG70C_BOUNDED_LIVE_REVALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b29eddb6df90d52b8520bb9209044558b00ec4fc31f7624370c9da71b0b41b73"
+        },
+        {
+          "original_path": "docs/validation/AG71A_IRS_EVIDENCE_CHAIN_OF_CUSTODY_DIAGNOSTIC.md",
+          "archived_path": "docs/history/validation/AG71A_IRS_EVIDENCE_CHAIN_OF_CUSTODY_DIAGNOSTIC.md",
+          "category": "validation",
+          "filename": "AG71A_IRS_EVIDENCE_CHAIN_OF_CUSTODY_DIAGNOSTIC.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "bdaff7aa931995e1d45934271c793a85a1902dd220ec7e7337ce33ab5919d1a3"
+        },
+        {
+          "original_path": "docs/validation/AG71A_IRS_OFFICIAL_CURRENT_ACQUISITION_QUERY_STRATEGY_REVIEW.md",
+          "archived_path": "docs/history/validation/AG71A_IRS_OFFICIAL_CURRENT_ACQUISITION_QUERY_STRATEGY_REVIEW.md",
+          "category": "validation",
+          "filename": "AG71A_IRS_OFFICIAL_CURRENT_ACQUISITION_QUERY_STRATEGY_REVIEW.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "60f295119c17ede982719497a8f5a05375e2d4076ec928a2b41bc07301eb1c48"
+        },
+        {
+          "original_path": "docs/validation/AG72R_PROVIDER_SEARCH_ALLOCATION_REVIEW.md",
+          "archived_path": "docs/history/validation/AG72R_PROVIDER_SEARCH_ALLOCATION_REVIEW.md",
+          "category": "validation",
+          "filename": "AG72R_PROVIDER_SEARCH_ALLOCATION_REVIEW.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "5ae7692832c09373901cf2e7565008645c1eb898fe07c2f7b24bf5664ce5cbe5"
+        },
+        {
+          "original_path": "docs/validation/AG72V_BOUNDED_IRS_LIVE_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG72V_BOUNDED_IRS_LIVE_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG72V_BOUNDED_IRS_LIVE_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "585c90e0da2bc8e10831140b02069e3cba69e692ce2300836909881b05130c2a"
+        },
+        {
+          "original_path": "docs/validation/AG73A_AUTHORITY_CANDIDATE_PASSPORT_CUSTODY.md",
+          "archived_path": "docs/history/validation/AG73A_AUTHORITY_CANDIDATE_PASSPORT_CUSTODY.md",
+          "category": "validation",
+          "filename": "AG73A_AUTHORITY_CANDIDATE_PASSPORT_CUSTODY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "80afc6cce8cb3d27a6679efddce12a96d2cf620eab48b3091c47bf6dd3035cc3"
+        },
+        {
+          "original_path": "docs/validation/AG73B_AUTHORITY_PASSPORT_RUNTIME_VISIBILITY.md",
+          "archived_path": "docs/history/validation/AG73B_AUTHORITY_PASSPORT_RUNTIME_VISIBILITY.md",
+          "category": "validation",
+          "filename": "AG73B_AUTHORITY_PASSPORT_RUNTIME_VISIBILITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "6b1f6b16e6adcd7183d1687bcd576bebe2f9c465bb9f067eb72aa62e17e40dd9"
+        },
+        {
+          "original_path": "docs/validation/AG73C_BOUNDED_IRS_CUSTODY_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG73C_BOUNDED_IRS_CUSTODY_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG73C_BOUNDED_IRS_CUSTODY_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a9c1dc31b40459649cad3d06e331f1f989f381c3838cc82f892ac38f5d670601"
+        },
+        {
+          "original_path": "docs/validation/AG73D_V_PROVIDER_RESULT_REPRESENTED_VISIBILITY.md",
+          "archived_path": "docs/history/validation/AG73D_V_PROVIDER_RESULT_REPRESENTED_VISIBILITY.md",
+          "category": "validation",
+          "filename": "AG73D_V_PROVIDER_RESULT_REPRESENTED_VISIBILITY.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d529f9ca414dbad373c846342c5f87d08baeaa83ce8d2065a5421e132a0be8c7"
+        },
+        {
+          "original_path": "docs/validation/AG73E_ONE_RUN_IRS_LIVE_CUSTODY_VALIDATION.md",
+          "archived_path": "docs/history/validation/AG73E_ONE_RUN_IRS_LIVE_CUSTODY_VALIDATION.md",
+          "category": "validation",
+          "filename": "AG73E_ONE_RUN_IRS_LIVE_CUSTODY_VALIDATION.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "97cbd5584b071471c0a795ed531a60f0e8fdfac18d7d27ba29b203e9da513b39"
+        },
+        {
+          "original_path": "docs/validation/AG7_ANSWER_CONTRACT_LIVE_REVALIDATION.md",
+          "archived_path": "docs/history/validation/AG7_ANSWER_CONTRACT_LIVE_REVALIDATION.md",
+          "category": "validation",
+          "filename": "AG7_ANSWER_CONTRACT_LIVE_REVALIDATION.md",
+          "prior_status": "offline gate passed; bounded live validation completed.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "818723ccd59d605d5e93e03856877dd6fed43d5dfd756b900f585db5b9a7a0dc"
+        },
+        {
+          "original_path": "docs/validation/AG7_ANSWER_QUALITY_REVIEW.md",
+          "archived_path": "docs/history/validation/AG7_ANSWER_QUALITY_REVIEW.md",
+          "category": "validation",
+          "filename": "AG7_ANSWER_QUALITY_REVIEW.md",
+          "prior_status": "compact qualitative review of representative AG-7 live answers.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "d8ef744fe08459d015e764c31b2fcf90ffb58b300a42469474fb82bd93d7051a"
+        },
+        {
+          "original_path": "docs/validation/AG8_OFFICIAL_LEGAL_CALIBRATION.md",
+          "archived_path": "docs/history/validation/AG8_OFFICIAL_LEGAL_CALIBRATION.md",
+          "category": "validation",
+          "filename": "AG8_OFFICIAL_LEGAL_CALIBRATION.md",
+          "prior_status": "offline calibration revision completed; no live validation used.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8951354b377dd60ad31941ce76d4eba68dfa15510d4fa02671f77928a0dc94a1"
+        },
+        {
+          "original_path": "docs/validation/AG93B_OFFLINE_GOLDEN_TASK_HARNESS.md",
+          "archived_path": "docs/history/validation/AG93B_OFFLINE_GOLDEN_TASK_HARNESS.md",
+          "category": "validation",
+          "filename": "AG93B_OFFLINE_GOLDEN_TASK_HARNESS.md",
+          "prior_status": "implemented as an offline fixture-backed evaluation harness.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "2b477ec1f4d44cd1097026e8b4252343f37c10dd1e002cc8d5658c8d49ce3355"
+        },
+        {
+          "original_path": "docs/validation/AG93C_OFFLINE_REPLAY_REVIEW_PACKET.md",
+          "archived_path": "docs/history/validation/AG93C_OFFLINE_REPLAY_REVIEW_PACKET.md",
+          "category": "validation",
+          "filename": "AG93C_OFFLINE_REPLAY_REVIEW_PACKET.md",
+          "prior_status": "implemented as an offline review/export artifact.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b5bdfe99c61d55cdea1b7e6cb8957068d308e95cd2ed4a2a0f0d2afc13dc4138"
+        },
+        {
+          "original_path": "docs/validation/AG9_LIVE_REVALIDATION.md",
+          "archived_path": "docs/history/validation/AG9_LIVE_REVALIDATION.md",
+          "category": "validation",
+          "filename": "AG9_LIVE_REVALIDATION.md",
+          "prior_status": "offline gate passed; bounded live validation completed; compact validation summary committed. The full truth-review packet is local and untracked only.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "8de4f3cc24369dd784359a88ec5224e1f0adfca8634fb379137a286ba06941e9"
+        },
+        {
+          "original_path": "docs/validation/AG_LIVE_OBSERVABILITY.md",
+          "archived_path": "docs/history/validation/AG_LIVE_OBSERVABILITY.md",
+          "category": "validation",
+          "filename": "AG_LIVE_OBSERVABILITY.md",
+          "prior_status": "AG-LIVE-OBSERVE-01 packet projection contract.",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "f2764f9cd83fb26d23ef9467c24680a0029c63997c4756e8a729701f9c998f6e"
+        },
+        {
+          "original_path": "docs/validation/L1_SOURCE_CLASS_RECOVERY_DIAGNOSTICS.md",
+          "archived_path": "docs/history/validation/L1_SOURCE_CLASS_RECOVERY_DIAGNOSTICS.md",
+          "category": "validation",
+          "filename": "L1_SOURCE_CLASS_RECOVERY_DIAGNOSTICS.md",
+          "prior_status": "L1 diagnostics-only validation packet. Classification: pure/offline",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "a18288111181b5fe044472949ba6a289c60788dc9f067408306085e8f00c19d1"
+        },
+        {
+          "original_path": "docs/validation/LEGAL_CURRENT_SOURCE_QUALITY_L2B_VALIDATION_PLAN.md",
+          "archived_path": "docs/history/validation/LEGAL_CURRENT_SOURCE_QUALITY_L2B_VALIDATION_PLAN.md",
+          "category": "validation",
+          "filename": "LEGAL_CURRENT_SOURCE_QUALITY_L2B_VALIDATION_PLAN.md",
+          "prior_status": null,
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b1eed2951df798731b9e16ed3869989353fdb07a322890b83f3f0ee72c35905e"
+        },
+        {
+          "original_path": "docs/validation/OFFICIAL_NUMERIC_SOURCE_GROUNDING_AG48A_PLAN.md",
+          "archived_path": "docs/history/validation/OFFICIAL_NUMERIC_SOURCE_GROUNDING_AG48A_PLAN.md",
+          "category": "validation",
+          "filename": "OFFICIAL_NUMERIC_SOURCE_GROUNDING_AG48A_PLAN.md",
+          "prior_status": "offline diagnostic validation plan. No live validation is authorized by",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "b866fcff2be6c81d0187c99c8b802e41ce5aa94770af8469dc17423b69b9c5ca"
+        },
+        {
+          "original_path": "docs/validation/OFFICIAL_SOURCE_ACQUISITION_SURVIVAL_AG48B_PLAN.md",
+          "archived_path": "docs/history/validation/OFFICIAL_SOURCE_ACQUISITION_SURVIVAL_AG48B_PLAN.md",
+          "category": "validation",
+          "filename": "OFFICIAL_SOURCE_ACQUISITION_SURVIVAL_AG48B_PLAN.md",
+          "prior_status": "offline diagnostic validation plan. No live validation is authorized by",
+          "current_route": null,
+          "migration_batch": "D3B",
+          "content_sha256": "cf5e74bd78e7967b3df2e12792b69b874cb8ca5df2af7462a1e976512b39bb2c"
+        }
+      ]
+    }
+  }
+}

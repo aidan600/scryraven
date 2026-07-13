@@ -169,7 +169,7 @@ Current-looking or easy-to-misread docs inspected:
 
 | Document | Finding | Action this phase | Remaining risk |
 | --- | --- | --- | --- |
-| `docs/architecture/SCRYRAVEN_CURRENT_STATE.md` | Current-sounding filename previously contained a long Controller-era rollup and "orchestrator untouched" language. | Replaced with a short current-state redirect stub. Moved old body to `docs/architecture/historical/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md`. | Low; old text is preserved under a clearly historical path. |
+| `docs/architecture/SCRYRAVEN_CURRENT_STATE.md` | Current-sounding filename previously contained a long Controller-era rollup and "orchestrator untouched" language. | Replaced with a short current-state redirect stub. Moved old body to `docs/history/architecture/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md`. | Low; old text is preserved under a clearly historical path. |
 | `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` | Legacy Controller-handoff playbook can look like current default doctrine. | Added AG-94G vocabulary note and target-surface warning. | Body remains intentionally legacy. |
 | `docs/product/AG81B_R1_ANSWER_WORTHINESS_AND_GOLDEN_EXAMPLES.md` | Product defect taxonomy still names Controller/AnswerContract as future defect owners. | Added authority-routing note. | Body remains product-useful but not current authority routing. |
 | `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md` | Correct input audit, but records `pipeline_orchestrator.py` line delta `0` and older protected wording. | Added AG-94G clarification note. | Historical body remains unchanged. |
@@ -292,7 +292,7 @@ Moved stale current-looking history:
 
 - `docs/architecture/SCRYRAVEN_CURRENT_STATE.md` is now a redirect stub.
 - The old body is preserved at
-  `docs/architecture/historical/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md`.
+  `docs/history/architecture/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md`.
 
 Remaining uses of "protected" are intentional when they appear in historical
 phase records, safety contexts, or the glossary sentence explaining that

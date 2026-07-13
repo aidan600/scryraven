@@ -26,8 +26,8 @@ The inventory includes 361 tracked Markdown/rule docs:
 | Root and meta docs | 5 | `.cursor/rules/*.mdc`, `.github/pull_request_template.md`, `AGENTS.md`, `README.md`. |
 | `docs/codex/` | 13 | Codex operating system, phase templates, validation/test guidance, publication guidance. |
 | `docs/architecture/` | 233 | Current contracts plus many historical phase records. |
-| `docs/architecture/historical/` | 1 | Controller-era current-state body already moved out of the current-looking file. |
-| `docs/validation/` | 81 | Validation notes and output-quality records, mostly phase history. |
+| `docs/history/architecture/` | 1 | Controller-era current-state body already moved out of the current-looking file. |
+| `docs/history/validation/` | 81 | Validation notes and output-quality records, mostly phase history. |
 | `docs/product/` | 7 | Product design/usage contracts and rubric docs. |
 | `docs/operator/` | 2 | Local broker/provider-proxy operator guidance. |
 | `docs/evals/` plus `docs/eval_queries.md` | 2 | Evaluation query docs. |
@@ -69,10 +69,10 @@ sections in the named docs.
 | Current second-half architecture contracts named by the guidance map: `AG_ANALYST_EVIDENCE_RELATIVE_REPORT_01.md`, `AG_ANALYSIS_GAP_FOLLOWUP_SEARCH_01.md`, `AG_COMPONENT_COVERAGE_RELIABILITY_PROOF_01.md`, `AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`, `AG_FOLLOWUP_SEARCH_AUTHORIZATION_REENTRY_01.md`, `AG_SCRUTINEER_REVIEW_01.md`, `AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md`, `AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md`, `AG_FINAL_ANSWER_PACKET_HARDENING_01.md`, `AUTHOR_PROSE_ONLY_FINALIZATION_01.md` | 10 | Current but supporting | These are accurate seam contracts, but Codex should reach them through the guidance map or the smallest relevant phase contract, not default-read all of them. |
 | Current live/dry-run/product-path docs under `docs/architecture/AG_LIMITED_LIVE_*`, `AG_LIVE_*`, `AG_ORDINARY_LIVE_*`, `AG_LOCAL_DRYRUN_*`, `AG_FIXTURE_DOGFOOD_*`, and `AG_CHECK_01_*` | 12 | Current but supporting | Useful for live/dry-run/product-path phases. They must not be treated as live correctness proof unless the phase separately licenses live validation. |
 | Current supporting architecture contracts not in the default spine: `AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md`, `DPRIME_PRODUCT_MODEL_ROUTE_CONFIG_BOUNDARY.md`, `FAP_AUTHOR_BOUNDARY.md`, `RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md`, `SOURCE_AUTHORITY_POSTURE.md`, `LEGAL_CURRENT_PRIMARY_TRIAGE_L2A.md`, `LEGAL_CURRENT_SOURCE_QUALITY_L2B.md`, `OFFICIAL_NUMERIC_SOURCE_GROUNDING_AG48A.md`, `OFFICIAL_SOURCE_ACQUISITION_SURVIVAL_AG48B.md`, `TARGETED_RETRIEVAL_OWNERSHIP_AG42.md`, `TARGETED_RETRIEVAL_SPINE_REPRESENTATION_AG43C.md`, `TYPED_RETRIEVAL_BATCH_DESIGN_AG46A.md`, and similar narrow contracts | 13 | Current but supporting | Accurate for their seams, but too narrow for default context. Cross-link from the map only when relevant. |
-| `docs/architecture/source_hierarchy_answer_contract_invariants.md` | 1 | Stale / contradictory | It states "The Controller and AnswerContract own source-obligation fulfillment." Current doctrine routes authority through RunKernel/RunAuthority plus current D-prime/source-obligation surfaces. Update or mark historical. |
+| `docs/history/architecture/phases/source_hierarchy_answer_contract_invariants.md` | 1 | Stale / contradictory | It states "The Controller and AnswerContract own source-obligation fulfillment." Current doctrine routes authority through RunKernel/RunAuthority plus current D-prime/source-obligation surfaces. Update or mark historical. |
 | `docs/architecture/AG51B_*`, `AG74*` through `AG79*`, `AG89*` through `AG95*`, `AG96*`, `ACTIVE_*`, `CONFLICT_*`, `CONTROLLER_*`, `DOCUMENTATION_ROLES_*`, `EVIDENCE_INTEGRATION_*`, `OFFICIAL_*`, `SOURCE_CLASS_*`, `WEAK_CORPUS_*`, and older AG-SEM phase records not named as current contracts above | 191 | Historical phase note | Most are valuable provenance but contain old "Controller-owned", "Architecture Groove / Prove Mode", or phase-local next-gate wording. They should be marked historical or routed through current docs. |
-| `docs/architecture/historical/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md` | 1 | Historical phase note | Already has a supersession banner; keep as archive. |
-| `docs/validation/*.md` | 81 | Historical phase note | Validation records are phase evidence, not current doctrine. Some live-validation notes are useful provenance, but future phases should not read them by default. |
+| `docs/history/architecture/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md` | 1 | Historical phase note | Already has a supersession banner; keep as archive. |
+| `docs/history/validation/*.md` | 81 | Historical phase note | Validation records are phase evidence, not current doctrine. Some live-validation notes are useful provenance, but future phases should not read them by default. |
 | `docs/product/*.md` | 7 | Current but supporting | Product rubric/design/usage docs are useful for UX/product phases. They are not core architecture authority unless the phase is product-output-facing. |
 | `docs/operator/*.md` | 2 | Current but supporting | Current local broker/provider-proxy operator guidance. Read only when live/provider-proxy work is explicitly licensed. |
 | `docs/eval_queries.md`, `docs/evals/reference_query_library.md` | 2 | Current but supporting | Evaluation material and query library. Not architecture doctrine. |
@@ -120,7 +120,7 @@ Top cleanup targets:
 - `docs/architecture/ANALYST_WORKBENCH_FULL_SLICE.md` is current but incomplete
   as a runtime contract. It should either become the canonical Workbench
   contract or be split into a current contract plus historical phase note.
-- `docs/architecture/source_hierarchy_answer_contract_invariants.md` still says
+- `docs/history/architecture/phases/source_hierarchy_answer_contract_invariants.md` still says
   Controller and AnswerContract own source-obligation fulfillment. That should
   be updated to current RunKernel/RunAuthority vocabulary or marked historical.
 - Older `AG74*` through `AG79*` docs repeatedly use Controller-owned and
@@ -241,7 +241,7 @@ Phase 1: Workbench runtime contract consolidation.
 
 Phase 2: Stale Controller vocabulary repair.
 
-- Edit `docs/architecture/source_hierarchy_answer_contract_invariants.md` to
+- Edit `docs/history/architecture/phases/source_hierarchy_answer_contract_invariants.md` to
   current RunKernel/RunAuthority ownership vocabulary or mark it historical.
 - Add historical banners to selected AG74-AG79 docs if they continue to present
   Controller-era doctrine as current.

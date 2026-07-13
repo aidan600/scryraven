@@ -98,8 +98,8 @@ Focused current-guidance counts:
 | `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md` | 2 | 7 | 21 | 8 |
 | `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` | 39 | 0 | 14 | 15 |
 | `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md` | 1 | 1 | 4 | 0 |
-| `docs/architecture/AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md` | 10 | 33 | 44 | 50 |
-| `docs/architecture/AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md` | 0 | 3 | 6 | 8 |
+| `docs/history/architecture/phases/AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md` | 10 | 33 | 44 | 50 |
+| `docs/history/architecture/phases/AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md` | 0 | 3 | 6 | 8 |
 
 Command summary: vocabulary is still numerically Controller-heavy because of
 historical docs, tests, and compatibility modules. The current Codex guidance
@@ -153,11 +153,11 @@ docs still carry older Controller doctrine.
 | `docs/codex/CODEX_GUIDANCE_MAP.md` | current documentation | Correct routing; updated in this phase with AG-94C audit link. |
 | `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md` | current documentation | Correctly says RunAuthority supersedes Controller for AG-89+ work. |
 | `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` | stale or historical documentation for AG-89+ | Useful only when a phase explicitly selects legacy Controller maintenance. |
-| `docs/architecture/AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md` | current-ish historical documentation | Accurate post-activation checkpoint; superseded by this AG-94C doctrine audit for current routing. |
-| `docs/architecture/AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md` | current-ish historical documentation | Accurate consolidation note; not full current doctrine. |
+| `docs/history/architecture/phases/AG92D_RUNAUTHORITY_POSTACTIVATION_AUDIT.md` | current-ish historical documentation | Accurate post-activation checkpoint; superseded by this AG-94C doctrine audit for current routing. |
+| `docs/history/architecture/phases/AG92E_RUNAUTHORITY_TARGETED_CONSOLIDATION.md` | current-ish historical documentation | Accurate consolidation note; not full current doctrine. |
 | `docs/architecture/SCRYRAVEN_CURRENT_STATE.md` | misleading current documentation | Name implies current state but content is mostly Controller-era status; route future authority work away from it unless explicitly refreshing it. |
 | `docs/architecture/AG74*` through `AG79*` Controller docs | stale or historical documentation | Preserve as history; do not delete or bulk rewrite. |
-| `docs/validation/AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md` | stale or historical documentation | Historical validation note, not current doctrine. |
+| `docs/history/validation/AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md` | stale or historical documentation | Historical validation note, not current doctrine. |
 | `docs/product/AG81B_R1_ANSWER_WORTHINESS_AND_GOLDEN_EXAMPLES.md` | stale doctrine reference in product doc | Contains an old "Controller-owned handoff phase" recommendation; not a current authority guide. |
 
 ## Stale Docs / Misleading Docs
@@ -167,10 +167,10 @@ Docs that can still lead a future implementer toward old Controller doctrine:
 - `docs/architecture/SCRYRAVEN_CURRENT_STATE.md`: current-sounding filename,
   but content states "Controller decides, orchestrator executes" as the current
   model. This is misleading after RunAuthority activation.
-- `docs/architecture/AG79D_TARGETED_ORCHESTRATOR_AUTHORITY_CLOSURE.md` and the
+- `docs/history/architecture/phases/AG79D_TARGETED_ORCHESTRATOR_AUTHORITY_CLOSURE.md` and the
   AG-74 through AG-79 sequence: correct historical records, but not current
   authority doctrine.
-- `docs/validation/AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md`:
+- `docs/history/validation/AG69F_CONTROLLER_LIFECYCLE_FORCED_CORRIDOR_VALIDATION.md`:
   historical validation note that states "Controller decides. Orchestrator
   executes."
 - `docs/product/AG81B_R1_ANSWER_WORTHINESS_AND_GOLDEN_EXAMPLES.md`: product

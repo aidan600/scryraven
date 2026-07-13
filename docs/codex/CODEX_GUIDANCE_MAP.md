@@ -81,6 +81,8 @@ its narrow responsibility:
 | --- | --- |
 | Current-path/quarantine classification detail | [AG Current Path Quarantine](../architecture/AG_CURRENT_PATH_QUARANTINE_01.md) |
 | Historical provenance, only when a current owner or phase explicitly requires it (last resort; not default-read) | [Historical Document Index](../history/INDEX.md) |
+| Historical architecture phase provenance only (last resort; not default-read) | [Historical Architecture Index](../history/architecture/INDEX.md) |
+| Historical validation evidence provenance only (last resort; not default-read) | [Historical Validation Index](../history/validation/INDEX.md) |
 
 ## Authority And Orchestration
 

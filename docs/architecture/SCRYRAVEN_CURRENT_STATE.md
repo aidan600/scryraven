@@ -109,7 +109,7 @@ installed-state claims.
 ## Historical Provenance
 
 The former Controller-era rollup remains at
-`docs/architecture/historical/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md`.
+`docs/history/architecture/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md`.
 Completed phase records and Git history preserve the Phase 1-5A chronology and
 rationale. Read them only when a current owner routes to them or a phase
 explicitly targets history; they do not override this owner.

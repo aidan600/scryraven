@@ -13,21 +13,41 @@ Current repository truth lives in the current-state owner, the current roadmap
 owner, the coding-agent guidance map, and the exact concern-specific
 architecture owners. Documents under `docs/history/` preserve provenance only.
 
-Historical wording such as "next phase," "current," or "closed" applies to the
-document's original phase unless a current owner explicitly reopens it.
+Historical wording such as "next phase," "current," or "closed" applies to
+the document's original phase unless a current owner explicitly reopens it.
 Historical files must not override code, tests, or current canonical docs.
 
 Route here only when a current owner or phase explicitly requires provenance.
 Do not treat this index as installed-state, roadmap, or implementation
 authority.
 
-Current owners:
+Read current owners first:
 
 - [Coding Agent Guidance Map](../codex/CODEX_GUIDANCE_MAP.md)
 - [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md)
 - [Current Roadmap](../roadmap/CURRENT_ROADMAP.md)
 
-## Moved Files
+## Category Indexes
+
+| Category | Index | Count |
+| --- | --- | --- |
+| Historical architecture phase records (D3B) | [architecture/INDEX.md](architecture/INDEX.md) | 185 |
+| Historical validation evidence (D3B) | [validation/INDEX.md](validation/INDEX.md) | 81 |
+
+Archive metadata: [ARCHIVE_MANIFEST.json](ARCHIVE_MANIFEST.json)
+
+## Batch Counts
+
+| Batch | Category | Files |
+| --- | --- | ---: |
+| D3A | roadmaps | 2 |
+| D3A | handoffs | 2 |
+| D3A | drafts | 1 |
+| D3A | project-source-candidates | 3 |
+| D3B | architecture | 185 |
+| D3B | validation | 81 |
+
+## D3A Moved Files
 
 | Historical file | Original path | Historical category | Current owner or route |
 | --- | --- | --- | --- |
