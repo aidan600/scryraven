@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -42,12 +42,14 @@ configuration.
 | `MC-P5A-STRICT-ONE-SHOT` | Provider-faithful transport is strict one-shot: at most one provider request per child, no SDK retry, and no endpoint, provider, or model fallback. Unsupported providers fail closed with zero requests. |
 | `MC-P5A-SAMPLING-COMPAT` | OpenRouter and Local chat transport internally own temperature `0.3`; OpenAI Responses omits temperature; caller-authored temperature is rejected. |
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
+| `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
 
 ## Current Ordinary Multi-Component Flow
 
 For a qualifying request, the ordinary entrypoint selects the bounded class,
 derives component work, and runs component Analyst and D-prime work under
-RunKernel-owned Scheduler V2 leases. RunKernel admits component state;
+RunKernel-owned scheduler leases. Closed-default runs use Scheduler V2;
+explicitly injected Specialist-enabled runs use Scheduler V3. RunKernel admits component state;
 Cross-Component Analyst proposes synthesis; synthesis D-prime validates it; and
 RunKernel admits canonical graph/synthesis state. Scrutineer may trigger the one
 bounded recovery and selective recomputation cycle. The resulting admitted state
@@ -59,10 +61,20 @@ Canonical mutation, graph reduction, synthesis, recovery, selective
 recomputation, Scrutineer, Sufficiency, FinalAnswerPacket, and Author remain
 serial on the main product thread.
 
+When a registry and policy are explicitly injected, typed Specialist work is
+inserted between its originating proposal and the applicable D-prime review.
+It remains serial on the main thread, consumes no semantic-envelope unit, and
+has no admission or answer authority. Exact Scrutineer synthesis-leaf
+remediation requires fresh synthesis D-prime and fresh Scrutineer review. A
+failed predispatch reconstruction retains no input or result, returns its
+reservation with zero spent units, and exposes one typed handoff. Optional
+failure remains visible to D-prime and continues; required failure leaves the
+handoff pending because D-prime does not run, then reaches the existing safe
+non-Author terminal.
+
 ## Not Installed
 
 - Arbitrary-query multi-component support.
-- Generic Specialist graph substrate.
 - Ordinary quantitative Specialist graph activation.
 - Social-source acquisition or a Social Awareness specialist.
 - Adaptive provider concurrency or Local component parallelism.
@@ -93,6 +105,7 @@ and this document does not license changes to that surface.
 ## Canonical Architecture Links
 
 - [Multi-component synthesis runtime architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) owns the deep installed multi-component contracts.
+- [Specialist graph substrate](SPECIALIST_GRAPH_SUBSTRATE.md) owns generic Specialist proposal, registry, policy, work, result, scheduling, and validator-consumption contracts.
 - [D-prime architecture](DPRIME_ARCHITECTURE.md) owns component and synthesis D-prime role boundaries.
 - [Run-contract semantic loop](RUN_CONTRACT_SEMANTIC_LOOP.md) owns the integrated query-to-answer proposal and reduction flow.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.

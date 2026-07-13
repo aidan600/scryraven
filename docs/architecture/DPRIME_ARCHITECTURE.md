@@ -4,8 +4,8 @@ Status: current
 Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
-Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, or Specialist activation
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, or product Specialist activation
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -16,6 +16,8 @@ D-prime. Installed-state claims belong to
 [Current Roadmap](../roadmap/CURRENT_ROADMAP.md), and the complete bounded
 multi-component path belongs to
 [Multi-Component Synthesis Runtime Architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
+Generic Specialist result boundaries belong to
+[Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md).
 
 D-prime is an evidence-relative validation role. It reviews one nominated
 proposal against the exact evidence, component, synthesis, dependency, scope,
@@ -135,12 +137,25 @@ Sufficiency, package claims, create citation eligibility, render citations,
 write prose, or claim correctness. Those downstream owners consume only
 RunKernel-admitted state.
 
-The deterministic source-bound calculator is an installed bounded supporting
-capability, not a D-prime replacement and not ordinary Specialist graph work.
-Any future Specialist result must preserve exact input lineage and pass the
-same proposal/validation/admission boundaries; it cannot bypass D-prime or
-RunKernel. This invariant does not design or activate the planned Specialist
-graph.
+The generic Specialist graph substrate provides the outcome of a proposed need
+to component or synthesis D-prime under one top-level
+`specialist_need_handoff` namespace. The handoff carries either a bounded
+result or a typed policy, capability, target, budget, failure, blocked, or
+contested availability posture. Only no proposal omits it. The nominated claim,
+evidence, component, graph, and admitted input bindings remain ordinary
+D-prime inputs. A required predispatch reconstruction failure still creates the
+failed handoff before the scheduler blocks; it creates no result and remains
+pending and unconsumed because D-prime does not run. Optional nonexecution
+handoffs remain visible to the applicable D-prime. RunKernel independently
+rederives the exact current D-prime
+role, action, artifact, target, and handoff-bearing input digest before
+exactly-once consumption; it does not trust a caller-supplied route or status.
+A Specialist outcome preserves exact lineage, cannot validate itself, and
+cannot bypass D-prime or RunKernel.
+
+The deterministic source-bound calculator remains an installed bounded
+supporting capability. It is not registered or activated as an ordinary
+Specialist by the generic substrate phase.
 
 ## Nonproofs
 

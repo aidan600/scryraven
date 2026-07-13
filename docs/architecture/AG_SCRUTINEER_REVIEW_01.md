@@ -13,8 +13,8 @@ product correctness path is opened.
 
 ## Result
 
-`AG-SCRUTINEER-REVIEW-01` introduces Scrutineer as a supervisory
-review/sign-off layer for Analyst work product. It is not product authority.
+`AG-SCRUTINEER-REVIEW-01` introduces Scrutineer as a supervisory review/sign-off layer for Analyst work product.
+It is not product authority.
 The Scrutineer red-teams whether Analyst support is actually backed by admitted
 SemanticObservation and custody, whether ComponentCoverage overclaims, and
 whether currentness, contradiction, scope, weak-source-class, missing-component,
@@ -27,8 +27,8 @@ a new proposal packet and does not shadow the Analyst packet.
 
 ## Review Behavior
 
-Scrutineer can perform an initial review before remediation and a final
-verification after remediation. A clean review can return `signed_off` for the
+Scrutineer can perform an initial review and final verification around
+remediation. A clean review can return `signed_off` for the
 Analyst work product when support findings, admitted SemanticObservation refs,
 and ComponentCoverage lineage line up. That sign-off is only Analyst work
 sign-off: final-answer sign-off and product correctness remain false.
@@ -49,8 +49,8 @@ After fixture-backed remediation re-enters through SearchResultCandidatePacket,
 FetchReadContentPacket, EvidenceLedger, EvidenceRelativeAnalysisPacket,
 SemanticObservation admission, and ComponentCoverage, Scrutineer can run final
 verification. If the issue is resolved, it returns `signed_off`. If support is
-still weak, unreadable, stale, contradictory, or insufficient, contested posture
-must be preserved for future FAP/Author rather than smoothed away.
+still weak, unreadable, stale, contradictory, or insufficient, contested posture must be preserved
+for future FAP/Author rather than smoothed away.
 
 ## Mode Posture
 

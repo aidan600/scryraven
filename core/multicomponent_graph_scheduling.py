@@ -30,6 +30,7 @@ MULTICOMPONENT_SCHEDULER_STAGE = "multicomponent_graph_scheduler"
 MULTICOMPONENT_SCHEDULER_OWNER = "RunKernel.MulticomponentGraphScheduler"
 MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION = "multicomponent_graph_scheduler_v1"
 MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION = "multicomponent_graph_scheduler_v2"
+MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION = "multicomponent_graph_scheduler_v3"
 MULTICOMPONENT_LEASE_SCHEMA_VERSION = "multicomponent_semantic_work_lease_v1"
 MULTICOMPONENT_LEASE_V2_SCHEMA_VERSION = "multicomponent_semantic_work_lease_v2"
 MULTICOMPONENT_WORK_SCHEMA_VERSION = "multicomponent_semantic_work_v1"
@@ -61,6 +62,14 @@ PARALLEL_INITIAL_COMPONENT_ANALYST = "parallel_initial_component_analyst"
 PARALLEL_INITIAL_COMPONENT_DPRIME = "parallel_initial_component_dprime"
 PARALLEL_SERIAL_ONLY = "serial_only"
 
+WORK_KIND_SEMANTIC_ROLE = "semantic_role"
+WORK_KIND_SPECIALIST_CAPABILITY = "specialist_capability"
+RESOURCE_HOSTED_MODEL_TRANSPORT = "hosted_model_transport"
+RESOURCE_LOCAL_MODEL_TRANSPORT = "local_model_transport"
+RESOURCE_DETERMINISTIC_SPECIALIST = "deterministic_specialist"
+EXECUTOR_STRICT_ONE_SHOT_MODEL = "strict_one_shot_model_transport"
+EXECUTOR_REGISTERED_DETERMINISTIC = "registered_deterministic_capability"
+
 # This is the one authoritative compatibility mapping.  The existing role-call
 # authorization and the Phase 4 scheduler both consume it.
 MULTICOMPONENT_ROLE_CALL_LIMITS: Mapping[str, int] = {
@@ -78,10 +87,19 @@ LEASE_DENIED_EXHAUSTED = "denied_exhausted"
 LEASE_CANCELLED = "cancelled_predispatch_returned"
 LEASE_FAILED = "failed_spent"
 LEASE_STALE = "stale_rejected_spent"
+LEASE_BLOCKED = "blocked_spent"
+LEASE_CONTESTED = "contested_spent"
 
 _RESERVED_STATUSES = frozenset({LEASE_GRANTED})
 _SPENT_STATUSES = frozenset(
-    {LEASE_EXECUTION_STARTED, LEASE_COMPLETED, LEASE_FAILED, LEASE_STALE}
+    {
+        LEASE_EXECUTION_STARTED,
+        LEASE_COMPLETED,
+        LEASE_FAILED,
+        LEASE_STALE,
+        LEASE_BLOCKED,
+        LEASE_CONTESTED,
+    }
 )
 _ACTIVE_STATUSES = frozenset({LEASE_GRANTED, LEASE_EXECUTION_STARTED})
 _TERMINAL_STATUSES = frozenset(
@@ -91,7 +109,13 @@ _TERMINAL_STATUSES = frozenset(
         LEASE_CANCELLED,
         LEASE_FAILED,
         LEASE_STALE,
+        LEASE_BLOCKED,
+        LEASE_CONTESTED,
     }
+)
+
+_BATCH_SCHEDULER_VERSIONS = frozenset(
+    {MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION, MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION}
 )
 
 
@@ -224,8 +248,24 @@ def _scheduler_without_digest(state: Mapping[str, Any]) -> dict[str, Any]:
 def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
     current = deepcopy(dict(state))
     leases = [_mapping(item) for item in current.get("lease_history") or ()]
-    reserved = sum(1 for lease in leases if lease.get("status") in _RESERVED_STATUSES)
-    spent = sum(1 for lease in leases if lease.get("status") in _SPENT_STATUSES)
+    semantic_leases = [
+        lease
+        for lease in leases
+        if _mapping(lease.get("work")).get("work_kind")
+        != WORK_KIND_SPECIALIST_CAPABILITY
+    ]
+    specialist_leases = [
+        lease
+        for lease in leases
+        if _mapping(lease.get("work")).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+    ]
+    reserved = sum(
+        1 for lease in semantic_leases if lease.get("status") in _RESERVED_STATUSES
+    )
+    spent = sum(
+        1 for lease in semantic_leases if lease.get("status") in _SPENT_STATUSES
+    )
     active = [lease for lease in leases if lease.get("status") in _ACTIVE_STATUSES]
     envelope = _mapping(current.get("compatibility_envelope"))
     total = int(envelope.get("total_units") or 0)
@@ -250,7 +290,7 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
         )
     role_reserved = {role: 0 for role in MULTICOMPONENT_ROLE_CALL_LIMITS}
     role_spent = {role: 0 for role in MULTICOMPONENT_ROLE_CALL_LIMITS}
-    for lease in leases:
+    for lease in semantic_leases:
         role = str(_mapping(lease.get("work")).get("role") or "")
         if role not in MULTICOMPONENT_ROLE_CALL_LIMITS:
             raise MulticomponentGraphSchedulingError("lease role is unknown")
@@ -263,7 +303,7 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
             raise MulticomponentGraphSchedulingError(
                 "scheduler role allocation exceeds the shared role cap"
             )
-    if current.get("schema_version") == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+    if current.get("schema_version") in _BATCH_SCHEDULER_VERSIONS:
         counters = _mapping(current.get("accounting_counters"))
         names = (
             "dispatch_committed_unit_count",
@@ -287,7 +327,7 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
                 "stale_result_count",
             )
         )
-        batch_leases = [lease for lease in leases if lease.get("batch_id")]
+        batch_leases = [lease for lease in semantic_leases if lease.get("batch_id")]
         active_batch_leases = [
             lease for lease in batch_leases if lease.get("status") in _ACTIVE_STATUSES
         ]
@@ -313,6 +353,39 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
             raise MulticomponentGraphSchedulingError(
                 "scheduler V2 transport accounting invariant is invalid"
             )
+    if current.get("schema_version") == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION:
+        pool = _mapping(current.get("specialist_compatibility_pool"))
+        limit = int(pool.get("specialist_work_item_limit") or 0)
+        specialist_reserved = sum(
+            1 for lease in specialist_leases if lease.get("status") in _RESERVED_STATUSES
+        )
+        specialist_spent = sum(
+            1 for lease in specialist_leases if lease.get("status") in _SPENT_STATUSES
+        )
+        specialist_remaining = int(pool.get("specialist_remaining") or 0)
+        if (
+            limit not in {0, 1}
+            or specialist_remaining < 0
+            or limit
+            != specialist_remaining + specialist_reserved + specialist_spent
+            or sum(
+                1
+                for lease in specialist_leases
+                if lease.get("status") in _ACTIVE_STATUSES
+            )
+            > 1
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "scheduler V3 Specialist allocation invariant is invalid"
+            )
+        pool.update(
+            {
+                "specialist_reserved": specialist_reserved,
+                "specialist_spent": specialist_spent,
+                "specialist_total": limit,
+            }
+        )
+        current["specialist_compatibility_pool"] = pool
     envelope.update(
         {
             "reserved_units": reserved,
@@ -463,6 +536,55 @@ def initialize_scheduler_v2_state(
     return _refresh_scheduler(state)
 
 
+def initialize_scheduler_v3_state(
+    *,
+    run_id: str,
+    request_id: str,
+    configured_provider: Any,
+    specialist_work_item_limit: int,
+    specialist_registry_digest: str,
+    specialist_execution_policy_digest: str,
+) -> dict[str, Any]:
+    """Construct the versioned one-authority scheduler with Specialist work."""
+
+    if specialist_work_item_limit not in {0, 1}:
+        raise MulticomponentGraphSchedulingError(
+            "scheduler V3 Specialist limit must be zero or one"
+        )
+    state = initialize_scheduler_v2_state(
+        run_id=run_id,
+        request_id=request_id,
+        configured_provider=configured_provider,
+    )
+    state.pop("scheduler_digest", None)
+    state["schema_version"] = MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
+    state["scheduler_revision"] = 1
+    state["specialist_compatibility_pool"] = {
+        "schema_version": "specialist_budget_state_v1",
+        "specialist_work_item_limit": specialist_work_item_limit,
+        "specialist_total": specialist_work_item_limit,
+        "specialist_remaining": specialist_work_item_limit,
+        "specialist_reserved": 0,
+        "specialist_spent": 0,
+        "specialist_returned": 0,
+    }
+    state["specialist_registry_digest"] = specialist_registry_digest
+    state["specialist_execution_policy_digest"] = (
+        specialist_execution_policy_digest
+    )
+    state["specialist_parallelism"] = False
+    state["specialist_recursion"] = False
+    state["specialist_maximum_in_flight"] = 1
+    state["transition_history"] = [
+        {
+            **state["transition_history"][0],
+            "transition": "scheduler_v3_initialized",
+            "specialist_work_item_limit": specialist_work_item_limit,
+        }
+    ]
+    return _refresh_scheduler(state)
+
+
 def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
     state = deepcopy(dict(value))
     schema_version = state.get("schema_version")
@@ -489,7 +611,7 @@ def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
             or state.get("maximum_active_physical_leases") != 1
             or any(field in state for field in v2_only_fields)
         )
-    elif schema_version == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
+    elif schema_version in _BATCH_SCHEDULER_VERSIONS:
         profile = derive_multicomponent_transport_profile(
             state.get("configured_provider_class")
         )
@@ -517,6 +639,24 @@ def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
                 )
             )
         )
+        if schema_version == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION:
+            invalid = invalid or (
+                not isinstance(state.get("specialist_compatibility_pool"), Mapping)
+                or not state.get("specialist_registry_digest")
+                or not state.get("specialist_execution_policy_digest")
+                or state.get("specialist_parallelism") is not False
+                or state.get("specialist_recursion") is not False
+                or state.get("specialist_maximum_in_flight") != 1
+            )
+        else:
+            invalid = invalid or any(
+                field in state
+                for field in (
+                    "specialist_compatibility_pool",
+                    "specialist_registry_digest",
+                    "specialist_execution_policy_digest",
+                )
+            )
     else:
         invalid = True
     if invalid:
@@ -527,13 +667,127 @@ def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
         raise MulticomponentGraphSchedulingError("scheduler digest mismatch")
     if (
         refreshed.get("status")
-        in {"completed", "blocked_exhausted", "blocked_required_work_failed"}
+        in {
+            "completed",
+            "blocked_exhausted",
+            "blocked_required_work_failed",
+            "blocked_required_specialist_proposal",
+            "blocked_required_specialist_work",
+        }
         and refreshed.get("active_physical_lease_count") != 0
     ):
         raise MulticomponentGraphSchedulingError(
             "terminal scheduler state cannot contain an active semantic lease"
         )
     return refreshed
+
+
+def block_required_specialist_proposal(
+    *, state: Any, proposal: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Safely block an active V3 scheduler on one denied required proposal."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    item = _mapping(proposal)
+    if (
+        scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
+        or scheduler.get("status") != "active"
+        or item.get("posture") != "required"
+        or item.get("proposal_authority") == "accepted"
+        or any(
+            _mapping(lease).get("status") in _ACTIVE_STATUSES
+            for lease in scheduler.get("lease_history") or ()
+        )
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "required Specialist proposal cannot block this scheduler state"
+        )
+    scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+    scheduler["status"] = "blocked_required_specialist_proposal"
+    scheduler["terminal_posture"] = "blocked_required_specialist_proposal"
+    scheduler["failed_required_work_ref"] = {
+        "proposal_id": item.get("proposal_id"),
+        "proposal_digest": item.get("proposal_digest"),
+        "proposal_authority": item.get("proposal_authority"),
+        "rejection_reason": item.get("rejection_reason"),
+    }
+    scheduler["transition_history"].append(
+        {
+            "transition": "blocked_required_specialist_proposal",
+            "scheduler_revision": scheduler["scheduler_revision"],
+            "proposal_id": item.get("proposal_id"),
+            "rejection_reason": item.get("rejection_reason"),
+        }
+    )
+    return _refresh_scheduler(scheduler)
+
+
+def block_required_specialist_reconstruction_failure(
+    *,
+    state: Any,
+    proposal: Mapping[str, Any],
+    work_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Block V3 after one required Specialist reservation was returned."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    item = _mapping(proposal)
+    requested_work = _mapping(work_ref)
+    cancelled = [
+        _mapping(lease)
+        for lease in scheduler.get("lease_history") or ()
+        if _mapping(lease).get("status") == LEASE_CANCELLED
+        and _mapping(lease).get("settlement_reason")
+        == "exact_batch_packet_reconstruction_failed"
+        and _mapping(_mapping(lease).get("work")).get("work_id")
+        == requested_work.get("work_id")
+        and _mapping(_mapping(lease).get("work")).get("work_digest")
+        == requested_work.get("work_digest")
+    ]
+    work = _mapping(cancelled[0].get("work")) if len(cancelled) == 1 else {}
+    proposal_ref = _mapping(work.get("specialist_proposal_ref"))
+    if (
+        scheduler.get("schema_version")
+        != MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
+        or scheduler.get("status") != "active"
+        or item.get("posture") != "required"
+        or item.get("proposal_authority") != "accepted"
+        or len(cancelled) != 1
+        or proposal_ref.get("proposal_id") != item.get("proposal_id")
+        or proposal_ref.get("proposal_digest") != item.get("proposal_digest")
+        or any(
+            _mapping(lease).get("status") in _ACTIVE_STATUSES
+            for lease in scheduler.get("lease_history") or ()
+        )
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "required Specialist reconstruction failure cannot block this scheduler"
+        )
+    scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+    scheduler["status"] = "blocked_required_specialist_work"
+    scheduler["terminal_posture"] = "blocked_required_specialist_work"
+    scheduler["failed_required_work_ref"] = {
+        **_work_ref(work),
+        "proposal_id": item.get("proposal_id"),
+        "proposal_digest": item.get("proposal_digest"),
+        "settlement": LEASE_CANCELLED,
+        "nonexecution_reason": "input_reconstruction_failed",
+    }
+    scheduler["transition_history"].append(
+        {
+            "transition": "blocked_required_specialist_work",
+            "scheduler_revision": scheduler["scheduler_revision"],
+            "work_id": work.get("work_id"),
+            "proposal_id": item.get("proposal_id"),
+            "settlement": LEASE_CANCELLED,
+            "nonexecution_reason": "input_reconstruction_failed",
+        }
+    )
+    return _refresh_scheduler(scheduler)
 
 
 def _completed_artifact(state: Any, role: str, evaluation_key: str) -> dict[str, Any]:
@@ -598,6 +852,18 @@ def _work(
         "scheduler_revision": scheduler.get("scheduler_revision"),
         "output_schema_variant": output_schema_variant,
     }
+    if scheduler.get("schema_version") == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION:
+        core.update(
+            {
+                "work_kind": WORK_KIND_SEMANTIC_ROLE,
+                "resource_class": (
+                    RESOURCE_LOCAL_MODEL_TRANSPORT
+                    if scheduler.get("backend_class") == BACKEND_LOCAL_OPENAI_COMPATIBLE
+                    else RESOURCE_HOSTED_MODEL_TRANSPORT
+                ),
+                "executor_class": EXECUTOR_STRICT_ONE_SHOT_MODEL,
+            }
+        )
     recovery = _mapping(recovery_binding)
     if recovery:
         authorization = _mapping(recovery.get("recovery_authorization_ref"))
@@ -635,10 +901,287 @@ def _work(
     }
 
 
+def _specialist_work(
+    *,
+    state: Any,
+    scheduler: Mapping[str, Any],
+    proposal: Mapping[str, Any],
+) -> dict[str, Any]:
+    from core.specialist_graph_runtime import build_specialist_work_node
+
+    input_authority = reconstruct_specialist_bounded_input(
+        state=state,
+        proposal=proposal,
+    )
+    node = build_specialist_work_node(
+        proposal=proposal,
+        bounded_input_digest=str(input_authority["bounded_input_digest"]),
+        bounded_input_lineage_refs=tuple(
+            input_authority["bounded_input_lineage_refs"]
+        ),
+        bounded_input_reconstruction_ref=_mapping(
+            input_authority["bounded_input_reconstruction_ref"]
+        ),
+    )
+    target = _mapping(node.get("canonical_target_ref"))
+    core = {
+        "schema_version": MULTICOMPONENT_WORK_SCHEMA_VERSION,
+        "run_id": state.run_id,
+        "request_id": state.request_id,
+        "accepted_contract_ref": deepcopy(node.get("accepted_contract_ref") or {}),
+        "graph_ref": deepcopy(node.get("graph_ref") or {}),
+        "target_kind": target.get("target_kind"),
+        "component_id": (
+            target.get("target_key") if target.get("target_kind") == "component" else None
+        ),
+        "synthesis_key": (
+            target.get("target_key") if target.get("target_kind") == "synthesis" else None
+        ),
+        "node_ref": deepcopy(target),
+        "role": WORK_KIND_SPECIALIST_CAPABILITY,
+        "logical_evaluation_key": node.get("node_id"),
+        "input_packet_digest": node.get("bounded_input_digest"),
+        "prerequisite_refs": [
+            deepcopy(node.get("proposal_ref") or {}),
+            deepcopy(target),
+        ],
+        "scheduler_revision": scheduler.get("scheduler_revision"),
+        "output_schema_variant": node.get("output_schema_ref"),
+        "parallel_class": PARALLEL_SERIAL_ONLY,
+        "work_kind": WORK_KIND_SPECIALIST_CAPABILITY,
+        "resource_class": RESOURCE_DETERMINISTIC_SPECIALIST,
+        "executor_class": EXECUTOR_REGISTERED_DETERMINISTIC,
+        "specialist_work_node": node,
+        "capability_id": node.get("capability_id"),
+        "capability_version": node.get("capability_version"),
+        "capability_descriptor_digest": node.get("capability_descriptor_digest"),
+        "specialist_proposal_ref": deepcopy(node.get("proposal_ref") or {}),
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "work_id": f"multicomponent-work:{digest[:24]}",
+        "work_digest": digest,
+    }
+
+
+def reconstruct_specialist_bounded_input(
+    *, state: Any, proposal: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Reconstruct transient input and its retained digest/ref authority."""
+
+    from core.component_work_graph_v1 import (
+        COMPONENT_WORK_GRAPH_V1_STAGE,
+        validate_component_work_graph_v1,
+    )
+    from core.specialist_graph_runtime import (
+        proposal_ref,
+        specialist_digest,
+        validate_bound_specialist_proposal,
+    )
+
+    bound = validate_bound_specialist_proposal(proposal)
+    if bound.get("proposal_authority") != "accepted":
+        raise MulticomponentGraphSchedulingError(
+            "Specialist input reconstruction requires an accepted proposal"
+        )
+    target = _mapping(bound.get("canonical_target_ref"))
+    target_kind = str(target.get("target_kind") or "")
+    target_key = str(target.get("target_key") or "")
+    proposal_authority_ref = proposal_ref(bound)
+    if target_kind == "component":
+        context = _mapping(state.multicomponent_scheduler_context)
+        analyst_input = _mapping(
+            _mapping(context.get("component_analyst_input_packets")).get(
+                target_key
+            )
+        )
+        analyst = _completed_artifact(
+            state, ROLE_COMPONENT_ANALYST, target_key
+        )
+        contract = (
+            state.current_answer_contract or state.initial_answer_contract
+        )
+        component_ref = next(
+            (
+                _mapping(item)
+                for item in contract.get("accepted_answer_component_refs")
+                or ()
+                if _mapping(item).get("component_id") == target_key
+            ),
+            {},
+        )
+        if (
+            not analyst_input
+            or not analyst
+            or not component_ref
+            or component_ref.get("component_revision")
+            != target.get("target_revision")
+            or component_ref.get("component_digest")
+            != target.get("target_digest")
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "component Specialist input authority is stale or incomplete"
+            )
+        analyst_ref = {
+            "artifact_id": analyst.get("artifact_id"),
+            "artifact_digest": analyst.get("artifact_digest"),
+        }
+        analyst_input_digest = safe_packet_digest(analyst_input)
+        packet = {
+            "bounded_question": bound.get("bounded_question"),
+            "canonical_target_ref": deepcopy(target),
+            "analyst_artifact_ref": analyst_ref,
+            "exact_component_and_evidence_input": deepcopy(analyst_input),
+            "proposal_input_artifact_refs": deepcopy(
+                bound.get("input_artifact_refs") or []
+            ),
+        }
+        lineage_refs = [
+            proposal_authority_ref,
+            deepcopy(target),
+            analyst_ref,
+            {"component_analyst_input_packet_digest": analyst_input_digest},
+        ]
+        reconstruction_core = {
+            "schema_version": "specialist_bounded_input_reconstruction_ref_v1",
+            "owner": "RunState.current_component_specialist_inputs",
+            "proposal_ref": proposal_authority_ref,
+            "canonical_target_ref": deepcopy(target),
+            "accepted_contract_ref": _contract_ref(contract),
+            "analyst_artifact_ref": analyst_ref,
+            "component_analyst_input_packet_digest": analyst_input_digest,
+        }
+    elif target_kind == "synthesis":
+        graph = validate_component_work_graph_v1(
+            _mapping(state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+        )
+        node = next(
+            (
+                _mapping(item)
+                for item in graph.get("synthesis_nodes") or ()
+                if _mapping(item).get("synthesis_key") == target_key
+            ),
+            {},
+        )
+        node_ref = _node_ref(node) if node else {}
+        allowed_statuses = (
+            {"proposed", "challenged", "blocked"}
+            if bound.get("origin_role") == ROLE_SCRUTINEER
+            else {"proposed"}
+        )
+        if (
+            not node
+            or node.get("status") not in allowed_statuses
+            or node.get("node_revision") != target.get("target_revision")
+            or node.get("node_digest") != target.get("target_digest")
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "synthesis Specialist input authority is stale or incomplete"
+            )
+        admitted_input_refs = [
+            deepcopy(_mapping(item))
+            for item in node.get("input_node_refs") or ()
+        ]
+        packet = {
+            "bounded_question": bound.get("bounded_question"),
+            "canonical_target_ref": deepcopy(target),
+            "nominated_synthesis_ref": node_ref,
+            "admitted_input_refs": admitted_input_refs,
+            "proposal_input_artifact_refs": deepcopy(
+                bound.get("input_artifact_refs") or []
+            ),
+        }
+        graph_ref = _graph_ref(graph)
+        admitted_input_refs_digest = specialist_digest(admitted_input_refs)
+        lineage_refs = [
+            proposal_authority_ref,
+            deepcopy(target),
+            graph_ref,
+            node_ref,
+            *admitted_input_refs,
+        ]
+        reconstruction_core = {
+            "schema_version": "specialist_bounded_input_reconstruction_ref_v1",
+            "owner": "RunState.current_synthesis_specialist_inputs",
+            "proposal_ref": proposal_authority_ref,
+            "canonical_target_ref": deepcopy(target),
+            "graph_ref": graph_ref,
+            "nominated_synthesis_ref": node_ref,
+            "admitted_input_ref_count": len(admitted_input_refs),
+            "admitted_input_refs_digest": admitted_input_refs_digest,
+        }
+    else:
+        raise MulticomponentGraphSchedulingError(
+            "Specialist input reconstruction target kind is unsupported"
+        )
+    reconstruction_ref = {
+        **reconstruction_core,
+        "reconstruction_ref_digest": _digest(reconstruction_core),
+    }
+    return {
+        "transient_bounded_input": packet,
+        "bounded_input_digest": specialist_digest(packet),
+        "bounded_input_lineage_refs": lineage_refs,
+        "bounded_input_reconstruction_ref": reconstruction_ref,
+    }
+
+
+def reconstruct_specialist_input_for_work(
+    *, state: Any, work: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Reconstruct and validate the exact transient packet for granted work."""
+
+    from core.specialist_graph_runtime import validate_specialist_work_node
+
+    item = _mapping(work)
+    if item.get("work_kind") != WORK_KIND_SPECIALIST_CAPABILITY:
+        raise MulticomponentGraphSchedulingError(
+            "transient Specialist reconstruction requires Specialist work"
+        )
+    node = validate_specialist_work_node(
+        _mapping(item.get("specialist_work_node"))
+    )
+    proposal_id = str(
+        _mapping(node.get("proposal_ref")).get("proposal_id") or ""
+    )
+    plane = _mapping(state.projections.get("specialist_work_plane"))
+    proposal = next(
+        (
+            _mapping(candidate)
+            for candidate in plane.get("proposals") or ()
+            if _mapping(candidate).get("proposal_id") == proposal_id
+        ),
+        {},
+    )
+    if not proposal:
+        raise MulticomponentGraphSchedulingError(
+            "Specialist work lost its bound proposal authority"
+        )
+    authority = reconstruct_specialist_bounded_input(
+        state=state, proposal=proposal
+    )
+    if (
+        authority.get("bounded_input_digest")
+        != node.get("bounded_input_digest")
+        or item.get("input_packet_digest") != node.get("bounded_input_digest")
+        or authority.get("bounded_input_lineage_refs")
+        != node.get("bounded_input_lineage_refs")
+        or authority.get("bounded_input_reconstruction_ref")
+        != node.get("bounded_input_reconstruction_ref")
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "reconstructed Specialist input does not match authorized work"
+        )
+    return deepcopy(_mapping(authority.get("transient_bounded_input")))
+
+
 def classify_work_parallelism(work: Mapping[str, Any]) -> str:
     """Classify Phase 5A eligibility from exact canonical work facts."""
 
     item = _mapping(work)
+    if item.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY:
+        return PARALLEL_SERIAL_ONLY
     initial_component = (
         item.get("target_kind") == "component"
         and bool(item.get("component_id"))
@@ -682,6 +1225,38 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
         _mapping(item) for item in contract.get("accepted_answer_component_refs") or ()
     ]
     admissions = _component_admissions(state)
+    specialist_state = _mapping(
+        state.projections.get("specialist_work_plane")
+    )
+    specialist_remaining = int(
+        _mapping(scheduler.get("specialist_compatibility_pool")).get(
+            "specialist_remaining"
+        )
+        or 0
+    )
+    active_specialist_proposal_ids = {
+        str(
+            _mapping(_mapping(lease).get("work"))
+            .get("specialist_proposal_ref", {})
+            .get("proposal_id")
+            or ""
+        )
+        for lease in scheduler.get("lease_history") or ()
+        if _mapping(lease).get("status") in _ACTIVE_STATUSES
+        and _mapping(_mapping(lease).get("work")).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+    }
+
+    def specialist_proposal_can_schedule(proposal: Mapping[str, Any]) -> bool:
+        return bool(
+            proposal.get("posture") == "required"
+            or specialist_remaining > 0
+            or (
+                allow_active_lease
+                and str(proposal.get("proposal_id") or "")
+                in active_specialist_proposal_ids
+            )
+        )
     ready: list[tuple[tuple[int, int, str], dict[str, Any]]] = []
     for index, component_ref in enumerate(component_refs):
         component_id = str(component_ref.get("component_id") or "")
@@ -718,15 +1293,43 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                 )
             )
             continue
+        if specialist_state:
+            from core.specialist_graph_runtime import pending_proposal_for_target
+
+            pending_specialist = pending_proposal_for_target(
+                specialist_state,
+                target_kind="component",
+                target_key=component_id,
+            )
+            if pending_specialist and specialist_proposal_can_schedule(
+                pending_specialist
+            ):
+                return [
+                    _specialist_work(
+                        state=state,
+                        scheduler=scheduler,
+                        proposal=pending_specialist,
+                    )
+                ]
         dprime = _completed_artifact(state, ROLE_COMPONENT_DPRIME, component_id)
         if not dprime:
             from core.multicomponent_component_admission import (
                 component_dprime_input_packet,
             )
 
+            specialist_handoff = {}
+            if specialist_state:
+                from core.specialist_graph_runtime import handoff_for_target
+
+                specialist_handoff = handoff_for_target(
+                    specialist_state,
+                    target_kind="component",
+                    target_key=component_id,
+                )
             dprime_input = component_dprime_input_packet(
                 analyst_artifact=analyst,
                 analyst_input_packet=analyst_input,
+                specialist_need_handoff=specialist_handoff or None,
             )
             ready.append(
                 (
@@ -849,8 +1452,39 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
         )
         if node.get("status") != "proposed":
             continue
+        if specialist_state:
+            from core.specialist_graph_runtime import pending_proposal_for_target
+
+            pending_specialist = pending_proposal_for_target(
+                specialist_state,
+                target_kind="synthesis",
+                target_key=str(synthesis_key),
+            )
+            if pending_specialist and specialist_proposal_can_schedule(
+                pending_specialist
+            ):
+                return [
+                    _specialist_work(
+                        state=state,
+                        scheduler=scheduler,
+                        proposal=pending_specialist,
+                    )
+                ]
         try:
-            packet = synthesis_dprime_input_packet(graph, synthesis_key=synthesis_key)
+            specialist_handoff = {}
+            if specialist_state:
+                from core.specialist_graph_runtime import handoff_for_target
+
+                specialist_handoff = handoff_for_target(
+                    specialist_state,
+                    target_kind="synthesis",
+                    target_key=str(synthesis_key),
+                )
+            packet = synthesis_dprime_input_packet(
+                graph,
+                synthesis_key=synthesis_key,
+                specialist_need_handoff=specialist_handoff or None,
+            )
         except ValueError:
             # A proposed downstream node is not actionable until its exact
             # upstream synthesis authority has been admitted.
@@ -859,6 +1493,11 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             key = f"{synthesis_key}:selective:graph-revision:{graph['graph_revision']}"
         elif int(graph.get("recovery_rounds") or 0):
             key = f"{synthesis_key}:graph-revision:{graph['graph_revision']}"
+        elif node.get("specialist_result_ref"):
+            key = (
+                f"{synthesis_key}:specialist:"
+                f"graph-revision:{graph['graph_revision']}"
+            )
         else:
             key = str(synthesis_key)
         ready.append(
@@ -895,6 +1534,27 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
         "blocked",
         "recovery_proposed",
     }
+    if scrutiny_done and specialist_state:
+        from core.specialist_graph_runtime import pending_proposal_for_target
+
+        for node in graph.get("synthesis_nodes") or ():
+            mapped_node = _mapping(node)
+            key = str(mapped_node.get("synthesis_key") or "")
+            pending_specialist = pending_proposal_for_target(
+                specialist_state,
+                target_kind="synthesis",
+                target_key=key,
+            )
+            if pending_specialist and specialist_proposal_can_schedule(
+                pending_specialist
+            ):
+                return [
+                    _specialist_work(
+                        state=state,
+                        scheduler=scheduler,
+                        proposal=pending_specialist,
+                    )
+                ]
     if (
         graph.get("scrutineer_required") is True
         and not scrutiny_done
@@ -904,6 +1564,8 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             key = f"full-case:selective:graph-revision:{graph['graph_revision']}"
         elif int(graph.get("recovery_rounds") or 0):
             key = f"full-case:graph-revision:{graph['graph_revision']}"
+        elif graph.get("specialist_result_refs"):
+            key = f"full-case:specialist:graph-revision:{graph['graph_revision']}"
         else:
             key = "full-case"
         packet = scrutineer_input_packet(graph)
@@ -956,6 +1618,11 @@ def _work_ref(work: Mapping[str, Any]) -> dict[str, Any]:
         "target_kind": item.get("target_kind"),
         "component_id": item.get("component_id"),
         "synthesis_key": item.get("synthesis_key"),
+        "work_kind": item.get("work_kind"),
+        "resource_class": item.get("resource_class"),
+        "executor_class": item.get("executor_class"),
+        "capability_id": item.get("capability_id"),
+        "capability_version": item.get("capability_version"),
     }
 
 
@@ -965,29 +1632,35 @@ def derive_ready_batch_work(state: Any) -> list[dict[str, Any]]:
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
-        raise MulticomponentGraphSchedulingError("batch membership requires scheduler V2")
+    if scheduler.get("schema_version") not in _BATCH_SCHEDULER_VERSIONS:
+        raise MulticomponentGraphSchedulingError("batch membership requires scheduler V2/V3")
     ready = derive_ready_work(state)
     if not ready:
         return []
     envelope = _mapping(scheduler.get("compatibility_envelope"))
     remaining = int(envelope.get("remaining_units") or 0)
-    if remaining <= 0:
-        return []
     first = _mapping(ready[0])
     role = str(first.get("role") or "")
     parallel_class = classify_work_parallelism(first)
     if first.get("parallel_class") != parallel_class:
         raise MulticomponentGraphSchedulingError("work parallel classification mismatch")
-    role_used = int(_mapping(envelope.get("role_reserved_units")).get(role) or 0) + int(
-        _mapping(envelope.get("role_spent_units")).get(role) or 0
-    )
-    role_remaining = int(MULTICOMPONENT_ROLE_CALL_LIMITS[role]) - role_used
-    if role_remaining <= 0:
-        return []
-    effective_width = int(scheduler.get("effective_width") or 0)
-    width = 1 if parallel_class == PARALLEL_SERIAL_ONLY else effective_width
-    limit = min(width, remaining, role_remaining)
+    if first.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY:
+        pool = _mapping(scheduler.get("specialist_compatibility_pool"))
+        if int(pool.get("specialist_remaining") or 0) <= 0:
+            return []
+        limit = 1
+    else:
+        if remaining <= 0:
+            return []
+        role_used = int(_mapping(envelope.get("role_reserved_units")).get(role) or 0) + int(
+            _mapping(envelope.get("role_spent_units")).get(role) or 0
+        )
+        role_remaining = int(MULTICOMPONENT_ROLE_CALL_LIMITS[role]) - role_used
+        if role_remaining <= 0:
+            return []
+        effective_width = int(scheduler.get("effective_width") or 0)
+        width = 1 if parallel_class == PARALLEL_SERIAL_ONLY else effective_width
+        limit = min(width, remaining, role_remaining)
     selected: list[dict[str, Any]] = []
     seen: dict[str, set[str]] = {
         "work_id": set(),
@@ -1002,6 +1675,7 @@ def derive_ready_batch_work(state: Any) -> list[dict[str, Any]]:
         candidate_class = classify_work_parallelism(candidate)
         if (
             candidate.get("role") != role
+            or candidate.get("work_kind") != first.get("work_kind")
             or candidate_class != parallel_class
             or candidate.get("parallel_class") != candidate_class
             or candidate.get("scheduler_revision") != first.get("scheduler_revision")
@@ -1042,8 +1716,8 @@ def grant_next_batch(
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
-        raise MulticomponentGraphSchedulingError("batch grant requires scheduler V2")
+    if scheduler.get("schema_version") not in _BATCH_SCHEDULER_VERSIONS:
+        raise MulticomponentGraphSchedulingError("batch grant requires scheduler V2/V3")
     ready = derive_ready_work(state)
     if not ready:
         raise MulticomponentGraphSchedulingError("scheduler has no current ready work")
@@ -1061,6 +1735,9 @@ def grant_next_batch(
         "backend_class": scheduler.get("backend_class"),
         "effective_width": scheduler.get("effective_width"),
         "parallel_class": parallel_class,
+        "work_kind": first.get("work_kind", WORK_KIND_SEMANTIC_ROLE),
+        "resource_class": first.get("resource_class"),
+        "executor_class": first.get("executor_class"),
         "ordered_work_refs": [_work_ref(item) for item in (selected or [first])],
     }
     batch_digest = _digest(batch_seed)
@@ -1103,7 +1780,11 @@ def grant_next_batch(
             "status": LEASE_DENIED_EXHAUSTED,
             "dispatch_action_ref": {},
             "role_action_ref": {},
-            "settlement_reason": "compatibility_envelope_exhausted",
+            "settlement_reason": (
+                "specialist_compatibility_pool_exhausted"
+                if first.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY
+                else "compatibility_envelope_exhausted"
+            ),
         }
         lease_digest = _digest(lease_core)
         denied_lease = {
@@ -1162,8 +1843,13 @@ def grant_next_batch(
         ]
         batch["ordered_lease_refs"] = deepcopy(lease_refs)
         batch["lease_group"]["ordered_lease_refs"] = deepcopy(lease_refs)
-        envelope["remaining_units"] = int(envelope["remaining_units"]) - len(leases)
-        scheduler["compatibility_envelope"] = envelope
+        if first.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY:
+            pool = _mapping(scheduler.get("specialist_compatibility_pool"))
+            pool["specialist_remaining"] = int(pool["specialist_remaining"]) - len(leases)
+            scheduler["specialist_compatibility_pool"] = pool
+        else:
+            envelope["remaining_units"] = int(envelope["remaining_units"]) - len(leases)
+            scheduler["compatibility_envelope"] = envelope
         scheduler["lease_history"].extend(leases)
     scheduler["scheduler_revision"] = next_revision
     scheduler["last_ready_work"] = [deepcopy(item) for item in ready]
@@ -1198,8 +1884,8 @@ def cancel_batch(
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
-        raise MulticomponentGraphSchedulingError("batch cancellation requires scheduler V2")
+    if scheduler.get("schema_version") not in _BATCH_SCHEDULER_VERSIONS:
+        raise MulticomponentGraphSchedulingError("batch cancellation requires scheduler V2/V3")
     batch_index = _batch_index(scheduler, batch_id)
     batch = _mapping(scheduler["batch_history"][batch_index])
     if batch.get("status") != LEASE_GRANTED:
@@ -1228,10 +1914,21 @@ def cancel_batch(
         "all_reservations_returned": True,
     }
     scheduler["batch_history"][batch_index] = batch
-    envelope = _mapping(scheduler.get("compatibility_envelope"))
-    envelope["remaining_units"] = int(envelope["remaining_units"]) + len(leases)
-    envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(leases)
-    scheduler["compatibility_envelope"] = envelope
+    specialist_batch = all(
+        _mapping(lease.get("work")).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+        for lease in leases
+    )
+    if specialist_batch:
+        pool = _mapping(scheduler.get("specialist_compatibility_pool"))
+        pool["specialist_remaining"] = int(pool["specialist_remaining"]) + len(leases)
+        pool["specialist_returned"] = int(pool.get("specialist_returned") or 0) + len(leases)
+        scheduler["specialist_compatibility_pool"] = pool
+    else:
+        envelope = _mapping(scheduler.get("compatibility_envelope"))
+        envelope["remaining_units"] = int(envelope["remaining_units"]) + len(leases)
+        envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(leases)
+        scheduler["compatibility_envelope"] = envelope
     scheduler["scheduler_revision"] = next_revision
     scheduler["transition_history"].append(
         {
@@ -1258,8 +1955,8 @@ def dispatch_batch(
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
-    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION:
-        raise MulticomponentGraphSchedulingError("batch dispatch requires scheduler V2")
+    if scheduler.get("schema_version") not in _BATCH_SCHEDULER_VERSIONS:
+        raise MulticomponentGraphSchedulingError("batch dispatch requires scheduler V2/V3")
     batch_index = _batch_index(scheduler, batch_id)
     batch = _mapping(scheduler["batch_history"][batch_index])
     if batch.get("status") != LEASE_GRANTED:
@@ -1308,6 +2005,7 @@ def dispatch_batch(
         ROLE_CROSS_COMPONENT_ANALYST: "multicomponent_cross_analyst_execute",
         ROLE_SYNTHESIS_DPRIME: "multicomponent_synthesis_dprime_execute",
         ROLE_SCRUTINEER: "multicomponent_scrutineer_execute",
+        WORK_KIND_SPECIALIST_CAPABILITY: "specialist_capability_execute",
     }
     seen_keys: set[str] = set()
     for batch_index_value, (lease, descriptor, action_ref) in enumerate(
@@ -1370,23 +2068,42 @@ def dispatch_batch(
     batch["dispatch_action_ref"] = deepcopy(dict(dispatch_action_ref))
     batch["descriptor_set_digest"] = declared_set_digest
     batch["ordered_child_action_refs"] = deepcopy(action_refs)
-    batch["safe_accounting_summary"] = {
-        "schema_version": MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION,
-        "dispatch_committed_unit_count": len(leases),
-        "transport_submission_count": 0,
-        "transport_started_count": 0,
-        "transport_completed_count": 0,
-        "provider_request_attempt_count": 0,
-        "successful_artifact_count": 0,
-        "failed_submission_count": 0,
-        "failed_transport_count": 0,
-        "stale_result_count": 0,
-    }
+    specialist_batch = all(
+        _mapping(lease.get("work")).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+        for lease in leases
+    )
+    batch["safe_accounting_summary"] = (
+        {
+            "schema_version": "specialist_batch_accounting_summary_v1",
+            "specialist_dispatch_committed_unit_count": len(leases),
+            "deterministic_execution_started_count": 0,
+            "deterministic_execution_completed_count": 0,
+            "provider_request_attempt_count": 0,
+            "model_call_count": 0,
+            "token_usage": 0,
+            "model_cost": 0,
+        }
+        if specialist_batch
+        else {
+            "schema_version": MULTICOMPONENT_BATCH_ACCOUNTING_SUMMARY_SCHEMA_VERSION,
+            "dispatch_committed_unit_count": len(leases),
+            "transport_submission_count": 0,
+            "transport_started_count": 0,
+            "transport_completed_count": 0,
+            "provider_request_attempt_count": 0,
+            "successful_artifact_count": 0,
+            "failed_submission_count": 0,
+            "failed_transport_count": 0,
+            "stale_result_count": 0,
+        }
+    )
     scheduler["batch_history"][batch_index] = batch
     counters = _mapping(scheduler.get("accounting_counters"))
-    counters["dispatch_committed_unit_count"] = int(
-        counters.get("dispatch_committed_unit_count") or 0
-    ) + len(leases)
+    if not specialist_batch:
+        counters["dispatch_committed_unit_count"] = int(
+            counters.get("dispatch_committed_unit_count") or 0
+        ) + len(leases)
     scheduler["accounting_counters"] = counters
     scheduler["scheduler_revision"] = next_revision
     scheduler["transition_history"].append(
@@ -1583,7 +2300,7 @@ def settle_role_lease(
         }
     )
     if (
-        scheduler.get("schema_version") == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+        scheduler.get("schema_version") in _BATCH_SCHEDULER_VERSIONS
         and inputs.get("batch_id")
     ):
         submitted = inputs.get("transport_submitted") is True
@@ -1693,6 +2410,106 @@ def settle_role_lease(
         scheduler["terminal_posture"] = (
             None if active_after else "blocked_required_work_failed"
         )
+    return _refresh_scheduler(scheduler)
+
+
+def settle_specialist_lease(
+    *, state: Any, action_inputs: Mapping[str, Any], settlement: str
+) -> dict[str, Any]:
+    """Settle deterministic Specialist work without semantic/model accounting."""
+
+    if settlement not in {
+        LEASE_COMPLETED,
+        LEASE_FAILED,
+        LEASE_BLOCKED,
+        LEASE_CONTESTED,
+        LEASE_STALE,
+    }:
+        raise MulticomponentGraphSchedulingError(
+            "invalid Specialist postdispatch settlement"
+        )
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    if scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION:
+        raise MulticomponentGraphSchedulingError("Specialist settlement requires scheduler V3")
+    inputs = _mapping(action_inputs)
+    index = _lease_index(scheduler, str(inputs.get("lease_id") or ""))
+    lease = _mapping(scheduler["lease_history"][index])
+    work = _mapping(lease.get("work"))
+    if (
+        lease.get("status") != LEASE_EXECUTION_STARTED
+        or work.get("work_kind") != WORK_KIND_SPECIALIST_CAPABILITY
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "Specialist lease is not awaiting deterministic settlement"
+        )
+    for key in (
+        "batch_id",
+        "batch_digest",
+        "batch_index",
+        "lease_digest",
+        "work_id",
+        "work_digest",
+        "logical_evaluation_key",
+        "input_packet_digest",
+        "capability_id",
+        "capability_version",
+    ):
+        expected = (
+            lease.get(key)
+            if key in {"batch_id", "batch_digest", "batch_index", "lease_digest"}
+            else work.get(key)
+        )
+        if inputs.get(key) != expected:
+            raise MulticomponentGraphSchedulingError(
+                "Specialist action settlement binding mismatch"
+            )
+    current = work_is_current(state, work)
+    if settlement in {LEASE_COMPLETED, LEASE_BLOCKED, LEASE_CONTESTED, LEASE_FAILED} and not current:
+        raise MulticomponentGraphSchedulingError(
+            "stale Specialist work cannot settle as current"
+        )
+    if settlement == LEASE_STALE and current:
+        raise MulticomponentGraphSchedulingError(
+            "current Specialist work cannot settle as stale"
+        )
+    lease["status"] = settlement
+    lease["settlement_reason"] = inputs.get("failure_kind")
+    scheduler["lease_history"][index] = lease
+    scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+    scheduler["transition_history"].append(
+        {
+            "transition": settlement,
+            "scheduler_revision": scheduler["scheduler_revision"],
+            "lease_id": lease.get("lease_id"),
+            "work_id": work.get("work_id"),
+            "work_kind": WORK_KIND_SPECIALIST_CAPABILITY,
+            "capability_id": work.get("capability_id"),
+        }
+    )
+    batch_index = _batch_index(scheduler, str(inputs.get("batch_id") or ""))
+    batch = _mapping(scheduler["batch_history"][batch_index])
+    summary = _mapping(batch.get("safe_accounting_summary"))
+    summary["deterministic_execution_started_count"] = 1
+    summary["deterministic_execution_completed_count"] = 1
+    summary["settlement"] = settlement
+    batch["safe_accounting_summary"] = summary
+    batch["status"] = "settled"
+    batch["terminal_settlement_summary"] = {
+        "lease_count": 1,
+        "ordered_settlements": [settlement],
+        "all_leases_terminal": True,
+    }
+    scheduler["batch_history"][batch_index] = batch
+    required = _mapping(work.get("specialist_proposal_ref")).get("posture") == "required"
+    if required and settlement != LEASE_COMPLETED:
+        scheduler["failed_required_work_ref"] = {
+            **_work_ref(work),
+            "settlement": settlement,
+        }
+        scheduler["status"] = "blocked_required_specialist_work"
+        scheduler["terminal_posture"] = "blocked_required_specialist_work"
     return _refresh_scheduler(scheduler)
 
 
@@ -1820,10 +2637,17 @@ def cancel_lease(*, state: Any, lease_id: str, reason: str) -> dict[str, Any]:
     lease["settlement_reason"] = str(reason or "predispatch_cancellation")[:160]
     scheduler["lease_history"][index] = lease
     scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
-    envelope = _mapping(scheduler.get("compatibility_envelope"))
-    envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
-    envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
-    scheduler["compatibility_envelope"] = envelope
+    work = _mapping(lease.get("work"))
+    if work.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY:
+        pool = _mapping(scheduler.get("specialist_compatibility_pool"))
+        pool["specialist_remaining"] = int(pool["specialist_remaining"]) + 1
+        pool["specialist_returned"] = int(pool.get("specialist_returned") or 0) + 1
+        scheduler["specialist_compatibility_pool"] = pool
+    else:
+        envelope = _mapping(scheduler.get("compatibility_envelope"))
+        envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
+        envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
+        scheduler["compatibility_envelope"] = envelope
     scheduler["transition_history"].append(
         {
             "transition": LEASE_CANCELLED,
@@ -1915,8 +2739,8 @@ def _settle_for_canonical_authority_transition(
         if not work_is_current(state, _mapping(lease.get("work")))
     ]
     granted_affected = [item for item in affected if item[1].get("status") == LEASE_GRANTED]
-    if granted_affected and scheduler.get("schema_version") == (
-        MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+    if granted_affected and scheduler.get("schema_version") in (
+        _BATCH_SCHEDULER_VERSIONS
     ) and all(lease.get("batch_id") for _, lease in active):
         batch_ids = {str(lease.get("batch_id") or "") for _, lease in active}
         if len(batch_ids) != 1 or any(
@@ -1930,10 +2754,20 @@ def _settle_for_canonical_authority_transition(
             lease["status"] = LEASE_CANCELLED
             lease["settlement_reason"] = transition
             scheduler["lease_history"][index] = lease
-        envelope = _mapping(scheduler.get("compatibility_envelope"))
-        envelope["remaining_units"] = int(envelope["remaining_units"]) + len(active)
-        envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(active)
-        scheduler["compatibility_envelope"] = envelope
+        if all(
+            _mapping(lease.get("work")).get("work_kind")
+            == WORK_KIND_SPECIALIST_CAPABILITY
+            for _, lease in active
+        ):
+            pool = _mapping(scheduler.get("specialist_compatibility_pool"))
+            pool["specialist_remaining"] = int(pool["specialist_remaining"]) + len(active)
+            pool["specialist_returned"] = int(pool.get("specialist_returned") or 0) + len(active)
+            scheduler["specialist_compatibility_pool"] = pool
+        else:
+            envelope = _mapping(scheduler.get("compatibility_envelope"))
+            envelope["remaining_units"] = int(envelope["remaining_units"]) + len(active)
+            envelope["returned_units"] = int(envelope.get("returned_units") or 0) + len(active)
+            scheduler["compatibility_envelope"] = envelope
         batch_id = next(iter(batch_ids))
         batch_index = _batch_index(scheduler, batch_id)
         batch = _mapping(scheduler["batch_history"][batch_index])
@@ -1959,17 +2793,25 @@ def _settle_for_canonical_authority_transition(
             work = _mapping(lease.get("work"))
             if lease.get("status") == LEASE_GRANTED:
                 lease["status"] = LEASE_CANCELLED
-                envelope = _mapping(scheduler.get("compatibility_envelope"))
-                envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
-                envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
-                scheduler["compatibility_envelope"] = envelope
+                if work.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY:
+                    pool = _mapping(scheduler.get("specialist_compatibility_pool"))
+                    pool["specialist_remaining"] = int(pool["specialist_remaining"]) + 1
+                    pool["specialist_returned"] = int(pool.get("specialist_returned") or 0) + 1
+                    scheduler["specialist_compatibility_pool"] = pool
+                else:
+                    envelope = _mapping(scheduler.get("compatibility_envelope"))
+                    envelope["remaining_units"] = int(envelope["remaining_units"]) + 1
+                    envelope["returned_units"] = int(envelope.get("returned_units") or 0) + 1
+                    scheduler["compatibility_envelope"] = envelope
                 settlement = LEASE_CANCELLED
             else:
                 lease["status"] = LEASE_STALE
                 settlement = LEASE_STALE
-                if scheduler.get("schema_version") == (
-                    MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
-                ) and lease.get("batch_id"):
+                if (
+                    scheduler.get("schema_version") in _BATCH_SCHEDULER_VERSIONS
+                    and lease.get("batch_id")
+                    and work.get("work_kind") != WORK_KIND_SPECIALIST_CAPABILITY
+                ):
                     counters = _mapping(scheduler.get("accounting_counters"))
                     counters["stale_result_count"] = int(
                         counters.get("stale_result_count") or 0
@@ -1986,9 +2828,7 @@ def _settle_for_canonical_authority_transition(
                     "authority_change_settlement": True,
                 }
             )
-        if affected and scheduler.get("schema_version") == (
-            MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
-        ):
+        if affected and scheduler.get("schema_version") in _BATCH_SCHEDULER_VERSIONS:
             affected_batch_ids = {
                 str(lease.get("batch_id") or "")
                 for _, lease in affected
@@ -2065,8 +2905,11 @@ def scheduler_trace_projection(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "EXECUTOR_REGISTERED_DETERMINISTIC",
+    "LEASE_BLOCKED",
     "LEASE_CANCELLED",
     "LEASE_COMPLETED",
+    "LEASE_CONTESTED",
     "LEASE_DENIED_EXHAUSTED",
     "LEASE_EXECUTION_STARTED",
     "LEASE_FAILED",
@@ -2085,9 +2928,14 @@ __all__ = [
     "MULTICOMPONENT_SCHEDULER_OWNER",
     "MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION",
+    "MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_STAGE",
     "MULTICOMPONENT_WORK_SCHEMA_VERSION",
     "MulticomponentGraphSchedulingError",
+    "RESOURCE_DETERMINISTIC_SPECIALIST",
+    "WORK_KIND_SPECIALIST_CAPABILITY",
+    "block_required_specialist_reconstruction_failure",
+    "block_required_specialist_proposal",
     "cancel_batch",
     "cancel_lease",
     "classify_work_parallelism",
@@ -2102,8 +2950,12 @@ __all__ = [
     "grant_next_batch",
     "initialize_scheduler_state",
     "initialize_scheduler_v2_state",
+    "initialize_scheduler_v3_state",
+    "reconstruct_specialist_bounded_input",
+    "reconstruct_specialist_input_for_work",
     "scheduler_trace_projection",
     "settle_role_lease",
+    "settle_specialist_lease",
     "validate_scheduler_state",
     "validate_role_lease_settlement",
     "work_is_current",

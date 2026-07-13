@@ -155,7 +155,9 @@ def test_recovery_is_bounded_and_selective() -> None:
 def test_scheduler_lease_and_concurrency_invariants_are_visible() -> None:
     text = _collapsed(CANONICAL)
     for phrase in (
-        "Every semantic call is Scheduler V2-governed",
+        "Every semantic call is RunKernel-scheduler-governed",
+        "Runs with an explicitly injected Specialist registry and execution policy use Scheduler V3",
+        "Closed-default runs remain V2-identical",
         "exact contiguous next batch",
         "Batch grant, cancellation, dispatch spend, and child-action publication are atomic",
         "predispatch cancellation returns an exact reservation",
@@ -196,7 +198,7 @@ def test_finalization_blocked_behavior_and_nonproofs_remain_narrow() -> None:
         "sanitized non-Author terminal `RunOutcome`",
         "Malformed or unrelated invariant/infrastructure failures remain errors",
         "does not prove arbitrary-query support",
-        "This contract neither designs nor activates the planned Specialist graph",
+        "does not register a product capability",
     ):
         assert phrase in text
 

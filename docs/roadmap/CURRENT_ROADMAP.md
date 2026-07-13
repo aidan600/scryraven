@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -15,10 +15,10 @@ approved direction without installing a capability or licensing implementation.
 Current installed behavior is owned separately by
 [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 
-## Active Next: S0
+## Installed Foundation: S0
 
 **Generic Specialist graph doctrine, runtime substrate, and inert generic
-substrate validation.**
+substrate validation are installed.**
 
 The high-level goal is to establish:
 
@@ -27,9 +27,9 @@ The high-level goal is to establish:
 - component and synthesis derivation points;
 - exact input/output lineage;
 - inert generic capability validation proving substrate reuse;
-- no product Specialist activation yet.
+- no product Specialist activation.
 
-## Committed Next: S1
+## Active Next: S1
 
 **Quantitative Specialist ordinary product activation.**
 

@@ -157,6 +157,13 @@ class RunDeps:
     # ordinary multi-component runtime composes the repository-owned default.
     strict_one_shot_smart_model_transport: Callable[..., Any] | None = None
 
+    # Optional S0 generic Specialist dependency injection.  Ordinary CLI/UI
+    # construction leaves both unset, preserving the closed production policy.
+    # Capability adapters remain on the registry object and are never retained
+    # in RunKernel state.
+    specialist_capability_registry: Any | None = None
+    specialist_execution_policy: Any | None = None
+
 
 @dataclass
 class RunOutcome:

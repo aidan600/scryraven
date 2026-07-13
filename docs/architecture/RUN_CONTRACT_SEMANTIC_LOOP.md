@@ -4,8 +4,8 @@ Status: current
 Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
-Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, or planned Specialist activation
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, or product Specialist activation
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -72,15 +72,22 @@ The current loop is one authority flow, not a phase chronology:
     synthesis state.
 18. Full Scrutineer adversarially challenges the case when its installed
     triggers require review.
-19. At most one bounded missing-component recovery may amend the
+19. A typed Specialist need from component Analyst, Cross-Component Analyst,
+    or full Scrutineer may, only under an injected registry and policy, become
+    one RunKernel-governed deterministic work item. Its bounded result or exact
+    typed nonexecution disposition becomes one unified handoff for component or
+    synthesis D-prime; a required predispatch reconstruction failure publishes
+    that failed handoff pending and unconsumed before the ordinary path safely
+    blocks without running D-prime.
+20. At most one bounded missing-component recovery may amend the
     AnswerContract, re-enter ordinary research, admit the recovered component,
     and resume the governed graph.
-20. Recovery invalidates and recomputes only the affected synthesis closure;
+21. Recovery invalidates and recomputes only the affected synthesis closure;
     unaffected admitted synthesis is deterministically carried forward under a
     new RunKernel authority binding.
-21. Sufficiency decides readiness from admitted state. FinalAnswerPacket then
+22. Sufficiency decides readiness from admitted state. FinalAnswerPacket then
     packages only admitted, readiness-approved material.
-22. Author renders a ready packet, or a blocked packet reaches the installed
+23. Author renders a ready packet, or a blocked packet reaches the installed
     sanitized non-Author terminal. The product returns `RunOutcome`, including
     CLI-visible output when applicable.
 
@@ -129,15 +136,21 @@ ordinary research re-entry. The installed multi-component recovery is bounded
 to one missing component and one graph/contract amendment, remains within the
 five-component graph cap, and leads to affected-only recomputation.
 
-## Supporting Calculation Capability
+## Specialist And Supporting Calculation Capabilities
+
+The generic Specialist substrate is installed but closed by default. It adds
+typed proposal, registry, policy, work/disposition/result, separate-budget,
+unified-handoff, and D-prime consumption contracts without registering a
+product capability. Specialist results and nonexecution dispositions are
+proposal-stage inputs and have no direct admission, Sufficiency,
+FinalAnswerPacket, Author, or citation authority.
 
 The deterministic source-bound calculator is an installed bounded supporting
 capability. It operates only on already source-bound numeric inputs and
 preserves formula, units, assumptions, caveats, blockers, and source lineage.
 It does not decide ComponentCoverage, Sufficiency, FinalAnswerPacket, Author,
-citations, contract mutation, or product correctness. Its existence is not
-ordinary Specialist graph activation and does not install or design the
-planned Specialist substrate.
+citations, contract mutation, or product correctness. Its existence does not
+activate the calculator through the generic Specialist substrate.
 
 ## Live And Operator Boundaries
 
@@ -171,4 +184,4 @@ This contract does not prove arbitrary-query support, live acquisition quality,
 messy-source semantic correctness, citation rendering, source-obligation
 satisfaction, broad answer quality, or product correctness. It does not license
 new providers, prompts, retrieval behavior, source ranking, Author behavior, or
-Specialist activation.
+product Specialist activation.
