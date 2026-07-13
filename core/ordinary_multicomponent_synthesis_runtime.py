@@ -1895,7 +1895,7 @@ def _execute_run_kernel_selected_batch(
             _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
             for work in works
         ]
-    except Exception:
+    except Exception as exc:
         run_kernel.cancel_multicomponent_work_batch(
             batch_id=str(batch.get("batch_id") or ""),
             reason="exact_batch_packet_reconstruction_failed",
@@ -1903,15 +1903,29 @@ def _execute_run_kernel_selected_batch(
         if (
             len(works) == 1
             and works[0].get("work_kind") == "specialist_capability"
-            and _safe_mapping(works[0].get("specialist_proposal_ref")).get(
-                "posture"
-            )
-            == "optional"
         ):
+            proposal_posture = _safe_mapping(
+                works[0].get("specialist_proposal_ref")
+            ).get("posture")
             run_kernel.dispose_failed_specialist_reconstruction(
                 work=works[0]
             )
-            return
+            if proposal_posture == "optional":
+                return
+            current = _safe_mapping(
+                run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+            )
+            if (
+                proposal_posture == "required"
+                and current.get("status") == "blocked_required_specialist_work"
+            ):
+                raise _ScheduledSemanticWorkBlocked(
+                    "required Specialist input reconstruction failed before dispatch"
+                ) from exc
+            raise OrdinaryMulticomponentRuntimeError(
+                "required Specialist reconstruction failure did not reach its "
+                "scheduler blocked terminal"
+            ) from exc
         raise
     from core.specialist_graph_runtime import specialist_digest
 

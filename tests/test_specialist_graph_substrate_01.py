@@ -644,6 +644,85 @@ def test_changed_reconstruction_cancels_once_before_adapter_and_refunds_unit(
     )
 
 
+def test_required_reconstruction_failure_handoffs_once_then_blocks_safely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    harness = SpecialistNorthstarHarness(tmp_path)
+    harness.posture = "required"
+    reconstruction_calls = 0
+
+    def fail_reconstruction(*, state: Any, work: dict[str, Any]) -> dict[str, Any]:
+        nonlocal reconstruction_calls
+        del state, work
+        reconstruction_calls += 1
+        raise scheduling.MulticomponentGraphSchedulingError(
+            "required Specialist input changed before dispatch"
+        )
+
+    monkeypatch.setattr(
+        scheduling,
+        "reconstruct_specialist_input_for_work",
+        fail_reconstruction,
+    )
+    outcome, kernel, _captured = _run(
+        tmp_path,
+        monkeypatch,
+        harness=harness,
+        registry=_registry(calls),
+        policy=SpecialistExecutionPolicy(
+            enabled_capability_ids=("test.specialist.alpha",),
+            specialist_work_item_limit=1,
+        ),
+    )
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    pool = scheduler["specialist_compatibility_pool"]
+    specialist_leases = [
+        item
+        for item in scheduler["lease_history"]
+        if (item.get("work") or {}).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+    ]
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    disposition = plane["proposal_dispositions"][0]
+    handoff = plane["need_handoffs"][0]
+    blocked_transitions = [
+        item
+        for item in scheduler["transition_history"]
+        if item.get("transition") == "blocked_required_specialist_work"
+    ]
+
+    assert outcome.report != NORTHSTAR_REPORT
+    assert reconstruction_calls == 1
+    assert calls == []
+    assert [item["status"] for item in specialist_leases] == [LEASE_CANCELLED]
+    assert pool["specialist_remaining"] == pool["specialist_total"] == 1
+    assert pool["specialist_reserved"] == pool["specialist_spent"] == 0
+    assert pool["specialist_returned"] == 1
+    assert scheduler["status"] == "blocked_required_specialist_work"
+    assert scheduler["terminal_posture"] == "blocked_required_specialist_work"
+    assert len(blocked_transitions) == 1
+    assert scheduler["failed_required_work_ref"]["nonexecution_reason"] == (
+        "input_reconstruction_failed"
+    )
+    assert plane["result_artifact_count"] == 0
+    assert plane["proposal_disposition_count"] == plane["need_handoff_count"] == 1
+    assert disposition["execution_availability_posture"] == AVAILABILITY_FAILED
+    assert disposition["terminal_nonexecution_reason"] == (
+        "input_reconstruction_failed"
+    )
+    assert disposition["result_ref"] == {}
+    assert disposition["validator_consumption"] == "pending_validator_consumption"
+    assert handoff["availability_posture"] == AVAILABILITY_FAILED
+    assert handoff["nonexecution_reason"] == "input_reconstruction_failed"
+    assert handoff["result"] == {}
+    assert handoff["validator_consumption"] == "pending_validator_consumption"
+    assert not any(
+        action.action_type.value == "specialist_capability_execute"
+        for action in kernel.state.issued_actions.values()
+    )
+
+
 def test_runkernel_reproves_exact_handoff_consumption_and_rejects_double_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

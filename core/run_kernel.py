@@ -18370,6 +18370,7 @@ class RunKernel:
                 LEASE_CANCELLED,
                 MULTICOMPONENT_SCHEDULER_STAGE,
                 WORK_KIND_SPECIALIST_CAPABILITY,
+                block_required_specialist_reconstruction_failure,
             )
             from core.specialist_graph_runtime import (
                 AVAILABILITY_BUDGET,
@@ -18418,12 +18419,13 @@ class RunKernel:
                 or proposal.get("proposal_digest")
                 != action.inputs.get("proposal_digest")
                 or proposal.get("proposal_authority") != PROPOSAL_ACCEPTED
-                or proposal.get("posture") != "optional"
                 or proposal_id in active_proposal_ids
             )
+            blocked_scheduler: dict[str, Any] = {}
             if nonexecution_reason == "specialist_pool_exhausted":
                 invalid = (
                     common_invalid
+                    or proposal.get("posture") != "optional"
                     or int(pool.get("specialist_remaining") or 0) != 0
                     or int(pool.get("specialist_spent") or 0) < 1
                 )
@@ -18448,8 +18450,20 @@ class RunKernel:
                     ).get("specialist_proposal_ref", {}).get("proposal_id")
                     == proposal_id
                 ]
-                invalid = common_invalid or len(cancelled) != 1
+                invalid = (
+                    common_invalid
+                    or proposal.get("posture") not in {"optional", "required"}
+                    or len(cancelled) != 1
+                )
                 availability = AVAILABILITY_FAILED
+                if not invalid and proposal.get("posture") == "required":
+                    blocked_scheduler = (
+                        block_required_specialist_reconstruction_failure(
+                            state=self.state,
+                            proposal=proposal,
+                            work_ref=action.inputs,
+                        )
+                    )
             else:
                 invalid = True
                 availability = ""
@@ -18465,6 +18479,10 @@ class RunKernel:
                     nonexecution_reason=nonexecution_reason,
                 )
             )
+            if blocked_scheduler:
+                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                    blocked_scheduler
+                )
             self.state.projections[action.stage] = deepcopy(
                 self.state.projections[SPECIALIST_WORK_PLANE_STAGE][
                     "proposal_dispositions"

@@ -724,6 +724,72 @@ def block_required_specialist_proposal(
     return _refresh_scheduler(scheduler)
 
 
+def block_required_specialist_reconstruction_failure(
+    *,
+    state: Any,
+    proposal: Mapping[str, Any],
+    work_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Block V3 after one required Specialist reservation was returned."""
+
+    scheduler = validate_scheduler_state(
+        _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    )
+    item = _mapping(proposal)
+    requested_work = _mapping(work_ref)
+    cancelled = [
+        _mapping(lease)
+        for lease in scheduler.get("lease_history") or ()
+        if _mapping(lease).get("status") == LEASE_CANCELLED
+        and _mapping(lease).get("settlement_reason")
+        == "exact_batch_packet_reconstruction_failed"
+        and _mapping(_mapping(lease).get("work")).get("work_id")
+        == requested_work.get("work_id")
+        and _mapping(_mapping(lease).get("work")).get("work_digest")
+        == requested_work.get("work_digest")
+    ]
+    work = _mapping(cancelled[0].get("work")) if len(cancelled) == 1 else {}
+    proposal_ref = _mapping(work.get("specialist_proposal_ref"))
+    if (
+        scheduler.get("schema_version")
+        != MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
+        or scheduler.get("status") != "active"
+        or item.get("posture") != "required"
+        or item.get("proposal_authority") != "accepted"
+        or len(cancelled) != 1
+        or proposal_ref.get("proposal_id") != item.get("proposal_id")
+        or proposal_ref.get("proposal_digest") != item.get("proposal_digest")
+        or any(
+            _mapping(lease).get("status") in _ACTIVE_STATUSES
+            for lease in scheduler.get("lease_history") or ()
+        )
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "required Specialist reconstruction failure cannot block this scheduler"
+        )
+    scheduler["scheduler_revision"] = int(scheduler["scheduler_revision"]) + 1
+    scheduler["status"] = "blocked_required_specialist_work"
+    scheduler["terminal_posture"] = "blocked_required_specialist_work"
+    scheduler["failed_required_work_ref"] = {
+        **_work_ref(work),
+        "proposal_id": item.get("proposal_id"),
+        "proposal_digest": item.get("proposal_digest"),
+        "settlement": LEASE_CANCELLED,
+        "nonexecution_reason": "input_reconstruction_failed",
+    }
+    scheduler["transition_history"].append(
+        {
+            "transition": "blocked_required_specialist_work",
+            "scheduler_revision": scheduler["scheduler_revision"],
+            "work_id": work.get("work_id"),
+            "proposal_id": item.get("proposal_id"),
+            "settlement": LEASE_CANCELLED,
+            "nonexecution_reason": "input_reconstruction_failed",
+        }
+    )
+    return _refresh_scheduler(scheduler)
+
+
 def _completed_artifact(state: Any, role: str, evaluation_key: str) -> dict[str, Any]:
     raw = _mapping(
         state.projections.get(f"multicomponent_role:{role}:{evaluation_key}")
@@ -2868,6 +2934,7 @@ __all__ = [
     "MulticomponentGraphSchedulingError",
     "RESOURCE_DETERMINISTIC_SPECIALIST",
     "WORK_KIND_SPECIALIST_CAPABILITY",
+    "block_required_specialist_reconstruction_failure",
     "block_required_specialist_proposal",
     "cancel_batch",
     "cancel_lease",
