@@ -1,3 +1,8 @@
+Status: historical
+Authority: none
+Default-read: no
+Historical-scope: Phase 15 checkpoint handoff at 5e72fcc; provenance only.
+
 # Phase 15 checkpoint handoff at 5e72fcc
 
 Date: 2026-05-18

@@ -1,3 +1,8 @@
+Status: historical
+Authority: none
+Default-read: no
+Historical-scope: Phase 14 checkpoint handoff at 6f7cc76; provenance only.
+
 # Phase 14 Checkpoint Handoff 6f7cc76
 
 Status: repo-local checkpoint/handoff draft. This document is not an active

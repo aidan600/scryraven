@@ -1,3 +1,8 @@
+Status: historical
+Authority: none
+Default-read: no
+Historical-scope: Phase 14 source-refresh review draft; provenance only.
+
 # Source Refresh Phase 14 Draft
 
 Status: Historical/draft Phase 14 review package. This document is a dated
@@ -128,9 +133,9 @@ Recommended source note:
 
 ## 7. Historical/Superseded Docs Note
 
-- `docs/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md` should be treated as historical and
+- `docs/history/roadmaps/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md` should be treated as historical and
   repo-only unless explicitly refreshed.
-- `docs/ROADMAP_IMPLEMENTATION_NOTES.md` should be treated as stale unless
+- `docs/history/roadmaps/ROADMAP_IMPLEMENTATION_NOTES.md` should be treated as stale unless
   updated in a later docs-only pass.
 - Older retrieval roadmap docs should not be used as active Project Source
   guidance without human review.

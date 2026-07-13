@@ -1,3 +1,9 @@
+Status: historical
+Authority: none
+Default-read: no
+Historical-scope: Superseded roadmap-vs-implementation snapshot; provenance only.
+Superseded-by: docs/roadmap/CURRENT_ROADMAP.md
+
 # Roadmap vs implementation (snapshot)
 
 Status: Historical/superseded implementation snapshot. This document is

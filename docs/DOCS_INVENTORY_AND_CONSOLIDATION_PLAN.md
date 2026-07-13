@@ -1,3 +1,11 @@
+Status: historical
+Authority: none
+Default-read: no
+Superseded-by:
+- docs/codex/CODEX_GUIDANCE_MAP.md
+- docs/architecture/SCRYRAVEN_CURRENT_STATE.md
+- docs/roadmap/CURRENT_ROADMAP.md
+- docs/history/INDEX.md
 # ScryRaven Docs Inventory And Consolidation Plan
 
 Status: docs inventory and cleanup plan only. No cleanup performed.
@@ -24,10 +32,10 @@ The inventory includes 361 tracked Markdown/rule docs:
 | `docs/operator/` | 2 | Local broker/provider-proxy operator guidance. |
 | `docs/evals/` plus `docs/eval_queries.md` | 2 | Evaluation query docs. |
 | Retrieval, quantitative, Cursor, and misc docs | 14 | Roadmaps, handoff drafts, review guides, Cursor workflow, source-refresh draft. |
-| `outputs/local_only/ag94c_project_source_candidates/` | 3 | Tracked Project Source candidate drafts referenced by AG-94C; not default Codex docs. |
+| `docs/history/project-source-candidates/` | 3 | Tracked Project Source candidate drafts referenced by AG-94C; not default Codex docs. |
 
 This phase inspected repo-visible tracked files only. The three tracked
-`outputs/local_only/ag94c_project_source_candidates/*` files are inventoried as
+`docs/history/project-source-candidates/*` files are inventoried as
 tracked candidate drafts, but they should not become default Codex context.
 AG-94C says they are candidate text for a user to upload through ChatGPT and do
 not update ChatGPT memory automatically.
@@ -71,9 +79,9 @@ sections in the named docs.
 | `.cursor/rules/*.mdc`, `docs/cursor/CURSOR_COMPOSER_WORKFLOW.md` | 3 | Current but supporting | Alternate-agent/editor workflow. Do not use as Codex architecture authority. |
 | `.github/pull_request_template.md` | 1 | Current but supporting | PR hygiene only. |
 | `docs/MVP_FRIEND_RUNBOOK.md` | 1 | Current but supporting | Useful demo/operator doc; not a claim of arbitrary-query readiness or product correctness. |
-| `docs/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md`, `docs/ROADMAP_IMPLEMENTATION_NOTES.md`, `docs/source_refresh_phase14_draft.md`, `docs/phase14_checkpoint_handoff_6f7cc76.md`, `docs/phase15_checkpoint_handoff_5e72fcc.md` | 5 | Historical phase note | Status lines already say historical, superseded, draft, or not active policy. |
+| `docs/history/roadmaps/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md`, `docs/history/roadmaps/ROADMAP_IMPLEMENTATION_NOTES.md`, `docs/history/drafts/source_refresh_phase14_draft.md`, `docs/history/handoffs/phase14_checkpoint_handoff_6f7cc76.md`, `docs/history/handoffs/phase15_checkpoint_handoff_5e72fcc.md` | 5 | Historical phase note | Status lines already say historical, superseded, draft, or not active policy. |
 | `docs/design_balanced_anchor_resolution_v1.md`, `docs/economist_shadow_telemetry_promotion_policy.md`, `docs/retrieval/*.md`, `docs/quantitative/*.md`, `docs/architecture_safety_contract.md` | 7 | Too detailed for default Codex context | Useful deep context, but should be linked only from relevant phases. Some may later be archived or summarized. |
-| `outputs/local_only/ag94c_project_source_candidates/*.md` | 3 | Too detailed for default Codex context | Tracked Project Source candidate drafts, referenced by AG-94C. They are not repo doctrine and should not become default Codex reads. |
+| `docs/history/project-source-candidates/*.md` | 3 | Too detailed for default Codex context | Tracked Project Source candidate drafts, referenced by AG-94C. They are not repo doctrine and should not become default Codex reads. |
 
 ## Smallest Durable Doc Spine Proposal
 
@@ -126,13 +134,13 @@ Top cleanup targets:
   `AG90G_POST_ANALYST_HANDOFF_PACKAGING_SEAM.md`,
   `AG90H_POST_AUTHOR_TRACE_OUTCOME_PROJECTION_BURNDOWN.md`, and
   `AG91K_FINAL_ANSWER_PACKET_AUTHOR_EXECUTOR_UNDER_RUNKERNEL.md`.
-- `docs/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md` and
-  `docs/ROADMAP_IMPLEMENTATION_NOTES.md` are explicitly historical/superseded
+- `docs/history/roadmaps/RETRIEVAL_AND_FAILURE_UX_ROADMAP.md` and
+  `docs/history/roadmaps/ROADMAP_IMPLEMENTATION_NOTES.md` are explicitly historical/superseded
   and should stay out of default reads.
 - The AG-96 follow-up and SearchWorkPlan docs preserve valuable history but are
   too detailed for default context and overlap current D-prime/follow-up/FAP
   docs.
-- `outputs/local_only/ag94c_project_source_candidates/*.md` should not be
+- `docs/history/project-source-candidates/*.md` should not be
   default-read repo doctrine. A later cleanup should decide whether to keep
   them tracked, move them to a clearly archived docs path, or leave them as
   explicitly non-default local candidate material.
@@ -246,7 +254,7 @@ Phase 3: Historical archive/routing pass.
   moves.
 - Clarify that AG-96 follow-up/SearchWorkPlan docs are historical/supporting
   unless a phase explicitly reopens that stack.
-- Decide treatment for tracked `outputs/local_only/ag94c_project_source_candidates/*`.
+- Decide treatment for tracked `docs/history/project-source-candidates/*`.
 
 Phase 4: Default-read and spine hardening.
 

@@ -330,7 +330,7 @@ repo still contains current-looking Controller-era docs. Upload-ready candidate
 markdown files were drafted under:
 
 ```text
-outputs/local_only/ag94c_project_source_candidates/
+docs/history/project-source-candidates/
 ```
 
 Those files are only candidate source text for the user to upload through

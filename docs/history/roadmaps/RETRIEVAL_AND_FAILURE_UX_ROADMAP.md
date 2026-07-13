@@ -1,3 +1,9 @@
+Status: historical
+Authority: none
+Default-read: no
+Historical-scope: Superseded retrieval/failure-UX roadmap; provenance only.
+Superseded-by: docs/roadmap/CURRENT_ROADMAP.md
+
 # Roadmap: Retrieval, Disambiguation, and Failure UX
 
 Status: Historical/superseded roadmap. This document is repo-local context only

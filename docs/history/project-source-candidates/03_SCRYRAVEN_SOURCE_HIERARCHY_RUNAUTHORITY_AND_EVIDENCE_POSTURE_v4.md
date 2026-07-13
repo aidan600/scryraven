@@ -1,3 +1,15 @@
+Status: historical
+Authority: none
+Default-read: no
+Historical-scope: AG-94C Project Source candidate draft (source hierarchy and evidence posture v4).
+
+These files are historical Project Source candidate drafts. ChatGPT Project
+Sources are external context, not repository files. Current repository truth is
+routed through docs/codex/CODEX_GUIDANCE_MAP.md,
+docs/architecture/SCRYRAVEN_CURRENT_STATE.md, and
+docs/roadmap/CURRENT_ROADMAP.md. Do not treat this candidate as current Project
+context or repository doctrine.
+
 PROJECT SOURCE CANDIDATE — NOT A REPO AUTHORITY DOC
 
 # ScryRaven Source Hierarchy, RunAuthority, And Evidence Posture v4
