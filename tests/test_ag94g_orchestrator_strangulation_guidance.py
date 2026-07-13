@@ -12,8 +12,8 @@ CURRENT_STATE = ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md"
 HISTORICAL_CURRENT_STATE = (
     ROOT
     / "docs"
+    / "history"
     / "architecture"
-    / "historical"
     / "SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md"
 )
 CURRENT_GUIDANCE = [
