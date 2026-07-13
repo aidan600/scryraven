@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose

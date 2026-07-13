@@ -5,7 +5,7 @@ Authority: canonical:component-dag-scheduling-concurrency
 Default-read: no
 Applies-to: ComponentWorkGraph, semantic-work scheduling, leases, batches, and runtime concurrency
 Does-not-authorize: new providers, adaptive width, Local parallelism, graph-bound parallelism, or mode-budget selection
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: merged change to graph, scheduler, lease, dispatch, or concurrency behavior
 
 ## Responsibility
@@ -108,6 +108,12 @@ V2 batch, cancellation returns the full still-granted batch atomically; partial
 refund is invalid. Postdispatch transport failure, output failure, artifact
 failure, and stale-result rejection remain spent. Returned units are cumulative
 audit facts, not a fourth live allocation bucket.
+
+For required Specialist work, predispatch input-reconstruction failure returns
+the exact V3 reservation, records one failed disposition and unified handoff,
+and then reaches `blocked_required_specialist_work` with zero active leases and
+zero Specialist spent units. Optional reconstruction failure records the same
+availability facts without blocking the ordinary path.
 
 AnswerContract, graph, recovery-target, and selective-closure reducers derive
 lease invalidation from the independently validated candidate state. Affected

@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, product Specialist activation, or roadmap execution
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -178,6 +178,10 @@ Scheduler V3. V3 preserves the same semantic ready-work owner and 22-unit
 envelope while adding a separate zero-or-one deterministic Specialist pool.
 Specialist work is inserted after its bound role proposal and before the exact
 component or synthesis D-prime review. Closed-default runs remain V2-identical.
+Predispatch Specialist input-reconstruction failure returns the exact
+reservation and creates one failed disposition plus unified handoff. Optional
+work remains nonblocking; required work reaches the Specialist-specific blocked
+terminal before ordinary sanitized blocked finalization.
 
 The compatibility envelope is the sum of the shared role caps. Every work item
 has an exact budget/work lease bound to current contract, graph, input packet,

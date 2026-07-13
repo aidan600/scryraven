@@ -5,7 +5,7 @@ Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
 Does-not-authorize: product capability registration, calculator activation, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: 4292320b5583772f3f31ce2dab4c6f0e2c989ed8
+Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
@@ -133,10 +133,17 @@ silent fallback.
 Retained Specialist artifacts are bounded projections only. Immediately before
 dispatch commitment, the driver reconstructs the exact component or synthesis
 input from current canonical owners and verifies its digest. Reconstruction
-failure cancels and refunds the reservation exactly once, creates no result,
-and never starts the adapter. The transient packet exists only in driver-local
-execution scope. It is absent from RunKernel, scheduler leases/batches/actions,
-the Specialist work plane, observations, graphs, logs, and traces. Raw prompts,
+failure cancels and refunds the exact reservation once, leaves zero Specialist
+spent units, publishes no Specialist execution action, creates no result, and
+never starts the adapter. Both optional and required proposals receive exactly
+one failed disposition and unified handoff. The optional handoff remains visible
+to D-prime and nonblocking. The required handoff remains pending and unconsumed
+because D-prime does not run; Scheduler V3 reaches
+`blocked_required_specialist_work` before the existing safe non-Author terminal.
+The transient packet exists only in
+driver-local execution scope. It is absent from RunKernel, scheduler
+leases/batches/actions, the Specialist work plane, observations, graphs, logs,
+and traces. Raw prompts,
 raw model or provider payloads, private logs, full traces, database rows,
 caches, secrets, and private artifacts are neither accepted nor retained.
 Capability adapters stay in injected runtime scope and are not serialized into

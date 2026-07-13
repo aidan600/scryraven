@@ -47,6 +47,12 @@ MARKERS = (
     "MC-P5A-MAIN-THREAD-COST",
     "SPECIALIST-S0-GENERIC",
 )
+S0_RUNTIME_SHA = (
+    "56b78b24015a75ff964b83ffcc77c4a18f24fb58"  # pragma: allowlist secret
+)
+PRE_S0_RUNTIME_SHA = (
+    "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
+)
 
 
 def _read(path: Path) -> str:
@@ -80,6 +86,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         assert claimants == [owner]
         assert "Status: current" in _read(owner)
         assert "Default-read: yes" in _read(owner)
+        assert f"Verified-against-runtime: {S0_RUNTIME_SHA}" in _read(owner)
 
 
 def test_concern_authorities_are_unique_current_and_default_no() -> None:
@@ -87,13 +94,9 @@ def test_concern_authorities_are_unique_current_and_default_no() -> None:
     for authority, owner in CONCERN_OWNERS.items():
         text = _read(owner)
         verified_runtime = (
-            "4292320b5583772f3f31ce2dab4c6f0e2c989ed8"  # pragma: allowlist secret
-            if authority
-            in {
-                "canonical:dprime-role-contract",
-                "canonical:specialist-graph-substrate",
-            }
-            else "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
+            PRE_S0_RUNTIME_SHA
+            if authority == "canonical:fap-author-boundary"
+            else S0_RUNTIME_SHA
         )
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
