@@ -39,7 +39,6 @@ TEMPLATE = CODEX / "PHASE_BRIEF_TEMPLATE.md"
 ADDENDA = CODEX / "PHASE_BRIEF_ADDENDA.md"
 GUIDANCE = CODEX / "CODEX_GUIDANCE_MAP.md"
 PUBLICATION = CODEX / "CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md"
-NEXT = "AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01"
 
 
 def _read(path: Path) -> str:
@@ -150,9 +149,15 @@ def test_publication_compatibility_is_preserved_without_reasoning_coupling() -> 
     assert "Do not merge, rebase, force-push, delete branches" in collapsed
 
 
-def test_current_product_checkpoint_remains_canonical() -> None:
-    for path in (GUIDANCE, PLAYBOOK):
-        assert NEXT in _read(path), path.name
+def test_temporal_owners_replace_workflow_roadmap_copying() -> None:
+    guidance = _read(GUIDANCE)
+    playbook = _read(PLAYBOOK)
+
+    assert "../architecture/SCRYRAVEN_CURRENT_STATE.md" in guidance
+    assert "../roadmap/CURRENT_ROADMAP.md" in guidance
+    assert "docs/architecture/SCRYRAVEN_CURRENT_STATE.md" in playbook
+    assert "docs/roadmap/CURRENT_ROADMAP.md" in playbook
+    assert "This playbook owns workflow, not the product roadmap" in playbook
 
 
 def test_guidance_map_stays_a_compact_resolvable_router() -> None:

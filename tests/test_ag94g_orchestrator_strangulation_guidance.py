@@ -57,7 +57,8 @@ def test_current_guidance_uses_current_surface_vocabulary() -> None:
     ):
         assert phrase in combined
 
-    assert "line delta `0` is a scope-control fact" in combined
+    normalized = " ".join(combined.replace("`", "").split())
+    assert "zero line delta is a scope-control fact" in normalized
     assert "not architecture success" in combined
 
 
@@ -78,15 +79,15 @@ def test_current_guidance_does_not_make_orchestrator_sacred() -> None:
     assert "strangler target" in normalized
 
 
-def test_current_state_is_redirect_stub_and_history_is_preserved() -> None:
+def test_current_state_is_canonical_owner_and_history_is_preserved() -> None:
     current = _read(CURRENT_STATE)
     historical = _read(HISTORICAL_CURRENT_STATE)
 
-    assert "current-state redirect stub" in current
+    assert "Authority: canonical:current-installed-state" in current
+    assert "Default-read: yes" in current
     assert "AG-94G supersession banner" in historical
     assert "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md" in current
-    assert "AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md" in current
-    assert "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md" in current
+    assert HISTORICAL_CURRENT_STATE.name in current
     assert "Controller decides, orchestrator executes" not in current
     assert "Controller decides, orchestrator executes" in historical
 

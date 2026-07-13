@@ -21,9 +21,6 @@ TOUCHED_DOCS = (
     QUARANTINE_DOC,
 )
 
-CURRENT_NEXT_GATE = "AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01"
-
-
 def _source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -67,13 +64,15 @@ def test_build_proof_repair_approval_standards_are_visible() -> None:
     assert "repair fixes a named integrity defect" in combined_lower
 
 
-def test_guidance_map_routes_to_current_multicomponent_product_gate() -> None:
+def test_guidance_map_routes_to_exclusive_temporal_owners() -> None:
     guidance = _source(GUIDANCE_MAP_DOC)
     guidance_lower = guidance.casefold()
 
-    assert CURRENT_NEXT_GATE.casefold() in guidance_lower
-    assert "recommended next multi-component build" in guidance_lower
-    assert "runtime parallelism remains deferred" in _collapsed(guidance_lower)
+    assert "../architecture/scryraven_current_state.md" in guidance_lower
+    assert "../roadmap/current_roadmap.md" in guidance_lower
+    assert "current installed product state" in guidance_lower
+    assert "current priority, sequence, and checkpoint definitions" in guidance_lower
+    assert "ag-multicomponent-dynamic-graph-recovery-01" not in guidance_lower
 
 
 def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:
@@ -90,7 +89,6 @@ def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:
         ), path
 
     combined_lower = _all_touched_text().casefold()
-    assert CURRENT_NEXT_GATE.casefold() in combined_lower
     forbidden_current_claims = (
         "fixture dogfood is still the next checkpoint",
         "fixture dogfood is the next checkpoint after #355",
@@ -103,6 +101,6 @@ def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:
 
 def test_historical_checkpoint_narrative_is_not_current_routing() -> None:
     guidance = _source(GUIDANCE_MAP_DOC).casefold()
-    assert "older pr-number timelines" in guidance
-    assert "historical context" in guidance
+    assert "historical documents are read only" in guidance
+    assert "completed phase chronology" in guidance
     assert "## current productization posture" not in guidance

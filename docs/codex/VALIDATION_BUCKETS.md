@@ -98,13 +98,13 @@ Phase validation summaries must state:
 - whether live validation was run;
 - whether live validation was prohibited, not licensed, or separately licensed.
 
-For current-path and quarantine work, use
-`docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` to classify surfaces as
-current internal authority path, current product-consumed path,
-passive/supporting projection, fixture-only proof, offline harness,
-integration-staging harness, product-facing dry-run proof, legacy/passive/
-historical, historical/proof-only debt, or closed-this-phase unless explicitly
-licensed.
+For validation routing, read
+`docs/architecture/SCRYRAVEN_CURRENT_STATE.md` for current installed state and
+`docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` for proof/product-delta
+classification. Read `docs/roadmap/CURRENT_ROADMAP.md` only when phase sequence
+matters. `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` is routed support
+for its narrow quarantine classifications, not the broad current product-status
+owner.
 
 Do not add a test to `fast_pr` merely because the phase added it. A promoted
 `fast_pr` entry must be a cheap broad sentinel, not a phase-detail test.

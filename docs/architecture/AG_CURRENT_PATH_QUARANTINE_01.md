@@ -1,6 +1,20 @@
 # AG-CURRENT-PATH-QUARANTINE-01
 
-Status: active quarantine and proof-class cleanup for the current path registry.
+Status: supporting
+Authority: routed-support
+Default-read: no
+
+Routing notice: This document contains useful concern-specific quarantine
+doctrine plus historical and phase-local status material. It does not own
+current installed state or the current roadmap. Read
+[ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md) and
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md) first, and use this document
+only when [Coding Agent Guidance Map](../codex/CODEX_GUIDANCE_MAP.md) or a phase
+brief routes to this concern. Some implementation-status sections await D1
+repair and must not override code/tests or the canonical current-state owner.
+
+Legacy phase-local status: active quarantine and proof-class cleanup for the
+current path registry.
 
 Proof class: `docs_only` plus phase-focused docs-posture/static guards.
 

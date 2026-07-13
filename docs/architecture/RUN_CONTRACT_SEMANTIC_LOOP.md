@@ -1,8 +1,21 @@
 # Run-Contract Semantic Loop
 
+Status: supporting
+Authority: routed-support
+Default-read: no
+
+Routing notice: This document contains useful concern-specific semantic-loop
+doctrine plus historical and phase-local status material. It does not own
+current installed state or the current roadmap. Read
+[ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md) and
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md) first, and use this document
+only when [Coding Agent Guidance Map](../codex/CODEX_GUIDANCE_MAP.md) or a phase
+brief routes to this concern. Some implementation-status sections await D1
+repair and must not override code/tests or the canonical current-state owner.
+
 ## 1. Status
 
-Status: Current doctrine after PR #342 /
+Legacy implementation-status summary: Current doctrine after PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, refreshed after
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,

@@ -236,9 +236,9 @@ def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
         assert CANONICAL.name in _read(path), path.name
 
     current = _collapsed(CURRENT_STATE)
-    assert "Nonqualifying and single-component ordinary runs retain direct semantic production" in current
-    assert "component Analyst -> component D-prime -> RunKernel component admission" in current
-    assert "V0" in current and "review surfaces" in current
+    assert "Nonqualifying and single-component requests retain their established direct ordinary path" in current
+    assert "MC-P1-ORDINARY" in current
+    assert "Component Analyst and component D-prime feed RunKernel component admission" in current
 
     semantic = _read(SEMANTIC_LOOP)
     for heading in (
@@ -259,7 +259,7 @@ def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
     assert "explain synthesis that is already admitted and packaged by FAP" in fap
 
 
-def test_guidance_routes_installed_phase_five_a() -> None:
+def test_current_state_summarizes_installed_phase_five_a_and_router_stays_narrow() -> None:
     canonical = _collapsed(CANONICAL)
     current = _collapsed(CURRENT_STATE)
 
@@ -279,10 +279,10 @@ def test_guidance_routes_installed_phase_five_a() -> None:
         assert phrase in canonical
 
     for phrase in (
-        "Multi-component Phase 3 selective recomputation is installed",
-        "Multi-component Phase 4 serial scheduling and work/budget leases are installed",
-        "Multi-component Phase 5A hosted initial-component parallel dispatch is installed",
-        "Width 2 is a compatibility cap",
+        "MC-P3-SELECTIVE-RECOMPUTE",
+        "MC-P4-SCHEDULER-LEASES",
+        "MC-P5A-HOSTED-W2",
+        "Hosted width-2 overlap is limited to eligible initial component transport",
         "ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome",
     ):
         assert phrase in current
@@ -290,7 +290,5 @@ def test_guidance_routes_installed_phase_five_a() -> None:
     for path in (GUIDANCE, PLAYBOOK):
         collapsed = _collapsed(path)
         assert CANONICAL.name in collapsed
-        assert "ordinary Sufficiency" in collapsed
-        assert "FinalAnswerPacket" in collapsed
-        assert "Author" in collapsed
-        assert "RunOutcome" in collapsed
+        assert "SCRYRAVEN_CURRENT_STATE.md" in collapsed
+        assert "CURRENT_ROADMAP.md" in collapsed
