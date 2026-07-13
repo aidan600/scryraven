@@ -146,6 +146,13 @@ def _tracked(pattern: str) -> list[str]:
     return [line.replace("\\", "/") for line in out.splitlines() if line]
 
 
+def test_pre_commit_excludes_archive_manifest_from_detect_secrets() -> None:
+    text = _read(ROOT / ".pre-commit-config.yaml")
+    assert "detect-secrets" in text
+    assert "docs/history/ARCHIVE_MANIFEST" in text
+    assert "exclude:" in text
+
+
 def test_manifest_exists_parses_and_is_deterministic() -> None:
     data = _manifest()
     assert data["schema"] == "scryraven-doc-history-manifest-v1"
