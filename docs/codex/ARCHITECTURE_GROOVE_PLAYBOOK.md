@@ -229,16 +229,17 @@ path and produces the claimed reviewable output.
 Fail condition: the ordinary product path cannot consume the change. Stop with a
 blocker report instead of demonstrating the behavior beside the product.
 
-### Current multi-component checkpoint
+### Temporal truth ownership
 
-Multi-component Phase 1,
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`, installs the bounded
-default ordinary entrypoint -> typed component producer roles -> component
-admission -> graph/synthesis producer roles -> RunKernel canonical admission ->
-ordinary Sufficiency -> FinalAnswerPacket -> Author -> RunOutcome -> CLI output
-path. The recommended next phase is
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`. The canonical architecture is
+Current installed state is owned by
+`docs/architecture/SCRYRAVEN_CURRENT_STATE.md`. Current phase sequence is owned
+by `docs/roadmap/CURRENT_ROADMAP.md`. The canonical deep multi-component
+architecture remains
 `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`.
+
+This playbook owns workflow, not the product roadmap. Phase briefs must route to
+the temporal owners and must not copy completed-phase chronology into durable
+workflow guidance.
 
 ## Capability inventory / reuse-first gate
 

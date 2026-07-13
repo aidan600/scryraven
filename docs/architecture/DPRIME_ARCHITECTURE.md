@@ -1,6 +1,20 @@
 # D-prime architecture
 
-Status: Updated through MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01.
+Status: supporting
+Authority: routed-support
+Default-read: no
+
+Routing notice: This document contains useful concern-specific D-prime doctrine
+plus historical and phase-local status material. It does not own current
+installed state or the current roadmap. Read
+[ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md) and
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md) first, and use this document
+only when [Coding Agent Guidance Map](../codex/CODEX_GUIDANCE_MAP.md) or a phase
+brief routes to this concern. Some implementation-status sections await D1
+repair and must not override code/tests or the canonical current-state owner.
+
+Legacy implementation-status summary: Updated through
+MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01.
 Mode: BUILD.
 This overview documents implemented product-consumed D-prime authority and the
 repo-visible synthesis validation and RunKernel graph/synthesis admission
