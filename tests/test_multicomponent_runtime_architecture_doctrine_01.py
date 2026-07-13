@@ -2,12 +2,11 @@
 
 Harness label: PRODUCT-PATH-REGRESSION
 Ordinary product path guarded or fed: installed bounded default ordinary
-multi-component answer path through Phase 5A hosted component parallel dispatch.
+multi-component answer path through hosted component parallel dispatch.
 Runtime consumer: repo-visible architecture doctrine and Codex phase guidance.
-Integration deadline: none; Phase 5A is installed in the ordinary product path.
-Exit condition: replace only with an equal-or-stronger guard over the installed
-ordinary end-to-end component validation, recovery, and selective-recomputation
-path.
+Integration deadline: none; the bounded path is installed.
+Exit condition: replace only with an equal-or-stronger guard over installed
+component validation, synthesis, recovery, scheduling, and finalization.
 Why this is not a shadow product path: it reads Markdown only and creates no
 query, graph, semantic output, admission, readiness, packet, or prose.
 Forbidden interpretation: passing is not runtime multi-component behavior,
@@ -16,16 +15,10 @@ live validation, citation/source-obligation satisfaction, or correctness.
 Test path/node id: tests/test_multicomponent_runtime_architecture_doctrine_01.py
 Proof class: installed product architecture static posture.
 Validation bucket: phase_focus.
-Surface guarded: canonical architecture ownership and installed Phase 5A.
-High-custody or closed-this-phase surface: RunKernel scheduling, work/budget
-leases, batch authority, and hosted initial-component overlap are installed.
+Surface guarded: canonical bounded multi-component architecture.
 Runtime/product path guarded: docs consumed by future product phases; no runtime.
 Expected cost: local Markdown reads only, well under one second.
-Promotion posture: remain phase_focus unless it becomes the repo's selected
-cheap broad docs sentinel.
-Demotion/retirement condition: an equal-or-stronger current doctrine guard owns
-the installed ordinary path through Phase 5A.
-Why not fast_pr: this is detailed phase doctrine, not ordinary PR tax.
+Promotion posture: remain phase_focus.
 """
 
 from __future__ import annotations
@@ -42,7 +35,6 @@ SEMANTIC_LOOP = ARCH / "RUN_CONTRACT_SEMANTIC_LOOP.md"
 DAG = ARCH / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md"
 WORKBENCH = ARCH / "CROSS_COMPONENT_ANALYST_WORKBENCH.md"
 DPRIME = ARCH / "DPRIME_ARCHITECTURE.md"
-ANALYST = ARCH / "ANALYST_WORKBENCH_FULL_SLICE.md"
 FAP_AUTHOR = ARCH / "FAP_AUTHOR_BOUNDARY.md"
 GUIDANCE = CODEX / "CODEX_GUIDANCE_MAP.md"
 PLAYBOOK = CODEX / "ARCHITECTURE_GROOVE_PLAYBOOK.md"
@@ -56,239 +48,169 @@ def _collapsed(path: Path) -> str:
     return " ".join(_read(path).split())
 
 
-def test_canonical_owner_separates_current_reuse_and_installed_path() -> None:
-    text = _collapsed(CANONICAL)
+def test_canonical_owner_has_current_metadata_and_supported_boundary() -> None:
+    text = _read(CANONICAL)
+    collapsed = _collapsed(CANONICAL)
+    assert "Status: current" in text
+    assert "Authority: canonical:bounded-multicomponent-runtime" in text
+    assert "Default-read: no" in text
+    assert "ordinary-bounded-multicomponent-factual-synthesis-v1" in text
+    assert "Nonqualifying and single-component requests retain" in collapsed
+    assert "arbitrary-query multi-component support" in text
+    assert "Mode:" not in text
+    assert "Verdict target:" not in text
 
+
+def test_direct_and_qualifying_lanes_are_selected_before_semantic_output() -> None:
+    text = _collapsed(CANONICAL)
     for phrase in (
-        "Current default ordinary behavior",
-        "Existing reusable bounded capability",
-        "Installed Phase 1 through Phase 5A path",
-        "commit_semantic_producer_bundle(...)",
-        "lane selection occurs before canonical semantic production",
-        "The V0 contracts and serial checkpoint are not ordinary answer consumption.",
-        "ordinary-bounded-multicomponent-factual-synthesis-v1",
-        "Phase 2 installed one governed missing-component recovery",
-        "Phase 3 replaces",
-        "whole-graph rebuild",
-        "RunKernel-derived affected synthesis closure",
-        "unaffected synthesis deterministically carried",
-        "affected-only recomputation",
-        "one fresh whole-case Scrutineer",
-        "ordinary Sufficiency / FinalAnswerPacket / Author",
+        "Lane selection occurs before canonical semantic production",
+        "Direct ordinary lane",
+        "Qualifying bounded multi-component lane",
+        "component Analyst proposal",
+        "component D-prime validation",
+        "Cross-Component Analyst synthesis proposal",
+        "synthesis D-prime validation",
+        "full Scrutineer challenge when triggered",
+        "Sufficiency / FinalAnswerPacket / Author / RunOutcome",
+        "Component finals are not handed to Author for ungoverned glue",
     ):
         assert phrase in text
 
 
-def test_roles_remain_separate_smartmodel_capabilities() -> None:
-    text = _read(CANONICAL)
-    collapsed = _collapsed(CANONICAL)
-
+def test_roles_remain_separate_and_shortcuts_are_closed() -> None:
+    text = _collapsed(CANONICAL)
     for role in (
-        "Regular component Analyst",
+        "Component Analyst",
         "Component D-prime",
         "Cross-Component Analyst",
         "Synthesis D-prime",
-        "Scrutineer",
+        "Full Scrutineer",
         "RunKernel",
         "Sufficiency",
         "FinalAnswerPacket",
         "Author",
     ):
         assert role in text
-
     for phrase in (
         "D-prime verifies the claim.",
         "Scrutineer attacks the case.",
-        "separately configured SmartModel role",
-        "must not hardcode GPT-5.6",
-        "must not replace broad semantic analysis",
-        "RunKernel | Derives current ready semantic work",
-    ):
-        assert phrase in collapsed
-
-    assert "existing narrow deterministic same-component multi-source Scrutineer gate is not the full Scrutineer" in collapsed
-
-
-def test_unsafe_authority_shortcuts_are_explicitly_closed() -> None:
-    collapsed = _collapsed(CANONICAL)
-
-    for phrase in (
-        "Validate or admit its own synthesis",
-        "Act as first-pass Analyst, invent the claim",
-        "Invent synthesis, act as Cross-Component Analyst",
-        "Act as the first-pass Analyst",
+        "Validate or admit its proposal",
+        "Invent synthesis",
         "Manufacture semantic output",
-        "Generate, repair, validate, or reinterpret synthesis",
-        "Create synthesis, glue unadmitted component outputs",
-        "Deterministic logic must not replace broad semantic analysis",
-    ):
-        assert phrase in collapsed
-
-
-def test_graph_is_n_capable_layered_and_v1_is_a_successor() -> None:
-    text = _read(CANONICAL)
-    collapsed = _collapsed(CANONICAL)
-
-    for phrase in (
-        "n-capable",
-        "mode-budgeted",
-        "acyclic",
-        "serial-compatible initially",
-        "bounded synthesis-of-synthesis",
-        "SynthesisWorkNode",
-        "synthesis-to-synthesis edges",
-        "node-, edge-, subgraph-, and whole-graph challenges",
-        "ComponentWorkGraph V1",
-        "Do not silently redefine the established V0 contract.",
-        "An empty edge set does not prove semantic independence.",
-    ):
-        assert phrase in text or phrase in collapsed
-
-    assert "Two components are an example, not a schema limit" in collapsed
-    assert "one synthesis layer is not the durable architecture" in collapsed
-
-
-def test_answer_contract_and_product_endpoint_block_downstream_glue() -> None:
-    text = _read(CANONICAL)
-    collapsed = _collapsed(CANONICAL)
-
-    for phrase in (
-        "something the run owes the user",
-        "subordinate derived reasoning needed to fulfill one or more obligations",
-        "A synthesis node does not automatically become an AnswerContract component.",
-        "default ordinary entrypoint",
-        "ordinary RunAuthority Sufficiency",
-        "ordinary FinalAnswerPacket",
-        "ordinary Author",
-        "user-facing answer containing appropriate admitted synthesis",
-        "Graph admission alone is not product completion.",
-    ):
-        assert phrase in text or phrase in collapsed
-
-    for substitute in (
-        "Contracts",
-        "packets",
-        "fixtures",
-        "serial checkpoints",
-        "diagnostic output",
-        "diagnostic finalization",
-    ):
-        assert substitute in text
-
-
-def test_historical_phase_one_envelope_bounds_and_scrutiny_triggers() -> None:
-    text = _read(CANONICAL)
-
-    for phrase in (
-        "Phase 1 Envelope",
-        "Explicit component nodes | 2-5",
-        "Maximum synthesis nodes | 4",
-        "Maximum synthesis depth | 2",
-        "Automatic recovery rounds | 0",
-        "Graph amendment rounds | 0",
-        "mode is Deep",
-        "one synthesis node depends on another synthesis node",
+        "Generate, repair, validate, or reinterpret claims or synthesis",
+        "Create synthesis, glue unadmitted outputs",
     ):
         assert phrase in text
 
 
-def test_installed_phase_two_three_four_and_phase_five_a() -> None:
-    text = _read(CANONICAL)
-    collapsed = _collapsed(CANONICAL)
-
+def test_graph_and_answer_contract_boundaries_are_current() -> None:
+    text = _collapsed(CANONICAL)
     for phrase in (
-        "Phase 2 installed one governed missing-component recovery and AnswerContract amendment",
-        "Phase 3 replaces",
-        "selective invalidation, carry-forward, and affected-only recomputation",
-        "RunKernel-derived affected synthesis closure",
-        "unaffected synthesis deterministically carried",
-        "revision-bound",
-        "one fresh whole-case Scrutineer",
-        "Phase 4: RunKernel scheduling and work/budget leases",
-        "Phase 5A: hosted initial-component width-2 transport",
-        "Phase 5A is a compatibility cap",
-        "Workers receive no RunKernel",
-        "Physical completion order cannot alter canonical reduction order",
-        "Local parallelism",
-        "graph-bound parallelism",
-        "No permanent Fast/Balanced/Deep semantic-call budget values were chosen",
+        "acyclic, n-capable in durable shape, serial-compatible",
+        "bounded synthesis-of-synthesis",
+        "Component and synthesis nodes are first-class",
+        "synthesis-to-synthesis edges",
+        "An empty edge set does not prove semantic independence",
+        "an obligation the run owes the user",
+        "A synthesis node does not automatically become an AnswerContract component",
+        "ComponentWorkGraph V1 is the installed ordinary graph",
+        "ComponentWorkGraph V0 remains historical/review/ compatibility material",
     ):
-        assert phrase in text or phrase in collapsed
-
-    # Guard against regressing installed Phase 2/3/4/5A back to deferred posture.
-    assert "These Boundary 3 capabilities are deferred, not rejected" not in text
-    assert "Phase 4 scheduling and leases are deferred" not in text
-    assert "Installed Phase 1 path" not in text or "Installed Phase 1 through Phase 5A path" in collapsed
+        assert phrase in text
 
 
-def test_companion_docs_crosslink_and_keep_narrow_ownership() -> None:
-    for path in (
-        CURRENT_STATE,
-        SEMANTIC_LOOP,
-        DAG,
-        WORKBENCH,
-        DPRIME,
-        ANALYST,
-        FAP_AUTHOR,
-        GUIDANCE,
-        PLAYBOOK,
+def test_current_bounded_envelope_and_role_caps_are_exact() -> None:
+    text = _read(CANONICAL)
+    for phrase in (
+        "Initial component nodes | 2–5",
+        "Total component nodes after recovery | at most 5",
+        "Synthesis nodes | 1–4",
+        "Maximum synthesis depth | 2",
+        "Missing-component recovery | at most 1",
+        "Graph/AnswerContract amendment rounds | at most 1",
+        "Component Analyst | 5",
+        "Component D-prime | 5",
+        "Cross-Component Analyst | 2",
+        "Synthesis D-prime | 8",
+        "Scrutineer | 2",
     ):
+        assert phrase in text
+
+
+def test_recovery_is_bounded_and_selective() -> None:
+    text = _collapsed(CANONICAL)
+    for phrase in (
+        "one recovery may add exactly one missing component",
+        "re-enters ordinary research",
+        "stales the affected synthesis closure",
+        "carries forward exact unaffected admitted synthesis",
+        "recomputes affected synthesis in topological order",
+        "one fresh whole-case Scrutineer review",
+        "do not reuse a prior validation or admission as direct authority for a new revision",
+    ):
+        assert phrase in text
+
+
+def test_scheduler_lease_and_concurrency_invariants_are_visible() -> None:
+    text = _collapsed(CANONICAL)
+    for phrase in (
+        "Every semantic call is Scheduler V2-governed",
+        "exact contiguous next batch",
+        "Batch grant, cancellation, dispatch spend, and child-action publication are atomic",
+        "predispatch cancellation returns an exact reservation",
+        "Postdispatch failure and stale rejection remain spent",
+        "zero active leases",
+        "width 2 for canonical OpenAI/OpenRouter hosted providers",
+        "Local and unsupported/conservative providers use width 1",
+        "recovery, selective recomputation, and all graph-bound work remain serial",
+        "physical completion order cannot choose canonical order",
+    ):
+        assert phrase in text
+
+
+def test_phase5a_transport_privacy_sampling_and_cost_are_explicit() -> None:
+    text = _collapsed(CANONICAL)
+    for phrase in (
+        "Installed Phase 5A Transport Contract",
+        "each child makes at most one provider request",
+        "SDK retries are disabled",
+        "unsupported identities normalize conservatively to width 1 and fail closed with zero provider requests",
+        "OpenRouter and Local chat requests use repository-owned temperature `0.3`",
+        "OpenAI Responses requests omit temperature",
+        "caller-authored temperature is rejected before a provider request",
+        "raw prompts, raw model responses, raw provider payloads, credentials, private URLs, headers",
+        "Workers never receive `CostAccumulator`",
+        "Provider-attempt accounting remains separate from product cost accounting",
+        "exactly once on the main thread before artifact reduction",
+    ):
+        assert phrase in text
+
+
+def test_finalization_blocked_behavior_and_nonproofs_remain_narrow() -> None:
+    text = _collapsed(CANONICAL)
+    for phrase in (
+        "Graph admission alone is not product completion",
+        "FAP cannot create synthesis",
+        "Author cannot glue missing or unadmitted component output",
+        "sanitized non-Author terminal `RunOutcome`",
+        "Malformed or unrelated invariant/infrastructure failures remain errors",
+        "does not prove arbitrary-query support",
+        "This contract neither designs nor activates the planned Specialist graph",
+    ):
+        assert phrase in text
+
+
+def test_companion_docs_crosslink_and_temporal_owners_stay_separate() -> None:
+    for path in (CURRENT_STATE, SEMANTIC_LOOP, DAG, WORKBENCH, DPRIME, FAP_AUTHOR, GUIDANCE, PLAYBOOK):
         assert CANONICAL.name in _read(path), path.name
 
     current = _collapsed(CURRENT_STATE)
-    assert "Nonqualifying and single-component requests retain their established direct ordinary path" in current
     assert "MC-P1-ORDINARY" in current
-    assert "Component Analyst and component D-prime feed RunKernel component admission" in current
+    assert "MC-P5A-STRICT-ONE-SHOT" in current
+    assert "ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome" in current
 
-    semantic = _read(SEMANTIC_LOOP)
-    for heading in (
-        "current nonqualifying and single-component ordinary loop",
-        "installed qualifying component-validation loop",
-        "installed qualifying cross-component loop",
-        "installed dynamic recovery and scheduling loop",
-    ):
-        assert heading in semantic
-
-    workbench = _collapsed(WORKBENCH)
-    assert "real dedicated configured-SmartModel Cross-Component Analyst call" in workbench
-    assert "may not validate its own proposal, admit graph state, dispatch recovery, or render answer prose" in workbench
-
-    fap = _collapsed(FAP_AUTHOR)
-    assert "FAP may package admitted direct component material and admitted synthesis" in fap
-    assert "FAP must not generate, repair, reinterpret, or validate synthesis" in fap
-    assert "explain synthesis that is already admitted and packaged by FAP" in fap
-
-
-def test_current_state_summarizes_installed_phase_five_a_and_router_stays_narrow() -> None:
-    canonical = _collapsed(CANONICAL)
-    current = _collapsed(CURRENT_STATE)
-
-    for phrase in (
-        "Installed Phase 1 through Phase 5A path",
-        "Phase 2 installed one governed missing-component recovery",
-        "Phase 3 replaces",
-        "Phase 4: RunKernel scheduling and work/budget leases",
-        "Phase 5A: hosted initial-component width-2 transport",
-        "Phase 5A is a compatibility cap",
-        "hosted initial component Analyst and D-prime calls physically overlap",
-        "ordinary Sufficiency",
-        "FinalAnswerPacket",
-        "Author",
-        "RunOutcome",
-    ):
-        assert phrase in canonical
-
-    for phrase in (
-        "MC-P3-SELECTIVE-RECOMPUTE",
-        "MC-P4-SCHEDULER-LEASES",
-        "MC-P5A-HOSTED-W2",
-        "Hosted width-2 overlap is limited to eligible initial component transport",
-        "ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome",
-    ):
-        assert phrase in current
-
-    for path in (GUIDANCE, PLAYBOOK):
-        collapsed = _collapsed(path)
-        assert CANONICAL.name in collapsed
-        assert "SCRYRAVEN_CURRENT_STATE.md" in collapsed
-        assert "CURRENT_ROADMAP.md" in collapsed
+    guidance = _read(GUIDANCE)
+    assert "SCRYRAVEN_CURRENT_STATE.md" in guidance
+    assert "CURRENT_ROADMAP.md" in guidance
+    assert "canonical:bounded-multicomponent-runtime" in guidance

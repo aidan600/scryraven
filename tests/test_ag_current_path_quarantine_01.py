@@ -129,9 +129,10 @@ def test_current_authority_is_distinguished_from_product_consumed_path() -> None
     for phrase in required:
         assert phrase in combined or phrase in collapsed
 
-    assert "SearchResultCandidatePacket" in registry
-    assert "FetchReadContentPacket / SanitizedContentReference" in registry
-    assert "AuthorProseFinalization" in registry
+    assert "not an installed-state registry or a roadmap" in registry
+    assert "ScryRaven Current State" in registry
+    assert "Current Roadmap" in registry
+    assert "Proof Class and Actual App Delta Gate" in registry
     assert "current product-consumed path | fixture-only proof" not in registry
     assert "fixture-only proof | current product-consumed path" not in registry
     assert "offline harness | current product-consumed path" not in registry
@@ -174,66 +175,52 @@ def test_harness_labels_deadlines_and_forbidden_substitutes_are_required() -> No
         assert phrase in combined or phrase in collapsed
 
 
-def test_current_path_registry_classifies_required_surfaces() -> None:
+def test_current_path_contract_defines_narrow_classification_vocabulary() -> None:
     text = _source(QUARANTINE_DOC)
     collapsed = _collapsed(text)
     required_phrases = (
-        "Proof class: `docs_only` plus phase-focused docs-posture/static guards.",
-        "Product-facing progress type: quarantine/docs-process work.",
-        "Actual user-facing app delta: none.",
-        "current mandatory next product checkpoint is tightly scoped limited live validation",
-        "current internal authority path",
-        "current product-consumed path",
+        "current product-consumed",
+        "current internal authority",
+        "supporting/passive",
         "current passive/supporting projection",
-        "fixture-only proof",
-        "offline harness / proof-only harness",
-        "integration-staging harness",
-        "live-search-only validation",
-        "product-facing dry-run proof",
-        "legacy/passive/historical",
-        "closed-this-phase unless explicitly licensed",
-        "SearchPlanner / initial_answer_contract",
-        "SearchExecutorHandoff",
-        "SearchResultCandidatePacket",
-        "FetchReadContentPacket / SanitizedContentReference",
-        "EvidenceLedger candidate/content custody",
-        "EvidenceRelativeAnalysisPacket / AnalystReport",
-        "FollowupSearchIntentPacket / AnalysisGapSearchProposal",
-        "SemanticObservation admission",
-        "ComponentCoverage reduction",
-        "ScrutineerReview",
-        "Specialist source-bound calculation",
-        "SufficiencyReadiness",
-        "hardened FinalAnswerPacket",
-        "AuthorProseFinalization",
-        "Old final-answer packet runtime paths",
-        "Old Author execution paths",
-        "`core/pipeline_orchestrator.py`",
-        "`core/offline_search_executor_bridge.py`",
-        "Historical docs",
+        "fixture-only",
+        "offline harness",
+        "integration-staging",
+        "product-facing dry run",
+        "historical/proof-only",
+        "legacy",
+        "closed unless licensed",
+        "contains no broad product-state registry",
     )
     for phrase in required_phrases:
         assert phrase in text or phrase in collapsed
 
+    forbidden_temporal_claims = (
+        "mandatory next product checkpoint",
+        "recommended next phase",
+        "## Current-Path Registry",
+        "## Current Roadmap",
+    )
+    for phrase in forbidden_temporal_claims:
+        assert phrase not in text
+
 
 def test_docs_posture_keeps_overclaims_quarantined() -> None:
     registry = _source(QUARANTINE_DOC)
+    collapsed_registry = _collapsed(registry)
     required_negative_posture = (
-        "search candidates are not evidence",
-        "fetch/read content is not semantic support",
-        "EvidenceLedger custody is not component satisfaction",
-        "Analyst proposal is not RunKernel authority",
-        "Scrutineer sign-off is not product correctness",
-        "Specialist calculation is not answer authority",
-        "SufficiencyReadiness is not final answer prose",
-        "hardened FAP is not product correctness",
-        "AuthorProseFinalization does not prove citation rendering",
-        "AuthorProseFinalization does not satisfy source obligations",
-        "fixture-only proof is not product readiness",
-        "live-search-only proof is not product correctness",
+        "Search candidates are not evidence",
+        "readable content is not semantic support",
+        "custody is not component satisfaction",
+        "A worker proposal does not establish RunKernel admission",
+        "ComponentCoverage is not readiness",
+        "graph admission is not FAP packaging",
+        "FAP packaging is not Author rendering",
+        "Human-readable output is not live or product correctness",
+        "Passing a docs/static guard proves repository posture only",
     )
     for phrase in required_negative_posture:
-        assert phrase in registry
+        assert phrase in registry or phrase in collapsed_registry
 
     scanned_docs = "\n".join(
         _source(path)
@@ -271,15 +258,13 @@ def test_what_this_phase_does_not_prove_is_visible_in_current_docs() -> None:
         for path in (QUARANTINE_DOC, CURRENT_STATE_DOC, RUN_CONTRACT_DOC)
     )
     non_proofs = (
-        "ordinary-query execution",
-        "source acquisition quality",
-        "fetch/read survival on real sources",
-        "semantic support from messy live evidence",
+        "arbitrary-query support",
+        "live acquisition quality",
+        "messy-source semantic correctness",
         "citation rendering",
-        "citation eligibility in user-visible output",
         "source-obligation satisfaction",
         "product correctness",
-        "product-quality Author prose",
+        "broad answer quality",
     )
     for phrase in non_proofs:
         assert phrase in combined

@@ -1,316 +1,192 @@
-# RunKernel Component DAG And Concurrency
+# RunKernel Component DAG, Scheduling, And Concurrency
 
-Status: graph, scheduling, and concurrency companion doctrine. The canonical
-multi-component role and synthesis architecture is
-[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
+Status: current
+Authority: canonical:component-dag-scheduling-concurrency
+Default-read: no
+Applies-to: ComponentWorkGraph, semantic-work scheduling, leases, batches, and runtime concurrency
+Does-not-authorize: new providers, adaptive width, Local parallelism, graph-bound parallelism, or mode-budget selection
+Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Update-trigger: merged change to graph, scheduler, lease, dispatch, or concurrency behavior
 
-Mode: BUILD.
+## Responsibility
 
-Current cross-component doctrine:
-[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
+This document owns the current component DAG, scheduling, lease, batch, and
+concurrency contract. Role and synthesis semantics belong to
+[Multi-Component Synthesis Runtime Architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md),
+and integrated authority flow belongs to
+[Run-Contract Semantic Loop](RUN_CONTRACT_SEMANTIC_LOOP.md).
 
-## Purpose
+ComponentWorkGraph V1 is installed for
+`ordinary-bounded-multicomponent-factual-synthesis-v1`. ComponentWorkGraph V0
+is historical/review/compatibility material and is not the ordinary executor,
+scheduler, or answer path.
 
-Future multi-component and multi-hop work should be represented as a
-RunKernel-owned component dependency graph with compact component refs and
-explicit admission boundaries, not a sequential checklist.
+## Graph Contract
 
-The durable direction is an n-capable, mode-budgeted, acyclic graph that is
-serial-compatible initially and supports bounded synthesis-of-synthesis.
-Serial correctness, dynamic recovery, selective recomputation, Phase 4
-RunKernel scheduling/work leases, and Phase 5A hosted initial-component
-parallel dispatch are installed on ComponentWorkGraph V1. Runtime parallelism
-is limited to eligible initial component Analyst and D-prime waves at width 2;
-graph-bound, recovery, selective, Local, and unknown-provider work remains
-serial. None of execution, scheduling, budget leases, or runtime parallelism is
-installed by the historical V0 contracts.
+Multi-component work is a RunKernel-owned acyclic dependency graph, not a
+caller-authored checklist. Component and synthesis nodes are first-class,
+identity-bearing, revision-bound, challengeable graph objects. The graph may
+represent direct component output, component-to-synthesis and
+synthesis-to-synthesis dependencies, subset synthesis, multiple synthesis
+groups, bounded layered synthesis, blockers, stale revisions, challenges, and
+recovery state.
 
-The installed implementation is owned by `core.multicomponent_graph_scheduling`
-and consumed by the ordinary selected runtime. This companion document does not
-itself execute work, route models, plan queries, or plan semantics.
+The installed bounds are:
 
-## Multi-Source And Multi-Component
+- 2–5 component nodes;
+- 1–4 synthesis nodes;
+- maximum synthesis depth 2;
+- at most one missing-component recovery and graph/AnswerContract amendment;
+- no recovery beyond the five-component cap.
 
-Multi-source means one answer component with multiple sources bearing on that
-component.
+An empty edge set means no edge is admitted; it does not prove semantic
+independence. Structural edges come from accepted request structure. The
+Cross-Component Analyst proposes semantic edges and synthesis. Synthesis
+D-prime validates nominated relations. RunKernel alone admits canonical graph
+state.
 
-Multi-component means one user question with multiple answer components. Each
-component may require its own searches, sources, analysis, assumptions, and
-synthesis.
-
-Do not call multi-component work "multi-source." A one-component multi-source
-posture does not prove multi-component aggregation, dependency handling, or
-concurrency safety.
-
-## Dependency Graph Doctrine
-
-Multi-component work should be a dependency graph, not a checklist.
-
-Future shape:
-
-```text
-user question
--> planner proposes component graph
--> RunKernel authorizes graph/scheduling/budget leases
--> independent nodes may run concurrently when dependencies are satisfied
--> dependent nodes wait for inputs
--> Cross-Component Analyst Workbench proposes synthesis/dependency/gap posture
--> synthesis D-prime validates synthesis support over component refs
--> RunKernel admits / blocks / challenges / authorizes bounded recovery
--> later Sufficiency/FAP/Author phases consume only admitted refs
-```
-
-The next BUILD must go further than that historical intermediate shape:
-ordinary Sufficiency, FinalAnswerPacket, Author, and user-facing answer output
-must consume appropriate admitted direct and synthesized material in the same
-end-to-end product path. Graph admission or a serial checkpoint alone is not
-product completion.
-
-Planner and Analyst surfaces may propose decomposition. RunKernel owns
-scheduling, budget leases, caps, custody, cancellation, and admission. Analyst
-must not directly launch parallel work. Concurrency must preserve authority, not
-bypass it.
-
-The unsafe path remains closed:
+`AnswerContract` and `ComponentWorkGraph` remain distinct:
 
 ```text
-component A final
-+ component B final
-+ component C final
--> Author glues
+AnswerContract component = an obligation the run owes the user
+ComponentWorkNode = the governed lane for one obligation
+synthesis node = subordinate derived reasoning used to fulfill obligations
 ```
 
-## Future ComponentWorkNode Contract Shape
+A synthesis node does not automatically become an AnswerContract component.
 
-`ComponentWorkNode` V0 now exists as a typed projection over one current product
-component lane. It is not graph execution, scheduler authorization,
-multi-component planning, budget leasing, FAP, Author, citation rendering, or
-product correctness.
+## Canonical Ready Work
 
-A future graph-level node shape may include:
+RunKernel derives ready semantic work from the current accepted
+AnswerContract, graph revision, admitted artifacts, recovery state, selective
+closure, exact role caps, and active leases. Callers do not nominate the next
+role, logical key, packet, provider class, width, or work item.
 
-- `node_id`
-- `parent_run_id`
-- `component_id`
-- `component_type`
-- `dependency_ids`
-- search requirements
-- source obligation requirements
-- source authority posture requirements
-- assigned role/lane
-- model role requirement if any
-- budget lease
-- status
-- output packet refs
-- blocker refs
-- caveats/nonclaims
-- raw/private retention flags
+Scheduler V2 batch membership is the contiguous prefix of canonical ready-work
+order that:
 
-These fields should remain authority-preserving. They should not become a
-shadow planner, shadow product path, or prompt-visible substitute for RunKernel
-authorization.
+- has one role and one parallel class;
+- fits the role's remaining cap and the compatibility envelope;
+- fits the provider-derived effective width;
+- preserves distinct work, component, packet, and logical identities; and
+- stops at the first incompatible intervening item.
 
-## Component And Synthesis Nodes
+The scheduler never skips intervening work to create a larger batch, never
+mixes roles in a batch, and never introduces an all-Analyst or all-D-prime stage
+barrier. Physical completion order cannot choose canonical work order.
 
-The durable graph has first-class concepts equivalent to `ComponentWorkNode`
-and `SynthesisWorkNode`. The exact synthesis-node implementation name remains
-open, but synthesis must be identity-bearing, revision-bound, challengeable,
-and admissible. It must not remain only an external reference attached to a
-component node.
+## Lease And Budget Authority
 
-The graph supports direct component results, subset synthesis, multiple
-independent synthesis groups, component-to-synthesis edges,
-synthesis-to-synthesis edges, bounded layered synthesis, and node-, edge-,
-subgraph-, and whole-graph challenges. An empty edge set means no admitted edge
-is present; it does not prove semantic independence. Unknown or unassessed
-dependency posture must remain explicit.
+Every semantic call carries an exact RunKernel lease bound to current work,
+input packet digest, role, logical evaluation key, graph/contract revision, and
+the relevant recovery or selective-closure lineage. A lease cannot be rebound
+to different work or a new authority revision.
 
-`ComponentWorkGraph V1` is the preferred successor. It should represent
-component refs, first-class synthesis-node refs, structural edges, proposed and
-admitted semantic edges, challenge refs, revision/staleness metadata, and
-depth/budget posture. Do not silently redefine V0: V0 may remain a compatibility
-or review-only input and is a named strangler target for the ordinary path.
+The shared compatibility envelope is derived from the installed role caps:
 
-## Installed Phase 4 And Phase 5A Budget, Lease, And Dispatch Doctrine
+| Role | Unit cap |
+| --- | ---: |
+| Component Analyst | 5 |
+| Component D-prime | 5 |
+| Cross-Component Analyst | 2 |
+| Synthesis D-prime | 8 |
+| Scrutineer | 2 |
 
-The selected ordinary ComponentWorkGraph V1 path uses a parent compatibility
-envelope plus exact semantic-work leases. Scheduler V2 asks RunKernel for a
-contiguous prefix of canonical ready-work order before the driver knows which
-role will run. It never skips an intervening item, mixes roles, or creates an
-all-Analyst/all-D-prime stage barrier. Caller traversal order cannot nominate or
-override the next semantic call.
+The parent total is the sum of that one mapping; callers cannot author a second
+total. Grant moves units from remaining to reserved. Dispatch moves reserved
+units to permanently spent. Completion does not change allocation.
 
-For configured OpenAI and OpenRouter SmartModel providers, RunKernel derives
-`hosted_api` with effective width and hard cap 2. Local derives
-`local_openai_compatible` at width 1, and unknown providers derive
-`conservative_unknown` at width 1. These facts come only from the existing
-canonical provider normalizer. They are a compatibility policy, not measured
-provider capacity, user configuration, routing authority, or adaptive
-rate-limit policy. Retained scheduler V1 remains strictly serial historical
-state and rejects V2 batch fields or parallel posture.
+Predispatch cancellation may return an exact granted reservation once. For a
+V2 batch, cancellation returns the full still-granted batch atomically; partial
+refund is invalid. Postdispatch transport failure, output failure, artifact
+failure, and stale-result rejection remain spent. Returned units are cumulative
+audit facts, not a fourth live allocation bucket.
 
-RunKernel atomically grants the exact V2 batch and leases, while packet
-reconstruction and private child-action preparation remain transient on the
-main product thread. Batch dispatch atomically moves all reservations to spent
-and publishes the complete contiguous child-action set. No child action or
-logical key is visible before that commitment. A precommit defect atomically
-returns the full batch; partial refund and partial child publication are
-invalid.
+AnswerContract, graph, recovery-target, and selective-closure reducers derive
+lease invalidation from the independently validated candidate state. Affected
+granted work is cancelled and returned; affected dispatch-committed work is
+stale-rejected and remains spent; unrelated leased work remains current. A
+caller-authored transition label or digest cannot create cancellation
+authority.
 
-Only independent initial component Analyst and initial component D-prime waves
-may use a per-run bounded worker pool. Workers execute configured transport and
-pure normalization only. RunKernel mutation, artifact identity/digest
-construction, observations, component admission, graph reduction, recovery,
-Sufficiency, FAP, Author, persistence, and trace mutation remain on the main
-thread. Physical completion order is stored by batch index and cannot choose
-canonical observation, component-admission, graph, accounting, or answer order.
+Completed and blocked scheduler states require zero active leases. Completion
+with either a granted reservation or dispatch-committed lease is a non-mutating
+error. Required-work exhaustion reaches ordinary Sufficiency/FAP handling and
+the safe blocked terminal only after active sibling work drains.
 
-Component budgets must be reserved from the parent envelope before concurrent
-work starts. This prevents multi-component work from silently multiplying cost,
-latency, provider calls, model calls, fetch/read attempts, or retrieval work.
+## Atomic Batch Lifecycle
 
-The parent total is derived from the shared installed role caps rather than a
-second caller-authored total. One semantic transport commits one unit. Grant
-moves remaining to reserved; predispatch cancellation returns it exactly once;
-dispatch moves reserved to permanently spent. Completion and postdispatch
-failure do not change allocation. Returned units are cumulative audit, not a
-fourth live bucket.
+RunKernel atomically grants one exact batch and all of its leases. Before any
+mutation, the main thread reconstructs and validates every private child
+descriptor against the granted work.
 
-Leases are cancellable before dispatch, bounded, attributable to exact current
-work, and auditable by RunKernel. Failed or stale postdispatch work retains its
-unit. Required exhaustion reaches ordinary Sufficiency/FAP and the safe blocked
-terminal. Scheduler V2 permits at most two active physical leases only for the
-eligible hosted initial-component classes; all other work uses V2 batches of
-one.
+Dispatch then atomically:
 
-Scheduler completion and every blocked terminal require zero active leases.
-Invalid completion with either a granted or dispatch-committed lease is a
-non-mutating error. Canonical contract, graph, target, and selective-closure
-reducers derive settlement by comparing the exact lease with the independently
-validated next authority state. Affected granted work is cancelled and refunded
-once; affected dispatch-committed work is stale-rejected and remains spent;
-unrelated leased work remains current. Callers cannot submit authority-change
-classifications or authority digests to trigger these transitions.
+1. verifies that the batch is still the current contiguous ready prefix;
+2. commits every reservation to spent;
+3. binds every descriptor to its exact lease and logical key; and
+4. publishes the complete contiguous ordered child-action set.
+
+No child action or logical key becomes visible before that commitment. A
+precommit defect publishes no child action, consumes no logical key, and
+returns the complete batch. After commitment, failures remain spent and all
+submitted siblings are drained before terminalization.
+
+## Installed Concurrency
+
+The canonical provider normalizer derives only these execution classes:
+
+| Configured provider class | Backend class | Effective width |
+| --- | --- | ---: |
+| OpenAI or OpenRouter | `hosted_api` | 2 |
+| Local OpenAI-compatible | `local_openai_compatible` | 1 |
+| Unknown or unsupported | `conservative_unknown` | 1 |
+
+Width 2 applies only to eligible independent initial component Analyst and
+initial component D-prime waves. Local and unknown/conservative execution use
+width 1. Cross-Component Analyst, synthesis D-prime, Scrutineer, recovery,
+selective Cross-Component Analyst, affected synthesis validation, and all
+graph-bound work remain serial.
+
+The width-2 hosted posture is a compatibility cap, not measured provider
+capacity, adaptive rate-limit policy, user-configurable concurrency, or routing
+authority. Scheduler V1 remains immutable historical serial schema and rejects
+V2 batch or parallel fields.
+
+## Worker Boundary And Determinism
+
+Workers perform configured synchronous transport and pure normalization only.
+They receive no RunKernel, mutable RunState, graph, EvidenceLedger, admission
+state, recovery authority, `CostAccumulator`, FAP/Author state, persistence
+writer, or trace writer.
+
+Canonical artifacts, identities, digests, role observations, lease settlement,
+component admission, graph reduction, recovery, selective recomputation,
+Sufficiency, FAP, Author, persistence, trace mutation, and response-bearing
+cost recording remain on the main product thread. Results are collected by
+canonical batch index, so transport completion order cannot alter admission,
+graph, accounting, or answer order.
+
+Provider-attempt accounting is separate from product cost accounting. A
+provider request attempt may be spent without a response; model cost is
+recorded only from response-bearing bounded usage facts, exactly once on the
+main thread before artifact reduction.
 
 ## Mode Doctrine
 
-Fast uses low width and low depth, minimal recovery, small concurrency, and a
-strong speed/boundedness posture.
+Mode may change bounded budgets. Mode does not change semantic authority,
+admission ownership, truth standards, lease lineage, or deterministic reduction
+order. This contract does not select permanent Fast/Balanced/Deep width, depth,
+or semantic-call budgets.
 
-Balanced uses moderate width, limited depth, concurrent independent components
-when dependencies are satisfied, and one final aggregation pass.
+## Nonproofs
 
-Deep / Pro uses a larger graph, more specialist lanes/source classes,
-aggregation, recovery, and higher budgets. Larger budget does not change
-semantic authority.
+This contract does not prove live provider capacity, adaptive concurrency,
+Local parallelism, graph-bound parallelism, arbitrary-query scheduling,
+Specialist scheduling, model quality, or product correctness. It does not
+authorize new providers, endpoint changes, mode-budget selection, or live
+calls.
 
-## Cross-Component Analyst Workbench
-
-Component success is not final answer authority.
-
-Cross-Component Analyst Workbench is the proposal-only synthesis layer between
-per-component lanes and synthesis D-prime validation. It must review:
-
-- all component outputs;
-- conflicts;
-- assumptions;
-- missing dependencies;
-- normalization assumptions;
-- source-authority postures;
-- caveats and nonclaims;
-- whether synthesis is allowed;
-- whether answer should block.
-
-It may propose synthesis, dependency, missing-component, contradiction, caveat,
-and recovery refs. It must not validate its own synthesis, admit evidence,
-dispatch search, collapse component refs into untraceable summary, create a
-parallel Analyst system, or feed Author directly.
-
-Only after Cross-Component Analyst proposal, synthesis D-prime validation, and
-RunKernel admission may later phases consider Sufficiency/FAP/Author
-consumption.
-
-## Model-Role Routing Pointer
-
-Do not design around one blanket model.
-
-RunKernel itself should not become an LLM thinker. If an LLM is needed for
-planning or interpretation, it should be a Planner, Analyst, or Specialist call
-authorized and recorded by RunKernel.
-
-Keep `COMPONENT-MODEL-ROLE-ROUTING-MATRIX-01` pinned as future work.
-
-## Near-Term Planning Constraint
-
-`GENERIC-QUERY-TO-RELATION-PLANNING-01` adds a no-live single-relation planning
-dry run, but it does not implement multi-component planning.
-
-Its single-relation plan packets carry metadata candidates shaped so they can
-later lift into `ComponentWorkNode` / `ComponentWorkGraph` concepts. Those
-candidates are not implemented nodes, scheduling authorization, or budget
-leases. Do not hardcode the assumption that ScryRaven will remain
-single-component forever.
-
-`GENERIC-SINGLE-RELATION-LIVE-DOGFOOD-01` may consume those same plan-derived
-metadata candidates while running one default-off live dogfood relation under
-explicit confirmation and caps. That consumption does not implement
-`ComponentWorkNode`, `ComponentWorkGraph`, RunKernel DAG scheduling, concurrency,
-or budget leases, and it must remain single-relation only.
-
-## Historical V0 Sequence And Current Roadmap
-
-These are future doctrine items, with the currently introduced contract noted
-where it exists:
-
-- `COMPONENT-MODEL-ROLE-ROUTING-MATRIX-01`
-- `FAP-AUTHOR-BOUNDARY-INSPECTION-01`
-- `RUN-KERNEL-COMPONENT-DAG-AND-CONCURRENCY-BUDGET-01`
-- `MULTI-COMPONENT-QUERY-PLANNING-01`
-- `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`
-- `CROSS-COMPONENT-SYNTHESIS-PROPOSAL-V0-01`
-- `DPRIME-SYNTHESIS-VALIDATION-V0-01` - introduced as a validation-only
-  `core.dprime_synthesis_validation` contract over Workbench proposal refs.
-- `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01` - introduced as a ref-only
-  `core.runkernel_component_graph_admission` contract over ComponentWorkGraph,
-  Workbench, and synthesis D-prime validation refs.
-- `MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` - introduced as a
-  review-only serial dry-run checkpoint in
-  `core.multicomponent_serial_dry_run_checkpoint` over graph, Workbench,
-  synthesis D-prime validation, and RunKernel admission refs.
-- `MULTI-COMPONENT-LIVE-DOGFOOD-01`
-
-The list above records V0 provenance and older roadmap names; it is not the
-current next-phase route. Phases 1 through 4 and Phase 5A hosted component
-parallel dispatch are installed. Hosted live characterization remains a
-separate next checkpoint; Local characterization remains later.
-
-After serial end-to-end ordinary activation, the committed Boundary 3 sequence
-is dynamic graph and AnswerContract amendment, targeted ordinary research
-re-entry, selective invalidation, selective synthesis recomputation,
-revision-specific validation/scrutiny, RunKernel scheduling and budget leases,
-and width-2 hosted initial-component dispatch are installed. Cross, synthesis,
-Scrutineer, recovery, and selective work remains serial.
-
-## Current Status
-
-The V0 work through
-`MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` remains no-execution and
-review-only. ComponentWorkGraph V1 now supports the installed Phase 1 ordinary
-path, Phase 2 recovery, Phase 3 selective recomputation, Phase 4 lease
-authority, and Phase 5A hosted initial-component width-2 transport through
-ordinary Sufficiency/FAP/Author consumption. It does not install graph-bound,
-recovery, selective, or Local parallelism; adaptive rate-limit handling; live
-provider characterization; source-display or citation changes; Specialist
-activation; or broader product-correctness claims. No permanent
-Fast/Balanced/Deep semantic-call budgets were selected.
-
-ScryRaven is not friend-level MVP and is not a general supported-query MVP.
-
-Related current posture docs:
-
-- [CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md)
-- [MVP_SUPPORTED_QUERY_CLASS_BOUNDARY.md](MVP_SUPPORTED_QUERY_CLASS_BOUNDARY.md)
-- [SOURCE_AUTHORITY_POSTURE.md](SOURCE_AUTHORITY_POSTURE.md)
-- [AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md](AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md)
-- [DPRIME_ARCHITECTURE.md](DPRIME_ARCHITECTURE.md)
-- [RUN_CONTRACT_SEMANTIC_LOOP.md](RUN_CONTRACT_SEMANTIC_LOOP.md)
+Proposal semantics and historical V0 rationale remain available in
+[Cross-Component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md), but
+that history does not override this installed execution contract.
