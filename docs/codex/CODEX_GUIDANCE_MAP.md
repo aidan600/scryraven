@@ -58,32 +58,28 @@ completed-phase chronology into phase briefs.
 
 | Concern | Read first |
 | --- | --- |
-| Installed bounded ordinary multi-component runtime | [Multi-Component Synthesis Runtime Architecture](../architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) |
+| D-prime role and authority (`canonical:dprime-role-contract`) | [D-prime Architecture](../architecture/DPRIME_ARCHITECTURE.md) |
+| Integrated query-to-answer semantic loop (`canonical:run-contract-semantic-loop`) | [Run-Contract Semantic Loop](../architecture/RUN_CONTRACT_SEMANTIC_LOOP.md) |
+| Component DAG, scheduling, leases, and concurrency (`canonical:component-dag-scheduling-concurrency`) | [RunKernel Component DAG, Scheduling, And Concurrency](../architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) |
+| FAP packaging, Author rendering, and blocked terminal (`canonical:fap-author-boundary`) | [FinalAnswerPacket / Author Boundary](../architecture/FAP_AUTHOR_BOUNDARY.md) |
+| Installed bounded ordinary multi-component runtime (`canonical:bounded-multicomponent-runtime`) | [Multi-Component Synthesis Runtime Architecture](../architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) |
 | Cross-component Analyst proposal contract | [Cross-Component Analyst Workbench](../architecture/CROSS_COMPONENT_ANALYST_WORKBENCH.md) |
 | Analyst Workbench | [Analyst Workbench Full Slice](../architecture/ANALYST_WORKBENCH_FULL_SLICE.md) |
-| FAP / Author boundary | [FAP / Author Boundary](../architecture/FAP_AUTHOR_BOUNDARY.md) |
 | Scrutineer | [Scrutineer Review](../architecture/AG_SCRUTINEER_REVIEW_01.md) |
 | Specialist calculation | [Specialist Source-Bound Calculation](../architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) |
 | SufficiencyReadiness | [Sufficiency Partial-Answer Readiness](../architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md) |
 | Hardened FinalAnswerPacket | [Final Answer Packet Hardening](../architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md) |
 | Author prose finalization | [Author Prose-Only Finalization](../architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md) |
 
-## Routed-Support Warnings
+## Routed Support
 
-The following documents combine useful concern-specific doctrine with
-historical or phase-local implementation-status material. They are
-`Authority: routed-support`, `Default-read: no`, and are neither current-state
-nor roadmap owners. Read the two temporal owners first and use these only for
-the named concern:
+Routed-support documents are neither current-state nor roadmap owners. Read
+the exact canonical concern owner first and use supporting material only for
+its narrow responsibility:
 
 | Narrow concern | Supporting document |
 | --- | --- |
 | Current-path/quarantine classification detail | [AG Current Path Quarantine](../architecture/AG_CURRENT_PATH_QUARANTINE_01.md) |
-| Search-planning and integrated semantic-loop detail | [Run-Contract Semantic Loop](../architecture/RUN_CONTRACT_SEMANTIC_LOOP.md) |
-| D-prime concern-specific doctrine | [D-prime Architecture](../architecture/DPRIME_ARCHITECTURE.md) |
-
-Their implementation-status sections await D1 repair and must not override
-code/tests or [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 
 ## Authority And Orchestration
 
@@ -109,6 +105,10 @@ Provider-facing work must declare product integration or testing/operator
 broker-doorman work. Broker output is sanitized provider material only; it is
 not evidence custody, citation eligibility, source-obligation satisfaction, or
 answer material.
+
+The capability inventory / reuse-first gate also applies to the generic
+single-relation dogfood path: route planning, acquisition, source/readiness,
+and D-prime integration work to existing owners before adding machinery.
 
 ## Live Validation
 

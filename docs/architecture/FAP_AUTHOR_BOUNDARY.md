@@ -1,144 +1,140 @@
-# FAP / Author Boundary
+# FinalAnswerPacket / Author Boundary
 
-Status: architecture doctrine only for future answer rendering.
+Status: current
+Authority: canonical:fap-author-boundary
+Default-read: no
+Applies-to: ordinary FinalAnswerPacket packaging, Author rendering, and blocked FAP terminal behavior
+Does-not-authorize: new claims, evidence interpretation, synthesis creation, citation upgrade, or Author execution when FAP is blocked
+Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Update-trigger: merged change to FAP packaging, Author input, rendering, or blocked terminal behavior
 
-Mode: BUILD.
+## Responsibility
 
-## Purpose
+This document owns the installed boundary among Sufficiency,
+FinalAnswerPacket (FAP), Author, and blocked terminal behavior. The complete
+semantic authority flow belongs to
+[Run-Contract Semantic Loop](RUN_CONTRACT_SEMANTIC_LOOP.md), and the bounded
+multi-component producer path belongs to
+[Multi-Component Synthesis Runtime Architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 
-This document records FinalAnswerPacket (FAP) and Author boundary doctrine for
-future answer rendering. It is intended to keep future FAP inspection, source
-gateway, and Author work aligned with the current RunKernel-owned answer path.
-
-For the canonical multi-component producer, synthesis, validation, and
-admission architecture, read
-[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
-
-## Core Doctrine
-
-FAP is a constrained authority manifest, not a planner.
-
-FAP packages upstream-authorized claims, required caveats, source bindings,
-not-claimed boundaries, rendering references, and support posture references. It
-does not create authority.
-
-FAP may package admitted direct component material and admitted synthesis after
-ordinary Sufficiency approves readiness. FAP must not generate, repair,
-reinterpret, or validate synthesis, glue unadmitted component finals, or treat
-graph admission alone as answer readiness.
-
-The authority chain is:
+The authority sequence is:
 
 ```text
-mode contract / query-class contract
--> planner / relation plan
--> Analyst evidence posture
--> SufficiencyReadiness
--> FAP packaging
+RunKernel-admitted direct and synthesized state
+-> Sufficiency readiness decision
+-> FinalAnswerPacket authority packaging
 -> Author rendering
+-> RunOutcome
 ```
 
-FAP may carry:
+Sufficiency decides whether admitted state is ready, partial, blocked,
+contested, insufficient, follow-up-required, or not applicable. Graph admission
+alone is not answer readiness.
 
-- authorized claims;
-- required caveats;
-- optional or peripheral caveats only if externally labeled;
-- source bindings;
-- source-display requirements;
-- not-claimed boundaries;
-- mode/rendering refs;
-- support posture refs.
+## FinalAnswerPacket Contract
 
-FAP must not decide:
+FAP is a constrained authority manifest, not a planner, Analyst, validator, or
+repair layer. It packages admitted and readiness-approved material for Author.
 
-- what evidence means;
-- which source is authoritative;
-- which caveats matter;
-- how much evidence is sufficient;
-- what mode requires;
-- what answer should be given if upstream authority is missing.
+FAP may package:
 
-## Author Doctrine
+- admitted direct component claims;
+- admitted synthesis;
+- required caveats and uncertainty posture;
+- source and evidence bindings already authorized upstream;
+- not-claimed and prohibited-upgrade boundaries;
+- rendering and mode references; and
+- readiness and support posture references.
 
-Author is a constrained communication layer over FAP.
+FAP must not:
 
-Author may optimize presentation. Author may not optimize truth.
+- create, repair, reinterpret, or validate a claim or synthesis;
+- glue unadmitted component outputs;
+- decide what evidence means or which source is authoritative;
+- create citation eligibility or satisfy source obligations;
+- remove blockers or required caveats;
+- upgrade weak or contested support; or
+- package material that Sufficiency did not authorize.
 
-Author may:
+FAP packaging does not itself prove answer correctness, citation correctness,
+or source-obligation satisfaction.
 
-- choose clear wording;
-- organize the answer;
-- follow mode/rendering rules;
-- include required caveats;
-- surface source links readably;
-- create a human-facing source gateway.
-- explain synthesis that is already admitted and packaged by FAP.
+## Author Contract
 
-Author must not:
-
-- reinterpret evidence;
-- resolve conflicts;
-- decide source authority;
-- drop required caveats;
-- upgrade weak support;
-- introduce new claims;
-- infer missing context from model knowledge;
-- change source posture.
-- generate, repair, or validate synthesis, including glue between component
-  outputs that upstream roles did not admit.
-
-## Blocked FAP Terminal Outcome
-
-When FinalAnswerPacket readiness is BLOCKED, Author must not run.
-
-`author_input_blocked` preserves the FAP→Author hard stop: no Author payload is
-derived and no Author model call is made. The ordinary product path returns a
-deterministic sanitized non-Author terminal `RunOutcome` instead of raising
-`PipelineError` for that blocked readiness case.
-
-Rules:
-
-- Exported terminal posture is blocked/insufficient whenever FAP is blocked.
-- Safe terminal text may name sanitized readiness reasons, missing obligations,
-  component counts, or evidence posture from `build_safe_blocked_fap_summary`.
-- Safe terminal text must not contain prompts, provider/model payloads, raw
-  evidence, private logs, full traces, chain of thought, or unsupported answer
-  claims.
-- If Sufficiency lineage says `partial_answer_authorized` while FAP is blocked,
-  preserve that lineage only as diagnostics. Do not export it as the final
-  `RunOutcome` posture.
-- Pre-FAP execution-trace facts (recovery, conflict, weak-corpus, source-class)
-  remain available on the returned outcome.
-- Malformed or invariant failures outside blocked FAP readiness still raise.
-
-## Source Gateway Doctrine
-
-Future answers should make claims inspectable through this chain:
+Author is a constrained communication layer over FAP-authorized material.
 
 ```text
-answer
--> claim/component
--> Analyst support posture
+Author may improve presentation.
+Author may not improve truth posture.
+```
+
+Author may choose clear wording, structure the response, follow mode and
+rendering rules, preserve required caveats, pass through authorized sources,
+and explain synthesis that is already admitted and packaged.
+
+Author must not reinterpret evidence, resolve conflicts, decide source
+authority, drop caveats, upgrade support, invent missing context, introduce new
+claims, create missing synthesis, repair evidence, satisfy a missing source
+obligation, or create authority absent from FAP.
+
+## Blocked FAP Terminal
+
+When FAP readiness is blocked, Author does not run. No Author input is derived
+and no Author model call is made.
+
+For the installed ordinary blocked-readiness case, the product returns a
+deterministic sanitized non-Author `RunOutcome` rather than relabeling the case
+as an Author answer or raising `PipelineError`. The exported terminal posture is
+blocked/insufficient even when upstream diagnostics preserved a partial-answer
+lineage.
+
+The safe summary may include sanitized readiness reasons, missing obligations,
+component counts, and evidence posture. It must not contain prompts, raw model
+or provider material, raw evidence, credentials, private logs, full traces,
+chain of thought, or unsupported answer claims. Pre-FAP execution facts such as
+recovery, conflict, weak-corpus, and source-class posture may remain available
+as safe diagnostics.
+
+This normalization is narrow. Malformed packets, broken identity or lineage,
+invariant failures, infrastructure failures, and unrelated internal failures
+remain errors. They must not be relabeled as ordinary insufficiency.
+
+## Ordinary And Supporting Surfaces
+
+The ordinary product path currently consumes Sufficiency, FAP, Author,
+`RunOutcome`, and CLI-visible output for supported direct and bounded
+multi-component cases. That ordinary behavior is the current product contract.
+
+[Final Answer Packet Hardening](AG_FINAL_ANSWER_PACKET_HARDENING_01.md) and
+[Author Prose-Only Finalization](AUTHOR_PROSE_ONLY_FINALIZATION_01.md) preserve
+useful bounded hardening, packet-posture, and prose-only supporting contracts.
+They do not define the only current product path and must not be used to demote
+ordinary FAP/Author consumption to future work. Older FAP, Author, and follow-up
+phase records remain compatibility or historical context unless a current
+owner explicitly reuses them.
+
+## Source Gateway
+
+A presentation layer may make already authorized claims inspectable through a
+chain such as:
+
+```text
+answer claim
+-> admitted component or synthesis
 -> FAP authorization
 -> source binding
--> source material
+-> bounded source material
 ```
 
-The source gateway is presentation and inspectability. It is not an alternate
-evidence interpreter, source-authority engine, citation eligibility engine, or
-source-obligation satisfaction path.
+This is presentation and inspectability direction. It is not an installed
+source-authority engine, citation eligibility engine, citation renderer, or
+source-obligation satisfaction path unless current code and focused tests
+separately establish that exact behavior. This phase changes none of those
+runtime surfaces.
 
-## Current Status
+## Nonproofs
 
-This document records FAP/Author boundary doctrine, including the blocked-FAP
-safe terminal outcome rule above.
-
-Product correctness remains unclaimed. ScryRaven is not friend-level MVP and is
-not a general supported-query MVP.
-
-Related current posture docs:
-
-- [AG_FINAL_ANSWER_PACKET_HARDENING_01.md](AG_FINAL_ANSWER_PACKET_HARDENING_01.md)
-- [AUTHOR_PROSE_ONLY_FINALIZATION_01.md](AUTHOR_PROSE_ONLY_FINALIZATION_01.md)
-- [SOURCE_AUTHORITY_POSTURE.md](SOURCE_AUTHORITY_POSTURE.md)
-- [RUN_CONTRACT_SEMANTIC_LOOP.md](RUN_CONTRACT_SEMANTIC_LOOP.md)
+This contract does not prove arbitrary-query readiness, live product behavior,
+citation rendering, source-obligation satisfaction, broad Author quality, or
+product correctness. It does not authorize changes to citations, prompts,
+models, providers, source ranking, FAP runtime, or Author runtime.
