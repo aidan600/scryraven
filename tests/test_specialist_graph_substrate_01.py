@@ -53,9 +53,19 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
+    role_artifact_ref,
 )
 from core.protocols import NullStatusWriter
+from core.run_kernel import RunKernel, RunKernelTransitionError
 from core.specialist_graph_runtime import (
+    AVAILABILITY_BLOCKED,
+    AVAILABILITY_BUDGET,
+    AVAILABILITY_CAPABILITY,
+    AVAILABILITY_CONTESTED,
+    AVAILABILITY_FAILED,
+    AVAILABILITY_POLICY,
+    AVAILABILITY_RESULT,
+    AVAILABILITY_TARGET,
     EXECUTION_BLOCKED,
     EXECUTION_CONTESTED,
     EXECUTION_FAILED,
@@ -72,6 +82,7 @@ from core.specialist_graph_runtime import (
     closed_specialist_execution_policy,
     closed_specialist_registry,
     normalize_specialist_need_proposal,
+    specialist_digest,
 )
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
@@ -108,10 +119,12 @@ class SpecialistNorthstarHarness(NorthstarHarness):
     scrutineer_target_key = "S"
     scrutineer_challenge_target_key = "synthesis_02"
     component_proposal_all = False
+    component_target_override: str | None = None
 
     def __init__(self, tmp_path: Path) -> None:
         super().__init__(tmp_path)
         self.specialist_dprime_inputs: list[dict[str, Any]] = []
+        self.all_dprime_inputs: list[dict[str, Any]] = []
         self.scrutineer_calls = 0
 
     @staticmethod
@@ -141,8 +154,10 @@ class SpecialistNorthstarHarness(NorthstarHarness):
         if system_prompt in {
             ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME],
             ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME],
-        } and payload.get("specialist_result_inputs"):
-            self.specialist_dprime_inputs.append(deepcopy(payload))
+        }:
+            self.all_dprime_inputs.append(deepcopy(payload))
+            if payload.get("specialist_need_handoff"):
+                self.specialist_dprime_inputs.append(deepcopy(payload))
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER]:
             self.scrutineer_calls += 1
             if self.proposal_origin == "scrutineer" and self.scrutineer_calls == 1:
@@ -183,7 +198,10 @@ class SpecialistNorthstarHarness(NorthstarHarness):
         ):
             output["specialist_need_proposal"] = self._proposal(
                 target_kind="component",
-                target_key=str(payload["component_ref"]["component_id"]),
+                target_key=(
+                    self.component_target_override
+                    or str(payload["component_ref"]["component_id"])
+                ),
                 hint=self.capability_hint,
                 posture=self.posture,
                 requirement=self.capability_requirement,
@@ -276,6 +294,45 @@ def _run(
     return outcome, captured["semantic_run_kernel"], captured
 
 
+def _run_with_pending_specialist_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Any, RunKernel, Any]:
+    original_consume = RunKernel.consume_specialist_handoff_by_dprime
+
+    def leave_pending(
+        self: RunKernel,
+        *,
+        handoff_id: str,
+        dprime_artifact_ref: dict[str, Any],
+    ) -> dict[str, Any]:
+        del handoff_id, dprime_artifact_ref
+        return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
+
+    monkeypatch.setattr(
+        RunKernel, "consume_specialist_handoff_by_dprime", leave_pending
+    )
+    harness = SpecialistNorthstarHarness(tmp_path)
+    outcome, kernel, _captured = _run(
+        tmp_path,
+        monkeypatch,
+        harness=harness,
+        registry=_registry([]),
+        policy=SpecialistExecutionPolicy(
+            enabled_capability_ids=("test.specialist.alpha",),
+            specialist_work_item_limit=1,
+        ),
+    )
+    assert outcome.report == NORTHSTAR_REPORT
+    assert (
+        kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["need_handoffs"][
+            0
+        ]["validator_consumption"]
+        == "pending_validator_consumption"
+    )
+    return outcome, kernel, original_consume
+
+
 def test_no_need_ordinary_run_preserves_scheduler_v2_and_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -298,6 +355,32 @@ def test_no_need_ordinary_run_preserves_scheduler_v2_and_answer(
         "schema_version"
     ] == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
     assert SPECIALIST_WORK_PLANE_STAGE not in kernel.state.projections
+
+
+def test_enabled_specialist_lane_without_proposal_omits_handoff_from_exact_packets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness = SpecialistNorthstarHarness(tmp_path)
+    harness.proposal_origin = "none"
+    outcome, kernel, _captured = _run(
+        tmp_path,
+        monkeypatch,
+        harness=harness,
+        registry=_registry([]),
+        policy=SpecialistExecutionPolicy(
+            enabled_capability_ids=("test.specialist.alpha",),
+            specialist_work_item_limit=1,
+        ),
+    )
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert outcome.report == NORTHSTAR_REPORT
+    assert plane["proposal_count"] == plane["need_handoff_count"] == 0
+    assert harness.all_dprime_inputs
+    assert all(
+        "specialist_need_handoff" not in packet
+        and "specialist_result_inputs" not in packet
+        for packet in harness.all_dprime_inputs
+    )
 
 
 def test_component_origin_runs_through_v3_registry_and_component_dprime(
@@ -330,14 +413,43 @@ def test_component_origin_runs_through_v3_registry_and_component_dprime(
         "specialist_returned": 0,
     }
     assert len(calls) == 1 and calls[0]["thread_id"] == main_thread
-    assert plane["proposal_count"] == plane["work_node_count"] == plane["result_artifact_count"] == 1
-    assert plane["result_artifacts"][0]["validator_consumption"] == "consumed_by_component_dprime"
-    assert harness.specialist_dprime_inputs[0]["specialist_result_inputs"]["namespace"] == "specialist_result_inputs"
+    assert (
+        plane["proposal_count"]
+        == plane["work_node_count"]
+        == plane["result_artifact_count"]
+        == 1
+    )
+    assert (
+        plane["proposal_disposition_count"] == plane["need_handoff_count"] == 1
+    )
+    assert (
+        plane["proposal_dispositions"][0]["execution_availability_posture"]
+        == AVAILABILITY_RESULT
+    )
+    assert (
+        plane["proposal_dispositions"][0]["proposal_ref"]["proposal_digest"]
+        == plane["proposals"][0]["proposal_digest"]
+    )
+    assert (
+        plane["result_artifacts"][0]["validator_consumption"]
+        == "consumed_by_component_dprime"
+    )
+    assert (
+        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+            "namespace"
+        ]
+        == "specialist_need_handoff"
+    )
     assert scheduler["compatibility_envelope"]["total_units"] == 22
     assert plane["provider_request_attempt_count"] == plane["model_call_count"] == 0
     assert plane["token_usage"] == plane["model_cost"] == 0
     assert plane["maximum_observed_in_flight"] == 1
     result = plane["result_artifacts"][0]
+    assert (
+        specialist_digest(calls[0]["inputs"])
+        == plane["work_nodes"][0]["bounded_input_digest"]
+        == result["bounded_input_digest"]
+    )
     for authority in (
         "component_admission_authority",
         "synthesis_admission_authority",
@@ -386,7 +498,222 @@ def test_synthesis_origin_uses_second_capability_without_driver_branch(
     assert result["capability_id"] == "test.specialist.beta"
     assert result["validator_consumption"] == "consumed_by_synthesis_dprime"
     assert len(calls) == 1
-    assert harness.specialist_dprime_inputs[0]["nominated_synthesis"]["synthesis_key"] == "S"
+    assert (
+        harness.specialist_dprime_inputs[0]["nominated_synthesis"][
+            "synthesis_key"
+        ]
+        == "S"
+    )
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert (
+        specialist_digest(calls[0]["inputs"])
+        == plane["work_nodes"][0]["bounded_input_digest"]
+        == result["bounded_input_digest"]
+    )
+
+
+def test_transient_component_packet_sentinel_reaches_only_adapter_local_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    harness = SpecialistNorthstarHarness(tmp_path)
+    sentinel_url = "https://sentinel.invalid/specialist-transient-only"
+    sentinel_evidence = "SENTINEL_EVIDENCE_" + ("x" * 6000)
+    original = scheduling.reconstruct_specialist_bounded_input
+
+    def with_sentinel(
+        *, state: Any, proposal: dict[str, Any]
+    ) -> dict[str, Any]:
+        authority = original(state=state, proposal=proposal)
+        packet = deepcopy(authority["transient_bounded_input"])
+        packet["sentinel_source_url"] = sentinel_url
+        packet["sentinel_evidence_text"] = sentinel_evidence
+        authority["transient_bounded_input"] = packet
+        authority["bounded_input_digest"] = specialist_digest(packet)
+        return authority
+
+    monkeypatch.setattr(
+        scheduling, "reconstruct_specialist_bounded_input", with_sentinel
+    )
+    outcome, kernel, _captured = _run(
+        tmp_path,
+        monkeypatch,
+        harness=harness,
+        registry=_registry(calls),
+        policy=SpecialistExecutionPolicy(
+            enabled_capability_ids=("test.specialist.alpha",),
+            specialist_work_item_limit=1,
+        ),
+    )
+    assert outcome.report == NORTHSTAR_REPORT
+    assert calls[0]["inputs"]["sentinel_source_url"] == sentinel_url
+    assert calls[0]["inputs"]["sentinel_evidence_text"] == sentinel_evidence
+    retained = json.dumps(
+        {
+            "projections": kernel.state.projections,
+            "actions": [
+                action.to_dict()
+                for action in kernel.state.issued_actions.values()
+            ],
+        },
+        sort_keys=True,
+    )
+    assert sentinel_url not in retained
+    assert sentinel_evidence not in retained
+    work = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["work_nodes"][
+        0
+    ]
+    assert "bounded_inputs" not in work
+    assert set(key for key in work if key.startswith("bounded_input_")) == {
+        "bounded_input_digest",
+        "bounded_input_schema_ref",
+        "bounded_input_lineage_refs",
+        "bounded_input_reconstruction_ref",
+    }
+
+
+def test_changed_reconstruction_cancels_once_before_adapter_and_refunds_unit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    harness = SpecialistNorthstarHarness(tmp_path)
+    reconstruction_calls = 0
+
+    def change_after_authorization(*, state: Any, work: dict[str, Any]) -> dict[str, Any]:
+        nonlocal reconstruction_calls
+        del state, work
+        reconstruction_calls += 1
+        raise scheduling.MulticomponentGraphSchedulingError(
+            "authorized Specialist input changed before dispatch"
+        )
+
+    monkeypatch.setattr(
+        scheduling,
+        "reconstruct_specialist_input_for_work",
+        change_after_authorization,
+    )
+    captured = install_handoff_capture(
+        monkeypatch, capture_stages=(HANDOFF_SEMANTIC,)
+    )
+    deps = harness.deps()
+    deps.specialist_capability_registry = _registry(calls)
+    deps.specialist_execution_policy = SpecialistExecutionPolicy(
+        enabled_capability_ids=("test.specialist.alpha",),
+        specialist_work_item_limit=1,
+    )
+    try:
+        orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-13",
+                session_id="specialist-changed-packet-session",
+                run_id="specialist-changed-packet-run",
+            ),
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+    except Exception:
+        pass
+    kernel = captured["semantic_run_kernel"]
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    pool = scheduler["specialist_compatibility_pool"]
+    specialist_leases = [
+        item
+        for item in scheduler["lease_history"]
+        if (item.get("work") or {}).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+    ]
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert reconstruction_calls == 1
+    assert calls == []
+    assert [item["status"] for item in specialist_leases] == [LEASE_CANCELLED]
+    assert pool["specialist_remaining"] == pool["specialist_total"] == 1
+    assert pool["specialist_reserved"] == pool["specialist_spent"] == 0
+    assert pool["specialist_returned"] == 1
+    assert plane["result_artifact_count"] == 0
+    assert plane["proposal_dispositions"][0][
+        "execution_availability_posture"
+    ] == AVAILABILITY_FAILED
+    assert plane["proposal_dispositions"][0]["terminal_nonexecution_reason"] == (
+        "input_reconstruction_failed"
+    )
+    assert not any(
+        action.action_type.value == "specialist_capability_execute"
+        for action in kernel.state.issued_actions.values()
+    )
+
+
+def test_runkernel_reproves_exact_handoff_consumption_and_rejects_double_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _outcome, kernel, consume = _run_with_pending_specialist_handoff(
+        tmp_path, monkeypatch
+    )
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    handoff = plane["need_handoffs"][0]
+    target_key = handoff["canonical_target_ref"]["target_key"]
+    artifact = kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{target_key}"
+    ]
+    consume(
+        kernel,
+        handoff_id=handoff["handoff_id"],
+        dprime_artifact_ref=role_artifact_ref(artifact),
+    )
+    consumed = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert consumed["need_handoffs"][0]["validator_consumption"] == (
+        "consumed_by_component_dprime"
+    )
+    consumption_action = next(
+        action
+        for action in reversed(tuple(kernel.state.issued_actions.values()))
+        if action.action_type.value == "specialist_validator_consume"
+    )
+    assert "route" not in consumption_action.inputs
+    assert "validation_status" not in consumption_action.inputs
+    with pytest.raises(RunKernelTransitionError):
+        consume(
+            kernel,
+            handoff_id=handoff["handoff_id"],
+            dprime_artifact_ref=role_artifact_ref(artifact),
+        )
+
+
+@pytest.mark.parametrize("forgery", ["digest", "unrelated_dprime"])
+def test_runkernel_rejects_forged_or_unrelated_dprime_handoff_consumption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    forgery: str,
+) -> None:
+    _outcome, kernel, consume = _run_with_pending_specialist_handoff(
+        tmp_path, monkeypatch
+    )
+    handoff = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE][
+        "need_handoffs"
+    ][0]
+    target_key = handoff["canonical_target_ref"]["target_key"]
+    if forgery == "digest":
+        artifact = kernel.state.projections[
+            f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{target_key}"
+        ]
+        artifact_ref = role_artifact_ref(artifact)
+        artifact_ref["artifact_digest"] = "0" * 64
+    else:
+        artifact = next(
+            value
+            for key, value in kernel.state.projections.items()
+            if key.startswith(f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:")
+            and key
+            != f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{target_key}"
+        )
+        artifact_ref = role_artifact_ref(artifact)
+    with pytest.raises(RunKernelTransitionError):
+        consume(
+            kernel,
+            handoff_id=handoff["handoff_id"],
+            dprime_artifact_ref=artifact_ref,
+        )
 
 
 def test_cross_component_unknown_target_is_typed_rejected_and_optional(
@@ -594,11 +921,31 @@ def test_required_versus_optional_policy_denial_in_ordinary_path(
         policy=closed_specialist_execution_policy(),
     )
     scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
-    proposal = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["proposals"][0]
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    proposal = plane["proposals"][0]
     assert (outcome.report == NORTHSTAR_REPORT) is expected_answer
     assert scheduler["status"] == expected_scheduler_status
     assert proposal["proposal_authority"] == PROPOSAL_DENIED_POLICY
     assert proposal["posture"] == posture
+    assert (
+        plane["proposal_dispositions"][0]["execution_availability_posture"]
+        == AVAILABILITY_POLICY
+    )
+    assert plane["need_handoffs"][0]["result"] == {}
+    if posture == "optional":
+        assert (
+            harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+                "availability_posture"
+            ]
+            == AVAILABILITY_POLICY
+        )
+        assert plane["need_handoffs"][0]["validator_consumption"] == (
+            "consumed_by_component_dprime"
+        )
+    else:
+        assert plane["need_handoffs"][0]["validator_consumption"] == (
+            "pending_validator_consumption"
+        )
 
 
 def test_one_unit_budget_exhaustion_blocks_second_required_specialist(
@@ -635,6 +982,112 @@ def test_one_unit_budget_exhaustion_blocks_second_required_specialist(
         "denied_exhausted",
     ]
     assert len(calls) == 1
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert [
+        item["execution_availability_posture"]
+        for item in plane["proposal_dispositions"]
+    ] == [
+        AVAILABILITY_RESULT,
+        AVAILABILITY_BUDGET,
+    ]
+
+
+def test_one_unit_budget_exhaustion_hands_optional_need_to_dprime_without_second_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+    harness = SpecialistNorthstarHarness(tmp_path)
+    harness.component_proposal_all = True
+    outcome, kernel, _captured = _run(
+        tmp_path,
+        monkeypatch,
+        harness=harness,
+        registry=_registry(calls),
+        policy=SpecialistExecutionPolicy(
+            enabled_capability_ids=("test.specialist.alpha",),
+            specialist_work_item_limit=1,
+        ),
+    )
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    specialist_leases = [
+        item
+        for item in scheduler["lease_history"]
+        if (item.get("work") or {}).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+    ]
+    assert outcome.report == NORTHSTAR_REPORT
+    assert len(calls) == len(specialist_leases) == 1
+    assert plane["proposal_count"] == plane["proposal_disposition_count"] == 5
+    availability = [
+        item["execution_availability_posture"]
+        for item in plane["proposal_dispositions"]
+    ]
+    assert availability.count(AVAILABILITY_RESULT) == 1
+    assert availability.count(AVAILABILITY_BUDGET) == 4
+    assert all(
+        item["terminal_nonexecution_reason"] == "specialist_pool_exhausted"
+        for item in plane["proposal_dispositions"]
+        if item["execution_availability_posture"] == AVAILABILITY_BUDGET
+    )
+    assert [
+        item["availability_posture"] for item in plane["need_handoffs"]
+    ] == availability
+    assert all(
+        item["validator_consumption"] == "consumed_by_component_dprime"
+        for item in plane["need_handoffs"]
+    )
+    assert any(
+        packet["specialist_need_handoff"]["availability_posture"]
+        == AVAILABILITY_BUDGET
+        for packet in harness.specialist_dprime_inputs
+    )
+
+
+@pytest.mark.parametrize(
+    ("denial", "expected_authority", "expected_availability"),
+    (
+        ("capability", PROPOSAL_REJECTED, AVAILABILITY_CAPABILITY),
+        ("target", PROPOSAL_UNSUPPORTED_TARGET, AVAILABILITY_TARGET),
+    ),
+)
+def test_optional_capability_and_target_denials_are_visible_to_component_dprime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    denial: str,
+    expected_authority: str,
+    expected_availability: str,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    harness = SpecialistNorthstarHarness(tmp_path)
+    if denial == "capability":
+        harness.capability_requirement = "missing_fixture_requirement"
+    else:
+        harness.component_target_override = "unrelated-component"
+    outcome, kernel, _captured = _run(
+        tmp_path,
+        monkeypatch,
+        harness=harness,
+        registry=_registry(calls),
+        policy=SpecialistExecutionPolicy(
+            enabled_capability_ids=("test.specialist.alpha",),
+            specialist_work_item_limit=1,
+        ),
+    )
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert outcome.report == NORTHSTAR_REPORT
+    assert calls == []
+    assert plane["proposals"][0]["proposal_authority"] == expected_authority
+    assert (
+        plane["proposal_dispositions"][0]["execution_availability_posture"]
+        == expected_availability
+    )
+    assert (
+        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+            "availability_posture"
+        ]
+        == expected_availability
+    )
 
 
 def _terminal_registry(
@@ -708,6 +1161,22 @@ def test_capability_failure_block_and_contested_remain_spent_and_validated(
     assert lease["status"] == expected_lease
     assert scheduler["specialist_compatibility_pool"]["specialist_spent"] == 1
     assert len(calls) == 1
+    expected_availability = {
+        EXECUTION_FAILED: AVAILABILITY_FAILED,
+        EXECUTION_BLOCKED: AVAILABILITY_BLOCKED,
+        EXECUTION_CONTESTED: AVAILABILITY_CONTESTED,
+    }[expected_result]
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    assert (
+        plane["proposal_dispositions"][0]["execution_availability_posture"]
+        == expected_availability
+    )
+    assert (
+        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+            "availability_posture"
+        ]
+        == expected_availability
+    )
 
 
 def _specialist_scheduler_fixture(

@@ -257,7 +257,7 @@ def synthesis_dprime_input_packet(
     graph: Mapping[str, Any],
     *,
     synthesis_key: str,
-    specialist_result_artifact: Mapping[str, Any] | None = None,
+    specialist_need_handoff: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     validated = validate_component_work_graph_v1(graph)
     node = _synthesis_node(validated, synthesis_key)
@@ -302,31 +302,24 @@ def synthesis_dprime_input_packet(
             _bounded_semantic_role_input_from_node(item) for item in input_nodes
         ],
     }
-    if specialist_result_artifact:
+    if specialist_need_handoff:
         from core.specialist_graph_runtime import (
-            specialist_result_ref,
-            validate_specialist_result_artifact,
+            specialist_need_handoff_packet,
+            validate_specialist_need_handoff,
         )
 
-        result = validate_specialist_result_artifact(specialist_result_artifact)
-        target = _safe_mapping(result.get("canonical_target_ref"))
+        handoff = validate_specialist_need_handoff(specialist_need_handoff)
+        target = _safe_mapping(handoff.get("canonical_target_ref"))
         if (
             target.get("target_kind") != "synthesis"
             or target.get("target_key") != synthesis_key
-            or result.get("dprime_route") != "synthesis_dprime"
         ):
             raise ComponentWorkGraphV1Error(
-                "synthesis D-prime Specialist result target mismatch"
+                "synthesis D-prime Specialist handoff target mismatch"
             )
-        packet["specialist_result_inputs"] = {
-            "namespace": "specialist_result_inputs",
-            "result_ref": specialist_result_ref(result),
-            "bounded_result": deepcopy(result.get("bounded_result") or {}),
-            "assumptions": list(result.get("assumptions") or ()),
-            "caveats": list(result.get("caveats") or ()),
-            "blockers": list(result.get("blockers") or ()),
-            "execution_posture": result.get("execution_posture"),
-        }
+        packet["specialist_need_handoff"] = specialist_need_handoff_packet(
+            handoff
+        )
     return packet
 
 
@@ -1930,7 +1923,7 @@ def graph_with_synthesis_validation(
     *,
     synthesis_key: str,
     dprime_artifact: Mapping[str, Any],
-    specialist_result_artifact: Mapping[str, Any] | None = None,
+    specialist_need_handoff: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     current = validate_component_work_graph_v1(graph)
     artifact = validate_multicomponent_role_artifact(
@@ -1940,7 +1933,7 @@ def graph_with_synthesis_validation(
     expected_input = synthesis_dprime_input_packet(
         current,
         synthesis_key=synthesis_key,
-        specialist_result_artifact=specialist_result_artifact,
+        specialist_need_handoff=specialist_need_handoff,
     )
     if artifact["input_packet_digest"] != _digest(expected_input):
         raise ComponentWorkGraphV1Error("synthesis D-prime input binding mismatch")
@@ -2415,6 +2408,7 @@ def expected_graph_after_transition(
     physical_call_accounting: Mapping[str, Any] | None = None,
     structure_graph: Mapping[str, Any] | None = None,
     transition_graph: Mapping[str, Any] | None = None,
+    specialist_need_handoff: Mapping[str, Any] | None = None,
     specialist_result_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Rederive the unique next canonical graph for one Graph V1 operation."""
@@ -2447,7 +2441,7 @@ def expected_graph_after_transition(
             current,
             synthesis_key=synthesis_key,
             dprime_artifact=role_artifact,
-            specialist_result_artifact=specialist_result_artifact,
+            specialist_need_handoff=specialist_need_handoff,
         )
     elif operation == "scrutiny":
         if role_artifact is None:

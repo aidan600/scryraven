@@ -1053,8 +1053,13 @@ def _scheduler_work_input_packet(
         ).items()
     }
     if work.get("work_kind") == "specialist_capability":
-        packet = _safe_mapping(
-            _safe_mapping(work.get("specialist_work_node")).get("bounded_inputs")
+        from core.multicomponent_graph_scheduling import (
+            reconstruct_specialist_input_for_work,
+        )
+
+        packet = reconstruct_specialist_input_for_work(
+            state=run_kernel.state,
+            work=work,
         )
     elif role == ROLE_COMPONENT_ANALYST and component_id:
         packet = analyst_inputs.get(component_id, {})
@@ -1065,14 +1070,14 @@ def _scheduler_work_input_packet(
             )
         )
         analyst_input = analyst_inputs.get(component_id, {})
-        specialist_result: dict[str, Any] = {}
+        specialist_handoff: dict[str, Any] = {}
         specialist_state = _safe_mapping(
             run_kernel.state.projections.get("specialist_work_plane")
         )
         if specialist_state:
-            from core.specialist_graph_runtime import result_for_target
+            from core.specialist_graph_runtime import handoff_for_target
 
-            specialist_result = result_for_target(
+            specialist_handoff = handoff_for_target(
                 specialist_state,
                 target_kind="component",
                 target_key=component_id,
@@ -1081,7 +1086,7 @@ def _scheduler_work_input_packet(
             component_dprime_input_packet(
                 analyst_artifact=analyst,
                 analyst_input_packet=analyst_input,
-                specialist_result_artifact=specialist_result or None,
+                specialist_need_handoff=specialist_handoff or None,
             )
             if analyst and analyst_input
             else {}
@@ -1150,14 +1155,16 @@ def _scheduler_work_input_packet(
                     closure=closure,
                 )
             elif role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
-                specialist_result = {}
+                specialist_handoff = {}
                 specialist_state = _safe_mapping(
                     run_kernel.state.projections.get("specialist_work_plane")
                 )
                 if specialist_state:
-                    from core.specialist_graph_runtime import result_for_target
+                    from core.specialist_graph_runtime import (
+                        handoff_for_target,
+                    )
 
-                    specialist_result = result_for_target(
+                    specialist_handoff = handoff_for_target(
                         specialist_state,
                         target_kind="synthesis",
                         target_key=synthesis_key,
@@ -1165,7 +1172,7 @@ def _scheduler_work_input_packet(
                 packet = synthesis_dprime_input_packet(
                     graph,
                     synthesis_key=synthesis_key,
-                    specialist_result_artifact=specialist_result or None,
+                    specialist_need_handoff=specialist_handoff or None,
                 )
             elif role == ROLE_SCRUTINEER:
                 packet = scrutineer_input_packet(graph)
@@ -1173,10 +1180,12 @@ def _scheduler_work_input_packet(
                 packet = {}
         else:
             packet = {}
-    if (
-        not packet
-        or safe_packet_digest(packet) != work.get("input_packet_digest")
-    ):
+    packet_digest = safe_packet_digest(packet)
+    if work.get("work_kind") == "specialist_capability":
+        from core.specialist_graph_runtime import specialist_digest
+
+        packet_digest = specialist_digest(packet)
+    if not packet or packet_digest != work.get("input_packet_digest"):
         raise OrdinaryMulticomponentRuntimeError(
             "scheduler-selected work packet could not be reconstructed exactly"
         )
@@ -1430,29 +1439,22 @@ def _consume_scheduler_selected_artifact(
                 f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
             )
         )
-        specialist_result: dict[str, Any] = {}
+        specialist_handoff: dict[str, Any] = {}
         specialist_state = _safe_mapping(
             run_kernel.state.projections.get("specialist_work_plane")
         )
         if specialist_state:
             from core.multicomponent_role_runtime import role_artifact_ref
-            from core.specialist_graph_runtime import result_for_target
+            from core.specialist_graph_runtime import handoff_for_target
 
-            specialist_result = result_for_target(
+            specialist_handoff = handoff_for_target(
                 specialist_state,
                 target_kind="component",
                 target_key=component_id,
             )
-            if specialist_result:
-                run_kernel.consume_specialist_result_by_dprime(
-                    result_id=str(specialist_result.get("result_id") or ""),
-                    route="component_dprime",
-                    validation_status=str(
-                        _safe_mapping(artifact.get("semantic_output")).get(
-                            "validation_status"
-                        )
-                        or ""
-                    ),
+            if specialist_handoff:
+                run_kernel.consume_specialist_handoff_by_dprime(
+                    handoff_id=str(specialist_handoff.get("handoff_id") or ""),
                     dprime_artifact_ref=role_artifact_ref(artifact),
                 )
         bindable = drive_context["selected_bindables"].get(component_id)
@@ -1477,7 +1479,7 @@ def _consume_scheduler_selected_artifact(
             semantic_observation=observation,
             sanitized_content_references=content_refs,
             component_coverage_record=coverage,
-            specialist_result_artifact=specialist_result or None,
+            specialist_need_handoff=specialist_handoff or None,
         )
         if work.get("recovery_authorization_ref"):
             if component_admission_ref.get("admission_status") not in {
@@ -1676,29 +1678,22 @@ def _consume_scheduler_selected_artifact(
             )
         return
     if role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
-        specialist_result: dict[str, Any] = {}
+        specialist_handoff: dict[str, Any] = {}
         specialist_state = _safe_mapping(
             run_kernel.state.projections.get("specialist_work_plane")
         )
         if specialist_state:
             from core.multicomponent_role_runtime import role_artifact_ref
-            from core.specialist_graph_runtime import result_for_target
+            from core.specialist_graph_runtime import handoff_for_target
 
-            specialist_result = result_for_target(
+            specialist_handoff = handoff_for_target(
                 specialist_state,
                 target_kind="synthesis",
                 target_key=synthesis_key,
             )
-            if specialist_result:
-                run_kernel.consume_specialist_result_by_dprime(
-                    result_id=str(specialist_result.get("result_id") or ""),
-                    route="synthesis_dprime",
-                    validation_status=str(
-                        _safe_mapping(artifact.get("semantic_output")).get(
-                            "validation_status"
-                        )
-                        or ""
-                    ),
+            if specialist_handoff:
+                run_kernel.consume_specialist_handoff_by_dprime(
+                    handoff_id=str(specialist_handoff.get("handoff_id") or ""),
                     dprime_artifact_ref=role_artifact_ref(artifact),
                 )
         graph = validate_component_work_graph_v1(
@@ -1715,7 +1710,7 @@ def _consume_scheduler_selected_artifact(
                 graph,
                 synthesis_key=synthesis_key,
                 dprime_artifact=artifact,
-                specialist_result_artifact=specialist_result or None,
+                specialist_need_handoff=specialist_handoff or None,
             ),
         )
         node = next(
@@ -1905,8 +1900,29 @@ def _execute_run_kernel_selected_batch(
             batch_id=str(batch.get("batch_id") or ""),
             reason="exact_batch_packet_reconstruction_failed",
         )
+        if (
+            len(works) == 1
+            and works[0].get("work_kind") == "specialist_capability"
+            and _safe_mapping(works[0].get("specialist_proposal_ref")).get(
+                "posture"
+            )
+            == "optional"
+        ):
+            run_kernel.dispose_failed_specialist_reconstruction(
+                work=works[0]
+            )
+            return
         raise
-    packet_digests = [safe_packet_digest(packet) for packet in packets]
+    from core.specialist_graph_runtime import specialist_digest
+
+    packet_digests = [
+        (
+            specialist_digest(packet)
+            if work.get("work_kind") == "specialist_capability"
+            else safe_packet_digest(packet)
+        )
+        for work, packet in zip(works, packets, strict=True)
+    ]
     actions = run_kernel.commit_multicomponent_batch_dispatch(
         batch_id=str(batch.get("batch_id") or ""),
         packet_digests=packet_digests,
@@ -1945,6 +1961,7 @@ def _execute_run_kernel_selected_batch(
             result = execute_specialist_capability(
                 registry=registry,
                 work_node=work_node,
+                transient_bounded_input=packets[0],
                 authorization_action_ref=action_ref,
                 lease_ref=lease_ref,
             )
@@ -2265,6 +2282,7 @@ def _drive_run_kernel_selected_semantic_work(
             raise _ScheduledSemanticWorkBlocked(
                 "required scheduled semantic work did not complete"
             )
+        run_kernel.dispose_exhausted_optional_specialist_proposals()
         ready = run_kernel.derive_current_multicomponent_ready_work()
         if not ready:
             if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):

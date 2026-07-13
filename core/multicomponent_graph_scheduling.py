@@ -840,13 +840,22 @@ def _specialist_work(
     state: Any,
     scheduler: Mapping[str, Any],
     proposal: Mapping[str, Any],
-    bounded_inputs: Mapping[str, Any],
 ) -> dict[str, Any]:
     from core.specialist_graph_runtime import build_specialist_work_node
 
+    input_authority = reconstruct_specialist_bounded_input(
+        state=state,
+        proposal=proposal,
+    )
     node = build_specialist_work_node(
         proposal=proposal,
-        bounded_inputs=bounded_inputs,
+        bounded_input_digest=str(input_authority["bounded_input_digest"]),
+        bounded_input_lineage_refs=tuple(
+            input_authority["bounded_input_lineage_refs"]
+        ),
+        bounded_input_reconstruction_ref=_mapping(
+            input_authority["bounded_input_reconstruction_ref"]
+        ),
     )
     target = _mapping(node.get("canonical_target_ref"))
     core = {
@@ -865,7 +874,7 @@ def _specialist_work(
         "node_ref": deepcopy(target),
         "role": WORK_KIND_SPECIALIST_CAPABILITY,
         "logical_evaluation_key": node.get("node_id"),
-        "input_packet_digest": node.get("input_digest"),
+        "input_packet_digest": node.get("bounded_input_digest"),
         "prerequisite_refs": [
             deepcopy(node.get("proposal_ref") or {}),
             deepcopy(target),
@@ -888,6 +897,217 @@ def _specialist_work(
         "work_id": f"multicomponent-work:{digest[:24]}",
         "work_digest": digest,
     }
+
+
+def reconstruct_specialist_bounded_input(
+    *, state: Any, proposal: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Reconstruct transient input and its retained digest/ref authority."""
+
+    from core.component_work_graph_v1 import (
+        COMPONENT_WORK_GRAPH_V1_STAGE,
+        validate_component_work_graph_v1,
+    )
+    from core.specialist_graph_runtime import (
+        proposal_ref,
+        specialist_digest,
+        validate_bound_specialist_proposal,
+    )
+
+    bound = validate_bound_specialist_proposal(proposal)
+    if bound.get("proposal_authority") != "accepted":
+        raise MulticomponentGraphSchedulingError(
+            "Specialist input reconstruction requires an accepted proposal"
+        )
+    target = _mapping(bound.get("canonical_target_ref"))
+    target_kind = str(target.get("target_kind") or "")
+    target_key = str(target.get("target_key") or "")
+    proposal_authority_ref = proposal_ref(bound)
+    if target_kind == "component":
+        context = _mapping(state.multicomponent_scheduler_context)
+        analyst_input = _mapping(
+            _mapping(context.get("component_analyst_input_packets")).get(
+                target_key
+            )
+        )
+        analyst = _completed_artifact(
+            state, ROLE_COMPONENT_ANALYST, target_key
+        )
+        contract = (
+            state.current_answer_contract or state.initial_answer_contract
+        )
+        component_ref = next(
+            (
+                _mapping(item)
+                for item in contract.get("accepted_answer_component_refs")
+                or ()
+                if _mapping(item).get("component_id") == target_key
+            ),
+            {},
+        )
+        if (
+            not analyst_input
+            or not analyst
+            or not component_ref
+            or component_ref.get("component_revision")
+            != target.get("target_revision")
+            or component_ref.get("component_digest")
+            != target.get("target_digest")
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "component Specialist input authority is stale or incomplete"
+            )
+        analyst_ref = {
+            "artifact_id": analyst.get("artifact_id"),
+            "artifact_digest": analyst.get("artifact_digest"),
+        }
+        analyst_input_digest = safe_packet_digest(analyst_input)
+        packet = {
+            "bounded_question": bound.get("bounded_question"),
+            "canonical_target_ref": deepcopy(target),
+            "analyst_artifact_ref": analyst_ref,
+            "exact_component_and_evidence_input": deepcopy(analyst_input),
+            "proposal_input_artifact_refs": deepcopy(
+                bound.get("input_artifact_refs") or []
+            ),
+        }
+        lineage_refs = [
+            proposal_authority_ref,
+            deepcopy(target),
+            analyst_ref,
+            {"component_analyst_input_packet_digest": analyst_input_digest},
+        ]
+        reconstruction_core = {
+            "schema_version": "specialist_bounded_input_reconstruction_ref_v1",
+            "owner": "RunState.current_component_specialist_inputs",
+            "proposal_ref": proposal_authority_ref,
+            "canonical_target_ref": deepcopy(target),
+            "accepted_contract_ref": _contract_ref(contract),
+            "analyst_artifact_ref": analyst_ref,
+            "component_analyst_input_packet_digest": analyst_input_digest,
+        }
+    elif target_kind == "synthesis":
+        graph = validate_component_work_graph_v1(
+            _mapping(state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+        )
+        node = next(
+            (
+                _mapping(item)
+                for item in graph.get("synthesis_nodes") or ()
+                if _mapping(item).get("synthesis_key") == target_key
+            ),
+            {},
+        )
+        node_ref = _node_ref(node) if node else {}
+        allowed_statuses = (
+            {"proposed", "challenged", "blocked"}
+            if bound.get("origin_role") == ROLE_SCRUTINEER
+            else {"proposed"}
+        )
+        if (
+            not node
+            or node.get("status") not in allowed_statuses
+            or node.get("node_revision") != target.get("target_revision")
+            or node.get("node_digest") != target.get("target_digest")
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "synthesis Specialist input authority is stale or incomplete"
+            )
+        admitted_input_refs = [
+            deepcopy(_mapping(item))
+            for item in node.get("input_node_refs") or ()
+        ]
+        packet = {
+            "bounded_question": bound.get("bounded_question"),
+            "canonical_target_ref": deepcopy(target),
+            "nominated_synthesis_ref": node_ref,
+            "admitted_input_refs": admitted_input_refs,
+            "proposal_input_artifact_refs": deepcopy(
+                bound.get("input_artifact_refs") or []
+            ),
+        }
+        graph_ref = _graph_ref(graph)
+        admitted_input_refs_digest = specialist_digest(admitted_input_refs)
+        lineage_refs = [
+            proposal_authority_ref,
+            deepcopy(target),
+            graph_ref,
+            node_ref,
+            *admitted_input_refs,
+        ]
+        reconstruction_core = {
+            "schema_version": "specialist_bounded_input_reconstruction_ref_v1",
+            "owner": "RunState.current_synthesis_specialist_inputs",
+            "proposal_ref": proposal_authority_ref,
+            "canonical_target_ref": deepcopy(target),
+            "graph_ref": graph_ref,
+            "nominated_synthesis_ref": node_ref,
+            "admitted_input_ref_count": len(admitted_input_refs),
+            "admitted_input_refs_digest": admitted_input_refs_digest,
+        }
+    else:
+        raise MulticomponentGraphSchedulingError(
+            "Specialist input reconstruction target kind is unsupported"
+        )
+    reconstruction_ref = {
+        **reconstruction_core,
+        "reconstruction_ref_digest": _digest(reconstruction_core),
+    }
+    return {
+        "transient_bounded_input": packet,
+        "bounded_input_digest": specialist_digest(packet),
+        "bounded_input_lineage_refs": lineage_refs,
+        "bounded_input_reconstruction_ref": reconstruction_ref,
+    }
+
+
+def reconstruct_specialist_input_for_work(
+    *, state: Any, work: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Reconstruct and validate the exact transient packet for granted work."""
+
+    from core.specialist_graph_runtime import validate_specialist_work_node
+
+    item = _mapping(work)
+    if item.get("work_kind") != WORK_KIND_SPECIALIST_CAPABILITY:
+        raise MulticomponentGraphSchedulingError(
+            "transient Specialist reconstruction requires Specialist work"
+        )
+    node = validate_specialist_work_node(
+        _mapping(item.get("specialist_work_node"))
+    )
+    proposal_id = str(
+        _mapping(node.get("proposal_ref")).get("proposal_id") or ""
+    )
+    plane = _mapping(state.projections.get("specialist_work_plane"))
+    proposal = next(
+        (
+            _mapping(candidate)
+            for candidate in plane.get("proposals") or ()
+            if _mapping(candidate).get("proposal_id") == proposal_id
+        ),
+        {},
+    )
+    if not proposal:
+        raise MulticomponentGraphSchedulingError(
+            "Specialist work lost its bound proposal authority"
+        )
+    authority = reconstruct_specialist_bounded_input(
+        state=state, proposal=proposal
+    )
+    if (
+        authority.get("bounded_input_digest")
+        != node.get("bounded_input_digest")
+        or item.get("input_packet_digest") != node.get("bounded_input_digest")
+        or authority.get("bounded_input_lineage_refs")
+        != node.get("bounded_input_lineage_refs")
+        or authority.get("bounded_input_reconstruction_ref")
+        != node.get("bounded_input_reconstruction_ref")
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "reconstructed Specialist input does not match authorized work"
+        )
+    return deepcopy(_mapping(authority.get("transient_bounded_input")))
 
 
 def classify_work_parallelism(work: Mapping[str, Any]) -> str:
@@ -1023,20 +1243,6 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         state=state,
                         scheduler=scheduler,
                         proposal=pending_specialist,
-                        bounded_inputs={
-                            "bounded_question": pending_specialist.get("bounded_question"),
-                            "canonical_target_ref": deepcopy(
-                                pending_specialist.get("canonical_target_ref") or {}
-                            ),
-                            "analyst_artifact_ref": {
-                                "artifact_id": analyst.get("artifact_id"),
-                                "artifact_digest": analyst.get("artifact_digest"),
-                            },
-                            "exact_component_and_evidence_input": deepcopy(analyst_input),
-                            "proposal_input_artifact_refs": deepcopy(
-                                pending_specialist.get("input_artifact_refs") or []
-                            ),
-                        },
                     )
                 ]
         dprime = _completed_artifact(state, ROLE_COMPONENT_DPRIME, component_id)
@@ -1045,11 +1251,11 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                 component_dprime_input_packet,
             )
 
-            specialist_result = {}
+            specialist_handoff = {}
             if specialist_state:
-                from core.specialist_graph_runtime import result_for_target
+                from core.specialist_graph_runtime import handoff_for_target
 
-                specialist_result = result_for_target(
+                specialist_handoff = handoff_for_target(
                     specialist_state,
                     target_kind="component",
                     target_key=component_id,
@@ -1057,7 +1263,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             dprime_input = component_dprime_input_packet(
                 analyst_artifact=analyst,
                 analyst_input_packet=analyst_input,
-                specialist_result_artifact=specialist_result or None,
+                specialist_need_handoff=specialist_handoff or None,
             )
             ready.append(
                 (
@@ -1196,27 +1402,14 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         state=state,
                         scheduler=scheduler,
                         proposal=pending_specialist,
-                        bounded_inputs={
-                            "bounded_question": pending_specialist.get("bounded_question"),
-                            "canonical_target_ref": deepcopy(
-                                pending_specialist.get("canonical_target_ref") or {}
-                            ),
-                            "nominated_synthesis_ref": _node_ref(node),
-                            "admitted_input_refs": deepcopy(
-                                node.get("input_node_refs") or []
-                            ),
-                            "proposal_input_artifact_refs": deepcopy(
-                                pending_specialist.get("input_artifact_refs") or []
-                            ),
-                        },
                     )
                 ]
         try:
-            specialist_result = {}
+            specialist_handoff = {}
             if specialist_state:
-                from core.specialist_graph_runtime import result_for_target
+                from core.specialist_graph_runtime import handoff_for_target
 
-                specialist_result = result_for_target(
+                specialist_handoff = handoff_for_target(
                     specialist_state,
                     target_kind="synthesis",
                     target_key=str(synthesis_key),
@@ -1224,7 +1417,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             packet = synthesis_dprime_input_packet(
                 graph,
                 synthesis_key=synthesis_key,
-                specialist_result_artifact=specialist_result or None,
+                specialist_need_handoff=specialist_handoff or None,
             )
         except ValueError:
             # A proposed downstream node is not actionable until its exact
@@ -1294,19 +1487,6 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         state=state,
                         scheduler=scheduler,
                         proposal=pending_specialist,
-                        bounded_inputs={
-                            "bounded_question": pending_specialist.get("bounded_question"),
-                            "canonical_target_ref": deepcopy(
-                                pending_specialist.get("canonical_target_ref") or {}
-                            ),
-                            "nominated_synthesis_ref": _node_ref(mapped_node),
-                            "admitted_input_refs": deepcopy(
-                                mapped_node.get("input_node_refs") or []
-                            ),
-                            "proposal_input_artifact_refs": deepcopy(
-                                pending_specialist.get("input_artifact_refs") or []
-                            ),
-                        },
                     )
                 ]
     if (
@@ -2704,6 +2884,8 @@ __all__ = [
     "initialize_scheduler_state",
     "initialize_scheduler_v2_state",
     "initialize_scheduler_v3_state",
+    "reconstruct_specialist_bounded_input",
+    "reconstruct_specialist_input_for_work",
     "scheduler_trace_projection",
     "settle_role_lease",
     "settle_specialist_lease",

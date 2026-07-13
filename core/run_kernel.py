@@ -758,6 +758,7 @@ class ActionType(str, Enum):
     )
     MULTICOMPONENT_SCRUTINEER_EXECUTE = "multicomponent_scrutineer_execute"
     SPECIALIST_PROPOSAL_BIND = "specialist_proposal_bind"
+    SPECIALIST_PROPOSAL_DISPOSE = "specialist_proposal_dispose"
     SPECIALIST_CAPABILITY_EXECUTE = "specialist_capability_execute"
     SPECIALIST_VALIDATOR_CONSUME = "specialist_validator_consume"
     MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE = (
@@ -886,6 +887,7 @@ class ObservationType(str, Enum):
     )
     MULTICOMPONENT_SCRUTINEER_COMPLETED = "multicomponent_scrutineer_completed"
     SPECIALIST_PROPOSAL_BOUND = "specialist_proposal_bound"
+    SPECIALIST_PROPOSAL_DISPOSED = "specialist_proposal_disposed"
     SPECIALIST_CAPABILITY_COMPLETED = "specialist_capability_completed"
     SPECIALIST_VALIDATOR_CONSUMED = "specialist_validator_consumed"
     MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED = (
@@ -3791,22 +3793,34 @@ class RunKernel:
         )
         return deepcopy(bound)
 
-    def consume_specialist_result_by_dprime(
+    def consume_specialist_handoff_by_dprime(
         self,
         *,
-        result_id: str,
-        route: str,
-        validation_status: str,
+        handoff_id: str,
         dprime_artifact_ref: Mapping[str, Any],
     ) -> dict[str, Any]:
+        from core.specialist_graph_runtime import (
+            SPECIALIST_WORK_PLANE_STAGE,
+            handoff_by_id,
+        )
+
+        handoff = handoff_by_id(
+            _safe_mapping(
+                self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+            ),
+            handoff_id=handoff_id,
+        )
+        if not handoff:
+            raise RunKernelTransitionError(
+                "D-prime consumption requires a retained Specialist handoff"
+            )
         action = self.authorize(
-            stage=f"specialist_validator_consumption:{result_id}",
+            stage=f"specialist_validator_consumption:{handoff_id}",
             action_type=ActionType.SPECIALIST_VALIDATOR_CONSUME,
-            reason="relevant_dprime_consume_exact_specialist_result",
+            reason="relevant_dprime_consume_exact_specialist_need_handoff",
             inputs={
-                "result_id": result_id,
-                "route": route,
-                "validation_status": validation_status,
+                "handoff_id": handoff_id,
+                "handoff_digest": handoff.get("handoff_digest"),
                 "dprime_artifact_ref": deepcopy(dict(dprime_artifact_ref)),
             },
             expected_observation_type=ObservationType.SPECIALIST_VALIDATOR_CONSUMED,
@@ -3819,9 +3833,118 @@ class RunKernel:
                 payload={},
             )
         )
+        return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
+
+    def dispose_exhausted_optional_specialist_proposals(self) -> int:
+        """Record each optional accepted need that cannot receive another unit."""
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+        )
+        from core.specialist_graph_runtime import (
+            PROPOSAL_ACCEPTED,
+            SPECIALIST_WORK_PLANE_STAGE,
+        )
+
+        plane = _safe_mapping(
+            self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+        )
+        scheduler = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+        )
+        pool = _safe_mapping(scheduler.get("specialist_compatibility_pool"))
+        if (
+            not plane
+            or int(pool.get("specialist_remaining") or 0) != 0
+            or int(pool.get("specialist_spent") or 0) < 1
+        ):
+            return 0
+        disposed_ids = {
+            _safe_mapping(_safe_mapping(item).get("proposal_ref")).get(
+                "proposal_id"
+            )
+            for item in plane.get("proposal_dispositions") or ()
+        }
+        active_ids = {
+            _safe_mapping(_safe_mapping(item).get("work"))
+            .get("specialist_proposal_ref", {})
+            .get("proposal_id")
+            for item in scheduler.get("lease_history") or ()
+            if _safe_mapping(item).get("status")
+            in {"granted_reserved", "execution_started_spent"}
+        }
+        candidates = [
+            _safe_mapping(item)
+            for item in plane.get("proposals") or ()
+            if _safe_mapping(item).get("proposal_authority")
+            == PROPOSAL_ACCEPTED
+            and _safe_mapping(item).get("posture") == "optional"
+            and _safe_mapping(item).get("proposal_id") not in disposed_ids
+            and _safe_mapping(item).get("proposal_id") not in active_ids
+        ]
+        count = 0
+        for proposal in candidates:
+            action = self.authorize(
+                stage=f"specialist_disposition:{proposal['proposal_id']}",
+                action_type=ActionType.SPECIALIST_PROPOSAL_DISPOSE,
+                reason="optional_specialist_pool_exhausted",
+                inputs={
+                    "proposal_id": proposal["proposal_id"],
+                    "proposal_digest": proposal["proposal_digest"],
+                    "nonexecution_reason": "specialist_pool_exhausted",
+                },
+                expected_observation_type=(
+                    ObservationType.SPECIALIST_PROPOSAL_DISPOSED
+                ),
+            )
+            self.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.COMPLETED,
+                    payload={},
+                )
+            )
+            count += 1
+        return count
+
+    def dispose_failed_specialist_reconstruction(
+        self, *, work: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Record one exact cancelled predispatch reconstruction failure."""
+
         from core.specialist_graph_runtime import SPECIALIST_WORK_PLANE_STAGE
 
-        return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
+        item = _safe_mapping(work)
+        proposal_ref = _safe_mapping(item.get("specialist_proposal_ref"))
+        action = self.authorize(
+            stage=f"specialist_disposition:{proposal_ref.get('proposal_id')}",
+            action_type=ActionType.SPECIALIST_PROPOSAL_DISPOSE,
+            reason="specialist_input_reconstruction_failed_predispatch",
+            inputs={
+                "proposal_id": proposal_ref.get("proposal_id"),
+                "proposal_digest": proposal_ref.get("proposal_digest"),
+                "work_id": item.get("work_id"),
+                "work_digest": item.get("work_digest"),
+                "nonexecution_reason": "input_reconstruction_failed",
+            },
+            expected_observation_type=(
+                ObservationType.SPECIALIST_PROPOSAL_DISPOSED
+            ),
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        return deepcopy(
+            self.state.projections[SPECIALIST_WORK_PLANE_STAGE][
+                "proposal_dispositions"
+            ][-1]
+        )
 
     def derive_current_multicomponent_ready_work(self) -> list[dict[str, Any]]:
         """Return RunKernel's exact current scheduler readiness projection."""
@@ -18165,9 +18288,16 @@ class RunKernel:
                 block_required_specialist_proposal,
             )
             from core.specialist_graph_runtime import (
+                AVAILABILITY_CAPABILITY,
+                AVAILABILITY_POLICY,
+                AVAILABILITY_TARGET,
                 PROPOSAL_ACCEPTED,
+                PROPOSAL_DENIED_POLICY,
+                PROPOSAL_REJECTED,
+                PROPOSAL_UNSUPPORTED_TARGET,
                 SPECIALIST_WORK_PLANE_STAGE,
                 append_bound_proposal,
+                append_specialist_disposition,
                 validate_bound_specialist_proposal,
             )
 
@@ -18200,6 +18330,31 @@ class RunKernel:
             )
             self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
             self.state.projections[action.stage] = deepcopy(proposal)
+            if proposal.get("proposal_authority") != PROPOSAL_ACCEPTED:
+                disposition_contract = {
+                    PROPOSAL_DENIED_POLICY: (
+                        AVAILABILITY_POLICY,
+                        "denied_by_policy",
+                    ),
+                    PROPOSAL_REJECTED: (
+                        AVAILABILITY_CAPABILITY,
+                        "unknown_or_incompatible_capability",
+                    ),
+                    PROPOSAL_UNSUPPORTED_TARGET: (
+                        AVAILABILITY_TARGET,
+                        "unsupported_target",
+                    ),
+                }
+                availability, reason = disposition_contract[
+                    str(proposal.get("proposal_authority") or "")
+                ]
+                plane = append_specialist_disposition(
+                    plane,
+                    proposal=proposal,
+                    availability_posture=availability,
+                    nonexecution_reason=reason,
+                )
+                self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
             if (
                 proposal.get("posture") == "required"
                 and proposal.get("proposal_authority") != PROPOSAL_ACCEPTED
@@ -18210,6 +18365,111 @@ class RunKernel:
                         proposal=proposal,
                     )
                 )
+        elif action.action_type is ActionType.SPECIALIST_PROPOSAL_DISPOSE:
+            from core.multicomponent_graph_scheduling import (
+                LEASE_CANCELLED,
+                MULTICOMPONENT_SCHEDULER_STAGE,
+                WORK_KIND_SPECIALIST_CAPABILITY,
+            )
+            from core.specialist_graph_runtime import (
+                AVAILABILITY_BUDGET,
+                AVAILABILITY_FAILED,
+                PROPOSAL_ACCEPTED,
+                SPECIALIST_WORK_PLANE_STAGE,
+                append_specialist_disposition,
+                validate_bound_specialist_proposal,
+            )
+
+            plane = _safe_mapping(
+                self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+            )
+            proposal_id = str(action.inputs.get("proposal_id") or "")
+            proposal = next(
+                (
+                    validate_bound_specialist_proposal(_safe_mapping(item))
+                    for item in plane.get("proposals") or ()
+                    if _safe_mapping(item).get("proposal_id") == proposal_id
+                ),
+                {},
+            )
+            scheduler = _safe_mapping(
+                self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+            )
+            pool = _safe_mapping(
+                scheduler.get("specialist_compatibility_pool")
+            )
+            nonexecution_reason = str(
+                action.inputs.get("nonexecution_reason") or ""
+            )
+            active_proposal_ids = {
+                _safe_mapping(_safe_mapping(item).get("work"))
+                .get("specialist_proposal_ref", {})
+                .get("proposal_id")
+                for item in scheduler.get("lease_history") or ()
+                if _safe_mapping(item).get("status")
+                in {"granted_reserved", "execution_started_spent"}
+                and _safe_mapping(_safe_mapping(item).get("work")).get(
+                    "work_kind"
+                )
+                == WORK_KIND_SPECIALIST_CAPABILITY
+            }
+            common_invalid = (
+                not proposal
+                or proposal.get("proposal_digest")
+                != action.inputs.get("proposal_digest")
+                or proposal.get("proposal_authority") != PROPOSAL_ACCEPTED
+                or proposal.get("posture") != "optional"
+                or proposal_id in active_proposal_ids
+            )
+            if nonexecution_reason == "specialist_pool_exhausted":
+                invalid = (
+                    common_invalid
+                    or int(pool.get("specialist_remaining") or 0) != 0
+                    or int(pool.get("specialist_spent") or 0) < 1
+                )
+                availability = AVAILABILITY_BUDGET
+            elif nonexecution_reason == "input_reconstruction_failed":
+                cancelled = [
+                    _safe_mapping(item)
+                    for item in scheduler.get("lease_history") or ()
+                    if _safe_mapping(item).get("status") == LEASE_CANCELLED
+                    and _safe_mapping(item).get("settlement_reason")
+                    == "exact_batch_packet_reconstruction_failed"
+                    and _safe_mapping(_safe_mapping(item).get("work")).get(
+                        "work_id"
+                    )
+                    == action.inputs.get("work_id")
+                    and _safe_mapping(_safe_mapping(item).get("work")).get(
+                        "work_digest"
+                    )
+                    == action.inputs.get("work_digest")
+                    and _safe_mapping(
+                        _safe_mapping(item).get("work")
+                    ).get("specialist_proposal_ref", {}).get("proposal_id")
+                    == proposal_id
+                ]
+                invalid = common_invalid or len(cancelled) != 1
+                availability = AVAILABILITY_FAILED
+            else:
+                invalid = True
+                availability = ""
+            if invalid:
+                raise RunKernelTransitionError(
+                    "Specialist nonexecution disposition lacks exact authority"
+                )
+            self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
+                append_specialist_disposition(
+                    plane,
+                    proposal=proposal,
+                    availability_posture=availability,
+                    nonexecution_reason=nonexecution_reason,
+                )
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.projections[SPECIALIST_WORK_PLANE_STAGE][
+                    "proposal_dispositions"
+                ][-1]
+            )
         elif action.action_type is ActionType.SPECIALIST_CAPABILITY_EXECUTE:
             from core.multicomponent_graph_scheduling import (
                 LEASE_BLOCKED,
@@ -18283,38 +18543,217 @@ class RunKernel:
             )
             self.state.projections[action.stage] = deepcopy(result)
         elif action.action_type is ActionType.SPECIALIST_VALIDATOR_CONSUME:
+            from core.component_work_graph_v1 import (
+                COMPONENT_WORK_GRAPH_V1_STAGE,
+                synthesis_dprime_input_packet,
+                validate_component_work_graph_v1,
+            )
+            from core.multicomponent_component_admission import (
+                component_dprime_input_packet,
+            )
+            from core.multicomponent_role_runtime import (
+                ROLE_COMPONENT_ANALYST,
+                ROLE_COMPONENT_DPRIME,
+                ROLE_SYNTHESIS_DPRIME,
+                role_artifact_ref,
+                safe_packet_digest,
+                validate_multicomponent_role_artifact,
+            )
             from core.specialist_graph_runtime import (
                 SPECIALIST_WORK_PLANE_STAGE,
+                VALIDATOR_PENDING,
+                handoff_by_id,
                 mark_validator_consumption,
             )
 
-            dprime_ref = _safe_mapping(action.inputs.get("dprime_artifact_ref"))
+            plane = _safe_mapping(
+                self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+            )
+            handoff_id = str(action.inputs.get("handoff_id") or "")
+            handoff = handoff_by_id(plane, handoff_id=handoff_id)
+            if (
+                not handoff
+                or handoff.get("handoff_digest")
+                != action.inputs.get("handoff_digest")
+                or handoff.get("validator_consumption") != VALIDATOR_PENDING
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist handoff consumption identity is stale or terminal"
+                )
+            dprime_ref = _safe_mapping(
+                action.inputs.get("dprime_artifact_ref")
+            )
             dprime_action_id = str(
-                dprime_ref.get("action_id")
-                or _safe_mapping(dprime_ref.get("authorized_action_ref")).get(
+                _safe_mapping(dprime_ref.get("authorized_action_ref")).get(
                     "action_id"
                 )
                 or ""
             )
-            if dprime_action_id not in self.state.reduced_action_ids:
+            dprime_action = self.state.issued_actions.get(dprime_action_id)
+            target = _safe_mapping(handoff.get("canonical_target_ref"))
+            target_kind = str(target.get("target_kind") or "")
+            expected_role = {
+                "component": ROLE_COMPONENT_DPRIME,
+                "synthesis": ROLE_SYNTHESIS_DPRIME,
+            }.get(target_kind)
+            expected_action_type = {
+                "component": ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+                "synthesis": ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
+            }.get(target_kind)
+            if (
+                dprime_action is None
+                or dprime_action.action_id not in self.state.reduced_action_ids
+                or dprime_action.action_type is not expected_action_type
+                or dprime_action.inputs.get("role") != expected_role
+                or dprime_action.inputs.get("target_kind") != target_kind
+            ):
                 raise RunKernelTransitionError(
-                    "Specialist validator consumption requires completed D-prime"
+                    "Specialist handoff requires the exact relevant completed D-prime"
                 )
+            completed = validate_multicomponent_role_artifact(
+                _safe_mapping(self.state.projections.get(dprime_action.stage)),
+                expected_role=str(expected_role or ""),
+            )
+            if role_artifact_ref(completed) != dprime_ref:
+                raise RunKernelTransitionError(
+                    "Specialist handoff D-prime artifact reference is forged or unrelated"
+                )
+            target_key = str(target.get("target_key") or "")
+            node_ref = _safe_mapping(dprime_action.inputs.get("node_ref"))
+            if target_kind == "component":
+                accepted = _safe_mapping(
+                    self.state.current_answer_contract
+                    or self.state.initial_answer_contract
+                )
+                component_ref = next(
+                    (
+                        _safe_mapping(item)
+                        for item in accepted.get(
+                            "accepted_answer_component_refs"
+                        )
+                        or ()
+                        if _safe_mapping(item).get("component_id")
+                        == target_key
+                    ),
+                    {},
+                )
+                analyst = validate_multicomponent_role_artifact(
+                    _safe_mapping(
+                        self.state.projections.get(
+                            f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{target_key}"
+                        )
+                    ),
+                    expected_role=ROLE_COMPONENT_ANALYST,
+                )
+                analyst_input = _safe_mapping(
+                    _safe_mapping(self.state.multicomponent_scheduler_context)
+                    .get("component_analyst_input_packets", {})
+                    .get(target_key)
+                )
+                if (
+                    dprime_action.inputs.get("component_id") != target_key
+                    or component_ref.get("component_revision")
+                    != target.get("target_revision")
+                    or component_ref.get("component_digest")
+                    != target.get("target_digest")
+                    or node_ref.get("component_revision")
+                    != target.get("target_revision")
+                    or node_ref.get("component_digest")
+                    != target.get("target_digest")
+                ):
+                    raise RunKernelTransitionError(
+                        "Specialist component handoff target is no longer exact"
+                    )
+                packet = component_dprime_input_packet(
+                    analyst_artifact=analyst,
+                    analyst_input_packet=analyst_input,
+                    specialist_need_handoff=handoff,
+                )
+                route = "component_dprime"
+            else:
+                graph = validate_component_work_graph_v1(
+                    _safe_mapping(
+                        self.state.projections.get(
+                            COMPONENT_WORK_GRAPH_V1_STAGE
+                        )
+                    )
+                )
+                synthesis_node = next(
+                    (
+                        _safe_mapping(item)
+                        for item in graph.get("synthesis_nodes") or ()
+                        if _safe_mapping(item).get("synthesis_key")
+                        == target_key
+                    ),
+                    {},
+                )
+                graph_ref = _safe_mapping(
+                    dprime_action.inputs.get("graph_ref")
+                )
+                scrutineer_successor = (
+                    handoff.get("origin_role") == "scrutineer"
+                )
+                target_revision_matches = (
+                    int(synthesis_node.get("node_revision") or 0)
+                    > int(target.get("target_revision") or 0)
+                    and _safe_mapping(
+                        synthesis_node.get("specialist_result_ref")
+                    )
+                    == _safe_mapping(
+                        _safe_mapping(handoff.get("result")).get("result_ref")
+                    )
+                    if scrutineer_successor
+                    else synthesis_node.get("node_revision")
+                    == target.get("target_revision")
+                )
+                if (
+                    dprime_action.inputs.get("synthesis_key") != target_key
+                    or not target_revision_matches
+                    or node_ref.get("node_revision")
+                    != synthesis_node.get("node_revision")
+                    or node_ref.get("node_digest")
+                    != synthesis_node.get("node_digest")
+                    or graph_ref.get("graph_revision")
+                    != graph.get("graph_revision")
+                    or graph_ref.get("graph_digest")
+                    != graph.get("graph_digest")
+                ):
+                    raise RunKernelTransitionError(
+                        "Specialist synthesis handoff target is no longer exact"
+                    )
+                packet = synthesis_dprime_input_packet(
+                    graph,
+                    synthesis_key=target_key,
+                    specialist_need_handoff=handoff,
+                )
+                route = "synthesis_dprime"
+            if safe_packet_digest(packet) != dprime_action.inputs.get(
+                "input_packet_digest"
+            ) or completed.get(
+                "input_packet_digest"
+            ) != dprime_action.inputs.get("input_packet_digest"):
+                raise RunKernelTransitionError(
+                    "Specialist handoff was not consumed by the exact reconstructed D-prime input"
+                )
+            validation_status = str(
+                _safe_mapping(completed.get("semantic_output")).get(
+                    "validation_status"
+                )
+                or ""
+            )
             self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
                 mark_validator_consumption(
-                    _safe_mapping(
-                        self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
-                    ),
-                    result_id=str(action.inputs.get("result_id") or ""),
-                    route=str(action.inputs.get("route") or ""),
-                    validation_status=str(
-                        action.inputs.get("validation_status") or ""
-                    ),
+                    plane,
+                    handoff_id=handoff_id,
+                    route=route,
+                    validation_status=validation_status,
+                    dprime_artifact_ref=dprime_ref,
                 )
             )
             self.state.projections[action.stage] = {
-                "result_id": action.inputs.get("result_id"),
-                "route": action.inputs.get("route"),
+                "handoff_id": handoff_id,
+                "handoff_digest": action.inputs.get("handoff_digest"),
+                "route": route,
                 "dprime_artifact_ref": deepcopy(dprime_ref),
             }
         elif action.action_type is ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE:
@@ -18393,7 +18832,9 @@ class RunKernel:
                 )
         elif action.action_type is ActionType.MULTICOMPONENT_BATCH_GRANT:
             from core.multicomponent_graph_scheduling import (
+                LEASE_DENIED_EXHAUSTED,
                 MULTICOMPONENT_SCHEDULER_STAGE,
+                WORK_KIND_SPECIALIST_CAPABILITY,
                 derive_ready_batch_work,
                 derive_ready_work,
                 grant_next_batch,
@@ -18424,6 +18865,40 @@ class RunKernel:
                 },
             )
             self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
+            if (
+                _batch.get("status") == LEASE_DENIED_EXHAUSTED
+                and _safe_mapping(ready[0]).get("work_kind")
+                == WORK_KIND_SPECIALIST_CAPABILITY
+            ):
+                from core.specialist_graph_runtime import (
+                    AVAILABILITY_BUDGET,
+                    SPECIALIST_WORK_PLANE_STAGE,
+                    append_specialist_disposition,
+                )
+
+                plane = _safe_mapping(
+                    self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                )
+                proposal_id = _safe_mapping(
+                    _safe_mapping(ready[0]).get("specialist_proposal_ref")
+                ).get("proposal_id")
+                proposal = next(
+                    (
+                        _safe_mapping(item)
+                        for item in plane.get("proposals") or ()
+                        if _safe_mapping(item).get("proposal_id")
+                        == proposal_id
+                    ),
+                    {},
+                )
+                self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
+                    append_specialist_disposition(
+                        plane,
+                        proposal=proposal,
+                        availability_posture=AVAILABILITY_BUDGET,
+                        nonexecution_reason="specialist_pool_exhausted",
+                    )
+                )
         elif action.action_type is ActionType.MULTICOMPONENT_BATCH_DISPATCH:
             from core.multicomponent_graph_scheduling import (
                 MULTICOMPONENT_SCHEDULER_STAGE,
@@ -19261,6 +19736,7 @@ class RunKernel:
             physical_call_accounting = None
             structure_graph = None
             transition_graph = None
+            specialist_need_handoff = None
             specialist_result_artifact = None
             if operation == "structure":
                 if current_graph or int(graph.get("graph_revision") or 0) != 1:
@@ -19413,18 +19889,22 @@ class RunKernel:
                         )
                     from core.specialist_graph_runtime import (
                         SPECIALIST_WORK_PLANE_STAGE,
-                        result_for_target,
+                        handoff_for_target,
                     )
 
                     specialist_plane = self.state.projections.get(
                         SPECIALIST_WORK_PLANE_STAGE
                     )
                     if specialist_plane:
-                        specialist_result_artifact = result_for_target(
-                            specialist_plane,
-                            target_kind="synthesis",
-                            target_key=str(synthesis_key or ""),
-                        ) or None
+                        specialist_need_handoff = (
+                            handoff_for_target(
+                                specialist_plane,
+                                target_kind="synthesis",
+                                target_key=str(synthesis_key or ""),
+                                include_consumed=True,
+                            )
+                            or None
+                        )
                 elif operation == "scrutiny":
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
@@ -19765,6 +20245,7 @@ class RunKernel:
                     physical_call_accounting=physical_call_accounting,
                     structure_graph=structure_graph,
                     transition_graph=transition_graph,
+                    specialist_need_handoff=specialist_need_handoff,
                     specialist_result_artifact=specialist_result_artifact,
                 )
             except ValueError as exc:
