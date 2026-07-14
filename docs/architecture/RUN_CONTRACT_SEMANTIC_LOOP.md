@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -83,6 +83,10 @@ The current loop is one authority flow, not a phase chronology:
     A required predispatch reconstruction failure publishes that failed handoff
     pending and unconsumed before the ordinary path safely blocks without
     running D-prime.
+    Cross input reproof is unconditional: the ordinary caller may supply its
+    exact transient packet, while RunKernel independently reconstructs from
+    current scheduler-owned component Analyst packets. Missing reconstruction
+    authority fails before graph reduction and retains no new packet or catalog.
 20. At most one bounded missing-component recovery may amend the
     AnswerContract, re-enter ordinary research, admit the recovered component,
     and resume the governed graph.

@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -45,6 +45,9 @@ S1:
   units, precision, and deterministic claim alignment;
 - routes semantic use through component or synthesis D-prime;
 - keeps one serial unit with component-before-synthesis priority;
+- unconditionally reproofs every ordinary Cross input from either the exact
+  transient packet or RunKernel's current scheduler-owned component packets,
+  while retaining neither;
 - leaves estimates, arbitrary formulas, conversions, and acquisition unsupported.
 
 ## Active Next: Separately Licensed Quantitative Live Validation

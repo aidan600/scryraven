@@ -5,7 +5,7 @@ Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, additional Specialist activation, or live validation
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -171,6 +171,13 @@ is deliberately absent from component and synthesis D-prime input. D-prime
 receives the bounded result-or-disposition handoff and ordinary evidence or
 admitted-input refs; the contract cannot become validation or admission
 authority.
+
+Before synthesis D-prime can receive graph-derived work, Cross input reproof is
+unconditional. The ordinary caller may bind the exact transient Cross packet;
+RunKernel independently reconstructs it from current scheduler-owned component
+Analyst packets. Missing or stale reconstruction authority rejects graph
+reduction and retains no packet, contract, catalog, or source material. This
+does not add D-prime calculation, proposal, or admission authority.
 
 ## Nonproofs
 

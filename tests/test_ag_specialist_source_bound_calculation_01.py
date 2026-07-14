@@ -456,6 +456,10 @@ def test_docs_record_specialist_source_bound_calculation_posture() -> None:
         "two-hop proof",
         "legacy RunKernel calculation reducer remains compatibility support only",
         "The Specialist cannot validate or admit its own result",
+        "Cross input reproof is unconditional",
+        "current scheduler-owned component Analyst packets",
+        "There is no structural-only fallback",
+        "no component packet, transient Cross packet, proposal contract, catalog, or source material is newly retained or exported",
         "next roadmap checkpoint is separately licensed quantitative live validation",
     )
     for phrase in required:

@@ -5,7 +5,7 @@ Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
 Does-not-authorize: additional product capabilities, calculator scope expansion, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
@@ -181,6 +181,13 @@ The S1 model-visible proposal contract, complete source catalogs, source
 material, and full evidence candidate records follow the same nonretention
 boundary. Bounded retained refs may preserve only the safe identity and source-
 posture facts needed for exact result validation.
+
+The ordinary Cross graph boundary applies unconditional input reproof before
+any quantitative proposal can enter graph state. An exact transient packet may
+be checked directly; RunKernel rederives from its current scheduler-owned
+component Analyst packets. Missing authority fails closed, and this temporary
+argument threading creates no new Specialist, scheduler, graph, or retained
+packet authority.
 
 The substrate grants no provider, model, search, fetch/read, retrieval, or
 publication authority. It introduces no hidden fallback, recursive Specialist

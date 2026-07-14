@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -205,6 +205,18 @@ projections. Deterministic
 Decimal arithmetic, units, precision, and exact claim alignment flow through
 the existing unified handoff; D-prime and RunKernel retain all validation and
 admission authority.
+
+Cross input binding is reproofed unconditionally before initial graph
+construction and whole-graph resynthesis. The ordinary consumer may provide
+the exact transient Cross packet, whose structural facts, proposal contract,
+aliases, nonmaterial catalog, and absence of source material are validated.
+RunKernel supplies no caller-authored proof: it reads the current scheduler-
+owned component Analyst mapping, checks the existing initialization or recovery
+packet-digest authority, independently reconstructs the complete Cross packet,
+and requires the artifact `input_packet_digest` to match. Missing, incomplete,
+malformed, cross-run, stale, or inconsistent authority fails before reduction.
+No packet, contract, catalog, source text, claim text, or complete candidate is
+newly retained or exported.
 
 The compatibility envelope is the sum of the shared role caps. Every work item
 has an exact budget/work lease bound to current contract, graph, input packet,

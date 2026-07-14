@@ -52,7 +52,7 @@ MARKERS = (
     "SPECIALIST-S1-QUANTITATIVE",
 )
 S1_RUNTIME_SHA = (
-    "9e19d54b20036512509955e3176fb0386282796d"  # pragma: allowlist secret
+    "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 )
 PRE_S0_RUNTIME_SHA = (
     "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret

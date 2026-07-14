@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -86,6 +86,13 @@ the same declarative field, operator, and bound facts are consumed by runtime
 validation. Missing source posture is not treated favorably, and component
 admission cannot upgrade underlying evidence. Contract, full catalog, and source
 material retention remains closed outside the transient role/adapter scope.
+
+Cross input reproof is unconditional. The ordinary caller may prove the exact
+transient packet directly; RunKernel independently reconstructs it from current
+scheduler-owned component Analyst packets and their existing scheduler
+authority digest. Missing or stale reconstruction authority fails before graph
+reduction, and no packet, contract, catalog, or source material is newly
+retained or exported.
 
 ## Not Installed
 

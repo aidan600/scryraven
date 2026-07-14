@@ -5,7 +5,7 @@ Authority: canonical:quantitative-specialist-product-activation
 Default-read: no
 Applies-to: ordinary source-bound calculator capability, model-visible proposal contract, transient numeric source catalogs, evidence-quality projection, literal binding, numeric provenance, product registry/policy, claim alignment, and D-prime handoff
 Does-not-authorize: search, acquisition, provider/model calls, estimates, arbitrary formulas, recursion, parallelism, direct admission, FAP, Author, or live validation
-Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to the ordinary quantitative Specialist proposal contract, evidence bridge, source catalogs, parser, product composition, or validator handoff
 
 Installed runtime class: quantitative-specialist-product-activation-s1
@@ -109,6 +109,23 @@ nominated admitted component claim
 This two-hop proof is mandatory. Source quality is inherited from the underlying
 component evidence; admission of a component claim cannot cleanse weak,
 unknown, stale, conflicting, or incomplete source posture.
+
+## Exact Cross Input Reproof
+
+Cross input reproof is unconditional before a Cross-Component Analyst artifact
+can create or reprove a ComponentWorkGraph. The ordinary caller may supply the
+exact transient Cross packet while it exists. RunKernel instead independently
+reconstructs the complete packet from the current scheduler-owned component
+Analyst packets and checks those packets against the existing initialization or
+recovery authority digest. The retained artifact `input_packet_digest` must
+equal the digest of that exact packet.
+
+Missing, empty, malformed, incomplete, cross-run, stale-component, or
+digest-inconsistent reconstruction authority fails closed before graph
+reduction. There is no structural-only fallback and no caller assertion can
+substitute for reproduction. A temporary `deepcopy` function argument is
+allowed; no component packet, transient Cross packet, proposal contract,
+catalog, or source material is newly retained or exported.
 
 | Product posture | Required source facts | Calculator consequence |
 | --- | --- | --- |
