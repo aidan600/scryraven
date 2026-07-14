@@ -39,6 +39,7 @@ from scripts.ag_live_s1_product_convergence_01_support import (  # noqa: E402
     CONFIG_NAME,
     LEDGER_NAME,
     MANIFEST_NAME,
+    CampaignBudgetGuard,
     CampaignSafetyError,
     consume_campaign_counters,
     initial_budget_ledger,
@@ -176,6 +177,7 @@ def _repository_pricing_observation(
 
 
 def _campaign_config(nonsecret_config: dict[str, Any], *, created_at: str) -> dict[str, Any]:
+    profile = get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE)
     return {
         "campaign_schema": CAMPAIGN_SCHEMA,
         "phase_id": PHASE_ID,
@@ -187,6 +189,12 @@ def _campaign_config(nonsecret_config: dict[str, Any], *, created_at: str) -> di
         "fixed_queries": _query_packets(),
         "query_order": list(QUERY_ORDER),
         "query_strings_and_digests_immutable": True,
+        "sanitized_packet_schema": profile.packet_schema,
+        "source_custody_requirements": (
+            profile.source_custody_policy.as_requested_dict()
+            if profile.source_custody_policy is not None
+            else None
+        ),
         "per_run_cap_policy": AG_LIVE_S1_PER_RUN_CAP_POLICY.as_requested_dict(),
         "per_run_hard_operational_budget": _per_run_operational_budget(),
         "hard_operational_budget": {
@@ -460,6 +468,110 @@ def refresh_offline_campaign_state(config_path: Path) -> int:
     return 0
 
 
+def reconcile_sanitized_campaign_observability(config_path: Path) -> int:
+    """Repair campaign accounting from sanitized product-owned cap facts only."""
+
+    resolved_config = config_path.resolve()
+    root = resolved_config.parent
+    validate_campaign_root(ROOT, root)
+    config = read_sanitized_json(resolved_config, root=root)
+    manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+    if manifest.get("initial_wave_complete") is not True:
+        raise CampaignSafetyError(
+            "sanitized observability reconciliation requires completed Wave 1"
+        )
+
+    repair_id = "campaign_observability_fetch_and_source_custody_repair_01"
+    profile = get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE)
+    source_custody_requirements = (
+        profile.source_custody_policy.as_requested_dict()
+        if profile.source_custody_policy is not None
+        else None
+    )
+    config["sanitized_packet_schema"] = profile.packet_schema
+    config["source_custody_requirements"] = source_custody_requirements
+    write_sanitized_json(resolved_config, config, root=root)
+    consume_campaign_counters(
+        config_path=resolved_config,
+        block="A",
+        increments={"root_cause_repair_clusters": 1},
+        event_id=repair_id,
+    )
+    ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+    for run_key, run in ledger.get("runs", {}).items():
+        if not isinstance(run, dict):
+            continue
+        query_id, separator, attempt_text = str(run_key).rpartition(":")
+        if not separator:
+            raise CampaignSafetyError("campaign ledger run key is invalid")
+        attempt = int(attempt_text)
+        packet_path = root / "runs" / f"run_{query_id}_{attempt:02d}.sanitized.json"
+        packet = read_sanitized_json(packet_path, root=root)
+        caps_observed = packet.get("caps_observed")
+        if not isinstance(caps_observed, dict):
+            raise CampaignSafetyError("run packet lacks sanitized product cap facts")
+        guard = CampaignBudgetGuard(
+            config_path=resolved_config,
+            query_id=query_id,
+            attempt=attempt,
+            block=str(run["block"]),
+        )
+        guard.reconcile_product_cap_observation_counts(caps_observed)
+
+        custody = (
+            packet.get("validation_observability", {}).get(
+                "source_custody_summary"
+            )
+        )
+        if isinstance(custody, dict) and source_custody_requirements:
+            custody["source_custody_expected"] = True
+            custody["fetch_read_required"] = True
+            custody["profile_policy_reconciled"] = True
+            write_sanitized_json(packet_path, packet, root=root)
+
+    amendments = manifest.setdefault("instruction_amendments", [])
+    if not any(
+        item.get("name") == repair_id
+        for item in amendments
+        if isinstance(item, dict)
+    ):
+        amendments.append(
+            {
+                "recorded_at": utc_now(),
+                "name": repair_id,
+                "classification": "campaign_observability_repair",
+                "owners": [
+                    "CampaignBudgetGuard",
+                    "core.validation_observability",
+                ],
+                "live_rerun_not_run_reason": "block_a_observed_token_cap_exhausted",
+            }
+        )
+    write_sanitized_json(root / MANIFEST_NAME, manifest, root=root)
+
+    repairs = read_sanitized_json(root / "repair_matrix.json", root=root)
+    entries = repairs.setdefault("entries", [])
+    if not any(item.get("repair_cluster_id") == repair_id for item in entries):
+        entries.append(
+            {
+                "repair_cluster_id": repair_id,
+                "status": "completed_offline",
+                "classification": "campaign_observability_repair",
+                "owners": [
+                    "CampaignBudgetGuard",
+                    "core.validation_observability",
+                ],
+                "deterministic_offline_reproduction": (
+                    "test_product_cap_reconciliation_and_s1_source_custody_profile"
+                ),
+                "live_rerun": "not_run_block_a_observed_token_cap_exhausted",
+            }
+        )
+    write_sanitized_json(root / "repair_matrix.json", repairs, root=root)
+    print(f"reconciled sanitized campaign observability at {root}")
+    return 0
+
+
 def _query_map(config: dict[str, Any]) -> dict[str, str]:
     return {
         str(item["query_id"]): str(item["query"])
@@ -714,6 +826,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Refresh observational schema before any live contact.",
     )
+    action.add_argument(
+        "--reconcile-sanitized-observability",
+        action="store_true",
+        help="Repair accounting from sanitized completed-run facts only.",
+    )
     action.add_argument("--run-block", choices=["A", "B"])
     parser.add_argument(
         "--output-root",
@@ -735,6 +852,12 @@ def main(argv: list[str] | None = None) -> int:
             if not args.config:
                 raise CampaignSafetyError("--refresh-offline-state requires --config")
             return refresh_offline_campaign_state(Path(args.config))
+        if args.reconcile_sanitized_observability:
+            if not args.config:
+                raise CampaignSafetyError(
+                    "--reconcile-sanitized-observability requires --config"
+                )
+            return reconcile_sanitized_campaign_observability(Path(args.config))
         if not args.config:
             raise CampaignSafetyError("--run-block requires --config")
         if bool(args.rerun_query_id) != bool(args.control_query_id):

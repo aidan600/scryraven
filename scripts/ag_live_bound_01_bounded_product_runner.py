@@ -134,7 +134,7 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
         with _suppress_ordinary_retention_for_bounded_runner():
             outcome = _call_run_pipeline_once(config, deps, status, accumulator)
     except AgLiveBoundPreflightError as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started)
+        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
         packet = build_live_failure_packet(
             context,
             cap_policy=cap_policy,
@@ -159,7 +159,7 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
         print(f"refusing live product execution: {exc}", file=sys.stderr)
         return 2
     except _run_cap_exceeded_type() as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started)
+        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
         packet = build_live_failure_packet(
             context,
             cap_policy=cap_policy,
@@ -184,7 +184,7 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
         print(f"bounded live product run exceeded caps: {exc}", file=sys.stderr)
         return 2
     except _pipeline_error_type() as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started)
+        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
         packet = build_live_failure_packet(
             context,
             cap_policy=cap_policy,
@@ -209,7 +209,7 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
         print(f"bounded live product run failed: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started)
+        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
         packet = build_live_failure_packet(
             context,
             cap_policy=cap_policy,
@@ -237,7 +237,7 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
         )
         return 2
 
-    _complete_campaign_guard(campaign_guard, campaign_run_started)
+    _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
     packet = build_live_success_packet(
         context,
         outcome=outcome,
@@ -364,8 +364,13 @@ def _validate_campaign_run_config(guard: Any, context: Any, config: Any) -> None
         )
 
 
-def _complete_campaign_guard(guard: Any | None, started: bool) -> None:
+def _complete_campaign_guard(
+    guard: Any | None,
+    started: bool,
+    cap_policy: Any,
+) -> None:
     if guard is not None and started:
+        guard.reconcile_product_cap_observations(cap_policy)
         guard.complete_run()
 
 

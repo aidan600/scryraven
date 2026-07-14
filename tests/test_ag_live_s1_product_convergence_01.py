@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import pytest
 
+from core.validation_observability import build_validation_observability
 from core.validation_profiles import (
     AG_LIVE_S1_BLOCK_A_OPERATIONAL_BUDGET,
     AG_LIVE_S1_COMBINED_OPERATIONAL_BUDGET,
@@ -323,6 +324,108 @@ def test_unknown_pricing_is_telemetry_not_free_or_a_stop_authority(
     }
     assert guard.config["monetary_stop_authority"] is False
     assert guard.snapshot()["actual_provider_cost_not_observed"] is True
+
+
+def test_product_cap_reconciliation_and_s1_source_custody_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = _campaign_guard(tmp_path, monkeypatch)
+    guard.begin_run()
+    cap_policy = get_validation_profile(
+        AG_LIVE_S1_PRODUCT_CONVERGENCE
+    ).cap_policy.to_run_cap_policy()
+    cap_policy.mark_fetch_read_operation()
+    guard.reconcile_product_cap_observations(cap_policy)
+    snapshot = guard.snapshot()
+    assert snapshot["run"]["retrieval_fetch_read_operations"] == 1
+    assert snapshot["consumed_combined"]["retrieval_fetch_read_operations"] == 1
+    assert snapshot["run"]["product_cap_observations"][
+        "fetch_read_operations"
+    ] == 1
+
+    profile = get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE)
+    observability = build_validation_observability(
+        validation_profile=profile,
+        preflight_context=SimpleNamespace(profile_name=profile.name),
+        run_config=None,
+        outcome=SimpleNamespace(
+            execution_trace={},
+            top_passages=[],
+            seen_urls=[],
+            report="",
+        ),
+        cap_policy=cap_policy,
+    )
+    custody = observability["source_custody_summary"]
+    assert custody["source_custody_expected"] is True
+    assert custody["fetch_read_required"] is True
+
+
+def test_post_wave_reconciliation_uses_sanitized_packets_only_and_is_idempotent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _initialize_temp_campaign(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        support,
+        "validate_campaign_root",
+        lambda _repo_root, candidate: candidate.resolve(),
+    )
+    config_path = root / support.CONFIG_NAME
+    guard = support.CampaignBudgetGuard(
+        config_path=config_path,
+        query_id="A_NO_QUANT",
+        attempt=1,
+        block="A",
+    )
+    guard.begin_run()
+    packet_path = root / "runs" / "run_A_NO_QUANT_01.sanitized.json"
+    support.write_sanitized_json(
+        packet_path,
+        {
+            "campaign_schema": support.CAMPAIGN_SCHEMA,
+            "query_id": "A_NO_QUANT",
+            "attempt": 1,
+            "caps_observed": {
+                "search_dispatches": 1,
+                "fetch_read_operations": 1,
+                "author_model_calls": 1,
+                "smart_search_judgment_model_calls": 0,
+                "retries": 0,
+            },
+            "validation_observability": {
+                "source_custody_summary": {
+                    "source_custody_expected": False,
+                    "fetch_read_required": False,
+                    "fetch_read_operations": 1,
+                }
+            },
+        },
+        root=root,
+    )
+    manifest = support.read_sanitized_json(root / support.MANIFEST_NAME, root=root)
+    manifest["initial_wave_complete"] = True
+    support.write_sanitized_json(
+        root / support.MANIFEST_NAME,
+        manifest,
+        root=root,
+    )
+
+    assert campaign.reconcile_sanitized_campaign_observability(config_path) == 0
+    assert campaign.reconcile_sanitized_campaign_observability(config_path) == 0
+
+    ledger = support.read_sanitized_json(root / support.LEDGER_NAME, root=root)
+    assert ledger["consumed_combined"]["retrieval_fetch_read_operations"] == 1
+    assert ledger["consumed_combined"]["root_cause_repair_clusters"] == 1
+    packet = support.read_sanitized_json(packet_path, root=root)
+    custody = packet["validation_observability"]["source_custody_summary"]
+    assert custody["source_custody_expected"] is True
+    assert custody["fetch_read_required"] is True
+    assert custody["profile_policy_reconciled"] is True
+    repairs = support.read_sanitized_json(root / "repair_matrix.json", root=root)
+    assert len(repairs["entries"]) == 1
+    assert repairs["entries"][0]["status"] == "completed_offline"
 
 
 def test_unknown_query_broker_alternate_and_retry_postures_fail_closed(

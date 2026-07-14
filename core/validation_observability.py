@@ -15,7 +15,7 @@ from urllib.parse import urlparse, urlunparse
 
 from core.provider_diagnostics import summarize_provider_diagnostics
 from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
-from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY
+from core.validation_profiles import get_validation_profile
 
 VALIDATION_OBSERVABILITY_SCHEMA_VERSION = "validation_observability_v1"
 SUBJECT_BUDGET_SUMMARY_SCHEMA_VERSION = "subject_budget_summary_v1"
@@ -815,7 +815,7 @@ def _source_custody_summary(
 ) -> dict[str, Any]:
     packet = _mapping(trace.get("final_answer_packet"))
     expected = _source_custody_expected(profile_name)
-    fetch_required = profile_name == AG_LIVE_SOURCE_CUSTODY
+    fetch_required = _source_custody_fetch_required(profile_name)
     official_satisfied = _official_source_custody_satisfied(trace, packet)
     source_obligation_status = _source_obligation_status(trace, packet)
     final_answer_mentions_custody_partial = _mentions_custody_partial(
@@ -1206,7 +1206,24 @@ def _source_obligation_status(
 
 
 def _source_custody_expected(profile_name: str | None) -> bool:
-    return profile_name == AG_LIVE_SOURCE_CUSTODY
+    return _source_custody_policy(profile_name) is not None
+
+
+def _source_custody_fetch_required(profile_name: str | None) -> bool:
+    policy = _source_custody_policy(profile_name)
+    return bool(
+        policy is not None
+        and getattr(policy, "require_official_full_fetch_read", False)
+    )
+
+
+def _source_custody_policy(profile_name: str | None) -> Any | None:
+    if not profile_name:
+        return None
+    try:
+        return get_validation_profile(profile_name).source_custody_policy
+    except KeyError:
+        return None
 
 
 def _has_official_doc_citations(

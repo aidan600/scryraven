@@ -935,6 +935,48 @@ class CampaignBudgetGuard:
                 estimate["pricing_status"] = "pricing_unknown"
             self._write(ledger)
 
+    def reconcile_product_cap_observations(self, cap_policy: Any) -> None:
+        """Reconcile product-owned cap facts not visible at dependency wrappers."""
+
+        self.reconcile_product_cap_observation_counts(cap_policy.observed_counts())
+
+    def reconcile_product_cap_observation_counts(
+        self,
+        observed: Mapping[str, Any],
+    ) -> None:
+        """Apply an already-sanitized product cap observation mapping."""
+
+        if int(observed.get("retries") or 0) != 0:
+            raise CampaignSafetyError("campaign-added retry count must remain zero")
+        product_fetch_reads = max(
+            0,
+            int(observed.get("fetch_read_operations") or 0),
+        )
+        with self._lock:
+            ledger = self._load()
+            run = ledger["runs"][self.run_key]
+            wrapper_observed = int(run["retrieval_fetch_read_operations"])
+            delta = max(0, product_fetch_reads - wrapper_observed)
+            if delta:
+                self._increment(
+                    ledger,
+                    field="retrieval_fetch_read_operations",
+                    amount=delta,
+                )
+                run["retrieval_fetch_read_operations"] += delta
+            run["product_cap_observations"] = {
+                "search_dispatches": int(observed.get("search_dispatches") or 0),
+                "fetch_read_operations": product_fetch_reads,
+                "author_model_calls": int(
+                    observed.get("author_model_calls") or 0
+                ),
+                "smart_search_judgment_model_calls": int(
+                    observed.get("smart_search_judgment_model_calls") or 0
+                ),
+                "retries": 0,
+            }
+            self._write(ledger)
+
     def complete_run(self) -> None:
         with self._lock:
             ledger = self._load()
