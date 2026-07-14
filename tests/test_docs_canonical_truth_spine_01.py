@@ -37,6 +37,9 @@ CONCERN_OWNERS = {
     "canonical:quantitative-specialist-product-activation": (
         ARCH / "AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md"
     ),
+    "canonical:quantitative-finalization-containment": (
+        ARCH / "AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md"
+    ),
 }
 DEFAULT_SPINE = (GUIDANCE, CURRENT_STATE, ROADMAP)
 MARKERS = (
@@ -50,13 +53,28 @@ MARKERS = (
     "MC-P5A-MAIN-THREAD-COST",
     "SPECIALIST-S0-GENERIC",
     "SPECIALIST-S1-QUANTITATIVE",
+    "QUANT-FINALIZATION-CONTAINMENT",
+)
+QUANT_FINALIZATION_RUNTIME_SHA = (
+    "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
 )
 S1_RUNTIME_SHA = (
     "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 )
-PRE_S0_RUNTIME_SHA = (
-    "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
-)
+RUNTIME_SHA_BY_CONCERN = {
+    "canonical:dprime-role-contract": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:run-contract-semantic-loop": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
+    "canonical:fap-author-boundary": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:bounded-multicomponent-runtime": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:specialist-graph-substrate": S1_RUNTIME_SHA,
+    "canonical:quantitative-specialist-product-activation": (
+        QUANT_FINALIZATION_RUNTIME_SHA
+    ),
+    "canonical:quantitative-finalization-containment": (
+        QUANT_FINALIZATION_RUNTIME_SHA
+    ),
+}
 
 
 def _read(path: Path) -> str:
@@ -81,27 +99,27 @@ def test_guidance_links_resolve() -> None:
 
 def test_temporal_authorities_are_unique_and_default_read() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
-    for authority, owner in (
-        ("canonical:current-installed-state", CURRENT_STATE),
-        ("canonical:current-roadmap", ROADMAP),
+    for authority, owner, verified_runtime in (
+        (
+            "canonical:current-installed-state",
+            CURRENT_STATE,
+            QUANT_FINALIZATION_RUNTIME_SHA,
+        ),
+        ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
         assert "Status: current" in _read(owner)
         assert "Default-read: yes" in _read(owner)
-        assert f"Verified-against-runtime: {S1_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {verified_runtime}" in _read(owner)
 
 
 def test_concern_authorities_are_unique_current_and_default_no() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
     for authority, owner in CONCERN_OWNERS.items():
         text = _read(owner)
-        verified_runtime = (
-            PRE_S0_RUNTIME_SHA
-            if authority == "canonical:fap-author-boundary"
-            else S1_RUNTIME_SHA
-        )
+        verified_runtime = RUNTIME_SHA_BY_CONCERN[authority]
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]

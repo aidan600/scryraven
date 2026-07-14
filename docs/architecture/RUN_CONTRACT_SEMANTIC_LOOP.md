@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -94,8 +94,12 @@ The current loop is one authority flow, not a phase chronology:
     unaffected admitted synthesis is deterministically carried forward under a
     new RunKernel authority binding.
 22. Sufficiency decides readiness from admitted state. FinalAnswerPacket then
-    packages only admitted, readiness-approved material.
-23. Author renders a ready packet, or a blocked packet reaches the installed
+    packages only admitted, readiness-approved material and projects
+    claim-scoped quantitative rendering authority.
+23. Author renders a ready packet. Its candidate prose is buffered until the
+    deterministic quantitative finalization validator binds every numeric
+    assertion to the current packet manifest. Rejected prose is not displayed,
+    reduced, rewritten, or retried. A blocked packet reaches the installed
     sanitized non-Author terminal. The product returns `RunOutcome`, including
     CLI-visible output when applicable.
 
@@ -120,6 +124,7 @@ rendering reduce deterministically on the main thread.
 | Sufficiency | Whether admitted state is ready, partial, blocked, contested, insufficient, or not applicable. | New claims, synthesis, or prose. |
 | FinalAnswerPacket | An authority manifest packaging readiness-approved material. | Evidence interpretation, support repair, or prose rendering. |
 | Author | Presentation of packet-authorized material. | New claims, synthesis, evidence, support, or authority. |
+| Quantitative finalization validation | Deterministic claim/literal binding before accepted prose. | Semantic equivalence inference, calculation, conversion, claim admission, or prose repair. |
 
 These boundaries prevent common laundering errors: search candidates are not
 evidence; fetch/read content is not semantic support; custody is not coverage;

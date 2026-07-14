@@ -5,7 +5,7 @@ Authority: canonical:quantitative-specialist-product-activation
 Default-read: no
 Applies-to: ordinary source-bound calculator capability, model-visible proposal contract, transient numeric source catalogs, evidence-quality projection, literal binding, numeric provenance, product registry/policy, claim alignment, and D-prime handoff
 Does-not-authorize: search, acquisition, provider/model calls, estimates, arbitrary formulas, recursion, parallelism, direct admission, FAP, Author, or live validation
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
 Update-trigger: merged change to the ordinary quantitative Specialist proposal contract, evidence bridge, source catalogs, parser, product composition, or validator handoff
 
 Installed runtime class: quantitative-specialist-product-activation-s1
@@ -17,7 +17,9 @@ Specialist. The generic proposal, registry, scheduling, result, and validator
 contracts belong to [Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md).
 Current installed-state scope belongs to
 [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md), and phase sequence belongs
-to [Current Roadmap](../roadmap/CURRENT_ROADMAP.md).
+to [Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Final accepted-prose
+numeric containment belongs to
+[Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md).
 
 The ordinary `python -m proplex` CLI and home-page UI compose one fixed product
 registry and execution policy into their normal `RunDeps`. There is no public
@@ -196,6 +198,12 @@ nominated claim and evidence or admitted-input refs. The Specialist cannot
 validate or admit its own result and has no ComponentCoverage, Sufficiency,
 FinalAnswerPacket, Author, citation, source-obligation, search, acquisition, or
 contract-mutation authority.
+
+When that exact claim is supported and admitted, the ordinary component or
+synthesis path carries a bounded Specialist authority ref, applicable D-prime
+ref, and D-prime consumption ref into FAP. Finalization may classify only the
+matching result literal as `specialist_derived_numeric`; execution success,
+value equality, or an unused result cannot create rendering authority.
 
 ## Scheduling And Lifecycle
 

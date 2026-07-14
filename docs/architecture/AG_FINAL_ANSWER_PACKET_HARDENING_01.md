@@ -2,12 +2,12 @@
 
 Status: Completed implementation posture for the hardened FinalAnswerPacket
 handoff surface.
+Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
 
 ## Purpose
 
 `AG-FINAL-ANSWER-PACKET-HARDENING-01` opens the hardened FAP handoff surface.
-It consumes SufficiencyReadiness and uses the existing canonical
-`final_answer_packet` stage/state slot:
+It consumes SufficiencyReadiness and uses the existing canonical `final_answer_packet` stage/state slot:
 
 - `state.final_answer_packet`
 - `state.final_answer_authority_projection`
@@ -23,8 +23,8 @@ does not run live calls, and does not claim product correctness.
 The new runtime path is `core/final_answer_packet_hardening_runtime.py`. It
 adds `FINAL_ANSWER_PACKET_HARDEN` / `FINAL_ANSWER_PACKET_HARDENED` as the
 RunKernel action/observation pair and writes the canonical
-`final_answer_packet` projection. It does not use old AG-92C/AG-96 FAP/Author
-authority, and it does not call `core.pipeline_orchestrator.py`,
+`final_answer_packet` projection. It does not use old AG-92C/AG-96 FAP/Author authority,
+and it does not call `core.pipeline_orchestrator.py`,
 `core.final_answer_packet_runtime.py`, `core.final_answer_runtime_adapter.py`,
 or `core.followup_final_answer_packet_runtime.py`.
 
@@ -36,6 +36,9 @@ cannot be laundered into a packet.
 ## Status Taxonomy
 
 The hardened FAP taxonomy is:
+
+The full/partial/blocked/follow-up/contested/insufficient/not-applicable
+postures remain distinct.
 
 - `full_answer_packet_ready`
 - `partial_answer_packet_ready`
@@ -66,6 +69,11 @@ revision, digest, readiness status, FAP component status, allowed Author
 treatment, coverage refs, SemanticObservation refs, safe source/content refs,
 Scrutineer refs, Specialist refs, follow-up refs when relevant, caveats, and
 prohibited upgrades.
+
+The hardened packet also projects a claim-scoped quantitative finalization
+manifest from supported safe claim text and current semantic/D-prime refs. The
+manifest adds no calculation, conversion, admission, or Sufficiency authority;
+it is consumed by the shared deterministic AuthorProse validator.
 
 Treatment remains posture-preserving:
 

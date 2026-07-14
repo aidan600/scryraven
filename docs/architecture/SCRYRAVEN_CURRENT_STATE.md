@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -44,6 +44,7 @@ configuration.
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, units, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
+| `QUANT-FINALIZATION-CONTAINMENT` | Every active accepted-prose route consumes one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source numbers, current admitted D-prime-supported claims, and exact completed S1 results remain eligible only for their bound propositions. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, or result reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 
 ## Current Ordinary Multi-Component Flow
 
@@ -86,6 +87,14 @@ the same declarative field, operator, and bound facts are consumed by runtime
 validation. Missing source posture is not treated favorably, and component
 admission cannot upgrade underlying evidence. Contract, full catalog, and source
 material retention remains closed outside the transient role/adapter scope.
+
+At finalization, FinalAnswerPacket projects current numeric authority by claim,
+not as a global value/unit allowlist. Ordinary Author receives fixed no-
+calculation/no-conversion instructions and exact transient renderings. Candidate
+prose is buffered and deterministically validated before display or successful
+Author reduction. Hardened AuthorProse and follow-up AF5B finalization consume
+the same validator. A failed check creates no accepted AuthorProse or final
+answer outcome and does not trigger a model retry.
 
 Cross input reproof is unconditional. The ordinary caller may prove the exact
 transient packet directly; RunKernel independently reconstructs it from current
@@ -135,6 +144,7 @@ and this document does not license changes to that surface.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
+- [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns claim-scoped numeric projection and accepted-prose validation across active finalizers.
 - [RunAuthority implementation guide](../codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md) owns authority-migration procedure.
 
 ## Current Roadmap
