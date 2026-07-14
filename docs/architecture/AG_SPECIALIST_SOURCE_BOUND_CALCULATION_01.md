@@ -1,72 +1,143 @@
-# AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01
+# Quantitative Specialist Product Activation
 
-Status: completed implementation posture for the first useful Specialist MVP.
+Status: current
+Authority: canonical:quantitative-specialist-product-activation
+Default-read: no
+Applies-to: ordinary source-bound calculator capability, transient numeric source catalogs, literal binding, numeric provenance, product registry/policy, claim alignment, and D-prime handoff
+Does-not-authorize: search, acquisition, provider/model calls, estimates, arbitrary formulas, recursion, parallelism, direct admission, FAP, Author, or live validation
+Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Update-trigger: merged change to the ordinary quantitative Specialist capability, source catalogs, parser, product composition, or validator handoff
 
-Proof class: `component_harness_proof`.
+Installed runtime class: quantitative-specialist-product-activation-s1
 
-Product path affected: RunKernel-reduced Specialist source-bound calculation
-state over already custodied/admitted/source-bound numeric inputs. No live
-provider, broker, retrieval, fetch/read, model, ComponentCoverage, Sufficiency,
-FinalAnswerPacket, Author, citation, source-obligation satisfaction,
-`current_answer_contract` mutation, or product correctness path is opened.
+## Responsibility And Product Consumer
 
-## Result
+This document is the sole current owner of the installed quantitative
+Specialist. The generic proposal, registry, scheduling, result, and validator
+contracts belong to [Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md).
+Current installed-state scope belongs to
+[ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md), and phase sequence belongs
+to [Current Roadmap](../roadmap/CURRENT_ROADMAP.md).
 
-`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` introduces Specialist as
-source-bound deterministic calculation only.
+The ordinary `python -m proplex` CLI and home-page UI compose one fixed product
+registry and execution policy into their normal `RunDeps`. There is no public
+toggle. Diagnostics and dry-run surfaces remain closed. Activation is limited
+to `ordinary-bounded-multicomponent-factual-synthesis-v1`; nonqualifying and
+single-component requests preserve their established ordinary behavior.
 
-Specialist is not product authority. It records whether already source-bound
-numeric inputs can support a
-small deterministic calculation, and it preserves exact input lineage, formula
-lineage, units, assumptions, caveats, blockers, and closed downstream flags.
+## Installed Capability
 
-RunKernel owns Specialist calculation reduction. The canonical state is a
-RunKernel-reduced Specialist calculation record/projection/history under
-`specialist_source_bound_calculation`. The helper can build a record from
-fixture source-bound numeric inputs, but canonical Specialist state comes only
-from RunKernel authorization and reduction.
+The one product descriptor is:
 
-## Calculation Behavior
+| Field | Installed value |
+| --- | --- |
+| Capability ID | `specialist.source_bound_calculation` |
+| Version | `1.0.0` |
+| Requirement | `source_bound_quantitative_calculation` |
+| Input schema | `specialist.source_bound_calculation.request.v1` |
+| Output schema | `specialist.source_bound_calculation.result.v1` |
+| Executor | deterministic local adapter, no provider transport |
 
-Supported deterministic operators are:
+The product registry contains only that descriptor, and the fixed product
+policy enables only that capability with a zero-or-one serial Specialist unit.
+The generic registry, adapter interface, Scheduler V3 resolution, and unified
+D-prime handoff are reused without a calculator-specific scheduler or driver
+branch.
 
-- `sum`
-- `difference`
-- `product`
-- `ratio`
-- `percentage`
-- `percentage_point_difference`
-- `simple_rate`
-- `weighted_average`
+## Source Catalogs And Literal Binding
 
-Inputs must be source-bound and lineage-preserving. Each numeric input carries a
-typed numeric value, unit, label, component id, input digest, currentness/source
-class posture, caveats, and source/custody/content/SemanticObservation/Analyst
-refs when available. Weighted-average weights must be source-bound or explicitly
-fixture-bound.
+Repository code derives transient local source catalogs from ordinary role
+inputs. Component Analyst receives a `component_evidence` alias with bounded
+source posture, evidence/custody refs, lineage completeness, and a digest of
+the bounded material. Cross-Component Analyst receives deterministic
+`component_01`, `component_02`, and later aliases for current admitted
+component claims. Each synthesis entry binds:
 
-Invalid, stale, contradictory, mixed-unit, missing-unit, missing-lineage,
-non-numeric, denominator-zero, or unsupported-formula calculations remain
-blocked, invalid_input, or contested; in short, unsafe calculations remain
-blocked or contested rather than becoming support. Specialist does not infer
-missing values, normalize incompatible units without explicit inputs, parse
-arbitrary formulas, execute arbitrary code, or calculate from raw/unbounded
-text.
+```text
+nominated admitted component claim
+-> exact literal occurrence in that claim
+-> underlying current component evidence containing the same literal
+```
 
-## Boundaries
+This two-hop proof is mandatory. The retained proposal uses local aliases and
+exact literal text only; it cannot carry component, node, graph, lease, URL,
+field-path, source text, provider, prompt, response, search, retrieval, or
+canonical authority material. Source material is reconstructed transiently
+immediately before dispatch and is not retained in RunKernel state, scheduler
+records, results, logs, or traces.
 
-Specialist calculation output does not decide ComponentCoverage, Sufficiency,
-FinalAnswerPacket, Author input, citation eligibility, source-obligation
-satisfaction, current-answer-contract mutation, or product correctness.
-ComponentCoverage remains the canonical component support reducer.
-Sufficiency/FAP/Author remain closed.
+## Request, Parser, And Calculation Contract
 
-Scrutineer can review Specialist calculation posture and refs enough to flag
-unsupported calculation, stale input, contradiction, or missing source-bound
-lineage. Scrutineer does not calculate or authorize Specialist output.
+The closed request schema contains request kind, calculation kind, a bounded
+formula label, expected output unit and precision posture, two to eight
+operands, one claim binding, and bounded assumptions/caveats. Each operand
+uses a local key, source alias, exact source numeric literal, operator-specific
+role, and optional occurrence/pair key. Unknown fields fail closed.
 
-Existing Economist surfaces remain legacy/passive unless deliberately reused
-without authority revival. This phase does not revive legacy Economist handoff
-authority, Author behavior, citation behavior, or old orchestration paths.
+Supported deterministic operators and roles are:
 
-The next likely phase is `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`.
+| Operator | Required roles |
+| --- | --- |
+| `sum` | two or more `term` operands |
+| `difference` | one `minuend`, one `subtrahend` |
+| `product` | two or more `factor` operands |
+| `ratio` | one `numerator`, one `denominator` |
+| `percentage` | one `numerator`, one `denominator` |
+| `percentage_point_difference` | one `minuend`, one `subtrahend` |
+| `simple_rate` | one `numerator`, one `denominator` |
+| `weighted_average` | at least two complete `value`/`weight` pairs |
+
+Parser `source_bound_numeric_literal_parser.v1` uses `Decimal` and a closed
+grammar for sign, dot-decimal or canonical comma grouping, an optional single
+scale word, explicit percent or bounded units, and currency code. A currency
+symbol is accepted only with an exact structured catalog currency fact.
+Locale ambiguity, expressions, words-as-numbers, duplicated scales,
+non-finite values, and arbitrary code fail closed. Units and precision are
+derived deterministically; missing or incompatible units, denominator zero,
+unsupported formulas, weak/stale/conflicting sources, missing lineage, and
+literal-binding ambiguity block or contest the result.
+
+The product adapter calls the pure `evaluate_source_bound_calculation` seam.
+That seam owns normalized deterministic arithmetic facts shared with the old
+record builder. The legacy RunKernel calculation reducer remains compatibility
+support only and is not called by ordinary S1 execution.
+
+## Claim Alignment And Authority
+
+A completed calculation is useful only when the nominated proposed-result
+literal occurs exactly in the nominated claim and reparses to the same
+`Decimal`, derived unit, and compatible precision. The result records
+`source_explicit` input provenance, `derived_deterministic` output provenance,
+operator/formula/parser facts, assumptions, caveats, blockers, and exact
+lineage. Non-exact alignment is contested and spent; execution success alone
+is not semantic support.
+
+Component or synthesis D-prime receives the result only through the generic
+`specialist_need_handoff` and must validate its use against the ordinary
+nominated claim and evidence or admitted-input refs. The Specialist cannot
+validate or admit its own result and has no ComponentCoverage, Sufficiency,
+FinalAnswerPacket, Author, citation, source-obligation, search, acquisition, or
+contract-mutation authority.
+
+## Scheduling And Lifecycle
+
+The separate Specialist budget remains zero or one unit, serial and
+nonrecursive. Canonical ready-work order gives an eligible component
+calculation priority before a later synthesis calculation. Spending the unit
+at component scope therefore makes later optional synthesis work unavailable
+and later required synthesis work safely blocks through the existing typed
+lifecycle. Optional failure remains visible and nonblocking; required failure
+or exhaustion reaches the safe non-Author terminal after active work drains.
+
+## Unsupported And Nonproofs
+
+S1 does not support estimates, number invention, arbitrary formula strings,
+unit or currency conversion, source acquisition, social-source analysis, more
+than one Specialist unit, recursion, parallel Specialist execution, or global
+capability arbitration. It does not prove live correctness, arbitrary-query
+coverage, broad quantitative reasoning quality, answer quality, or production
+stability.
+
+The next roadmap checkpoint is separately licensed quantitative live
+validation. That checkpoint must not be inferred from these offline product-
+path proofs or from capability availability.

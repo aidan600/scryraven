@@ -67,7 +67,7 @@ completed-phase chronology into phase briefs.
 | Cross-component Analyst proposal contract | [Cross-Component Analyst Workbench](../architecture/CROSS_COMPONENT_ANALYST_WORKBENCH.md) |
 | Analyst Workbench | [Analyst Workbench Full Slice](../architecture/ANALYST_WORKBENCH_FULL_SLICE.md) |
 | Scrutineer | [Scrutineer Review](../architecture/AG_SCRUTINEER_REVIEW_01.md) |
-| Source-bound quantitative calculation capability | [Specialist Source-Bound Calculation](../architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) |
+| Ordinary quantitative Specialist product activation (`canonical:quantitative-specialist-product-activation`) | [Quantitative Specialist Product Activation](../architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) |
 | SufficiencyReadiness | [Sufficiency Partial-Answer Readiness](../architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md) |
 | Hardened FinalAnswerPacket | [Final Answer Packet Hardening](../architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md) |
 | Author prose finalization | [Author Prose-Only Finalization](../architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md) |

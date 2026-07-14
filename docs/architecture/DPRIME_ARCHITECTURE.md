@@ -4,8 +4,8 @@ Status: current
 Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
-Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, or product Specialist activation
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, additional Specialist activation, or live validation
+Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -18,6 +18,8 @@ multi-component path belongs to
 [Multi-Component Synthesis Runtime Architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 Generic Specialist result boundaries belong to
 [Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md).
+Installed calculator-specific claim alignment belongs to
+[Quantitative Specialist Product Activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md).
 
 D-prime is an evidence-relative validation role. It reviews one nominated
 proposal against the exact evidence, component, synthesis, dependency, scope,
@@ -28,10 +30,10 @@ It does not choose the proposal, admit the result, or render an answer.
 
 | Role | Owns | Must not do |
 | --- | --- | --- |
-| Component Analyst | Proposes what bounded custodied evidence supports for one answer component. | Validate or admit its own proposal, authorize recovery, or render. |
-| Component D-prime | Validates the nominated component proposal against its bound evidence and component obligations. | Act as first-pass Analyst, invent a claim, admit support, mutate the AnswerContract, or render. |
-| Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, and recovery needs over admitted refs. | Validate or admit its own synthesis, authorize recovery, or render. |
-| Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, and caveat refs. | Invent synthesis, act as Cross-Component Analyst, admit graph state, or render. |
+| Component Analyst | Proposes what bounded custodied evidence supports for one answer component and may nominate one exact source-bound quantitative need. | Validate or admit its own proposal, authorize the capability or recovery, or render. |
+| Component D-prime | Validates the nominated component proposal against its bound evidence and component obligations, including exact calculator claim alignment when handed off. | Act as first-pass Analyst, invent or calculate a claim, admit support, mutate the AnswerContract, or render. |
+| Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, recovery needs, and an exact cross-component quantitative need over admitted refs. | Validate or admit its own synthesis, authorize the capability or recovery, or render. |
+| Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, caveat, and two-hop calculator lineage refs. | Invent or calculate synthesis, act as Cross-Component Analyst, admit graph state, or render. |
 | Full Scrutineer | Adversarially challenges a component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace the first-pass Analyst, manufacture a replacement case, admit state, or render. |
 | RunKernel | Performs structural validation and alone admits, blocks, challenges, or authorizes bounded recovery. | Manufacture semantic output or delegate canonical admission to a worker. |
 
@@ -153,12 +155,19 @@ exactly-once consumption; it does not trust a caller-supplied route or status.
 A Specialist outcome preserves exact lineage, cannot validate itself, and
 cannot bypass D-prime or RunKernel.
 
-The deterministic source-bound calculator remains an installed bounded
-supporting capability. It is not registered or activated as an ordinary
-Specialist by the generic substrate phase.
+The deterministic source-bound calculator is registered and activated by the
+fixed S1 ordinary product composition for the named bounded multi-component
+class. A completed handoff supports the nominated claim only when its exact
+calculated value, operator, unit, precision, assumptions, caveats, source-
+explicit input lineage, and claim alignment all match. Synthesis use additionally
+requires two-hop proof from each admitted component claim to the same exact
+literal in underlying current evidence. Execution success alone is insufficient;
+non-exact alignment remains contested. D-prime does not rerun arithmetic or
+authorize the capability.
 
 ## Nonproofs
 
 This contract does not prove arbitrary-query support, live model quality,
-provider correctness, retrieval quality, citation correctness, answer quality,
-or product correctness. Live calls remain separately licensed.
+provider correctness, retrieval quality, citation correctness, live calculator
+correctness, broad quantitative reasoning quality, answer quality, or product
+correctness. Live calls remain separately licensed.

@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -29,23 +29,32 @@ The high-level goal is to establish:
 - inert generic capability validation proving substrate reuse;
 - no product Specialist activation.
 
-## Active Next: S1
+## Installed Product Activation: S1
 
-**Quantitative Specialist ordinary product activation.**
+**Quantitative Specialist ordinary product activation is installed.**
 
-After S0, S1 will:
+S1:
 
-- register and consume the existing deterministic quantitative calculator
-  through the S0 substrate;
-- preserve numeric provenance, assumptions, units, uncertainty, and source
-  lineage;
-- validate downstream semantic use through the correct D-prime boundary.
+- registers and consumes the deterministic source-bound calculator through the
+  S0 substrate in the fixed ordinary CLI/UI product composition;
+- preserves exact source-literal and two-hop synthesis provenance, assumptions,
+  units, precision, and deterministic claim alignment;
+- routes semantic use through component or synthesis D-prime;
+- keeps one serial unit with component-before-synthesis priority;
+- leaves estimates, arbitrary formulas, conversions, and acquisition unsupported.
+
+## Active Next: Separately Licensed Quantitative Live Validation
+
+The next checkpoint is a bounded, separately authorized live validation of the
+installed quantitative product path. S1's offline proofs do not authorize that
+work or establish live correctness, arbitrary-query coverage, or broad
+quantitative reasoning quality.
 
 ## Later, Deliberately Underspecified
 
 - Social-source acquisition and authority design.
 - Social Awareness specialist design and offline validation.
-- Controlled live end-to-end product dogfood.
+- Broader controlled live end-to-end product dogfood.
 - Hosted and Local capacity characterization.
 - UI and productization.
 

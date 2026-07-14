@@ -4,8 +4,8 @@ Status: current
 Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
-Does-not-authorize: product capability registration, calculator activation, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Does-not-authorize: additional product capabilities, calculator scope expansion, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
+Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
@@ -15,6 +15,8 @@ state is summarized in [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md),
 phase order belongs to [Current Roadmap](../roadmap/CURRENT_ROADMAP.md), and the
 ordinary bounded consumer belongs to
 [Multi-Component Synthesis Runtime Architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
+The one installed calculator product belongs to
+[Quantitative Specialist Product Activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md).
 
 The substrate lets an existing semantic role propose a bounded need, lets
 RunKernel bind that proposal to exact current authority, resolves an explicitly
@@ -41,7 +43,11 @@ Component Analyst, Cross-Component Analyst, and full Scrutineer may emit the
 same optional proposal shape. A proposal names a bounded question, capability
 requirement, optional capability hint, exact target, input/output schema refs,
 input artifact refs, assumptions, caveats, nonclaims, advisory budget posture,
-and a nonrecursive parent posture.
+and a nonrecursive parent posture. An optional capability-generic
+`capability_request` is canonical-JSON bounded to 16 KiB, depth 6, 64 mapping
+keys, 64 list items, and 1,000 characters per string. It rejects raw/private
+material, provider/model/search/retrieval fields, executable expressions, and
+caller-authored graph, lease, admission, FAP, or Author authority.
 
 RunKernel binds the proposal to the originating completed role action and
 artifact, current AnswerContract, current component or graph target revision,
@@ -57,16 +63,19 @@ advisory; resolution deterministically selects from compatible enabled
 descriptors under policy. Unknown, disabled, or schema-incompatible
 capabilities fail closed with a typed proposal posture.
 
-The default registry and default execution policy are closed. No product
-capability is registered or enabled by S0. Tests inject two inert deterministic
-capabilities to prove reuse without adding driver branches. The existing
-source-bound calculator remains unchanged and is not registered by this phase.
+The generic default registry and policy remain closed. The ordinary CLI/UI
+product path separately composes the fixed S1 registry and policy containing
+only `specialist.source_bound_calculation` version `1.0.0`. Generic substrate
+tests still inject inert deterministic capabilities to prove reuse, and the
+Scheduler/driver contain no calculator-specific capability branch.
 
 ## Scheduler V3 And Budget Separation
 
 Scheduler V3 is an upgrade of the existing RunKernel scheduler and is selected
-only when both a Specialist registry and execution policy are injected into an
-ordinary bounded run. Runs without that injection retain Scheduler V2 behavior.
+when a Specialist registry and execution policy are injected into an ordinary
+bounded run. The fixed ordinary CLI/UI composition supplies the S1 product
+registry/policy; generic closed-default and no-need behavior remains
+V2-compatible.
 
 Specialist work uses its own compatibility pool:
 
@@ -77,6 +86,11 @@ Specialist work uses its own compatibility pool:
 - no provider transport or model request;
 - no token or model-cost accounting;
 - no consumption of the five semantic role caps or their 22-unit envelope.
+
+Canonical ready-work ordering gives eligible component Specialist work priority
+before a later synthesis need. The one unit cannot be spent twice: later
+optional exhaustion remains visible and nonblocking, while later required
+exhaustion safely blocks through the existing lifecycle.
 
 The Specialist work node binds the accepted proposal, canonical target,
 contract and graph refs, capability descriptor, exact RunKernel authorization
@@ -118,6 +132,13 @@ independently rederives the current D-prime role, action, artifact, target, and
 exact handoff-bearing input digest before allowing exactly-once consumption;
 caller-supplied route or validation status is not trusted.
 
+For the installed quantitative capability, the result also carries exact
+source-literal binding, deterministic parser/operator/unit/precision facts,
+and claim alignment. Synthesis calculation lineage proves the literal through
+the admitted component claim to the same underlying current component evidence.
+Only the applicable D-prime may decide whether those facts support the nominated
+claim; successful arithmetic cannot validate itself.
+
 ## Scrutineer Boundary
 
 S0 permits automatic remediation only for an exact current synthesis leaf.
@@ -156,7 +177,7 @@ proposal, parallel Specialist execution, or arbitrary-query support.
 ## Nonproofs
 
 Offline tests prove generic contract reuse, exact lineage, ordinary bounded
-consumption, closed defaults, typed rejection, and deterministic scheduling.
-They do not prove a product Specialist, calculator activation, live correctness,
-answer quality, broad capability coverage, arbitrary-query support, or useful
-hosted/Local capacity.
+quantitative consumption, closed generic defaults, typed rejection, and
+deterministic scheduling. They do not prove live calculator correctness, answer
+quality, broad quantitative reasoning, additional capability coverage,
+arbitrary-query support, or useful hosted/Local capacity.

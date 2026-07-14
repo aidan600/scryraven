@@ -156,8 +156,9 @@ def test_scheduler_lease_and_concurrency_invariants_are_visible() -> None:
     text = _collapsed(CANONICAL)
     for phrase in (
         "Every semantic call is RunKernel-scheduler-governed",
-        "Runs with an explicitly injected Specialist registry and execution policy use Scheduler V3",
-        "Closed-default runs remain V2-identical",
+        "fixed ordinary CLI/UI product composition injects the S1 quantitative Specialist registry and execution policy and uses Scheduler V3",
+        "Generic closed-default and no-need runs remain V2-compatible",
+        "two-hop proof from each admitted component claim",
         "exact contiguous next batch",
         "Batch grant, cancellation, dispatch spend, and child-action publication are atomic",
         "predispatch cancellation returns an exact reservation",
@@ -198,7 +199,7 @@ def test_finalization_blocked_behavior_and_nonproofs_remain_narrow() -> None:
         "sanitized non-Author terminal `RunOutcome`",
         "Malformed or unrelated invariant/infrastructure failures remain errors",
         "does not prove arbitrary-query support",
-        "does not register a product capability",
+        "installed quantitative product contract is owned by",
     ):
         assert phrase in text
 

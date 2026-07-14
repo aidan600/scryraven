@@ -4,8 +4,8 @@ Status: current
 Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
-Does-not-authorize: arbitrary-query claims, live calls, width expansion, product Specialist activation, or roadmap execution
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
+Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -68,10 +68,10 @@ Component finals are not handed to Author for ungoverned glue.
 | Role | Owns | Must not do |
 | --- | --- | --- |
 | Planner / semantic producer | Proposes query meaning, answer components, search/source requirements, and structural request relationships. | Admit claims, validate its own proposals, or manufacture evidence. |
-| Component Analyst | Uses the configured SmartModel role to propose what bounded custodied evidence supports for one component. | Validate or admit its proposal, dispatch recovery, or render. |
-| Component D-prime | Validates the nominated component proposal against exact evidence, component, scope, source-obligation, currentness, and caveat refs. | Act as first-pass Analyst, invent or admit a claim, dispatch search, or render. |
-| Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, and recovery needs. | Validate or admit its synthesis, authorize recovery, or render. |
-| Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, and caveat refs. | Invent synthesis, act as Cross-Component Analyst, admit state, or render. |
+| Component Analyst | Uses the configured SmartModel role to propose what bounded custodied evidence supports for one component and may nominate an exact source-bound quantitative need. | Validate or admit its proposal, authorize the capability, dispatch recovery, or render. |
+| Component D-prime | Validates the nominated component proposal against exact evidence, component, scope, source-obligation, currentness, caveat, and calculator-alignment refs. | Act as first-pass Analyst, invent or calculate a claim, admit support, dispatch search, or render. |
+| Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, recovery needs, and exact cross-component quantitative needs. | Validate or admit its synthesis, authorize the capability or recovery, or render. |
+| Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, caveat, and two-hop calculator lineage refs. | Invent synthesis or calculate a substitute, act as Cross-Component Analyst, admit state, or render. |
 | Full Scrutineer | Adversarially challenges component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace first-pass analysis, manufacture a replacement case, admit state, or render. |
 | RunKernel | Derives ready work; owns exact batches, leases, caps, settlement, canonical reduction, admission, block/challenge, and recovery authorization. | Manufacture semantic output or accept caller-authored scheduler authority. |
 | Sufficiency | Decides readiness from admitted state. | Invent or repair synthesis. |
@@ -173,15 +173,28 @@ work and atomically grants the exact contiguous next batch. The driver does not
 provide a role, logical key, packet, backend class, or width as its next-work
 choice.
 
-Runs with an explicitly injected Specialist registry and execution policy use
-Scheduler V3. V3 preserves the same semantic ready-work owner and 22-unit
-envelope while adding a separate zero-or-one deterministic Specialist pool.
+The fixed ordinary CLI/UI product composition injects the S1 quantitative
+Specialist registry and execution policy and uses Scheduler V3. V3 preserves
+the same semantic ready-work owner and 22-unit envelope while adding a separate
+zero-or-one deterministic Specialist pool.
 Specialist work is inserted after its bound role proposal and before the exact
-component or synthesis D-prime review. Closed-default runs remain V2-identical.
+component or synthesis D-prime review. Generic closed-default and no-need runs
+remain V2-compatible. Eligible component calculation work precedes a later
+synthesis calculation for the single unit.
 Predispatch Specialist input-reconstruction failure returns the exact
 reservation and creates one failed disposition plus unified handoff. Optional
 work remains nonblocking; required work reaches the Specialist-specific blocked
 terminal before ordinary sanitized blocked finalization.
+
+Component and Cross-Component Analyst input packets include repository-owned
+transient quantitative source catalogs. Component requests bind exact literals
+to bounded component evidence. Synthesis requests use deterministic component
+aliases and require two-hop proof from each admitted component claim to the same
+literal in its underlying current evidence. The transient source material is
+reconstructed only for adapter execution and is not retained. Deterministic
+Decimal arithmetic, units, precision, and exact claim alignment flow through
+the existing unified handoff; D-prime and RunKernel retain all validation and
+admission authority.
 
 The compatibility envelope is the sum of the shared role caps. Every work item
 has an exact budget/work lease bound to current contract, graph, input packet,
@@ -265,8 +278,11 @@ production traffic stability, more than one recovery, permanent mode budgets,
 Local or graph-bound parallelism, citation correctness, answer quality, or
 product correctness.
 
-Product capability activation and capacity characterization are routed to
-[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). The installed generic
-Specialist substrate is owned by
-[Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md); this contract does
-not register a product capability or execute roadmap work.
+The installed quantitative product contract is owned by
+[Quantitative Specialist Product Activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md),
+and the generic substrate remains owned by
+[Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md). Separately licensed
+quantitative live validation and capacity characterization are routed to
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Offline activation does not
+prove live correctness, broad quantitative reasoning, or arbitrary-query
+coverage.
