@@ -428,7 +428,7 @@ def test_post_wave_reconciliation_uses_sanitized_packets_only_and_is_idempotent(
     assert repairs["entries"][0]["status"] == "completed_offline"
 
 
-def test_budget_exhausted_finalizer_uses_completed_sanitized_state_only(
+def test_budget_exhausted_finalizer_and_operator_extension_are_sanitized(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -444,8 +444,8 @@ def test_budget_exhausted_finalizer_uses_completed_sanitized_state_only(
     )
 
     ledger = support.read_sanitized_json(root / support.LEDGER_NAME, root=root)
-    ledger["outbound_blocked"] = True
-    ledger["outbound_block_reason"] = "observed_token_ceiling_reached"
+    ledger["outbound_blocked"] = False
+    ledger["outbound_block_reason"] = None
     ledger["outbound_blocked_by_block"]["A"] = True
     ledger["outbound_block_reason_by_block"]["A"] = (
         "observed_token_ceiling_reached"
@@ -460,6 +460,14 @@ def test_budget_exhausted_finalizer_uses_completed_sanitized_state_only(
         }
     )
     ledger["observed_token_telemetry"].update(
+        {
+            "input_tokens": 54803,
+            "output_tokens": 10501,
+            "embedding_tokens": 189607,
+            "total_observed_tokens": 254911,
+        }
+    )
+    ledger["observed_token_telemetry_by_block"]["A"].update(
         {
             "input_tokens": 54803,
             "output_tokens": 10501,
@@ -556,6 +564,96 @@ def test_budget_exhausted_finalizer_uses_completed_sanitized_state_only(
     assert (root / "review.md").read_text(encoding="utf-8").startswith(
         support.CAMPAIGN_MARKER
     )
+
+    assert campaign.authorize_wave_1_completion_extension(config_path) == 0
+    assert campaign.authorize_wave_1_completion_extension(config_path) == 0
+    preserved = support.read_sanitized_json(
+        root / "campaign_summary.pre_extension.sanitized.json",
+        root=root,
+    )
+    assert preserved["disposition"] == "BUDGET_EXHAUSTED"
+    amended_summary = support.read_sanitized_json(
+        root / "campaign_summary.json",
+        root=root,
+    )
+    assert amended_summary["disposition"] == "BUDGET_EXHAUSTED"
+    assert amended_summary["superseded_for_wave_1_completion"] is True
+    assert amended_summary["superseding_authority"] == (
+        "explicit_operator_budget_extension"
+    )
+    amended_config = support.read_sanitized_json(config_path, root=root)
+    assert amended_config["hard_operational_budget"]["block_a"][
+        "observed_model_plus_embedding_tokens"
+    ] == 375000
+    assert amended_config["hard_operational_budget"]["combined"][
+        "observed_model_plus_embedding_tokens"
+    ] == 400000
+    amended_ledger = support.read_sanitized_json(
+        root / support.LEDGER_NAME,
+        root=root,
+    )
+    assert amended_ledger["outbound_blocked_by_block"]["A"] is False
+    assert amended_ledger["consumed_combined"]["campaign_added_retries"] == 0
+
+    calls: list[dict[str, Any]] = []
+
+    def _fake_execute_one(**kwargs: Any) -> tuple[int, dict[str, Any]]:
+        calls.append(kwargs)
+        packet = {
+            "campaign_schema": support.CAMPAIGN_SCHEMA,
+            "query_id": "D_CONVERSION_NEGATIVE",
+            "attempt": 2,
+            "success_classification": "success",
+            "product_provider_failure": None,
+            "s1_runtime_summary": {"stage_reached": "run_outcome"},
+            "attempt_reason": "operator_authorized_wave_1_completion",
+            "campaign_added_retries": 0,
+        }
+        support.write_sanitized_json(
+            root / "runs" / "run_D_CONVERSION_NEGATIVE_02.sanitized.json",
+            packet,
+            root=root,
+        )
+        campaign._record_run(
+            root=root,
+            query_id="D_CONVERSION_NEGATIVE",
+            attempt=2,
+            packet=packet,
+            result_code=0,
+            attempt_reason="operator_authorized_wave_1_completion",
+        )
+        return 0, packet
+
+    monkeypatch.setattr(campaign, "_execute_one", _fake_execute_one)
+    assert campaign.run_d_completion_extension(config_path) == 0
+    assert len(calls) == 1
+    assert calls[0]["query_id"] == "D_CONVERSION_NEGATIVE"
+    assert calls[0]["attempt"] == 2
+    assert calls[0]["attempt_reason"] == (
+        "operator_authorized_wave_1_completion"
+    )
+    paused_ledger = support.read_sanitized_json(
+        root / support.LEDGER_NAME,
+        root=root,
+    )
+    assert paused_ledger["outbound_blocked"] is True
+    assert paused_ledger["outbound_block_reason"] == (
+        "mandatory_operator_review_after_d_attempt_02"
+    )
+    paused_manifest = support.read_sanitized_json(
+        root / support.MANIFEST_NAME,
+        root=root,
+    )
+    assert paused_manifest["attempts"] == {
+        "A_NO_QUANT": 1,
+        "B_COMPONENT_CALC": 1,
+        "C_SYNTHESIS_CALC": 1,
+        "D_CONVERSION_NEGATIVE": 2,
+    }
+    assert paused_manifest["wave_1_completion_extension"]["status"] == "completed"
+    assert paused_manifest["wave_1_completion_extension"][
+        "further_live_work_authorized"
+    ] is False
 
 
 def test_unknown_query_broker_alternate_and_retry_postures_fail_closed(

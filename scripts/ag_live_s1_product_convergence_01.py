@@ -12,7 +12,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,14 @@ EXPECTED_DISPOSITIONS = {
     "C_SYNTHESIS_CALC": "one synthesis-origin difference with two-hop binding",
     "D_CONVERSION_NEGATIVE": "no unsupported converted mile result presented as supported",
 }
+WAVE_1_EXTENSION_QUERY_ID = "D_CONVERSION_NEGATIVE"
+WAVE_1_EXTENSION_ATTEMPT = 2
+WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING = 375_000
+WAVE_1_EXTENSION_PREVIOUS_TOKEN_TOTAL = 254_911
+WAVE_1_EXTENSION_ADDITIONAL_TOKEN_LIMIT = 120_089
+WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING = 400_000
+WAVE_1_EXTENSION_ATTEMPT_REASON = "operator_authorized_wave_1_completion"
+WAVE_1_EXTENSION_AUTHORITY = "explicit_operator_budget_extension"
 
 
 def _git(*args: str) -> str:
@@ -846,6 +854,190 @@ def finalize_budget_exhausted_campaign(
     return 0
 
 
+def authorize_wave_1_completion_extension(config_path: Path) -> int:
+    """Record the operator's one-run D completion extension offline."""
+
+    resolved_config = config_path.resolve()
+    root = resolved_config.parent
+    validate_campaign_root(ROOT, root)
+    config = read_sanitized_json(resolved_config, root=root)
+    manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+    ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+    summary_path = root / "campaign_summary.json"
+    summary = read_sanitized_json(summary_path, root=root)
+
+    existing = manifest.get("wave_1_completion_extension")
+    if isinstance(existing, dict):
+        if existing.get("status") != "authorized":
+            raise CampaignSafetyError(
+                "Wave 1 completion extension is no longer in its authorization state"
+            )
+        if (
+            config["hard_operational_budget"]["block_a"][
+                "observed_model_plus_embedding_tokens"
+            ]
+            != WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+            or ledger["hard_operational_budget"]["block_a"][
+                "observed_model_plus_embedding_tokens"
+            ]
+            != WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+            or (root / "runs" / "run_D_CONVERSION_NEGATIVE_02.sanitized.json").exists()
+        ):
+            raise CampaignSafetyError("authorized completion extension state drifted")
+        print(f"Wave 1 completion extension already authorized at {root}")
+        return 0
+
+    if manifest.get("initial_wave_complete") is not True:
+        raise CampaignSafetyError("completion extension requires the original Wave 1")
+    if manifest.get("attempts") != {
+        "A_NO_QUANT": 1,
+        "B_COMPONENT_CALC": 1,
+        "C_SYNTHESIS_CALC": 1,
+        "D_CONVERSION_NEGATIVE": 1,
+    }:
+        raise CampaignSafetyError("completion extension requires only A01 through D01")
+    if (
+        manifest.get("terminal_disposition") != "BUDGET_EXHAUSTED"
+        or summary.get("disposition") != "BUDGET_EXHAUSTED"
+    ):
+        raise CampaignSafetyError(
+            "completion extension requires the preserved BUDGET_EXHAUSTED terminal packet"
+        )
+    if int(config.get("campaign_added_retries", -1)) != 0 or int(
+        ledger["consumed_combined"].get("campaign_added_retries", -1)
+    ) != 0:
+        raise CampaignSafetyError("campaign-added retries must remain zero")
+
+    expected_block_a = AG_LIVE_S1_BLOCK_A_OPERATIONAL_BUDGET.as_dict()
+    if (
+        config["hard_operational_budget"]["block_a"] != expected_block_a
+        or ledger["hard_operational_budget"]["block_a"] != expected_block_a
+    ):
+        raise CampaignSafetyError(
+            "completion extension may replace only the original Block A token ceiling"
+        )
+    combined_config = config["hard_operational_budget"]["combined"]
+    combined_ledger = ledger["hard_operational_budget"]["combined"]
+    if (
+        combined_config != AG_LIVE_S1_COMBINED_OPERATIONAL_BUDGET.as_dict()
+        or combined_ledger != AG_LIVE_S1_COMBINED_OPERATIONAL_BUDGET.as_dict()
+        or int(combined_config["observed_model_plus_embedding_tokens"])
+        != WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING
+    ):
+        raise CampaignSafetyError("combined campaign budget must remain unchanged")
+    combined_tokens = int(
+        ledger["observed_token_telemetry"]["total_observed_tokens"]
+    )
+    block_a_tokens = int(
+        ledger["observed_token_telemetry_by_block"]["A"][
+            "total_observed_tokens"
+        ]
+    )
+    if (
+        combined_tokens != WAVE_1_EXTENSION_PREVIOUS_TOKEN_TOTAL
+        or block_a_tokens != WAVE_1_EXTENSION_PREVIOUS_TOKEN_TOTAL
+    ):
+        raise CampaignSafetyError(
+            "completion extension token baseline differs from the operator decision"
+        )
+    if (
+        ledger.get("outbound_blocked_by_block", {}).get("A") is not True
+        or ledger.get("outbound_block_reason_by_block", {}).get("A")
+        != "observed_token_ceiling_reached"
+    ):
+        raise CampaignSafetyError("original Block A token stop is not preserved")
+    d02_path = root / "runs" / "run_D_CONVERSION_NEGATIVE_02.sanitized.json"
+    if d02_path.exists():
+        raise CampaignSafetyError("D attempt 02 already has a packet")
+
+    prior_packet_path = root / "campaign_summary.pre_extension.sanitized.json"
+    if prior_packet_path.exists():
+        raise CampaignSafetyError("preserved pre-extension terminal packet already exists")
+    original_packet_timestamp = datetime.fromtimestamp(
+        summary_path.stat().st_mtime,
+        tz=timezone.utc,
+    ).isoformat()
+    write_sanitized_json(prior_packet_path, summary, root=root)
+    authorized_at = utc_now()
+    amendment = {
+        "recorded_at": authorized_at,
+        "name": "operator_authorized_wave_1_completion_extension",
+        "query_id": WAVE_1_EXTENSION_QUERY_ID,
+        "attempt": WAVE_1_EXTENSION_ATTEMPT,
+        "attempt_reason": WAVE_1_EXTENSION_ATTEMPT_REASON,
+        "campaign_added_retries": 0,
+        "superseded_for_wave_1_completion": True,
+        "superseding_authority": WAVE_1_EXTENSION_AUTHORITY,
+        "original_terminal_packet_timestamp": original_packet_timestamp,
+        "original_consumed_combined": dict(ledger["consumed_combined"]),
+        "original_observed_token_telemetry": dict(
+            ledger["observed_token_telemetry"]
+        ),
+        "absolute_cumulative_block_a_token_ceiling": (
+            WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+        ),
+        "maximum_additional_observed_tokens": (
+            WAVE_1_EXTENSION_ADDITIONAL_TOKEN_LIMIT
+        ),
+        "combined_token_ceiling_unchanged": (
+            WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING
+        ),
+        "non_token_budgets_extended": False,
+    }
+
+    config["hard_operational_budget"]["block_a"][
+        "observed_model_plus_embedding_tokens"
+    ] = WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+    config["wave_1_completion_extension"] = {
+        **amendment,
+        "exact_live_command": (
+            "py scripts\\ag_live_s1_product_convergence_01.py "
+            "--run-d-completion-extension --config "
+            "output\\live_validation\\s1_product_convergence\\"
+            "campaign_config.sanitized.json"
+        ),
+    }
+    ledger["hard_operational_budget"]["block_a"][
+        "observed_model_plus_embedding_tokens"
+    ] = WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+    ledger["outbound_blocked_by_block"]["A"] = False
+    ledger["outbound_block_reason_by_block"]["A"] = None
+    ledger.setdefault("operational_budget_amendments", []).append(amendment)
+
+    manifest.setdefault("instruction_amendments", []).append(amendment)
+    manifest["terminal_disposition_superseded_for_wave_1_completion"] = True
+    manifest["superseding_authority"] = WAVE_1_EXTENSION_AUTHORITY
+    manifest["wave_1_completion_extension"] = {
+        "status": "authorized",
+        **amendment,
+        "mandatory_pause_after_attempt": True,
+    }
+    summary.setdefault("disposition_history", []).append(
+        {
+            "disposition": "BUDGET_EXHAUSTED",
+            "terminal_reason": summary.get("terminal_reason"),
+            "original_terminal_packet_timestamp": original_packet_timestamp,
+            "original_consumed_combined": dict(ledger["consumed_combined"]),
+            "original_observed_token_telemetry": dict(
+                ledger["observed_token_telemetry"]
+            ),
+            "superseded_for_wave_1_completion": True,
+            "superseding_authority": WAVE_1_EXTENSION_AUTHORITY,
+            "preserved_packet": prior_packet_path.name,
+        }
+    )
+    summary["superseded_for_wave_1_completion"] = True
+    summary["superseding_authority"] = WAVE_1_EXTENSION_AUTHORITY
+    summary["campaign_status"] = "wave_1_completion_extension_authorized"
+
+    write_sanitized_json(resolved_config, config, root=root)
+    write_sanitized_json(root / LEDGER_NAME, ledger, root=root)
+    write_sanitized_json(root / MANIFEST_NAME, manifest, root=root)
+    write_sanitized_json(summary_path, summary, root=root)
+    print(f"authorized offline Wave 1 completion extension at {root}")
+    return 0
+
+
 def _query_map(config: dict[str, Any]) -> dict[str, str]:
     return {
         str(item["query_id"]): str(item["query"])
@@ -908,25 +1100,28 @@ def _record_run(
     attempt: int,
     packet: dict[str, Any],
     result_code: int,
+    attempt_reason: str | None = None,
 ) -> None:
     manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
     manifest["attempts"][query_id] = attempt
     manifest["live_contact_started"] = True
-    manifest["runs"].append(
-        {
-            "query_id": query_id,
-            "attempt": attempt,
-            "result_code": result_code,
-            "success_classification": packet.get("success_classification"),
-            "stage_reached": packet.get("s1_runtime_summary", {}).get(
-                "stage_reached"
-            ),
-            "product_provider_failure_classification": (
-                packet.get("product_provider_failure") or {}
-            ).get("classification"),
-            "recorded_at": utc_now(),
-        }
-    )
+    run_record = {
+        "query_id": query_id,
+        "attempt": attempt,
+        "result_code": result_code,
+        "success_classification": packet.get("success_classification"),
+        "stage_reached": packet.get("s1_runtime_summary", {}).get(
+            "stage_reached"
+        ),
+        "product_provider_failure_classification": (
+            packet.get("product_provider_failure") or {}
+        ).get("classification"),
+        "recorded_at": utc_now(),
+    }
+    if attempt_reason is not None:
+        run_record["attempt_reason"] = attempt_reason
+        run_record["campaign_added_retries"] = 0
+    manifest["runs"].append(run_record)
     initial_done = all(int(manifest["attempts"].get(item, 0)) >= 1 for item in QUERY_ORDER)
     manifest["initial_wave_complete"] = initial_done
     manifest["next_initial_query_id"] = next(
@@ -969,6 +1164,7 @@ def _execute_one(
     query_id: str,
     query: str,
     attempt: int,
+    attempt_reason: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
     from scripts import ag_live_bound_01_bounded_product_runner as runner
 
@@ -987,14 +1183,127 @@ def _execute_one(
     result = runner.main(args)
     packet_path = root / "runs" / f"run_{query_id}_{attempt:02d}.sanitized.json"
     packet = read_sanitized_json(packet_path, root=root)
+    if attempt_reason is not None:
+        packet["attempt_reason"] = attempt_reason
+        packet["campaign_added_retries"] = 0
+        write_sanitized_json(packet_path, packet, root=root)
     _record_run(
         root=root,
         query_id=query_id,
         attempt=attempt,
         packet=packet,
         result_code=result,
+        attempt_reason=attempt_reason,
     )
     return result, packet
+
+
+def run_d_completion_extension(config_path: Path) -> int:
+    """Execute only the operator-authorized D attempt 02 and then pause."""
+
+    resolved_config = config_path.resolve()
+    root = resolved_config.parent
+    validate_campaign_root(ROOT, root)
+    config = read_sanitized_json(resolved_config, root=root)
+    manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+    ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+    extension = manifest.get("wave_1_completion_extension")
+    if not isinstance(extension, dict) or extension.get("status") != "authorized":
+        raise CampaignSafetyError(
+            "D attempt 02 requires the offline operator-extension authorization"
+        )
+    if manifest.get("attempts") != {
+        "A_NO_QUANT": 1,
+        "B_COMPONENT_CALC": 1,
+        "C_SYNTHESIS_CALC": 1,
+        "D_CONVERSION_NEGATIVE": 1,
+    }:
+        raise CampaignSafetyError("D attempt 02 is the only authorized live run")
+    if int(config.get("campaign_added_retries", -1)) != 0:
+        raise CampaignSafetyError("campaign-added retries must remain zero")
+    if (
+        config["hard_operational_budget"]["block_a"][
+            "observed_model_plus_embedding_tokens"
+        ]
+        != WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+        or ledger["hard_operational_budget"]["block_a"][
+            "observed_model_plus_embedding_tokens"
+        ]
+        != WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING
+        or config["hard_operational_budget"]["combined"][
+            "observed_model_plus_embedding_tokens"
+        ]
+        != WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING
+        or ledger["hard_operational_budget"]["combined"][
+            "observed_model_plus_embedding_tokens"
+        ]
+        != WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING
+    ):
+        raise CampaignSafetyError("operator token-extension identity drifted")
+    if int(ledger["observed_token_telemetry"]["total_observed_tokens"]) != (
+        WAVE_1_EXTENSION_PREVIOUS_TOKEN_TOTAL
+    ):
+        raise CampaignSafetyError("outbound work occurred after extension authorization")
+    if ledger.get("outbound_blocked") is True or ledger.get(
+        "outbound_blocked_by_block", {}
+    ).get("A") is True:
+        raise CampaignSafetyError("campaign outbound work remains blocked")
+    packet_path = root / "runs" / "run_D_CONVERSION_NEGATIVE_02.sanitized.json"
+    if packet_path.exists():
+        raise CampaignSafetyError("D attempt 02 cannot be repeated")
+
+    query = _query_map(config)[WAVE_1_EXTENSION_QUERY_ID]
+    try:
+        result, packet = _execute_one(
+            config_path=resolved_config,
+            root=root,
+            block="A",
+            query_id=WAVE_1_EXTENSION_QUERY_ID,
+            query=query,
+            attempt=WAVE_1_EXTENSION_ATTEMPT,
+            attempt_reason=WAVE_1_EXTENSION_ATTEMPT_REASON,
+        )
+    except Exception as exc:
+        ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+        ledger["outbound_blocked"] = True
+        ledger["outbound_block_reason"] = (
+            "wave_1_completion_extension_infrastructure_failure"
+        )
+        write_sanitized_json(root / LEDGER_NAME, ledger, root=root)
+        manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+        extension = manifest["wave_1_completion_extension"]
+        extension["status"] = "failed_before_trustworthy_packet"
+        extension["exception_class"] = type(exc).__name__
+        extension["mandatory_operator_review"] = True
+        extension["completed_at"] = utc_now()
+        write_sanitized_json(root / MANIFEST_NAME, manifest, root=root)
+        raise
+
+    ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+    block_a_token_stop = ledger.get("outbound_blocked_by_block", {}).get("A") is True
+    combined_token_stop = ledger.get("outbound_blocked") is True
+    if not combined_token_stop:
+        ledger["outbound_blocked"] = True
+        ledger["outbound_block_reason"] = (
+            "observed_token_ceiling_reached"
+            if block_a_token_stop
+            else "mandatory_operator_review_after_d_attempt_02"
+        )
+    write_sanitized_json(root / LEDGER_NAME, ledger, root=root)
+
+    manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+    extension = manifest["wave_1_completion_extension"]
+    extension["status"] = "completed"
+    extension["completed_at"] = utc_now()
+    extension["result_code"] = result
+    extension["runner_classification"] = packet.get("success_classification")
+    extension["product_provider_failure_classification"] = (
+        packet.get("product_provider_failure") or {}
+    ).get("classification")
+    extension["mandatory_operator_review"] = True
+    extension["further_live_work_authorized"] = False
+    write_sanitized_json(root / MANIFEST_NAME, manifest, root=root)
+    return result
 
 
 def run_block(
@@ -1110,6 +1419,16 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Finalize a sanitized Block A token-exhausted campaign.",
     )
+    action.add_argument(
+        "--authorize-wave-1-completion-extension",
+        action="store_true",
+        help="Record the operator-authorized D02 token extension offline.",
+    )
+    action.add_argument(
+        "--run-d-completion-extension",
+        action="store_true",
+        help="Run only operator-authorized D attempt 02, then pause.",
+    )
     action.add_argument("--run-block", choices=["A", "B"])
     parser.add_argument(
         "--output-root",
@@ -1152,6 +1471,18 @@ def main(argv: list[str] | None = None) -> int:
                 live_runtime_sha=args.live_runtime_sha,
                 recommendation=args.recommendation,
             )
+        if args.authorize_wave_1_completion_extension:
+            if not args.config:
+                raise CampaignSafetyError(
+                    "--authorize-wave-1-completion-extension requires --config"
+                )
+            return authorize_wave_1_completion_extension(Path(args.config))
+        if args.run_d_completion_extension:
+            if not args.config:
+                raise CampaignSafetyError(
+                    "--run-d-completion-extension requires --config"
+                )
+            return run_d_completion_extension(Path(args.config))
         if not args.config:
             raise CampaignSafetyError("--run-block requires --config")
         if bool(args.rerun_query_id) != bool(args.control_query_id):
