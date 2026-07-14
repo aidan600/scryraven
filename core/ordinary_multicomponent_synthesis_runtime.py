@@ -12,7 +12,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from core.component_work_graph_v1 import (
     COMPONENT_WORK_GRAPH_V1_STAGE,
@@ -306,6 +306,55 @@ def _selected_multicomponent_contract(
     )
 
 
+def _structured_evidence_fact(
+    *,
+    candidate: Mapping[str, Any],
+    passage: Mapping[str, Any],
+    candidate_keys: Sequence[str],
+    passage_keys: Sequence[str],
+    limit: int = 120,
+) -> str | None:
+    """Prefer one exact candidate fact, then an uncontradicted passage fact."""
+
+    for owner, keys in ((candidate, candidate_keys), (passage, passage_keys)):
+        for key in keys:
+            value = _clean_text(owner.get(key), limit=limit)
+            if value and value.casefold() != "unknown":
+                return value
+    return None
+
+
+def _exact_conflict_facts(
+    *, candidate: Mapping[str, Any], passage: Mapping[str, Any]
+) -> tuple[str | None, bool | None]:
+    for owner in (candidate, passage):
+        conflict = _clean_text(owner.get("conflict_posture"), limit=80)
+        if conflict and conflict.casefold() != "unknown":
+            return conflict, conflict.casefold() == "present"
+        contradictory = owner.get("contradictory")
+        if isinstance(contradictory, bool):
+            return ("present" if contradictory else "none"), contradictory
+        disposition = _clean_text(
+            owner.get("fact_disposition") or owner.get("disposition"),
+            limit=80,
+        )
+        if disposition and disposition.casefold() in {"contradicted", "contested"}:
+            return "present", True
+    return None, None
+
+
+def _exact_currency_fact(
+    *, candidate: Mapping[str, Any], passage: Mapping[str, Any]
+) -> str | None:
+    for owner in (candidate, passage):
+        value = owner.get("canonical_currency_unit")
+        if isinstance(value, str):
+            token = value.strip()
+            if len(token) == 3 and token.isascii() and token.isalpha():
+                return token.upper()
+    return None
+
+
 def _evidence_input(bindable: Any | None) -> dict[str, Any]:
     if bindable is None:
         return {
@@ -314,28 +363,78 @@ def _evidence_input(bindable: Any | None) -> dict[str, Any]:
             "candidate_custody_ref": {},
         }
     passage = bindable.passage
-    candidate = bindable.candidate_record
-    return {
+    candidate = _safe_mapping(bindable.candidate_record)
+    source_class = _structured_evidence_fact(
+        candidate=candidate,
+        passage=passage,
+        candidate_keys=("source_class",),
+        passage_keys=("source_class",),
+    )
+    source_tier = _structured_evidence_fact(
+        candidate=candidate,
+        passage=passage,
+        candidate_keys=("source_tier",),
+        passage_keys=("source_tier",),
+    )
+    currentness = _structured_evidence_fact(
+        candidate=candidate,
+        passage=passage,
+        candidate_keys=("currentness_signal", "currentness"),
+        passage_keys=("currentness_signal", "currentness"),
+    )
+    fact_disposition = _structured_evidence_fact(
+        candidate=candidate,
+        passage=passage,
+        candidate_keys=("fact_disposition", "disposition"),
+        passage_keys=("fact_disposition", "disposition"),
+        limit=80,
+    )
+    readability = _structured_evidence_fact(
+        candidate=candidate,
+        passage=passage,
+        candidate_keys=("readable_status", "readability_status"),
+        passage_keys=("readable_status", "readability_status"),
+        limit=80,
+    )
+    canonical_currency = _exact_currency_fact(
+        candidate=candidate, passage=passage
+    )
+    conflict, contradictory = _exact_conflict_facts(
+        candidate=candidate, passage=passage
+    )
+    custody = {
+        key: candidate.get(key)
+        for key in (
+            "candidate_id",
+            "source_class",
+            "source_tier",
+            "fact_disposition",
+            "readable_status",
+            "currentness_signal",
+            "conflict_posture",
+            "contradictory",
+            "canonical_currency_unit",
+        )
+        if candidate.get(key) is not None
+    }
+    result = {
         "evidence_status": "available",
         "evidence_ref_id": bindable.evidence_ref_id,
         "source_title": _clean_text(passage.get("title"), limit=240),
         "source_url": _clean_text(passage.get("url"), limit=500),
         "bounded_text": _clean_text(passage.get("text"), limit=6000),
-        "currentness": _clean_text(
-            passage.get("currentness_signal") or passage.get("currentness"),
-            limit=120,
-        ),
-        "candidate_custody_ref": {
-            key: candidate.get(key)
-            for key in (
-                "candidate_id",
-                "fact_disposition",
-                "readable_status",
-                "currentness_signal",
-            )
-            if candidate.get(key) is not None
-        },
+        "currentness": currentness,
+        "source_class": source_class,
+        "source_tier": source_tier,
+        "fact_disposition": fact_disposition,
+        "readability_posture": readability,
+        "conflict_posture": conflict,
+        "canonical_currency_unit": canonical_currency,
+        "candidate_custody_ref": custody,
     }
+    if contradictory is not None:
+        result["contradictory"] = contradictory
+    return result
 
 
 def _semantic_material(
@@ -1377,6 +1476,7 @@ def _consume_scheduler_selected_artifact(
     run_kernel: Any,
     work: Mapping[str, Any],
     artifact: Mapping[str, Any],
+    input_packet: Mapping[str, Any],
     drive_context: dict[str, Any],
 ) -> None:
     """Route one selected artifact to its installed deterministic owner."""
@@ -1546,7 +1646,7 @@ def _consume_scheduler_selected_artifact(
                 MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
             )
 
-            packet = _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
+            packet = _safe_mapping(input_packet)
             accepted = (
                 run_kernel.state.current_answer_contract
                 or run_kernel.state.initial_answer_contract
@@ -1589,8 +1689,9 @@ def _consume_scheduler_selected_artifact(
                 component_nodes=component_nodes,
                 cross_component_artifact=artifact,
                 component_analyst_input_packets=_safe_mapping(
-                    run_kernel.state.multicomponent_scheduler_context
-                ).get("component_analyst_input_packets", {}),
+                    drive_context.get("component_analyst_input_packets")
+                ),
+                transient_cross_input_packet=packet,
                 additional_scrutineer_trigger_reasons=tuple(
                     drive_context.get("additional_scrutineer_trigger_reasons")
                     or ()
@@ -2210,13 +2311,16 @@ def _execute_run_kernel_selected_batch(
                 )
             artifact = None
         artifacts.append(artifact)
-    for work, artifact in zip(works, artifacts, strict=True):
+    for work, artifact, input_packet in zip(
+        works, artifacts, packets, strict=True
+    ):
         if artifact is not None:
             try:
                 _consume_scheduler_selected_artifact(
                     run_kernel=run_kernel,
                     work=work,
                     artifact=artifact,
+                    input_packet=input_packet,
                     drive_context=drive_context,
                 )
             except Exception as exc:
@@ -2269,6 +2373,7 @@ def _drive_run_kernel_selected_semantic_work(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
     selected_bindables: Mapping[str, Any],
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
     query: str,
 ) -> None:
     """Drive qualifying semantic work exclusively from RunKernel leases."""
@@ -2279,6 +2384,10 @@ def _drive_run_kernel_selected_semantic_work(
     drive_context: dict[str, Any] = {
         "runtime_scope": runtime_scope,
         "selected_bindables": dict(selected_bindables),
+        "component_analyst_input_packets": {
+            str(key): _safe_mapping(value)
+            for key, value in component_analyst_input_packets.items()
+        },
         "query": query,
         "cost_recorded_child_action_ids": set(),
         "additional_scrutineer_trigger_reasons": (
@@ -2429,6 +2538,7 @@ def _execute_selected_lane(
         run_kernel=run_kernel,
         runtime_scope=runtime_scope,
         selected_bindables=selected,
+        component_analyst_input_packets=analyst_inputs,
         query=query,
     )
 

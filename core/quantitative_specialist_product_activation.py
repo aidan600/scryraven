@@ -18,10 +18,16 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.evidence_ledger import source_taxonomy_quality_facts
 from core.specialist_graph_runtime import (
     EXECUTION_BLOCKED,
     EXECUTION_COMPLETED,
     EXECUTION_CONTESTED,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH,
     SpecialistCapabilityRegistry,
     SpecialistCapabilitySpec,
     SpecialistExecutionPolicy,
@@ -48,6 +54,145 @@ NUMERIC_LITERAL_PARSER_DIGEST = sha256(
 
 MAX_OPERANDS = 8
 MAX_NUMERIC_LITERAL_LENGTH = 120
+QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION = (
+    "quantitative_specialist_proposal_contract.v1"
+)
+QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE = (
+    "must equal one synthesis_key proposed in the same artifact"
+)
+QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS = (
+    "local_need_id",
+    "capability_requirement",
+    "candidate_capability_hint",
+    "bounded_question",
+    "target",
+    "posture",
+    "input_schema_ref",
+    "expected_output_schema_ref",
+    "input_artifact_refs",
+    "assumptions",
+    "caveats",
+    "nonclaims",
+    "advisory_budget_posture",
+    "recursion_depth",
+    "specialist_parent_ref",
+    "capability_request",
+)
+QUANTITATIVE_PROPOSAL_REQUIRED_FIELDS = (
+    "local_need_id",
+    "capability_requirement",
+    "candidate_capability_hint",
+    "bounded_question",
+    "target",
+    "posture",
+    "input_schema_ref",
+    "expected_output_schema_ref",
+    "recursion_depth",
+    "specialist_parent_ref",
+    "capability_request",
+)
+QUANTITATIVE_REQUEST_ALLOWED_FIELDS = frozenset(
+    {
+        "request_kind",
+        "calculation_kind",
+        "formula_label",
+        "expected_output_unit",
+        "expected_precision_posture",
+        "operands",
+        "claim_binding",
+        "assumptions",
+        "caveats",
+    }
+)
+QUANTITATIVE_REQUEST_REQUIRED_FIELDS = frozenset(
+    {"request_kind", "calculation_kind", "operands", "claim_binding"}
+)
+QUANTITATIVE_OPERAND_ALLOWED_FIELDS = frozenset(
+    {
+        "local_operand_key",
+        "label",
+        "source_local_key",
+        "source_numeric_literal",
+        "literal_occurrence",
+        "operand_role",
+        "pair_key",
+    }
+)
+QUANTITATIVE_OPERAND_REQUIRED_FIELDS = frozenset(
+    {
+        "local_operand_key",
+        "source_local_key",
+        "source_numeric_literal",
+        "operand_role",
+    }
+)
+QUANTITATIVE_CLAIM_BINDING_FIELDS = frozenset(
+    {"proposed_result_literal", "literal_occurrence", "expected_result_unit"}
+)
+QUANTITATIVE_OPERATOR_ROLE_POLICIES: dict[str, dict[str, Any]] = {
+    "sum": {
+        "minimum_operands": 2,
+        "roles": {"term": "at_least_two"},
+        "pair_key": "prohibited",
+    },
+    "difference": {
+        "exact_operands": 2,
+        "roles": {"minuend": 1, "subtrahend": 1},
+        "pair_key": "prohibited",
+    },
+    "product": {
+        "minimum_operands": 2,
+        "roles": {"factor": "at_least_two"},
+        "pair_key": "prohibited",
+    },
+    "ratio": {
+        "exact_operands": 2,
+        "roles": {"numerator": 1, "denominator": 1},
+        "pair_key": "prohibited",
+    },
+    "percentage": {
+        "exact_operands": 2,
+        "roles": {"numerator": 1, "denominator": 1},
+        "pair_key": "prohibited",
+    },
+    "percentage_point_difference": {
+        "exact_operands": 2,
+        "roles": {"minuend": 1, "subtrahend": 1},
+        "pair_key": "prohibited",
+    },
+    "simple_rate": {
+        "exact_operands": 2,
+        "roles": {"numerator": 1, "denominator": 1},
+        "pair_key": "prohibited",
+    },
+    "weighted_average": {
+        "minimum_pair_groups": 2,
+        "roles_per_pair": {"value": 1, "weight": 1},
+        "pair_key": "required",
+    },
+}
+QUANTITATIVE_PROHIBITED_PROPOSAL_FIELDS = (
+    "canonical IDs or digests",
+    "action or lease refs",
+    "graph or admission refs",
+    "provider or model routes",
+    "URLs",
+    "arbitrary field paths",
+    "search or retrieval authority",
+)
+QUANTITATIVE_PROHIBITED_REQUEST_FIELDS = (
+    "numeric_value",
+    "parsed values",
+    "formulas or expressions",
+    "code",
+    "estimates",
+    "conversions",
+    "model-prior numbers",
+    "component, node, or graph authority",
+    "source URLs",
+    "arbitrary JSON or field paths",
+    "prompts, responses, provider, search, or retrieval material",
+)
 _PRECISION_POSTURES = frozenset(
     {"exact_as_reported", "rounded_as_reported", "approximate_as_reported"}
 )
@@ -57,18 +202,11 @@ _SCALE_FACTORS = {
     "billion": Decimal("1000000000"),
     "trillion": Decimal("1000000000000"),
 }
-_BAD_CURRENTNESS = frozenset(
-    {"stale", "stale_or_unknown", "unknown", "currentness_unknown"}
+_ACCEPTABLE_CURRENTNESS = frozenset(
+    {"current", "official_current", "current_primary_or_official"}
 )
-_WEAK_SOURCE_CLASSES = frozenset(
-    {
-        "blog",
-        "forum",
-        "social_media",
-        "unknown",
-        "unvetted_secondary",
-        "weak_secondary",
-    }
+_CLEAR_CONFLICT_POSTURES = frozenset(
+    {"none", "clear", "no_conflict", "uncontested"}
 )
 _LOCAL_KEY_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,79}\Z")
 _UNIT_RE = re.compile(
@@ -154,6 +292,177 @@ def _digest(value: Any) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def quantitative_proposal_runtime_schema_facts() -> dict[str, Any]:
+    """Return the declarative product schema also consumed by validation."""
+
+    proposal_required = set(QUANTITATIVE_PROPOSAL_REQUIRED_FIELDS)
+    request_required = set(QUANTITATIVE_REQUEST_REQUIRED_FIELDS)
+    request_allowed = set(QUANTITATIVE_REQUEST_ALLOWED_FIELDS)
+    operand_required = set(QUANTITATIVE_OPERAND_REQUIRED_FIELDS)
+    operand_allowed = set(QUANTITATIVE_OPERAND_ALLOWED_FIELDS)
+    return {
+        "proposal_schema": {
+            "allowed_fields": list(QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS),
+            "required_fields": list(QUANTITATIVE_PROPOSAL_REQUIRED_FIELDS),
+            "optional_fields": [
+                field
+                for field in QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS
+                if field not in proposal_required
+            ],
+            "fixed_fields": {
+                "capability_requirement": QUANTITATIVE_CAPABILITY_REQUIREMENT,
+                "candidate_capability_hint": QUANTITATIVE_CAPABILITY_ID,
+                "input_schema_ref": QUANTITATIVE_INPUT_SCHEMA_REF,
+                "expected_output_schema_ref": QUANTITATIVE_OUTPUT_SCHEMA_REF,
+                "recursion_depth": 0,
+                "specialist_parent_ref": None,
+            },
+            "locally_selected_fields": [
+                field
+                for field in QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS
+                if field
+                not in {
+                    "capability_requirement",
+                    "candidate_capability_hint",
+                    "input_schema_ref",
+                    "expected_output_schema_ref",
+                    "recursion_depth",
+                    "specialist_parent_ref",
+                }
+            ],
+            "prohibited_fields": list(QUANTITATIVE_PROHIBITED_PROPOSAL_FIELDS),
+        },
+        "capability_request_schema": {
+            "allowed_fields": sorted(request_allowed),
+            "required_fields": sorted(request_required),
+            "optional_fields": sorted(request_allowed - request_required),
+            "fixed_fields": {"request_kind": "source_bound_calculation"},
+            "operand_schema": {
+                "allowed_fields": sorted(operand_allowed),
+                "required_fields": sorted(operand_required),
+                "optional_fields": sorted(operand_allowed - operand_required),
+                "literal_occurrence_rule": (
+                    "optional positive one-based integer"
+                ),
+                "pair_key_rule": "allowed only for weighted_average",
+            },
+            "claim_binding_schema": {
+                "allowed_fields": sorted(QUANTITATIVE_CLAIM_BINDING_FIELDS),
+                "required_fields": sorted(QUANTITATIVE_CLAIM_BINDING_FIELDS),
+                "literal_occurrence_rule": (
+                    "required field; nullable or a positive one-based integer"
+                ),
+            },
+            "supported_operators": sorted(SUPPORTED_OPERATORS),
+            "operator_role_rules": deepcopy(QUANTITATIVE_OPERATOR_ROLE_POLICIES),
+            "raw_operand_array_order_defines_noncommutative_semantics": False,
+            "limits": {
+                "maximum_operands": MAX_OPERANDS,
+                "maximum_numeric_literal_characters": (
+                    MAX_NUMERIC_LITERAL_LENGTH
+                ),
+                "generic_capability_request_maximum_canonical_json_bytes": (
+                    SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES
+                ),
+                "generic_capability_request_maximum_depth": (
+                    SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH
+                ),
+                "generic_capability_request_maximum_mapping_keys": (
+                    SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS
+                ),
+                "generic_capability_request_maximum_list_items": (
+                    SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS
+                ),
+                "generic_capability_request_maximum_string_characters": (
+                    SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH
+                ),
+            },
+            "prohibited_fields": list(QUANTITATIVE_PROHIBITED_REQUEST_FIELDS),
+        },
+    }
+
+
+QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST = _digest(
+    {
+        "schema_version": QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION,
+        **quantitative_proposal_runtime_schema_facts(),
+    }
+)
+
+
+def build_quantitative_specialist_proposal_contract(
+    target_kind: str,
+    target_key_or_rule: str,
+    allowed_source_local_keys: Sequence[str],
+) -> dict[str, Any]:
+    """Build one model-visible contract from the executable product schema."""
+
+    if target_kind not in {"component", "synthesis"}:
+        raise ValueError("quantitative proposal contract target_kind is invalid")
+    target_value = _required_text(
+        target_key_or_rule, field="target_key_or_rule", limit=360
+    )
+    source_keys = [
+        _local_key(item, field="allowed_source_local_keys")
+        for item in allowed_source_local_keys
+    ]
+    if not source_keys or len(source_keys) != len(set(source_keys)):
+        raise ValueError(
+            "quantitative proposal contract requires unique source local keys"
+        )
+    target_contract = {"target_kind": target_kind}
+    if target_kind == "component":
+        target_contract["target_key"] = target_value
+        output_rule = (
+            "return the ordinary component fields and, only when needed, one "
+            "sibling specialist_need_proposal"
+        )
+    else:
+        target_contract["target_key_rule"] = target_value
+        output_rule = (
+            "return one top-level object containing synthesis_proposals and, "
+            "when needed, one sibling specialist_need_proposal; the Specialist "
+            "proposal is not nested inside a synthesis proposal"
+        )
+    contract = {
+        "schema_version": QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION,
+        "contract_digest": QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST,
+        **quantitative_proposal_runtime_schema_facts(),
+        "target_contract": target_contract,
+        "allowed_source_local_keys": source_keys,
+        "output_rule": output_rule,
+    }
+    contract["instance_digest"] = _digest(contract)
+    return contract
+
+
+def validate_quantitative_specialist_proposal_contract(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Fail closed if a supplied model contract has drifted or been altered."""
+
+    contract = deepcopy(dict(value))
+    instance_digest = contract.pop("instance_digest", None)
+    if (
+        contract.get("schema_version")
+        != QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION
+        or contract.get("contract_digest")
+        != QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST
+        or contract.get("proposal_schema")
+        != quantitative_proposal_runtime_schema_facts()["proposal_schema"]
+        or contract.get("capability_request_schema")
+        != quantitative_proposal_runtime_schema_facts()[
+            "capability_request_schema"
+        ]
+        or instance_digest != _digest(contract)
+    ):
+        raise QuantitativeSpecialistProductError(
+            "proposal_contract_drift",
+            "quantitative Specialist proposal contract does not match runtime",
+        )
+    return {**contract, "instance_digest": instance_digest}
+
+
 def _text_digest(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
 
@@ -177,45 +486,101 @@ def _evidence_posture(evidence: Mapping[str, Any]) -> dict[str, Any]:
             or custody.get("currentness_signal"),
             limit=120,
         )
-        or ("current" if evidence_status == "available" else "unknown")
+        or "unknown"
     )
     source_class = (
         _clean_text(
             evidence.get("source_class_posture")
             or evidence.get("source_class")
+            or custody.get("source_class")
             or custody.get("source_class_posture"),
             limit=120,
         )
-        or (
-            "custodied_component_evidence"
-            if evidence_status == "available"
-            else "unknown"
-        )
+        or "unknown"
     )
-    conflict = (
+    source_tier = (
         _clean_text(
-            evidence.get("conflict_posture") or custody.get("conflict_posture"),
+            evidence.get("source_tier") or custody.get("source_tier"),
+            limit=120,
+        )
+        or "unknown"
+    )
+    fact_disposition = (
+        _clean_text(
+            evidence.get("fact_disposition")
+            or custody.get("fact_disposition"),
             limit=80,
         )
-        or (
-            "present"
-            if str(custody.get("fact_disposition") or "").casefold()
-            in {"contradicted", "contested"}
-            else "none"
+        or "unknown"
+    )
+    readability = (
+        _clean_text(
+            evidence.get("readability_posture")
+            or evidence.get("readable_status")
+            or custody.get("readable_status"),
+            limit=80,
         )
+        or "unknown"
+    )
+    conflict = _clean_text(
+        evidence.get("conflict_posture") or custody.get("conflict_posture"),
+        limit=80,
+    )
+    explicit_contradictory = evidence.get("contradictory")
+    if not isinstance(explicit_contradictory, bool):
+        explicit_contradictory = custody.get("contradictory")
+    if not conflict:
+        if isinstance(explicit_contradictory, bool):
+            conflict = "present" if explicit_contradictory else "none"
+        elif fact_disposition.casefold() in {"contradicted", "contested"}:
+            conflict = "present"
+        else:
+            conflict = "unknown"
+    taxonomy = source_taxonomy_quality_facts(
+        source_class=source_class,
+        source_tier=source_tier,
+    )
+    lineage_complete = bool(
+        evidence_status == "available"
+        and evidence_ref_id
+        and custody_candidate_id
+        and evidence_ref_id == custody_candidate_id
+    )
+    quality_reasons: list[str] = []
+    if currentness.casefold() not in _ACCEPTABLE_CURRENTNESS:
+        quality_reasons.append("currentness_not_explicitly_acceptable")
+    if taxonomy["source_class_strength"] != "strong":
+        quality_reasons.append("source_class_not_explicitly_strong")
+    if taxonomy["source_tier_strength"] != "strong":
+        quality_reasons.append("source_tier_not_explicitly_strong")
+    if conflict.casefold() not in _CLEAR_CONFLICT_POSTURES:
+        quality_reasons.append("conflict_posture_not_explicitly_clear")
+    if not lineage_complete:
+        quality_reasons.append("evidence_lineage_incomplete")
+    quality_posture = (
+        "incomplete_lineage"
+        if not lineage_complete
+        else "authoritative_current_clear"
+        if not quality_reasons
+        else "contested_source_posture"
     )
     return {
         "evidence_status": evidence_status,
         "currentness_posture": currentness,
         "source_class_posture": source_class,
+        "source_class": taxonomy["source_class"],
+        "source_tier": taxonomy["source_tier"],
+        "source_class_strength": taxonomy["source_class_strength"],
+        "source_tier_strength": taxonomy["source_tier_strength"],
+        "fact_disposition": fact_disposition,
+        "readability_posture": readability,
         "conflict_posture": conflict,
-        "contradictory": conflict.casefold() == "present",
-        "evidence_lineage_complete": bool(
-            evidence_status == "available"
-            and evidence_ref_id
-            and custody_candidate_id
-            and evidence_ref_id == custody_candidate_id
+        "contradictory": (
+            explicit_contradictory is True or conflict.casefold() == "present"
         ),
+        "source_quality_posture": quality_posture,
+        "source_quality_reasons": quality_reasons,
+        "evidence_lineage_complete": lineage_complete,
         "canonical_currency_unit": _canonical_currency(
             evidence.get("canonical_currency_unit")
             or custody.get("canonical_currency_unit")
@@ -252,8 +617,16 @@ def build_component_quantitative_source_catalog(
         "bounded_field_present": bool(bounded_text),
         "currentness_posture": posture["currentness_posture"],
         "source_class_posture": posture["source_class_posture"],
+        "source_class": posture["source_class"],
+        "source_tier": posture["source_tier"],
+        "source_class_strength": posture["source_class_strength"],
+        "source_tier_strength": posture["source_tier_strength"],
+        "fact_disposition": posture["fact_disposition"],
+        "readability_posture": posture["readability_posture"],
         "conflict_posture": posture["conflict_posture"],
         "contradictory": posture["contradictory"],
+        "source_quality_posture": posture["source_quality_posture"],
+        "source_quality_reasons": posture["source_quality_reasons"],
         "component_lineage_ref": component_lineage_ref,
         "evidence_ref": posture["evidence_ref"],
         "lineage_complete": bool(component_lineage_ref)
@@ -261,13 +634,15 @@ def build_component_quantitative_source_catalog(
     }
     if posture["canonical_currency_unit"]:
         entry["canonical_currency_unit"] = posture["canonical_currency_unit"]
-    if include_material:
-        entry["source_material"] = {"bounded_text": bounded_text}
-    return {
+    catalog = {
         "schema_version": QUANTITATIVE_SOURCE_CATALOG_SCHEMA,
         "catalog_kind": "component_quantitative_sources",
         "component_evidence": entry,
     }
+    catalog["posture_digest"] = _digest(catalog)
+    if include_material:
+        entry["source_material"] = {"bounded_text": bounded_text}
+    return catalog
 
 
 def build_synthesis_quantitative_source_catalog(
@@ -294,28 +669,13 @@ def build_synthesis_quantitative_source_catalog(
         raw_claim_text = claim.get("claim_text") or node.get("claim_text")
         claim_text = str(raw_claim_text) if raw_claim_text is not None else None
         claim_material = claim_text or ""
-        packet = packets.get(component_id, {}) if include_material else {}
+        packet = packets.get(component_id, {})
         evidence = _safe_mapping(packet.get("component_evidence"))
         evidence_text = str(evidence.get("bounded_text") or "")
         posture = _evidence_posture(evidence)
         graph_evidence_refs = [
             _safe_mapping(item) for item in node.get("evidence_refs") or ()
         ]
-        if not include_material:
-            first_evidence_ref = graph_evidence_refs[0] if graph_evidence_refs else {}
-            posture = {
-                **posture,
-                "currentness_posture": (
-                    "current"
-                    if node.get("current") is True and node.get("stale") is not True
-                    else "stale"
-                ),
-                "source_class_posture": "admitted_component_evidence",
-                "conflict_posture": "none",
-                "contradictory": False,
-                "evidence_lineage_complete": bool(first_evidence_ref),
-                "evidence_ref": first_evidence_ref,
-            }
         component_lineage_ref = {
             key: node.get(key)
             for key in (
@@ -334,10 +694,9 @@ def build_synthesis_quantitative_source_catalog(
             "allowed_source_field": "claim_text",
             "bounded_field_digest": _text_digest(claim_material),
             "bounded_field_present": bool(claim_text),
-            "bounded_claim_text": claim_text,
             "underlying_evidence_field_digest": (
                 _text_digest(evidence_text)
-                if include_material
+                if evidence_text
                 else next(
                     (
                         str(item.get("content_digest"))
@@ -348,15 +707,23 @@ def build_synthesis_quantitative_source_catalog(
                 )
             ),
             "underlying_evidence_present": (
-                bool(evidence_text) if include_material else bool(graph_evidence_refs)
+                bool(evidence_text) or bool(graph_evidence_refs)
             ),
             "admission_status": node.get("admission_status"),
             "current": node.get("current") is True,
             "stale": node.get("stale") is True,
             "currentness_posture": posture["currentness_posture"],
             "source_class_posture": posture["source_class_posture"],
+            "source_class": posture["source_class"],
+            "source_tier": posture["source_tier"],
+            "source_class_strength": posture["source_class_strength"],
+            "source_tier_strength": posture["source_tier_strength"],
+            "fact_disposition": posture["fact_disposition"],
+            "readability_posture": posture["readability_posture"],
             "conflict_posture": posture["conflict_posture"],
             "contradictory": posture["contradictory"],
+            "source_quality_posture": posture["source_quality_posture"],
+            "source_quality_reasons": posture["source_quality_reasons"],
             "component_lineage_ref": component_lineage_ref,
             "admitted_claim_ref": {
                 key: claim.get(key)
@@ -376,6 +743,11 @@ def build_synthesis_quantitative_source_catalog(
                 "underlying_evidence_text": evidence_text,
             }
         catalog[alias] = entry
+    nonmaterial_catalog = deepcopy(catalog)
+    for value in nonmaterial_catalog.values():
+        if isinstance(value, dict):
+            value.pop("source_material", None)
+    catalog["posture_digest"] = _digest(nonmaterial_catalog)
     return catalog
 
 
@@ -608,19 +980,10 @@ def _text_list(value: Any, *, field: str, maximum: int = 8) -> list[str]:
 
 def _validate_request(value: Mapping[str, Any]) -> dict[str, Any]:
     request = _safe_mapping(value)
-    allowed = {
-        "request_kind",
-        "calculation_kind",
-        "formula_label",
-        "expected_output_unit",
-        "expected_precision_posture",
-        "operands",
-        "claim_binding",
-        "assumptions",
-        "caveats",
-    }
-    required = {"request_kind", "calculation_kind", "operands", "claim_binding"}
-    if set(request) - allowed or not required <= set(request):
+    if (
+        set(request) - QUANTITATIVE_REQUEST_ALLOWED_FIELDS
+        or not QUANTITATIVE_REQUEST_REQUIRED_FIELDS <= set(request)
+    ):
         raise QuantitativeSpecialistProductError(
             "invalid_input", "quantitative request has missing or unknown fields"
         )
@@ -658,24 +1021,12 @@ def _validate_request(value: Mapping[str, Any]) -> dict[str, Any]:
             "invalid_input", "quantitative request requires one to eight operands"
         )
     operands: list[dict[str, Any]] = []
-    allowed_operand = {
-        "local_operand_key",
-        "label",
-        "source_local_key",
-        "source_numeric_literal",
-        "literal_occurrence",
-        "operand_role",
-        "pair_key",
-    }
-    required_operand = {
-        "local_operand_key",
-        "source_local_key",
-        "source_numeric_literal",
-        "operand_role",
-    }
     for raw_operand in raw_operands:
         operand = _safe_mapping(raw_operand)
-        if set(operand) - allowed_operand or not required_operand <= set(operand):
+        if (
+            set(operand) - QUANTITATIVE_OPERAND_ALLOWED_FIELDS
+            or not QUANTITATIVE_OPERAND_REQUIRED_FIELDS <= set(operand)
+        ):
             raise QuantitativeSpecialistProductError(
                 "invalid_input", "quantitative operand has missing or unknown fields"
             )
@@ -724,12 +1075,7 @@ def _validate_request(value: Mapping[str, Any]) -> dict[str, Any]:
     _validate_operand_roles(calculation_kind, operands)
 
     claim = _safe_mapping(request.get("claim_binding"))
-    claim_allowed = {
-        "proposed_result_literal",
-        "literal_occurrence",
-        "expected_result_unit",
-    }
-    if set(claim) != claim_allowed:
+    if set(claim) != QUANTITATIVE_CLAIM_BINDING_FIELDS:
         raise QuantitativeSpecialistProductError(
             "invalid_input", "claim_binding requires exactly its three bounded fields"
         )
@@ -767,35 +1113,34 @@ def _validate_operand_roles(
     calculation_kind: str, operands: Sequence[Mapping[str, Any]]
 ) -> None:
     roles = [str(item.get("operand_role") or "") for item in operands]
-    if calculation_kind in {"sum", "product"}:
-        expected = "term" if calculation_kind == "sum" else "factor"
-        if len(operands) < 2 or set(roles) != {expected}:
+    policy = QUANTITATIVE_OPERATOR_ROLE_POLICIES[calculation_kind]
+    if policy.get("pair_key") == "prohibited" and any(
+        item.get("pair_key") for item in operands
+    ):
+        raise QuantitativeSpecialistProductError(
+            "invalid_operand_roles", "pair_key is only valid for weighted_average"
+        )
+    if "minimum_operands" in policy:
+        expected = next(iter(_safe_mapping(policy.get("roles"))))
+        if (
+            len(operands) < int(policy["minimum_operands"])
+            or set(roles) != {expected}
+        ):
             raise QuantitativeSpecialistProductError(
                 "invalid_operand_roles",
                 f"{calculation_kind} requires at least two {expected} operands",
             )
-        if any(item.get("pair_key") for item in operands):
-            raise QuantitativeSpecialistProductError(
-                "invalid_operand_roles", "pair_key is only valid for weighted_average"
-            )
         return
-    role_pairs = {
-        "difference": ("minuend", "subtrahend"),
-        "ratio": ("numerator", "denominator"),
-        "percentage": ("numerator", "denominator"),
-        "percentage_point_difference": ("minuend", "subtrahend"),
-        "simple_rate": ("numerator", "denominator"),
-    }
-    if calculation_kind in role_pairs:
-        expected_roles = role_pairs[calculation_kind]
-        if len(operands) != 2 or sorted(roles) != sorted(expected_roles):
+    if "exact_operands" in policy:
+        expected_roles = _safe_mapping(policy.get("roles"))
+        if len(operands) != int(policy["exact_operands"]) or any(
+            roles.count(role) != int(count)
+            for role, count in expected_roles.items()
+        ):
+            named_roles = list(expected_roles)
             raise QuantitativeSpecialistProductError(
                 "invalid_operand_roles",
-                f"{calculation_kind} requires exactly one {expected_roles[0]} and one {expected_roles[1]}",
-            )
-        if any(item.get("pair_key") for item in operands):
-            raise QuantitativeSpecialistProductError(
-                "invalid_operand_roles", "pair_key is only valid for weighted_average"
+                f"{calculation_kind} requires exactly one {named_roles[0]} and one {named_roles[1]}",
             )
         return
     pairs: dict[str, list[str]] = {}
@@ -808,7 +1153,12 @@ def _validate_operand_roles(
                 "weighted_average requires value/weight roles with pair_key",
             )
         pairs.setdefault(pair_key, []).append(role)
-    if len(pairs) < 2 or any(sorted(values) != ["value", "weight"] for values in pairs.values()):
+    minimum_pairs = int(policy["minimum_pair_groups"])
+    roles_per_pair = _safe_mapping(policy.get("roles_per_pair"))
+    if len(pairs) < minimum_pairs or any(
+        any(values.count(role) != int(count) for role, count in roles_per_pair.items())
+        for values in pairs.values()
+    ):
         raise QuantitativeSpecialistProductError(
             "invalid_operand_roles",
             "weighted_average requires at least two complete value/weight pairs",
@@ -1045,6 +1395,14 @@ def _base_bounded_result(
     }
 
 
+def _evaluator_source_class_posture(entry: Mapping[str, Any]) -> str:
+    """Map closed product quality to the legacy pure evaluator vocabulary."""
+
+    if entry.get("source_quality_posture") == "authoritative_current_clear":
+        return "current_primary_or_official"
+    return "weak_secondary"
+
+
 def _evaluate_quantitative_request(transient: Mapping[str, Any]) -> dict[str, Any]:
     request = _validate_request(_safe_mapping(transient.get("capability_request")))
     target = _safe_mapping(transient.get("canonical_target_ref"))
@@ -1107,7 +1465,7 @@ def _evaluate_quantitative_request(transient: Mapping[str, Any]) -> dict[str, An
                 "source_bound_ref": source_bound_ref,
                 "component_id": component_ref.get("component_id"),
                 "currentness_posture": entry.get("currentness_posture") or "unknown",
-                "source_class_posture": entry.get("source_class_posture") or "unknown",
+                "source_class_posture": _evaluator_source_class_posture(entry),
                 "conflict_posture": entry.get("conflict_posture") or "unknown",
                 "contradictory": entry.get("contradictory") is True,
                 "role": operand["operand_role"],
@@ -1163,6 +1521,21 @@ def _evaluate_quantitative_request(transient: Mapping[str, Any]) -> dict[str, An
                     "operand_role": operand["operand_role"],
                     "pair_key": operand.get("pair_key"),
                     "input_digest": _safe_mapping(normalized).get("input_digest"),
+                    "source_class": _safe_mapping(
+                        catalog.get(operand["source_local_key"])
+                    ).get("source_class"),
+                    "source_tier": _safe_mapping(
+                        catalog.get(operand["source_local_key"])
+                    ).get("source_tier"),
+                    "currentness_posture": _safe_mapping(
+                        catalog.get(operand["source_local_key"])
+                    ).get("currentness_posture"),
+                    "conflict_posture": _safe_mapping(
+                        catalog.get(operand["source_local_key"])
+                    ).get("conflict_posture"),
+                    "source_quality_posture": _safe_mapping(
+                        catalog.get(operand["source_local_key"])
+                    ).get("source_quality_posture"),
                 }
                 for operand, normalized in zip(
                     parsed_operands, evaluation["input_records"], strict=True
@@ -1308,13 +1681,26 @@ __all__ = [
     "QUANTITATIVE_CAPABILITY_VERSION",
     "QUANTITATIVE_INPUT_SCHEMA_REF",
     "QUANTITATIVE_OUTPUT_SCHEMA_REF",
+    "QUANTITATIVE_OPERATOR_ROLE_POLICIES",
+    "QUANTITATIVE_OPERAND_ALLOWED_FIELDS",
+    "QUANTITATIVE_OPERAND_REQUIRED_FIELDS",
+    "QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS",
+    "QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST",
+    "QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION",
+    "QUANTITATIVE_PROPOSAL_REQUIRED_FIELDS",
+    "QUANTITATIVE_REQUEST_ALLOWED_FIELDS",
+    "QUANTITATIVE_REQUEST_REQUIRED_FIELDS",
     "QUANTITATIVE_SOURCE_CATALOG_SCHEMA",
+    "QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE",
     "QuantitativeSpecialistProductError",
     "build_component_quantitative_source_catalog",
+    "build_quantitative_specialist_proposal_contract",
     "build_quantitative_product_specialist_policy",
     "build_quantitative_product_specialist_registry",
     "build_synthesis_quantitative_source_catalog",
     "compose_quantitative_specialist_product_deps",
     "parse_source_bound_numeric_literal",
+    "quantitative_proposal_runtime_schema_facts",
     "source_bound_quantitative_calculation_adapter",
+    "validate_quantitative_specialist_proposal_contract",
 ]

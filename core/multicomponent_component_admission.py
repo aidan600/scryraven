@@ -67,6 +67,7 @@ def component_analyst_input_packet(
 ) -> dict[str, Any]:
     from core.quantitative_specialist_product_activation import (
         build_component_quantitative_source_catalog,
+        build_quantitative_specialist_proposal_contract,
     )
 
     packet = {
@@ -104,6 +105,13 @@ def component_analyst_input_packet(
             evidence_input=packet["component_evidence"],
         )
     )
+    packet["quantitative_specialist_proposal_contract"] = (
+        build_quantitative_specialist_proposal_contract(
+            target_kind="component",
+            target_key_or_rule=str(packet["component_ref"]["component_id"]),
+            allowed_source_local_keys=("component_evidence",),
+        )
+    )
     return packet
 
 
@@ -116,6 +124,10 @@ def component_dprime_input_packet(
     analyst = validate_multicomponent_role_artifact(
         analyst_artifact,
         expected_role=ROLE_COMPONENT_ANALYST,
+    )
+    exact_component_input = _safe_mapping(analyst_input_packet)
+    exact_component_input.pop(
+        "quantitative_specialist_proposal_contract", None
     )
     packet = {
         "supported_query_class": (
@@ -130,9 +142,7 @@ def component_dprime_input_packet(
                 analyst["semantic_output"].get("nonclaims") or ()
             ),
         },
-        "exact_component_and_evidence_input": _safe_mapping(
-            analyst_input_packet
-        ),
+        "exact_component_and_evidence_input": exact_component_input,
     }
     if specialist_need_handoff:
         from core.specialist_graph_runtime import (

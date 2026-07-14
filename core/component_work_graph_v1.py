@@ -19,6 +19,7 @@ from core.multicomponent_role_runtime import (
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
     SUPPORTED_QUERY_CLASS,
     role_artifact_ref,
+    safe_packet_digest,
     validate_multicomponent_role_artifact,
 )
 
@@ -229,6 +230,8 @@ def cross_component_input_packet(
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     from core.quantitative_specialist_product_activation import (
+        QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
+        build_quantitative_specialist_proposal_contract,
         build_synthesis_quantitative_source_catalog,
     )
 
@@ -261,6 +264,16 @@ def cross_component_input_packet(
             component_nodes=component_nodes,
             component_analyst_input_packets=(
                 component_analyst_input_packets or {}
+            ),
+        )
+    )
+    packet["quantitative_specialist_proposal_contract"] = (
+        build_quantitative_specialist_proposal_contract(
+            target_kind="synthesis",
+            target_key_or_rule=QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
+            allowed_source_local_keys=tuple(
+                f"component_{index:02d}"
+                for index, _node in enumerate(component_nodes, start=1)
             ),
         )
     )
@@ -880,6 +893,7 @@ def component_work_graph_v1_from_cross_component_artifact(
     component_nodes: Sequence[Mapping[str, Any]],
     cross_component_artifact: Mapping[str, Any],
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
 ) -> dict[str, Any]:
     components = [validate_component_work_node_v1(item) for item in component_nodes]
@@ -902,7 +916,58 @@ def component_work_graph_v1_from_cross_component_artifact(
         requested_synthesis_directive=requested_synthesis_directive,
         component_analyst_input_packets=component_analyst_input_packets,
     )
-    if cross["input_packet_digest"] != _digest(expected_cross_input):
+    supplied_cross_input = _safe_mapping(transient_cross_input_packet)
+    if supplied_cross_input:
+        structural_expected = cross_component_input_packet(
+            component_nodes=components,
+            accepted_contract_ref=accepted_contract_ref,
+            requested_synthesis_directive=requested_synthesis_directive,
+        )
+        if any(
+            supplied_cross_input.get(key) != value
+            for key, value in structural_expected.items()
+            if key != "quantitative_source_catalog"
+        ):
+            raise ComponentWorkGraphV1Error(
+                "transient Cross input structure does not match current components"
+            )
+        supplied_catalog = _safe_mapping(
+            supplied_cross_input.get("quantitative_source_catalog")
+        )
+        expected_aliases = {
+            f"component_{index:02d}"
+            for index, _component in enumerate(components, start=1)
+        }
+        if (
+            supplied_catalog.get("schema_version")
+            != "quantitative_source_catalog.v1"
+            or supplied_catalog.get("catalog_kind")
+            != "synthesis_quantitative_sources"
+            or {
+                key
+                for key, value in supplied_catalog.items()
+                if isinstance(value, Mapping)
+            }
+            != expected_aliases
+            or any(
+                "source_material" in _safe_mapping(value)
+                for value in supplied_catalog.values()
+            )
+        ):
+            raise ComponentWorkGraphV1Error(
+                "transient Cross quantitative catalog is malformed"
+            )
+        expected_cross_input = supplied_cross_input
+    input_binding_matches = cross["input_packet_digest"] == safe_packet_digest(
+        expected_cross_input
+    )
+    # The ordinary caller validates the exact enriched transient packet while it
+    # exists. RunKernel's independent graph rederivation intentionally receives
+    # no contract or candidate metadata; it instead binds the same current,
+    # scheduler-authorized role artifact and its retained input-packet digest.
+    if not input_binding_matches and (
+        supplied_cross_input or component_analyst_input_packets
+    ):
         raise ComponentWorkGraphV1Error(
             "Cross-Component Analyst input binding mismatch"
         )

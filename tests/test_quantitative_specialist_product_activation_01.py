@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from copy import deepcopy
 from dataclasses import fields
 from decimal import Decimal
@@ -26,9 +27,11 @@ from typing import Any, Mapping
 
 import pytest
 
+import core.ordinary_multicomponent_synthesis_runtime as ordinary_runtime
 import core.pipeline_orchestrator as orchestrator
 import core.quantitative_specialist_product_activation as quantitative_product
 import core.specialist_source_bound_calculation_runtime as legacy_calculation
+from core.component_work_graph_v1 import cross_component_input_packet
 from core.cost_accounting import CostAccumulator
 from core.multicomponent_component_admission import component_analyst_input_packet
 from core.multicomponent_graph_scheduling import (
@@ -43,6 +46,7 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
+    SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
 )
 from core.protocols import NullStatusWriter
 from core.quantitative_specialist_product_activation import (
@@ -51,14 +55,25 @@ from core.quantitative_specialist_product_activation import (
     QUANTITATIVE_CAPABILITY_REQUIREMENT,
     QUANTITATIVE_CAPABILITY_VERSION,
     QUANTITATIVE_INPUT_SCHEMA_REF,
+    QUANTITATIVE_OPERAND_ALLOWED_FIELDS,
+    QUANTITATIVE_OPERAND_REQUIRED_FIELDS,
+    QUANTITATIVE_OPERATOR_ROLE_POLICIES,
     QUANTITATIVE_OUTPUT_SCHEMA_REF,
+    QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST,
+    QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION,
+    QUANTITATIVE_REQUEST_ALLOWED_FIELDS,
+    QUANTITATIVE_REQUEST_REQUIRED_FIELDS,
+    QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
     build_component_quantitative_source_catalog,
     build_quantitative_product_specialist_policy,
     build_quantitative_product_specialist_registry,
+    build_quantitative_specialist_proposal_contract,
     build_synthesis_quantitative_source_catalog,
     compose_quantitative_specialist_product_deps,
     parse_source_bound_numeric_literal,
+    quantitative_proposal_runtime_schema_facts,
     source_bound_quantitative_calculation_adapter,
+    validate_quantitative_specialist_proposal_contract,
 )
 from core.run_config import RunDeps
 from core.specialist_graph_runtime import (
@@ -67,6 +82,11 @@ from core.specialist_graph_runtime import (
     EXECUTION_BLOCKED,
     EXECUTION_COMPLETED,
     EXECUTION_CONTESTED,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS,
+    SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH,
     SPECIALIST_WORK_PLANE_STAGE,
     SpecialistGraphRuntimeError,
     closed_specialist_execution_policy,
@@ -120,13 +140,17 @@ def _evidence(text: str, **overrides: Any) -> dict[str, Any]:
         "evidence_ref_id": "evidence:quantitative",
         "bounded_text": text,
         "currentness": "current",
+        "source_class": "current_primary_or_official",
         "source_class_posture": "current_primary_or_official",
+        "source_tier": "official",
         "conflict_posture": "none",
         "candidate_custody_ref": {
             "candidate_id": "evidence:quantitative",
             "fact_disposition": "accepted",
             "readable_status": "readable",
             "currentness_signal": "current",
+            "source_class": "current_primary_or_official",
+            "source_tier": "official",
         },
     }
     payload.update(overrides)
@@ -224,7 +248,10 @@ def _adapter_result(**kwargs: Any) -> dict[str, Any]:
 
 
 def _synthesis_transient(
-    *, claim_only_literal: bool = False
+    *,
+    claim_only_literal: bool = False,
+    first_evidence_overrides: Mapping[str, Any] | None = None,
+    second_evidence_overrides: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     nodes = [
         {
@@ -268,13 +295,17 @@ def _synthesis_transient(
     ]
     packets = {
         "component:a": {
-            "component_evidence": _evidence("Evidence A reports 10 USD.")
+            "component_evidence": _evidence(
+                "Evidence A reports 10 USD.",
+                **dict(first_evidence_overrides or {}),
+            )
         },
         "component:b": {
             "component_evidence": _evidence(
                 "Evidence B reports 20 USD.",
                 evidence_ref_id="evidence:b",
                 candidate_custody_ref={"candidate_id": "evidence:b"},
+                **dict(second_evidence_overrides or {}),
             )
         },
     }
@@ -336,6 +367,152 @@ def test_product_registry_policy_composition_and_closed_defaults() -> None:
     # dataclasses.replace is intentionally used only with real RunDeps-like dataclasses.
     with pytest.raises(TypeError):
         compose_quantitative_specialist_product_deps(deps)
+
+
+def _ordinary_cross_packet_for_contract() -> dict[str, Any]:
+    nodes = [
+        {
+            "component_id": f"component:{index}",
+            "component_revision": "1",
+            "component_digest": f"component-digest:{index}",
+            "node_kind": "component",
+            "node_id": f"node:{index}",
+            "node_revision": "1",
+            "node_digest": f"node-digest:{index}",
+            "admission_status": "admitted",
+            "current": True,
+            "stale": False,
+            "admitted_claim_ref": {
+                "claim_id": f"claim:{index}",
+                "claim_digest": f"claim-digest:{index}",
+                "claim_text": f"Component {index} reports {index * 10} USD.",
+            },
+            "evidence_refs": [{"content_digest": f"content:{index}"}],
+        }
+        for index in (1, 2)
+    ]
+    packets = {
+        f"component:{index}": {
+            "component_evidence": _evidence(
+                f"Evidence {index} reports {index * 10} USD.",
+                evidence_ref_id=f"evidence:{index}",
+                candidate_custody_ref={
+                    "candidate_id": f"evidence:{index}",
+                    "source_class": "current_primary_or_official",
+                    "source_tier": "official",
+                },
+            )
+        }
+        for index in (1, 2)
+    }
+    return cross_component_input_packet(
+        component_nodes=nodes,
+        accepted_contract_ref={"accepted_contract_digest": "contract-digest"},
+        requested_synthesis_directive="Compare the exact values.",
+        component_analyst_input_packets=packets,
+    )
+
+
+def test_versioned_proposal_contract_is_shared_by_component_and_cross_inputs() -> None:
+    component_packet = component_analyst_input_packet(
+        run_id="run",
+        request_id="request",
+        accepted_contract={
+            "accepted_contract_version": "v1",
+            "accepted_contract_digest": "contract-digest",
+        },
+        component_ref=_component_ref(),
+        evidence_input=_evidence("Values are 10 USD and 20 USD."),
+    )
+    cross_packet = _ordinary_cross_packet_for_contract()
+    component = component_packet["quantitative_specialist_proposal_contract"]
+    cross = cross_packet["quantitative_specialist_proposal_contract"]
+    for contract in (component, cross):
+        assert contract["schema_version"] == (
+            QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION
+        )
+        assert contract["contract_digest"] == QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST
+        assert validate_quantitative_specialist_proposal_contract(contract) == contract
+        assert contract["proposal_schema"]["fixed_fields"] == {
+            "capability_requirement": QUANTITATIVE_CAPABILITY_REQUIREMENT,
+            "candidate_capability_hint": QUANTITATIVE_CAPABILITY_ID,
+            "input_schema_ref": QUANTITATIVE_INPUT_SCHEMA_REF,
+            "expected_output_schema_ref": QUANTITATIVE_OUTPUT_SCHEMA_REF,
+            "recursion_depth": 0,
+            "specialist_parent_ref": None,
+        }
+    assert component["target_contract"] == {
+        "target_kind": "component",
+        "target_key": _component_ref()["component_id"],
+    }
+    assert component["allowed_source_local_keys"] == ["component_evidence"]
+    assert cross["target_contract"] == {
+        "target_kind": "synthesis",
+        "target_key_rule": QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
+    }
+    assert cross["allowed_source_local_keys"] == [
+        "component_01",
+        "component_02",
+    ]
+    assert "sibling specialist_need_proposal" in cross["output_rule"]
+
+
+def test_contract_schema_fields_policies_and_generic_bounds_are_runtime_owned() -> None:
+    facts = quantitative_proposal_runtime_schema_facts()
+    request = facts["capability_request_schema"]
+    operand = request["operand_schema"]
+    assert set(request["allowed_fields"]) == QUANTITATIVE_REQUEST_ALLOWED_FIELDS
+    assert set(request["required_fields"]) == QUANTITATIVE_REQUEST_REQUIRED_FIELDS
+    assert set(operand["allowed_fields"]) == QUANTITATIVE_OPERAND_ALLOWED_FIELDS
+    assert set(operand["required_fields"]) == QUANTITATIVE_OPERAND_REQUIRED_FIELDS
+    assert request["operator_role_rules"] == QUANTITATIVE_OPERATOR_ROLE_POLICIES
+    assert set(request["supported_operators"]) == set(
+        QUANTITATIVE_OPERATOR_ROLE_POLICIES
+    )
+    assert request["limits"] == {
+        "maximum_operands": 8,
+        "maximum_numeric_literal_characters": 120,
+        "generic_capability_request_maximum_canonical_json_bytes": (
+            SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES
+        ),
+        "generic_capability_request_maximum_depth": (
+            SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH
+        ),
+        "generic_capability_request_maximum_mapping_keys": (
+            SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS
+        ),
+        "generic_capability_request_maximum_list_items": (
+            SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS
+        ),
+        "generic_capability_request_maximum_string_characters": (
+            SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH
+        ),
+    }
+    assert request["raw_operand_array_order_defines_noncommutative_semantics"] is False
+
+
+def test_contract_digest_is_deterministic_and_schema_drift_fails_closed() -> None:
+    one = build_quantitative_specialist_proposal_contract(
+        "component", "component:one", ("component_evidence",)
+    )
+    two = build_quantitative_specialist_proposal_contract(
+        "component", "component:one", ("component_evidence",)
+    )
+    assert one == two
+    assert one["instance_digest"] == two["instance_digest"]
+    drifted = deepcopy(one)
+    drifted["capability_request_schema"]["allowed_fields"].append(
+        "model_prior_number"
+    )
+    with pytest.raises(Exception, match="does not match runtime"):
+        validate_quantitative_specialist_proposal_contract(drifted)
+    for mutation in (
+        {},
+        {**one, "schema_version": "stale.v0"},
+        {**one, "instance_digest": "malformed"},
+    ):
+        with pytest.raises(Exception):
+            validate_quantitative_specialist_proposal_contract(mutation)
 
 
 def test_cli_and_ui_compose_fixed_product_deps_without_public_controls() -> None:
@@ -487,6 +664,213 @@ def test_synthesis_aliases_are_deterministic_and_two_hop_is_enforced() -> None:
     )
     assert blocked["execution_posture"] == EXECUTION_BLOCKED
     assert blocked["blockers"] == ["claim_only_numeric_invention"]
+
+
+def test_ordinary_evidence_bridge_preserves_safe_candidate_facts_with_precedence() -> None:
+    bindable = SimpleNamespace(
+        evidence_ref_id="candidate:one",
+        candidate_record={
+            "candidate_id": "candidate:one",
+            "source_class": "current_primary_or_official",
+            "source_tier": "official",
+            "currentness_signal": "current",
+            "fact_disposition": "accepted",
+            "readable_status": "readable",
+        },
+        passage={
+            "title": "Bounded title",
+            "url": "https://example.test/fact",
+            "text": "The exact amount is 10 USD.",
+            "source_class": "secondary_analysis",
+            "source_tier": "secondary",
+            "currentness_signal": "stale",
+            "conflict_posture": "none",
+            "canonical_currency_unit": "USD",
+        },
+    )
+    bridged = ordinary_runtime._evidence_input(bindable)
+    assert bridged["source_class"] == "current_primary_or_official"
+    assert bridged["source_tier"] == "official"
+    assert bridged["currentness"] == "current"
+    assert bridged["fact_disposition"] == "accepted"
+    assert bridged["readability_posture"] == "readable"
+    assert bridged["conflict_posture"] == "none"
+    assert bridged["contradictory"] is False
+    assert bridged["canonical_currency_unit"] == "USD"
+    assert set(bridged["candidate_custody_ref"]) <= {
+        "candidate_id",
+        "source_class",
+        "source_tier",
+        "fact_disposition",
+        "readable_status",
+        "currentness_signal",
+        "conflict_posture",
+        "contradictory",
+        "canonical_currency_unit",
+    }
+    encoded = json.dumps(bridged)
+    assert "provider_payload" not in encoded
+    assert "complete candidate" not in encoded
+
+
+def test_missing_evidence_metadata_stays_unknown_without_favorable_defaults() -> None:
+    evidence = {
+        "evidence_status": "available",
+        "evidence_ref_id": "candidate:one",
+        "bounded_text": "Values are 10 USD and 20 USD.",
+        "candidate_custody_ref": {"candidate_id": "candidate:one"},
+    }
+    catalog = build_component_quantitative_source_catalog(
+        component_ref=_component_ref(), evidence_input=evidence
+    )
+    entry = catalog["component_evidence"]
+    assert entry["source_class"] == "unknown"
+    assert entry["source_tier"] == "unknown"
+    assert entry["currentness_posture"] == "unknown"
+    assert entry["conflict_posture"] == "unknown"
+    assert entry["source_quality_posture"] == "contested_source_posture"
+    assert "custodied_component_evidence" not in json.dumps(catalog)
+    result = _adapter_result(
+        evidence_overrides={
+            "source_class": None,
+            "source_class_posture": None,
+            "source_tier": None,
+            "currentness": None,
+            "conflict_posture": None,
+            "candidate_custody_ref": {
+                "candidate_id": "evidence:quantitative"
+            },
+        }
+    )
+    assert result["execution_posture"] == EXECUTION_CONTESTED
+
+
+def test_model_and_execution_catalogs_share_posture_but_only_execution_has_material() -> None:
+    cross_packet = _ordinary_cross_packet_for_contract()
+    nodes = cross_packet["component_nodes"]
+    packets = {
+        f"component:{index}": {
+            "component_evidence": _evidence(
+                f"Evidence {index} reports {index * 10} USD.",
+                evidence_ref_id=f"evidence:{index}",
+                candidate_custody_ref={
+                    "candidate_id": f"evidence:{index}",
+                    "source_class": "current_primary_or_official",
+                    "source_tier": "official",
+                },
+            )
+        }
+        for index in (1, 2)
+    }
+    model_catalog = build_synthesis_quantitative_source_catalog(
+        component_nodes=nodes,
+        component_analyst_input_packets=packets,
+    )
+    execution_catalog = build_synthesis_quantitative_source_catalog(
+        component_nodes=nodes,
+        component_analyst_input_packets=packets,
+        include_material=True,
+    )
+    assert model_catalog["posture_digest"] == execution_catalog["posture_digest"]
+    stripped = deepcopy(execution_catalog)
+    for value in stripped.values():
+        if isinstance(value, dict):
+            value.pop("source_material", None)
+    assert stripped == model_catalog
+    assert "source_material" not in json.dumps(model_catalog)
+    assert "bounded_claim_text" not in json.dumps(model_catalog)
+    assert all(
+        "source_material" in execution_catalog[f"component_{index:02d}"]
+        for index in (1, 2)
+    )
+
+
+@pytest.mark.parametrize(
+    "source_class",
+    (
+        "secondary",
+        "secondary_analysis",
+        "reputable_secondary",
+        "social_signal",
+        "social_or_forum",
+        "social_media",
+        "community",
+        "context",
+        "blog",
+        "forum",
+        "unvetted_secondary",
+        "weak_secondary",
+        "unknown",
+    ),
+)
+def test_weak_secondary_social_and_unknown_sources_are_contested(
+    source_class: str,
+) -> None:
+    result = _adapter_result(
+        evidence_overrides={
+            "source_class": source_class,
+            "source_class_posture": source_class,
+            "source_tier": "secondary",
+        }
+    )
+    assert result["execution_posture"] == EXECUTION_CONTESTED
+    assert result["bounded_result"]["calculation_status"] == "contested"
+    assert all(
+        item["source_quality_posture"] == "contested_source_posture"
+        for item in result["bounded_result"]["input_refs"]
+    )
+
+
+@pytest.mark.parametrize("missing", ("source_class", "source_tier", "currentness"))
+def test_each_missing_quality_dimension_contests_instead_of_completing(
+    missing: str,
+) -> None:
+    overrides: dict[str, Any] = {}
+    if missing == "source_class":
+        overrides.update(source_class=None, source_class_posture=None)
+    elif missing == "source_tier":
+        overrides["source_tier"] = None
+    else:
+        overrides["currentness"] = None
+    custody = dict(_evidence("")["candidate_custody_ref"])
+    if missing == "source_class":
+        custody.pop("source_class", None)
+    elif missing == "source_tier":
+        custody.pop("source_tier", None)
+    else:
+        custody.pop("currentness_signal", None)
+    overrides["candidate_custody_ref"] = custody
+    result = _adapter_result(evidence_overrides=overrides)
+    assert result["execution_posture"] == EXECUTION_CONTESTED
+
+
+def test_current_primary_official_source_completes_and_missing_lineage_blocks() -> None:
+    completed = _adapter_result()
+    assert completed["execution_posture"] == EXECUTION_COMPLETED
+    assert all(
+        item["source_quality_posture"] == "authoritative_current_clear"
+        for item in completed["bounded_result"]["input_refs"]
+    )
+    blocked = _adapter_result(
+        evidence_overrides={"candidate_custody_ref": {}}
+    )
+    assert blocked["execution_posture"] == EXECUTION_BLOCKED
+
+
+def test_synthesis_inherits_weak_underlying_evidence_without_admission_upgrade() -> None:
+    result = source_bound_quantitative_calculation_adapter(
+        _synthesis_transient(
+            second_evidence_overrides={
+                "source_class": "secondary_analysis",
+                "source_class_posture": "secondary_analysis",
+                "source_tier": "secondary",
+            }
+        )
+    )
+    assert result["execution_posture"] == EXECUTION_CONTESTED
+    refs = result["bounded_result"]["input_refs"]
+    assert refs[1]["source_class"] == "secondary_analysis"
+    assert refs[1]["source_quality_posture"] == "contested_source_posture"
 
 
 @pytest.mark.parametrize(
@@ -804,10 +1188,14 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     component_dprime = prompts["component_dprime"]
     synthesis_dprime = prompts["synthesis_dprime"]
     assert "component_evidence" in component
-    assert "exact supplied source_numeric_literal" in component
+    assert "quantitative_specialist_proposal_contract" in component
+    assert "conforming exactly" in component
+    assert "supplied fixed capability and schema values exactly" in component
     assert "required only" in component and "optional only" in component
     assert "later cross-component synthesis" in component
     assert "component_01/component_02/..." in cross
+    assert "one sibling specialist_need_proposal" in cross
+    assert "synthesis_proposals only" not in cross
     assert "underlying current component evidence" in cross
     assert "claim_alignment" in component_dprime
     assert "claim_alignment" in synthesis_dprime
@@ -818,9 +1206,15 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     )
     assert "source_bound_quantitative_calculation" not in scrutineer
     assert "claim_alignment" not in scrutineer
+    assert sha256(
+        SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT.encode("utf-8")
+    ).hexdigest() == (
+        "bc36a9c8c63c00e33fe6a77fd6daaed8200f089593ff054d6a3fbf165be2aeb6"  # pragma: allowlist secret
+    )
     for prompt in (component, cross, component_dprime, synthesis_dprime):
         assert "write final" in prompt or "render" in prompt
         assert "authorize search" in prompt
+        assert "admit your" in prompt or "admit" in prompt
 
 
 def _product_proposal(
@@ -882,6 +1276,140 @@ def _quantitative_dprime_response(payload: Mapping[str, Any]) -> str:
     )
 
 
+def _contract_driven_quantitative_proposal(
+    *,
+    role_packet: Mapping[str, Any],
+    target_key: str,
+    posture: str,
+    calculation_kind: str,
+    operand_specs: list[tuple[str, str, str, str]],
+    proposed_result_literal: str,
+    expected_result_unit: str,
+) -> dict[str, Any]:
+    """Act like a fake role that knows only its production packet contract."""
+
+    contract = dict(
+        role_packet.get("quantitative_specialist_proposal_contract") or {}
+    )
+    contract = validate_quantitative_specialist_proposal_contract(contract)
+    proposal_schema = dict(contract.get("proposal_schema") or {})
+    request_schema = dict(contract.get("capability_request_schema") or {})
+    operand_schema = dict(request_schema.get("operand_schema") or {})
+    claim_schema = dict(request_schema.get("claim_binding_schema") or {})
+    fixed_proposal = dict(proposal_schema.get("fixed_fields") or {})
+    fixed_request = dict(request_schema.get("fixed_fields") or {})
+    allowed_proposal = set(proposal_schema.get("allowed_fields") or ())
+    allowed_request = set(request_schema.get("allowed_fields") or ())
+    allowed_operand = set(operand_schema.get("allowed_fields") or ())
+    allowed_claim = set(claim_schema.get("allowed_fields") or ())
+    allowed_sources = set(contract.get("allowed_source_local_keys") or ())
+    assert calculation_kind in set(request_schema.get("supported_operators") or ())
+    assert all(source in allowed_sources for _, _, _, source in operand_specs)
+    assert {
+        "local_operand_key",
+        "source_local_key",
+        "source_numeric_literal",
+        "operand_role",
+    } <= allowed_operand
+    assert {
+        "proposed_result_literal",
+        "literal_occurrence",
+        "expected_result_unit",
+    } == allowed_claim
+
+    target_contract = dict(contract.get("target_contract") or {})
+    if target_contract.get("target_kind") == "component":
+        selected_target = str(target_contract["target_key"])
+        source_material = {
+            "component_evidence": str(
+                dict(role_packet.get("component_evidence") or {}).get(
+                    "bounded_text"
+                )
+                or ""
+            )
+        }
+    else:
+        assert target_contract.get("target_key_rule")
+        selected_target = target_key
+        source_material = {
+            str(alias): str(
+                dict(dict(node).get("direct_claim_ref") or {}).get(
+                    "claim_text"
+                )
+                or ""
+            )
+            for alias, node in zip(
+                contract.get("allowed_source_local_keys") or (),
+                role_packet.get("component_nodes") or (),
+                strict=True,
+            )
+        }
+    assert all(
+        literal in source_material[source]
+        for _key, literal, _role, source in operand_specs
+    )
+    request: dict[str, Any] = {
+        **fixed_request,
+        "calculation_kind": calculation_kind,
+        "operands": [
+            {
+                "local_operand_key": key,
+                "source_local_key": source,
+                "source_numeric_literal": literal,
+                "operand_role": role,
+            }
+            for key, literal, role, source in operand_specs
+        ],
+        "claim_binding": {
+            "proposed_result_literal": proposed_result_literal,
+            "literal_occurrence": None,
+            "expected_result_unit": expected_result_unit,
+        },
+    }
+    optional_request_values = {
+        "formula_label": f"bounded {calculation_kind}",
+        "expected_output_unit": expected_result_unit,
+        "expected_precision_posture": "exact_as_reported",
+        "assumptions": [],
+        "caveats": [],
+    }
+    request.update(
+        {
+            key: value
+            for key, value in optional_request_values.items()
+            if key in allowed_request
+        }
+    )
+    proposal: dict[str, Any] = {
+        **fixed_proposal,
+        "local_need_id": "quantitative-need-one",
+        "bounded_question": "Calculate the nominated exact source literals.",
+        "target": {
+            "target_kind": target_contract["target_kind"],
+            "target_key": selected_target,
+        },
+        "posture": posture,
+        "capability_request": request,
+    }
+    optional_proposal_values = {
+        "input_artifact_refs": [],
+        "assumptions": [],
+        "caveats": [],
+        "nonclaims": ["The calculator does not admit the nominated claim."],
+        "advisory_budget_posture": "one unit",
+    }
+    proposal.update(
+        {
+            key: value
+            for key, value in optional_proposal_values.items()
+            if key in allowed_proposal
+        }
+    )
+    assert set(proposal) <= allowed_proposal
+    assert set(request) <= allowed_request
+    return proposal
+
+
 class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
     proposal_origin = "component"
     component_posture = "optional"
@@ -890,7 +1418,9 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
 
     def __init__(self, tmp_path: Path) -> None:
         super().__init__(tmp_path)
+        self.component_inputs: list[dict[str, Any]] = []
         self.cross_inputs: list[dict[str, Any]] = []
+        self._active_role_packet: dict[str, Any] = {}
         self.raw_author_response = (
             "Northstar quantitative result\n\n"
             "The supported derived combined amount is 1500 USD. The remaining "
@@ -906,6 +1436,8 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
 
     def build_search_passages(self) -> list[dict[str, Any]]:
         passages = super().build_search_passages()
+        for passage in passages:
+            passage["conflict_posture"] = "none"
         base = next(item for item in passages if item["source_id"] == 101)
         base["title"] = "Northstar exact quantitative inputs"
         base["text"] = (
@@ -926,23 +1458,34 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
         posture: str,
         requirement: str,
     ) -> dict[str, Any]:
-        del hint, posture, requirement
-        return _product_proposal(
-            target_kind=target_kind,
+        del hint, posture, requirement, target_kind
+        evidence_text = str(
+            dict(self._active_role_packet.get("component_evidence") or {}).get(
+                "bounded_text"
+            )
+            or ""
+        )
+        literals = re.findall(r"\b\d+(?:\.\d+)? USD\b", evidence_text)
+        assert literals[:2] == ["1200 USD", "300 USD"]
+        proposed = f"{sum(Decimal(item.split()[0]) for item in literals[:2]):f} USD"
+        return _contract_driven_quantitative_proposal(
+            role_packet=self._active_role_packet,
             target_key=target_key,
             posture=self.component_posture,
-            capability_request=_request(
-                operands=[
-                    _operand("base", "1200 USD", "term"),
-                    _operand("supplement", "300 USD", "term"),
-                ],
-                result_literal="1500 USD",
-                result_unit="USD",
-                expected_output_unit="USD",
-            ),
+            calculation_kind="sum",
+            operand_specs=[
+                ("base", literals[0], "term", "component_evidence"),
+                ("supplement", literals[1], "term", "component_evidence"),
+            ],
+            proposed_result_literal=proposed,
+            expected_result_unit="USD",
         )
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        if system_prompt in ROLE_SYSTEM_PROMPTS.values():
+            self._active_role_packet = json.loads(prompt)
+        if system_prompt == ROLE_SYSTEM_PROMPTS["component_analyst"]:
+            self.component_inputs.append(deepcopy(self._active_role_packet))
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
             self.cross_inputs.append(json.loads(prompt))
         raw = super().ask_model(prompt, system_prompt, **kwargs)
@@ -994,6 +1537,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
         super().__init__(tmp_path)
         self._source_aliases: dict[str, str] = {}
         self.cross_inputs: list[dict[str, Any]] = []
+        self._active_role_packet: dict[str, Any] = {}
         self.raw_author_response = (
             "Northstar quantitative synthesis\n\n"
             "The supported difference between the 60000 USD threshold and the "
@@ -1028,6 +1572,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
     def build_search_passages(self) -> list[dict[str, Any]]:
         passages = super().build_search_passages()
         for passage in passages:
+            passage["conflict_posture"] = "none"
             if passage["source_id"] == 101:
                 passage["title"] = "Northstar base rebate amount 1200 USD"
                 passage["text"] = "The Northstar base rebate amount is 1200 USD."
@@ -1045,45 +1590,58 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
         posture: str,
         requirement: str,
     ) -> dict[str, Any]:
-        del hint, posture, requirement
-        return _product_proposal(
-            target_kind=target_kind,
+        del hint, posture, requirement, target_kind
+        return _contract_driven_quantitative_proposal(
+            role_packet=self._active_role_packet,
             target_key=target_key,
-            capability_request=_request(
-                calculation_kind="difference",
-                operands=[
-                    _operand(
-                        "threshold",
-                        "60000 USD",
-                        "minuend",
-                        source=self._source_aliases["income"],
-                    ),
-                    _operand(
-                        "base",
-                        "1200 USD",
-                        "subtrahend",
-                        source=self._source_aliases["base"],
-                    ),
-                ],
-                result_literal="58800 USD",
-                result_unit="USD",
-                expected_output_unit="USD",
-            ),
+            posture="optional",
+            calculation_kind="difference",
+            operand_specs=[
+                (
+                    "threshold",
+                    "60000 USD",
+                    "minuend",
+                    self._source_aliases["income"],
+                ),
+                (
+                    "base",
+                    "1200 USD",
+                    "subtrahend",
+                    self._source_aliases["base"],
+                ),
+            ],
+            proposed_result_literal="58800 USD",
+            expected_result_unit="USD",
         )
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         payload = json.loads(prompt) if system_prompt in ROLE_SYSTEM_PROMPTS.values() else {}
+        if payload:
+            self._active_role_packet = deepcopy(payload)
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
             self.cross_inputs.append(deepcopy(payload))
             catalog = dict(payload.get("quantitative_source_catalog") or {})
-            for alias, entry in catalog.items():
-                if not isinstance(entry, Mapping):
-                    continue
-                claim = str(dict(entry or {}).get("bounded_claim_text") or "")
+            aliases = list(
+                dict(
+                    payload.get("quantitative_specialist_proposal_contract")
+                    or {}
+                ).get("allowed_source_local_keys")
+                or ()
+            )
+            for alias, node in zip(
+                aliases, payload.get("component_nodes") or (), strict=True
+            ):
+                assert alias in catalog
+                claim = str(
+                    dict(dict(node).get("direct_claim_ref") or {}).get(
+                        "claim_text"
+                    )
+                    or ""
+                )
                 if "1200 USD" in claim:
-                    self._source_aliases["base"] = alias
+                    self._source_aliases["base"] = str(alias)
                 if "60000 USD" in claim:
-                    self._source_aliases["income"] = alias
+                    self._source_aliases["income"] = str(alias)
             assert set(self._source_aliases) == {"base", "income"}
         raw = super().ask_model(prompt, system_prompt, **kwargs)
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
@@ -1195,17 +1753,44 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     ]
     assert deps.specialist_capability_registry is not None
     assert deps.specialist_execution_policy is not None
-    assert "1500 USD" in positive.report
     assert positive_result["capability_id"] == QUANTITATIVE_CAPABILITY_ID
-    assert positive_result["execution_posture"] == EXECUTION_COMPLETED
+    assert positive_result["execution_posture"] == EXECUTION_COMPLETED, json.dumps(
+        positive_result, sort_keys=True
+    )
+    assert "1500 USD" in positive.report
     assert positive_result["bounded_result"]["numeric_value_text"] == "1500"
     assert positive_result["bounded_result"]["claim_alignment"]["posture"] == (
         "exact_match"
     )
     assert positive_result["validator_consumption"] == "consumed_by_component_dprime"
     dprime_packet = positive_harness.specialist_dprime_inputs[0]
+    assert "quantitative_specialist_proposal_contract" not in json.dumps(
+        dprime_packet
+    )
     assert dprime_packet["nominated_claim"]["claim_text"] == (
         "The supported derived combined Northstar amount is 1500 USD."
+    )
+    component_role_packet = next(
+        packet
+        for packet in positive_harness.component_inputs
+        if "base rebate"
+        in str(
+            dict(packet.get("component_ref") or {}).get(
+                "user_facing_question"
+            )
+            or ""
+        ).casefold()
+    )
+    assert validate_quantitative_specialist_proposal_contract(
+        component_role_packet["quantitative_specialist_proposal_contract"]
+    )
+    assert component_role_packet["quantitative_source_catalog"][
+        "component_evidence"
+    ]["source_quality_posture"] == "authoritative_current_clear"
+    assert "_request" not in _contract_driven_quantitative_proposal.__code__.co_names
+    assert (
+        "_product_proposal"
+        not in _contract_driven_quantitative_proposal.__code__.co_names
     )
     assert positive_scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
     assert positive_scheduler["specialist_compatibility_pool"]["specialist_spent"] == 1
@@ -1239,10 +1824,31 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
         "The Northstar record reports a base amount",
         "The supported derived combined Northstar amount",
         "quantitative_source_catalog",
+        "quantitative_specialist_proposal_contract",
+        QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION,
         "capability_request",
         "source_numeric_literal",
+        "provider_name",
+        "normalized_source_identity",
     ):
         assert forbidden not in retained_specialist_state
+    retained_product_projections = json.dumps(
+        {
+            "specialist": positive_plane,
+            "scheduler": positive_scheduler,
+            "graph": positive_kernel.state.projections.get(
+                "multicomponent_component_work_graph_v1"
+            ),
+            "actions": specialist_actions,
+        },
+        sort_keys=True,
+    )
+    assert "quantitative_specialist_proposal_contract" not in (
+        retained_product_projections
+    )
+    assert QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION not in (
+        retained_product_projections
+    )
 
     def unavailable_adapter(_transient: Mapping[str, Any]) -> dict[str, Any]:
         return {
@@ -1294,7 +1900,9 @@ def test_synthesis_origin_uses_same_product_capability_and_two_hop_handoff(
     result = plane["result_artifacts"][0]
     assert "58800 USD" in outcome.report
     assert result["capability_id"] == QUANTITATIVE_CAPABILITY_ID
-    assert result["execution_posture"] == EXECUTION_COMPLETED
+    assert result["execution_posture"] == EXECUTION_COMPLETED, json.dumps(
+        result, sort_keys=True
+    )
     assert result["bounded_result"]["numeric_value_text"] == "58800"
     assert result["bounded_result"]["claim_alignment"]["posture"] == "exact_match"
     assert result["validator_consumption"] == "consumed_by_synthesis_dprime"
@@ -1306,6 +1914,21 @@ def test_synthesis_origin_uses_same_product_capability_and_two_hop_handoff(
     assert harness.specialist_dprime_inputs[0]["nominated_synthesis"][
         "synthesis_key"
     ] == "E"
+    assert "quantitative_specialist_proposal_contract" not in json.dumps(
+        harness.specialist_dprime_inputs[0]
+    )
+    cross_role_packet = harness.cross_inputs[0]
+    assert validate_quantitative_specialist_proposal_contract(
+        cross_role_packet["quantitative_specialist_proposal_contract"]
+    )
+    assert "source_material" not in json.dumps(
+        cross_role_packet["quantitative_source_catalog"]
+    )
+    assert set(harness._source_aliases.values()) <= set(
+        cross_role_packet["quantitative_specialist_proposal_contract"][
+            "allowed_source_local_keys"
+        ]
+    )
     scheduler_source = (ROOT / "core" / "multicomponent_graph_scheduling.py").read_text(
         encoding="utf-8"
     )
