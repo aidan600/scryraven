@@ -428,6 +428,136 @@ def test_post_wave_reconciliation_uses_sanitized_packets_only_and_is_idempotent(
     assert repairs["entries"][0]["status"] == "completed_offline"
 
 
+def test_budget_exhausted_finalizer_uses_completed_sanitized_state_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _initialize_temp_campaign(tmp_path, monkeypatch)
+    config_path = root / support.CONFIG_NAME
+    manifest = support.read_sanitized_json(root / support.MANIFEST_NAME, root=root)
+    manifest["initial_wave_complete"] = True
+    manifest["attempts"] = {query_id: 1 for query_id, _ in AG_LIVE_S1_FIXED_QUERIES}
+    support.write_sanitized_json(
+        root / support.MANIFEST_NAME,
+        manifest,
+        root=root,
+    )
+
+    ledger = support.read_sanitized_json(root / support.LEDGER_NAME, root=root)
+    ledger["outbound_blocked"] = True
+    ledger["outbound_block_reason"] = "observed_token_ceiling_reached"
+    ledger["outbound_blocked_by_block"]["A"] = True
+    ledger["outbound_block_reason_by_block"]["A"] = (
+        "observed_token_ceiling_reached"
+    )
+    ledger["consumed_combined"].update(
+        {
+            "full_scryraven_runs": 4,
+            "generative_plus_embedding_calls": 33,
+            "external_provider_search_calls": 8,
+            "retrieval_fetch_read_operations": 4,
+            "root_cause_repair_clusters": 1,
+        }
+    )
+    ledger["observed_token_telemetry"].update(
+        {
+            "input_tokens": 54803,
+            "output_tokens": 10501,
+            "embedding_tokens": 189607,
+            "total_observed_tokens": 254911,
+        }
+    )
+    ledger["calls_by_model_and_provider"] = {
+        "model:OpenAI:gpt-5.4": 5,
+        "model:OpenAI:gpt-5.4-mini": 20,
+        "model:OpenAI:text-embedding-3-small": 8,
+        "search:tavily:observed": 8,
+        "search:tavily:reserved": 8,
+    }
+    ledger["observational_repository_cost_estimate"].update(
+        {"pricing_status": "pricing_known", "usd": 0.477357}
+    )
+    ledger["live_contact_started_at"] = "2026-07-14T20:21:33+00:00"
+    ledger["runs"] = {
+        f"{query_id}:1": {
+            "completed_at": f"2026-07-14T20:23:{49 + index:02d}+00:00"
+        }
+        for index, (query_id, _query) in enumerate(AG_LIVE_S1_FIXED_QUERIES)
+    }
+    support.write_sanitized_json(root / support.LEDGER_NAME, ledger, root=root)
+
+    classifications = {
+        "A_NO_QUANT": "success",
+        "B_COMPONENT_CALC": "success",
+        "C_SYNTHESIS_CALC": "success",
+        "D_CONVERSION_NEGATIVE": "cap_overflow",
+    }
+    for query_id, classification in classifications.items():
+        support.write_sanitized_json(
+            root / "runs" / f"run_{query_id}_01.sanitized.json",
+            {
+                "campaign_schema": support.CAMPAIGN_SCHEMA,
+                "query_id": query_id,
+                "attempt": 1,
+                "success_classification": classification,
+                "product_provider_failure": None,
+            },
+            root=root,
+        )
+
+    runtime_sha = "a" * 40
+    assert (
+        campaign.finalize_budget_exhausted_campaign(
+            config_path=config_path,
+            live_runtime_sha=runtime_sha,
+            recommendation="core_integration_reassessment",
+        )
+        == 0
+    )
+
+    summary = support.read_sanitized_json(
+        root / "campaign_summary.json",
+        root=root,
+    )
+    assert summary["disposition"] == "BUDGET_EXHAUSTED"
+    assert summary["live_runtime_sha"] == runtime_sha
+    assert summary["selected_next_recommendation"] == (
+        "core_integration_reassessment"
+    )
+    assert summary["budget_consumed"]["full_scryraven_runs"] == 4
+    assert summary["budget_consumed"]["total_observed_tokens"] == 254911
+    assert summary["live_contact"]["elapsed_seconds"] == 139.0
+    assert summary["calls_by_model_and_provider"] == {
+        "model:OpenAI:gpt-5.4": 5,
+        "model:OpenAI:gpt-5.4-mini": 20,
+        "model:OpenAI:text-embedding-3-small": 8,
+        "search:tavily:observed": 8,
+    }
+    assert summary["product_provider_failure_count"] == 0
+
+    failure = support.read_sanitized_json(root / "failure_matrix.json", root=root)
+    classes = {
+        item["query_id"]: item["primary_failure_class"]
+        for item in failure["entries"]
+    }
+    assert classes == {
+        "A_NO_QUANT": "partial_acquisition_or_custody_gap",
+        "B_COMPONENT_CALC": "partial_role_or_authority_gap",
+        "C_SYNTHESIS_CALC": "partial_acquisition_and_role_gap",
+        "D_CONVERSION_NEGATIVE": "observed_token_budget_exhausted",
+    }
+    repairs = support.read_sanitized_json(root / "repair_matrix.json", root=root)
+    assert repairs["wave_1_complete"] is True
+    final_manifest = support.read_sanitized_json(
+        root / support.MANIFEST_NAME,
+        root=root,
+    )
+    assert final_manifest["terminal_disposition"] == "BUDGET_EXHAUSTED"
+    assert (root / "review.md").read_text(encoding="utf-8").startswith(
+        support.CAMPAIGN_MARKER
+    )
+
+
 def test_unknown_query_broker_alternate_and_retry_postures_fail_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

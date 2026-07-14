@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -572,6 +573,279 @@ def reconcile_sanitized_campaign_observability(config_path: Path) -> int:
     return 0
 
 
+def finalize_budget_exhausted_campaign(
+    *,
+    config_path: Path,
+    live_runtime_sha: str,
+    recommendation: str,
+) -> int:
+    """Finalize the terminal campaign from sanitized state only."""
+
+    resolved_config = config_path.resolve()
+    root = resolved_config.parent
+    validate_campaign_root(ROOT, root)
+    config = read_sanitized_json(resolved_config, root=root)
+    manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+    ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+    if manifest.get("initial_wave_complete") is not True:
+        raise CampaignSafetyError("terminal finalization requires completed Wave 1")
+    if (
+        ledger.get("outbound_blocked_by_block", {}).get("A") is not True
+        or ledger.get("outbound_block_reason_by_block", {}).get("A")
+        != "observed_token_ceiling_reached"
+    ):
+        raise CampaignSafetyError(
+            "BUDGET_EXHAUSTED requires the observed Block A token stop"
+        )
+    sha = str(live_runtime_sha or "").strip().casefold()
+    if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
+        raise CampaignSafetyError("live runtime SHA must be an exact 40-hex identity")
+    if recommendation != "core_integration_reassessment":
+        raise CampaignSafetyError(
+            "terminal campaign recommendation must be core_integration_reassessment"
+        )
+    if manifest.get("attempts") != {query_id: 1 for query_id in QUERY_ORDER}:
+        raise CampaignSafetyError(
+            "terminal finalization requires exactly one Wave 1 attempt per query"
+        )
+
+    packets = {
+        query_id: read_sanitized_json(
+            root / "runs" / f"run_{query_id}_01.sanitized.json",
+            root=root,
+        )
+        for query_id in QUERY_ORDER
+    }
+    expected_classifications = {
+        "A_NO_QUANT": "success",
+        "B_COMPONENT_CALC": "success",
+        "C_SYNTHESIS_CALC": "success",
+        "D_CONVERSION_NEGATIVE": "cap_overflow",
+    }
+    for query_id, expected in expected_classifications.items():
+        packet = packets[query_id]
+        if (
+            packet.get("query_id") != query_id
+            or packet.get("attempt") != 1
+            or packet.get("success_classification") != expected
+        ):
+            raise CampaignSafetyError(
+                f"terminal packet classification drifted for {query_id}"
+            )
+        if packet.get("product_provider_failure") is not None:
+            raise CampaignSafetyError(
+                f"terminal packet unexpectedly records a product failure for {query_id}"
+            )
+
+    live_started_at = str(ledger.get("live_contact_started_at") or "")
+    live_completed_values = [
+        str(item.get("completed_at") or "")
+        for item in ledger.get("runs", {}).values()
+        if isinstance(item, dict)
+    ]
+    if not live_started_at or len(live_completed_values) != len(QUERY_ORDER) or any(
+        not value for value in live_completed_values
+    ):
+        raise CampaignSafetyError(
+            "terminal finalization requires complete live-contact timestamps"
+        )
+    live_ended_at = max(live_completed_values)
+    live_elapsed_seconds = round(
+        (
+            datetime.fromisoformat(live_ended_at)
+            - datetime.fromisoformat(live_started_at)
+        ).total_seconds(),
+        6,
+    )
+
+    consumed = dict(ledger["consumed_combined"])
+    tokens = ledger["observed_token_telemetry"]
+    estimate = ledger["observational_repository_cost_estimate"]
+    configured = config["ordinary_resolved_product_configuration"]
+    exercised_calls = {
+        key: value
+        for key, value in ledger["calls_by_model_and_provider"].items()
+        if not key.endswith(":reserved")
+    }
+    run_dispositions = [
+        {
+            "query_id": "A_NO_QUANT",
+            "runner_classification": "success",
+            "observed_disposition": (
+                "reviewable ordinary final output with no Specialist work; "
+                "requested facts remained incomplete"
+            ),
+        },
+        {
+            "query_id": "B_COMPONENT_CALC",
+            "runner_classification": "success",
+            "observed_disposition": (
+                "reviewable arithmetic final output with no Specialist proposal, "
+                "result, or component D-prime consumption"
+            ),
+        },
+        {
+            "query_id": "C_SYNTHESIS_CALC",
+            "runner_classification": "success",
+            "observed_disposition": (
+                "reviewable insufficient-evidence final output with no Specialist "
+                "proposal, result, two-hop binding, or synthesis D-prime consumption"
+            ),
+        },
+        {
+            "query_id": "D_CONVERSION_NEGATIVE",
+            "runner_classification": "cap_overflow",
+            "observed_disposition": (
+                "cap overflow before final output; negative-control posture not proved"
+            ),
+        },
+    ]
+    summary = {
+        "campaign_schema": CAMPAIGN_SCHEMA,
+        "phase_id": PHASE_ID,
+        "disposition": "BUDGET_EXHAUSTED",
+        "terminal_reason": (
+            "Block A observed-token cap was exceeded after a response; subsequent "
+            "outbound work stopped prospectively and Block B was not authorized."
+        ),
+        "live_runtime_sha": sha,
+        "baseline_product_configuration": {
+            key: configured[key]
+            for key in (
+                "fast_provider",
+                "fast_model",
+                "smart_provider",
+                "smart_model",
+                "embed_provider",
+                "embed_model",
+            )
+        }
+        | {
+            "active_configured_search_providers": list(
+                configured["active_search_providers"]
+            )
+        },
+        "calls_by_model_and_provider": exercised_calls,
+        "operational_budget_requested": config["hard_operational_budget"],
+        "budget_consumed": consumed
+        | {
+            "input_tokens": tokens["input_tokens"],
+            "cached_input_tokens": tokens["cached_input_tokens"],
+            "output_tokens": tokens["output_tokens"],
+            "embedding_tokens": tokens["embedding_tokens"],
+            "total_observed_tokens": tokens["total_observed_tokens"],
+        },
+        "block_a_stop": {
+            "observed_token_ceiling": config["hard_operational_budget"]["block_a"][
+                "observed_model_plus_embedding_tokens"
+            ],
+            "observed_token_total_after_last_response": tokens[
+                "total_observed_tokens"
+            ],
+            "posture": "post_response_prospective_stop",
+            "reason": "observed_token_ceiling_reached",
+        },
+        "live_contact": {
+            "started_at": live_started_at,
+            "ended_at": live_ended_at,
+            "elapsed_seconds": live_elapsed_seconds,
+        },
+        "observational_repository_cost_estimate": {
+            "usd": estimate["usd"],
+            "pricing_status": estimate["pricing_status"],
+        },
+        "actual_provider_cost_not_observed": True,
+        "product_provider_failure_count": sum(
+            1 for packet in packets.values() if packet.get("product_provider_failure")
+        ),
+        "run_dispositions": run_dispositions,
+        "alternate_model_comparison": "alternate_model_comparison_not_run",
+        "alternate_model_comparison_reason": (
+            "separately scoped future portability checkpoint"
+        ),
+        "broker_used": False,
+        "explicit_nonproofs": [
+            "S1 quantitative Specialist live convergence was not proved.",
+            "Component or synthesis D-prime consumption was not observed.",
+            "Two-hop synthesis source binding was not proved.",
+            (
+                "The conversion-negative final-answer posture was not observed "
+                "because Run D stopped before final output."
+            ),
+            "Model portability was not run.",
+            "Actual provider billing was not observed.",
+        ],
+        "selected_next_recommendation": recommendation,
+    }
+    write_sanitized_json(root / "campaign_summary.json", summary, root=root)
+
+    failure = read_sanitized_json(root / "failure_matrix.json", root=root)
+    attributions = {
+        "A_NO_QUANT": (
+            "partial_acquisition_or_custody_gap",
+            "ordinary product acquisition and source-custody integration",
+        ),
+        "B_COMPONENT_CALC": (
+            "partial_role_or_authority_gap",
+            "ordinary multicomponent Specialist proposal and consumption path",
+        ),
+        "C_SYNTHESIS_CALC": (
+            "partial_acquisition_and_role_gap",
+            "acquisition/custody and ordinary multicomponent Specialist integration",
+        ),
+        "D_CONVERSION_NEGATIVE": (
+            "observed_token_budget_exhausted",
+            "campaign operational budget",
+        ),
+    }
+    for entry in failure["entries"]:
+        failure_class, owner = attributions[str(entry["query_id"])]
+        entry["primary_failure_class"] = failure_class
+        entry["candidate_current_owner"] = owner
+    write_sanitized_json(root / "failure_matrix.json", failure, root=root)
+    repairs = read_sanitized_json(root / "repair_matrix.json", root=root)
+    repairs["wave_1_complete"] = True
+    write_sanitized_json(root / "repair_matrix.json", repairs, root=root)
+
+    manifest["terminal_disposition"] = "BUDGET_EXHAUSTED"
+    manifest["live_runtime_sha"] = sha
+    manifest["selected_next_recommendation"] = recommendation
+    write_sanitized_json(root / MANIFEST_NAME, manifest, root=root)
+
+    exercised_search = [
+        key.split(":", 2)[1]
+        for key in exercised_calls
+        if key.startswith("search:") and key.endswith(":observed")
+    ]
+    review = (
+        f"{CAMPAIGN_MARKER}\n\n"
+        f"# {PHASE_ID} local campaign review\n\n"
+        "Terminal disposition: `BUDGET_EXHAUSTED`.\n\n"
+        f"Wave 1 ran A, B, C, and D in order at live runtime SHA `{sha}`. "
+        f"Configured search identities were {', '.join(configured['active_search_providers'])}; "
+        f"observed search identities were {', '.join(exercised_search)}. Broker use "
+        "was false and alternate-model comparison was not run.\n\n"
+        "A reached reviewable output without Specialist work but remained incomplete. "
+        "B presented arithmetic without Specialist or component D-prime consumption. "
+        "C returned insufficient evidence without Specialist, two-hop, or synthesis "
+        "D-prime consumption. D stopped before final output at the Block A token cap.\n\n"
+        f"Consumed telemetry: {consumed['full_scryraven_runs']} runs, "
+        f"{consumed['generative_plus_embedding_calls']} model/embedding calls, "
+        f"{consumed['external_provider_search_calls']} provider/search calls, "
+        f"{consumed['retrieval_fetch_read_operations']} fetch/read operations, and "
+        f"{tokens['total_observed_tokens']} observed tokens. The stop is post-response "
+        f"and prospective. Live contact elapsed {live_elapsed_seconds} seconds.\n\n"
+        f"Repository-estimated cost is USD {estimate['usd']}. This is not actual billed "
+        "cost; actual provider billing was not observed. No product-provider failure "
+        "was recorded and campaign-added retries remained zero.\n\n"
+        "One offline campaign-observability repair was completed without a live rerun. "
+        f"The selected next recommendation is `{recommendation}` and is not started here.\n"
+    )
+    (root / "review.md").write_text(review, encoding="utf-8")
+    print(f"finalized terminal campaign state at {root}")
+    return 0
+
+
 def _query_map(config: dict[str, Any]) -> dict[str, str]:
     return {
         str(item["query_id"]): str(item["query"])
@@ -831,6 +1105,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Repair accounting from sanitized completed-run facts only.",
     )
+    action.add_argument(
+        "--finalize-budget-exhausted",
+        action="store_true",
+        help="Finalize a sanitized Block A token-exhausted campaign.",
+    )
     action.add_argument("--run-block", choices=["A", "B"])
     parser.add_argument(
         "--output-root",
@@ -840,6 +1119,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", help="Sanitized campaign config for live runs.")
     parser.add_argument("--rerun-query-id", choices=list(QUERY_ORDER))
     parser.add_argument("--control-query-id", choices=list(QUERY_ORDER))
+    parser.add_argument("--live-runtime-sha")
+    parser.add_argument(
+        "--recommendation",
+        choices=["core_integration_reassessment"],
+    )
     return parser
 
 
@@ -858,6 +1142,16 @@ def main(argv: list[str] | None = None) -> int:
                     "--reconcile-sanitized-observability requires --config"
                 )
             return reconcile_sanitized_campaign_observability(Path(args.config))
+        if args.finalize_budget_exhausted:
+            if not args.config or not args.live_runtime_sha or not args.recommendation:
+                raise CampaignSafetyError(
+                    "terminal finalization requires config, live runtime SHA, and recommendation"
+                )
+            return finalize_budget_exhausted_campaign(
+                config_path=Path(args.config),
+                live_runtime_sha=args.live_runtime_sha,
+                recommendation=args.recommendation,
+            )
         if not args.config:
             raise CampaignSafetyError("--run-block requires --config")
         if bool(args.rerun_query_id) != bool(args.control_query_id):
