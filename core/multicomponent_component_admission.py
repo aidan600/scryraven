@@ -65,7 +65,11 @@ def component_analyst_input_packet(
     component_ref: Mapping[str, Any],
     evidence_input: Mapping[str, Any],
 ) -> dict[str, Any]:
-    return {
+    from core.quantitative_specialist_product_activation import (
+        build_component_quantitative_source_catalog,
+    )
+
+    packet = {
         "supported_query_class": (
             "ordinary-bounded-multicomponent-factual-synthesis-v1"
         ),
@@ -94,6 +98,13 @@ def component_analyst_input_packet(
         },
         "component_evidence": _safe_mapping(evidence_input),
     }
+    packet["quantitative_source_catalog"] = (
+        build_component_quantitative_source_catalog(
+            component_ref=packet["component_ref"],
+            evidence_input=packet["component_evidence"],
+        )
+    )
+    return packet
 
 
 def component_dprime_input_packet(

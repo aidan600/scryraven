@@ -1139,6 +1139,7 @@ def _scheduler_work_input_packet(
                     requested_synthesis_directive=str(
                         context.get("requested_synthesis_directive") or ""
                     ),
+                    component_analyst_input_packets=analyst_inputs,
                 )
         elif graph_raw:
             graph = validate_component_work_graph_v1(graph_raw)
@@ -1587,6 +1588,9 @@ def _consume_scheduler_selected_artifact(
                 ),
                 component_nodes=component_nodes,
                 cross_component_artifact=artifact,
+                component_analyst_input_packets=_safe_mapping(
+                    run_kernel.state.multicomponent_scheduler_context
+                ).get("component_analyst_input_packets", {}),
                 additional_scrutineer_trigger_reasons=tuple(
                     drive_context.get("additional_scrutineer_trigger_reasons")
                     or ()

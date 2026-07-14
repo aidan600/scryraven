@@ -226,8 +226,13 @@ def cross_component_input_packet(
     component_nodes: Sequence[Mapping[str, Any]],
     accepted_contract_ref: Mapping[str, Any],
     requested_synthesis_directive: str,
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    from core.quantitative_specialist_product_activation import (
+        build_synthesis_quantitative_source_catalog,
+    )
+
+    packet = {
         "supported_query_class": SUPPORTED_QUERY_CLASS,
         "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
         "requested_synthesis_directive": _clean_text(
@@ -251,6 +256,15 @@ def cross_component_input_packet(
             for node in component_nodes
         ],
     }
+    packet["quantitative_source_catalog"] = (
+        build_synthesis_quantitative_source_catalog(
+            component_nodes=component_nodes,
+            component_analyst_input_packets=(
+                component_analyst_input_packets or {}
+            ),
+        )
+    )
+    return packet
 
 
 def synthesis_dprime_input_packet(
@@ -865,6 +879,7 @@ def component_work_graph_v1_from_cross_component_artifact(
     requested_synthesis_directive: str,
     component_nodes: Sequence[Mapping[str, Any]],
     cross_component_artifact: Mapping[str, Any],
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
 ) -> dict[str, Any]:
     components = [validate_component_work_node_v1(item) for item in component_nodes]
@@ -885,6 +900,7 @@ def component_work_graph_v1_from_cross_component_artifact(
         component_nodes=components,
         accepted_contract_ref=accepted_contract_ref,
         requested_synthesis_directive=requested_synthesis_directive,
+        component_analyst_input_packets=component_analyst_input_packets,
     )
     if cross["input_packet_digest"] != _digest(expected_cross_input):
         raise ComponentWorkGraphV1Error(

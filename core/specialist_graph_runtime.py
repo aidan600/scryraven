@@ -10,6 +10,7 @@ included in retained RunKernel state.
 from __future__ import annotations
 
 import json
+import math
 from copy import deepcopy
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -85,6 +86,69 @@ _RAW_PRIVATE_KEYS = frozenset(
         "raw_response",
         "secret",
         "token",
+    }
+)
+SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES = 16 * 1024
+SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH = 6
+SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS = 64
+SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS = 64
+SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH = 1000
+_CAPABILITY_REQUEST_FORBIDDEN_KEYS = frozenset(
+    {
+        "action",
+        "action_id",
+        "admission",
+        "admission_status",
+        "author",
+        "author_claim",
+        "bounded_text",
+        "canonical_action",
+        "canonical_lease",
+        "code",
+        "component_id",
+        "conversion_expression",
+        "executable_expression",
+        "expression",
+        "fap",
+        "fetch",
+        "field_path",
+        "final_answer_packet",
+        "formula",
+        "formula_expression",
+        "formula_string",
+        "graph",
+        "graph_id",
+        "graph_ref",
+        "json_path",
+        "lease",
+        "lease_id",
+        "model",
+        "node_id",
+        "prompt",
+        "provider",
+        "read",
+        "response",
+        "retrieval",
+        "search",
+        "source_path",
+        "source_text",
+        "url",
+    }
+)
+_CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS = frozenset(
+    {
+        "api_key",
+        "authorization",
+        "cookie",
+        "credential",
+        "private",
+        "prompt",
+        "provider",
+        "raw_",
+        "response",
+        "retrieval",
+        "secret",
+        "search",
     }
 )
 
@@ -180,6 +244,98 @@ def _reject_private(value: Any, *, context: str) -> None:
         raise SpecialistGraphRuntimeError(
             f"{context} contains raw/private material: {', '.join(sorted(forbidden))}"
         )
+
+
+def _normalized_key(value: Any) -> str:
+    return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
+
+
+def normalize_specialist_capability_request(value: Any) -> dict[str, Any]:
+    """Validate and normalize one capability-generic proposal request envelope."""
+
+    if not isinstance(value, Mapping):
+        raise SpecialistGraphRuntimeError(
+            "Specialist capability_request must be one JSON mapping"
+        )
+    mapping_key_count = 0
+    list_item_count = 0
+
+    def normalize(item: Any, *, depth: int) -> Any:
+        nonlocal mapping_key_count, list_item_count
+        if depth > SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH:
+            raise SpecialistGraphRuntimeError(
+                "Specialist capability_request exceeds maximum nesting depth"
+            )
+        if callable(item) or isinstance(item, bytes | bytearray | memoryview):
+            raise SpecialistGraphRuntimeError(
+                "Specialist capability_request contains executable or binary material"
+            )
+        if item is None or isinstance(item, bool | int):
+            return item
+        if isinstance(item, float):
+            if not math.isfinite(item):
+                raise SpecialistGraphRuntimeError(
+                    "Specialist capability_request contains a non-finite number"
+                )
+            return item
+        if isinstance(item, str):
+            if len(item) > SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH:
+                raise SpecialistGraphRuntimeError(
+                    "Specialist capability_request string exceeds maximum length"
+                )
+            return item
+        if isinstance(item, Mapping):
+            mapping_key_count += len(item)
+            if mapping_key_count > SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS:
+                raise SpecialistGraphRuntimeError(
+                    "Specialist capability_request exceeds maximum mapping keys"
+                )
+            normalized_mapping: dict[str, Any] = {}
+            for key, child in item.items():
+                if not isinstance(key, str) or not key.strip():
+                    raise SpecialistGraphRuntimeError(
+                        "Specialist capability_request keys must be nonempty strings"
+                    )
+                normalized_key = _normalized_key(key)
+                if (
+                    normalized_key in _CAPABILITY_REQUEST_FORBIDDEN_KEYS
+                    or any(
+                        part in normalized_key
+                        for part in _CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS
+                    )
+                ):
+                    raise SpecialistGraphRuntimeError(
+                        "Specialist capability_request contains forbidden authority or material"
+                    )
+                normalized_mapping[str(key)] = normalize(
+                    child, depth=depth + 1
+                )
+            return normalized_mapping
+        if isinstance(item, Sequence) and not isinstance(item, str):
+            values = list(item)
+            list_item_count += len(values)
+            if list_item_count > SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS:
+                raise SpecialistGraphRuntimeError(
+                    "Specialist capability_request exceeds maximum list items"
+                )
+            return [normalize(child, depth=depth + 1) for child in values]
+        raise SpecialistGraphRuntimeError(
+            "Specialist capability_request contains an unknown object type"
+        )
+
+    normalized = normalize(value, depth=1)
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES:
+        raise SpecialistGraphRuntimeError(
+            "Specialist capability_request exceeds maximum canonical JSON bytes"
+        )
+    return dict(normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,6 +536,10 @@ def normalize_specialist_need_proposal(value: Mapping[str, Any]) -> dict[str, An
         "dispatch_authority_claimed": False,
         "admission_authority_claimed": False,
     }
+    if "capability_request" in raw:
+        normalized["capability_request"] = normalize_specialist_capability_request(
+            raw.get("capability_request")
+        )
     return _json_safe(normalized)
 
 
@@ -1734,6 +1894,11 @@ __all__ = [
     "PROPOSAL_UNSUPPORTED_TARGET",
     "RESOURCE_DETERMINISTIC_SPECIALIST",
     "SPECIALIST_NEED_SCHEMA_VERSION",
+    "SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES",
+    "SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH",
+    "SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS",
+    "SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS",
+    "SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH",
     "SPECIALIST_DISPOSITION_SCHEMA_VERSION",
     "SPECIALIST_HANDOFF_SCHEMA_VERSION",
     "SPECIALIST_RESULT_SCHEMA_VERSION",
@@ -1761,6 +1926,7 @@ __all__ = [
     "handoff_for_target",
     "mark_validator_consumption",
     "normalize_specialist_need_proposal",
+    "normalize_specialist_capability_request",
     "pending_proposal_for_target",
     "proposal_ref",
     "required_rejection_for_target",
