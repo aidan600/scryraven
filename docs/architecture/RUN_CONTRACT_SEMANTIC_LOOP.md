@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -72,8 +72,11 @@ The current loop is one authority flow, not a phase chronology:
     synthesis state.
 18. Full Scrutineer adversarially challenges the case when its installed
     triggers require review.
-19. In the fixed CLI/UI product composition, a typed source-bound quantitative
-    need from component or Cross-Component Analyst may become one RunKernel-
+19. In the fixed CLI/UI product composition, component and ordinary Cross-
+    Component Analyst receive one repository-owned model-visible quantitative
+    proposal contract whose declarative fields, fixed values, operator policies,
+    and bounds are also consumed by runtime validation. A conforming typed
+    source-bound quantitative need may become one RunKernel-
     governed deterministic work item. Its exact source-literal result or typed
     nonexecution disposition becomes one unified handoff for component or
     synthesis D-prime. Synthesis inputs carry two-hop claim-to-evidence lineage.
@@ -155,6 +158,13 @@ ComponentCoverage, Sufficiency, FinalAnswerPacket, Author, citation, source-
 obligation, search, acquisition, contract-mutation, or product-correctness
 authority. Estimates, arbitrary formulas, conversions, and number invention
 remain unsupported.
+
+Source posture comes from the structured candidate first and exact passage
+fallbacks second. Missing class, tier, currentness, or conflict remains unknown;
+neither fact acceptance nor component admission supplies a favorable default.
+Synthesis inherits the underlying component evidence posture. The proposal
+contract, full catalogs, and source material do not enter canonical RunKernel,
+scheduler, graph, result, log, or trace projections.
 
 ## Live And Operator Boundaries
 

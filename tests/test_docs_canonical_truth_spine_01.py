@@ -52,7 +52,7 @@ MARKERS = (
     "SPECIALIST-S1-QUANTITATIVE",
 )
 S1_RUNTIME_SHA = (
-    "cb286ac91a0c7a24c364d5e992961c229c819eb4"  # pragma: allowlist secret
+    "9e19d54b20036512509955e3176fb0386282796d"  # pragma: allowlist secret
 )
 PRE_S0_RUNTIME_SHA = (
     "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
@@ -201,6 +201,16 @@ def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries(
         "two-hop proof",
         "component calculation priority before a later synthesis calculation",
         "legacy RunKernel calculation reducer remains compatibility support only",
+        "quantitative_specialist_proposal_contract.v1",
+        "The same declarative facts build the model-visible contract and drive runtime proposal/request validation",
+        "structured candidate record as primary and passage metadata as an exact fallback",
+        "Missing facts remain `unknown`",
+        "authoritative_current_clear",
+        "contested_source_posture",
+        "incomplete_lineage",
+        "identical nonmaterial fields and `posture_digest`",
+        "Component D-prime receives the exact ordinary component input without it",
+        "full source catalogs, source material, and complete candidate records are absent from canonical RunKernel projections",
         "next roadmap checkpoint is separately licensed quantitative live validation",
     ):
         assert phrase in text

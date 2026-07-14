@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -43,7 +43,7 @@ configuration.
 | `MC-P5A-SAMPLING-COMPAT` | OpenRouter and Local chat transport internally own temperature `0.3`; OpenAI Responses omits temperature; caller-authored temperature is rejected. |
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
-| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and Cross-Component Analyst may nominate exact source literals through repository-owned transient catalogs; the deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, units, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews the handoff. One serial Specialist unit gives eligible component work priority before later synthesis work. |
+| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, units, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
 
 ## Current Ordinary Multi-Component Flow
 
@@ -81,6 +81,12 @@ component evidence. Decimal arithmetic, unit/precision derivation, and exact
 claim alignment are deterministic. Estimates, arbitrary formulas, conversions,
 number invention, and acquisition remain unsupported.
 
+The model-visible quantitative proposal contract is versioned and digest-bound;
+the same declarative field, operator, and bound facts are consumed by runtime
+validation. Missing source posture is not treated favorably, and component
+admission cannot upgrade underlying evidence. Contract, full catalog, and source
+material retention remains closed outside the transient role/adapter scope.
+
 ## Not Installed
 
 - Arbitrary-query multi-component support.
@@ -116,7 +122,7 @@ and this document does not license changes to that surface.
 
 - [Multi-component synthesis runtime architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) owns the deep installed multi-component contracts.
 - [Specialist graph substrate](SPECIALIST_GRAPH_SUBSTRATE.md) owns generic Specialist proposal, registry, policy, work, result, scheduling, and validator-consumption contracts.
-- [Quantitative Specialist product activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) owns the installed calculator registry/policy, source catalogs, parser, provenance, claim alignment, and handoff use.
+- [Quantitative Specialist product activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) owns the installed calculator registry/policy, model-visible proposal contract, evidence bridge/quality, source catalogs, parser, provenance, claim alignment, and handoff use.
 - [D-prime architecture](DPRIME_ARCHITECTURE.md) owns component and synthesis D-prime role boundaries.
 - [Run-contract semantic loop](RUN_CONTRACT_SEMANTIC_LOOP.md) owns the integrated query-to-answer proposal and reduction flow.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.

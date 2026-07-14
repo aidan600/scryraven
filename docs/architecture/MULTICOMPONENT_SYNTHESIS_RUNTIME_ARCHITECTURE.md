@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -186,12 +186,22 @@ reservation and creates one failed disposition plus unified handoff. Optional
 work remains nonblocking; required work reaches the Specialist-specific blocked
 terminal before ordinary sanitized blocked finalization.
 
-Component and Cross-Component Analyst input packets include repository-owned
-transient quantitative source catalogs. Component requests bind exact literals
-to bounded component evidence. Synthesis requests use deterministic component
-aliases and require two-hop proof from each admitted component claim to the same
-literal in its underlying current evidence. The transient source material is
-reconstructed only for adapter execution and is not retained. Deterministic
+Component and ordinary Cross-Component Analyst input packets include the same
+repository-owned model-visible quantitative proposal contract plus transient
+source catalogs. The component contract binds the exact component target and
+`component_evidence`; the synthesis contract binds the same-artifact
+`synthesis_key` rule and exact `component_01`, `component_02`, ... aliases. The
+proposal is a sibling of ordinary component fields or `synthesis_proposals`,
+never nested. Component requests bind exact literals to bounded component
+evidence. Synthesis requests use deterministic component aliases and require
+two-hop proof from each admitted component claim to the same literal in its
+underlying current evidence. Candidate-primary source facts and exact passage
+fallbacks remain unknown when absent; graph admission does not upgrade them.
+Model and execution catalogs share the same nonmaterial posture and digest,
+while source material exists only in the execution catalog. The contract and
+transient source material are reconstructed only for their scoped consumers and
+are not retained in canonical graph, scheduler, work, result, log, or trace
+projections. Deterministic
 Decimal arithmetic, units, precision, and exact claim alignment flow through
 the existing unified handoff; D-prime and RunKernel retain all validation and
 admission authority.

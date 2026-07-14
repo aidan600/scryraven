@@ -5,7 +5,7 @@ Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, additional Specialist activation, or live validation
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -164,6 +164,13 @@ requires two-hop proof from each admitted component claim to the same exact
 literal in underlying current evidence. Execution success alone is insufficient;
 non-exact alignment remains contested. D-prime does not rerun arithmetic or
 authorize the capability.
+
+The repository-owned model-visible quantitative proposal contract is an input
+only to ordinary component and Cross-Component Analyst proposal production. It
+is deliberately absent from component and synthesis D-prime input. D-prime
+receives the bounded result-or-disposition handoff and ordinary evidence or
+admitted-input refs; the contract cannot become validation or admission
+authority.
 
 ## Nonproofs
 

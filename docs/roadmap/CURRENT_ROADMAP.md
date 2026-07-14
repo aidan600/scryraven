@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -37,6 +37,10 @@ S1:
 
 - registers and consumes the deterministic source-bound calculator through the
   S0 substrate in the fixed ordinary CLI/UI product composition;
+- supplies one repository-owned model-visible proposal contract whose
+  declarative schema also drives runtime validation;
+- preserves candidate-primary evidence quality without favorable defaults and
+  keeps the contract, full catalogs, and source material out of canonical state;
 - preserves exact source-literal and two-hop synthesis provenance, assumptions,
   units, precision, and deterministic claim alignment;
 - routes semantic use through component or synthesis D-prime;

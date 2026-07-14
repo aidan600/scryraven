@@ -5,7 +5,7 @@ Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
 Does-not-authorize: additional product capabilities, calculator scope expansion, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
@@ -68,6 +68,13 @@ product path separately composes the fixed S1 registry and policy containing
 only `specialist.source_bound_calculation` version `1.0.0`. Generic substrate
 tests still inject inert deterministic capabilities to prove reuse, and the
 Scheduler/driver contain no calculator-specific capability branch.
+
+That product additionally supplies a repository-owned model-visible proposal
+contract only to ordinary component and Cross-Component Analyst inputs. Its
+declarative schema facts are shared with product validation; the generic
+proposal schema, registry, scheduler, and handoff remain the existing consumers
+and are adapted rather than shadowed. D-prime, selective, Scrutineer, and
+nonqualifying inputs do not acquire the product contract.
 
 ## Scheduler V3 And Budget Separation
 
@@ -169,6 +176,11 @@ raw model or provider payloads, private logs, full traces, database rows,
 caches, secrets, and private artifacts are neither accepted nor retained.
 Capability adapters stay in injected runtime scope and are not serialized into
 RunKernel state.
+
+The S1 model-visible proposal contract, complete source catalogs, source
+material, and full evidence candidate records follow the same nonretention
+boundary. Bounded retained refs may preserve only the safe identity and source-
+posture facts needed for exact result validation.
 
 The substrate grants no provider, model, search, fetch/read, retrieval, or
 publication authority. It introduces no hidden fallback, recursive Specialist

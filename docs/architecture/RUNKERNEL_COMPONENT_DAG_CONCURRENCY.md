@@ -5,7 +5,7 @@ Authority: canonical:component-dag-scheduling-concurrency
 Default-read: no
 Applies-to: ComponentWorkGraph, semantic-work scheduling, leases, batches, and runtime concurrency
 Does-not-authorize: new providers, adaptive width, Local parallelism, graph-bound parallelism, or mode-budget selection
-Verified-against-runtime: cb286ac91a0c7a24c364d5e992961c229c819eb4
+Verified-against-runtime: 9e19d54b20036512509955e3176fb0386282796d
 Update-trigger: merged change to graph, scheduler, lease, dispatch, or concurrency behavior
 
 ## Responsibility
@@ -83,6 +83,11 @@ one in flight, nonrecursive, and excluded from semantic role caps, provider
 transport accounting, and the 22-unit compatibility envelope. Canonical ready-
 work ordering gives an eligible component calculation priority over a later
 synthesis calculation for the one-unit pool.
+
+The quantitative model-visible proposal contract and source catalogs remain
+transient role/adapter inputs. RunKernel binds the accepted proposal and exact
+current input digest, but scheduler ready work, leases, batches, actions, and
+canonical graphs do not retain the contract, full catalogs, or source material.
 
 ## Lease And Budget Authority
 
