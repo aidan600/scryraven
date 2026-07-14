@@ -1306,6 +1306,441 @@ def run_d_completion_extension(config_path: Path) -> int:
     return result
 
 
+def finalize_wave_1_completion_extension(
+    *,
+    config_path: Path,
+    live_runtime_sha: str,
+    d_negative_control_posture: str,
+) -> int:
+    """Build the five-attempt terminal matrix from sanitized packets only."""
+
+    resolved_config = config_path.resolve()
+    root = resolved_config.parent
+    validate_campaign_root(ROOT, root)
+    config = read_sanitized_json(resolved_config, root=root)
+    manifest = read_sanitized_json(root / MANIFEST_NAME, root=root)
+    ledger = read_sanitized_json(root / LEDGER_NAME, root=root)
+    extension = manifest.get("wave_1_completion_extension")
+    if not isinstance(extension, dict) or extension.get("status") != "completed":
+        raise CampaignSafetyError("extension finalization requires completed D attempt 02")
+    if manifest.get("attempts") != {
+        "A_NO_QUANT": 1,
+        "B_COMPONENT_CALC": 1,
+        "C_SYNTHESIS_CALC": 1,
+        "D_CONVERSION_NEGATIVE": 2,
+    }:
+        raise CampaignSafetyError("extension finalization requires exactly five attempts")
+    if (
+        ledger.get("outbound_blocked") is not True
+        or manifest["wave_1_completion_extension"].get(
+            "further_live_work_authorized"
+        )
+        is not False
+    ):
+        raise CampaignSafetyError("mandatory post-D operator pause is not enforced")
+    sha = str(live_runtime_sha or "").strip().casefold()
+    if len(sha) != 40 or any(char not in "0123456789abcdef" for char in sha):
+        raise CampaignSafetyError("live runtime SHA must be an exact 40-hex identity")
+    if d_negative_control_posture != "unsupported_conversion_presented":
+        raise CampaignSafetyError(
+            "this terminal matrix requires the reviewed unsupported-conversion posture"
+        )
+
+    packet_specs = (
+        ("A_NO_QUANT", 1, "success"),
+        ("B_COMPONENT_CALC", 1, "success"),
+        ("C_SYNTHESIS_CALC", 1, "success"),
+        ("D_CONVERSION_NEGATIVE", 1, "cap_overflow"),
+        ("D_CONVERSION_NEGATIVE", 2, "success"),
+    )
+    packets: dict[tuple[str, int], dict[str, Any]] = {}
+    for query_id, attempt, classification in packet_specs:
+        packet = read_sanitized_json(
+            root / "runs" / f"run_{query_id}_{attempt:02d}.sanitized.json",
+            root=root,
+        )
+        if (
+            packet.get("query_id") != query_id
+            or packet.get("attempt") != attempt
+            or packet.get("success_classification") != classification
+        ):
+            raise CampaignSafetyError(
+                f"sanitized attempt identity drifted for {query_id} attempt {attempt}"
+            )
+        if packet.get("product_provider_failure") is not None:
+            raise CampaignSafetyError(
+                "provider-failure campaigns require their separate stop disposition"
+            )
+        packets[(query_id, attempt)] = packet
+    d02 = packets[(WAVE_1_EXTENSION_QUERY_ID, WAVE_1_EXTENSION_ATTEMPT)]
+    if (
+        d02.get("attempt_reason") != WAVE_1_EXTENSION_ATTEMPT_REASON
+        or d02.get("campaign_added_retries") != 0
+        or not str(d02.get("final_answer_text") or "").strip()
+    ):
+        raise CampaignSafetyError("D attempt 02 extension identity or output drifted")
+
+    expected_matches = {
+        "A_NO_QUANT": True,
+        "B_COMPONENT_CALC": False,
+        "C_SYNTHESIS_CALC": False,
+        "D_CONVERSION_NEGATIVE": False,
+    }
+    observations = {
+        "A_NO_QUANT": (
+            "reviewable ordinary final output without Specialist work; requested "
+            "Earth/Mars facts remained incomplete"
+        ),
+        "B_COMPONENT_CALC": (
+            "arithmetic reached final output without a Specialist proposal, result, "
+            "spend, or component D-prime consumption"
+        ),
+        "C_SYNTHESIS_CALC": (
+            "required exact literals and difference did not reach final output; no "
+            "Specialist, synthesis D-prime, or two-hop binding was observed"
+        ),
+        "D_CONVERSION_NEGATIVE": (
+            "attempt 01 stopped at the superseded token ceiling; operator-authorized "
+            "attempt 02 presented unsupported converted values and a converted difference"
+        ),
+    }
+    expected = {
+        "A_NO_QUANT": EXPECTED_DISPOSITIONS["A_NO_QUANT"],
+        "B_COMPONENT_CALC": EXPECTED_DISPOSITIONS["B_COMPONENT_CALC"],
+        "C_SYNTHESIS_CALC": EXPECTED_DISPOSITIONS["C_SYNTHESIS_CALC"],
+        "D_CONVERSION_NEGATIVE": EXPECTED_DISPOSITIONS["D_CONVERSION_NEGATIVE"],
+    }
+
+    attempt_summaries = []
+    for query_id, attempt, _classification in packet_specs:
+        packet = packets[(query_id, attempt)]
+        runtime = packet.get("s1_runtime_summary") or {}
+        specialist = runtime.get("specialist") or {}
+        custody = (
+            (packet.get("validation_observability") or {}).get(
+                "source_custody_summary"
+            )
+            or {}
+        )
+        run_budget = (packet.get("campaign_budget") or {}).get("run") or {}
+        attempt_summaries.append(
+            {
+                "query_id": query_id,
+                "attempt": attempt,
+                "attempt_reason": packet.get("attempt_reason"),
+                "runner_classification": packet.get("success_classification"),
+                "stage_reached": runtime.get("stage_reached"),
+                "expected_disposition": expected[query_id],
+                "expected_disposition_matched": (
+                    expected_matches[query_id]
+                    if query_id != WAVE_1_EXTENSION_QUERY_ID or attempt == 2
+                    else None
+                ),
+                "observation": observations[query_id],
+                "specialist_proposal_count": specialist.get("proposal_count", 0),
+                "specialist_result_count": specialist.get("result_count", 0),
+                "specialist_spent": specialist.get("specialist_spent", 0),
+                "component_dprime_consumed": runtime.get(
+                    "component_dprime_consumed", False
+                ),
+                "synthesis_dprime_consumed": runtime.get(
+                    "synthesis_dprime_consumed", False
+                ),
+                "two_hop_source_binding_proved": runtime.get(
+                    "two_hop_source_binding_proved", False
+                ),
+                "source_custody_expected": custody.get("source_custody_expected"),
+                "source_custody_satisfied": custody.get(
+                    "source_custody_satisfied"
+                ),
+                "official_doc_citations_present": custody.get(
+                    "official_doc_citations_present"
+                ),
+                "fetch_read_operations": custody.get("fetch_read_operations"),
+                "generative_calls": run_budget.get("generative_calls"),
+                "embedding_calls": run_budget.get("embedding_calls"),
+                "external_provider_search_calls": run_budget.get(
+                    "external_provider_search_calls_observed"
+                ),
+                "input_tokens": run_budget.get("input_tokens"),
+                "output_tokens": run_budget.get("output_tokens"),
+                "embedding_tokens": run_budget.get("embedding_tokens"),
+                "product_provider_failure": None,
+            }
+        )
+
+    live_started_at = str(ledger.get("live_contact_started_at") or "")
+    completed_times = [
+        str(item.get("completed_at") or "")
+        for item in ledger.get("runs", {}).values()
+        if isinstance(item, dict)
+    ]
+    if not live_started_at or len(completed_times) != 5 or any(
+        not value for value in completed_times
+    ):
+        raise CampaignSafetyError("five-attempt live-contact timing is incomplete")
+    live_ended_at = max(completed_times)
+    elapsed_seconds = round(
+        (
+            datetime.fromisoformat(live_ended_at)
+            - datetime.fromisoformat(live_started_at)
+        ).total_seconds(),
+        6,
+    )
+    consumed = dict(ledger["consumed_combined"])
+    block_a_requested = dict(config["hard_operational_budget"]["block_a"])
+    combined_requested = dict(config["hard_operational_budget"]["combined"])
+    counter_fields = tuple(consumed)
+    block_a_remaining = {
+        field: int(block_a_requested[field]) - int(consumed[field])
+        for field in counter_fields
+    }
+    combined_remaining = {
+        field: int(combined_requested[field]) - int(consumed[field])
+        for field in counter_fields
+    }
+    block_a_remaining["live_contact_elapsed_seconds"] = round(
+        float(block_a_requested["live_contact_elapsed_seconds"]) - elapsed_seconds,
+        6,
+    )
+    combined_remaining["live_contact_elapsed_seconds"] = round(
+        float(combined_requested["live_contact_elapsed_seconds"]) - elapsed_seconds,
+        6,
+    )
+    tokens = ledger["observed_token_telemetry"]
+    total_tokens = int(tokens["total_observed_tokens"])
+    estimate = ledger["observational_repository_cost_estimate"]
+    calls = {
+        key: value
+        for key, value in ledger["calls_by_model_and_provider"].items()
+        if not key.endswith(":reserved")
+    }
+
+    failure = read_sanitized_json(root / "failure_matrix.json", root=root)
+    failure_entries = {
+        "A_NO_QUANT": {
+            "query_id": "A_NO_QUANT",
+            "attempts": [1],
+            "expected_disposition_matched": True,
+            "primary_failure_class": "partial_acquisition_or_custody_gap",
+            "candidate_current_owner": "ordinary acquisition and source custody",
+            "observation": observations["A_NO_QUANT"],
+        },
+        "B_COMPONENT_CALC": {
+            "query_id": "B_COMPONENT_CALC",
+            "attempts": [1],
+            "expected_disposition_matched": False,
+            "primary_failure_class": "role_or_authority_integration_gap",
+            "candidate_current_owner": (
+                "ordinary bounded multicomponent S1 proposal and consumption path"
+            ),
+            "observation": observations["B_COMPONENT_CALC"],
+        },
+        "C_SYNTHESIS_CALC": {
+            "query_id": "C_SYNTHESIS_CALC",
+            "attempts": [1],
+            "expected_disposition_matched": False,
+            "primary_failure_class": "acquisition_and_role_integration_gap",
+            "candidate_current_owner": (
+                "ordinary acquisition/custody and bounded multicomponent S1 integration"
+            ),
+            "observation": observations["C_SYNTHESIS_CALC"],
+        },
+        "D_CONVERSION_NEGATIVE": {
+            "query_id": "D_CONVERSION_NEGATIVE",
+            "attempts": [1, 2],
+            "attempt_01_classification": "superseded_campaign_token_cap_overflow",
+            "attempt_02_reason": WAVE_1_EXTENSION_ATTEMPT_REASON,
+            "expected_disposition_matched": False,
+            "primary_failure_class": "role_or_authority_non_upgrade_failure",
+            "candidate_current_owner": (
+                "ordinary quantitative authority and S1 activation integration"
+            ),
+            "observation": observations["D_CONVERSION_NEGATIVE"],
+        },
+    }
+    failure["entries"] = [failure_entries[item] for item in QUERY_ORDER]
+    failure["wave_1_complete"] = True
+    failure["wave_1_completion_extension_complete"] = True
+    failure["terminal_disposition"] = "PARTIAL_ROLE_OR_AUTHORITY_GAP"
+    write_sanitized_json(root / "failure_matrix.json", failure, root=root)
+
+    repairs = read_sanitized_json(root / "repair_matrix.json", root=root)
+    repairs["wave_1_complete"] = True
+    repairs["wave_1_completion_extension_complete"] = True
+    repairs["product_runtime_repair_clusters_attempted"] = 0
+    repairs["recommended_first_product_cluster"] = {
+        "status": "candidate_not_started_pending_operator_direction",
+        "classification": "core_integration_reassessment",
+        "candidate_owner": (
+            "ordinary bounded multicomponent class activation and S1 proposal/consumption"
+        ),
+        "required_first_step": (
+            "deterministic offline reproduction of why live qualifying requests did "
+            "not expose Specialist proposal or graph consumption"
+        ),
+    }
+    write_sanitized_json(root / "repair_matrix.json", repairs, root=root)
+
+    prior_summary = read_sanitized_json(root / "campaign_summary.json", root=root)
+    configured = config["ordinary_resolved_product_configuration"]
+    summary = {
+        "campaign_schema": CAMPAIGN_SCHEMA,
+        "phase_id": PHASE_ID,
+        "disposition": "PARTIAL_ROLE_OR_AUTHORITY_GAP",
+        "terminal_reason": (
+            "Wave 1 completed under the explicit D02 token extension. B and C did "
+            "not exercise the installed Specialist path, and D02 presented unsupported "
+            "converted output; mandatory operator review now blocks further live work."
+        ),
+        "live_runtime_sha": sha,
+        "completed_at": utc_now(),
+        "disposition_history": list(prior_summary.get("disposition_history") or []),
+        "superseded_terminal_packet": (
+            "campaign_summary.pre_extension.sanitized.json"
+        ),
+        "wave_1_completion_extension": dict(config["wave_1_completion_extension"]),
+        "baseline_product_configuration": {
+            key: configured[key]
+            for key in (
+                "fast_provider",
+                "fast_model",
+                "smart_provider",
+                "smart_model",
+                "embed_provider",
+                "embed_model",
+            )
+        }
+        | {
+            "active_configured_search_providers": list(
+                configured["active_search_providers"]
+            )
+        },
+        "attempts": attempt_summaries,
+        "expected_disposition_matches": expected_matches,
+        "hard_operational_budget": {
+            "block_a_requested": block_a_requested,
+            "combined_requested": combined_requested,
+            "consumed": consumed,
+            "block_a_remaining": block_a_remaining,
+            "combined_remaining": combined_remaining,
+        },
+        "observed_token_telemetry": dict(tokens)
+        | {
+            "original_block_a_ceiling": 225_000,
+            "extended_block_a_ceiling": WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING,
+            "block_a_remaining": (
+                WAVE_1_EXTENSION_BLOCK_A_TOKEN_CEILING - total_tokens
+            ),
+            "combined_ceiling": WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING,
+            "combined_remaining": (
+                WAVE_1_EXTENSION_COMBINED_TOKEN_CEILING - total_tokens
+            ),
+        },
+        "live_contact": {
+            "started_at": live_started_at,
+            "ended_at": live_ended_at,
+            "elapsed_seconds": elapsed_seconds,
+            "mandatory_pause_after_d02": True,
+        },
+        "calls_by_model_and_provider": calls,
+        "observational_repository_cost_estimate": dict(estimate),
+        "actual_provider_cost_not_observed": True,
+        "manual_official_source_checks": {
+            "count": consumed["independent_manual_source_checks"],
+            "result": "not_run",
+        },
+        "product_provider_failure_count": 0,
+        "campaign_observability_defects": [
+            (
+                "The original 225000 Block A observed-token ceiling was "
+                "operator-classified as miscalibrated and superseded only for D02."
+            ),
+            (
+                "Fetch/read campaign accounting and generic source-custody profile "
+                "observation were reconciled offline without a live rerun."
+            ),
+        ],
+        "product_defects": [
+            "A and C exposed incomplete requested official-source fact coverage.",
+            (
+                "B and C exposed no Specialist proposal, result, applicable D-prime "
+                "consumption, or synthesis two-hop binding."
+            ),
+            (
+                "D02 presented unsupported conversions and a converted difference "
+                "as answer output despite no Specialist execution."
+            ),
+        ],
+        "repair_matrix_posture": {
+            "campaign_observability_repairs_completed": 1,
+            "product_runtime_repairs_attempted": 0,
+        },
+        "first_candidate_repair_cluster": repairs[
+            "recommended_first_product_cluster"
+        ],
+        "selected_next_recommendation": "core_integration_reassessment",
+        "selected_next_recommendation_started": False,
+        "alternate_model_comparison": "alternate_model_comparison_not_run",
+        "alternate_model_comparison_reason": (
+            "separately scoped future portability checkpoint"
+        ),
+        "broker_used": False,
+        "retention_and_redaction": {
+            "sanitized_local_ignored_packets_only": True,
+            "credential_values_retained": False,
+            "raw_provider_payloads_retained": False,
+            "raw_prompts_retained": False,
+            "raw_model_responses_retained": False,
+            "private_material_retained": False,
+        },
+        "explicit_nonproofs": [
+            "S1 quantitative Specialist live convergence was not proved.",
+            "Component or synthesis D-prime consumption was not observed.",
+            "Two-hop synthesis source binding was not proved.",
+            "The unsupported-conversion negative control did not pass.",
+            "Model portability was not run.",
+            "Actual provider billing was not observed.",
+        ],
+    }
+    write_sanitized_json(root / "campaign_summary.json", summary, root=root)
+
+    manifest["terminal_disposition"] = "PARTIAL_ROLE_OR_AUTHORITY_GAP"
+    manifest["live_runtime_sha"] = sha
+    manifest["selected_next_recommendation"] = "core_integration_reassessment"
+    manifest["selected_next_recommendation_started"] = False
+    manifest["matrix_review_complete"] = True
+    manifest["wave_1_completion_extension"]["status"] = "completed_and_reviewed"
+    manifest["wave_1_completion_extension"]["reviewed_at"] = utc_now()
+    write_sanitized_json(root / MANIFEST_NAME, manifest, root=root)
+
+    review = (
+        f"{CAMPAIGN_MARKER}\n\n"
+        f"# {PHASE_ID} local campaign review\n\n"
+        "Terminal disposition: `PARTIAL_ROLE_OR_AUTHORITY_GAP`.\n\n"
+        "The original `BUDGET_EXHAUSTED` packet is preserved and superseded only "
+        "for the explicit operator-authorized D02 completion. A, B, and C were not "
+        "rerun. D02 completed successfully at the runner level, with zero campaign "
+        "retries and no product-provider failure.\n\n"
+        "A matched its no-Specialist disposition but returned incomplete requested "
+        "facts. B and C did not match their Specialist/D-prime dispositions. D02 did "
+        "not match the negative control: unsupported converted values and a converted "
+        "difference reached final output without Specialist execution.\n\n"
+        f"Consumed telemetry: {consumed['full_scryraven_runs']} runs, "
+        f"{consumed['generative_plus_embedding_calls']} model/embedding calls, "
+        f"{consumed['external_provider_search_calls']} search calls, "
+        f"{consumed['retrieval_fetch_read_operations']} fetch/read operations, and "
+        f"{total_tokens} observed tokens over {elapsed_seconds} elapsed seconds.\n\n"
+        f"Repository-estimated cost is USD {estimate['usd']}; this is not actual "
+        "billed cost. Broker and alternate-model use were false. The first candidate "
+        "product cluster is an offline core integration reassessment and is not "
+        "started. Further live work is not authorized pending operator review.\n"
+    )
+    (root / "review.md").write_text(review, encoding="utf-8")
+    print(f"finalized five-attempt Wave 1 matrix at {root}")
+    return 0
+
+
 def run_block(
     *,
     block: str,
@@ -1429,6 +1864,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run only operator-authorized D attempt 02, then pause.",
     )
+    action.add_argument(
+        "--finalize-wave-1-completion-extension",
+        action="store_true",
+        help="Build the reviewed five-attempt terminal matrix offline.",
+    )
     action.add_argument("--run-block", choices=["A", "B"])
     parser.add_argument(
         "--output-root",
@@ -1439,6 +1879,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rerun-query-id", choices=list(QUERY_ORDER))
     parser.add_argument("--control-query-id", choices=list(QUERY_ORDER))
     parser.add_argument("--live-runtime-sha")
+    parser.add_argument(
+        "--d-negative-control-posture",
+        choices=["unsupported_conversion_presented"],
+    )
     parser.add_argument(
         "--recommendation",
         choices=["core_integration_reassessment"],
@@ -1483,6 +1927,21 @@ def main(argv: list[str] | None = None) -> int:
                     "--run-d-completion-extension requires --config"
                 )
             return run_d_completion_extension(Path(args.config))
+        if args.finalize_wave_1_completion_extension:
+            if (
+                not args.config
+                or not args.live_runtime_sha
+                or not args.d_negative_control_posture
+            ):
+                raise CampaignSafetyError(
+                    "extension finalization requires config, live runtime SHA, and "
+                    "the reviewed D negative-control posture"
+                )
+            return finalize_wave_1_completion_extension(
+                config_path=Path(args.config),
+                live_runtime_sha=args.live_runtime_sha,
+                d_negative_control_posture=args.d_negative_control_posture,
+            )
         if not args.config:
             raise CampaignSafetyError("--run-block requires --config")
         if bool(args.rerun_query_id) != bool(args.control_query_id):

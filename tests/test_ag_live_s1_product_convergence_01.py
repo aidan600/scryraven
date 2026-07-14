@@ -606,6 +606,7 @@ def test_budget_exhausted_finalizer_and_operator_extension_are_sanitized(
             "success_classification": "success",
             "product_provider_failure": None,
             "s1_runtime_summary": {"stage_reached": "run_outcome"},
+            "final_answer_text": "unsupported converted values were presented",
             "attempt_reason": "operator_authorized_wave_1_completion",
             "campaign_added_retries": 0,
         }
@@ -621,6 +622,18 @@ def test_budget_exhausted_finalizer_and_operator_extension_are_sanitized(
             packet=packet,
             result_code=0,
             attempt_reason="operator_authorized_wave_1_completion",
+        )
+        fake_ledger = support.read_sanitized_json(
+            root / support.LEDGER_NAME,
+            root=root,
+        )
+        fake_ledger["runs"]["D_CONVERSION_NEGATIVE:2"] = {
+            "completed_at": "2026-07-14T20:24:52+00:00"
+        }
+        support.write_sanitized_json(
+            root / support.LEDGER_NAME,
+            fake_ledger,
+            root=root,
         )
         return 0, packet
 
@@ -654,6 +667,49 @@ def test_budget_exhausted_finalizer_and_operator_extension_are_sanitized(
     assert paused_manifest["wave_1_completion_extension"][
         "further_live_work_authorized"
     ] is False
+
+    assert (
+        campaign.finalize_wave_1_completion_extension(
+            config_path=config_path,
+            live_runtime_sha="b" * 40,
+            d_negative_control_posture="unsupported_conversion_presented",
+        )
+        == 0
+    )
+    completed_summary = support.read_sanitized_json(
+        root / "campaign_summary.json",
+        root=root,
+    )
+    assert completed_summary["disposition"] == "PARTIAL_ROLE_OR_AUTHORITY_GAP"
+    assert len(completed_summary["attempts"]) == 5
+    assert completed_summary["expected_disposition_matches"] == {
+        "A_NO_QUANT": True,
+        "B_COMPONENT_CALC": False,
+        "C_SYNTHESIS_CALC": False,
+        "D_CONVERSION_NEGATIVE": False,
+    }
+    assert completed_summary["observed_token_telemetry"][
+        "extended_block_a_ceiling"
+    ] == 375000
+    assert completed_summary["selected_next_recommendation"] == (
+        "core_integration_reassessment"
+    )
+    completed_failure = support.read_sanitized_json(
+        root / "failure_matrix.json",
+        root=root,
+    )
+    assert completed_failure["terminal_disposition"] == (
+        "PARTIAL_ROLE_OR_AUTHORITY_GAP"
+    )
+    assert completed_failure["entries"][-1]["attempts"] == [1, 2]
+    completed_repairs = support.read_sanitized_json(
+        root / "repair_matrix.json",
+        root=root,
+    )
+    assert completed_repairs["product_runtime_repair_clusters_attempted"] == 0
+    assert completed_repairs["recommended_first_product_cluster"]["status"] == (
+        "candidate_not_started_pending_operator_direction"
+    )
 
 
 def test_unknown_query_broker_alternate_and_retry_postures_fail_closed(
