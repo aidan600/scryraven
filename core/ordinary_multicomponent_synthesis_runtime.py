@@ -546,10 +546,20 @@ def _execute_fresh_resynthesis(
 
     current_contract = run_kernel.state.current_answer_contract
     contract_ref = _accepted_contract_ref(current_contract)
+    component_packets = _safe_mapping(
+        _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get(
+            "component_analyst_input_packets"
+        )
+    )
+    if not component_packets:
+        raise OrdinaryMulticomponentRuntimeError(
+            "fresh resynthesis requires current scheduler-owned component packets"
+        )
     cross_input = cross_component_input_packet(
         component_nodes=graph["component_nodes"],
         accepted_contract_ref=contract_ref,
         requested_synthesis_directive=requested_synthesis_directive,
+        component_analyst_input_packets=component_packets,
     )
     cross_key = f"graph-v1:revision:{graph['graph_revision']}"
     cross_artifact = execute_multicomponent_role_call(
@@ -563,6 +573,8 @@ def _execute_fresh_resynthesis(
         graph,
         accepted_contract_ref=contract_ref,
         cross_component_artifact=cross_artifact,
+        component_analyst_input_packets=component_packets,
+        transient_cross_input_packet=cross_input,
     )
     current = reduce_component_work_graph_v1(
         run_kernel=run_kernel,
@@ -1768,12 +1780,19 @@ def _consume_scheduler_selected_artifact(
             )
         else:
             graph = validate_component_work_graph_v1(graph_raw)
+            component_packets = _safe_mapping(
+                _safe_mapping(
+                    run_kernel.state.multicomponent_scheduler_context
+                ).get("component_analyst_input_packets")
+            )
             candidate = component_work_graph_v1_resynthesis_from_cross_component_artifact(
                 graph,
                 accepted_contract_ref=_accepted_contract_ref(
                     run_kernel.state.current_answer_contract
                 ),
                 cross_component_artifact=artifact,
+                component_analyst_input_packets=component_packets,
+                transient_cross_input_packet=input_packet,
             )
             reduce_component_work_graph_v1(
                 run_kernel=run_kernel,
