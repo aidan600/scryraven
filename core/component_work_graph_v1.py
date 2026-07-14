@@ -19,6 +19,7 @@ from core.multicomponent_role_runtime import (
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
     SUPPORTED_QUERY_CLASS,
     role_artifact_ref,
+    safe_packet_digest,
     validate_multicomponent_role_artifact,
 )
 
@@ -226,8 +227,15 @@ def cross_component_input_packet(
     component_nodes: Sequence[Mapping[str, Any]],
     accepted_contract_ref: Mapping[str, Any],
     requested_synthesis_directive: str,
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    from core.quantitative_specialist_product_activation import (
+        QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
+        build_quantitative_specialist_proposal_contract,
+        build_synthesis_quantitative_source_catalog,
+    )
+
+    packet = {
         "supported_query_class": SUPPORTED_QUERY_CLASS,
         "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
         "requested_synthesis_directive": _clean_text(
@@ -251,6 +259,25 @@ def cross_component_input_packet(
             for node in component_nodes
         ],
     }
+    packet["quantitative_source_catalog"] = (
+        build_synthesis_quantitative_source_catalog(
+            component_nodes=component_nodes,
+            component_analyst_input_packets=(
+                component_analyst_input_packets or {}
+            ),
+        )
+    )
+    packet["quantitative_specialist_proposal_contract"] = (
+        build_quantitative_specialist_proposal_contract(
+            target_kind="synthesis",
+            target_key_or_rule=QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
+            allowed_source_local_keys=tuple(
+                f"component_{index:02d}"
+                for index, _node in enumerate(component_nodes, start=1)
+            ),
+        )
+    )
+    return packet
 
 
 def synthesis_dprime_input_packet(
@@ -865,6 +892,8 @@ def component_work_graph_v1_from_cross_component_artifact(
     requested_synthesis_directive: str,
     component_nodes: Sequence[Mapping[str, Any]],
     cross_component_artifact: Mapping[str, Any],
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
 ) -> dict[str, Any]:
     components = [validate_component_work_node_v1(item) for item in component_nodes]
@@ -881,12 +910,180 @@ def component_work_graph_v1_from_cross_component_artifact(
     )
     if cross.get("run_id") != run_id or cross.get("request_id") != request_id:
         raise ComponentWorkGraphV1Error("Cross-Component Analyst cross-run artifact")
-    expected_cross_input = cross_component_input_packet(
-        component_nodes=components,
-        accepted_contract_ref=accepted_contract_ref,
-        requested_synthesis_directive=requested_synthesis_directive,
+    validated_component_packets: dict[str, dict[str, Any]] | None = None
+    if component_analyst_input_packets is not None:
+        if not isinstance(component_analyst_input_packets, Mapping):
+            raise ComponentWorkGraphV1Error(
+                "Cross input reconstruction requires component Analyst packets"
+            )
+        expected_component_ids = {item["component_id"] for item in components}
+        if not component_analyst_input_packets or {
+            str(key) for key in component_analyst_input_packets
+        } != expected_component_ids:
+            raise ComponentWorkGraphV1Error(
+                "Cross input reconstruction requires one current packet per component"
+            )
+        from core.multicomponent_component_admission import (
+            component_analyst_input_packet,
+        )
+
+        validated_component_packets = {}
+        for component in components:
+            component_id = str(component["component_id"])
+            raw_packet = component_analyst_input_packets.get(component_id)
+            if not isinstance(raw_packet, Mapping):
+                raise ComponentWorkGraphV1Error(
+                    "Cross input reconstruction component packet is malformed"
+                )
+            packet = dict(raw_packet)
+            binding = _safe_mapping(packet.get("run_binding"))
+            packet_component = _safe_mapping(packet.get("component_ref"))
+            if (
+                binding.get("run_id") != run_id
+                or binding.get("request_id") != request_id
+                or packet_component.get("component_id") != component_id
+                or packet_component.get("component_revision")
+                != component.get("component_revision")
+                or packet_component.get("component_digest")
+                != component.get("component_digest")
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "Cross input reconstruction component packet binding mismatch"
+                )
+            independently_rebuilt_packet = component_analyst_input_packet(
+                run_id=run_id,
+                request_id=request_id,
+                accepted_contract={
+                    "accepted_contract_version": binding.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": binding.get(
+                        "accepted_contract_digest"
+                    ),
+                },
+                component_ref=packet_component,
+                evidence_input=_safe_mapping(packet.get("component_evidence")),
+            )
+            if packet != independently_rebuilt_packet:
+                raise ComponentWorkGraphV1Error(
+                    "Cross input reconstruction component packet is malformed"
+                )
+            validated_component_packets[component_id] = packet
+
+    supplied_cross_input = _safe_mapping(transient_cross_input_packet)
+    if transient_cross_input_packet is not None and not supplied_cross_input:
+        raise ComponentWorkGraphV1Error("transient Cross input packet is malformed")
+    if supplied_cross_input:
+        structural_expected = cross_component_input_packet(
+            component_nodes=components,
+            accepted_contract_ref=accepted_contract_ref,
+            requested_synthesis_directive=requested_synthesis_directive,
+        )
+        if any(
+            supplied_cross_input.get(key) != value
+            for key, value in structural_expected.items()
+            if key != "quantitative_source_catalog"
+        ):
+            raise ComponentWorkGraphV1Error(
+                "transient Cross input structure does not match current components"
+            )
+        supplied_catalog = _safe_mapping(
+            supplied_cross_input.get("quantitative_source_catalog")
+        )
+        structural_catalog = _safe_mapping(
+            structural_expected.get("quantitative_source_catalog")
+        )
+        expected_aliases = {
+            f"component_{index:02d}"
+            for index, _component in enumerate(components, start=1)
+        }
+        if (
+            supplied_catalog.get("schema_version")
+            != "quantitative_source_catalog.v1"
+            or supplied_catalog.get("catalog_kind")
+            != "synthesis_quantitative_sources"
+            or {
+                key
+                for key, value in supplied_catalog.items()
+                if isinstance(value, Mapping)
+            }
+            != expected_aliases
+            or set(supplied_catalog)
+            != {
+                "schema_version",
+                "catalog_kind",
+                "posture_digest",
+                *expected_aliases,
+            }
+            or any(
+                "source_material" in _safe_mapping(value)
+                for value in supplied_catalog.values()
+            )
+        ):
+            raise ComponentWorkGraphV1Error(
+                "transient Cross quantitative catalog is malformed"
+            )
+        catalog_without_digest = deepcopy(supplied_catalog)
+        supplied_posture_digest = catalog_without_digest.pop(
+            "posture_digest", None
+        )
+        fixed_catalog_fields = {
+            "source_local_key",
+            "source_binding_kind",
+            "allowed_source_field",
+            "bounded_field_digest",
+            "bounded_field_present",
+            "admission_status",
+            "current",
+            "stale",
+            "component_lineage_ref",
+            "admitted_claim_ref",
+        }
+        if supplied_posture_digest != _digest(catalog_without_digest) or any(
+            not isinstance(supplied_catalog.get(alias), Mapping)
+            or set(_safe_mapping(supplied_catalog.get(alias)))
+            not in (
+                set(_safe_mapping(structural_catalog.get(alias))),
+                set(_safe_mapping(structural_catalog.get(alias)))
+                | {"canonical_currency_unit"},
+            )
+            or any(
+                _safe_mapping(supplied_catalog.get(alias)).get(field)
+                != _safe_mapping(structural_catalog.get(alias)).get(field)
+                for field in fixed_catalog_fields
+            )
+            for alias in expected_aliases
+        ):
+            raise ComponentWorkGraphV1Error(
+                "transient Cross quantitative catalog is malformed"
+            )
+        if validated_component_packets is not None:
+            independently_rebuilt_cross_input = cross_component_input_packet(
+                component_nodes=components,
+                accepted_contract_ref=accepted_contract_ref,
+                requested_synthesis_directive=requested_synthesis_directive,
+                component_analyst_input_packets=validated_component_packets,
+            )
+            if supplied_cross_input != independently_rebuilt_cross_input:
+                raise ComponentWorkGraphV1Error(
+                    "transient Cross input does not match current component packets"
+                )
+        expected_cross_input = supplied_cross_input
+    else:
+        if validated_component_packets is None:
+            raise ComponentWorkGraphV1Error(
+                "Cross input reconstruction authority is missing"
+            )
+        expected_cross_input = cross_component_input_packet(
+            component_nodes=components,
+            accepted_contract_ref=accepted_contract_ref,
+            requested_synthesis_directive=requested_synthesis_directive,
+            component_analyst_input_packets=validated_component_packets,
+        )
+    input_binding_matches = cross["input_packet_digest"] == safe_packet_digest(
+        expected_cross_input
     )
-    if cross["input_packet_digest"] != _digest(expected_cross_input):
+    if not input_binding_matches:
         raise ComponentWorkGraphV1Error(
             "Cross-Component Analyst input binding mismatch"
         )
@@ -1844,6 +2041,8 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
     *,
     accepted_contract_ref: Mapping[str, Any],
     cross_component_artifact: Mapping[str, Any],
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Install one complete fresh synthesis structure on an amended graph."""
@@ -1872,6 +2071,8 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
         ),
         component_nodes=current["component_nodes"],
         cross_component_artifact=cross_component_artifact,
+        component_analyst_input_packets=component_analyst_input_packets,
+        transient_cross_input_packet=transient_cross_input_packet,
         additional_scrutineer_trigger_reasons=(
             *(
                 ("deep_mode",)

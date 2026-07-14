@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -29,23 +29,39 @@ The high-level goal is to establish:
 - inert generic capability validation proving substrate reuse;
 - no product Specialist activation.
 
-## Active Next: S1
+## Installed Product Activation: S1
 
-**Quantitative Specialist ordinary product activation.**
+**Quantitative Specialist ordinary product activation is installed.**
 
-After S0, S1 will:
+S1:
 
-- register and consume the existing deterministic quantitative calculator
-  through the S0 substrate;
-- preserve numeric provenance, assumptions, units, uncertainty, and source
-  lineage;
-- validate downstream semantic use through the correct D-prime boundary.
+- registers and consumes the deterministic source-bound calculator through the
+  S0 substrate in the fixed ordinary CLI/UI product composition;
+- supplies one repository-owned model-visible proposal contract whose
+  declarative schema also drives runtime validation;
+- preserves candidate-primary evidence quality without favorable defaults and
+  keeps the contract, full catalogs, and source material out of canonical state;
+- preserves exact source-literal and two-hop synthesis provenance, assumptions,
+  units, precision, and deterministic claim alignment;
+- routes semantic use through component or synthesis D-prime;
+- keeps one serial unit with component-before-synthesis priority;
+- unconditionally reproofs every ordinary Cross input from either the exact
+  transient packet or RunKernel's current scheduler-owned component packets,
+  while retaining neither;
+- leaves estimates, arbitrary formulas, conversions, and acquisition unsupported.
+
+## Active Next: Separately Licensed Quantitative Live Validation
+
+The next checkpoint is a bounded, separately authorized live validation of the
+installed quantitative product path. S1's offline proofs do not authorize that
+work or establish live correctness, arbitrary-query coverage, or broad
+quantitative reasoning quality.
 
 ## Later, Deliberately Underspecified
 
 - Social-source acquisition and authority design.
 - Social Awareness specialist design and offline validation.
-- Controlled live end-to-end product dogfood.
+- Broader controlled live end-to-end product dogfood.
 - Hosted and Local capacity characterization.
 - UI and productization.
 

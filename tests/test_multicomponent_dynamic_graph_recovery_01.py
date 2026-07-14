@@ -1274,10 +1274,26 @@ def test_graph_identity_advances_and_pre_recovery_synthesis_becomes_noncurrent()
         for item in amended["stale_synthesis_history"]
     )
 
+    component_packets = deepcopy(
+        kernel.state.multicomponent_scheduler_context[
+            "component_analyst_input_packets"
+        ]
+    )
+    component_packets[component_id] = component_analyst_input_packet(
+        run_id=kernel.state.run_id,
+        request_id=kernel.state.request_id,
+        accepted_contract=kernel.state.current_answer_contract,
+        component_ref=component,
+        evidence_input={},
+    )
+    kernel.state.multicomponent_scheduler_context[
+        "component_analyst_input_packets"
+    ] = deepcopy(component_packets)
     cross_input = cross_component_input_packet(
         component_nodes=amended["component_nodes"],
         accepted_contract_ref=contract_ref,
         requested_synthesis_directive=amended["requested_synthesis_directive"],
+        component_analyst_input_packets=component_packets,
     )
     component_ids = [item["component_id"] for item in amended["component_nodes"]]
     evaluation_key = f"graph-v1:revision:{amended['graph_revision']}"
@@ -1317,6 +1333,8 @@ def test_graph_identity_advances_and_pre_recovery_synthesis_becomes_noncurrent()
         amended,
         accepted_contract_ref=contract_ref,
         cross_component_artifact=cross,
+        component_analyst_input_packets=component_packets,
+        transient_cross_input_packet=cross_input,
     )
     fresh = reduce_component_work_graph_v1(
         run_kernel=kernel,

@@ -19558,7 +19558,89 @@ class RunKernel:
                 ROLE_SCRUTINEER,
                 ROLE_SYNTHESIS_DPRIME,
                 role_artifact_ref,
+                safe_packet_digest,
             )
+
+            def current_component_packets_for_graph_reproof(
+                *,
+                component_nodes: Sequence[Mapping[str, Any]],
+                requested_synthesis_directive: str,
+            ) -> dict[str, Any]:
+                raw_context = self.state.multicomponent_scheduler_context
+                if not isinstance(raw_context, Mapping):
+                    raise RunKernelTransitionError(
+                        "Graph V1 structure reproof requires current component Analyst packets"
+                    )
+                context = _safe_mapping(raw_context)
+                raw_packets = raw_context.get("component_analyst_input_packets")
+                packets = _safe_mapping(
+                    raw_packets if isinstance(raw_packets, Mapping) else None
+                )
+                component_ids = {
+                    str(_safe_mapping(item).get("component_id") or "")
+                    for item in component_nodes
+                }
+                if (
+                    not packets
+                    or not component_ids
+                    or set(packets) != component_ids
+                    or any(
+                        not isinstance(value, Mapping)
+                        for value in (
+                            raw_packets.values()
+                            if isinstance(raw_packets, Mapping)
+                            else ()
+                        )
+                    )
+                    or _clean_text(
+                        context.get("requested_synthesis_directive"), limit=360
+                    )
+                    != _clean_text(requested_synthesis_directive, limit=360)
+                ):
+                    raise RunKernelTransitionError(
+                        "Graph V1 structure reproof requires current component Analyst packets"
+                    )
+                scheduler = _safe_mapping(
+                    self.state.projections.get("multicomponent_graph_scheduler")
+                )
+                if scheduler:
+                    expected_packet_digests: dict[str, Any] = {}
+                    recovery_transitions = [
+                        _safe_mapping(item)
+                        for item in scheduler.get("transition_history") or ()
+                        if _safe_mapping(item).get("transition")
+                        == "recovery_scheduler_context_registered"
+                    ]
+                    if recovery_transitions:
+                        expected_packet_digests = _safe_mapping(
+                            _safe_mapping(recovery_transitions[-1]).get(
+                                "authority_ref"
+                            )
+                        ).get("component_input_packet_digests", {})
+                    else:
+                        initialization_actions = [
+                            issued
+                            for issued in self.state.issued_actions.values()
+                            if issued.action_type
+                            is ActionType.MULTICOMPONENT_SCHEDULER_INITIALIZE
+                        ]
+                        if len(initialization_actions) == 1:
+                            expected_packet_digests = _safe_mapping(
+                                initialization_actions[0].inputs
+                            ).get("component_input_packet_digests", {})
+                    current_packet_digests = {
+                        str(key): safe_packet_digest(_safe_mapping(value))
+                        for key, value in packets.items()
+                    }
+                    if (
+                        not isinstance(expected_packet_digests, Mapping)
+                        or current_packet_digests
+                        != dict(expected_packet_digests)
+                    ):
+                        raise RunKernelTransitionError(
+                            "Graph V1 structure reproof component packets do not match scheduler authority"
+                        )
+                return deepcopy(packets)
 
             operation = action.inputs.get("operation")
             if operation == "selective_closure":
@@ -19825,6 +19907,12 @@ class RunKernel:
                         raise RunKernelTransitionError(
                             "Graph V1 structure must exactly consume current RunKernel component admission"
                         )
+                    component_packets = current_component_packets_for_graph_reproof(
+                        component_nodes=expected_component_nodes,
+                        requested_synthesis_directive=str(
+                            graph.get("requested_synthesis_directive") or ""
+                        ),
+                    )
                     structure_graph = (
                         component_work_graph_v1_from_cross_component_artifact(
                             run_id=self.state.run_id,
@@ -19835,6 +19923,7 @@ class RunKernel:
                             ),
                             component_nodes=expected_component_nodes,
                             cross_component_artifact=current_cross_artifact,
+                            component_analyst_input_packets=component_packets,
                             additional_scrutineer_trigger_reasons=tuple(
                                 reason
                                 for reason in graph.get("scrutineer_trigger_reasons")
@@ -20207,15 +20296,34 @@ class RunKernel:
                         raise RunKernelTransitionError(
                             "Graph V1 resynthesis lacks completed Cross-Component Analyst"
                         )
-                    transition_graph = (
-                        component_work_graph_v1_resynthesis_from_cross_component_artifact(
+                    try:
+                        component_packets = (
+                            current_component_packets_for_graph_reproof(
+                                component_nodes=current_graph.get(
+                                    "component_nodes", []
+                                ),
+                                requested_synthesis_directive=str(
+                                    current_graph.get(
+                                        "requested_synthesis_directive"
+                                    )
+                                    or ""
+                                ),
+                            )
+                        )
+                        transition_graph = component_work_graph_v1_resynthesis_from_cross_component_artifact(
                             current_graph,
                             accepted_contract_ref=_safe_mapping(
                                 current_graph.get("accepted_contract_ref")
                             ),
                             cross_component_artifact=role_artifact,
+                            component_analyst_input_packets=component_packets,
                         )
-                    )
+                    except RunKernelTransitionError:
+                        raise
+                    except ValueError as exc:
+                        raise RunKernelTransitionError(
+                            "Graph V1 resynthesis requires exact current Cross input"
+                        ) from exc
                 elif operation == "selective_resynthesis_structure":
                     evaluation_key = _clean_text(role_evaluation_key, limit=180)
                     closure = validate_selective_recomputation_closure(

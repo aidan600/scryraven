@@ -156,8 +156,20 @@ def test_scheduler_lease_and_concurrency_invariants_are_visible() -> None:
     text = _collapsed(CANONICAL)
     for phrase in (
         "Every semantic call is RunKernel-scheduler-governed",
-        "Runs with an explicitly injected Specialist registry and execution policy use Scheduler V3",
-        "Closed-default runs remain V2-identical",
+        "fixed ordinary CLI/UI product composition injects the S1 quantitative Specialist registry and execution policy and uses Scheduler V3",
+        "Generic closed-default and no-need runs remain V2-compatible",
+        "model-visible quantitative proposal contract plus transient source catalogs",
+        "component contract binds the exact component target and `component_evidence`",
+        "synthesis contract binds the same-artifact `synthesis_key` rule",
+        "proposal is a sibling of ordinary component fields or `synthesis_proposals`",
+        "graph admission does not upgrade them",
+        "source material exists only in the execution catalog",
+        "not retained in canonical graph, scheduler, work, result, log, or trace projections",
+        "Cross input binding is reproofed unconditionally",
+        "checks the existing initialization or recovery packet-digest authority",
+        "Missing, incomplete, malformed, cross-run, stale, or inconsistent authority fails before reduction",
+        "No packet, contract, catalog, source text, claim text, or complete candidate is newly retained or exported",
+        "two-hop proof from each admitted component claim",
         "exact contiguous next batch",
         "Batch grant, cancellation, dispatch spend, and child-action publication are atomic",
         "predispatch cancellation returns an exact reservation",
@@ -198,7 +210,7 @@ def test_finalization_blocked_behavior_and_nonproofs_remain_narrow() -> None:
         "sanitized non-Author terminal `RunOutcome`",
         "Malformed or unrelated invariant/infrastructure failures remain errors",
         "does not prove arbitrary-query support",
-        "does not register a product capability",
+        "installed quantitative product contract is owned by",
     ):
         assert phrase in text
 

@@ -34,6 +34,9 @@ CONCERN_OWNERS = {
         ARCH / "MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md"
     ),
     "canonical:specialist-graph-substrate": ARCH / "SPECIALIST_GRAPH_SUBSTRATE.md",
+    "canonical:quantitative-specialist-product-activation": (
+        ARCH / "AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md"
+    ),
 }
 DEFAULT_SPINE = (GUIDANCE, CURRENT_STATE, ROADMAP)
 MARKERS = (
@@ -46,9 +49,10 @@ MARKERS = (
     "MC-P5A-SAMPLING-COMPAT",
     "MC-P5A-MAIN-THREAD-COST",
     "SPECIALIST-S0-GENERIC",
+    "SPECIALIST-S1-QUANTITATIVE",
 )
-S0_RUNTIME_SHA = (
-    "56b78b24015a75ff964b83ffcc77c4a18f24fb58"  # pragma: allowlist secret
+S1_RUNTIME_SHA = (
+    "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 )
 PRE_S0_RUNTIME_SHA = (
     "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
@@ -86,7 +90,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         assert claimants == [owner]
         assert "Status: current" in _read(owner)
         assert "Default-read: yes" in _read(owner)
-        assert f"Verified-against-runtime: {S0_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {S1_RUNTIME_SHA}" in _read(owner)
 
 
 def test_concern_authorities_are_unique_current_and_default_no() -> None:
@@ -96,7 +100,7 @@ def test_concern_authorities_are_unique_current_and_default_no() -> None:
         verified_runtime = (
             PRE_S0_RUNTIME_SHA
             if authority == "canonical:fap-author-boundary"
-            else S0_RUNTIME_SHA
+            else S1_RUNTIME_SHA
         )
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
@@ -168,15 +172,50 @@ def test_current_state_has_all_installed_capability_markers() -> None:
         assert current.count(f"`{marker}`") == 1
 
 
-def test_roadmap_records_installed_s0_before_active_s1() -> None:
+def test_roadmap_records_installed_s0_and_s1_before_live_validation() -> None:
     roadmap = _read(ROADMAP)
-    assert roadmap.index("## Installed Foundation: S0") < roadmap.index(
-        "## Active Next: S1"
+    s0 = roadmap.index("## Installed Foundation: S0")
+    s1 = roadmap.index("## Installed Product Activation: S1")
+    live = roadmap.index(
+        "## Active Next: Separately Licensed Quantitative Live Validation"
     )
+    assert s0 < s1 < live
     assert "no product Specialist activation" in roadmap
+    assert "Quantitative Specialist ordinary product activation is installed" in roadmap
+    assert "offline proofs do not authorize" in roadmap
     assert "claims that planned capabilities are installed" in roadmap
     for marker in MARKERS:
         assert marker not in roadmap
+
+
+def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries() -> None:
+    owner = CONCERN_OWNERS[
+        "canonical:quantitative-specialist-product-activation"
+    ]
+    text = _collapsed(owner)
+    current = _collapsed(CURRENT_STATE)
+    for phrase in (
+        "Installed runtime class: quantitative-specialist-product-activation-s1",
+        "specialist.source_bound_calculation",
+        "source_bound_numeric_literal_parser.v1",
+        "two-hop proof",
+        "component calculation priority before a later synthesis calculation",
+        "legacy RunKernel calculation reducer remains compatibility support only",
+        "quantitative_specialist_proposal_contract.v1",
+        "The same declarative facts build the model-visible contract and drive runtime proposal/request validation",
+        "structured candidate record as primary and passage metadata as an exact fallback",
+        "Missing facts remain `unknown`",
+        "authoritative_current_clear",
+        "contested_source_posture",
+        "incomplete_lineage",
+        "identical nonmaterial fields and `posture_digest`",
+        "Component D-prime receives the exact ordinary component input without it",
+        "full source catalogs, source material, and complete candidate records are absent from canonical RunKernel projections",
+        "next roadmap checkpoint is separately licensed quantitative live validation",
+    ):
+        assert phrase in text
+    assert "Ordinary quantitative Specialist graph activation" not in current
+    assert "Estimates, arbitrary formulas, conversions" in current
 
 
 def test_multicomponent_owner_guards_phase5a_transport_contract() -> None:

@@ -6,6 +6,9 @@ from core.cost_accounting import CostAccumulator
 from core.failure_card import normalize_force_corpus_state
 from core.pipeline_orchestrator import PipelineError, run_pipeline
 from core.provider_validation import missing_required_api_keys
+from core.quantitative_specialist_product_activation import (
+    compose_quantitative_specialist_product_deps,
+)
 from core.retrieval import ensure_passage_source_ids
 from core.run_config import RunConfig, RunDeps
 from core.run_dedup import (
@@ -430,6 +433,7 @@ def render_home_page(context: UIContext) -> None:
                 policy_state_path=policy_state_path,
                 policy_journal_path=policy_journal_path,
             )
+            run_deps = compose_quantitative_specialist_product_deps(run_deps)
 
             cost_accumulator = CostAccumulator()
             with st.status("Running pipeline...", expanded=True) as _st_status:

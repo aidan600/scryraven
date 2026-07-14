@@ -85,6 +85,9 @@ from core.pipeline_orchestrator import PipelineError, run_pipeline  # noqa: E402
 from core.prompts import DEFAULT_SYSTEM  # noqa: E402
 from core.protocols import NullStatusWriter  # noqa: E402
 from core.provider_validation import missing_required_api_keys  # noqa: E402
+from core.quantitative_specialist_product_activation import (  # noqa: E402
+    compose_quantitative_specialist_product_deps,
+)
 from core.retrieval import (  # noqa: E402
     ACADEMIC_DOMAINS,
     NEWS_PREFERRED_DOMAINS,
@@ -980,6 +983,7 @@ def main(argv: list[str] | None = None) -> int:
         policy_state_path=OUTPUT_DIR / "policy_state.json",
         policy_journal_path=OUTPUT_DIR / "policy_journal.jsonl",
     )
+    deps = compose_quantitative_specialist_product_deps(deps)
 
     status = NullStatusWriter()
     accumulator = CostAccumulator()

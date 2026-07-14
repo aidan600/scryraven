@@ -27,6 +27,7 @@ from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     derive_author_input_payload,
 )
+from core.multicomponent_component_admission import component_analyst_input_packet
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
@@ -41,7 +42,13 @@ from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
 from core.run_authority_sufficiency_validation import (
     build_deterministic_sufficiency_judgment,
 )
-from core.run_kernel import RunKernel, RunKernelTransitionError
+from core.run_kernel import (
+    ActionType,
+    ObservationType,
+    RunKernel,
+    RunKernelTransitionError,
+    RunState,
+)
 from core.strict_one_shot_model_transport import (
     wrap_text_callable_as_strict_one_shot_transport,
 )
@@ -189,6 +196,8 @@ def _seed_component_admission(
     nodes: list[dict],
     *,
     cross_artifact: dict | None = None,
+    requested_synthesis_directive: str = "Explain the combined result.",
+    component_packets: dict[str, dict] | None = None,
 ) -> None:
     accepted_refs = []
     admission_refs = []
@@ -246,6 +255,20 @@ def _seed_component_admission(
         "accepted_contract_version": "0.1-passive",
         "accepted_contract_digest": "accepted-contract-digest",
         "component_admission_refs": admission_refs,
+    }
+    packets = component_packets or {
+        str(component_ref["component_id"]): component_analyst_input_packet(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract=kernel.state.initial_answer_contract,
+            component_ref=component_ref,
+            evidence_input={},
+        )
+        for component_ref in accepted_refs
+    }
+    kernel.state.multicomponent_scheduler_context = {
+        "requested_synthesis_directive": requested_synthesis_directive,
+        "component_analyst_input_packets": deepcopy(packets),
     }
     if cross_artifact is not None:
         kernel.state.projections[
@@ -307,9 +330,15 @@ def _structured_graph() -> tuple[RunKernel, dict]:
         requested_synthesis_directive=directive,
         component_nodes=nodes,
         cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",
@@ -362,9 +391,15 @@ def _flat_graph(*, caveats: tuple[str, ...] = ()) -> tuple[RunKernel, dict]:
         requested_synthesis_directive=directive,
         component_nodes=nodes,
         cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",
@@ -390,7 +425,7 @@ def _single_synthesis_candidate(
     nodes: list[dict],
     *,
     component_inputs: list[str],
-) -> tuple[dict, dict, str]:
+) -> tuple[dict, dict, str, dict]:
     accepted_ref = {
         "owner": "RunKernel.InitialAnswerContract",
         "canonical_state": True,
@@ -423,7 +458,343 @@ def _single_synthesis_candidate(
         },
         cross_input,
     )
-    return accepted_ref, cross, directive
+    return accepted_ref, cross, directive, cross_input
+
+
+def _cross_input_reproof_fixture() -> tuple[
+    list[dict], dict, str, dict[str, dict], dict, dict
+]:
+    nodes = [_component_node(1), _component_node(2)]
+    accepted_ref = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+    }
+    directive = "Reprove the exact combined result."
+    component_packets: dict[str, dict] = {}
+    for index, node in enumerate(nodes, start=1):
+        component_id = str(node["component_id"])
+        component_packets[component_id] = component_analyst_input_packet(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract=accepted_ref,
+            component_ref={
+                "component_id": component_id,
+                "component_revision": node["component_revision"],
+                "component_digest": node["component_digest"],
+                "user_facing_label": node["component_label"],
+                "user_facing_question": node["component_question"],
+                "mandatory_caveats": list(node.get("required_caveats") or ()),
+                "prohibited_upgrades": [],
+            },
+            evidence_input={
+                "evidence_status": "available",
+                "evidence_ref_id": f"evidence:{index}",
+                "bounded_text": f"Evidence {index} reports {index * 10} USD.",
+                "currentness_signal": "current",
+                "source_class": "current_primary_or_official",
+                "source_tier": "official",
+                "fact_disposition": "supported",
+                "readability_posture": "readable",
+                "conflict_posture": "none",
+                "contradictory": False,
+                "candidate_custody_ref": {
+                    "candidate_id": f"evidence:{index}",
+                    "currentness_signal": "current",
+                    "source_class": "current_primary_or_official",
+                    "source_tier": "official",
+                    "fact_disposition": "supported",
+                    "readable_status": "readable",
+                    "conflict_posture": "none",
+                    "contradictory": False,
+                },
+            },
+        )
+    cross_input = cross_component_input_packet(
+        component_nodes=nodes,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_analyst_input_packets=component_packets,
+    )
+    cross = _role_artifact(
+        ROLE_CROSS_COMPONENT_ANALYST,
+        {
+            "synthesis_proposals": [
+                {
+                    "synthesis_key": "exact_total",
+                    "claim_text": "The exact inputs combine to 30 USD.",
+                    "relationship_type": "quantitative_conjunction",
+                    "component_inputs": [node["component_id"] for node in nodes],
+                    "synthesis_inputs": [],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            ]
+        },
+        cross_input,
+    )
+    return nodes, accepted_ref, directive, component_packets, cross_input, cross
+
+
+def _redigest_role_artifact(artifact: dict) -> dict:
+    updated = deepcopy(artifact)
+    updated.pop("artifact_digest", None)
+    updated["artifact_digest"] = safe_packet_digest(updated)
+    return updated
+
+
+def test_cross_input_reproof_accepts_both_exact_authority_routes() -> None:
+    nodes, accepted_ref, directive, packets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    supplied = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
+    )
+    reconstructed = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+        component_analyst_input_packets=packets,
+    )
+    assert supplied == reconstructed
+
+
+@pytest.mark.parametrize("authority", ["supplied", "reconstructed"])
+def test_cross_input_reproof_rejects_forged_artifact_digest(authority: str) -> None:
+    nodes, accepted_ref, directive, packets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    forged = deepcopy(cross)
+    forged["input_packet_digest"] = "0" * 64
+    forged = _redigest_role_artifact(forged)
+    kwargs = (
+        {"transient_cross_input_packet": cross_input}
+        if authority == "supplied"
+        else {"component_analyst_input_packets": packets}
+    )
+    with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=accepted_ref,
+            requested_synthesis_directive=directive,
+            component_nodes=nodes,
+            cross_component_artifact=forged,
+            **kwargs,
+        )
+
+
+def test_cross_input_reproof_rejects_missing_or_incomplete_authority() -> None:
+    nodes, accepted_ref, directive, packets, _cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    with pytest.raises(ComponentWorkGraphV1Error, match="authority is missing"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=accepted_ref,
+            requested_synthesis_directive=directive,
+            component_nodes=nodes,
+            cross_component_artifact=cross,
+        )
+    packets.pop(nodes[-1]["component_id"])
+    with pytest.raises(ComponentWorkGraphV1Error, match="one current packet"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=accepted_ref,
+            requested_synthesis_directive=directive,
+            component_nodes=nodes,
+            cross_component_artifact=cross,
+            component_analyst_input_packets=packets,
+        )
+
+
+@pytest.mark.parametrize(
+    "stale_input",
+    ["contract", "directive", "component", "proposal_contract"],
+)
+def test_supplied_cross_input_reproof_rejects_stale_structure(
+    stale_input: str,
+) -> None:
+    nodes, accepted_ref, directive, _packets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    supplied = deepcopy(cross_input)
+    current_nodes = nodes
+    current_ref = accepted_ref
+    current_directive = directive
+    if stale_input == "contract":
+        current_ref = {**accepted_ref, "accepted_contract_digest": "stale-contract"}
+    elif stale_input == "directive":
+        current_directive = "A stale synthesis directive."
+    elif stale_input == "component":
+        current_nodes = [nodes[0], _component_node(3)]
+    else:
+        supplied["quantitative_specialist_proposal_contract"][
+            "contract_digest"
+        ] = "stale-proposal-contract"
+    with pytest.raises(ComponentWorkGraphV1Error, match="structure"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=current_ref,
+            requested_synthesis_directive=current_directive,
+            component_nodes=current_nodes,
+            cross_component_artifact=cross,
+            transient_cross_input_packet=supplied,
+        )
+
+
+@pytest.mark.parametrize("catalog_mutation", ["alias", "posture", "digest", "material"])
+def test_supplied_cross_input_reproof_rejects_malformed_catalog(
+    catalog_mutation: str,
+) -> None:
+    nodes, accepted_ref, directive, _packets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    supplied = deepcopy(cross_input)
+    catalog = supplied["quantitative_source_catalog"]
+    if catalog_mutation == "alias":
+        catalog["component_01"]["source_local_key"] = "component_99"
+    elif catalog_mutation == "posture":
+        catalog["component_01"]["source_quality_posture"] = "unknown"
+    elif catalog_mutation == "digest":
+        catalog["posture_digest"] = "0" * 64
+    else:
+        catalog["component_01"]["source_material"] = {
+            "claim_text": "must not be retained"
+        }
+    with pytest.raises(ComponentWorkGraphV1Error, match="catalog is malformed"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=accepted_ref,
+            requested_synthesis_directive=directive,
+            component_nodes=nodes,
+            cross_component_artifact=cross,
+            transient_cross_input_packet=supplied,
+        )
+
+
+def test_runkernel_reproof_uses_only_current_scheduler_packets() -> None:
+    nodes, accepted_ref, directive, packets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+        component_packets=packets,
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="structure",
+        graph_candidate=candidate,
+    )
+    assert kernel.state.projections["multicomponent_component_work_graph_v1"] == graph
+    retained = json.dumps(graph, sort_keys=True)
+    assert "quantitative_specialist_proposal_contract" not in retained
+    assert "quantitative_source_catalog" not in retained
+    assert "Evidence 1 reports" not in retained
+
+
+@pytest.mark.parametrize("corruption", ["missing", "cross_run"])
+def test_runkernel_reproof_fails_without_exact_scheduler_packets(
+    corruption: str,
+) -> None:
+    nodes, accepted_ref, directive, packets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+        component_packets=packets,
+    )
+    if corruption == "missing":
+        kernel.state.multicomponent_scheduler_context.pop(
+            "component_analyst_input_packets"
+        )
+    else:
+        packet = kernel.state.multicomponent_scheduler_context[
+            "component_analyst_input_packets"
+        ][nodes[0]["component_id"]]
+        packet["run_binding"]["run_id"] = "run:stale"
+    prior_observation_count = len(kernel.state.observations)
+    with pytest.raises(RunKernelTransitionError):
+        reduce_component_work_graph_v1(
+            run_kernel=kernel,
+            operation="structure",
+            graph_candidate=candidate,
+        )
+    assert "multicomponent_component_work_graph_v1" not in kernel.state.projections
+    assert len(kernel.state.observations) == prior_observation_count
+
+
+def test_forged_cross_input_fails_before_graph_reduction_authority() -> None:
+    nodes, accepted_ref, directive, packets, _cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    forged = deepcopy(cross)
+    forged["input_packet_digest"] = "f" * 64
+    forged = _redigest_role_artifact(forged)
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    issued_action_count = len(kernel.state.issued_actions)
+    with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=accepted_ref,
+            requested_synthesis_directive=directive,
+            component_nodes=nodes,
+            cross_component_artifact=forged,
+            component_analyst_input_packets=packets,
+        )
+    assert len(kernel.state.issued_actions) == issued_action_count
+    assert kernel.state.observations == []
+    assert "multicomponent_component_work_graph_v1" not in kernel.state.projections
+
+
+def test_cross_input_reproof_adds_no_runkernel_authority_surface() -> None:
+    assert "component_analyst_input_packets" not in RunState.__dataclass_fields__
+    assert all("reproof" not in action.value for action in ActionType)
+    assert all("reproof" not in observation.value for observation in ObservationType)
 
 
 def _validate_synthesis(kernel: RunKernel, graph: dict, key: str) -> dict:
@@ -563,7 +934,7 @@ def test_component_node_v1_rejects_noncanonical_admission_projection() -> None:
 
 def test_graph_rejects_synthesis_proposal_over_blocked_component() -> None:
     nodes = [_component_node(1), _blocked_component_node(2)]
-    accepted_ref, cross, directive = _single_synthesis_candidate(
+    accepted_ref, cross, directive, cross_input = _single_synthesis_candidate(
         nodes,
         component_inputs=[node["component_id"] for node in nodes],
     )
@@ -576,12 +947,13 @@ def test_graph_rejects_synthesis_proposal_over_blocked_component() -> None:
             requested_synthesis_directive=directive,
             component_nodes=nodes,
             cross_component_artifact=cross,
+            transient_cross_input_packet=cross_input,
         )
 
 
 def test_graph_with_admitted_synthesis_but_blocked_component_is_partial() -> None:
     nodes = [_component_node(1), _component_node(2), _blocked_component_node(3)]
-    accepted_ref, cross, directive = _single_synthesis_candidate(
+    accepted_ref, cross, directive, cross_input = _single_synthesis_candidate(
         nodes,
         component_inputs=[node["component_id"] for node in nodes[:2]],
     )
@@ -592,9 +964,15 @@ def test_graph_with_admitted_synthesis_but_blocked_component_is_partial() -> Non
         requested_synthesis_directive=directive,
         component_nodes=nodes,
         cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",
@@ -876,6 +1254,7 @@ def test_graph_v1_rejects_synthesis_cycle_before_runkernel_admission() -> None:
             requested_synthesis_directive=directive,
             component_nodes=nodes,
             cross_component_artifact=cross,
+            transient_cross_input_packet=cross_input,
         )
 
 
@@ -1418,9 +1797,15 @@ def _independent_admitted_graph() -> tuple[RunKernel, dict]:
         requested_synthesis_directive=directive,
         component_nodes=nodes,
         cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",

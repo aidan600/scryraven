@@ -149,9 +149,15 @@ def _selective_source_graph() -> tuple[RunKernel, dict]:
         requested_synthesis_directive=directive,
         component_nodes=nodes,
         cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",
@@ -1353,9 +1359,15 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         requested_synthesis_directive=directive,
         component_nodes=nodes,
         cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",

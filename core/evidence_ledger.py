@@ -1782,6 +1782,46 @@ def _strong_source_candidate(candidate: EvidenceCandidate) -> bool:
     ) and _clean_token(candidate.currentness_signal) not in _BAD_CURRENTNESS
 
 
+def source_taxonomy_quality_facts(
+    *, source_class: Any = None, source_tier: Any = None
+) -> dict[str, Any]:
+    """Project the canonical source taxonomy without changing ledger policy.
+
+    This deliberately classifies source class and source tier independently.
+    Consumers may require a positive strong fact, but must not treat an unknown
+    value as strong or silently substitute one dimension for the other.
+    """
+
+    normalized_class = _clean_token(source_class) or "unknown"
+    normalized_tier = _clean_token(source_tier) or "unknown"
+
+    def strength(
+        value: str, *, strong: frozenset[str], weak: frozenset[str]
+    ) -> str:
+        if value in strong:
+            return "strong"
+        if value in weak:
+            return "weak"
+        return "unknown"
+
+    class_strength = strength(
+        normalized_class,
+        strong=_STRONG_SOURCE_CLASSES | {"sourced_numeric_values"},
+        weak=_WEAK_SOURCE_CLASSES,
+    )
+    tier_strength = strength(
+        normalized_tier,
+        strong=_STRONG_SOURCE_TIERS,
+        weak=_WEAK_SOURCE_TIERS,
+    )
+    return {
+        "source_class": normalized_class,
+        "source_tier": normalized_tier,
+        "source_class_strength": class_strength,
+        "source_tier_strength": tier_strength,
+    }
+
+
 def _bad_readability(candidate: EvidenceCandidate) -> bool:
     return (
         _clean_token(candidate.readable_status) in _BAD_READABILITY
@@ -2354,4 +2394,5 @@ __all__ = [
     "build_evidence_ledger_observation_from_run_contract",
     "build_evidence_ledger_observation_from_runtime",
     "source_class_facts_from_evidence_ledger_projection",
+    "source_taxonomy_quality_facts",
 ]

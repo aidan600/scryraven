@@ -1037,6 +1037,34 @@ def reconstruct_specialist_bounded_input(
                 bound.get("input_artifact_refs") or []
             ),
         }
+        if bound.get("capability_request") is not None:
+            from core.quantitative_specialist_product_activation import (
+                build_component_quantitative_source_catalog,
+            )
+
+            packet["capability_request"] = deepcopy(
+                bound.get("capability_request")
+            )
+            packet["quantitative_source_catalog"] = (
+                build_component_quantitative_source_catalog(
+                    component_ref=_mapping(analyst_input.get("component_ref")),
+                    evidence_input=_mapping(
+                        analyst_input.get("component_evidence")
+                    ),
+                    include_material=True,
+                )
+            )
+            nominated_claim = str(
+                _mapping(analyst.get("semantic_output")).get("claim_text")
+                or ""
+            )
+            packet["nominated_claim"] = {
+                "claim_text": nominated_claim,
+                "claim_digest": specialist_digest(
+                    {"claim_text": nominated_claim}
+                ),
+                "claim_source": "component_analyst_proposal",
+            }
         lineage_refs = [
             proposal_authority_ref,
             deepcopy(target),
@@ -1092,6 +1120,35 @@ def reconstruct_specialist_bounded_input(
                 bound.get("input_artifact_refs") or []
             ),
         }
+        if bound.get("capability_request") is not None:
+            from core.quantitative_specialist_product_activation import (
+                build_synthesis_quantitative_source_catalog,
+            )
+
+            context = _mapping(state.multicomponent_scheduler_context)
+            packet["capability_request"] = deepcopy(
+                bound.get("capability_request")
+            )
+            packet["quantitative_source_catalog"] = (
+                build_synthesis_quantitative_source_catalog(
+                    component_nodes=tuple(
+                        _mapping(item)
+                        for item in graph.get("component_nodes") or ()
+                    ),
+                    component_analyst_input_packets=_mapping(
+                        context.get("component_analyst_input_packets")
+                    ),
+                    include_material=True,
+                )
+            )
+            nominated_claim = str(node.get("claim_text") or "")
+            packet["nominated_claim"] = {
+                "claim_text": nominated_claim,
+                "claim_digest": specialist_digest(
+                    {"claim_text": nominated_claim}
+                ),
+                "claim_source": "cross_component_analyst_proposal",
+            }
         graph_ref = _graph_ref(graph)
         admitted_input_refs_digest = specialist_digest(admitted_input_refs)
         lineage_refs = [
@@ -1392,6 +1449,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             requested_synthesis_directive=str(
                 context.get("requested_synthesis_directive") or ""
             ),
+            component_analyst_input_packets=packets,
         )
         work = _work(
             state=state,

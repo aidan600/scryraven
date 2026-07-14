@@ -443,19 +443,24 @@ def test_static_guards_keep_specialist_out_of_closed_surfaces() -> None:
 
 
 def test_docs_record_specialist_source_bound_calculation_posture() -> None:
-    docs_text = "\n".join(path.read_text(encoding="utf-8") for path in DOCS)
+    docs_text = " ".join(
+        "\n".join(path.read_text(encoding="utf-8") for path in DOCS).split()
+    )
     required = (
-        "AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01",
-        "source-bound deterministic calculation only",
-        "Specialist is not product authority",
-        "RunKernel owns Specialist calculation reduction",
-        "Inputs must be source-bound",
-        "lineage-preserving",
-        "blocked or contested",
-        "Scrutineer can review Specialist calculation posture",
-        "does not calculate or authorize",
-        "Existing Economist surfaces remain legacy/passive",
-        "AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01",
+        "Quantitative Specialist Product Activation",
+        "Installed runtime class: quantitative-specialist-product-activation-s1",
+        "quantitative_specialist_proposal_contract.v1",
+        "same declarative facts build the model-visible contract",
+        "structured candidate record as primary",
+        "Missing facts remain `unknown`",
+        "two-hop proof",
+        "legacy RunKernel calculation reducer remains compatibility support only",
+        "The Specialist cannot validate or admit its own result",
+        "Cross input reproof is unconditional",
+        "current scheduler-owned component Analyst packets",
+        "There is no structural-only fallback",
+        "no component packet, transient Cross packet, proposal contract, catalog, or source material is newly retained or exported",
+        "next roadmap checkpoint is separately licensed quantitative live validation",
     )
     for phrase in required:
         assert phrase in docs_text

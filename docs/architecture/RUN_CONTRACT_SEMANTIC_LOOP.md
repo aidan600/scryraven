@@ -4,8 +4,8 @@ Status: current
 Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
-Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, or product Specialist activation
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -72,13 +72,21 @@ The current loop is one authority flow, not a phase chronology:
     synthesis state.
 18. Full Scrutineer adversarially challenges the case when its installed
     triggers require review.
-19. A typed Specialist need from component Analyst, Cross-Component Analyst,
-    or full Scrutineer may, only under an injected registry and policy, become
-    one RunKernel-governed deterministic work item. Its bounded result or exact
-    typed nonexecution disposition becomes one unified handoff for component or
-    synthesis D-prime; a required predispatch reconstruction failure publishes
-    that failed handoff pending and unconsumed before the ordinary path safely
-    blocks without running D-prime.
+19. In the fixed CLI/UI product composition, component and ordinary Cross-
+    Component Analyst receive one repository-owned model-visible quantitative
+    proposal contract whose declarative fields, fixed values, operator policies,
+    and bounds are also consumed by runtime validation. A conforming typed
+    source-bound quantitative need may become one RunKernel-
+    governed deterministic work item. Its exact source-literal result or typed
+    nonexecution disposition becomes one unified handoff for component or
+    synthesis D-prime. Synthesis inputs carry two-hop claim-to-evidence lineage.
+    A required predispatch reconstruction failure publishes that failed handoff
+    pending and unconsumed before the ordinary path safely blocks without
+    running D-prime.
+    Cross input reproof is unconditional: the ordinary caller may supply its
+    exact transient packet, while RunKernel independently reconstructs from
+    current scheduler-owned component Analyst packets. Missing reconstruction
+    authority fails before graph reduction and retains no new packet or catalog.
 20. At most one bounded missing-component recovery may amend the
     AnswerContract, re-enter ordinary research, admit the recovered component,
     and resume the governed graph.
@@ -138,19 +146,29 @@ five-component graph cap, and leads to affected-only recomputation.
 
 ## Specialist And Supporting Calculation Capabilities
 
-The generic Specialist substrate is installed but closed by default. It adds
-typed proposal, registry, policy, work/disposition/result, separate-budget,
-unified-handoff, and D-prime consumption contracts without registering a
-product capability. Specialist results and nonexecution dispositions are
-proposal-stage inputs and have no direct admission, Sufficiency,
-FinalAnswerPacket, Author, or citation authority.
+The generic Specialist substrate remains closed by default and owns typed
+proposal, registry, policy, work/disposition/result, separate-budget, unified-
+handoff, and D-prime consumption contracts. The ordinary CLI/UI path composes
+the fixed product registry/policy for `specialist.source_bound_calculation`.
 
-The deterministic source-bound calculator is an installed bounded supporting
-capability. It operates only on already source-bound numeric inputs and
-preserves formula, units, assumptions, caveats, blockers, and source lineage.
-It does not decide ComponentCoverage, Sufficiency, FinalAnswerPacket, Author,
-citations, contract mutation, or product correctness. Its existence does not
-activate the calculator through the generic Specialist substrate.
+That adapter operates only on exact literals selected through repository-owned
+transient component or synthesis catalogs. It uses deterministic Decimal
+parsing and operator-specific roles, derives units and precision, and records
+claim alignment. Synthesis operands prove the literal through each admitted
+component claim to underlying current evidence. Component work has priority
+over a later synthesis need for the single serial unit. Results and
+nonexecution dispositions remain proposal-stage inputs and have no direct
+ComponentCoverage, Sufficiency, FinalAnswerPacket, Author, citation, source-
+obligation, search, acquisition, contract-mutation, or product-correctness
+authority. Estimates, arbitrary formulas, conversions, and number invention
+remain unsupported.
+
+Source posture comes from the structured candidate first and exact passage
+fallbacks second. Missing class, tier, currentness, or conflict remains unknown;
+neither fact acceptance nor component admission supplies a favorable default.
+Synthesis inherits the underlying component evidence posture. The proposal
+contract, full catalogs, and source material do not enter canonical RunKernel,
+scheduler, graph, result, log, or trace projections.
 
 ## Live And Operator Boundaries
 
@@ -183,5 +201,7 @@ named blocker removed for an existing consumer.
 This contract does not prove arbitrary-query support, live acquisition quality,
 messy-source semantic correctness, citation rendering, source-obligation
 satisfaction, broad answer quality, or product correctness. It does not license
-new providers, prompts, retrieval behavior, source ranking, Author behavior, or
-product Specialist activation.
+new providers, prompts, retrieval behavior, source ranking, Author behavior,
+additional Specialist capabilities, or calculator scope expansion. Installed
+offline activation does not prove live calculator correctness or broad
+quantitative reasoning quality.

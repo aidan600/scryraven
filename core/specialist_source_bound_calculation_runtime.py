@@ -215,29 +215,23 @@ class SpecialistSourceBoundCalculationResult:
         }
 
 
-def build_specialist_source_bound_calculation_record(
+def evaluate_source_bound_calculation(
     *,
-    run_id: str,
-    request_id: str,
     calculation_kind: str,
     input_records: Sequence[Mapping[str, Any]],
     formula_label: str | None = None,
     output_unit: str | None = None,
-    mode: str = "source_bound_calculation",
     assumptions: Sequence[Any] = (),
     caveats: Sequence[Any] = (),
-    reviewed_artifact_refs: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a bounded Specialist calculation record from structured inputs."""
+    """Purely evaluate one deterministic source-bound calculation.
 
-    clean_run_id = _required_token(
-        run_id,
-        "Specialist calculation requires run_id",
-    )
-    clean_request_id = _required_token(
-        request_id,
-        "Specialist calculation requires request_id",
-    )
+    This seam owns normalization, Decimal arithmetic, formula facts, blockers,
+    and the bounded result facts shared by the compatibility record builder and
+    the ordinary quantitative Specialist adapter.  It creates no RunKernel
+    action or canonical state and grants no downstream authority.
+    """
+
     operator = _operator(calculation_kind)
     normalized_inputs = _normalized_inputs(input_records)
     input_blockers = _input_blockers(normalized_inputs)
@@ -299,8 +293,66 @@ def build_specialist_source_bound_calculation_record(
     if status == "computed" and result_value is not None:
         result_base["numeric_value"] = _json_number(result_value)
         result_base["numeric_value_text"] = _decimal_text(result_value)
-    result_digest = _digest_json(result_base)
-    result = {**result_base, "result_digest": result_digest}
+    result = {**result_base, "result_digest": _digest_json(result_base)}
+    return {
+        "calculation_kind": operator,
+        "deterministic_operator": operator,
+        "formula_id": formula["formula_id"],
+        "formula_digest": formula["formula_digest"],
+        "formula_label": formula["formula_label"],
+        "formula": formula,
+        "input_records": normalized_inputs,
+        "input_count": len(normalized_inputs),
+        "result": result,
+        "calculation_status": status,
+        "blockers": blockers,
+        "blocker_count": len(blockers),
+        "component_coverage_reduced": False,
+        "sufficiency_decided": False,
+        "final_answer_packet_created": False,
+        "author_input_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+
+
+def build_specialist_source_bound_calculation_record(
+    *,
+    run_id: str,
+    request_id: str,
+    calculation_kind: str,
+    input_records: Sequence[Mapping[str, Any]],
+    formula_label: str | None = None,
+    output_unit: str | None = None,
+    mode: str = "source_bound_calculation",
+    assumptions: Sequence[Any] = (),
+    caveats: Sequence[Any] = (),
+    reviewed_artifact_refs: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a bounded Specialist calculation record from structured inputs."""
+
+    clean_run_id = _required_token(
+        run_id,
+        "Specialist calculation requires run_id",
+    )
+    clean_request_id = _required_token(
+        request_id,
+        "Specialist calculation requires request_id",
+    )
+    evaluation = evaluate_source_bound_calculation(
+        calculation_kind=calculation_kind,
+        input_records=input_records,
+        formula_label=formula_label,
+        output_unit=output_unit,
+        assumptions=assumptions,
+        caveats=caveats,
+    )
+    operator = str(evaluation["calculation_kind"])
+    normalized_inputs = list(evaluation["input_records"])
+    formula = dict(evaluation["formula"])
+    blockers = list(evaluation["blockers"])
+    status = str(evaluation["calculation_status"])
+    result = dict(evaluation["result"])
     reviewed_refs = _reviewed_artifact_refs(
         reviewed_artifact_refs,
         input_records=normalized_inputs,
@@ -1184,6 +1236,16 @@ def _required_unit(item: Mapping[str, Any]) -> str:
 
 
 def _decimal_from_input(item: Mapping[str, Any]) -> Decimal:
+    exact_text = item.get("numeric_value_text")
+    if isinstance(exact_text, str) and exact_text:
+        try:
+            parsed = Decimal(exact_text)
+        except InvalidOperation as exc:
+            raise SpecialistSourceBoundCalculationRuntimeError(
+                "input exact numeric text is invalid"
+            ) from exc
+        if parsed.is_finite():
+            return parsed
     value, ok = _typed_decimal(item.get("numeric_value"))
     if not ok or value is None:
         raise SpecialistSourceBoundCalculationRuntimeError("input is not typed numeric")
@@ -1476,6 +1538,7 @@ __all__ = [
     "build_specialist_source_bound_calculation_record",
     "build_specialist_source_bound_calculation_state",
     "calculation_ref_from_record",
+    "evaluate_source_bound_calculation",
     "reduce_specialist_source_bound_calculation",
     "validate_specialist_source_bound_calculation_record",
 ]

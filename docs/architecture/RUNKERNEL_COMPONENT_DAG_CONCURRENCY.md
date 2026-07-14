@@ -5,7 +5,7 @@ Authority: canonical:component-dag-scheduling-concurrency
 Default-read: no
 Applies-to: ComponentWorkGraph, semantic-work scheduling, leases, batches, and runtime concurrency
 Does-not-authorize: new providers, adaptive width, Local parallelism, graph-bound parallelism, or mode-budget selection
-Verified-against-runtime: 56b78b24015a75ff964b83ffcc77c4a18f24fb58
+Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
 Update-trigger: merged change to graph, scheduler, lease, dispatch, or concurrency behavior
 
 ## Responsibility
@@ -76,11 +76,27 @@ mixes roles in a batch, and never introduces an all-Analyst or all-D-prime stage
 barrier. Physical completion order cannot choose canonical work order.
 
 Scheduler V3 is the same RunKernel scheduler with a separate deterministic
-Specialist compatibility pool. It is selected only for runs with an injected
-Specialist registry and execution policy; ordinary closed-default runs remain
-V2. Specialist work is always serial, maximum one in flight, nonrecursive, and
-excluded from semantic role caps, provider transport accounting, and the
-22-unit compatibility envelope.
+Specialist compatibility pool. The fixed ordinary CLI/UI product composition
+injects the S1 quantitative registry and policy; generic closed-default and
+no-need runs remain V2-compatible. Specialist work is always serial, maximum
+one in flight, nonrecursive, and excluded from semantic role caps, provider
+transport accounting, and the 22-unit compatibility envelope. Canonical ready-
+work ordering gives an eligible component calculation priority over a later
+synthesis calculation for the one-unit pool.
+
+The quantitative model-visible proposal contract and source catalogs remain
+transient role/adapter inputs. RunKernel binds the accepted proposal and exact
+current input digest, but scheduler ready work, leases, batches, actions, and
+canonical graphs do not retain the contract, full catalogs, or source material.
+
+Every full Cross graph construction or reproof has exact packet-reconstruction
+authority. The ordinary path may pass the exact transient Cross packet.
+RunKernel reads only its current in-memory scheduler context, requires one
+packet per current component, checks current IDs/revisions/digests and the
+existing initialization or recovery packet-digest authority, and independently
+reconstructs the complete Cross packet. Missing or inconsistent authority fails
+before graph reduction; the temporary `deepcopy` is not a new state field,
+projection, action, observation, cache, lease fact, or retained packet.
 
 ## Lease And Budget Authority
 
@@ -195,10 +211,10 @@ or semantic-call budgets.
 ## Nonproofs
 
 This contract does not prove live provider capacity, adaptive concurrency,
-Local parallelism, graph-bound parallelism, arbitrary-query scheduling,
-product Specialist capability quality, or product correctness. It does not
-authorize new providers, endpoint changes, mode-budget selection, or live
-calls.
+Local parallelism, graph-bound parallelism, arbitrary-query scheduling, live
+quantitative correctness, broad Specialist capability quality, or product
+correctness. It does not authorize new providers, endpoint changes, mode-budget
+selection, additional product capabilities, or live calls.
 
 Proposal semantics and historical V0 rationale remain available in
 [Cross-Component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md), but
