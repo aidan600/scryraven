@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
 
+from core.quantitative_finalization_authority import (
+    build_quantitative_finalization_authority_manifest,
+)
 from core.sufficiency_readiness_runtime import (
     READINESS_STATUSES,
     validate_sufficiency_readiness_state,
@@ -403,6 +406,16 @@ def build_hardened_final_answer_packet_state(
 
     component_entries = _component_packet_entries(readiness_state, fap_status)
     source_support_refs = _source_support_refs(component_entries)
+    quantitative_manifest = build_quantitative_finalization_authority_manifest(
+        source_fap_ref={
+            "owner": FINAL_ANSWER_PACKET_OWNER,
+            "run_id": clean_run_id,
+            "request_id": clean_request_id,
+            "readiness_digest": readiness_digest,
+            "fap_status": fap_status,
+        },
+        component_packet_entries=component_entries,
+    )
     state_base = {
         "schema_version": FINAL_ANSWER_PACKET_HARDENING_SCHEMA_VERSION,
         "record_kind": "hardened_final_answer_packet_state",
@@ -424,6 +437,7 @@ def build_hardened_final_answer_packet_state(
             readiness_state.get("current_answer_contract_ref")
         ),
         "component_packet_entries": component_entries,
+        "quantitative_finalization_authority_manifest": quantitative_manifest,
         "supported_component_refs": _safe_list(
             readiness_state.get("supported_component_refs")
         ),
@@ -526,6 +540,9 @@ def build_hardened_final_answer_packet_projection(
         ),
         "component_packet_entries": _safe_list(
             state.get("component_packet_entries")
+        ),
+        "quantitative_finalization_authority_manifest": _safe_mapping(
+            state.get("quantitative_finalization_authority_manifest")
         ),
         "supported_component_refs": _safe_list(
             state.get("supported_component_refs")

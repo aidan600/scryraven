@@ -1422,7 +1422,8 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
         self._active_role_packet: dict[str, Any] = {}
         self.raw_author_response = (
             "Northstar quantitative result\n\n"
-            "The supported derived combined amount is 1500 USD. The remaining "
+            "The supported derived combined Northstar amount is 1500 USD. "
+            "The remaining "
             "Northstar filing facts and route synthesis are unchanged."
         )
 
@@ -1539,7 +1540,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
         self._active_role_packet: dict[str, Any] = {}
         self.raw_author_response = (
             "Northstar quantitative synthesis\n\n"
-            "The supported difference between the 60000 USD threshold and the "
+            "The difference between the 60000 USD threshold and the "
             "1200 USD base amount is 58800 USD. The filing-route synthesis remains "
             "subject to the admitted paper and online rules."
         )

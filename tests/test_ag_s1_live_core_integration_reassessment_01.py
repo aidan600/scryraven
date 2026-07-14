@@ -7,8 +7,8 @@ High-custody surface: FinalAnswerPacket/Author authority (diagnostic only).
 Runtime path guarded: current deterministic owners consumed by run_pipeline.
 Expected cost: sub-second, pure Python, no provider/search/model/fetch work.
 Promotion posture: remain phase-local; do not add to a permanent bucket.
-Retirement condition: replace these strict-xfail sentinels with passing product
-regressions in the immediately following licensed REPAIR phase.
+Retirement condition: retain independent route/prompt diagnostics until their
+own licensed repairs; quantitative finalization containment is now passing.
 """
 
 from __future__ import annotations
@@ -26,9 +26,10 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     _normalize_semantic_output,
 )
-from core.quantitative_consistency import (
-    apply_quantitative_consistency_guard,
-    build_two_item_normalized_consistency_diagnostic,
+from core.quantitative_finalization_authority import (
+    QuantitativeFinalizationAuthorityError,
+    build_quantitative_finalization_authority_manifest,
+    validate_author_output_quantitative_authority,
 )
 from core.quantitative_specialist_product_activation import (
     QUANTITATIVE_CAPABILITY_ID,
@@ -222,21 +223,40 @@ def test_insufficient_fap_should_not_preserve_unauthorized_conversion_prompt() -
     assert prompt not in payload.prompt
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="current Author guard applies only to two-item calorie/gram comparisons",
-)
-def test_author_guard_should_reject_unsupported_generic_conversion() -> None:
-    query = "Convert 100 km and 60 km to miles and report the difference."
+def test_finalization_validator_rejects_unsupported_generic_conversion() -> None:
     answer = "They are 62.1 and 37.3 miles; the difference is 24.8 miles."
-    diagnostic = build_two_item_normalized_consistency_diagnostic(
-        query=query,
-        final_answer=answer,
+    manifest = build_quantitative_finalization_authority_manifest(
+        source_fap_ref={
+            "packet_id": "reassessment-d02",
+            "readiness_status": "author_ready",
+        },
+        semantic_author_materialization={
+            "available": True,
+            "bounded_material_complete": True,
+            "bounded_material_refs": [
+                {
+                    "component_id": "earth",
+                    "content_ref_id": "earth-diameter",
+                    "content_digest": "earth-diameter-digest",
+                    "evidence_ref_id": "earth-evidence",
+                    "packet_evidence_id": "earth-packet-evidence",
+                    "source_id": 1,
+                    "bounded_text": "Earth's stated diameter is 100 km.",
+                },
+                {
+                    "component_id": "mars",
+                    "content_ref_id": "mars-diameter",
+                    "content_digest": "mars-diameter-digest",
+                    "evidence_ref_id": "mars-evidence",
+                    "packet_evidence_id": "mars-packet-evidence",
+                    "source_id": 2,
+                    "bounded_text": "Mars's stated diameter is 60 km.",
+                },
+            ],
+        },
     )
-    guarded, telemetry = apply_quantitative_consistency_guard(
-        query=query,
-        final_answer=answer,
-        diagnostic=diagnostic,
-    )
-    assert telemetry["quantitative_consistency_guard_applied"] is True
-    assert guarded != answer
+    with pytest.raises(QuantitativeFinalizationAuthorityError) as exc_info:
+        validate_author_output_quantitative_authority(answer, manifest=manifest)
+    assert exc_info.value.diagnostic["status"] == "rejected"
+    assert exc_info.value.diagnostic["answer_rewritten"] is False
+    assert exc_info.value.diagnostic["author_retry_requested"] is False

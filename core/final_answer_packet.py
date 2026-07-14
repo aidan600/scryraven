@@ -14,6 +14,10 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.quantitative_finalization_authority import (
+    build_quantitative_author_instruction_block,
+    build_quantitative_finalization_authority_bundle,
+)
 from core.semantic_observation_foundation import SanitizedContentReference
 
 FINAL_ANSWER_PACKET_SCHEMA_VERSION = "final_answer_packet_ag89d_v1"
@@ -46,6 +50,9 @@ FINAL_ANSWER_SEMANTIC_AUTHOR_MATERIALIZATION_SCHEMA_VERSION = (
 )
 FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_MATERIALIZATION_TRACE_SCHEMA_VERSION = (
     "final_answer_author_payload_semantic_materialization_trace_ag_auth_mat_01_v1"
+)
+FINAL_ANSWER_AUTHOR_PAYLOAD_QUANTITATIVE_AUTHORITY_TRACE_SCHEMA_VERSION = (
+    "final_answer_author_payload_quantitative_authority_trace_ag_s1_quant_final_01_v1"
 )
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
@@ -423,6 +430,44 @@ def _sequence_count(value: Any) -> int:
     return len(value)
 
 
+def _quantitative_authority_manifest_trace_ref(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Project the full runtime manifest into a shallow, packet-safe trace ref."""
+
+    manifest = dict(value or {})
+    claims = manifest.get("authorized_numeric_claims")
+    if isinstance(claims, (str, bytes)) or not isinstance(claims, Sequence):
+        claims = ()
+    authority_kind_counts: dict[str, int] = {}
+    for item in claims:
+        if not isinstance(item, Mapping):
+            continue
+        authority_kind = _clean_token(item.get("authority_kind"), limit=80)
+        if authority_kind:
+            authority_kind_counts[authority_kind] = (
+                authority_kind_counts.get(authority_kind, 0) + 1
+            )
+    return {
+        "schema_version": (
+            FINAL_ANSWER_AUTHOR_PAYLOAD_QUANTITATIVE_AUTHORITY_TRACE_SCHEMA_VERSION
+        ),
+        "source_manifest_schema_version": _clean_token(
+            manifest.get("schema_version"), limit=120
+        ),
+        "manifest_digest": _clean_token(manifest.get("manifest_digest"), limit=128),
+        "authorized_numeric_claim_count": len(claims),
+        "authority_kind_counts": authority_kind_counts,
+        "claim_scoped": manifest.get("claim_scoped") is True,
+        "value_only_matching_prohibited": (
+            manifest.get("value_only_matching_prohibited") is True
+        ),
+        "full_manifest_included": False,
+        "claim_text_included": False,
+        "final_text_included": False,
+    }
+
+
 def _safe_author_semantic_content_coverage_ref_envelope_trace_ref(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -688,6 +733,9 @@ class FinalAnswerAuthorInputPayload:
     admitted_synthesis_entries: tuple[Mapping[str, Any], ...] = ()
     multicomponent_graph_readiness: str | None = None
     multicomponent_limitations: tuple[str, ...] = ()
+    quantitative_finalization_authority_manifest: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -696,6 +744,17 @@ class FinalAnswerAuthorInputPayload:
         object.__setattr__(self, "status", AuthorInputStatus(status))
 
     def to_trace_ref(self) -> dict[str, Any]:
+        quantitative_trace_ref = _quantitative_authority_manifest_trace_ref(
+            self.quantitative_finalization_authority_manifest
+        )
+        trace_authority_payload = dict(self.authority_payload)
+        if "quantitative_finalization_authority_manifest" in trace_authority_payload:
+            trace_authority_payload[
+                "quantitative_finalization_authority_manifest_trace_ref"
+            ] = quantitative_trace_ref
+            trace_authority_payload.pop(
+                "quantitative_finalization_authority_manifest", None
+            )
         payload = {
             "packet_id": self.packet_id,
             "status": self.status.value,
@@ -720,7 +779,7 @@ class FinalAnswerAuthorInputPayload:
             "claim_postures": list(self.claim_postures),
             "mandatory_caveat_count": len(self.mandatory_caveats),
             "prohibited_upgrade_count": len(self.prohibited_upgrades),
-            "authority_payload": _safe_json(self.authority_payload),
+            "authority_payload": _safe_json(trace_authority_payload),
             "authority_block_hash": _hash_text(self.authority_block) if self.authority_block else None,
             "authority_block_length": len(self.authority_block),
         }
@@ -845,6 +904,10 @@ class FinalAnswerAuthorInputPayload:
                     materialization_trace_ref
                 )
             )
+        if self.quantitative_finalization_authority_manifest:
+            payload[
+                "quantitative_finalization_authority_manifest_trace_ref"
+            ] = quantitative_trace_ref
         return payload
 
 
@@ -1264,6 +1327,30 @@ class FinalAnswerPacket:
             payload["component_readiness"] = component_readiness
         return payload
 
+    def _quantitative_finalization_authority_bundle(
+        self,
+        *,
+        semantic_author_materialization: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return build_quantitative_finalization_authority_bundle(
+            source_fap_ref={
+                "packet_id": self.packet_id,
+                "packet_schema_version": self.schema_version,
+                "readiness_status": self.readiness_status.value,
+            },
+            direct_component_entries=self.direct_component_entries,
+            admitted_synthesis_entries=self.admitted_synthesis_entries,
+            semantic_author_materialization=(
+                semantic_author_materialization
+                if semantic_author_materialization is not None
+                else self._semantic_author_materialization()
+            ),
+        )
+
+    @property
+    def quantitative_finalization_authority_manifest(self) -> dict[str, Any]:
+        return dict(self._quantitative_finalization_authority_bundle()["manifest"])
+
     def to_author_input_payload(
         self,
         *,
@@ -1339,6 +1426,18 @@ class FinalAnswerPacket:
             satisfied_source_obligations=satisfied_source_obligations,
         )
         semantic_author_materialization = self._semantic_author_materialization()
+        quantitative_bundle = self._quantitative_finalization_authority_bundle(
+            semantic_author_materialization=semantic_author_materialization
+        )
+        quantitative_manifest = dict(quantitative_bundle["manifest"])
+        authority_payload = {
+            **authority_payload,
+            "quantitative_finalization_authority_manifest": quantitative_manifest,
+        }
+        quantitative_instruction_block = build_quantitative_author_instruction_block(
+            quantitative_manifest,
+            transient_renderings=quantitative_bundle["transient_renderings"],
+        )
         authority_block = self.to_author_authority_block(
             citation_source_ids=citation_source_ids,
             citation_ineligible_refs=citation_ineligible_refs,
@@ -1347,6 +1446,9 @@ class FinalAnswerPacket:
             satisfied_source_obligations=satisfied_source_obligations,
             authority_payload=authority_payload,
             semantic_author_materialization=semantic_author_materialization,
+            quantitative_authority_instruction_block=(
+                quantitative_instruction_block
+            ),
         )
         payload = FinalAnswerAuthorInputPayload(
             packet_id=self.packet_id,
@@ -1388,6 +1490,9 @@ class FinalAnswerPacket:
             ),
             multicomponent_limitations=tuple(
                 self.multicomponent_limitations
+            ),
+            quantitative_finalization_authority_manifest=(
+                quantitative_manifest
             ),
         )
         return payload
@@ -2012,6 +2117,7 @@ class FinalAnswerPacket:
         satisfied_source_obligations: Sequence[Mapping[str, Any]],
         authority_payload: Mapping[str, Any],
         semantic_author_materialization: Mapping[str, Any] | None = None,
+        quantitative_authority_instruction_block: str = "",
     ) -> str:
         lines: list[str] = [
             "",
@@ -2140,6 +2246,8 @@ class FinalAnswerPacket:
             block_text = str(semantic_author_materialization.get("block_text") or "")
             if block_text:
                 lines.append(block_text.rstrip("\n"))
+        if quantitative_authority_instruction_block:
+            lines.append(quantitative_authority_instruction_block.rstrip("\n"))
         return "\n".join(lines) + "\n"
 
     def to_legacy_citation_handoff_inputs(self) -> dict[str, Any]:
@@ -2233,6 +2341,9 @@ class FinalAnswerPacket:
         manifest = self.semantic_evidence_authority_manifest
         if manifest:
             payload["semantic_evidence_authority_manifest"] = _safe_json(manifest)
+        payload["quantitative_finalization_authority_manifest"] = _safe_json(
+            self.quantitative_finalization_authority_manifest
+        )
         return payload
 
     def to_trace_fragment(self) -> dict[str, Any]:

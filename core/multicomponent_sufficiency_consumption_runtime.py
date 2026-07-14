@@ -133,6 +133,12 @@ def build_multicomponent_graph_consumption(
                     "semantic_observation_ref": _mapping(
                         node.get("semantic_observation_ref")
                     ),
+                    "dprime_validation_ref": _mapping(
+                        node.get("dprime_validation_ref")
+                    ),
+                    "specialist_quantitative_authority_ref": _mapping(
+                        node.get("specialist_quantitative_authority_ref")
+                    ),
                     "component_coverage_ref": _mapping(
                         node.get("component_coverage_ref")
                     ),
@@ -186,6 +192,9 @@ def build_multicomponent_graph_consumption(
                     "input_node_refs": list(node.get("input_node_refs") or ()),
                     "dprime_validation_ref": _mapping(
                         node.get("dprime_validation_ref")
+                    ),
+                    "specialist_quantitative_authority_ref": _mapping(
+                        node.get("specialist_quantitative_authority_ref")
                     ),
                     "scrutineer_ref": _mapping(node.get("scrutineer_ref")),
                     "runkernel_admission_ref": _mapping(

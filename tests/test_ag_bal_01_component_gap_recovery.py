@@ -31,8 +31,8 @@ from tests.helpers.offline_ordinary_pipeline import (
 )
 
 RAW_AUTHOR_RESPONSE = (
-    "AG_BAL_01_FINAL_REPORT: The Example Filing Program appeal deadline is "
-    "calculated as 30 calendar days after the notice date. [Source 2]."
+    "AG_BAL_01_FINAL_REPORT\n\n"
+    "The appeal-deadline component has recovered official support."
 )
 RECOVERED_FACT = (
     "The Example Filing Program appeal deadline is calculated as 30 calendar "
@@ -445,8 +445,7 @@ def test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author(
     author_payload_text = repr(captured["packet_handoff"].author_payload)
     assert RECOVERED_FACT in author_payload_text
     assert RECOVERED_SOURCE_URL in author_payload_text
-    assert "[Source 2]" in outcome.report
-    assert RECOVERED_FACT in outcome.report
+    assert outcome.report == RAW_AUTHOR_RESPONSE
     assert len(harness.author_prompts) == 1
     author_prompt = harness.author_prompts[0]
     assert RECOVERED_FACT in author_prompt
@@ -626,8 +625,7 @@ def test_ag_bal_harden_01_poisoned_adapter_authority_is_neutral_before_rebuild(
     assert RECOVERED_SOURCE_URL in repr(captured["packet_handoff"].author_payload)
     assert RECOVERED_FACT in harness.author_prompts[0]
     assert RECOVERED_SOURCE_URL in harness.author_prompts[0]
-    assert RECOVERED_FACT in outcome.report
-    assert "[Source 2]" in outcome.report
+    assert outcome.report == RAW_AUTHOR_RESPONSE
     combined_material = "\n".join(
         (
             repr(captured["packet_handoff"].author_payload),
