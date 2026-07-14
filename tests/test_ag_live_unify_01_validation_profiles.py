@@ -9,6 +9,7 @@ import pytest
 from core.validation_profiles import (
     AG_LIVE_DISAMBIG,
     AG_LIVE_MULTI_COMPONENT,
+    AG_LIVE_S1_PRODUCT_CONVERGENCE,
     AG_LIVE_SMOKE,
     AG_LIVE_SOURCE_CUSTODY,
     BROKER_PRIVATE_ADAPTER,
@@ -30,6 +31,7 @@ def test_profile_registry_contains_required_ag_live_profiles() -> None:
         AG_LIVE_SOURCE_CUSTODY,
         AG_LIVE_MULTI_COMPONENT,
         AG_LIVE_DISAMBIG,
+        AG_LIVE_S1_PRODUCT_CONVERGENCE,
     }
     for profile in VALIDATION_PROFILES.values():
         assert profile.purpose
@@ -62,6 +64,7 @@ def test_ag_live_smoke_maps_to_direct_human_runner_behavior() -> None:
 
 
 def test_future_profiles_are_not_marked_as_live_proof() -> None:
+    assert get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE).live_status == "not_run"
     assert get_validation_profile(AG_LIVE_SOURCE_CUSTODY).live_status == "not_run"
     assert get_validation_profile(AG_LIVE_MULTI_COMPONENT).live_status == "not_run"
     assert get_validation_profile(AG_LIVE_DISAMBIG).live_status == "not_run"

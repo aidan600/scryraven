@@ -521,7 +521,7 @@ def test_cli_and_ui_compose_fixed_product_deps_without_public_controls() -> None
     diagnostic = (
         ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py"
     ).read_text(encoding="utf-8")
-    for source in (cli, ui):
+    for source in (cli, ui, diagnostic):
         tree = ast.parse(source)
         calls = {
             node.func.id
@@ -529,7 +529,6 @@ def test_cli_and_ui_compose_fixed_product_deps_without_public_controls() -> None
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
         }
         assert "compose_quantitative_specialist_product_deps" in calls
-    assert "compose_quantitative_specialist_product_deps" not in diagnostic
     combined = (cli + ui).casefold()
     for forbidden in (
         "--specialist-capability",
