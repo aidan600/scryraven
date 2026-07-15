@@ -5,7 +5,7 @@ Authority: canonical:quantitative-finalization-containment
 Default-read: no
 Applies-to: claim-scoped quantitative authority in every active accepted-prose finalization route
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: 2af389a508fed779d1ff860e228d87a740a29d84
+Verified-against-runtime: d8fac7719d1f6a3d50a804b7f6a0762c5268f59a
 Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or an active finalization entrypoint
 
 ## Responsibility
@@ -122,13 +122,17 @@ rescale, aggregate, or introduce a new numeric conclusion.
 
 After candidate prose exists, the shared deterministic validator:
 
-1. removes URL syntax, machine citations, support-reference sections, and
-   transport identifiers from the inspected prose surface;
-2. extracts bounded digit and common-cardinal candidates;
-3. preserves value, unit, sign, scale, notation, percent convention, and
-   declared precision in each literal signature;
-4. fingerprints the complete assertion rather than the value alone; and
-5. accepts only an exact manifest binding or fails closed.
+1. removes URL syntax, machine citations, reference-only rows, true digests,
+   and transport identifiers while keeping factual assertions under
+   source/reference headings inspectable;
+2. extracts bounded digit, compact-currency, and common-cardinal candidates,
+   including bounded hyphenated forms;
+3. preserves value, unit, accounting sign, scale, notation, percent convention,
+   and declared precision in each literal signature;
+4. emits enum-only unsupported markers for bounded ordinal, Unicode-fraction,
+   fullwidth-digit, or unmatched numeric-looking nontransport surfaces;
+5. fingerprints the complete assertion rather than the value alone; and
+6. accepts only an exact manifest binding or fails closed.
 
 This parser identifies candidates; it does not infer factual authority,
 perform arithmetic, convert units, or act as a general language theorem
@@ -165,6 +169,12 @@ Focused offline tests establish:
   adversarial controls;
 - direct number, date, port, percentage, citation, URL, and comma-grouping
   controls;
+- source-section assertions, compact currency, bracketed propositions,
+  hyphenated cardinals, digest-shaped decimals, and leading numeric
+  propositions cannot disappear into a zero-candidate acceptance;
+- accounting currency parentheses preserve negative sign posture while valid
+  positive, explicit-negative, Unicode-minus, and explanatory-parenthesis
+  controls remain distinct and stable;
 - component-origin S1 and synthesis-origin two-hop S1 positive paths produced
   by the installed adapter, registry, policy, and generic S0 handoff owners;
 - canonical `result_unit`, explicit legacy-only `unit` compatibility, same-unit
