@@ -1,41 +1,8 @@
-import ast
 import json
 import logging
-import re
 from pathlib import Path
-from typing import Any, Dict, List
-from urllib.parse import urlparse
 
 import pytest
-
-
-def load_app_functions(*function_names: str) -> Dict[str, Any]:
-    app_path = Path(__file__).resolve().parents[1] / "app.py"
-    source = app_path.read_text(encoding="utf-8")
-    module = ast.parse(source, filename=str(app_path))
-
-    selected_nodes: List[ast.FunctionDef] = []
-    wanted = set(function_names)
-    for node in module.body:
-        if isinstance(node, ast.FunctionDef) and node.name in wanted:
-            node.decorator_list = []
-            selected_nodes.append(node)
-
-    mini_module = ast.Module(body=selected_nodes, type_ignores=[])
-    ast.fix_missing_locations(mini_module)
-
-    namespace: Dict[str, Any] = {
-        "json": json,
-        "re": re,
-        "urlparse": urlparse,
-        "Path": Path,
-        "logger": logging.getLogger("tests"),
-        "List": List,
-        "Dict": Dict,
-        "Any": Any,
-    }
-    exec(compile(mini_module, str(app_path), "exec"), namespace)
-    return {name: namespace[name] for name in function_names}
 
 
 def test_static_import_guard_allows_exact_core_modules_only(tmp_path: Path) -> None:
@@ -58,14 +25,6 @@ def test_static_import_guard_allows_exact_core_modules_only(tmp_path: Path) -> N
             bare_core_import,
             allowed_core_modules={"core.controller_handoff_serialization"},
         )
-
-
-def test_parse_domain_list_trims_and_normalizes() -> None:
-    funcs = load_app_functions("parse_domain_list")
-    parse_domain_list = funcs["parse_domain_list"]
-
-    assert parse_domain_list(" NIH.gov, Nature.com ,,  ") == ["nih.gov", "nature.com"]
-
 
 def test_clean_json_response_extracts_json_object() -> None:
     from core.text_utils import clean_json_response

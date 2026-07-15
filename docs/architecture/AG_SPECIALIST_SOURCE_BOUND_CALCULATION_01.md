@@ -21,11 +21,13 @@ to [Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Final accepted-prose
 numeric containment belongs to
 [Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md).
 
-The ordinary `python -m proplex` CLI and home-page UI compose one fixed product
-registry and execution policy into their normal `RunDeps`. There is no public
-toggle. Diagnostics and dry-run surfaces remain closed. Activation is limited
-to `ordinary-bounded-multicomponent-factual-synthesis-v1`; nonqualifying and
-single-component requests preserve their established ordinary behavior.
+The ordinary public CLI composes one fixed product registry and execution policy
+into its normal `RunDeps`. The former home-page UI consumer belongs to the
+legacy Streamlit shell and is not ordinary product consumption. There is no
+public toggle. Diagnostics and dry-run surfaces remain closed. Activation is
+limited to `ordinary-bounded-multicomponent-factual-synthesis-v1`;
+nonqualifying and single-component requests preserve their established ordinary
+behavior.
 
 ## Installed Capability
 
@@ -234,6 +236,7 @@ capability arbitration. It does not prove live correctness, arbitrary-query
 coverage, broad quantitative reasoning quality, answer quality, or production
 stability.
 
-The next roadmap checkpoint is separately licensed quantitative live
-validation. That checkpoint must not be inferred from these offline product-
-path proofs or from capability availability.
+Current phase sequence is owned exclusively by
+`docs/roadmap/CURRENT_ROADMAP.md`. Capability availability and these offline
+product-path proofs do not authorize live validation, do not select the next
+phase, and do not establish live correctness.

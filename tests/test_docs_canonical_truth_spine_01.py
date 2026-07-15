@@ -61,6 +61,9 @@ QUANT_FINALIZATION_RUNTIME_SHA = (
 QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
+CURRENT_STATE_RUNTIME_SHA = (
+    "28d86c803682dc90fa6126ae7157c27fc49673f7"  # pragma: allowlist secret
+)
 QUANT_CONTAINMENT_RUNTIME_SHA = (
     "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
 )
@@ -109,7 +112,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         (
             "canonical:current-installed-state",
             CURRENT_STATE,
-            QUANT_CONTAINMENT_RUNTIME_SHA,
+            CURRENT_STATE_RUNTIME_SHA,
         ),
         ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
@@ -147,16 +150,21 @@ def test_quantitative_finalization_inventory_does_not_overclaim_saved_thread() -
     for consumer in (
         "AuthorExecutor",
         "AuthorProseFinalization",
-        "AF5B response-finalization",
+        "follow-up response finalizer",
     ):
         assert consumer in current
         assert consumer in containment
     for text in (current, containment):
-        assert "AF5B availability does not establish saved-thread product consumption" in text
-        assert "ui.pages_followup" in text
-        assert "core.followup" in text
-        assert "not wired to AF5B or the shared quantitative validator" in text
-        assert "known pre-live blocker" in text
+        normalized = " ".join(text.split())
+        assert "internal supporting machinery" in normalized
+        assert "does not establish" in normalized
+        assert "saved-thread product consumption" in normalized
+        assert "ui.pages_followup" in normalized
+        assert "core.followup" in normalized
+        assert "retired from ordinary product use" in normalized
+        assert "not a current consumer" in normalized
+        assert "shared accepted-prose validator" in normalized
+    assert "future follow-up activation" in containment
 
 
 def test_quarantine_is_narrow_routed_support_not_temporal_authority() -> None:
@@ -265,17 +273,41 @@ def test_current_state_has_all_installed_capability_markers() -> None:
         assert current.count(f"`{marker}`") == 1
 
 
-def test_roadmap_records_installed_s0_and_s1_before_live_validation() -> None:
+def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     roadmap = _read(ROADMAP)
+    normalized = _collapsed(ROADMAP)
     s0 = roadmap.index("## Installed Foundation: S0")
     s1 = roadmap.index("## Installed Product Activation: S1")
-    live = roadmap.index(
-        "## Active Next: Separately Licensed Quantitative Live Validation"
+    streamlit = roadmap.index(
+        "## Completed Remediation: Legacy Streamlit Ordinary-Product Retirement"
     )
-    assert s0 < s1 < live
+    economist = roadmap.index(
+        "## Active Next: Legacy Economist Ordinary-Execution Retirement"
+    )
+    proposal = roadmap.index("### Specialist Proposal-Instance Admission Hardening")
+    structured_route = roadmap.index(
+        "### Structured-List Route Qualification Repair"
+    )
+    convergence = roadmap.index("### Bounded Remediation/Convergence Checkpoint")
+    live = roadmap.index("### Separately Licensed Quantitative Live Validation")
+
+    assert s0 < s1 < streamlit < economist < proposal < structured_route < convergence < live
+    assert "CLI/UI product composition" not in roadmap
+    assert "fixed ordinary CLI product composition" in normalized
+    assert "## Active Next: Separately Licensed Quantitative Live Validation" not in roadmap
+    assert roadmap.count("## Active Next:") == 1
     assert "no product Specialist activation" in roadmap
     assert "Quantitative Specialist ordinary product activation is installed" in roadmap
-    assert "offline proofs do not authorize" in roadmap
+    assert "fail-closed" in roadmap
+    assert "reference and migration material only" in normalized
+    assert "Saved-thread Streamlit follow-up is not a current product path" in normalized
+    assert "Offline proof does not authorize live work" in normalized
+    assert "this roadmap grants no live license" in normalized
+    assert "transport-neutral conversation persistence" in roadmap
+    assert "follow-up application service" in roadmap
+    assert "intentional delivery adapter" in roadmap
+    assert "must not be restored as a Streamlit callback" in normalized
+    assert "No replacement UI framework has been selected" in normalized
     assert "claims that planned capabilities are installed" in roadmap
     for marker in MARKERS:
         assert marker not in roadmap
@@ -304,9 +336,13 @@ def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries(
         "identical nonmaterial fields and `posture_digest`",
         "Component D-prime receives the exact ordinary component input without it",
         "full source catalogs, source material, and complete candidate records are absent from canonical RunKernel projections",
-        "next roadmap checkpoint is separately licensed quantitative live validation",
+        "`docs/roadmap/CURRENT_ROADMAP.md`",
+        "do not authorize live validation",
+        "do not select the next phase",
+        "do not establish live correctness",
     ):
         assert phrase in text
+    assert "next roadmap checkpoint" not in text.casefold()
     assert "Ordinary quantitative Specialist graph activation" not in current
     assert "Estimates, arbitrary formulas, conversions" in current
 

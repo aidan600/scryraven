@@ -2,17 +2,16 @@
 
 ScryRaven is a weird little grounded-search lab for chasing claims, checking sources, and making answers show their receipts.
 
-It is a source-grounded research assistant experiment backed by a Streamlit-free backend pipeline (`run_pipeline` in [`core/pipeline_orchestrator.py`](core/pipeline_orchestrator.py)). It:
+It is a source-grounded research assistant experiment with a backend pipeline (`run_pipeline` in [`core/pipeline_orchestrator.py`](core/pipeline_orchestrator.py)) and a public command-line interface. It:
 
 * Routes query intent across web, news, and academic-style research flows
 * Generates targeted search queries
 * Retrieves sources from configured search providers
 * Ranks and filters evidence
 * Synthesizes cited reports
-* Supports follow-up questions on saved research threads
 * Experiments with source obligations, evidence sufficiency, and answer posture
 
-The Streamlit shell lives under [`app.py`](app.py) and [`ui/`](ui/). Runtime artifacts and local logs are stored under [`output/`](output/), which is intentionally ignored by Git.
+The public CLI and backend pipeline are the current supported executable product interface. The legacy Streamlit shell has been retired. Its source under [`ui/`](ui/) is retained temporarily for reference and migration only, and [`app.py`](app.py) is now a fail-closed compatibility tombstone.
 
 ## Status
 
@@ -20,18 +19,19 @@ This repository is a cleaned public snapshot of a private research prototype. So
 
 This is not a polished product. It is a working prototype and architecture lab for grounded answers, citation discipline, source-quality handling, and claim-aware retrieval.
 
+No replacement UI framework has been selected. Future UI work should consume transport-neutral application services rather than the legacy Streamlit shell. The current CLI should not be read as a commitment to the final user experience.
+
 ## What It Does
 
-When you click **Start Research**, the app:
+For a query submitted through the public CLI, the backend can:
 
-1. Classifies your prompt
-2. Plans search and retrieval work
-3. Searches across one or more configured providers
-4. Fetches and chunks source text
-5. Scores evidence for relevance and source quality
-6. Runs analysis and audit passes depending on mode
-7. Renders a final markdown report with citations
-8. Saves the session to local history for reopening and follow-up
+1. Classify the prompt
+2. Plan search and retrieval work
+3. Search across one or more configured providers
+4. Fetch and chunk source text
+5. Score evidence for relevance and source quality
+6. Run analysis and audit passes depending on mode
+7. Render a final markdown report with citations
 
 The core idea is simple: not all citations count the same, and an answer should know when its evidence is not good enough.
 
@@ -87,25 +87,9 @@ Then edit `.env` and set real values for your keys.
 
 ## How to Run
 
-Live Web UI, CLI, scripted Streamlit, provider/model, reference-query, and comparison runs may call external services. Treat them as approval-gated when working in review or validation mode.
+Normal query runs may call external services. Treat them as approval-gated when working in review or validation mode.
 
-### Web UI
-
-```powershell
-streamlit run app.py
-```
-
-Open the local URL shown in your terminal, usually:
-
-```text
-http://localhost:8501
-```
-
-### Offline UX Demo / Fixture Mode
-
-The Streamlit app includes fixture-backed offline demo scenarios for product-shell UX review. No API keys are required for this mode. Start the app, use **OFFLINE UX DEMO** in the sidebar, choose a scenario, and click **Open offline demo**. Demo sessions are labeled as offline fixtures, are not saved to history, and do not call providers, model APIs, search, retrieval, or live validation. See [`docs/product/offline_ux_demo.md`](docs/product/offline_ux_demo.md).
-
-### Headless CLI
+### Public CLI
 
 ```powershell
 python -m scryraven "your query" --mode Balanced
@@ -119,17 +103,11 @@ python -m proplex "your query" --mode Balanced
 
 Use `python -m scryraven --help` for all CLI options. `python -m proplex --help` is preserved for existing scripts.
 
-### Scripted Streamlit Launch
+### Retired UI Entrypoint
 
-The app also supports scripted local launch through environment variables.
+Executing `python app.py` now prints a retirement notice and exits nonzero. It does not launch or redirect to another interface.
 
-```powershell
-$env:SCRYRAVEN_RUN_QUERY = "your query"
-$env:SCRYRAVEN_RUN_MODE = "Balanced"
-streamlit run app.py
-```
-
-Legacy `PROPLEX_RUN_QUERY` and `PROPLEX_RUN_MODE` aliases remain temporarily supported when the `SCRYRAVEN_*` names are absent.
+The retained [`ui/`](ui/) tree, saved-thread Streamlit follow-up code, and fixture-backed Streamlit demo are legacy prototype material. They are not current product usage paths and should not be repaired or extended as the basis of future UI architecture.
 
 ### CLI Model Environment
 
@@ -213,35 +191,31 @@ pre-commit run --all-files
 
 The secret scanner helps prevent committing API keys or other sensitive values. GitHub secret scanning and push protection should also be enabled for the public repository.
 
-## Using the App
+## Using the CLI
 
-* Enter a topic on the home screen and click **Start Research**
-* Choose strategy in the sidebar:
-
-  * **Fast**: quickest answer
-  * **Balanced**: deeper synthesis
-  * **Deep**: most thorough pipeline
-* Use **Focus** mode for Web, Academic, or News-style research
-* Open **Library** from the sidebar to search past threads
-* On a thread, use **Export Markdown** to download the report
-* Ask follow-up questions in chat on an open thread
-
-Streamlit **Settings → Theme** light/dark support is supplemented by styles in [`ui/theme.py`](ui/theme.py).
+* Choose **Fast**, **Balanced**, or **Deep** with `--mode`
+* Use `--academic` or `--news` to force those retrieval modes
+* Use `--output` to write the report to a chosen file
+* Use `--include-domains` or `--exclude-domains` to constrain source domains
+* Run `python -m scryraven --help` for the complete option list
 
 ## Project Structure
 
-* [`app.py`](app.py) — Streamlit entrypoint
-* [`ui/`](ui/) — Pages, sidebar, follow-up chat, and UI helpers
-* [`core/`](core/) — Pipeline orchestration, retrieval, prompts, source handling, and storage logic
-* [`scripts/`](scripts/) — Quality aggregation, migrations, checks, and developer helpers
-* [`docs/`](docs/) — Architecture notes, validation notes, roadmap notes, and evaluation aids
-* [`tests/`](tests/) — Regression, contract, safety, and architecture tests
-* [`output/`](output/) — Local session history, passages cache, execution logs, review packets, and other generated artifacts; ignored by Git
-* [`.env.example`](.env.example) — Example environment variables
+* [`app.py`](app.py) — fail-closed tombstone for the retired legacy Streamlit entrypoint
+* [`ui/`](ui/) — retained legacy Streamlit pages and helpers; reference/migration only
+* [`core/`](core/) — pipeline orchestration, retrieval, prompts, source handling, and storage logic
+* [`scryraven/`](scryraven/) — public CLI package
+* [`proplex/`](proplex/) — legacy-compatible CLI package and compatibility surfaces
+* [`scripts/`](scripts/) — quality aggregation, migrations, checks, and developer helpers
+* [`docs/`](docs/) — architecture notes, validation notes, roadmap notes, and evaluation aids
+* [`tests/`](tests/) — regression, contract, safety, and architecture tests
+* [`output/`](output/) — local session history, passages cache, execution logs, review packets, and other generated artifacts; ignored by Git
+* [`.env.example`](.env.example) — example environment variables
 
 ## Notes
 
 * `.env`, local output artifacts, cache directories, and Python bytecode are git-ignored.
-* The `proplex` package and `python -m proplex` remain as compatibility layers while public entrypoints move to ScryRaven naming.
+* The `proplex` package and `python -m proplex` remain as compatibility layers while public entrypoints use ScryRaven naming.
 * Historical architecture and validation notes may mention older internal names.
+* Streamlit remains in `requirements.txt` while retained legacy code and test/inspection consequences are evaluated for a later physical-cleanup phase.
 * This project is a prototype. Expect rough edges.
