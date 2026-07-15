@@ -5,7 +5,7 @@ Authority: canonical:quantitative-finalization-containment
 Default-read: no
 Applies-to: claim-scoped quantitative authority in every active accepted-prose finalization route
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: d8fac7719d1f6a3d50a804b7f6a0762c5268f59a
+Verified-against-runtime: 60e15006357238dd75ac9ccc5ec779cc23bd9c70
 Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or an active finalization entrypoint
 
 ## Responsibility
