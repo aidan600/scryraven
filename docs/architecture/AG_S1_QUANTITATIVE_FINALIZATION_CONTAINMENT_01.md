@@ -5,7 +5,7 @@ Authority: canonical:quantitative-finalization-containment
 Default-read: no
 Applies-to: claim-scoped quantitative authority in every active accepted-prose finalization route
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
+Verified-against-runtime: 2af389a508fed779d1ff860e228d87a740a29d84
 Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or an active finalization entrypoint
 
 ## Responsibility
@@ -73,6 +73,29 @@ ref, coverage ref, matching value, or Author claim ref is omitted. It becomes
 direct-source authority only through the complete source binding above, or
 Specialist-derived authority only through the complete installed result and
 consumption lineage above.
+
+## Hardened Component Route
+
+The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
+AuthorProseFinalization` route preserves two component-scoped quantitative
+authority classes. Hardened direct source-explicit numeric authority requires
+exact current component, semantic-observation, content, coverage,
+evidence-custody, proposition-fingerprint, and complete literal-signature
+binding.
+
+Completed component S1 authority preserves the installed capability and
+version, result and handoff identities and digests, canonical component target,
+exact claim-material binding, canonical `result_unit` and precision, and
+terminal consumption by the applicable component D-prime. Generic D-prime
+admission alone remains nonauthority for arithmetic, conversion, aggregation,
+comparison, or same-value proposition reuse. Deterministic AuthorProse accepts
+valid bound direct-source and component S1 numeric claims and fails atomically
+on unsupported quantitative prose.
+
+The current hardened FinalAnswerPacket owner packages component entries only.
+It does not project synthesis entries and does not install a hardened synthesis
+sidecar. Ordinary synthesis-origin S1 authority remains owned by the ordinary
+ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.
 
 The manifest is not a global numeric allowlist. A value/unit match is
 insufficient without the same complete assertion fingerprint and literal
@@ -165,9 +188,18 @@ repair. Acquisition completeness is unchanged and was not converted.
 
 ## Nonproofs
 
-This offline repair does not prove which upstream role originated a rejected
-number, broad live correctness, arbitrary-query coverage, unrestricted
-natural-language number understanding, citation correctness, answer quality,
-or production stability. It does not change query qualification, component
-selection, S1 invocation policy, acquisition, provider/model behavior,
-ranking, Specialist operators, conversion support, or Sufficiency policy.
+- No live validation was performed.
+- No route-qualification repair was performed.
+- No acquisition-completeness repair was performed.
+- No provider or model changed.
+- No S1 proposal or invocation policy expanded.
+- No new Specialist capability was added.
+- No hardened synthesis path was activated.
+- Broad live correctness, answer quality, and production stability remain
+  unproved.
+
+This offline repair also does not prove which upstream role originated a
+rejected number, arbitrary-query coverage, unrestricted natural-language
+number understanding, or citation correctness. It does not change component
+selection, ranking, Specialist operators, conversion support, or Sufficiency
+policy.

@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
+Verified-against-runtime: 2af389a508fed779d1ff860e228d87a740a29d84
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -96,6 +96,25 @@ Author reduction. Hardened AuthorProse and follow-up AF5B finalization consume
 the same validator. A failed check creates no accepted AuthorProse or final
 answer outcome and does not trigger a model retry.
 
+The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
+AuthorProseFinalization` route preserves two component-scoped quantitative
+authority classes. Hardened direct source-explicit numeric authority requires
+exact current component, semantic-observation, content, coverage,
+evidence-custody, proposition-fingerprint, and complete literal-signature
+binding. Completed component S1 authority preserves the installed capability
+and version, result and handoff identities and digests, canonical component
+target, exact claim-material binding, canonical `result_unit` and precision,
+and terminal consumption by the applicable component D-prime. Generic D-prime
+admission alone remains nonauthority for arithmetic, conversion, aggregation,
+comparison, or same-value proposition reuse. Deterministic AuthorProse accepts
+valid bound direct-source and component S1 numeric claims and fails atomically
+on unsupported quantitative prose.
+
+The current hardened FinalAnswerPacket owner packages component entries only.
+It does not project synthesis entries and does not install a hardened synthesis
+sidecar. Ordinary synthesis-origin S1 authority remains owned by the ordinary
+ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.
+
 Cross input reproof is unconditional. The ordinary caller may prove the exact
 transient packet directly; RunKernel independently reconstructs it from current
 scheduler-owned component Analyst packets and their existing scheduler
@@ -110,12 +129,22 @@ retained or exported.
 - Additional product Specialists, arbitrary formulas, estimates, or unit/currency conversion.
 - Adaptive provider concurrency or Local component parallelism.
 - Graph-bound, synthesis, recovery, selective, or Scrutineer parallelism.
+- Hardened synthesis entries or a hardened synthesis sidecar.
 - Permanent Fast/Balanced/Deep graph or semantic-call budgets.
 - Hosted or Local capacity characterization.
 - Final UI/productization work.
 
 ## Not Proved
 
+- No live validation was performed.
+- No route-qualification repair was performed.
+- No acquisition-completeness repair was performed.
+- No provider or model changed.
+- No S1 proposal or invocation policy expanded.
+- No new Specialist capability was added.
+- No hardened synthesis path was activated.
+- Broad live correctness, answer quality, and production stability remain
+  unproved.
 - Broad live end-to-end product correctness or competitive answer quality.
 - Live quantitative correctness or broad quantitative reasoning quality.
 - Arbitrary-query readiness.

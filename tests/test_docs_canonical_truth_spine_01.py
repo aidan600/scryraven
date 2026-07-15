@@ -61,6 +61,9 @@ QUANT_FINALIZATION_RUNTIME_SHA = (
 QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
+HARDENED_PARITY_RUNTIME_SHA = (
+    "2af389a508fed779d1ff860e228d87a740a29d84"  # pragma: allowlist secret
+)
 S1_RUNTIME_SHA = (
     "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 )
@@ -75,7 +78,7 @@ RUNTIME_SHA_BY_CONCERN = {
         QUANT_LINEAGE_RUNTIME_SHA
     ),
     "canonical:quantitative-finalization-containment": (
-        QUANT_LINEAGE_RUNTIME_SHA
+        HARDENED_PARITY_RUNTIME_SHA
     ),
 }
 
@@ -106,7 +109,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         (
             "canonical:current-installed-state",
             CURRENT_STATE,
-            QUANT_LINEAGE_RUNTIME_SHA,
+            HARDENED_PARITY_RUNTIME_SHA,
         ),
         ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
@@ -194,6 +197,41 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
     assert "The two authority kinds are" in containment
     assert "Generic admission is not an authority kind." in containment
     assert "`admitted_quantitative_claim`" not in containment
+
+
+def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> None:
+    containment = _collapsed(
+        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
+    )
+    current = _collapsed(CURRENT_STATE)
+
+    for text in (containment, current):
+        for phrase in (
+            "preserves two component-scoped quantitative authority classes",
+            "exact current component, semantic-observation, content, coverage, evidence-custody, proposition-fingerprint, and complete literal-signature binding",
+            "installed capability and version, result and handoff identities and digests, canonical component target, exact claim-material binding, canonical `result_unit` and precision",
+            "terminal consumption by the applicable component D-prime",
+            "Generic D-prime admission alone remains nonauthority",
+            "fails atomically on unsupported quantitative prose",
+            "packages component entries only",
+            "does not project synthesis entries",
+            "does not install a hardened synthesis sidecar",
+            "No live validation was performed.",
+            "No route-qualification repair was performed.",
+            "No acquisition-completeness repair was performed.",
+            "No provider or model changed.",
+            "No hardened synthesis path was activated.",
+        ):
+            assert phrase in text
+
+    for phrase in (
+        "No S1 proposal or invocation policy expanded.",
+        "No new Specialist capability was added.",
+        "Broad live correctness, answer quality, and production stability remain unproved.",
+        "Ordinary synthesis-origin S1 authority remains owned by the ordinary ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.",
+    ):
+        assert phrase in containment
+        assert phrase in current
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
