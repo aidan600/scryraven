@@ -32,6 +32,84 @@ response behavior. This lane is high-custody and comparatively expensive; it is
 not default PR tax. Run `full` for push-to-main, manual serious validation, or a
 phase that explicitly needs the complete offline suite.
 
+## Review-Loop Validation Ramp
+
+Move expensive proof to the point where it answers a decision instead of
+repeating it throughout the inner loop. This ramp is intended to reduce repeated
+lane execution and hosted-CI churn, especially across several narrow review
+corrections; it does not weaken final-candidate proof.
+
+### 1. Implementation or narrow review continuation
+
+While work is still changing, run the newly failing reproduction and the exact
+node IDs or phase-focus test file owned by the correction. Add immediate
+producer/consumer tests only when the change crosses that seam. Run targeted
+Ruff, compile, formatting, or equivalent checks only for changed executable
+files, and changed-file documentation checks for changed docs.
+
+Do not normally run durable lanes, full or partitioned pytest,
+`pre-commit --all-files`, hosted exact-head CI, unrelated documentation guards,
+or the entire original phase validation bundle in this loop. A review verdict B
+defaults to this narrow posture. Repeat broader validation only when the
+correction changes the proof boundary or another runtime owner, invalidates
+earlier evidence, or the reviewer explicitly declares a new final candidate.
+
+### 2. Coherent implementation checkpoint
+
+After the causal runtime/test cluster is complete but before final publication,
+run the full `phase_focus` proof, immediate owning producer/consumer tests, and
+targeted static checks. Review the complete branch diff for neighboring failures
+and resolve known blockers before paying final-candidate validation cost. Do not
+automatically run every durable lane at this checkpoint.
+
+### 3. Final PR candidate
+
+Once, after all known implementation and review blockers are closed, run:
+
+- `fast_pr` for an ordinary non-docs PR;
+- only the durable lane or lanes directly affected by changed authority;
+- applicable documentation guards;
+- `pre-commit --all-files` when appropriate for a runtime PR;
+- exact-head hosted CI; and
+- a final complete-diff review.
+
+Route FinalAnswerPacket, Author, accepted prose, or response-finalization changes
+to `author_lane`; semantic production, reduction, component coverage, or semantic
+sufficiency changes to `semantic_lane`; and SearchJudgment or QueryPlan
+semantic-gap consumption to `semantic_search_lane`. Docs-only workflow changes
+have no runtime lane by default. Selecting multiple durable lanes requires an
+explicit reason tied to changed authority; topic proximity is insufficient.
+
+### Docs-only posture
+
+A true docs-only PR normally runs changed-file pre-commit hooks, applicable
+documentation/link/structure checks, diff checks, and ordinary hosted CI after
+publication. It does not run runtime pytest buckets merely because the docs
+describe a high-custody runtime surface. A PR is no longer docs-only when it
+changes tests, manifests, scripts, workflows, executable configuration, or
+generated runtime artifacts.
+
+### Parser and syntax-matrix posture
+
+Keep exhaustive syntax or input-shape matrices at the lowest deterministic owner
+that can prove classification. Production consumers should use a small,
+representative sentinel set proving that they call the shared validator and
+handle acceptance or rejection correctly. Do not automatically multiply every
+syntax permutation across every consumer. This policy does not require existing
+tests to be deleted or restructured.
+
+### Duplicate execution and exceptional validation
+
+When selected buckets overlap, avoid knowingly executing the same test node
+repeatedly. Use a deduplicated union when existing tooling supports it; otherwise
+report the overlap and justify the separate processes. This policy does not add
+a union runner or change the current runner.
+
+Full-suite validation is not ordinary PR tax, and partitioned broad validation
+is exceptional. Either requires explicit phase or reviewer authorization and a
+stated decision the run will make. Do not add broad validation to a narrow review
+continuation merely for reassurance.
+
 ## Generated-output Collection Hygiene
 
 `full` is an offline tracked-test sweep, not a request to collect generated local

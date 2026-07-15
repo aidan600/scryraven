@@ -55,7 +55,27 @@ Old authority paths to delete/demote/bypass/subordinate:
 Tests/checks per step:
 - Step 1:
 - Step 2:
-- Final focused checks:
+
+Continuation validation:
+- New reproduction:
+- Immediate owner checks:
+- Targeted static or changed-doc checks:
+
+Coherent-checkpoint validation:
+- Full phase-focus proof:
+- Immediate producer/consumer checks:
+- Complete-diff review:
+
+Final-candidate validation:
+- `fast_pr` (ordinary non-docs PR):
+- Directly affected durable lane(s), with changed-authority justification:
+- Final docs/static checks:
+- Exact-head hosted CI:
+
+Focused review corrections default to continuation validation, not a rerun of
+the complete phase validation bundle. Use the
+[Review-Loop Validation Ramp](VALIDATION_BUCKETS.md#review-loop-validation-ramp)
+to decide when broader proof is warranted.
 
 In-scope repair policy:
 - Fix focused test failures, formatting/pre-commit issues, stale links caused by
