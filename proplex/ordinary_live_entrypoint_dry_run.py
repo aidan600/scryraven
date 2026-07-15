@@ -184,7 +184,6 @@ class OrdinaryLiveEntrypointDryRunDeps:
             fetch_linkup_precision_block=self.closed_dependency(
                 "fetch_linkup_precision_block"
             ),
-            run_economist_step=self.closed_dependency("run_economist_step"),
             run_scout=self.closed_dependency("run_scout"),
             should_skip_quant_scout=lambda *_args, **_kwargs: True,
             clean_json_response=lambda value: value,

@@ -171,7 +171,6 @@ class _AnchorHarness:
         self.researcher_prompts: list[str] = []
         self.search_calls: list[dict[str, Any]] = []
         self.analyst_calls = 0
-        self.economist_calls = 0
         self.author_prompts: list[str] = []
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
@@ -266,10 +265,6 @@ class _AnchorHarness:
             )
         return passages
 
-    def run_economist_step(self, *_args: Any, **_kwargs: Any) -> str:
-        self.economist_calls += 1
-        return ""
-
     def deps(self) -> RunDeps:
         return RunDeps(
             ask_model=self.ask_model,
@@ -280,7 +275,6 @@ class _AnchorHarness:
             is_plausible_domain=lambda _url: True,
             anchor_query_to_topic=lambda q, _topic: q,
             fetch_linkup_precision_block=lambda *_args, **_kwargs: "",
-            run_economist_step=self.run_economist_step,
             run_scout=lambda *_args, **_kwargs: {},
             should_skip_quant_scout=lambda *_args, **_kwargs: False,
             clean_json_response=lambda value: value,
@@ -363,7 +357,6 @@ def test_pipeline_attaches_anchor_packet_and_compact_researcher_context(
 
     assert harness.researcher_calls == 1
     assert harness.analyst_calls == 1
-    assert harness.economist_calls == 0
     assert len(harness.search_calls) == 2
     assert harness.search_calls[0]["search_depth"] == "basic"
     assert harness.search_calls[0]["complexity"] == "medium"

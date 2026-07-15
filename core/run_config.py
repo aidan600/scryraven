@@ -126,7 +126,6 @@ class RunDeps:
     is_plausible_domain: Callable[..., Any]
     anchor_query_to_topic: Callable[..., Any]
     fetch_linkup_precision_block: Callable[..., Any]
-    run_economist_step: Callable[..., Any]
     run_scout: Callable[..., Any]
     should_skip_quant_scout: Callable[..., Any]
     clean_json_response: Callable[..., Any]
@@ -146,6 +145,10 @@ class RunDeps:
     kb_triggers_path: Any            # Path
     policy_state_path: Any           # Path
     policy_journal_path: Any         # Path
+
+    # Optional isolated legacy compatibility field. Current ordinary runtime
+    # neither reads nor invokes this callable.
+    run_economist_step: Callable[..., Any] | None = None
 
     # Optional offline-only adapter for authorized component-gap recovery.
     component_gap_recovery_adapter: Callable[..., Any] | None = None
