@@ -5,7 +5,7 @@ Authority: canonical:fap-author-boundary
 Default-read: no
 Applies-to: ordinary FinalAnswerPacket packaging, Author rendering, and blocked FAP terminal behavior
 Does-not-authorize: new claims, evidence interpretation, synthesis creation, citation upgrade, or Author execution when FAP is blocked
-Verified-against-runtime: 276d2e7b7608df8c2e26ad7a49125e1a422798f1
+Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
 Update-trigger: merged change to FAP packaging, Author input, rendering, or blocked terminal behavior
 
 ## Responsibility
@@ -24,6 +24,7 @@ RunKernel-admitted direct and synthesized state
 -> Sufficiency readiness decision
 -> FinalAnswerPacket authority packaging
 -> Author rendering
+-> deterministic quantitative finalization validation
 -> RunOutcome
 ```
 
@@ -44,6 +45,7 @@ FAP may package:
 - source and evidence bindings already authorized upstream;
 - not-claimed and prohibited-upgrade boundaries;
 - rendering and mode references; and
+- a claim-scoped quantitative finalization authority manifest; and
 - readiness and support posture references.
 
 FAP must not:
@@ -59,6 +61,15 @@ FAP must not:
 FAP packaging does not itself prove answer correctness, citation correctness,
 or source-obligation satisfaction.
 
+For quantitative packaging, generic D-prime admission is not numeric rendering
+authority. The quantitative manifest projects a proposition only from exact
+current source material (including the narrow component/content/coverage-bound
+equivalence) or from a completed installed Specialist result with exact
+claim-material alignment and applicable D-prime consumption. Full component and
+synthesis entries remain available to the Author payload itself, but their
+packet trace representation is reduced to counts and digests so RunKernel and
+Author execution compare the same packet-safe ref.
+
 ## Author Contract
 
 Author is a constrained communication layer over FAP-authorized material.
@@ -71,6 +82,14 @@ Author may not improve truth posture.
 Author may choose clear wording, structure the response, follow mode and
 rendering rules, preserve required caveats, pass through authorized sources,
 and explain synthesis that is already admitted and packaged.
+
+For quantitative propositions, Author receives exact transient renderings and
+fixed instructions prohibiting calculation, conversion, estimation,
+interpolation, unsupported rounding, rescaling, aggregation, and new numeric
+conclusions. Its response is buffered until the shared deterministic validator
+binds each numeric assertion to the current manifest. Accepted comma grouping
+does not broaden subject, metric, unit, sign, scale, percent, precision, or
+claim authority.
 
 Author must not reinterpret evidence, resolve conflicts, decide source
 authority, drop caveats, upgrade support, invent missing context, introduce new
@@ -112,6 +131,12 @@ They do not define the only current product path and must not be used to demote
 ordinary FAP/Author consumption to future work. Older FAP, Author, and follow-up
 phase records remain compatibility or historical context unless a current
 owner explicitly reuses them.
+
+The current ordinary AuthorExecutor, hardened AuthorProseFinalization, and
+follow-up AF5B finalizer all consume
+[Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md).
+Rejected prose creates no successful finalization, is not displayed or edited,
+and does not trigger an Author retry.
 
 ## Source Gateway
 

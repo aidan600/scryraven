@@ -82,6 +82,13 @@ def _stub_live_runner_without_env(
     monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
     monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
     monkeypatch.setattr(runner, "_build_live_run_deps", lambda: SimpleNamespace())
+    import core.quantitative_specialist_product_activation as product_activation
+
+    monkeypatch.setattr(
+        product_activation,
+        "compose_quantitative_specialist_product_deps",
+        lambda deps: deps,
+    )
     monkeypatch.setattr(
         runner,
         "_live_runtime_helpers",

@@ -22,6 +22,9 @@ from core.multicomponent_role_runtime import (
     safe_packet_digest,
     validate_multicomponent_role_artifact,
 )
+from core.quantitative_finalization_authority import (
+    specialist_quantitative_authority_ref_from_handoff,
+)
 
 COMPONENT_WORK_GRAPH_V1_SCHEMA_VERSION = "component_work_graph_v1"
 COMPONENT_WORK_GRAPH_V1_STAGE = "multicomponent_component_work_graph_v1"
@@ -2143,6 +2146,14 @@ def graph_with_synthesis_validation(
         raise ComponentWorkGraphV1Error("synthesis D-prime validation is out of order")
     validation_status = artifact["semantic_output"]["validation_status"]
     node["dprime_validation_ref"] = role_artifact_ref(artifact)
+    node["specialist_quantitative_authority_ref"] = (
+        specialist_quantitative_authority_ref_from_handoff(
+            specialist_need_handoff,
+            applicable_dprime_ref=role_artifact_ref(artifact),
+        )
+        if validation_status in _SUPPORT_VALIDATIONS and specialist_need_handoff
+        else {}
+    )
     node["required_caveats"] = list(
         dict.fromkeys(
             [
@@ -3215,6 +3226,7 @@ def _next_revision(graph: dict[str, Any]) -> dict[str, Any]:
 
 def _clear_synthesis_validation_and_admission(node: dict[str, Any]) -> None:
     node["dprime_validation_ref"] = {}
+    node["specialist_quantitative_authority_ref"] = {}
     node.pop("dprime_validated_node_revision", None)
     node.pop("dprime_validated_node_digest", None)
     node["runkernel_admission_ref"] = {}

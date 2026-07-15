@@ -37,6 +37,9 @@ CONCERN_OWNERS = {
     "canonical:quantitative-specialist-product-activation": (
         ARCH / "AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md"
     ),
+    "canonical:quantitative-finalization-containment": (
+        ARCH / "AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md"
+    ),
 }
 DEFAULT_SPINE = (GUIDANCE, CURRENT_STATE, ROADMAP)
 MARKERS = (
@@ -50,13 +53,34 @@ MARKERS = (
     "MC-P5A-MAIN-THREAD-COST",
     "SPECIALIST-S0-GENERIC",
     "SPECIALIST-S1-QUANTITATIVE",
+    "QUANT-FINALIZATION-CONTAINMENT",
+)
+QUANT_FINALIZATION_RUNTIME_SHA = (
+    "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
+)
+QUANT_LINEAGE_RUNTIME_SHA = (
+    "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
+)
+HARDENED_PARITY_RUNTIME_SHA = (
+    "2af389a508fed779d1ff860e228d87a740a29d84"  # pragma: allowlist secret
 )
 S1_RUNTIME_SHA = (
     "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 )
-PRE_S0_RUNTIME_SHA = (
-    "276d2e7b7608df8c2e26ad7a49125e1a422798f1"  # pragma: allowlist secret
-)
+RUNTIME_SHA_BY_CONCERN = {
+    "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
+    "canonical:run-contract-semantic-loop": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
+    "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
+    "canonical:bounded-multicomponent-runtime": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:specialist-graph-substrate": S1_RUNTIME_SHA,
+    "canonical:quantitative-specialist-product-activation": (
+        QUANT_LINEAGE_RUNTIME_SHA
+    ),
+    "canonical:quantitative-finalization-containment": (
+        HARDENED_PARITY_RUNTIME_SHA
+    ),
+}
 
 
 def _read(path: Path) -> str:
@@ -81,27 +105,27 @@ def test_guidance_links_resolve() -> None:
 
 def test_temporal_authorities_are_unique_and_default_read() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
-    for authority, owner in (
-        ("canonical:current-installed-state", CURRENT_STATE),
-        ("canonical:current-roadmap", ROADMAP),
+    for authority, owner, verified_runtime in (
+        (
+            "canonical:current-installed-state",
+            CURRENT_STATE,
+            HARDENED_PARITY_RUNTIME_SHA,
+        ),
+        ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
         assert "Status: current" in _read(owner)
         assert "Default-read: yes" in _read(owner)
-        assert f"Verified-against-runtime: {S1_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {verified_runtime}" in _read(owner)
 
 
 def test_concern_authorities_are_unique_current_and_default_no() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
     for authority, owner in CONCERN_OWNERS.items():
         text = _read(owner)
-        verified_runtime = (
-            PRE_S0_RUNTIME_SHA
-            if authority == "canonical:fap-author-boundary"
-            else S1_RUNTIME_SHA
-        )
+        verified_runtime = RUNTIME_SHA_BY_CONCERN[authority]
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
@@ -150,6 +174,7 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
 
     dprime = _collapsed(CONCERN_OWNERS["canonical:dprime-role-contract"])
     assert "ordinary bounded multi-component path consumes both component D-prime and synthesis D-prime" in dprime
+    assert "Review and admission alone do not prove" in dprime
     assert "approved general ordinary component Analyst" not in dprime
 
     semantic = _collapsed(CONCERN_OWNERS["canonical:run-contract-semantic-loop"])
@@ -163,7 +188,50 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
 
     fap = _collapsed(CONCERN_OWNERS["canonical:fap-author-boundary"])
     assert "When FAP readiness is blocked, Author does not run." in fap
+    assert "generic D-prime admission is not numeric rendering authority" in fap
     assert "future answer rendering" not in fap.casefold()
+
+    containment = _collapsed(
+        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
+    )
+    assert "The two authority kinds are" in containment
+    assert "Generic admission is not an authority kind." in containment
+    assert "`admitted_quantitative_claim`" not in containment
+
+
+def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> None:
+    containment = _collapsed(
+        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
+    )
+    current = _collapsed(CURRENT_STATE)
+
+    for text in (containment, current):
+        for phrase in (
+            "preserves two component-scoped quantitative authority classes",
+            "exact current component, semantic-observation, content, coverage, evidence-custody, proposition-fingerprint, and complete literal-signature binding",
+            "installed capability and version, result and handoff identities and digests, canonical component target, exact claim-material binding, canonical `result_unit` and precision",
+            "terminal consumption by the applicable component D-prime",
+            "Generic D-prime admission alone remains nonauthority",
+            "fails atomically on unsupported quantitative prose",
+            "packages component entries only",
+            "does not project synthesis entries",
+            "does not install a hardened synthesis sidecar",
+            "No live validation was performed.",
+            "No route-qualification repair was performed.",
+            "No acquisition-completeness repair was performed.",
+            "No provider or model changed.",
+            "No hardened synthesis path was activated.",
+        ):
+            assert phrase in text
+
+    for phrase in (
+        "No S1 proposal or invocation policy expanded.",
+        "No new Specialist capability was added.",
+        "Broad live correctness, answer quality, and production stability remain unproved.",
+        "Ordinary synthesis-origin S1 authority remains owned by the ordinary ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.",
+    ):
+        assert phrase in containment
+        assert phrase in current
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:

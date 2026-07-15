@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -18,6 +18,8 @@ are owned by [D-prime Architecture](DPRIME_ARCHITECTURE.md),
 [Run-Contract Semantic Loop](RUN_CONTRACT_SEMANTIC_LOOP.md),
 [RunKernel Component DAG, Scheduling, And Concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md),
 and [FinalAnswerPacket / Author Boundary](FAP_AUTHOR_BOUNDARY.md).
+[Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md)
+owns the claim-scoped numeric projection and final accepted-prose gate.
 
 The installed query class is:
 
@@ -75,8 +77,9 @@ Component finals are not handed to Author for ungoverned glue.
 | Full Scrutineer | Adversarially challenges component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace first-pass analysis, manufacture a replacement case, admit state, or render. |
 | RunKernel | Derives ready work; owns exact batches, leases, caps, settlement, canonical reduction, admission, block/challenge, and recovery authorization. | Manufacture semantic output or accept caller-authored scheduler authority. |
 | Sufficiency | Decides readiness from admitted state. | Invent or repair synthesis. |
-| FinalAnswerPacket | Packages admitted, readiness-approved direct and synthesized material. | Generate, repair, validate, or reinterpret claims or synthesis. |
-| Author | Renders packet-authorized material and may explain admitted synthesis. | Create synthesis, glue unadmitted outputs, repair evidence, or upgrade support. |
+| FinalAnswerPacket | Packages admitted, readiness-approved direct and synthesized material and projects claim-scoped quantitative rendering authority. | Generate, repair, validate, or reinterpret claims or synthesis; calculate or convert. |
+| Author | Renders packet-authorized material and may explain admitted synthesis. | Create synthesis, glue unadmitted outputs, calculate, convert, repair evidence, or upgrade support. |
+| Quantitative finalization authority | Deterministically binds numeric candidate assertions to current FAP authority before prose is accepted. | Interpret evidence, infer equivalent propositions, calculate, convert, admit claims, rewrite prose, or retry Author. |
 
 Durable mnemonic:
 
@@ -286,6 +289,13 @@ FinalAnswerPacket, Author, `RunOutcome`, and CLI-visible output. Graph admission
 alone is not product completion. FAP cannot create synthesis, and Author cannot
 glue missing or unadmitted component output.
 
+FAP also projects a claim-scoped quantitative authority manifest. The ordinary
+Author response is buffered until the shared deterministic validator confirms
+that every numeric assertion preserves the authorized proposition, value,
+unit, sign, scale, percent convention, and precision. Hardened AuthorProse and
+follow-up AF5B use the same owner. Rejection creates no accepted finalization,
+does not edit the response, and does not call Author again.
+
 When required semantic work fails or readiness remains blocked, active sibling
 leases drain and the path reaches the installed sanitized non-Author terminal
 `RunOutcome`. Malformed or unrelated invariant/infrastructure failures remain
@@ -302,6 +312,8 @@ product correctness.
 
 The installed quantitative product contract is owned by
 [Quantitative Specialist Product Activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md),
+final accepted-prose containment is owned by
+[Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md),
 and the generic substrate remains owned by
 [Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md). Separately licensed
 quantitative live validation and capacity characterization are routed to

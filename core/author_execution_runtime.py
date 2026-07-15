@@ -15,9 +15,11 @@ from core.final_answer_packet import (
     _safe_json,
 )
 from core.quantitative_consistency import (
-    apply_quantitative_consistency_guard,
     build_two_item_normalized_consistency_diagnostic,
-    is_two_item_calorie_gram_comparison_candidate,
+)
+from core.quantitative_finalization_authority import (
+    build_quantitative_finalization_authority_manifest,
+    validate_author_output_quantitative_authority,
 )
 from core.run_kernel import (
     AUTHOR_EXECUTION_STAGE,
@@ -376,9 +378,9 @@ def execute_author_action(
         system_prompt=system_prompt,
     )
 
-    stream_buffered = bool(
-        stream_display is not None and is_two_item_calorie_gram_comparison_candidate(query)
-    )
+    # Candidate prose cannot be displayed before the deterministic finalization
+    # gate decides whether it is accepted.
+    stream_buffered = stream_display is not None
     started = time.monotonic()
     stream_out = ask_model(
         author_payload.prompt,
@@ -397,19 +399,32 @@ def execute_author_action(
         stream_buffered=stream_buffered,
     )
     report = str(report or "")
+    quantitative_manifest = dict(
+        author_payload.quantitative_finalization_authority_manifest
+        or build_quantitative_finalization_authority_manifest(
+            source_fap_ref={"packet_id": author_payload.packet_id}
+        )
+    )
+    quantitative_finalization_validation = (
+        validate_author_output_quantitative_authority(
+            report,
+            manifest=quantitative_manifest,
+        )
+    )
+    if stream_buffered and stream_display is not None:
+        stream_display((report,))
+        stream_displayed = True
     quantitative_consistency_telemetry = build_two_item_normalized_consistency_diagnostic(
         query=query,
         final_answer=report,
         quantitative_packet=quantitative_packet,
         calculation_results=calculation_results,
     )
-    report, quantitative_consistency_guard_telemetry = apply_quantitative_consistency_guard(
-        query=query,
-        final_answer=report,
-        diagnostic=quantitative_consistency_telemetry,
-        quantitative_packet=quantitative_packet,
-        calculation_results=calculation_results,
-    )
+    quantitative_consistency_guard_telemetry = {
+        "quantitative_consistency_guard_applied": False,
+        "guard_reason": "subordinated_to_claim_scoped_quantitative_finalization",
+        "answer_rewritten": False,
+    }
     author_seconds = max(0.0, time.monotonic() - started)
     observation_payload = {
         "owner": "RunKernel.AuthorExecutor",
@@ -469,6 +484,9 @@ def execute_author_action(
         ),
         "quantitative_consistency_guard_telemetry": dict(
             quantitative_consistency_guard_telemetry or {}
+        ),
+        "quantitative_finalization_validation": dict(
+            quantitative_finalization_validation
         ),
     }
     return AuthorExecutionResult(

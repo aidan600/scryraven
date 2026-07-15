@@ -569,7 +569,7 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
         "use_reasoning": False,
     }
     assert "FINAL ANSWER PACKET AUTHORITY" in calls[0][0][0]
-    assert displayed == ["RAW MODEL FINAL ", "ANSWER [101]"]
+    assert displayed == ["RAW MODEL FINAL ANSWER [101]"]
     assert result.report == "RAW MODEL FINAL ANSWER [101]"
     assert result.observation.observation_type is ObservationType.AUTHOR_OUTPUT_OBSERVED
     assert action.inputs["expected_author_payload_ref_digest"] == expected_digest

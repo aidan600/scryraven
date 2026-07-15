@@ -48,11 +48,11 @@ eligible applicant should do."""
 
 NORTHSTAR_REPORT = """Northstar Home-Energy Rebate
 
-The base rebate is $1,200, and applications are due October 31, 2027. The
-income bonus is available at or below $60,000. A qualifying applicant seeking
-that bonus should file the paper application because bonus claimants must use
-paper. Online filing is available only to applicants who are not claiming the
-bonus."""
+The Northstar base rebate is $1,200. The Northstar application deadline is
+October 31, 2027. The income bonus is available at or below $60,000. A
+qualifying applicant seeking that bonus should file the paper application
+because bonus claimants must use paper. Online filing is available only to
+applicants who are not claiming the bonus."""
 
 
 @pytest.fixture(autouse=True)

@@ -418,6 +418,7 @@ def validate_query_lock(
     *,
     approved_backup_query: bool,
     profile_name: str = DEFAULT_PROFILE_NAME,
+    requested_query_id: str | None = None,
 ) -> str:
     profile = get_validation_profile(profile_name)
     if not profile.supports_direct_runner():
@@ -427,6 +428,21 @@ def validate_query_lock(
     normalized = query.strip()
     if not normalized:
         raise AgLiveBoundPreflightError("refusing run: empty query")
+    fixed_query_id = profile.query_id_for(normalized)
+    if fixed_query_id is not None:
+        if requested_query_id is not None and requested_query_id != fixed_query_id:
+            raise AgLiveBoundPreflightError(
+                "refusing run: query ID does not match the immutable fixed query"
+            )
+        return fixed_query_id
+    if profile.fixed_queries:
+        raise AgLiveBoundPreflightError(
+            f"refusing run: query must match one immutable {profile.name} query exactly"
+        )
+    if requested_query_id is not None:
+        raise AgLiveBoundPreflightError(
+            "refusing run: --query-id is valid only for a fixed-query profile"
+        )
     if normalized == profile.primary_query:
         return "primary"
     if normalized == profile.backup_query and approved_backup_query:
@@ -473,12 +489,14 @@ def build_preflight_context(
     run_id: str | None,
     confirm_live_product_run: bool,
     approved_backup_query: bool,
+    requested_query_id: str | None = None,
 ) -> PreflightContext:
     profile = get_validation_profile(profile_name)
     query_lock = validate_query_lock(
         query,
         approved_backup_query=approved_backup_query,
         profile_name=profile.name,
+        requested_query_id=requested_query_id,
     )
     validate_mode(mode, profile_name=profile.name)
     validate_domain_allowlist(include_domains, profile_name=profile.name)

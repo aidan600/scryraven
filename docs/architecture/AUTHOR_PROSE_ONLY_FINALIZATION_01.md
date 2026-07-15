@@ -2,11 +2,12 @@
 
 Status: Completed implementation posture for the RunKernel-owned prose-only
 finalization surface after hardened FinalAnswerPacket.
+Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
 
 ## Purpose
 
-AuthorProseFinalization is the prose-only finalization surface. It consumes
-hardened FAP only, plus an AuthorProsePolicy, and emits adjustable,
+AuthorProseFinalization is the prose-only finalization surface and consumes hardened FAP only,
+plus an AuthorProsePolicy, and emits adjustable,
 human-readable prose without changing answer authority.
 
 The surface exists so answer presentation can improve over time: style,
@@ -31,6 +32,11 @@ It requires existing `state.final_answer_authority_projection`, binds the FAP
 packet digest or no-packet digest, binds the final-answer authority projection
 digest, binds the policy digest, and rejects stale FAP/projection/policy
 bindings during reduction.
+
+Before any AuthorProse state or projection is created, the shared deterministic
+quantitative finalization validator binds every numeric assertion to the
+hardened FAP manifest. A rejection creates no successful AuthorProse state,
+does not edit the prose, and does not invoke a model retry.
 
 AuthorProseFinalization does not write canonical output to legacy `author_observation` / `final_answer_outcome`.
 It also does not mutate `current_answer_contract`.
@@ -93,8 +99,8 @@ AuthorProseFinalization may present source support refs as refs/digests, support
 ref placeholders, evidence summaries, or source appendices. These are support
 refs, not rendered citations.
 
-It does not render citations, does not create citation eligibility, does not
-satisfy source obligations, and does not claim product correctness. The
+It does not render citations, does not create citation eligibility, and does not satisfy source obligations.
+It does not claim product correctness. The
 projection keeps `citation_eligible: false`, `citations_rendered: false`,
 `source_obligation_satisfied: false`, and `product_correctness_claimed: false`.
 
@@ -112,6 +118,6 @@ pipeline orchestrator, citation rendering, or source-obligation machinery.
 ## Closed Surfaces
 
 This phase does not call a model or provider, does not execute old Author, does
-not assemble old prompts, does not render citations, does not satisfy source
-obligations, does not claim product correctness, does not mutate
-current_answer_contract, and does not access raw/private/unbounded data.
+not assemble old prompts, does not render citations, does not satisfy source obligations,
+does not claim product correctness and does not mutate current_answer_contract.
+It does not access raw/private/unbounded data.

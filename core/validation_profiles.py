@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -13,12 +14,52 @@ AG_LIVE_SOURCE_CUSTODY = "AG-LIVE-SOURCE-CUSTODY"
 AG_LIVE_MULTI_COMPONENT = "AG-LIVE-MULTI-COMPONENT"
 AG_LIVE_DISAMBIG = "AG-LIVE-DISAMBIG"
 AG_LIVE_XAXIS_SEARCH_CANDIDATES = "AG-LIVE-XAXIS-SEARCH-CANDIDATES"
+AG_LIVE_S1_PRODUCT_CONVERGENCE = "AG-LIVE-S1-PRODUCT-CONVERGENCE"
 
 DIRECT_HUMAN_PRIVATE_SHELL = "direct_human_private_shell"
 BROKER_PRIVATE_ADAPTER = "broker_private_adapter"
 
 LIVE_STATUS_SUCCEEDED_ONCE_DIRECT_HUMAN = "succeeded_once_direct_human_private_shell"
 LIVE_STATUS_NOT_RUN = "not_run"
+
+AG_LIVE_S1_QUERY_A_NO_QUANT = (
+    "Using only NASA's official Earth and Mars facts pages, answer two separate "
+    "components:\n\n"
+    "1. Report Earth's stated length of day and number of moons.\n"
+    "2. Report Mars's stated length of day and number of moons.\n\n"
+    "Then compare those stated facts qualitatively. Do not calculate totals, "
+    "differences, ratios, averages, percentages, or converted values."
+)
+AG_LIVE_S1_QUERY_B_COMPONENT_CALC = (
+    "Using NASA's official Earth facts page, answer two separately supported "
+    "components:\n\n"
+    "1. Calculate the absolute difference between Earth's stated equatorial and "
+    "polar diameters, using the exact source-visible kilometer literals.\n"
+    "2. Report Earth's stated length of day.\n\n"
+    "Do not round or convert units."
+)
+AG_LIVE_S1_QUERY_C_SYNTHESIS_CALC = (
+    "Using NASA's official Earth facts page and Mars facts page as separate answer "
+    "components:\n\n"
+    "1. Report Earth's stated equatorial diameter in kilometers.\n"
+    "2. Report Mars's stated equatorial diameter in kilometers.\n\n"
+    "Then calculate the absolute difference between those admitted component values, "
+    "using the exact source-visible literals. Do not round or convert units."
+)
+AG_LIVE_S1_QUERY_D_CONVERSION_NEGATIVE = (
+    "Using NASA's official Earth facts page and Mars facts page as separate answer "
+    "components:\n\n"
+    "1. Report Earth's stated equatorial diameter in kilometers.\n"
+    "2. Report Mars's stated equatorial diameter in kilometers.\n\n"
+    "Then convert both diameters to miles and calculate their difference in miles. "
+    "Use only the source-visible kilometer literals."
+)
+AG_LIVE_S1_FIXED_QUERIES: tuple[tuple[str, str], ...] = (
+    ("A_NO_QUANT", AG_LIVE_S1_QUERY_A_NO_QUANT),
+    ("B_COMPONENT_CALC", AG_LIVE_S1_QUERY_B_COMPONENT_CALC),
+    ("C_SYNTHESIS_CALC", AG_LIVE_S1_QUERY_C_SYNTHESIS_CALC),
+    ("D_CONVERSION_NEGATIVE", AG_LIVE_S1_QUERY_D_CONVERSION_NEGATIVE),
+)
 
 AG_LIVE_BOUND_PRIMARY_QUERY = (
     "According to the official Python 3 documentation, what are the default "
@@ -101,6 +142,44 @@ class ValidationCapPolicySpec:
             ),
             max_retries=self.max_retries,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignOperationalBudgetSpec:
+    """Hard operational limits for the bounded S1 convergence campaign."""
+
+    full_scryraven_runs: int
+    generative_plus_embedding_calls: int
+    external_provider_search_calls: int
+    retrieval_fetch_read_operations: int
+    observed_model_plus_embedding_tokens: int
+    independent_manual_source_checks: int
+    root_cause_repair_clusters: int
+    repeated_failed_query_reruns: int
+    live_contact_elapsed_seconds: int
+    campaign_added_retries: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "full_scryraven_runs": self.full_scryraven_runs,
+            "generative_plus_embedding_calls": (
+                self.generative_plus_embedding_calls
+            ),
+            "external_provider_search_calls": self.external_provider_search_calls,
+            "retrieval_fetch_read_operations": (
+                self.retrieval_fetch_read_operations
+            ),
+            "observed_model_plus_embedding_tokens": (
+                self.observed_model_plus_embedding_tokens
+            ),
+            "independent_manual_source_checks": (
+                self.independent_manual_source_checks
+            ),
+            "root_cause_repair_clusters": self.root_cause_repair_clusters,
+            "repeated_failed_query_reruns": self.repeated_failed_query_reruns,
+            "live_contact_elapsed_seconds": self.live_contact_elapsed_seconds,
+            "campaign_added_retries": self.campaign_added_retries,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,12 +320,29 @@ class ValidationProfile:
     source_custody_policy: ValidationSourceCustodyPolicySpec | None = None
     source_custody_policy_surface: str = PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE
     subject_budget: ValidationSubjectBudgetSpec | None = None
+    fixed_queries: tuple[tuple[str, str], ...] = ()
 
     def supports_direct_runner(self) -> bool:
         return (
             DIRECT_HUMAN_PRIVATE_SHELL in self.allowed_invocation_modes
-            and self.primary_query is not None
+            and (self.primary_query is not None or bool(self.fixed_queries))
         )
+
+    def fixed_query_map(self) -> dict[str, str]:
+        return {query_id: query for query_id, query in self.fixed_queries}
+
+    def fixed_query_digests(self) -> dict[str, str]:
+        return {
+            query_id: hashlib.sha256(query.encode("utf-8")).hexdigest()
+            for query_id, query in self.fixed_queries
+        }
+
+    def query_id_for(self, query: str) -> str | None:
+        normalized = str(query or "").strip()
+        for query_id, fixed_query in self.fixed_queries:
+            if normalized == fixed_query:
+                return query_id
+        return None
 
     def packet_identity(self) -> dict[str, Any]:
         return {
@@ -271,6 +367,7 @@ class ValidationProfile:
                 self.subject_budget
                 and self.subject_budget.subject_budget_enabled
             ),
+            "fixed_query_digests": self.fixed_query_digests(),
         }
 
     def broker_request_shape(self) -> dict[str, Any]:
@@ -317,6 +414,52 @@ BOUND_CAP_POLICY = ValidationCapPolicySpec(
     max_retries=0,
 )
 
+AG_LIVE_S1_PER_RUN_CAP_POLICY = ValidationCapPolicySpec(
+    max_scryraven_runs=1,
+    max_search_dispatches=4,
+    max_fetch_read_operations=8,
+    max_author_model_calls=1,
+    max_smart_search_judgment_model_calls=0,
+    max_independent_manual_source_checks=1,
+    max_retries=0,
+)
+
+AG_LIVE_S1_BLOCK_A_OPERATIONAL_BUDGET = CampaignOperationalBudgetSpec(
+    full_scryraven_runs=6,
+    generative_plus_embedding_calls=90,
+    external_provider_search_calls=30,
+    retrieval_fetch_read_operations=60,
+    observed_model_plus_embedding_tokens=225_000,
+    independent_manual_source_checks=4,
+    root_cause_repair_clusters=2,
+    repeated_failed_query_reruns=2,
+    live_contact_elapsed_seconds=4 * 60 * 60,
+)
+
+AG_LIVE_S1_BLOCK_B_OPERATIONAL_BUDGET = CampaignOperationalBudgetSpec(
+    full_scryraven_runs=4,
+    generative_plus_embedding_calls=60,
+    external_provider_search_calls=20,
+    retrieval_fetch_read_operations=40,
+    observed_model_plus_embedding_tokens=175_000,
+    independent_manual_source_checks=2,
+    root_cause_repair_clusters=1,
+    repeated_failed_query_reruns=0,
+    live_contact_elapsed_seconds=2 * 60 * 60,
+)
+
+AG_LIVE_S1_COMBINED_OPERATIONAL_BUDGET = CampaignOperationalBudgetSpec(
+    full_scryraven_runs=10,
+    generative_plus_embedding_calls=150,
+    external_provider_search_calls=50,
+    retrieval_fetch_read_operations=100,
+    observed_model_plus_embedding_tokens=400_000,
+    independent_manual_source_checks=6,
+    root_cause_repair_clusters=3,
+    repeated_failed_query_reruns=2,
+    live_contact_elapsed_seconds=6 * 60 * 60,
+)
+
 AG_LIVE_SOURCE_CUSTODY_POLICY = ValidationSourceCustodyPolicySpec(
     require_official_full_fetch_read=True,
     max_forced_fetch_reads=1,
@@ -341,6 +484,36 @@ AG_LIVE_MULTI_COMPONENT_SUBJECT_BUDGET = ValidationSubjectBudgetSpec(
 AG_LIVE_XAXIS_SEARCH_CANDIDATE_PROFILE = SearchCandidateValidationProfile()
 
 VALIDATION_PROFILES: dict[str, ValidationProfile] = {
+    AG_LIVE_S1_PRODUCT_CONVERGENCE: ValidationProfile(
+        name=AG_LIVE_S1_PRODUCT_CONVERGENCE,
+        purpose=(
+            "Characterize and converge the ordinary bounded multi-component "
+            "quantitative Specialist product path."
+        ),
+        proof_target="bounded live S1 ordinary product-path convergence",
+        allowed_invocation_modes=(DIRECT_HUMAN_PRIVATE_SHELL,),
+        live_status=LIVE_STATUS_NOT_RUN,
+        query_intent="fixed NASA official-facts bounded S1 matrix",
+        required_mode=BALANCED_MODE,
+        required_include_domains=("nasa.gov",),
+        cap_policy=AG_LIVE_S1_PER_RUN_CAP_POLICY,
+        expected_packet_criteria=(
+            "ordinary run_pipeline executes exactly once per requested run",
+            "ordinary S1 product registry and execution policy are composed",
+            "source custody remains explicit and is not favorably upgraded",
+            "sanitized packet retains no raw or private material",
+        ),
+        fixed_queries=AG_LIVE_S1_FIXED_QUERIES,
+        source_custody_policy=ValidationSourceCustodyPolicySpec(
+            require_official_full_fetch_read=True,
+            max_forced_fetch_reads=2,
+            preferred_domains=("nasa.gov",),
+            required_source_class="primary_source_documents",
+            required_source_tier="official",
+            required_currentness="current",
+            requirement_id="ag-live-s1-product-convergence:nasa-official-full-read",
+        ),
+    ),
     AG_LIVE_SMOKE: ValidationProfile(
         name=AG_LIVE_SMOKE,
         purpose="Can one bounded live product run complete?",

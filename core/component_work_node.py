@@ -1128,6 +1128,9 @@ def component_work_node_v1_from_admitted_component(
         "stale": admission.get("stale") is True,
         "analyst_finding_ref": analyst_ref,
         "dprime_validation_ref": dprime_ref,
+        "specialist_quantitative_authority_ref": _safe_mapping(
+            admission.get("specialist_quantitative_authority_ref")
+        ),
         "admitted_claim_ref": admitted_claim_ref,
         "semantic_observation_ref": observation_ref,
         "component_coverage_ref": coverage_ref,

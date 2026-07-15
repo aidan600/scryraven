@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 2af389a508fed779d1ff860e228d87a740a29d84
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -43,7 +43,8 @@ configuration.
 | `MC-P5A-SAMPLING-COMPAT` | OpenRouter and Local chat transport internally own temperature `0.3`; OpenAI Responses omits temperature; caller-authored temperature is rejected. |
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
-| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, units, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
+| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, canonical `result_unit`, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews and consumes the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
+| `QUANT-FINALIZATION-CONTAINMENT` | Every active accepted-prose route consumes one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 
 ## Current Ordinary Multi-Component Flow
 
@@ -87,6 +88,33 @@ validation. Missing source posture is not treated favorably, and component
 admission cannot upgrade underlying evidence. Contract, full catalog, and source
 material retention remains closed outside the transient role/adapter scope.
 
+At finalization, FinalAnswerPacket projects current numeric authority by claim,
+not as a global value/unit allowlist. Ordinary Author receives fixed no-
+calculation/no-conversion instructions and exact transient renderings. Candidate
+prose is buffered and deterministically validated before display or successful
+Author reduction. Hardened AuthorProse and follow-up AF5B finalization consume
+the same validator. A failed check creates no accepted AuthorProse or final
+answer outcome and does not trigger a model retry.
+
+The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
+AuthorProseFinalization` route preserves two component-scoped quantitative
+authority classes. Hardened direct source-explicit numeric authority requires
+exact current component, semantic-observation, content, coverage,
+evidence-custody, proposition-fingerprint, and complete literal-signature
+binding. Completed component S1 authority preserves the installed capability
+and version, result and handoff identities and digests, canonical component
+target, exact claim-material binding, canonical `result_unit` and precision,
+and terminal consumption by the applicable component D-prime. Generic D-prime
+admission alone remains nonauthority for arithmetic, conversion, aggregation,
+comparison, or same-value proposition reuse. Deterministic AuthorProse accepts
+valid bound direct-source and component S1 numeric claims and fails atomically
+on unsupported quantitative prose.
+
+The current hardened FinalAnswerPacket owner packages component entries only.
+It does not project synthesis entries and does not install a hardened synthesis
+sidecar. Ordinary synthesis-origin S1 authority remains owned by the ordinary
+ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.
+
 Cross input reproof is unconditional. The ordinary caller may prove the exact
 transient packet directly; RunKernel independently reconstructs it from current
 scheduler-owned component Analyst packets and their existing scheduler
@@ -101,12 +129,22 @@ retained or exported.
 - Additional product Specialists, arbitrary formulas, estimates, or unit/currency conversion.
 - Adaptive provider concurrency or Local component parallelism.
 - Graph-bound, synthesis, recovery, selective, or Scrutineer parallelism.
+- Hardened synthesis entries or a hardened synthesis sidecar.
 - Permanent Fast/Balanced/Deep graph or semantic-call budgets.
 - Hosted or Local capacity characterization.
 - Final UI/productization work.
 
 ## Not Proved
 
+- No live validation was performed.
+- No route-qualification repair was performed.
+- No acquisition-completeness repair was performed.
+- No provider or model changed.
+- No S1 proposal or invocation policy expanded.
+- No new Specialist capability was added.
+- No hardened synthesis path was activated.
+- Broad live correctness, answer quality, and production stability remain
+  unproved.
 - Broad live end-to-end product correctness or competitive answer quality.
 - Live quantitative correctness or broad quantitative reasoning quality.
 - Arbitrary-query readiness.
@@ -135,6 +173,7 @@ and this document does not license changes to that surface.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
+- [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns claim-scoped numeric projection and accepted-prose validation across active finalizers.
 - [RunAuthority implementation guide](../codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md) owns authority-migration procedure.
 
 ## Current Roadmap

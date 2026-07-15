@@ -17,6 +17,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
 
+from core.quantitative_finalization_authority import (
+    extract_quantitative_literals,
+    semantic_claim_fingerprint,
+    specialist_quantitative_authority_ref_from_handoff,
+)
+
 SUFFICIENCY_READINESS_SCHEMA_VERSION = (
     "sufficiency_readiness_ag_sufficiency_partial_answer_readiness_01_v1"
 )
@@ -32,6 +38,9 @@ SUFFICIENCY_READINESS_TRACE_KEY = "sufficiency_readiness"
 SUFFICIENCY_READINESS_OWNER = "RunKernel.SufficiencyReadiness"
 SUFFICIENCY_READINESS_HELPER = (
     "sufficiency_readiness_runtime_ag_sufficiency_partial_answer_readiness_01"
+)
+QUANTITATIVE_SOURCE_AUTHORITY_REF_SCHEMA_VERSION = (
+    "sufficiency_quantitative_source_authority_ref_v1"
 )
 
 READINESS_STATUSES = frozenset(
@@ -229,6 +238,8 @@ def build_sufficiency_readiness_action_inputs(
     specialist_source_bound_calculation_projection: Mapping[str, Any] | None = None,
     specialist_source_bound_calculation_history: Sequence[Mapping[str, Any]] = (),
     followup_search_authorization_projection: Mapping[str, Any] | None = None,
+    quantitative_source_authority_materials: Sequence[Mapping[str, Any]] = (),
+    specialist_quantitative_authority_inputs: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Build action inputs that bind the current readiness input context."""
 
@@ -260,6 +271,24 @@ def build_sufficiency_readiness_action_inputs(
             followup_search_authorization_projection
         ),
     )
+    quantitative_source_authority_refs = (
+        _quantitative_source_authority_refs_from_materials(
+            quantitative_source_authority_materials,
+            context_refs=context_refs,
+        )
+    )
+    specialist_quantitative_authority_refs = (
+        _specialist_quantitative_authority_refs_from_inputs(
+            specialist_quantitative_authority_inputs,
+            context_refs=context_refs,
+        )
+    )
+    context_refs["quantitative_source_authority_refs"] = (
+        quantitative_source_authority_refs
+    )
+    context_refs["specialist_quantitative_authority_refs"] = (
+        specialist_quantitative_authority_refs
+    )
     return {
         "schema_version": SUFFICIENCY_READINESS_ACTION_SCHEMA_VERSION,
         "owner": SUFFICIENCY_READINESS_OWNER,
@@ -283,6 +312,16 @@ def build_sufficiency_readiness_action_inputs(
         ),
         "specialist_calculation_ref_count": len(
             context_refs.get("specialist_calculation_refs") or []
+        ),
+        "quantitative_source_authority_ref_count": len(
+            quantitative_source_authority_refs
+        ),
+        "quantitative_source_authority_refs": quantitative_source_authority_refs,
+        "specialist_quantitative_authority_ref_count": len(
+            specialist_quantitative_authority_refs
+        ),
+        "specialist_quantitative_authority_refs": (
+            specialist_quantitative_authority_refs
         ),
         "followup_budget_posture": _followup_budget_posture(
             mode_label,
@@ -401,6 +440,22 @@ def build_sufficiency_readiness_state(
             followup_search_authorization_projection
         ),
     )
+    quantitative_source_authority_refs = _validated_quantitative_source_authority_refs(
+        inputs.get("quantitative_source_authority_refs"),
+        context_refs=context_refs,
+    )
+    specialist_quantitative_authority_refs = (
+        _validated_specialist_quantitative_authority_refs(
+            inputs.get("specialist_quantitative_authority_refs"),
+            context_refs=context_refs,
+        )
+    )
+    context_refs["quantitative_source_authority_refs"] = (
+        quantitative_source_authority_refs
+    )
+    context_refs["specialist_quantitative_authority_refs"] = (
+        specialist_quantitative_authority_refs
+    )
     actual_input_digest = _digest_json(context_refs)
     if inputs.get("readiness_input_digest") != actual_input_digest:
         raise SufficiencyReadinessRuntimeError(
@@ -446,6 +501,13 @@ def build_sufficiency_readiness_state(
             specialist_refs,
             component_key="component_id",
         )
+        quantitative_source_by_component = _refs_by_component(
+            quantitative_source_authority_refs,
+            component_key="component_id",
+        )
+        specialist_quantitative_by_component = _specialist_refs_by_component(
+            specialist_quantitative_authority_refs
+        )
         for component in component_refs:
             component_id = str(component["component_id"])
             component_map[component_id] = _component_readiness_entry(
@@ -455,6 +517,12 @@ def build_sufficiency_readiness_state(
                 scrutineer_refs=scrutineer_refs,
                 latest_review=latest_review,
                 specialist_refs=specialist_by_component.get(component_id, []),
+                quantitative_source_authority_refs=(
+                    quantitative_source_by_component.get(component_id, [])
+                ),
+                specialist_quantitative_authority_refs=(
+                    specialist_quantitative_by_component.get(component_id, [])
+                ),
                 followup_budget_posture=followup_budget_posture,
             )
 
@@ -493,6 +561,10 @@ def build_sufficiency_readiness_state(
         ),
         "scrutineer_review_refs": scrutineer_refs,
         "specialist_calculation_refs": specialist_refs,
+        "quantitative_source_authority_refs": quantitative_source_authority_refs,
+        "specialist_quantitative_authority_refs": (
+            specialist_quantitative_authority_refs
+        ),
         "followup_budget_posture": followup_budget_posture,
         "mandatory_caveats": aggregate["mandatory_caveats"],
         "prohibited_upgrades": aggregate["prohibited_upgrades"],
@@ -568,6 +640,12 @@ def build_sufficiency_readiness_projection(
         "specialist_calculation_refs": _safe_list(
             state.get("specialist_calculation_refs")
         ),
+        "quantitative_source_authority_refs": _safe_list(
+            state.get("quantitative_source_authority_refs")
+        ),
+        "specialist_quantitative_authority_refs": _safe_list(
+            state.get("specialist_quantitative_authority_refs")
+        ),
         "followup_budget_posture": state.get("followup_budget_posture"),
         "mandatory_caveats": _text_list(state.get("mandatory_caveats"), limit=500),
         "prohibited_upgrades": _text_list(
@@ -593,11 +671,21 @@ def reduce_sufficiency_readiness(
     *,
     run_kernel: Any,
     mode: str = "Balanced",
+    quantitative_source_authority_materials: Sequence[Mapping[str, Any]] = (),
+    specialist_quantitative_authority_inputs: Sequence[Mapping[str, Any]] = (),
 ) -> SufficiencyReadinessResult:
     """Authorize and reduce readiness through RunKernel."""
 
     try:
-        action = run_kernel.authorize_sufficiency_readiness(mode=mode)
+        action = run_kernel.authorize_sufficiency_readiness(
+            mode=mode,
+            quantitative_source_authority_materials=(
+                quantitative_source_authority_materials
+            ),
+            specialist_quantitative_authority_inputs=(
+                specialist_quantitative_authority_inputs
+            ),
+        )
         from core.run_kernel import Observation, ObservationType, RunStageStatus
 
         run_kernel.reduce(
@@ -672,6 +760,8 @@ def _component_readiness_entry(
     scrutineer_refs: Sequence[Mapping[str, Any]],
     latest_review: Mapping[str, Any],
     specialist_refs: Sequence[Mapping[str, Any]],
+    quantitative_source_authority_refs: Sequence[Mapping[str, Any]],
+    specialist_quantitative_authority_refs: Sequence[Mapping[str, Any]],
     followup_budget_posture: str,
 ) -> dict[str, Any]:
     component_id = str(component["component_id"])
@@ -766,6 +856,19 @@ def _component_readiness_entry(
     if status != "full_answer_ready":
         safe_claim_ref = {}
         claim_text = None
+    source_authority_refs = [
+        dict(item)
+        for item in quantitative_source_authority_refs
+        if _quantitative_source_ref_matches_claim(item, claim_text)
+    ]
+    specialist_quantitative_authority_ref = next(
+        (
+            dict(item)
+            for item in reversed(list(specialist_quantitative_authority_refs))
+            if _specialist_quantitative_ref_matches_claim(item, claim_text)
+        ),
+        {},
+    )
     return {
         "component_id": component_id,
         "component_revision": component.get("component_revision"),
@@ -781,6 +884,10 @@ def _component_readiness_entry(
             component_id,
         ),
         "specialist_calculation_refs": [dict(item) for item in specialist_refs],
+        "quantitative_source_authority_refs": source_authority_refs,
+        "specialist_quantitative_authority_ref": (
+            specialist_quantitative_authority_ref
+        ),
         "followup_budget_posture": followup_budget_posture,
         "component_readiness_status": status,
         "safe_answer_claim_text": claim_text,
@@ -1164,6 +1271,552 @@ def _context_refs(
     }
 
 
+def _quantitative_source_authority_refs_from_materials(
+    materials: Sequence[Mapping[str, Any]],
+    *,
+    context_refs: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    components = {
+        str(item.get("component_id")): item
+        for item in _safe_list(context_refs.get("component_refs"))
+        if isinstance(item, Mapping) and item.get("component_id")
+    }
+    coverages = [
+        _safe_mapping(item)
+        for item in _safe_list(context_refs.get("component_coverage_refs"))
+    ]
+    admissions = [
+        _safe_mapping(item)
+        for item in _safe_list(context_refs.get("semantic_observation_refs"))
+    ]
+    for material in materials or ():
+        raw = dict(material) if isinstance(material, Mapping) else {}
+        source_proposition = _clean_text(
+            raw.get("source_proposition"),
+            limit=2_000,
+        )
+        content_value = raw.get("sanitized_content_reference")
+        if hasattr(content_value, "to_dict"):
+            content_value = content_value.to_dict()
+        content = dict(content_value) if isinstance(content_value, Mapping) else {}
+        bounded_text = _clean_text(content.get("bounded_text"), limit=20_000)
+        if not source_proposition or not bounded_text:
+            continue
+        if source_proposition not in bounded_text:
+            continue
+        if not _source_content_reference_is_current_and_bounded(content):
+            continue
+        component_id = _clean_token(
+            raw.get("component_id") or content.get("answer_component_id"),
+            limit=260,
+        )
+        component = components.get(str(component_id or ""))
+        if not component:
+            continue
+        component_revision = _clean_token(
+            raw.get("component_revision") or content.get("component_revision"),
+            limit=120,
+        )
+        component_digest = _clean_token(
+            raw.get("component_digest") or content.get("component_contract_digest"),
+            limit=128,
+        )
+        if (
+            component_revision != component.get("component_revision")
+            or component_digest != component.get("component_digest")
+            or content.get("answer_component_id") != component_id
+            or content.get("component_revision") != component_revision
+            or content.get("component_contract_digest") != component_digest
+        ):
+            continue
+        content_ref_id = _clean_token(content.get("content_ref_id"), limit=260)
+        content_digest = _clean_token(content.get("content_digest"), limit=128)
+        evidence_ref_id = _clean_token(content.get("evidence_ref_id"), limit=260)
+        if not content_ref_id or not content_digest or not evidence_ref_id:
+            continue
+        source_fingerprint = semantic_claim_fingerprint(source_proposition)
+        source_literals = extract_quantitative_literals(source_proposition)
+        if not source_literals or any(
+            item.get("unsupported_textual_quantifier") for item in source_literals
+        ):
+            continue
+        literal_signatures = _quantitative_literal_signature_refs(source_literals)
+        for coverage in reversed(coverages):
+            if not _coverage_is_current_source_authority(
+                coverage,
+                component=component,
+            ):
+                continue
+            if raw.get("coverage_record_id") not in {
+                None,
+                coverage.get("coverage_record_id"),
+            }:
+                continue
+            if raw.get("coverage_record_digest") not in {
+                None,
+                coverage.get("coverage_record_digest"),
+            }:
+                continue
+            binding = next(
+                (
+                    _safe_mapping(item)
+                    for item in _safe_list(coverage.get("content_reference_bindings"))
+                    if _safe_mapping(item).get("content_ref_id") == content_ref_id
+                    and _safe_mapping(item).get("content_digest") == content_digest
+                    and _safe_mapping(item).get("evidence_ref_id") == evidence_ref_id
+                    and _normalized_token(
+                        _safe_mapping(item).get("availability_status")
+                    )
+                    == "available"
+                ),
+                {},
+            )
+            if not binding:
+                continue
+            observation = next(
+                (
+                    _safe_mapping(item)
+                    for item in _safe_list(coverage.get("accepted_observation_refs"))
+                    if content_ref_id
+                    in _text_list(_safe_mapping(item).get("content_refs"), limit=260)
+                    and _normalized_token(_safe_mapping(item).get("support_status"))
+                    in {"supports", "supported", "supported_with_caveats"}
+                ),
+                {},
+            )
+            if not observation:
+                continue
+            if raw.get("semantic_observation_id") not in {
+                None,
+                observation.get("observation_id"),
+            }:
+                continue
+            if raw.get("semantic_observation_digest") not in {
+                None,
+                observation.get("observation_digest"),
+            }:
+                continue
+            admission = next(
+                (
+                    item
+                    for item in admissions
+                    if item.get("observation_id") == observation.get("observation_id")
+                    and item.get("observation_digest")
+                    == observation.get("observation_digest")
+                    and item.get("answer_component_id") == component_id
+                    and content_ref_id
+                    in _text_list(item.get("content_refs"), limit=260)
+                    and evidence_ref_id
+                    in _text_list(item.get("evidence_refs"), limit=260)
+                ),
+                {},
+            )
+            if not admission:
+                continue
+            safe_claim = _clean_text(
+                observation.get("claim_or_value") or admission.get("claim_or_value"),
+                limit=1_000,
+            )
+            if not safe_claim:
+                continue
+            safe_fingerprint = semantic_claim_fingerprint(safe_claim)
+            if safe_fingerprint != source_fingerprint:
+                continue
+            if _quantitative_literal_signature_digest(
+                extract_quantitative_literals(safe_claim)
+            ) != _digest_json(literal_signatures):
+                continue
+            evidence_or_packet_ref = _without_empty(
+                {
+                    "evidence_ref_id": evidence_ref_id,
+                    "packet_evidence_id": raw.get("packet_evidence_id"),
+                    "source_id": content.get("source_id"),
+                    "source_digest": content.get("source_digest"),
+                }
+            )
+            ref_base = {
+                "schema_version": QUANTITATIVE_SOURCE_AUTHORITY_REF_SCHEMA_VERSION,
+                "component_id": component_id,
+                "component_revision": component_revision,
+                "component_digest": component_digest,
+                "source_proposition_fingerprint": source_fingerprint,
+                "source_proposition_digest": _digest_text(source_proposition),
+                "safe_claim_fingerprint": safe_fingerprint,
+                "literal_signatures": literal_signatures,
+                "complete_literal_signature_digest": _digest_json(literal_signatures),
+                "semantic_observation_ref": {
+                    "observation_id": observation.get("observation_id"),
+                    "observation_digest": observation.get("observation_digest"),
+                    "support_status": observation.get("support_status"),
+                },
+                "content_reference_ref": {
+                    "content_ref_id": content_ref_id,
+                    "content_digest": content_digest,
+                    "availability_status": binding.get("availability_status"),
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": coverage.get("coverage_record_id"),
+                    "coverage_record_digest": coverage.get("coverage_record_digest"),
+                    "coverage_state": coverage.get("coverage_state"),
+                },
+                "evidence_or_packet_evidence_ref": evidence_or_packet_ref,
+                "currentness_posture": coverage.get("currentness_posture"),
+                "source_safe_claim_relationship": "exact_claim_fingerprint",
+                "current": True,
+                "stale": False,
+                "source_proposition_retained": False,
+                "source_material_retained": False,
+            }
+            ref = {
+                **ref_base,
+                "source_authority_ref_digest": _digest_json(ref_base),
+            }
+            if not any(
+                item.get("source_authority_ref_digest")
+                == ref["source_authority_ref_digest"]
+                for item in refs
+            ):
+                refs.append(ref)
+            break
+    return refs
+
+
+def _source_content_reference_is_current_and_bounded(
+    content: Mapping[str, Any],
+) -> bool:
+    bounded_text = _clean_text(content.get("bounded_text"), limit=20_000)
+    if not bounded_text or content.get("structured_value") not in (None, {}, []):
+        return False
+    digest_payload = {
+        "content_kind": content.get("content_kind"),
+        "bounded_text": bounded_text,
+        "structured_value": None,
+    }
+    actual_digest = sha256(
+        json.dumps(digest_payload, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    return bool(
+        content.get("content_digest") == actual_digest
+        and content.get("sanitized") is True
+        and content.get("bounded") is True
+        and content.get("trace_only") is True
+        and content.get("accepted_authority") is False
+        and all(
+            content.get(key) is False
+            for key in (
+                "raw_content_retained",
+                "raw_provider_payload_retained",
+                "raw_prompt_retained",
+                "raw_model_response_retained",
+                "private_logs_retained",
+                "db_cache_rows_retained",
+                "full_trace_retained",
+                "secrets_returned",
+            )
+        )
+    )
+
+
+def _coverage_is_current_source_authority(
+    coverage: Mapping[str, Any],
+    *,
+    component: Mapping[str, Any],
+) -> bool:
+    return bool(
+        coverage.get("answer_component_id") == component.get("component_id")
+        and coverage.get("component_revision") == component.get("component_revision")
+        and coverage.get("component_digest") == component.get("component_digest")
+        and _normalized_token(coverage.get("coverage_state")) in _READY_COVERAGE_STATES
+        and _normalized_token(coverage.get("semantic_support_status")) == "supported"
+        and _normalized_token(coverage.get("content_availability_status"))
+        == "available"
+        and _normalized_token(coverage.get("evidence_custody_status")) == "custodied"
+        and _normalized_token(coverage.get("version_validity")) == "valid"
+        and _normalized_token(coverage.get("currentness_posture")) == "current"
+        and coverage.get("stale") is False
+        and _normalized_token(coverage.get("conflict_posture"))
+        not in _CONTESTED_CONFLICT
+    )
+
+
+def _quantitative_literal_signature_refs(
+    literals: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for ordinal, literal in enumerate(literals, start=1):
+        signature = {
+            "claim_literal_ordinal": ordinal,
+            "normalized_numeric_value_text": literal.get(
+                "normalized_numeric_value_text"
+            ),
+            "canonical_unit": literal.get("canonical_unit"),
+            "precision_posture": literal.get("precision_posture"),
+        }
+        refs.append(
+            {
+                **signature,
+                "literal_signature_digest": _digest_json(signature),
+            }
+        )
+    return refs
+
+
+def _quantitative_literal_signature_digest(
+    literals: Sequence[Mapping[str, Any]],
+) -> str:
+    return _digest_json(_quantitative_literal_signature_refs(literals))
+
+
+def _validated_quantitative_source_authority_refs(
+    value: Any,
+    *,
+    context_refs: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    components = {
+        str(item.get("component_id")): _safe_mapping(item)
+        for item in _safe_list(context_refs.get("component_refs"))
+        if isinstance(item, Mapping) and item.get("component_id")
+    }
+    coverages = [
+        _safe_mapping(item)
+        for item in _safe_list(context_refs.get("component_coverage_refs"))
+    ]
+    admissions = [
+        _safe_mapping(item)
+        for item in _safe_list(context_refs.get("semantic_observation_refs"))
+    ]
+    for item in _safe_list(value):
+        ref = _safe_mapping(item)
+        declared = ref.pop("source_authority_ref_digest", None)
+        component = components.get(str(ref.get("component_id") or ""))
+        observation_ref = _safe_mapping(ref.get("semantic_observation_ref"))
+        coverage_ref = _safe_mapping(ref.get("component_coverage_ref"))
+        content_ref = _safe_mapping(ref.get("content_reference_ref"))
+        evidence_ref = _safe_mapping(ref.get("evidence_or_packet_evidence_ref"))
+        literal_refs = _safe_list(ref.get("literal_signatures"))
+        coverage = next(
+            (
+                current
+                for current in coverages
+                if current.get("coverage_record_id")
+                == coverage_ref.get("coverage_record_id")
+                and current.get("coverage_record_digest")
+                == coverage_ref.get("coverage_record_digest")
+            ),
+            {},
+        )
+        admission = next(
+            (
+                current
+                for current in admissions
+                if current.get("observation_id")
+                == observation_ref.get("observation_id")
+                and current.get("observation_digest")
+                == observation_ref.get("observation_digest")
+                and content_ref.get("content_ref_id")
+                in _text_list(current.get("content_refs"), limit=260)
+                and evidence_ref.get("evidence_ref_id")
+                in _text_list(current.get("evidence_refs"), limit=260)
+            ),
+            {},
+        )
+        if not (
+            declared
+            and declared == _digest_json(ref)
+            and ref.get("schema_version")
+            == QUANTITATIVE_SOURCE_AUTHORITY_REF_SCHEMA_VERSION
+            and component
+            and coverage
+            and admission
+            and _coverage_is_current_source_authority(
+                coverage,
+                component=component,
+            )
+            and ref.get("source_proposition_fingerprint")
+            == ref.get("safe_claim_fingerprint")
+            and ref.get("source_safe_claim_relationship") == "exact_claim_fingerprint"
+            and ref.get("complete_literal_signature_digest")
+            == _digest_json(literal_refs)
+            and literal_refs
+            and content_ref.get("content_ref_id")
+            and content_ref.get("content_digest")
+            and evidence_ref.get("evidence_ref_id")
+            and ref.get("current") is True
+            and ref.get("stale") is False
+            and ref.get("source_proposition_retained") is False
+            and ref.get("source_material_retained") is False
+        ):
+            continue
+        refs.append({**ref, "source_authority_ref_digest": declared})
+    return refs
+
+
+def _specialist_quantitative_authority_refs_from_inputs(
+    inputs: Sequence[Mapping[str, Any]],
+    *,
+    context_refs: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    components = {
+        str(item.get("component_id")): _safe_mapping(item)
+        for item in _safe_list(context_refs.get("component_refs"))
+        if isinstance(item, Mapping) and item.get("component_id")
+    }
+    for item in inputs or ():
+        mapped = _safe_mapping(item)
+        ref = specialist_quantitative_authority_ref_from_handoff(
+            _safe_mapping(mapped.get("specialist_need_handoff")),
+            applicable_dprime_ref=_safe_mapping(mapped.get("applicable_dprime_ref")),
+        )
+        target = _safe_mapping(
+            _safe_mapping(ref.get("specialist_handoff_ref")).get("canonical_target_ref")
+        )
+        if target.get("target_kind") != "component":
+            continue
+        component = components.get(str(target.get("target_key") or ""))
+        safe_claim = _current_safe_claim_for_component(
+            context_refs,
+            str(target.get("target_key") or ""),
+        )
+        if not (
+            ref
+            and component
+            and str(target.get("target_revision"))
+            == str(component.get("component_revision"))
+            and target.get("target_digest") == component.get("component_digest")
+            and safe_claim
+            and ref.get("claim_material_digest") == _digest_text(safe_claim)
+        ):
+            continue
+        ref_base = {
+            **ref,
+            "currentness_posture": "current_completed_consumed_handoff",
+            "current": True,
+            "stale": False,
+        }
+        refs.append(
+            {
+                **ref_base,
+                "readiness_authority_ref_digest": _digest_json(ref_base),
+            }
+        )
+    return refs
+
+
+def _validated_specialist_quantitative_authority_refs(
+    value: Any,
+    *,
+    context_refs: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    components = {
+        str(item.get("component_id")): _safe_mapping(item)
+        for item in _safe_list(context_refs.get("component_refs"))
+        if isinstance(item, Mapping) and item.get("component_id")
+    }
+    for item in _safe_list(value):
+        ref = _safe_mapping(item)
+        declared = ref.pop("readiness_authority_ref_digest", None)
+        target = _safe_mapping(
+            _safe_mapping(ref.get("specialist_handoff_ref")).get("canonical_target_ref")
+        )
+        component = components.get(str(target.get("target_key") or ""))
+        safe_claim = _current_safe_claim_for_component(
+            context_refs,
+            str(target.get("target_key") or ""),
+        )
+        if not (
+            declared
+            and declared == _digest_json(ref)
+            and target.get("target_kind") == "component"
+            and component
+            and str(target.get("target_revision"))
+            == str(component.get("component_revision"))
+            and target.get("target_digest") == component.get("component_digest")
+            and safe_claim
+            and ref.get("claim_material_digest") == _digest_text(safe_claim)
+            and ref.get("currentness_posture") == "current_completed_consumed_handoff"
+            and ref.get("current") is True
+            and ref.get("stale") is False
+        ):
+            continue
+        refs.append({**ref, "readiness_authority_ref_digest": declared})
+    return refs
+
+
+def _current_safe_claim_for_component(
+    context_refs: Mapping[str, Any],
+    component_id: str,
+) -> str | None:
+    coverages = [
+        _safe_mapping(item)
+        for item in _safe_list(context_refs.get("component_coverage_refs"))
+        if _safe_mapping(item).get("answer_component_id") == component_id
+    ]
+    admissions = [
+        _safe_mapping(item)
+        for item in _safe_list(context_refs.get("semantic_observation_refs"))
+        if _safe_mapping(item).get("answer_component_id") == component_id
+    ]
+    return _clean_text(
+        _safe_claim_ref(
+            component_id=component_id,
+            coverage_refs=coverages,
+            admission_refs=admissions,
+        ).get("safe_answer_claim_text"),
+        limit=1_000,
+    )
+
+
+def _specialist_refs_by_component(
+    refs: Sequence[Mapping[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    for item in refs:
+        ref = _safe_mapping(item)
+        component_id = _clean_token(
+            _safe_mapping(
+                _safe_mapping(ref.get("specialist_handoff_ref")).get(
+                    "canonical_target_ref"
+                )
+            ).get("target_key"),
+            limit=260,
+        )
+        if component_id:
+            out.setdefault(component_id, []).append(ref)
+    return out
+
+
+def _quantitative_source_ref_matches_claim(
+    ref: Mapping[str, Any],
+    claim_text: str | None,
+) -> bool:
+    if not claim_text:
+        return False
+    literals = extract_quantitative_literals(claim_text)
+    return bool(
+        ref.get("safe_claim_fingerprint") == semantic_claim_fingerprint(claim_text)
+        and ref.get("complete_literal_signature_digest")
+        == _quantitative_literal_signature_digest(literals)
+    )
+
+
+def _specialist_quantitative_ref_matches_claim(
+    ref: Mapping[str, Any],
+    claim_text: str | None,
+) -> bool:
+    return bool(
+        claim_text
+        and ref.get("claim_material_digest") == _digest_text(claim_text)
+        and ref.get("current") is True
+        and ref.get("stale") is False
+    )
+
+
 def _contract_ref(contract: Mapping[str, Any]) -> dict[str, Any]:
     version = _clean_token(
         contract.get("accepted_contract_version")
@@ -1264,13 +1917,16 @@ def _coverage_refs(
                 "component_digest": mapped.get("component_digest"),
                 "coverage_state": mapped.get("coverage_state"),
                 "semantic_support_status": mapped.get("semantic_support_status"),
+                "support_posture": mapped.get("support_posture"),
                 "source_obligation_status": mapped.get("source_obligation_status"),
                 "content_availability_status": mapped.get(
                     "content_availability_status"
                 ),
                 "evidence_custody_status": mapped.get("evidence_custody_status"),
+                "version_validity": mapped.get("version_validity"),
                 "currentness_posture": mapped.get("currentness_posture"),
                 "conflict_posture": mapped.get("conflict_posture"),
+                "stale": mapped.get("stale") is True,
                 "followup_need": mapped.get("followup_need"),
                 "mode_budget_posture": mapped.get("mode_budget_posture"),
                 "accepted_observation_refs": _observation_refs(
@@ -1312,6 +1968,8 @@ def _admission_refs(
                 "component_digest": mapped.get("component_digest"),
                 "support_status": mapped.get("support_status"),
                 "support_posture": mapped.get("support_posture"),
+                "support_kind": mapped.get("support_kind"),
+                "directness": mapped.get("directness"),
                 "claim_or_value": mapped.get("claim_or_value"),
                 "content_refs": _text_list(mapped.get("content_refs"), limit=260),
                 "evidence_refs": _text_list(mapped.get("evidence_refs"), limit=260),
@@ -1605,7 +2263,13 @@ def _content_binding_refs(value: Any) -> list[dict[str, Any]]:
                 "content_digest": mapped.get("content_digest"),
                 "evidence_ref_id": mapped.get("evidence_ref_id"),
                 "answer_component_id": mapped.get("answer_component_id"),
+                "component_revision": mapped.get("component_revision"),
+                "component_contract_digest": mapped.get("component_contract_digest"),
+                "answer_bearing": mapped.get("answer_bearing") is True,
                 "availability_status": mapped.get("availability_status"),
+                "content_reference_schema_version": mapped.get(
+                    "content_reference_schema_version"
+                ),
             }
         )
         if ref:
@@ -1848,6 +2512,10 @@ def _normalize_key(key: Any) -> str:
 def _digest_json(value: Any) -> str:
     encoded = json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"))
     return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _digest_text(value: Any) -> str:
+    return sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
 __all__ = [

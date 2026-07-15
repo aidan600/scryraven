@@ -17,6 +17,9 @@ from core.multicomponent_role_runtime import (
     safe_packet_digest,
     validate_multicomponent_role_artifact,
 )
+from core.quantitative_finalization_authority import (
+    specialist_quantitative_authority_ref_from_handoff,
+)
 from core.semantic_observation_admission_runtime import (
     SemanticObservationAdmissionError,
     build_semantic_observation_admission_projection,
@@ -430,6 +433,14 @@ def stage_multicomponent_component_admission(
         else "unsupported"
     )
     claim_text = analyst["semantic_output"]["claim_text"]
+    specialist_quantitative_authority_ref = (
+        specialist_quantitative_authority_ref_from_handoff(
+            specialist_need_handoff,
+            applicable_dprime_ref=role_artifact_ref(dprime),
+        )
+        if supported and specialist_need_handoff
+        else {}
+    )
     return {
         "admission_state": admission_state,
         "admission_projection": admission_projection,
@@ -456,6 +467,9 @@ def stage_multicomponent_component_admission(
             "stale": False,
             "analyst_finding_ref": role_artifact_ref(analyst),
             "dprime_validation_ref": role_artifact_ref(dprime),
+            "specialist_quantitative_authority_ref": (
+                specialist_quantitative_authority_ref
+            ),
             "admitted_claim_ref": (
                 {
                     "claim_id": f"component-claim:{component['component_id']}",
