@@ -38,6 +38,7 @@ from core.quantitative_finalization_authority import (
     QuantitativeFinalizationAuthorityError,
     build_quantitative_finalization_authority_manifest,
     extract_quantitative_literals,
+    semantic_claim_fingerprint,
     validate_author_output_quantitative_authority,
 )
 from core.run_kernel import (
@@ -85,6 +86,13 @@ REPRESENTATIVE_REJECTIONS = (
     ("digest_shaped_decimal", "The unsupported total is (12345678)."),
     ("numbered_looking_value", "200) km is the unsupported difference."),
     ("accounting_parentheses", "Net income was ($100)."),
+    ("compact_currency_rate", "The unsupported rate is USD100/kg."),
+    ("superscript_surface", "The unsupported area is 10 m²."),
+    (
+        "ambiguous_reference_row",
+        "Sources:\n- NASA report distance 200 km.",
+    ),
+    ("word_ordinal", "The unsupported rank is first."),
 )
 
 
@@ -107,11 +115,17 @@ def _empty_bundle() -> dict[str, Any]:
         ),
         ("The unsupported fee is USD100.", "exact", "100", "USD"),
         ("The unsupported fee is EUR25.50.", "exact", "25.5", "EUR"),
+        ("The unsupported rate is USD100/kg.", "exact", "100", "USD_per_kg"),
+        ("The unsupported rate is EUR25.50/day.", "exact", "25.5", "EUR_per_day"),
+        ("The unsupported rate is GBP40/hour.", "exact", "40", "GBP_per_hour"),
         ("The unsupported difference is [200] km.", "exact", "200", "km"),
         ("The unsupported count is twenty-one.", "exact", "21", "dimensionless"),
         ("The unsupported rank is 21st.", "unsupported", None, None),
         ("The unsupported share is ½.", "unsupported", None, None),
         ("The unsupported span is ２００ km.", "unsupported", None, None),
+        ("The unsupported rank is first.", "unsupported", None, None),
+        ("The unsupported rank is tenth.", "unsupported", None, None),
+        ("The unsupported rank is eleventh.", "unsupported", None, None),
         ("The unsupported total is (12345678).", "exact", "12345678", "dimensionless"),
         ("200) km is the unsupported difference.", "exact", "200", "dimensionless"),
         (
@@ -137,11 +151,96 @@ def test_direct_parser_classifies_every_reproduced_surface(
             "digit_ordinal",
             "unicode_fraction",
             "fullwidth_digits",
+            "word_ordinal",
         }
         assert "normalized_numeric_value_text" not in literal
     else:
         assert literal["normalized_numeric_value_text"] == expected_value
         assert literal["canonical_unit"] == expected_unit
+
+
+@pytest.mark.parametrize(
+    ("candidate", "surface_kind", "exact_value", "exact_unit"),
+    (
+        ("The area is 10 m².", "superscript_digits", "10", "m"),
+        ("The volume is 10 m³.", "superscript_digits", "10", "m"),
+        ("The unsupported value is 10².", "superscript_digits", "10", "dimensionless"),
+        ("The unsupported coordinate is x₂.", "subscript_digits", None, None),
+    ),
+)
+def test_superscript_and_subscript_surfaces_are_explicitly_unsupported(
+    candidate: str,
+    surface_kind: str,
+    exact_value: str | None,
+    exact_unit: str | None,
+) -> None:
+    literals = extract_quantitative_literals(candidate)
+    unsupported = [
+        item for item in literals if item.get("unsupported_quantitative_surface")
+    ]
+
+    assert [item["unsupported_quantitative_surface"] for item in unsupported] == [
+        surface_kind
+    ]
+    exact = [item for item in literals if item.get("normalized_numeric_value_text")]
+    if exact_value is None:
+        assert exact == []
+    else:
+        assert len(exact) == 1
+        assert exact[0]["normalized_numeric_value_text"] == exact_value
+        assert exact[0]["canonical_unit"] == exact_unit
+
+
+@pytest.mark.parametrize(
+    ("candidate", "expected_value", "expected_unit"),
+    (
+        ("Sources:\n- NASA report distance 200 km.", "200", "km"),
+        ("Sources:\n- Report revenue USD100.", "100", "USD"),
+        ("Sources: Agency publication total 25 percent.", "25", "percent"),
+    ),
+)
+def test_ambiguous_reference_noun_rows_remain_inspectable(
+    candidate: str,
+    expected_value: str,
+    expected_unit: str,
+) -> None:
+    literals = extract_quantitative_literals(candidate)
+    diagnostic = _reject(candidate, _empty_bundle())
+
+    assert len(literals) == 1
+    assert literals[0]["normalized_numeric_value_text"] == expected_value
+    assert literals[0]["canonical_unit"] == expected_unit
+    assert diagnostic["candidate_quantitative_literal_count"] == 1
+    assert diagnostic["rejection_count"] == 1
+
+
+def _literal_signature_projection(text: str) -> tuple[tuple[str, ...], ...]:
+    fields = (
+        "unsupported_quantitative_surface",
+        "normalized_numeric_value_text",
+        "canonical_unit",
+        "precision_posture",
+        "scale_posture",
+        "sign_posture",
+        "percent_convention",
+        "notation_posture",
+    )
+    return tuple(
+        sorted(
+            tuple(str(item.get(field) or "") for field in fields)
+            for item in extract_quantitative_literals(text)
+        )
+    )
+
+
+def test_superscript_authority_and_plain_unit_do_not_collapse() -> None:
+    superscript = "The area is 10 m²."
+    plain = "The area is 10 m."
+
+    _reject(plain, _source_bundle(superscript))
+    _reject(superscript, _source_bundle(plain))
+    assert semantic_claim_fingerprint(superscript) != semantic_claim_fingerprint(plain)
+    assert _literal_signature_projection(superscript) != _literal_signature_projection(plain)
 
 
 @pytest.mark.parametrize(("label", "candidate"), REPRESENTATIVE_REJECTIONS)
@@ -174,6 +273,9 @@ def test_source_section_nonreference_numeric_row_without_copula_fails_closed() -
         ("The diameter is 1,000 km.", "The diameter is 1000 km."),
         ("The supported fee is USD100.", "The supported fee is USD100."),
         ("The supported fee is EUR25.50.", "The supported fee is EUR25.50."),
+        ("The supported rate is USD100/kg.", "The supported rate is USD100/kg."),
+        ("The supported rate is EUR25.50/day.", "The supported rate is EUR25.50/day."),
+        ("The supported rate is GBP40/hour.", "The supported rate is GBP40/hour."),
         ("The supported count is twenty-one.", "The supported count is twenty-one."),
         ("The supported difference is [200] km.", "The supported difference is [200] km."),
         ("200) km is the supported difference.", "200) km is the supported difference."),
@@ -204,6 +306,7 @@ def test_exact_supported_numeric_controls_remain_accepted(
         "The nonfactual identifier is AF5B-ref-77.",
         "Sources:\n- Official report 2026\n- Example Program reference 17",
         "1. Qualitative evidence supports the claim.\n2) Additional context agrees.",
+        "First, consider the qualitative evidence.",
     ),
 )
 def test_transport_and_structural_list_controls_remain_nonquantitative(
@@ -374,7 +477,11 @@ def test_ordinary_author_executor_rejects_before_display_reduction_or_run_outcom
     assert kernel.state.author_observation == {}
     assert kernel.state.final_answer_outcome == {}
     assert len(harness.author_prompts) == 1
+    assert diagnostic["answer_rewritten"] is False
+    assert diagnostic["answer_fragment_deleted"] is False
     assert diagnostic["author_retry_requested"] is False
+    assert diagnostic["final_text_included"] is False
+    assert candidate not in repr(diagnostic)
 
 
 @pytest.mark.parametrize(("label", "candidate"), REPRESENTATIVE_REJECTIONS)
@@ -462,15 +569,28 @@ def test_af5b_rejects_before_author_observation_and_final_answer_outcome(
     assert kernel.state.final_answer_outcome == {}
 
 
-def test_rejection_diagnostics_retain_only_bounded_markers_and_digests() -> None:
-    private_candidate = "PRIVATE-PARSER-CANDIDATE-SENTINEL share is ½."
+@pytest.mark.parametrize(
+    "private_candidate",
+    (
+        "PRIVATE-FRACTION-SENTINEL share is ½.",
+        "PRIVATE-RATE-SENTINEL rate is USD100/kg.",
+        "PRIVATE-SUPERSCRIPT-SENTINEL area is 10 m².",
+        "Sources:\n- PRIVATE-REFERENCE-SENTINEL report distance 200 km.",
+        "PRIVATE-ORDINAL-SENTINEL rank is first.",
+    ),
+)
+def test_rejection_diagnostics_retain_only_bounded_markers_and_digests(
+    private_candidate: str,
+) -> None:
+    private_marker = next(
+        token for token in private_candidate.split() if token.startswith("PRIVATE-")
+    )
 
     diagnostic = _reject(private_candidate, _empty_bundle())
     retained = repr(diagnostic)
 
-    assert "PRIVATE-PARSER-CANDIDATE-SENTINEL" not in retained
-    assert "share is" not in retained
-    assert "½" not in retained
+    assert private_marker not in retained
+    assert private_candidate not in retained
     assert diagnostic["answer_rewritten"] is False
     assert diagnostic["answer_fragment_deleted"] is False
     assert diagnostic["author_retry_requested"] is False
