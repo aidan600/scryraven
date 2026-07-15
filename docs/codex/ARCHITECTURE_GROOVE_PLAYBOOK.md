@@ -66,12 +66,16 @@ Default workflow:
 4. Implement with narrow continuation checks while one causal cluster converges.
 5. At a coherent checkpoint, run phase-focus and immediate-owner proof.
 6. Create coherent milestone commits and one clean candidate checkpoint.
-7. Review the exact implementation diff and run final-candidate validation once.
-8. If authorized, push and update or open the PR.
+7. Review the exact implementation diff and run the local final-candidate checks once.
+8. If authorized, push and update or open the PR, then wait for exact-head hosted CI.
 9. If separately authorized, run exceptional broad validation as its own job.
 10. Perform final independent or skeptical-maintainer review.
 11. Return one final phase bundle.
 ```
+
+Final-candidate validation is one checkpoint completed across the local checks
+in step 7 and exact-head hosted CI in step 8; publication does not restart the
+validation bundle.
 
 GitHub is the review surface for a completed phase branch, not a sub-step
 synchronization layer. Codex must not merge the PR.
