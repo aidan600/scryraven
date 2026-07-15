@@ -150,7 +150,6 @@ class _TraceHarness:
         self.recovery_scores = list(recovery_scores or [])
         self.search_calls: list[dict[str, Any]] = []
         self.analyst_calls = 0
-        self.economist_calls = 0
         self.author_calls = 0
         self.author_prompts: list[str] = []
 
@@ -291,10 +290,6 @@ class _TraceHarness:
             )
         return out
 
-    def run_economist_step(self, *_args: Any, **_kwargs: Any) -> str:
-        self.economist_calls += 1
-        return ""
-
     def deps(self) -> RunDeps:
         return RunDeps(
             ask_model=self.ask_model,
@@ -305,7 +300,6 @@ class _TraceHarness:
             is_plausible_domain=lambda _url: True,
             anchor_query_to_topic=lambda q, _topic: q,
             fetch_linkup_precision_block=lambda *_args, **_kwargs: "",
-            run_economist_step=self.run_economist_step,
             run_scout=lambda *_args, **_kwargs: {},
             should_skip_quant_scout=lambda *_args, **_kwargs: False,
             clean_json_response=lambda value: value,
@@ -463,7 +457,6 @@ def test_official_current_rules_recovery_executes_once_and_merges_additively(
     assert trace["weak_corpus_recovery_used"] is False
     assert trace["corpus_weak"] is False
     assert harness.analyst_calls == 1
-    assert harness.economist_calls == 0
     assert harness.author_calls == 1
     assert trace["economist_output_used_as_analysis"] is False
     assert trace["analyst_skipped_after_economist"] is False

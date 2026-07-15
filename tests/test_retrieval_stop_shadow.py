@@ -258,7 +258,6 @@ class _ShadowHarness:
             is_plausible_domain=lambda _url: True,
             anchor_query_to_topic=lambda q, _topic: q,
             fetch_linkup_precision_block=lambda *_args, **_kwargs: "",
-            run_economist_step=lambda *_args, **_kwargs: "",
             run_scout=lambda *_args, **_kwargs: {},
             should_skip_quant_scout=lambda *_args, **_kwargs: False,
             clean_json_response=lambda value: value,

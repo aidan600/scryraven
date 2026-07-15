@@ -12,7 +12,6 @@ import logging
 import os
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -171,7 +170,6 @@ from core.pipeline import (
     economist_schema_telemetry_defaults,
     kb_review_agent,
     quant_retrieval_sufficiency_telemetry_defaults,
-    thin_quant_preflight_missing_entities,
     validate_high_stakes_quantitative_query_shadow,
 )
 from core.policy import apply_policy_to_run_config, load_policy_state
@@ -268,7 +266,6 @@ from core.run_logging import (
 from core.runtime_prompt_assembly import (
     build_analyst_cached_prefix_from_scope,
     build_author_prompt_from_scope,
-    build_economist_preflight_prompt,
     build_expander_prompt,
     build_image_context,
     evidence_slice_for_analyst,
@@ -745,18 +742,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     scout_queries: list[str] = []
     scout_skip_reason: str | None = None
     economist_preflight_allowed: bool | None = None
-    economist_preflight_block_reason: str | None = None
+    economist_preflight_block_reason: str | None = (
+        "legacy_economist_ordinary_execution_retired"
+    )
     economist_preflight_missing_entities: list[str] = []
     missing_target_metric_directive_emitted = False
     author_system_prompt_key: str | None = None
     estimate_from_priors_requested = False
     estimate_from_priors_blocked_by_pre_analyst_gate = False
+    # Compatibility-only input for the passive legacy handoff contract. Ordinary
+    # runtime never activates, reads a dependency for, or invokes the Economist.
+    need_economist = False
     economist_ran = False
     economist_safety_telemetry: dict[str, Any] = {
         "economist_code_execution_requested": False,
         "economist_code_execution_blocked": False,
         "economist_safety_status": "code_execution_disabled",
-        "economist_skip_reason": None,
+        "economist_skip_reason": "legacy_economist_ordinary_execution_retired",
         **economist_schema_telemetry_defaults(),
     }
     quant_retrieval_sufficiency_telemetry: dict[str, Any] = (
@@ -3286,162 +3288,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     cached_prefix = final_evidence_handoff.cached_prefix
     author_notes = ""
 
-    # --- LINKUP (high tier) + QUANTITATIVE COMPONENT ---
-    # When both apply, Linkup runs in parallel with the fast pre-flight gate; the economist
-    # runs only after the gate passes (sequential), so we never spend smart-model time without evidence.
-    _economist_allowed = (not corpus_weak) and (
-        corpus_state != CorpusState.ESTIMATE_FROM_PRIORS.value
-    )
+    # --- LINKUP (high tier) ---
+    # Linkup remains an independent high-complexity retrieval supplement. The
+    # legacy Economist ordinary-execution branch has been retired.
     need_linkup = complexity == "high" and bool(os.getenv("LINKUP_API_KEY")) and not corpus_weak
-    need_economist = (
-        report_type in QUANT_REPORT_TYPES
-        and bool(os.getenv("OPENAI_API_KEY"))
-        and _economist_allowed
-    )
-
-    def _record_economist_preflight_result(
-        allowed: bool,
-        missing_entities: list[str],
-        block_reason: str | None,
-    ) -> None:
-        nonlocal economist_preflight_allowed
-        nonlocal economist_preflight_block_reason
-        nonlocal economist_preflight_missing_entities
-        economist_preflight_allowed = bool(allowed)
-        economist_preflight_missing_entities = [
-            str(entity).strip()[:200]
-            for entity in (missing_entities or [])
-            if str(entity).strip()
-        ]
-        economist_preflight_block_reason = (
-            str(block_reason).strip() if (not allowed and block_reason) else None
-        )
-
-    def _economist_preflight_gate() -> tuple[bool, list[str], str | None]:
-        """Return (allow_economist, missing_entities, block_reason). Fail-open when the gate cannot evaluate."""
-        _pf_prompt = build_economist_preflight_prompt(
-            entities_list=entities_list,
-            primary_entity=primary_entity,
-            core_topic=core_topic,
-            final_top_evidence=final_top_evidence,
-        )
-        if _pf_prompt is None:
-            return (True, [], None)
-        _pf_entities = _pf_prompt.entities
-        _pf_system = _pf_prompt.system_prompt
-        _pf_user = _pf_prompt.user_prompt
-        _measure_context_stage(
-            "economist_preflight",
-            prompt=_pf_user,
-            system_prompt=_pf_system,
-            evidence_passages=final_top_evidence,
-        )
-        try:
-            _pf_raw = ask_model(
-                _pf_user,
-                _pf_system,
-                provider=fast_provider,
-                model=fast_model,
-                effort="low",
-                base_url=local_url,
-                api_key=or_api_key,
-                use_reasoning=False,
-                require_json=True,
-                max_tokens=100,
-                temperature=0,
-            )
-            _pf_clean = deps.clean_json_response(_pf_raw)
-            _pf_obj = json.loads(_pf_clean)
-            if not isinstance(_pf_obj, dict):
-                raise ValueError("pre-flight JSON root must be an object")
-            _missing_ent = thin_quant_preflight_missing_entities(_pf_obj, _pf_entities)
-            if _missing_ent:
-                return (
-                    False,
-                    _missing_ent,
-                    "missing_numerical_anchor_for_entities",
-                )
-            return (True, [], None)
-        except Exception as e:
-            run_log.warning("Economist pre-flight gate failed (fail-open): %s", e)
-            return (True, [], None)
-
-    def _run_economist_step() -> str | None:
-        deps.run_economist_step(
-            core_topic=core_topic,
-            all_passages=final_top_evidence,
-            current_date=current_date,
-            ask_model=ask_model,
-            clean_json_response=deps.clean_json_response,
-            default_system=DEFAULT_SYSTEM,
-            provider=smart_provider,
-            model=smart_model,
-            base_url=local_url,
-            api_key=or_api_key,
-            scout_context=scout_context,
-            complexity=complexity,
-            corpus_weak=corpus_weak,
-            corpus_state=corpus_state,
-            safety_telemetry=economist_safety_telemetry,
-            user_query=query,
-        )
-        return None
-
-    if need_linkup and need_economist:
-        status.step("Fetching Linkup context; running quantitative evidence gate (parallel)...")
-        _par_t0 = time.monotonic()
-
-        def _linkup_job() -> str:
-            return fetch_linkup_precision_block(
-                core_topic,
-                intent,
-                complexity,
-                include_domains,
-                exclude_domains,
-                provider_diagnostics=provider_diagnostics,
-            )
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            fut_l = pool.submit(_linkup_job)
-            fut_pf = pool.submit(_economist_preflight_gate)
-            linkup_block = fut_l.result() or ""
-            (
-                allow_economist,
-                _preflight_missing,
-                _preflight_block_reason,
-            ) = fut_pf.result()
-        _record_economist_preflight_result(
-            allow_economist,
-            _preflight_missing,
-            _preflight_block_reason,
-        )
-
-        _gate_linkup_seconds = max(0.0, time.monotonic() - _par_t0)
-        run_log.info("[STEP] linkup+economist pre-flight gate in %.2fs", _gate_linkup_seconds)
-        if linkup_block:
-            status.step("Integrated Linkup precision context.")
-        cached_prefix += linkup_block
-        if allow_economist:
-            status.step("\u2699\ufe0f Building quantitative model...")
-            _eco_t0 = time.monotonic()
-            _run_economist_step()
-            economist_ran = True
-            economist_seconds = max(0.0, time.monotonic() - _eco_t0)
-            run_log.info("[STEP] economist completed in %.2fs", economist_seconds)
-        else:
-            economist_ran = False
-            run_log.info(
-                "[STEP] economist skipped (pre-flight gate: missing evidence for %s)", _preflight_missing
-            )
-            status.step("Quantitative model skipped \u2014 insufficient cited numerical evidence in retrieval.")
-            author_notes += (
-                "\n\nNOTE FOR AUTHOR \u2014 QUANTITATIVE FRAMEWORK NOT RUN:\n"
-                "The economist step was skipped because retrieved evidence did not contain explicit "
-                "cited numerical metrics for: "
-                + ", ".join(_preflight_missing)
-                + ". Answer from available evidence; do not present a quantitative framework or MODEL-DERIVED tables.\n"
-            )
-    elif need_linkup:
+    if need_linkup:
         status.step("Fetching Linkup deep precision block...")
         linkup_block = fetch_linkup_precision_block(
             core_topic,
@@ -3454,37 +3305,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if linkup_block:
             status.step("Integrated Linkup precision context.")
         cached_prefix += linkup_block
-    elif need_economist:
-        (
-            allow_economist,
-            _preflight_missing,
-            _preflight_block_reason,
-        ) = _economist_preflight_gate()
-        _record_economist_preflight_result(
-            allow_economist,
-            _preflight_missing,
-            _preflight_block_reason,
-        )
-        if not allow_economist:
-            economist_ran = False
-            run_log.info(
-                "[STEP] economist skipped (pre-flight gate: missing evidence for %s)", _preflight_missing
-            )
-            status.step("Quantitative model skipped \u2014 insufficient cited numerical evidence in retrieval.")
-            author_notes += (
-                "\n\nNOTE FOR AUTHOR \u2014 QUANTITATIVE FRAMEWORK NOT RUN:\n"
-                "The economist step was skipped because retrieved evidence did not contain explicit "
-                "cited numerical metrics for: "
-                + ", ".join(_preflight_missing)
-                + ". Answer from available evidence; do not present a quantitative framework or MODEL-DERIVED tables.\n"
-            )
-        else:
-            status.step("\u2699\ufe0f Building quantitative model...")
-            _eco_t0 = time.monotonic()
-            _run_economist_step()
-            economist_ran = True
-            economist_seconds = max(0.0, time.monotonic() - _eco_t0)
-            run_log.info("[STEP] economist completed in %.2fs", economist_seconds)
 
     if (
         not economist_safety_telemetry.get("economist_schema_version")

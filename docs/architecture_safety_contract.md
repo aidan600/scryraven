@@ -1,12 +1,28 @@
 # Architecture Safety Contract
 
-Status: Phase 1 contract documentation. Classification: no-op/docs-only.
+Status: legacy pre-retirement safety contract retained for isolated
+compatibility implementation. Classification: no-op/docs-only.
 
 This note documents the safety boundary for the ScryRaven research pipeline.
 It was originally written during the ProPlex/FauxPlex private-prototype era,
 and some historical artifact names remain for continuity. It is descriptive
 only: it does not authorize code, prompt, routing, retrieval, provider,
 source-filtering, telemetry, Analyst, Economist, or Author behavior changes.
+
+## Current Retirement Posture
+
+As verified at `7bbfff0f604096e3437bfdadc3dd8b81ec56b57c`, current ordinary CLI/backend
+composition does not inject or execute the legacy Economist, and the ordinary
+orchestrator has no Economist preflight or execution branch. The pipeline map,
+stage table, artifact handoffs, and promotion vocabulary below document the
+pre-retirement safety boundary and retained compatibility meanings; they are
+not a description of a current ordinary Economist stage.
+
+The isolated legacy implementation and direct safety tests remain so that
+repository-visible compatibility code cannot execute generated code or hand raw
+Economist artifacts to Author. Passive legacy trace fields remain diagnostic
+only. The existing S1 source-bound calculator is a separate bounded Specialist,
+not a replacement Economist or a broad quantitative-analysis agent.
 
 ## Recommendation Classifications
 
@@ -21,13 +37,13 @@ source-filtering, telemetry, Analyst, Economist, or Author behavior changes.
 | Add or rename telemetry fields. | diagnostics/telemetry-only |
 | Use Economist output to skip Analyst, change weak-corpus gates, or route raw Economist artifacts to Author. | behavior-changing; prohibited by this contract |
 
-## Pipeline Map
+## Legacy Pre-Retirement Pipeline Map
 
 Router -> Retrieval -> Economist -> Analyst -> Author -> Telemetry
 
-The pipeline may emit telemetry at several points, but telemetry does not change
-the stage order unless an existing active gate already does so. In particular,
-Economist shadow signals are diagnostic artifacts, not routing decisions.
+This map is retained solely to interpret old traces and the safety rules below.
+It is not the current ordinary product path. Current passive Economist shadow
+signals remain diagnostic artifacts, not routing decisions.
 
 ## Stage Responsibility Table
 
@@ -35,7 +51,7 @@ Economist shadow signals are diagnostic artifacts, not routing decisions.
 | --- | --- | --- |
 | Router | Classify intent, query type, entities, report type, and mode-related routing metadata. | Bypass retrieval, select providers outside existing policy, or decide Analyst skip from Economist fields. |
 | Retrieval | Search, fetch, chunk, score, filter, and assess corpus state, including existing weak-corpus recovery and pre-Analyst gating. | Change weak-corpus gating because of Economist output or send unsupported evidence forward as if healthy. |
-| Economist | Produce bounded quantitative scaffolding, safety telemetry, raw framework output, and shadow `quantitative_packet` diagnostics when applicable. | Execute code, become the final analysis, skip Analyst, or hand raw artifacts directly to Author. |
+| Economist (legacy implementation only) | Historically produced bounded quantitative scaffolding, safety telemetry, raw framework output, and shadow `quantitative_packet` diagnostics. It is not composed into current ordinary execution. | Execute code, become the final analysis, skip Analyst, or hand raw artifacts directly to Author. |
 | Analyst | Review evidence and any permitted quantitative scaffolding, synthesize conclusions, qualify uncertainty, and produce Author-ready analysis. | Treat raw Economist material as already reviewed or omit required caveats for weak evidence. |
 | Author | Write the final user-facing answer from retrieved evidence and Analyst-reviewed synthesis. | Receive or rely on raw `quantitative_packet`, raw Economist framework text, or raw `economist_v1` JSON. |
 | Telemetry | Record rich JSONL trace data, compact SQLite summary data, and read-only offline summaries. | Promote shadow fields into runtime control flow or let summarizer output affect behavior. |

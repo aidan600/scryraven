@@ -77,7 +77,6 @@ from core.pipeline import (  # noqa: E402
     QUANT_REPORT_TYPES,
     fetch_linkup_precision_block,
     process_search_queries,
-    run_economist_step,
     run_scout,
     should_skip_quant_scout,
 )
@@ -968,7 +967,6 @@ def main(argv: list[str] | None = None) -> int:
         is_plausible_domain=is_plausible_domain,
         anchor_query_to_topic=anchor_query_to_topic,
         fetch_linkup_precision_block=fetch_linkup_precision_block,
-        run_economist_step=run_economist_step,
         run_scout=run_scout,
         should_skip_quant_scout=should_skip_quant_scout,
         clean_json_response=clean_json_response,

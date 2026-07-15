@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 7bbfff0f604096e3437bfdadc3dd8b81ec56b57c
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -57,25 +57,33 @@ fail-closed, and retained `ui/` source is reference and migration material only.
 Saved-thread Streamlit follow-up is not a current product path. No replacement
 UI framework has been selected.
 
-## Active Next: Legacy Economist Ordinary-Execution Retirement
+## Completed Remediation: Legacy Economist Ordinary-Execution Retirement
 
-The next phase is intended to:
+Legacy Economist execution and its dependency injection are retired from
+ordinary CLI/backend runs. The implementation and direct safety tests remain as
+isolated legacy compatibility material, and passive telemetry remains
+non-authoritative. Linkup is unchanged. This remediation installed no economic
+Specialist replacement and did not expand S1 beyond its existing bounded
+source-bound calculation capability.
 
-- remove legacy Economist execution from ordinary CLI/backend runs;
-- remove ordinary dependency composition that keeps it reachable;
-- preserve the governed generic Specialist substrate as the selected direction
-  for future bounded specialist capabilities;
-- avoid building an economic Specialist replacement in the same retirement
-  phase; and
-- avoid provider, retrieval, prompt, citation, Author, or live-validation
-  changes.
+## Active Next: Post-Retirement Product Topology and Orchestrator Authority Census
 
-This roadmap records sequence only. It does not license that implementation.
+The next checkpoint is a read-only, offline `PROOF` phase. It must inventory:
+
+- every current ordinary product root and entrypoint;
+- current runtime paths and their ordinary consumers;
+- retained compatibility and retired reference surfaces;
+- every answer-producing path; and
+- remaining orchestrator authority islands and their intended owners.
+
+The census may classify debt and recommend later `BUILD` or `REPAIR` phases. It
+must not repair, replace, activate, or retire any inventoried surface. It grants
+no provider, model, search, retrieval, live-call, UI, or publication authority.
 
 ## Approved Remediation Sequence
 
-After legacy Economist ordinary-execution retirement, the approved checkpoints
-are ordered as follows.
+After the post-retirement topology and authority census, the approved product
+checkpoints remain ordered as follows.
 
 ### Specialist Proposal-Instance Admission Hardening
 
@@ -109,7 +117,7 @@ itself authorize runtime changes or live validation.
 
 ### Separately Licensed Quantitative Live Validation
 
-Only after Economist retirement, proposal-instance admission hardening,
+Only after the post-retirement census, proposal-instance admission hardening,
 structured-list route qualification repair, and the bounded convergence
 checkpoint may separately licensed quantitative live validation be considered.
 Offline proof does not authorize live work, and this roadmap grants no live

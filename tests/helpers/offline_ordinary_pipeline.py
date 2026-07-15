@@ -273,7 +273,6 @@ class OfflineOrdinaryPipelineHarness:
             fetch_linkup_precision_block=self.forbidden_live_dependency(
                 "fetch_linkup_precision_block"
             ),
-            run_economist_step=self.forbidden_live_dependency("run_economist_step"),
             run_scout=self.forbidden_live_dependency("run_scout"),
             should_skip_quant_scout=lambda *_args, **_kwargs: True,
             clean_json_response=lambda value: value,

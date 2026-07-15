@@ -1,11 +1,27 @@
 # Economist Shadow Telemetry Promotion Policy
 
-Status: Phase 10 policy note. Classification: docs-only / policy-only.
+Status: legacy/superseded Phase 10 policy note retained for compatibility-field
+interpretation. Classification: docs-only / policy-only.
 
 This document clarifies the requirements that would have to be satisfied before
 any future promotion of Economist shadow telemetry could even be considered. It
 does not authorize implementation, does not change current behavior, and does
-not create a promotion path by itself.
+not create a promotion path by itself. Legacy Economist ordinary execution was
+subsequently retired.
+
+## Current Post-Retirement Status
+
+At `7bbfff0f604096e3437bfdadc3dd8b81ec56b57c`, ordinary CLI/backend execution
+has no Economist runtime stage, preflight, dependency injection, or execution
+callsite. Retained skip-candidate, eligibility, alignment, handoff, and trace
+fields are passive legacy compatibility data. They do not represent a dormant
+runtime, a feature flag, or a current promotion path.
+
+This note is therefore superseded as a promotion roadmap. Its prohibitions and
+evidence cautions remain useful when reading historical traces or directly
+testing the isolated legacy implementation. Any proposal to add a future
+bounded Specialist must begin as a new separately licensed phase and must not
+claim to promote these fields back into an Economist runtime stage.
 
 ## Status / Scope
 
@@ -13,10 +29,10 @@ This pass is limited to policy documentation. It makes no source, test, prompt,
 routing, retrieval, provider-selection, source-filtering, Analyst, Economist,
 Author, telemetry-emission, summarizer, replay, or weak-corpus gate changes.
 
-The live runtime policy remains unchanged: Economist shadow telemetry is
-diagnostic only.
+The current ordinary runtime does not execute the Economist. Retained Economist
+shadow telemetry is diagnostic compatibility data only.
 
-## Current Live Policy
+## Current Compatibility-Field Policy
 
 All Economist skip candidate, skip eligibility, and alignment fields are
 diagnostic only:
@@ -63,10 +79,11 @@ SQLite compact summaries and summarizer readiness output are review aids only.
 They must not be treated as runtime policy or as a substitute for full replay
 and safety evidence.
 
-## Promotion Prerequisites
+## Legacy Hypothetical Promotion Prerequisites
 
-Any future behavior-changing promotion, if ever considered, must require all of
-the following before implementation is approved:
+These pre-retirement prerequisites are retained as historical safety context,
+not as an approved sequence. They do not provide a current promotion route. Any
+separately licensed future proposal would at minimum have to address:
 
 - Multiple clean cross-domain runs.
 - Negative controls.
@@ -133,7 +150,8 @@ separate approved pass scopes that change.
 ## Approval And Implementation Requirements
 
 This policy document does not authorize implementation. It does not change
-current behavior and does not create a promotion path by itself.
+current behavior and does not create a promotion path by itself. There is no
+current Economist runtime stage to promote.
 
 Any future behavior change requires explicit approval and a separate
 behavior-changing pass. That separate pass must include Rule 0 planning,

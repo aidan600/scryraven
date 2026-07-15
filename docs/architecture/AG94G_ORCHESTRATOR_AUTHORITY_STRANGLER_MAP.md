@@ -3,6 +3,10 @@
 Status: implemented as an offline architecture cleanup, authority inventory, and
 one small behavior-preserving projection extraction.
 
+Maintenance update: legacy Economist ordinary execution was retired at
+`7bbfff0f604096e3437bfdadc3dd8b81ec56b57c`. This update changes the Economist
+callsite/debt disposition below; it does not reopen AG-94G's historical scope.
+
 Validation boundary: repo-visible files, static inspection, focused tests, and
 offline checks only. No live ScryRaven/proplex provider, model, search,
 retrieval, secret, `.env`, DB row, raw provider payload, raw prompt, private log,
@@ -60,7 +64,8 @@ canonical state and must not re-decide it.
 
 ## Current Orchestrator Debt Summary
 
-The current orchestrator is 4,730 lines after this phase. It still contains:
+At the Economist retirement checkpoint, the orchestrator has 4,124 physical
+lines. It still contains:
 
 - provider/model/search execution wrappers and callsites;
 - retrieval stop/continue decisions through a compatibility controller;
@@ -69,7 +74,9 @@ The current orchestrator is 4,730 lines after this phase. It still contains:
 - weak-corpus recovery scheduling;
 - conflict-resolution retrieval scheduling;
 - targeted and ordinary continuation gates;
-- supplemental search, Scrutineer/remediation, Linkup, and Economist callsites;
+- supplemental search, Scrutineer/remediation, and Linkup callsites;
+- passive legacy Economist handoff and trace compatibility data, but no
+  ordinary Economist execution callsite;
 - Author/final-answer prompt-adjacent assembly callsites;
 - trace/export/session/report packaging;
 - compatibility mirrors into RunController state.
@@ -119,8 +126,8 @@ Buckets:
 | pre-recovery source-class telemetry, EvidenceLedger reduction, AnswerContract compatibility, SearchJudgment, lines 3298-3505 | 1 / 3 / 4 | Reduces contract/ledger facts, builds compatibility AnswerContract, executes SearchJudgment. | EvidenceLedger and SearchJudgment own canonical decisions; AnswerContract should become compatibility-only adapter. | Medium; mixed delegated and compatibility authority; changed: no. | Demote AnswerContract fallback after canonical coverage tests. |
 | authoritative-source action, conflict lifecycle, checkpoint refresh, controller spine, and recovery dispatch, lines 3506-3787 | 4 / 5 | Consumes SearchJudgment through authoritative-source action adapter, updates source-class lifecycle, conflict lifecycle, checkpoint/spine, then runs source-class and conflict retrieval executors. | SearchJudgment/EvidenceLedger recovery permission plus bounded source-class/conflict executors. | High; authority-bearing dispatch and search execution; changed: no. | Second recommended target after retrieval stop: source-class recovery dispatch permission. |
 | final evidence bundle and EvidenceLedger final reductions, lines 3788-3821 | 1 / 2 / 3 | Builds final evidence bundle and reduces final evidence into EvidenceLedger. | EvidenceLedger and FinalAnswerPacket, with final evidence selection in owned bundle builder. | Medium; final evidence identity affects citations and Author input; changed: no. | Keep callsite until FinalAnswerPacket can consume a canonical final-evidence selection object directly. |
-| Linkup and Economist block, lines 3823-4027 | 5 | Gates Linkup and Economist, runs model/linkup calls, adds Author notes when quantitative preflight blocks. | Economist bounded executor plus FinalAnswerPacket/AuthorExecutor posture. | High; model/provider/product behavior and Author-visible notes; changed: no. | Closed for this phase; future Economist phase with prompt/provider parity. |
-| quantitative telemetry and fallback directive, lines 4028-4073 | 2 / 6 | Builds high-stakes quant telemetry and Author fallback directive. | Economist/FinalAnswerPacket/AuthorExecutor. | Medium/high; directive can affect final answer; changed: no. | Move only with exact Author-note text parity and packet consumption tests. |
+| Linkup callsite and retired Economist compatibility region, current post-AG-94G surface | 5 / 4 / 6 | Independently gates and calls Linkup. Ordinary Economist gating, preflight, execution, dependency reads, and the quantitative-preflight Author note are retired. Passive legacy handoff/trace fields remain fixed to a non-running posture. | Linkup bounded retrieval executor; post-retirement topology census for any remaining legacy Economist compatibility owner. | High for Linkup provider behavior; low/medium for passive compatibility data; Economist ordinary execution changed: yes, retired at `7bbfff0`. | Keep Linkup parity. Inventory compatibility consumers before any later field or implementation cleanup; do not build a replacement here. |
+| quantitative telemetry and fallback directive, current post-retirement surface | 2 / 6 | Builds high-stakes quantitative diagnostics and passive legacy Economist compatibility telemetry. The former preflight-generated Author fallback note is absent. | Quantitative diagnostics owners plus trace/export observers; no Economist runtime owner is installed. | Medium; diagnostics can look authoritative even though they do not execute or route the Economist; changed: yes. | Keep passive/non-authoritative; classify consumers in the post-retirement topology census. |
 | Analyst runtime stage, lines 4074-4148 | 1 / 5 | Builds Analyst prefix/slice and calls bounded Analyst runtime stage. | Analyst runtime executor. | High due model/prompt behavior; delegated but callsite remains; changed: no. | Keep until Analyst executor consumes packetized inputs. |
 | legacy review, synthesis evaluator, Scrutineer/remediation, supplemental search, lines 4150-4173 | 4 / 5 | Calls legacy review runtime, which may run model/search supplemental and Scrutineer/remediation behavior. | Dedicated Scrutineer/supplemental executors subordinated to RunAuthority. | High; provider/model/search/final-context behavior; changed: no. | Closed for this phase; future supplemental lane demotion. |
 | Author evidence attachment, recency notes, prompt assembly, lines 4175-4213 | 2 / 5 | Attaches Author evidence, computes recency notes, builds prompt assembly before sufficiency/packet. | FinalAnswerPacket and AuthorExecutor. | High; Author/citation/prose surface; changed: no. | Move only when packet owns all Author-visible posture and tests prove prompt parity. |
@@ -142,6 +149,7 @@ Buckets:
 | Conflict-resolution retrieval | `conflict_resolution_controller.py` plus orchestrator AnswerContract adapter | RunAuthority conflict posture and bounded conflict executor | Conflict retrieval admission reads canonical conflict posture rather than compatibility AnswerContract facts. |
 | Targeted retrieval | `targeted_retrieval_controller.py` plus orchestrator ownership synthesis | QueryPlan/SearchJudgment continuation permission | Targeted retrieval lifecycle input no longer requires orchestrator-local lane ownership reconstruction. |
 | Supplemental lanes | legacy review runtime, Scrutineer/remediation, synthesis evaluator | Dedicated bounded executors subordinated to canonical sufficiency/final packet state | Supplemental search and remediation cannot alter final context without a canonical RunAuthority handoff. |
+| Legacy Economist compatibility data | optional `RunDeps` field, Economist handoff contract, Analyst/post-Author projection, trace/session fields | No current execution owner; post-retirement census must identify every actual compatibility consumer before cleanup | Ordinary composition and orchestrator remain unable to invoke the Economist; any later cleanup is separately licensed. |
 | Post-author compatibility projections | post-author/session/runtime trace projection helpers plus orchestrator source-class recomputation | Trace/export/report observers derived from EvidenceLedger/FinalAnswerPacket | Projections cannot rebuild source obligation/final posture from trace-local facts. |
 
 ## Licensed / Closed / Target / Historical Glossary
@@ -303,7 +311,7 @@ phase records, safety contexts, or the glossary sentence explaining that
 1. Is `pipeline_orchestrator.py` still behavior-bearing?
    - Yes. It still hosts provider/model/search callsites, retrieval loop
      scheduling, stop/continue helpers, controller-spine dispatch, source-class,
-     weak-corpus, conflict, supplemental, Economist, Author-adjacent, and
+     weak-corpus, conflict, supplemental, Linkup, Author-adjacent, and
      trace/session compatibility regions.
 2. Which behavior-bearing island should be strangled first?
    - Retrieval stop/continue.
@@ -315,6 +323,8 @@ phase records, safety contexts, or the glossary sentence explaining that
      `post_author_output_projection.py`.
 5. What remains in `pipeline_orchestrator.py`?
    - Lifecycle coordination plus the behavior-bearing islands inventoried above.
+     Economist ordinary execution is no longer one of those islands; only
+     passive legacy compatibility data remains for the next census.
 6. Which docs were updated to stop protecting the orchestrator by default?
    - `AGENTS.md`, Codex guidance map, RunAuthority guide, Architecture Groove
      playbook, phase/execution templates, Controller playbook note, AG94C note,
