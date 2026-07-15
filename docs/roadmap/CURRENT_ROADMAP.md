@@ -36,7 +36,7 @@ The high-level goal is to establish:
 S1:
 
 - registers and consumes the deterministic source-bound calculator through the
-  S0 substrate in the fixed ordinary CLI/UI product composition;
+  S0 substrate in the fixed ordinary CLI product composition;
 - supplies one repository-owned model-visible proposal contract whose
   declarative schema also drives runtime validation;
 - preserves candidate-primary evidence quality without favorable defaults and
@@ -50,14 +50,86 @@ S1:
   while retaining neither;
 - leaves estimates, arbitrary formulas, conversions, and acquisition unsupported.
 
-## Active Next: Separately Licensed Quantitative Live Validation
+## Completed Remediation: Legacy Streamlit Ordinary-Product Retirement
 
-The next checkpoint is a bounded, separately authorized live validation of the
-installed quantitative product path. S1's offline proofs do not authorize that
-work or establish live correctness, arbitrary-query coverage, or broad
-quantitative reasoning quality.
+The legacy Streamlit shell is retired from ordinary-product status. `app.py` is
+fail-closed, and retained `ui/` source is reference and migration material only.
+Saved-thread Streamlit follow-up is not a current product path. No replacement
+UI framework has been selected.
+
+## Active Next: Legacy Economist Ordinary-Execution Retirement
+
+The next phase is intended to:
+
+- remove legacy Economist execution from ordinary CLI/backend runs;
+- remove ordinary dependency composition that keeps it reachable;
+- preserve the governed generic Specialist substrate as the selected direction
+  for future bounded specialist capabilities;
+- avoid building an economic Specialist replacement in the same retirement
+  phase; and
+- avoid provider, retrieval, prompt, citation, Author, or live-validation
+  changes.
+
+This roadmap records sequence only. It does not license that implementation.
+
+## Approved Remediation Sequence
+
+After legacy Economist ordinary-execution retirement, the approved checkpoints
+are ordered as follows.
+
+### Specialist Proposal-Instance Admission Hardening
+
+This checkpoint will:
+
+- enforce required fields;
+- reject unsupported schema versions;
+- reject unknown fields where the contract is exact;
+- validate actual model-produced proposal JSON through the real admission
+  boundary; and
+- align canonical result-unit vocabulary.
+
+It must not expand Specialist capability or route eligibility.
+
+### Structured-List Route Qualification Repair
+
+This checkpoint will:
+
+- support numbered and imperative multi-component requests;
+- preserve trailing compare, calculate, and convert instructions;
+- route qualifying requests to the installed bounded path; and
+- keep nonqualifying requests direct.
+
+It must not alter providers, acquisition, prompts, or Specialist execution.
+
+### Bounded Remediation/Convergence Checkpoint
+
+The retirement and repair outcomes must converge through one bounded checkpoint
+before any quantitative live work is considered. This checkpoint does not
+itself authorize runtime changes or live validation.
+
+### Separately Licensed Quantitative Live Validation
+
+Only after Economist retirement, proposal-instance admission hardening,
+structured-list route qualification repair, and the bounded convergence
+checkpoint may separately licensed quantitative live validation be considered.
+Offline proof does not authorize live work, and this roadmap grants no live
+license. Arbitrary-query coverage, broad quantitative reasoning quality, and
+product correctness remain unproved.
 
 ## Later, Deliberately Underspecified
+
+Conversational follow-up remains future product work. Its intended direction is:
+
+```text
+transport-neutral conversation persistence
+-> follow-up application service
+-> intentional delivery adapter
+```
+
+It must not be restored as a Streamlit callback. Future UI work must consume
+transport-neutral application services. No replacement UI framework has been
+selected; local web, hosted web, desktop, Streamlit, and other delivery
+frameworks remain undecided.
 
 - Social-source acquisition and authority design.
 - Social Awareness specialist design and offline validation.

@@ -236,6 +236,7 @@ capability arbitration. It does not prove live correctness, arbitrary-query
 coverage, broad quantitative reasoning quality, answer quality, or production
 stability.
 
-The next roadmap checkpoint is separately licensed quantitative live
-validation. That checkpoint must not be inferred from these offline product-
-path proofs or from capability availability.
+Current phase sequence is owned exclusively by
+`docs/roadmap/CURRENT_ROADMAP.md`. Capability availability and these offline
+product-path proofs do not authorize live validation, do not select the next
+phase, and do not establish live correctness.
