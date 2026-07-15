@@ -218,6 +218,9 @@ _TRANSPORT_SECTION_ASSERTION_CUE_RE = re.compile(
     r"(?i)(?:\b(?:is|are|was|were|has|have|had|reports|reported|states|stated|"
     r"reached|costs?|totals?|equals?|amounts?)\b|^[^:\n]{1,120}:\s*\S)"
 )
+_TRANSPORT_REFERENCE_ONLY_HINT_RE = re.compile(
+    r"(?i)\b(?:source|reference|citation|report|memo|document|publication)\b"
+)
 _MARKDOWN_LIST_MARKER_RE = re.compile(r"^\s*[-*+]\s+")
 _NUMERIC_LIST_MARKER_RE = re.compile(r"^\s*(?P<ordinal>\d+)[.)]\s+")
 _MAX_STRUCTURAL_LIST_ORDINAL = 20
@@ -524,7 +527,11 @@ def _assertions(text: str) -> list[str]:
             if not heading:
                 in_transport_section = False
             continue
-        if in_transport_section and not _TRANSPORT_SECTION_ASSERTION_CUE_RE.search(line):
+        if (
+            in_transport_section
+            and _TRANSPORT_REFERENCE_ONLY_HINT_RE.search(line)
+            and not _TRANSPORT_SECTION_ASSERTION_CUE_RE.search(line)
+        ):
             if list_item:
                 flush_paragraph()
             continue

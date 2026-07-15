@@ -155,6 +155,13 @@ def test_every_reproduced_surface_fails_closed_instead_of_accepting_zero_candida
     assert diagnostic["rejection_count"] >= 1
 
 
+def test_source_section_nonreference_numeric_row_without_copula_fails_closed() -> None:
+    diagnostic = _reject("Sources:\n- Revenue USD100.", _empty_bundle())
+
+    assert diagnostic["candidate_quantitative_literal_count"] == 1
+    assert diagnostic["rejection_count"] == 1
+
+
 @pytest.mark.parametrize(
     ("source_claim", "candidate"),
     (
