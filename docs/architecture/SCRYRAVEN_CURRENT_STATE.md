@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 28d86c803682dc90fa6126ae7157c27fc49673f7
+Verified-against-runtime: 7bbfff0f604096e3437bfdadc3dd8b81ec56b57c
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -23,7 +23,9 @@ The public CLI is the current supported executable interface. Both
 the backend pipeline and the installed path described below. Bounded
 multi-component behavior applies only to the named query class
 `ordinary-bounded-multicomponent-factual-synthesis-v1`. Nonqualifying and
-single-component requests retain their established direct ordinary path.
+single-component requests retain their established direct ordinary path. The
+ordinary CLI/backend composition no longer injects or executes the legacy
+Economist callable.
 
 The legacy Streamlit shell, its home-page UI, and saved-thread Streamlit
 follow-up are not ordinary product consumption. The retained `ui/` source is
@@ -151,9 +153,35 @@ authority digest. Missing or stale reconstruction authority fails before graph
 reduction, and no packet, contract, catalog, or source material is newly
 retained or exported.
 
+## Retired Legacy Economist Ordinary Execution
+
+Legacy Economist execution is retired from the ordinary CLI/backend product
+path. The ordinary orchestrator no longer gates, preflights, schedules, or calls
+the Economist, and current dependency composition does not inject
+`run_economist_step`. Configuring `OPENAI_API_KEY` does not restore that path.
+The former quantitative-preflight Author note is likewise absent. Independent
+Linkup eligibility and call arguments are unchanged.
+
+The `RunDeps.run_economist_step` field remains optional and unread as an
+isolated compatibility shape. The legacy implementation, its direct
+source-binding and code-execution safety tests, retained Streamlit references,
+and passive handoff/trace fields remain repository-visible legacy material.
+Ordinary traces identify retirement explicitly, keep `economist_ran` false and
+`economist_seconds` zero, and do not produce an Economist packet. Those fields
+are compatibility data, not a dormant execution route or future authority.
+
+This retirement installs no replacement economic Specialist. The existing S1
+`specialist.source_bound_calculation` capability remains the only installed
+bounded quantitative Specialist: it performs deterministic calculations from
+exact selected source literals inside the named bounded multi-component class.
+It does not provide broad economic analysis, arbitrary formulas, estimates,
+acquisition, or general quantitative reasoning.
+
 ## Not Installed
 
 - Arbitrary-query multi-component support.
+- Legacy Economist execution in ordinary CLI/backend runs.
+- A replacement economic Specialist or broad quantitative reasoning agent.
 - Social-source acquisition or a Social Awareness specialist.
 - Additional product Specialists, arbitrary formulas, estimates, or unit/currency conversion.
 - Adaptive provider concurrency or Local component parallelism.
@@ -177,6 +205,7 @@ retained or exported.
   unproved.
 - Broad live end-to-end product correctness or competitive answer quality.
 - Live quantitative correctness or broad quantitative reasoning quality.
+- Broad ordinary quantitative or economic-analysis replacement coverage.
 - Arbitrary-query readiness.
 - Maximum useful hosted or Local concurrency.
 - Production stability across normal user traffic.

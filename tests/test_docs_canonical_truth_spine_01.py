@@ -23,6 +23,11 @@ GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
+ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
+ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
+ECONOMIST_TELEMETRY_POLICY = (
+    DOCS / "economist_shadow_telemetry_promotion_policy.md"
+)
 CONCERN_OWNERS = {
     "canonical:dprime-role-contract": ARCH / "DPRIME_ARCHITECTURE.md",
     "canonical:run-contract-semantic-loop": ARCH / "RUN_CONTRACT_SEMANTIC_LOOP.md",
@@ -62,8 +67,9 @@ QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = (
-    "28d86c803682dc90fa6126ae7157c27fc49673f7"  # pragma: allowlist secret
+    "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
 )
+LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 QUANT_CONTAINMENT_RUNTIME_SHA = (
     "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
 )
@@ -114,7 +120,11 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
             CURRENT_STATE,
             CURRENT_STATE_RUNTIME_SHA,
         ),
-        ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
+        (
+            "canonical:current-roadmap",
+            ROADMAP,
+            LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA,
+        ),
     ):
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
@@ -282,7 +292,11 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Remediation: Legacy Streamlit Ordinary-Product Retirement"
     )
     economist = roadmap.index(
-        "## Active Next: Legacy Economist Ordinary-Execution Retirement"
+        "## Completed Remediation: Legacy Economist Ordinary-Execution Retirement"
+    )
+    census = roadmap.index(
+        "## Active Next: Post-Retirement Product Topology and Orchestrator "
+        "Authority Census"
     )
     proposal = roadmap.index("### Specialist Proposal-Instance Admission Hardening")
     structured_route = roadmap.index(
@@ -291,7 +305,17 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     convergence = roadmap.index("### Bounded Remediation/Convergence Checkpoint")
     live = roadmap.index("### Separately Licensed Quantitative Live Validation")
 
-    assert s0 < s1 < streamlit < economist < proposal < structured_route < convergence < live
+    assert (
+        s0
+        < s1
+        < streamlit
+        < economist
+        < census
+        < proposal
+        < structured_route
+        < convergence
+        < live
+    )
     assert "CLI/UI product composition" not in roadmap
     assert "fixed ordinary CLI product composition" in normalized
     assert "## Active Next: Separately Licensed Quantitative Live Validation" not in roadmap
@@ -309,8 +333,52 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "must not be restored as a Streamlit callback" in normalized
     assert "No replacement UI framework has been selected" in normalized
     assert "claims that planned capabilities are installed" in roadmap
+    assert "read-only, offline `PROOF` phase" in roadmap
+    assert "must not repair, replace, activate, or retire" in normalized
     for marker in MARKERS:
         assert marker not in roadmap
+
+
+def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() -> None:
+    current = _collapsed(CURRENT_STATE)
+    roadmap = _collapsed(ROADMAP)
+    strangler = _collapsed(ORCHESTRATOR_STRANGLER)
+    safety = _collapsed(ECONOMIST_SAFETY)
+    telemetry = _collapsed(ECONOMIST_TELEMETRY_POLICY)
+
+    for text in (current, roadmap, strangler, safety, telemetry):
+        assert (
+            "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
+            in text
+        )
+
+    for phrase in (
+        "ordinary CLI/backend composition no longer injects or executes",
+        "ordinary orchestrator no longer gates, preflights, schedules, or calls",
+        "Independent Linkup eligibility and call arguments are unchanged",
+        "passive handoff/trace fields remain repository-visible legacy material",
+        "installs no replacement economic Specialist",
+        "specialist.source_bound_calculation",
+    ):
+        assert phrase in current
+
+    assert "Completed Remediation: Legacy Economist Ordinary-Execution Retirement" in roadmap
+    assert (
+        "Active Next: Post-Retirement Product Topology and Orchestrator Authority Census"
+        in roadmap
+    )
+    assert "answer-producing path" in roadmap
+    assert "remaining orchestrator authority islands" in roadmap
+
+    assert "no ordinary Economist execution callsite" in strangler
+    assert "Legacy Economist compatibility data" in strangler
+    assert "legacy pre-retirement safety contract" in safety
+    assert "not a description of a current ordinary Economist stage" in safety
+    assert "Economist code execution is categorically prohibited" in safety
+    assert "No direct Economist-to-Author handoff" in safety
+    assert "legacy/superseded Phase 10 policy note" in telemetry
+    assert "no Economist runtime stage" in telemetry
+    assert "do not represent a dormant runtime" in telemetry
 
 
 def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries() -> None:
