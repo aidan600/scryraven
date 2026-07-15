@@ -178,6 +178,7 @@ _SAFE_REF_EXACT_KEYS = frozenset(
         "available",
         "canonical_unit",
         "claim_scoped",
+        "component_revision",
         "current",
         "entry_kind",
         "execution_posture",
@@ -191,6 +192,7 @@ _SAFE_REF_EXACT_KEYS = frozenset(
         "stage",
         "stale",
         "target_kind",
+        "target_revision",
     }
 )
 _SAFE_REF_KEY_SUFFIXES = (
@@ -1101,6 +1103,9 @@ def _claim_sources(
                     "component_coverage_ref": _safe_ref(entry.get("component_coverage_ref")),
                 },
                 "specialist_ref": _safe_ref(entry.get("specialist_quantitative_authority_ref")),
+                "source_authority_refs": _safe_value(
+                    entry.get("quantitative_source_authority_refs") or []
+                ),
                 "fap_material_ref": {"entry_kind": "hardened_component", "entry_index": index},
             }
         )
@@ -1146,6 +1151,99 @@ def _claim_sources(
                     }
                 )
     return [*direct_claims, *admitted_claims]
+
+
+def _hardened_source_binding(
+    claim: Mapping[str, Any],
+    *,
+    fingerprint: str,
+    literals: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    claim_ref = _mapping(claim.get("claim_ref"))
+    admitted_ref = _mapping(claim.get("evidence_or_specialist_ref"))
+    admitted_observation_ref = _mapping(admitted_ref.get("semantic_observation_ref"))
+    admitted_coverage_ref = _mapping(admitted_ref.get("component_coverage_ref"))
+    expected_literal_refs = _hardened_literal_signature_refs(literals)
+    expected_literal_digest = _digest(expected_literal_refs)
+    for raw_ref in _mapping_sequence(claim.get("source_authority_refs")):
+        ref = _mapping(raw_ref)
+        declared_ref_digest = ref.pop("source_authority_ref_digest", None)
+        observation_ref = _mapping(ref.get("semantic_observation_ref"))
+        coverage_ref = _mapping(ref.get("component_coverage_ref"))
+        content_ref = _mapping(ref.get("content_reference_ref"))
+        evidence_ref = _mapping(ref.get("evidence_or_packet_evidence_ref"))
+        literal_refs = _mapping_sequence(ref.get("literal_signatures"))
+        if not (
+            declared_ref_digest
+            and declared_ref_digest == _digest(ref)
+            and ref.get("source_proposition_fingerprint") == fingerprint
+            and ref.get("safe_claim_fingerprint") == fingerprint
+            and ref.get("source_safe_claim_relationship") == "exact_claim_fingerprint"
+            and ref.get("component_id") == claim_ref.get("component_id")
+            and ref.get("component_revision") == claim_ref.get("component_revision")
+            and ref.get("component_digest") == claim_ref.get("component_digest")
+            and observation_ref.get("observation_id")
+            == admitted_observation_ref.get("observation_id")
+            and observation_ref.get("observation_digest")
+            == admitted_observation_ref.get("observation_digest")
+            and coverage_ref.get("coverage_record_id")
+            == admitted_coverage_ref.get("coverage_record_id")
+            and coverage_ref.get("coverage_record_digest")
+            == admitted_coverage_ref.get("coverage_record_digest")
+            and content_ref.get("content_ref_id")
+            and content_ref.get("content_digest")
+            and evidence_ref.get("evidence_ref_id")
+            and ref.get("complete_literal_signature_digest") == expected_literal_digest
+            and literal_refs == expected_literal_refs
+            and ref.get("current") is True
+            and ref.get("stale") is False
+            and ref.get("currentness_posture") == "current"
+            and ref.get("source_proposition_retained") is False
+            and ref.get("source_material_retained") is False
+        ):
+            continue
+        return {
+            "evidence_or_specialist_ref": {
+                "semantic_observation_ref": observation_ref,
+                "component_coverage_ref": coverage_ref,
+                "content_reference_ref": content_ref,
+                "evidence_or_packet_evidence_ref": evidence_ref,
+            },
+            "fap_material_ref": {
+                "entry_kind": "hardened_component_source_authority",
+                "component_id": ref.get("component_id"),
+                "component_digest": ref.get("component_digest"),
+                "source_authority_ref_digest": declared_ref_digest,
+                "source_proposition_digest": ref.get("source_proposition_digest"),
+                "content_ref_id": content_ref.get("content_ref_id"),
+                "content_digest": content_ref.get("content_digest"),
+                "coverage_record_id": coverage_ref.get("coverage_record_id"),
+                "coverage_record_digest": coverage_ref.get("coverage_record_digest"),
+            },
+        }
+    return None
+
+
+def _hardened_literal_signature_refs(
+    literals: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for ordinal, literal in enumerate(literals, start=1):
+        signature = {
+            "claim_literal_ordinal": ordinal,
+            "normalized_numeric_value_text": literal.get(
+                "normalized_numeric_value_text"
+            ),
+            "canonical_unit": literal.get("canonical_unit"),
+            "precision_posture": literal.get("precision_posture"),
+        }
+        refs.append(
+            {
+                **signature,
+                "literal_signature_digest": _digest(signature),
+            }
+        )
+    return refs
 
 
 def build_quantitative_finalization_authority_bundle(
@@ -1219,6 +1317,19 @@ def build_quantitative_finalization_authority_bundle(
             )
             if source_binding is not None:
                 source_binding_posture = "component_source_lineage_equivalent"
+        if (
+            source_binding is None
+            and claim.get("source_kind") == "admitted_quantitative_claim"
+            and _mapping(claim.get("fap_material_ref")).get("entry_kind")
+            == "hardened_component"
+        ):
+            source_binding = _hardened_source_binding(
+                claim,
+                fingerprint=fingerprint,
+                literals=literals,
+            )
+            if source_binding is not None:
+                source_binding_posture = "hardened_exact_source_fingerprint"
         specialist_ref = _safe_ref(claim.get("specialist_ref"))
         specialist_claim_authorized = _specialist_claim_matches(
             claim_text,

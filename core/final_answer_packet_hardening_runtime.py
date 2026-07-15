@@ -902,6 +902,12 @@ def _component_packet_entry(
             "safe_source_content_refs": source_refs,
             "scrutineer_refs": _safe_list(entry.get("scrutineer_refs")),
             "specialist_refs": _safe_list(entry.get("specialist_calculation_refs")),
+            "quantitative_source_authority_refs": _safe_list(
+                entry.get("quantitative_source_authority_refs")
+            ),
+            "specialist_quantitative_authority_ref": _safe_mapping(
+                entry.get("specialist_quantitative_authority_ref")
+            ),
             "followup_refs": followup_refs,
             "blockers": _text_list(entry.get("blockers"), limit=600),
             "caveats": caveats,
@@ -928,6 +934,8 @@ def _fap_safe_claim_ref(
         {
             "fap_status": fap_status,
             "component_id": entry.get("component_id"),
+            "component_revision": entry.get("component_revision"),
+            "component_digest": entry.get("component_digest"),
             "safe_answer_claim_text": safe_claim_text,
             "claim_text_source": entry.get("claim_text_source"),
             "claim_text_source_ref": entry.get("claim_text_source_ref"),

@@ -7437,6 +7437,12 @@ class RunKernel:
         self,
         *,
         mode: str = "Balanced",
+        quantitative_source_authority_materials: Sequence[
+            Mapping[str, Any]
+        ] = (),
+        specialist_quantitative_authority_inputs: Sequence[
+            Mapping[str, Any]
+        ] = (),
         reason: str = SUFFICIENCY_READINESS_REASON,
     ) -> AuthorizedAction:
         try:
@@ -7467,6 +7473,12 @@ class RunKernel:
                 followup_search_authorization_projection=self.state.projections.get(
                     FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
                     {},
+                ),
+                quantitative_source_authority_materials=(
+                    quantitative_source_authority_materials
+                ),
+                specialist_quantitative_authority_inputs=(
+                    specialist_quantitative_authority_inputs
                 ),
             )
         except SufficiencyReadinessRuntimeError as exc:
