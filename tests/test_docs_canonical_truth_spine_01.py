@@ -147,16 +147,21 @@ def test_quantitative_finalization_inventory_does_not_overclaim_saved_thread() -
     for consumer in (
         "AuthorExecutor",
         "AuthorProseFinalization",
-        "AF5B response-finalization",
+        "follow-up response finalizer",
     ):
         assert consumer in current
         assert consumer in containment
     for text in (current, containment):
-        assert "AF5B availability does not establish saved-thread product consumption" in text
-        assert "ui.pages_followup" in text
-        assert "core.followup" in text
-        assert "not wired to AF5B or the shared quantitative validator" in text
-        assert "known pre-live blocker" in text
+        normalized = " ".join(text.split())
+        assert "internal supporting machinery" in normalized
+        assert "does not establish" in normalized
+        assert "saved-thread product consumption" in normalized
+        assert "ui.pages_followup" in normalized
+        assert "core.followup" in normalized
+        assert "retired from ordinary product use" in normalized
+        assert "not a current consumer" in normalized
+        assert "shared accepted-prose validator" in normalized
+    assert "future follow-up activation" in containment
 
 
 def test_quarantine_is_narrow_routed_support_not_temporal_authority() -> None:

@@ -18,11 +18,20 @@ capability installed merely by describing it.
 
 ## Supported Ordinary Entrypoints And Query Boundary
 
-The ordinary ScryRaven application pipeline, including the compatible
-`python -m proplex` CLI, consumes the installed path described below. Bounded
+The public CLI is the current supported executable interface. Both
+`python -m scryraven` and the compatible `python -m proplex` entrypoint consume
+the backend pipeline and the installed path described below. Bounded
 multi-component behavior applies only to the named query class
 `ordinary-bounded-multicomponent-factual-synthesis-v1`. Nonqualifying and
 single-component requests retain their established direct ordinary path.
+
+The legacy Streamlit shell, its home-page UI, and saved-thread Streamlit
+follow-up are not ordinary product consumption. The retained `ui/` source is
+reference and migration material pending separately licensed physical cleanup,
+and `app.py` is a fail-closed retirement tombstone. No current UI framework is
+selected. Future UI work must consume transport-neutral application services;
+future conversation and follow-up product work must likewise be transport-neutral
+and explicitly activated.
 
 Nothing here proves arbitrary-query multi-component support or widens any
 provider, model, search, retrieval, or live-validation license.
@@ -43,8 +52,8 @@ configuration.
 | `MC-P5A-SAMPLING-COMPAT` | OpenRouter and Local chat transport internally own temperature `0.3`; OpenAI Responses omits temperature; caller-authored temperature is rejected. |
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
-| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, canonical `result_unit`, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews and consumes the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
-| `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and AF5B response-finalization consumers each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
+| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, canonical `result_unit`, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews and consumes the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
+| `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -61,7 +70,7 @@ collapsing to positive.
 
 For a qualifying request, the ordinary entrypoint selects the bounded class,
 derives component work, and runs component Analyst and D-prime work under
-RunKernel-owned scheduler leases. The ordinary CLI/UI product composition uses
+RunKernel-owned scheduler leases. The ordinary CLI product composition uses
 Scheduler V3; generic closed-default and no-need runs remain V2-compatible.
 RunKernel admits component state;
 Cross-Component Analyst proposes synthesis; synthesis D-prime validates it; and
@@ -103,14 +112,18 @@ At finalization, FinalAnswerPacket projects current numeric authority by claim,
 not as a global value/unit allowlist. Ordinary Author receives fixed no-
 calculation/no-conversion instructions and exact transient renderings. Candidate
 prose is buffered and deterministically validated before display or successful
-Author reduction. Deterministic AuthorProse and AF5B response finalization
-consume the same validator. A failed check creates no accepted AuthorProse or
-final answer outcome and does not trigger a model retry.
+Author reduction. Deterministic AuthorProse and the guarded follow-up response
+finalizer consume the same validator. A failed check creates no accepted
+AuthorProse or final answer outcome and does not trigger a model retry.
 
-AF5B availability does not establish saved-thread product consumption. The
-active saved-thread follow-up UI path through `ui.pages_followup` and
-`core.followup` is not wired to AF5B or the shared quantitative validator and
-remains a known pre-live blocker.
+The guarded follow-up response-finalization capability remains installed
+internal supporting machinery; its availability does not establish ordinary
+saved-thread product consumption. The old saved-thread Streamlit follow-up path
+through `ui.pages_followup` and `core.followup` is legacy and retired from
+ordinary product use. It is not a current consumer of the guarded finalizer or
+the shared validator. Any future conversation or follow-up activation must
+consume the shared accepted-prose validator through transport-neutral
+application services and must be explicitly activated.
 
 The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
 AuthorProseFinalization` route preserves two component-scoped quantitative
@@ -148,7 +161,8 @@ retained or exported.
 - Hardened synthesis entries or a hardened synthesis sidecar.
 - Permanent Fast/Balanced/Deep graph or semantic-call budgets.
 - Hosted or Local capacity characterization.
-- Final UI/productization work.
+- A selected current UI framework or final UI/productization work.
+- An ordinary saved-thread conversation or follow-up product workflow.
 
 ## Not Proved
 

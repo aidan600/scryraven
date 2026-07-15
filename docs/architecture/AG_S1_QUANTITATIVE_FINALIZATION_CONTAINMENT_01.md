@@ -3,7 +3,7 @@
 Status: current
 Authority: canonical:quantitative-finalization-containment
 Default-read: no
-Applies-to: claim-scoped quantitative authority in the ordinary AuthorExecutor, deterministic AuthorProseFinalization, and AF5B response-finalization consumers
+Applies-to: claim-scoped quantitative authority in the ordinary AuthorExecutor, deterministic AuthorProseFinalization, and guarded follow-up response-finalization consumers
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
 Verified-against-runtime: 5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2
 Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or a guarded finalization consumer
@@ -150,13 +150,15 @@ is subordinated. It no longer deletes or rewrites answer text.
 | --- | --- | --- | --- |
 | Ordinary `AuthorExecutor` | ordinary FinalAnswerPacket Author payload | after the one model response is fully buffered, before display or `AUTHOR_OUTPUT_OBSERVED` | rejected prose is not displayed or reduced; no retry |
 | Deterministic `AuthorProseFinalization` | hardened FAP state/projection | before AuthorProse state or projection construction | no successful AuthorProse state |
-| AF5B response-finalization capability | serialized follow-up/current FAP authority | during the existing AF5B validation context, before authorization/reduction | no successful Author observation or final-answer outcome |
+| Guarded follow-up response finalizer | serialized follow-up/current FAP authority | during its existing validation context, before authorization/reduction | no successful Author observation or final-answer outcome |
 
-AF5B availability does not establish saved-thread product consumption. The
-active saved-thread follow-up UI path through `ui.pages_followup` and
-`core.followup` is not wired to AF5B or the shared quantitative validator and
-remains a known pre-live blocker. This inventory makes no claim that the active
-saved-thread product path consumes AF5B.
+The guarded follow-up response-finalization capability remains installed
+internal supporting machinery, but its availability does not establish
+saved-thread product consumption. The legacy Streamlit consumer through
+`ui.pages_followup` and `core.followup` has been retired from ordinary product
+use and is not a current consumer of this finalizer or the shared quantitative
+validator. Any future follow-up activation must consume the shared
+accepted-prose validator before accepted user-facing prose is authorized.
 
 No accepted-prose compatibility formatter bypasses the shared validator. The
 ordinary route has no existing safe structured partial renderer that can
