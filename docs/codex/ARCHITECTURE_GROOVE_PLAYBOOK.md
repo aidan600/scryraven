@@ -63,18 +63,28 @@ Default workflow:
 1. Start from updated main.
 2. Create/use a phase branch.
 3. Inspect and plan the bounded implementation.
-4. Implement with phase-focused tests while one causal cluster converges.
-5. Create coherent milestone commits and one clean candidate checkpoint.
-6. Review the exact implementation diff.
-7. Run affected durable lanes once.
-8. If authorized, push and update or open the PR.
-9. Run full-suite or baseline-parity validation as a separate authorized job.
+4. Implement with narrow continuation checks while one causal cluster converges.
+5. At a coherent checkpoint, run phase-focus and immediate-owner proof.
+6. Create coherent milestone commits and one clean candidate checkpoint.
+7. Review the exact implementation diff and run the local final-candidate checks once.
+8. If authorized, push and update or open the PR, then wait for exact-head hosted CI.
+9. If separately authorized, run exceptional broad validation as its own job.
 10. Perform final independent or skeptical-maintainer review.
 11. Return one final phase bundle.
 ```
 
+Final-candidate validation is one checkpoint completed across the local checks
+in step 7 and exact-head hosted CI in step 8; publication does not restart the
+validation bundle.
+
 GitHub is the review surface for a completed phase branch, not a sub-step
 synchronization layer. Codex must not merge the PR.
+
+Use the canonical [Review-Loop Validation Ramp](VALIDATION_BUCKETS.md#review-loop-validation-ramp)
+for continuation, coherent-checkpoint, and final-candidate routing. A review
+verdict B defaults to its narrow continuation posture; do not rerun the complete
+phase bundle unless the correction meets a documented broader-validation
+condition.
 
 ## Standard setup
 
