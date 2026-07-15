@@ -92,6 +92,9 @@ REPRESENTATIVE_REJECTIONS = (
         "ambiguous_reference_row",
         "Sources:\n- NASA report distance 200 km.",
     ),
+    ("reference_row_usd", "Sources:\n- Report USD100."),
+    ("reference_row_eur", "Sources:\n- Memo EUR25.50."),
+    ("reference_row_gbp", "Citations:\n- Publication GBP40."),
     ("word_ordinal", "The unsupported rank is first."),
 )
 
@@ -118,6 +121,9 @@ def _empty_bundle() -> dict[str, Any]:
         ("The unsupported rate is USD100/kg.", "exact", "100", "USD_per_kg"),
         ("The unsupported rate is EUR25.50/day.", "exact", "25.5", "EUR_per_day"),
         ("The unsupported rate is GBP40/hour.", "exact", "40", "GBP_per_hour"),
+        ("Sources:\n- Report USD100.", "exact", "100", "USD"),
+        ("Sources:\n- Memo EUR25.50.", "exact", "25.5", "EUR"),
+        ("Citations:\n- Publication GBP40.", "exact", "40", "GBP"),
         ("The unsupported difference is [200] km.", "exact", "200", "km"),
         ("The unsupported count is twenty-one.", "exact", "21", "dimensionless"),
         ("The unsupported rank is 21st.", "unsupported", None, None),
@@ -197,6 +203,9 @@ def test_superscript_and_subscript_surfaces_are_explicitly_unsupported(
         ("Sources:\n- NASA report distance 200 km.", "200", "km"),
         ("Sources:\n- Report revenue USD100.", "100", "USD"),
         ("Sources: Agency publication total 25 percent.", "25", "percent"),
+        ("Sources:\n- Report USD100.", "100", "USD"),
+        ("Sources:\n- Memo EUR25.50.", "25.5", "EUR"),
+        ("Citations:\n- Publication GBP40.", "40", "GBP"),
     ),
 )
 def test_ambiguous_reference_noun_rows_remain_inspectable(
@@ -576,6 +585,7 @@ def test_af5b_rejects_before_author_observation_and_final_answer_outcome(
         "PRIVATE-RATE-SENTINEL rate is USD100/kg.",
         "PRIVATE-SUPERSCRIPT-SENTINEL area is 10 m².",
         "Sources:\n- PRIVATE-REFERENCE-SENTINEL report distance 200 km.",
+        "Sources:\n- Report USD100.\n- PRIVATE-SOURCE-ROW-SENTINEL qualitative context.",
         "PRIVATE-ORDINAL-SENTINEL rank is first.",
     ),
 )

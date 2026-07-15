@@ -30,7 +30,7 @@ QUANTITATIVE_FINALIZATION_VALIDATION_SCHEMA_VERSION = (
     "quantitative_finalization_validation_v1"
 )
 QUANTITATIVE_FINALIZATION_PARSER_VERSION = (
-    "claim_scoped_quantitative_finalization_parser_v3"
+    "claim_scoped_quantitative_finalization_parser_v4"
 )
 
 _PROHIBITED_TRANSFORMATIONS = (
@@ -229,7 +229,7 @@ _TRANSPORT_REFERENCE_ONLY_ROW_RE = re.compile(
     r"(?ix)^\s*"
     r"(?:(?:official|example\s+program)\s+)?"
     r"(?:source|reference|citation|report|memo|document|publication)"
-    r"\s+(?:\#?\d{1,4}|[a-z][a-z0-9_.:\-]{0,79})"
+    r"\s+(?P<reference_token>\#?\d{1,4}|[a-z](?:[a-z0-9_.:\-]{0,78}[a-z0-9])?)"
     r"\s*[.;]?\s*$"
 )
 _WORD_ORDINAL_ALTERNATION = "|".join(
@@ -516,6 +516,18 @@ def _strip_assertion_list_marker(line: str) -> tuple[str, bool]:
     return remainder, True
 
 
+def _is_reference_only_row(line: str) -> bool:
+    match = _TRANSPORT_REFERENCE_ONLY_ROW_RE.fullmatch(line)
+    if not match:
+        return False
+    token = str(match.group("reference_token") or "")
+    compact_currency = _COMPACT_CURRENCY_TOKEN_RE.fullmatch(token)
+    return not (
+        compact_currency
+        and compact_currency.group("currency") in _COMPACT_CURRENCY_CODES
+    )
+
+
 def _assertions(text: str) -> list[str]:
     prose = _strip_nonprose_transport(text)
     out: list[str] = []
@@ -548,10 +560,7 @@ def _assertions(text: str) -> list[str]:
             if not heading:
                 in_transport_section = False
             continue
-        if (
-            in_transport_section
-            and _TRANSPORT_REFERENCE_ONLY_ROW_RE.fullmatch(line)
-        ):
+        if in_transport_section and _is_reference_only_row(line):
             if list_item:
                 flush_paragraph()
             continue
