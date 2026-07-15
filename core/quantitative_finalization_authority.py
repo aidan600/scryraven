@@ -30,7 +30,7 @@ QUANTITATIVE_FINALIZATION_VALIDATION_SCHEMA_VERSION = (
     "quantitative_finalization_validation_v1"
 )
 QUANTITATIVE_FINALIZATION_PARSER_VERSION = (
-    "claim_scoped_quantitative_finalization_parser_v1"
+    "claim_scoped_quantitative_finalization_parser_v4"
 )
 
 _PROHIBITED_TRANSFORMATIONS = (
@@ -93,6 +93,7 @@ _ORDINAL_VALUES = {
     "eighth": 8,
     "ninth": 9,
     "tenth": 10,
+    "eleventh": 11,
 }
 _TEXT_SCALE_VALUES = {
     "hundred": 100,
@@ -148,13 +149,49 @@ _UNIT_STOPWORDS = frozenset(
         "with",
     }
 )
+_COMPACT_CURRENCY_CODES = frozenset(
+    {
+        "AED",
+        "AUD",
+        "BRL",
+        "CAD",
+        "CHF",
+        "CNY",
+        "DKK",
+        "EUR",
+        "GBP",
+        "HKD",
+        "INR",
+        "JPY",
+        "KRW",
+        "MXN",
+        "NOK",
+        "NZD",
+        "PLN",
+        "SEK",
+        "SGD",
+        "USD",
+        "ZAR",
+    }
+)
+_COMPACT_CURRENCY_TOKEN_RE = re.compile(
+    r"(?P<currency>[A-Z]{3})(?P<number>\d+(?:\.\d+)?)"
+    r"(?:/(?P<denominator>[A-Za-zµ°][A-Za-z0-9µ°_-]{0,31}))?"
+)
 _MACHINE_CITATION_RE = re.compile(
     r"(?:\[\s*\d+(?:\s*[-,]\s*\d+)*\s*\]|【[^】]{1,120}】)"
 )
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]{0,300})\]\((?:https?://|www\.)[^)]+\)")
 _BARE_URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
 _HTML_TAG_RE = re.compile(r"<[^>]{1,200}>")
-_DIGEST_PAREN_RE = re.compile(r"\(\s*[0-9a-fA-F]{8,64}\s*\)")
+_DIGEST_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:sha(?:-?\d+)?|digest|hash)(?:"
+    r"\s*[:=]\s*[0-9a-f]{8,128}\b|\s*\(\s*[0-9a-f]{8,128}\s*\))"
+)
+_DIGEST_PAREN_RE = re.compile(
+    r"\(\s*(?=[0-9a-fA-F]{8,64}\s*\))(?=[0-9a-fA-F]*[a-fA-F])"
+    r"[0-9a-fA-F]{8,64}\s*\)"
+)
 _ALPHANUMERIC_TRANSPORT_ID_RE = re.compile(
     r"(?i)\b(?=[a-z][a-z0-9_.:\-/]*\b)(?=[a-z0-9_.:\-/]*\d)"
     r"[a-z][a-z0-9_.:\-/]*\b"
@@ -163,9 +200,10 @@ _DIGIT_LITERAL_RE = re.compile(
     r"""
     (?P<qualifier>(?i:approximately|approx\.?|about|around|roughly|rounded)\s+)?
     (?P<sign>[+\-\u2212])?\s*
-    (?:(?P<currency_code>[A-Z]{3})\s+|(?P<currency_symbol>[$€£¥])\s*)?
+    (?:(?P<currency_code>[A-Z]{3})\s+|(?P<compact_currency_code>[A-Z]{3})(?=\d)|(?P<currency_symbol>[$€£¥])\s*)?
     (?P<number>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)
     (?P<exponent>[eE][+\-]?\d+)?
+    (?P<slash_rate_unit>/[A-Za-zµ°][A-Za-z0-9µ°_-]{0,31})?
     (?:\s+(?P<scale>(?i:thousand|million|billion|trillion)))?
     (?P<percent>\s*%)?
     (?:\s+(?P<unit>(?i:basis\s+points?|percentage\s+points?|bps|percent|percentage|[A-Za-zµ°][A-Za-z0-9µ°_-]{0,31}(?:[/*][A-Za-zµ°][A-Za-z0-9µ°_-]{0,31})*|per\s+[A-Za-zµ°][A-Za-z0-9µ°_-]{0,31})))?
@@ -173,6 +211,41 @@ _DIGIT_LITERAL_RE = re.compile(
     re.VERBOSE,
 )
 _WORD_TOKEN_RE = re.compile(r"[A-Za-z]+(?:-[A-Za-z]+)?")
+_UNSUPPORTED_NUMERIC_SURFACE_RE = re.compile(
+    r"(?P<digit_ordinal>(?<![A-Za-z0-9_])\d+(?:st|nd|rd|th)\b)"
+    r"|(?P<unicode_fraction>[\u00bc-\u00be\u2150-\u215e])"
+    r"|(?P<fullwidth_digits>[\uff10-\uff19]+(?:\uff0e[\uff10-\uff19]+)?)"
+    r"|(?P<superscript_digits>[\u00b2\u00b3\u00b9\u2070\u2074-\u2079]+)"
+    r"|(?P<subscript_digits>[\u2080-\u2089]+)"
+)
+_NUMERIC_GLYPH_RE = re.compile(
+    r"[0-9\u00bc-\u00be\u00b2\u00b3\u00b9\u2070\u2074-\u2079"
+    r"\u2080-\u2089\u2150-\u215e\uff10-\uff19]+"
+)
+_TRANSPORT_SECTION_HEADING_RE = re.compile(
+    r"(?i)^\s*(?:support\s+refs?|source\s+refs?|sources?|citations?)\s*:\s*"
+)
+_TRANSPORT_REFERENCE_ONLY_ROW_RE = re.compile(
+    r"(?ix)^\s*"
+    r"(?:(?:official|example\s+program)\s+)?"
+    r"(?:source|reference|citation|report|memo|document|publication)"
+    r"\s+(?P<reference_token>\#?\d{1,4}|[a-z](?:[a-z0-9_.:\-]{0,78}[a-z0-9])?)"
+    r"\s*[.;]?\s*$"
+)
+_WORD_ORDINAL_ALTERNATION = "|".join(
+    sorted((re.escape(word) for word in _ORDINAL_VALUES), key=len, reverse=True)
+)
+_FACTUAL_WORD_ORDINAL_RE = re.compile(
+    rf"(?i)(?:\b(?:is|are|was|were|equals?|ranked)\s+|\brank\s*[:=]\s*)"
+    rf"(?P<word_ordinal>{_WORD_ORDINAL_ALTERNATION})\b"
+)
+_MARKDOWN_LIST_MARKER_RE = re.compile(r"^\s*[-*+]\s+")
+_NUMERIC_LIST_MARKER_RE = re.compile(r"^\s*(?P<ordinal>\d+)[.)]\s+")
+_MAX_STRUCTURAL_LIST_ORDINAL = 20
+_QUANTITATIVE_VALUE_LEAD_RE = re.compile(
+    r"(?i)^(?:[$€£¥%]|[a-zµ°][a-z0-9µ°_-]{0,31}\s+"
+    r"(?:is|are|was|were|equals?|amounts?|costs?|totals?))\b"
+)
 _SAFE_REF_EXACT_KEYS = frozenset(
     {
         "available",
@@ -380,23 +453,86 @@ def _decimal_text(value: Decimal) -> str:
     return format(value.normalize(), "f")
 
 
+def _strip_machine_citation(match: re.Match[str]) -> str:
+    token = match.group(0)
+    if token.startswith("["):
+        prefix = match.string[max(0, match.start() - 48) : match.start()]
+        tail = match.string[match.end() : match.end() + 48]
+        proposition_prefix = re.search(
+            r"(?i)\b(?:is|are|was|were|equals?)\s*$",
+            prefix,
+        )
+        proposition_unit = re.match(
+            r"(?i)^\s*(?:%|basis\s+points?|percentage\s+points?|bps|percent|"
+            r"km|kilometers?|m|meters?|miles?|kg|kilograms?|g|grams?|"
+            r"usd|eur|gbp|jpy|cad|aud|chf|cny)\b",
+            tail,
+        )
+        if proposition_prefix or proposition_unit:
+            return f" {token[1:-1].strip()} "
+    return " "
+
+
+def _strip_alphanumeric_transport_id(match: re.Match[str]) -> str:
+    token = match.group(0)
+    compact_currency = _COMPACT_CURRENCY_TOKEN_RE.fullmatch(token)
+    if (
+        compact_currency
+        and compact_currency.group("currency") in _COMPACT_CURRENCY_CODES
+    ):
+        return token
+    return " "
+
+
 def _strip_nonprose_transport(text: str) -> str:
     value = str(text or "")
     value = _MARKDOWN_LINK_RE.sub(r"\1", value)
     value = _BARE_URL_RE.sub(" ", value)
-    value = _MACHINE_CITATION_RE.sub(" ", value)
+    value = _MACHINE_CITATION_RE.sub(_strip_machine_citation, value)
     value = _HTML_TAG_RE.sub(" ", value)
+    value = _DIGEST_CONTEXT_RE.sub(" ", value)
     value = _DIGEST_PAREN_RE.sub(" ", value)
-    value = _ALPHANUMERIC_TRANSPORT_ID_RE.sub(" ", value)
+    value = _ALPHANUMERIC_TRANSPORT_ID_RE.sub(
+        _strip_alphanumeric_transport_id,
+        value,
+    )
     value = re.sub(r"\s+([.!?;])", r"\1", value)
     return value
+
+
+def _strip_assertion_list_marker(line: str) -> tuple[str, bool]:
+    markdown = _MARKDOWN_LIST_MARKER_RE.match(line)
+    if markdown:
+        return line[markdown.end() :], True
+    numeric = _NUMERIC_LIST_MARKER_RE.match(line)
+    if not numeric:
+        return line, False
+    remainder = line[numeric.end() :]
+    if (
+        int(numeric.group("ordinal")) > _MAX_STRUCTURAL_LIST_ORDINAL
+        or _QUANTITATIVE_VALUE_LEAD_RE.match(remainder)
+    ):
+        return f"{numeric.group('ordinal')} {remainder}", False
+    return remainder, True
+
+
+def _is_reference_only_row(line: str) -> bool:
+    match = _TRANSPORT_REFERENCE_ONLY_ROW_RE.fullmatch(line)
+    if not match:
+        return False
+    token = str(match.group("reference_token") or "")
+    compact_currency = _COMPACT_CURRENCY_TOKEN_RE.fullmatch(token)
+    return not (
+        compact_currency
+        and compact_currency.group("currency") in _COMPACT_CURRENCY_CODES
+    )
 
 
 def _assertions(text: str) -> list[str]:
     prose = _strip_nonprose_transport(text)
     out: list[str] = []
     paragraph_parts: list[str] = []
-    skipping_transport_section = False
+    in_transport_section = False
 
     def flush_paragraph() -> None:
         if not paragraph_parts:
@@ -408,27 +544,25 @@ def _assertions(text: str) -> list[str]:
             paragraph,
         ):
             cleaned = _clean_text(part, limit=2000)
-            if cleaned and not cleaned.casefold().startswith(
-                ("support refs:", "source refs:", "sources:", "citations:")
-            ):
+            if cleaned:
                 out.append(cleaned)
 
     for raw_line in prose.splitlines() or [prose]:
-        raw_stripped = raw_line.strip()
-        list_item = bool(re.match(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", raw_line))
-        line = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s*)", "", raw_line)
-        if line.strip().casefold().startswith(
-            ("support refs:", "source refs:", "sources:", "citations:")
-        ):
+        line = re.sub(r"^\s*#{1,6}\s*", "", raw_line)
+        line, list_item = _strip_assertion_list_marker(line)
+        heading = _TRANSPORT_SECTION_HEADING_RE.match(line)
+        if heading:
             flush_paragraph()
-            skipping_transport_section = True
-            continue
-        if skipping_transport_section and list_item:
-            continue
-        if raw_stripped:
-            skipping_transport_section = False
-        if not raw_stripped:
+            line = line[heading.end() :]
+            in_transport_section = True
+        if not line.strip():
             flush_paragraph()
+            if not heading:
+                in_transport_section = False
+            continue
+        if in_transport_section and _is_reference_only_row(line):
+            if list_item:
+                flush_paragraph()
             continue
         if list_item:
             flush_paragraph()
@@ -439,13 +573,32 @@ def _assertions(text: str) -> list[str]:
     return out
 
 
+def _currency_code(match: re.Match[str]) -> str:
+    return str(
+        match.group("currency_code") or match.group("compact_currency_code") or ""
+    )
+
+
 def _unit_text(match: re.Match[str]) -> tuple[str | None, int]:
+    slash_rate = str(match.group("slash_rate_unit") or "")
+    if slash_rate:
+        denominator = slash_rate.removeprefix("/").casefold()
+        currency = _currency_code(match)
+        if currency:
+            return f"{currency}_per_{denominator}", match.end("slash_rate_unit")
+        symbol = str(match.group("currency_symbol") or "")
+        if symbol:
+            return (
+                f"currency_symbol:{symbol}_per_{denominator}",
+                match.end("slash_rate_unit"),
+            )
+        return f"/{denominator}", match.end("slash_rate_unit")
     percent = match.group("percent")
     unit = _clean_text(match.group("unit"), limit=80)
     if percent:
         return "percent", match.end("percent")
     if not unit:
-        currency = match.group("currency_code") or match.group("currency_symbol")
+        currency = _currency_code(match) or match.group("currency_symbol")
         return (str(currency) if currency else None), match.end("scale") if match.group("scale") else match.end("number")
     normalized = (
         unit.upper()
@@ -471,6 +624,9 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
     scale = str(match.group("scale") or "unit_scale").casefold()
     qualifier = str(match.group("qualifier") or "").strip().rstrip(".").casefold()
     sign = str(match.group("sign") or "")
+    currency_code = _currency_code(match)
+    if match.group("compact_currency_code") and currency_code not in _COMPACT_CURRENCY_CODES:
+        return None
     unit, span_end = _unit_text(match)
     numeric_source = number.replace(",", "") + exponent
     try:
@@ -481,11 +637,15 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         value = -value
     if scale != "unit_scale":
         value *= _SCALE_FACTORS[scale]
-    if match.group("currency_symbol"):
+    if match.group("currency_symbol") and not match.group("slash_rate_unit"):
         unit = f"currency_symbol:{match.group('currency_symbol')}"
-    elif match.group("currency_code"):
-        unit = str(match.group("currency_code"))
-    if not exponent and not match.group("currency_symbol"):
+    elif currency_code and not match.group("slash_rate_unit"):
+        unit = currency_code
+    if (
+        not exponent
+        and not match.group("currency_symbol")
+        and not match.group("slash_rate_unit")
+    ):
         parser_literal = ""
         if qualifier:
             parser_literal += (
@@ -494,8 +654,8 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
                 else qualifier + " "
             )
         parser_literal += ("-" if sign in {"-", "\u2212"} else sign) + number
-        if match.group("currency_code"):
-            parser_literal = str(match.group("currency_code")) + " " + parser_literal
+        if currency_code:
+            parser_literal = currency_code + " " + parser_literal
         if scale != "unit_scale":
             parser_literal += " " + scale
         if match.group("percent"):
@@ -509,6 +669,13 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         if parsed:
             value = Decimal(str(parsed["numeric_value_text"]))
             unit = str(parsed.get("unit") or "dimensionless")
+    accounting_parentheses = bool(
+        (currency_code or match.group("currency_symbol"))
+        and match.string[: match.start()].rstrip().endswith("(")
+        and match.string[span_end:].lstrip().startswith(")")
+    )
+    if accounting_parentheses:
+        value = -abs(value)
     decimal_places = len(number.split(".", 1)[1]) if "." in number else 0
     precision_class = (
         "approximate_as_reported"
@@ -529,7 +696,9 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         else "none"
     )
     sign_posture = (
-        "negative"
+        "accounting_negative"
+        if accounting_parentheses
+        else "negative"
         if value < 0
         else "explicit_positive"
         if sign == "+"
@@ -541,7 +710,13 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         f"scale={scale};sign={sign_posture};percent={percent_convention}"
     )
     span_start = match.start("number")
-    for group_name in ("qualifier", "sign", "currency_code", "currency_symbol"):
+    for group_name in (
+        "qualifier",
+        "sign",
+        "currency_code",
+        "compact_currency_code",
+        "currency_symbol",
+    ):
         if match.group(group_name):
             span_start = min(span_start, match.start(group_name))
     return {
@@ -590,25 +765,35 @@ def _text_literals(text: str, occupied: Sequence[tuple[int, int]]) -> list[dict[
     tokens = list(_WORD_TOKEN_RE.finditer(text))
     out: list[dict[str, Any]] = []
     index = 0
-    number_words = set(_CARDINAL_VALUES) | set(_TEXT_SCALE_VALUES) | {"and"}
+    number_words = (
+        set(_CARDINAL_VALUES)
+        | set(_TEXT_SCALE_VALUES)
+        | {"and"}
+    )
     while index < len(tokens):
         token = tokens[index]
         word = token.group(0).casefold()
+        word_parts = word.split("-")
         if any(start <= token.start() < end for start, end in occupied):
             index += 1
             continue
-        if word in _UNBOUNDED_QUANTIFIER_WORDS and word not in _ORDINAL_VALUES:
+        unsupported_parts = [
+            part
+            for part in word_parts
+            if part in _UNBOUNDED_QUANTIFIER_WORDS and part not in _ORDINAL_VALUES
+        ]
+        if unsupported_parts:
             out.append(
                 {
                     "span_start": token.start(),
                     "span_end": token.end(),
-                    "unsupported_textual_quantifier": word,
+                    "unsupported_textual_quantifier": unsupported_parts[0],
                     "parser_version": QUANTITATIVE_FINALIZATION_PARSER_VERSION,
                 }
             )
             index += 1
             continue
-        if word not in number_words or word == "and":
+        if any(part not in number_words for part in word_parts) or word == "and":
             index += 1
             continue
         start_index = index
@@ -616,11 +801,12 @@ def _text_literals(text: str, occupied: Sequence[tuple[int, int]]) -> list[dict[
         while index < len(tokens):
             current = tokens[index]
             current_word = current.group(0).casefold()
-            if current_word not in number_words:
+            current_words = current_word.split("-")
+            if any(part not in number_words for part in current_words):
                 break
             if words and text[tokens[index - 1].end() : current.start()].strip(" -"):
                 break
-            words.extend(current_word.split("-"))
+            words.extend(current_words)
             index += 1
         value = _parse_cardinal_words(words)
         if value is None:
@@ -663,18 +849,67 @@ def extract_quantitative_literals(text: str) -> list[dict[str, Any]]:
     prose = _strip_nonprose_transport(str(text or ""))
     literals: list[dict[str, Any]] = []
     occupied: list[tuple[int, int]] = []
+    for match in _UNSUPPORTED_NUMERIC_SURFACE_RE.finditer(prose):
+        surface_kind = next(
+            name
+            for name, value in match.groupdict().items()
+            if value is not None
+        )
+        literals.append(
+            {
+                "span_start": match.start(),
+                "span_end": match.end(),
+                "unsupported_quantitative_surface": surface_kind,
+                "parser_version": QUANTITATIVE_FINALIZATION_PARSER_VERSION,
+            }
+        )
+        occupied.append((match.start(), match.end()))
+    for match in _FACTUAL_WORD_ORDINAL_RE.finditer(prose):
+        span_start = match.start("word_ordinal")
+        span_end = match.end("word_ordinal")
+        literals.append(
+            {
+                "span_start": span_start,
+                "span_end": span_end,
+                "unsupported_quantitative_surface": "word_ordinal",
+                "parser_version": QUANTITATIVE_FINALIZATION_PARSER_VERSION,
+            }
+        )
+        occupied.append((span_start, span_end))
     for match in _DIGIT_LITERAL_RE.finditer(prose):
         numeric_start = match.start("number")
+        if any(start <= numeric_start < end for start, end in occupied):
+            continue
         if numeric_start and prose[numeric_start - 1] in "_":
             continue
-        if numeric_start and prose[numeric_start - 1].isalpha():
+        if (
+            numeric_start
+            and prose[numeric_start - 1].isalpha()
+            and not match.group("compact_currency_code")
+        ):
             continue
         literal = _digit_literal(match)
         if literal is None:
             continue
         literals.append(literal)
         occupied.append((int(literal["span_start"]), int(literal["span_end"])))
-    literals.extend(_text_literals(prose, occupied))
+    text_literals = _text_literals(prose, occupied)
+    literals.extend(text_literals)
+    occupied.extend(
+        (int(item["span_start"]), int(item["span_end"])) for item in text_literals
+    )
+    for match in _NUMERIC_GLYPH_RE.finditer(prose):
+        if any(start <= match.start() < end for start, end in occupied):
+            continue
+        literals.append(
+            {
+                "span_start": match.start(),
+                "span_end": match.end(),
+                "unsupported_quantitative_surface": "unparsed_numeric_surface",
+                "parser_version": QUANTITATIVE_FINALIZATION_PARSER_VERSION,
+            }
+        )
+        occupied.append((match.start(), match.end()))
     literals.sort(key=lambda item: (int(item["span_start"]), int(item["span_end"])))
     return literals
 
@@ -682,6 +917,10 @@ def extract_quantitative_literals(text: str) -> list[dict[str, Any]]:
 def _literal_signature(literal: Mapping[str, Any]) -> str:
     if literal.get("unsupported_textual_quantifier"):
         return "unsupported_text:" + str(literal["unsupported_textual_quantifier"])
+    if literal.get("unsupported_quantitative_surface"):
+        return "unsupported_surface:" + str(
+            literal["unsupported_quantitative_surface"]
+        )
     return "|".join(
         str(literal.get(key) or "")
         for key in (
@@ -1285,7 +1524,11 @@ def build_quantitative_finalization_authority_bundle(
     for claim_index, claim in enumerate(claims, start=1):
         claim_text = str(claim["claim_text"])
         literals = extract_quantitative_literals(claim_text)
-        if not literals or any(item.get("unsupported_textual_quantifier") for item in literals):
+        if not literals or any(
+            item.get("unsupported_textual_quantifier")
+            or item.get("unsupported_quantitative_surface")
+            for item in literals
+        ):
             continue
         fingerprint = semantic_claim_fingerprint(claim_text)
         claim_ref = _safe_ref(claim.get("claim_ref"))
@@ -1583,17 +1826,28 @@ def validate_author_output_quantitative_authority(
             for item in literals
             if item.get("unsupported_textual_quantifier")
         ]
-        if unsupported_words:
-            reasons.append(
-                {
-                    "assertion_index": assertion_index,
-                    "assertion_digest": assertion_digest,
-                    "reason_code": "unsupported_textual_quantifier",
-                    "quantifier_digests": [
-                        _text_digest(item) for item in unsupported_words
-                    ],
-                }
-            )
+        unsupported_surfaces = [
+            str(item.get("unsupported_quantitative_surface"))
+            for item in literals
+            if item.get("unsupported_quantitative_surface")
+        ]
+        if unsupported_words or unsupported_surfaces:
+            marker_values = unsupported_words or unsupported_surfaces
+            reason = {
+                "assertion_index": assertion_index,
+                "assertion_digest": assertion_digest,
+                "reason_code": (
+                    "unsupported_textual_quantifier"
+                    if unsupported_words
+                    else "unsupported_quantitative_surface"
+                ),
+                (
+                    "quantifier_digests"
+                    if unsupported_words
+                    else "surface_marker_digests"
+                ): [_text_digest(item) for item in marker_values],
+            }
+            reasons.append(reason)
             continue
         fingerprint = semantic_claim_fingerprint(assertion)
         authorized_entries = by_fingerprint.get(fingerprint, [])

@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 2af389a508fed779d1ff860e228d87a740a29d84
+Verified-against-runtime: 5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -44,7 +44,18 @@ configuration.
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI and home-page UI compose one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, canonical `result_unit`, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews and consumes the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
-| `QUANT-FINALIZATION-CONTAINMENT` | Every active accepted-prose route consumes one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
+| `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and AF5B response-finalization consumers each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
+
+The shared parser keeps factual numeric assertions inspectable when they appear
+under source/reference headings, in Markdown bullets, brackets, accounting
+parentheses, compact currency or compact currency-rate forms, or bounded
+hyphenated-cardinal forms. Only rows matching a bounded affirmative
+reference-only grammar are omitted; ambiguous reference-noun rows remain
+inspectable. Numeric-looking nontransport surfaces that the bounded exact parser
+does not normalize, including factual word ordinals and unconsumed superscript
+or subscript digits, receive an enum-only unsupported marker and fail closed.
+Accounting currency parentheses retain a negative sign posture rather than
+collapsing to positive.
 
 ## Current Ordinary Multi-Component Flow
 
@@ -92,9 +103,14 @@ At finalization, FinalAnswerPacket projects current numeric authority by claim,
 not as a global value/unit allowlist. Ordinary Author receives fixed no-
 calculation/no-conversion instructions and exact transient renderings. Candidate
 prose is buffered and deterministically validated before display or successful
-Author reduction. Hardened AuthorProse and follow-up AF5B finalization consume
-the same validator. A failed check creates no accepted AuthorProse or final
-answer outcome and does not trigger a model retry.
+Author reduction. Deterministic AuthorProse and AF5B response finalization
+consume the same validator. A failed check creates no accepted AuthorProse or
+final answer outcome and does not trigger a model retry.
+
+AF5B availability does not establish saved-thread product consumption. The
+active saved-thread follow-up UI path through `ui.pages_followup` and
+`core.followup` is not wired to AF5B or the shared quantitative validator and
+remains a known pre-live blocker.
 
 The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
 AuthorProseFinalization` route preserves two component-scoped quantitative

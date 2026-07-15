@@ -61,8 +61,8 @@ QUANT_FINALIZATION_RUNTIME_SHA = (
 QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
-HARDENED_PARITY_RUNTIME_SHA = (
-    "2af389a508fed779d1ff860e228d87a740a29d84"  # pragma: allowlist secret
+QUANT_CONTAINMENT_RUNTIME_SHA = (
+    "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
 )
 S1_RUNTIME_SHA = (
     "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
@@ -78,7 +78,7 @@ RUNTIME_SHA_BY_CONCERN = {
         QUANT_LINEAGE_RUNTIME_SHA
     ),
     "canonical:quantitative-finalization-containment": (
-        HARDENED_PARITY_RUNTIME_SHA
+        QUANT_CONTAINMENT_RUNTIME_SHA
     ),
 }
 
@@ -109,7 +109,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         (
             "canonical:current-installed-state",
             CURRENT_STATE,
-            HARDENED_PARITY_RUNTIME_SHA,
+            QUANT_CONTAINMENT_RUNTIME_SHA,
         ),
         ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
@@ -132,6 +132,31 @@ def test_concern_authorities_are_unique_current_and_default_no() -> None:
         assert "Status: current" in text
         assert "Default-read: no" in text
         assert f"Verified-against-runtime: {verified_runtime}" in text
+
+
+def test_quantitative_finalization_inventory_does_not_overclaim_saved_thread() -> None:
+    current = _read(CURRENT_STATE)
+    containment = _read(
+        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
+    )
+
+    assert "Every active accepted-prose route" not in current
+    assert "every active accepted-prose finalization route" not in containment
+    assert "## Active Finalization Route Inventory" not in containment
+    assert "## Guarded Finalization Consumer Inventory" in containment
+    for consumer in (
+        "AuthorExecutor",
+        "AuthorProseFinalization",
+        "AF5B response-finalization",
+    ):
+        assert consumer in current
+        assert consumer in containment
+    for text in (current, containment):
+        assert "AF5B availability does not establish saved-thread product consumption" in text
+        assert "ui.pages_followup" in text
+        assert "core.followup" in text
+        assert "not wired to AF5B or the shared quantitative validator" in text
+        assert "known pre-live blocker" in text
 
 
 def test_quarantine_is_narrow_routed_support_not_temporal_authority() -> None:
