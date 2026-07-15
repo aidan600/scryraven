@@ -61,6 +61,9 @@ QUANT_FINALIZATION_RUNTIME_SHA = (
 QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
+CURRENT_STATE_RUNTIME_SHA = (
+    "28d86c803682dc90fa6126ae7157c27fc49673f7"  # pragma: allowlist secret
+)
 QUANT_CONTAINMENT_RUNTIME_SHA = (
     "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
 )
@@ -109,7 +112,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         (
             "canonical:current-installed-state",
             CURRENT_STATE,
-            QUANT_CONTAINMENT_RUNTIME_SHA,
+            CURRENT_STATE_RUNTIME_SHA,
         ),
         ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
