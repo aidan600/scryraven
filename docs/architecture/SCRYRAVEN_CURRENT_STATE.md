@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 60e15006357238dd75ac9ccc5ec779cc23bd9c70
+Verified-against-runtime: 57ede2b45bb98824a0b506ce42110518162ae82d
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -48,10 +48,14 @@ configuration.
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
-parentheses, compact currency, or bounded hyphenated-cardinal forms. Numeric-
-looking nontransport surfaces that the bounded exact parser does not normalize
-receive an enum-only unsupported marker and fail closed. Accounting currency
-parentheses retain a negative sign posture rather than collapsing to positive.
+parentheses, compact currency or compact currency-rate forms, or bounded
+hyphenated-cardinal forms. Only rows matching a bounded affirmative
+reference-only grammar are omitted; ambiguous reference-noun rows remain
+inspectable. Numeric-looking nontransport surfaces that the bounded exact parser
+does not normalize, including factual word ordinals and unconsumed superscript
+or subscript digits, receive an enum-only unsupported marker and fail closed.
+Accounting currency parentheses retain a negative sign posture rather than
+collapsing to positive.
 
 ## Current Ordinary Multi-Component Flow
 

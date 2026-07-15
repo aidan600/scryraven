@@ -5,7 +5,7 @@ Authority: canonical:quantitative-finalization-containment
 Default-read: no
 Applies-to: claim-scoped quantitative authority in every active accepted-prose finalization route
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: 60e15006357238dd75ac9ccc5ec779cc23bd9c70
+Verified-against-runtime: 57ede2b45bb98824a0b506ce42110518162ae82d
 Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or an active finalization entrypoint
 
 ## Responsibility
@@ -122,15 +122,16 @@ rescale, aggregate, or introduce a new numeric conclusion.
 
 After candidate prose exists, the shared deterministic validator:
 
-1. removes URL syntax, machine citations, reference-only rows, true digests,
-   and transport identifiers while keeping factual assertions under
-   source/reference headings inspectable;
-2. extracts bounded digit, compact-currency, and common-cardinal candidates,
-   including bounded hyphenated forms;
+1. removes URL syntax, machine citations, affirmatively classified whole-row
+   references, true digests, and transport identifiers while keeping ambiguous
+   or factual rows under source/reference headings inspectable;
+2. extracts bounded digit, compact-currency, compact currency-rate, and
+   common-cardinal candidates, including bounded hyphenated forms;
 3. preserves value, unit, accounting sign, scale, notation, percent convention,
    and declared precision in each literal signature;
-4. emits enum-only unsupported markers for bounded ordinal, Unicode-fraction,
-   fullwidth-digit, or unmatched numeric-looking nontransport surfaces;
+4. emits enum-only unsupported markers for bounded digit or factual word
+   ordinals, Unicode fractions, fullwidth digits, unconsumed superscript or
+   subscript digits, and unmatched numeric-looking nontransport surfaces;
 5. fingerprints the complete assertion rather than the value alone; and
 6. accepts only an exact manifest binding or fails closed.
 
@@ -172,6 +173,9 @@ Focused offline tests establish:
 - source-section assertions, compact currency, bracketed propositions,
   hyphenated cardinals, digest-shaped decimals, and leading numeric
   propositions cannot disappear into a zero-candidate acceptance;
+- compact currency rates retain deterministic currency-per-unit signatures;
+  ambiguous reference-noun rows remain inspectable; and factual word ordinals
+  plus unconsumed superscript or subscript digits fail with enum-only markers;
 - accounting currency parentheses preserve negative sign posture while valid
   positive, explicit-negative, Unicode-minus, and explanatory-parenthesis
   controls remain distinct and stable;

@@ -62,7 +62,7 @@ QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
 QUANT_CONTAINMENT_RUNTIME_SHA = (
-    "60e15006357238dd75ac9ccc5ec779cc23bd9c70"  # pragma: allowlist secret
+    "57ede2b45bb98824a0b506ce42110518162ae82d"  # pragma: allowlist secret
 )
 S1_RUNTIME_SHA = (
     "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
