@@ -5,7 +5,7 @@ Authority: canonical:fap-author-boundary
 Default-read: no
 Applies-to: ordinary FinalAnswerPacket packaging, Author rendering, and blocked FAP terminal behavior
 Does-not-authorize: new claims, evidence interpretation, synthesis creation, citation upgrade, or Author execution when FAP is blocked
-Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
+Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
 Update-trigger: merged change to FAP packaging, Author input, rendering, or blocked terminal behavior
 
 ## Responsibility
@@ -60,6 +60,15 @@ FAP must not:
 
 FAP packaging does not itself prove answer correctness, citation correctness,
 or source-obligation satisfaction.
+
+For quantitative packaging, generic D-prime admission is not numeric rendering
+authority. The quantitative manifest projects a proposition only from exact
+current source material (including the narrow component/content/coverage-bound
+equivalence) or from a completed installed Specialist result with exact
+claim-material alignment and applicable D-prime consumption. Full component and
+synthesis entries remain available to the Author payload itself, but their
+packet trace representation is reduced to counts and digests so RunKernel and
+Author execution compare the same packet-safe ref.
 
 ## Author Contract
 

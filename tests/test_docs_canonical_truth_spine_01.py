@@ -58,21 +58,24 @@ MARKERS = (
 QUANT_FINALIZATION_RUNTIME_SHA = (
     "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
 )
+QUANT_LINEAGE_RUNTIME_SHA = (
+    "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
+)
 S1_RUNTIME_SHA = (
     "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 )
 RUNTIME_SHA_BY_CONCERN = {
-    "canonical:dprime-role-contract": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:run-contract-semantic-loop": QUANT_FINALIZATION_RUNTIME_SHA,
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
-    "canonical:fap-author-boundary": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:bounded-multicomponent-runtime": QUANT_FINALIZATION_RUNTIME_SHA,
     "canonical:specialist-graph-substrate": S1_RUNTIME_SHA,
     "canonical:quantitative-specialist-product-activation": (
-        QUANT_FINALIZATION_RUNTIME_SHA
+        QUANT_LINEAGE_RUNTIME_SHA
     ),
     "canonical:quantitative-finalization-containment": (
-        QUANT_FINALIZATION_RUNTIME_SHA
+        QUANT_LINEAGE_RUNTIME_SHA
     ),
 }
 
@@ -103,7 +106,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         (
             "canonical:current-installed-state",
             CURRENT_STATE,
-            QUANT_FINALIZATION_RUNTIME_SHA,
+            QUANT_LINEAGE_RUNTIME_SHA,
         ),
         ("canonical:current-roadmap", ROADMAP, S1_RUNTIME_SHA),
     ):
@@ -168,6 +171,7 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
 
     dprime = _collapsed(CONCERN_OWNERS["canonical:dprime-role-contract"])
     assert "ordinary bounded multi-component path consumes both component D-prime and synthesis D-prime" in dprime
+    assert "Review and admission alone do not prove" in dprime
     assert "approved general ordinary component Analyst" not in dprime
 
     semantic = _collapsed(CONCERN_OWNERS["canonical:run-contract-semantic-loop"])
@@ -181,7 +185,15 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
 
     fap = _collapsed(CONCERN_OWNERS["canonical:fap-author-boundary"])
     assert "When FAP readiness is blocked, Author does not run." in fap
+    assert "generic D-prime admission is not numeric rendering authority" in fap
     assert "future answer rendering" not in fap.casefold()
+
+    containment = _collapsed(
+        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
+    )
+    assert "The two authority kinds are" in containment
+    assert "Generic admission is not an authority kind." in containment
+    assert "`admitted_quantitative_claim`" not in containment
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:

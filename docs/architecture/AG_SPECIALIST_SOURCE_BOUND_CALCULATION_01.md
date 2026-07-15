@@ -5,7 +5,7 @@ Authority: canonical:quantitative-specialist-product-activation
 Default-read: no
 Applies-to: ordinary source-bound calculator capability, model-visible proposal contract, transient numeric source catalogs, evidence-quality projection, literal binding, numeric provenance, product registry/policy, claim alignment, and D-prime handoff
 Does-not-authorize: search, acquisition, provider/model calls, estimates, arbitrary formulas, recursion, parallelism, direct admission, FAP, Author, or live validation
-Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
+Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
 Update-trigger: merged change to the ordinary quantitative Specialist proposal contract, evidence bridge, source catalogs, parser, product composition, or validator handoff
 
 Installed runtime class: quantitative-specialist-product-activation-s1
@@ -192,6 +192,13 @@ operator/formula/parser facts, assumptions, caveats, blockers, and exact
 lineage. Non-exact alignment is contested and spent; execution success alone
 is not semantic support.
 
+The installed bounded result contract emits its canonical unit as
+`bounded_result["result_unit"]`. Finalization may accept the legacy `unit` field
+only when `result_unit` is absent and the legacy value is nonempty and
+normalizable. When both are present, normalized agreement retains
+`result_unit` as canonical and records compatibility agreement; disagreement
+fails closed. Compatibility does not change the installed adapter contract.
+
 Component or synthesis D-prime receives the result only through the generic
 `specialist_need_handoff` and must validate its use against the ordinary
 nominated claim and evidence or admitted-input refs. The Specialist cannot
@@ -202,8 +209,11 @@ contract-mutation authority.
 When that exact claim is supported and admitted, the ordinary component or
 synthesis path carries a bounded Specialist authority ref, applicable D-prime
 ref, and D-prime consumption ref into FAP. Finalization may classify only the
-matching result literal as `specialist_derived_numeric`; execution success,
-value equality, or an unused result cannot create rendering authority.
+exact claim whose claim-material digest contains the matching result literal as
+`specialist_derived_numeric`; the claim's complete literal signature is then
+validated atomically. Execution success, value equality, an unused result, or a
+valid result attached to a different proposition cannot create rendering
+authority.
 
 ## Scheduling And Lifecycle
 

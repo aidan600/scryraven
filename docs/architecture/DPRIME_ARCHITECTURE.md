@@ -5,7 +5,7 @@ Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, additional Specialist activation, or live validation
-Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
+Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -144,8 +144,14 @@ RunKernel-admitted state.
 For an admitted quantitative claim, downstream projection may carry the exact
 applicable D-prime artifact ref and consumption lineage into FAP. That ref does
 not expand D-prime authority: it lets finalization prove that an admitted claim
-was reviewed by the applicable validator. Missing, stale, or nonapplicable
-D-prime lineage cannot authorize numeric prose.
+was reviewed by the applicable validator. Review and admission alone do not
+prove that the numeric proposition was explicitly source-stated or calculated
+by an authorized Specialist. Finalization therefore omits a generic admitted
+numeric proposition unless its complete proposition and literal signature bind
+to current FAP source material, or a completed installed Specialist result with
+exact claim-material alignment was consumed by the applicable D-prime. Missing,
+stale, nonapplicable, or otherwise unaccompanied D-prime lineage cannot authorize
+numeric prose.
 
 The generic Specialist graph substrate provides the outcome of a proposed need
 to component or synthesis D-prime under one top-level

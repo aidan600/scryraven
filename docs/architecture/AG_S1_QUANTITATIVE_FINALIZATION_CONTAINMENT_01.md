@@ -5,7 +5,7 @@ Authority: canonical:quantitative-finalization-containment
 Default-read: no
 Applies-to: claim-scoped quantitative authority in every active accepted-prose finalization route
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
+Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
 Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or an active finalization entrypoint
 
 ## Responsibility
@@ -55,27 +55,38 @@ sufficiency_changed
 manifest_digest
 ```
 
-The three authority kinds are:
+The two authority kinds are:
 
 - `direct_source_numeric`: the exact proposition and literal come from current
-  FAP-authorized bounded source material;
-- `admitted_quantitative_claim`: the exact proposition is current, admitted,
-  and applicable-D-prime-supported; and
-- `specialist_derived_numeric`: the exact result comes from a completed S1
-  result with `exact_match` claim alignment, applicable component or synthesis
-  D-prime consumption, admission, and current FAP inclusion.
+  FAP-authorized bounded source material. A current admitted component
+  paraphrase may retain this kind only when its complete literal signature,
+  component identity, exact content and coverage refs, and conservative
+  subject/metric proposition core all bind to that same source material; and
+- `specialist_derived_numeric`: the exact claim comes from a completed installed
+  S1 result with canonical `result_unit`, `exact_match` claim-material binding,
+  applicable component or synthesis D-prime consumption, admission, and current
+  FAP inclusion.
+
+Generic admission is not an authority kind. An admitted component, synthesis,
+or hardened-FAP numeric proposition that has only a D-prime ref, observation
+ref, coverage ref, matching value, or Author claim ref is omitted. It becomes
+direct-source authority only through the complete source binding above, or
+Specialist-derived authority only through the complete installed result and
+consumption lineage above.
 
 The manifest is not a global numeric allowlist. A value/unit match is
 insufficient without the same complete assertion fingerprint and literal
-signature. An authorized value cannot be reused for another subject, metric,
-calculation result, conversion, estimate, comparison, ratio, rate, percentage,
-or proposition.
+signature or the stricter current component/content/coverage equivalence above.
+An authorized value cannot be reused for another subject, metric, calculation
+result, conversion, estimate, comparison, ratio, rate, percentage, or
+proposition.
 
 Retained references are limited to bounded identifier, digest, status,
 posture, route, and version shapes. Claim prose is used transiently to build
 the fingerprint and the Author instruction, then omitted from the manifest.
-The Author payload trace carries only a shallow digest-and-count envelope, not
-the full manifest or claim text.
+The Author payload trace carries only shallow digest-and-count envelopes for the
+manifest and multi-component entries, not the full manifest, graph entries, or
+claim text.
 
 ## Before And After Author
 
@@ -131,7 +142,14 @@ Focused offline tests establish:
   adversarial controls;
 - direct number, date, port, percentage, citation, URL, and comma-grouping
   controls;
-- component-origin S1 and synthesis-origin two-hop S1 positive paths;
+- component-origin S1 and synthesis-origin two-hop S1 positive paths produced
+  by the installed adapter, registry, policy, and generic S0 handoff owners;
+- canonical `result_unit`, explicit legacy-only `unit` compatibility, same-unit
+  agreement, conflict rejection, exact claim-material digest, and consumed
+  component/synthesis D-prime lineage controls;
+- admitted non-Specialist component/synthesis arithmetic, conversion, and
+  same-value proposition-laundering rejection while direct source propositions
+  remain eligible;
 - atomic rejection with no display, successful Author/AuthorProse/final
   outcome, answer rewrite, fragment deletion, or automatic retry; and
 - absence of raw prompts, model responses, source text, provider payloads,
