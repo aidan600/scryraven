@@ -49,6 +49,9 @@ from core.multicomponent_role_runtime import (
     SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
 )
 from core.protocols import NullStatusWriter
+from core.quantitative_finalization_authority import (
+    specialist_quantitative_authority_ref_from_handoff,
+)
 from core.quantitative_specialist_product_activation import (
     NUMERIC_LITERAL_PARSER_VERSION,
     QUANTITATIVE_CAPABILITY_ID,
@@ -88,10 +91,13 @@ from core.specialist_graph_runtime import (
     SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS,
     SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH,
     SPECIALIST_WORK_PLANE_STAGE,
+    VALIDATOR_PENDING,
     SpecialistGraphRuntimeError,
     closed_specialist_execution_policy,
     closed_specialist_registry,
     normalize_specialist_capability_request,
+    specialist_digest,
+    validate_specialist_need_handoff,
 )
 from core.specialist_source_bound_calculation_runtime import (
     evaluate_source_bound_calculation,
@@ -1254,6 +1260,23 @@ def _completed_exact_handoff(payload: Mapping[str, Any]) -> bool:
     )
 
 
+def _rekey_specialist_handoff(
+    handoff: Mapping[str, Any],
+) -> dict[str, Any]:
+    current = deepcopy(dict(handoff))
+    identity = deepcopy(current)
+    identity.pop("handoff_id", None)
+    identity.pop("handoff_digest", None)
+    identity["validator_consumption"] = VALIDATOR_PENDING
+    identity.pop("validator_consumption_terminal", None)
+    identity.pop("validator_validation_status", None)
+    identity.pop("validator_dprime_artifact_ref", None)
+    digest = specialist_digest(identity)
+    current["handoff_id"] = f"specialist-handoff:{digest[:24]}"
+    current["handoff_digest"] = digest
+    return validate_specialist_need_handoff(current)
+
+
 def _quantitative_dprime_response(payload: Mapping[str, Any]) -> str:
     exact = _completed_exact_handoff(payload)
     return json.dumps(
@@ -1741,7 +1764,7 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     )
     with monkeypatch.context() as positive_patch:
         positive_harness = QuantitativeComponentNorthstarHarness(tmp_path / "positive")
-        positive, positive_kernel, _captured, deps = _execute_product_run(
+        positive, positive_kernel, positive_captured, deps = _execute_product_run(
             harness=positive_harness,
             monkeypatch=positive_patch,
             run_id="quantitative-component-positive",
@@ -1759,10 +1782,115 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     )
     assert "1500 USD" in positive.report
     assert positive_result["bounded_result"]["numeric_value_text"] == "1500"
+    assert positive_result["bounded_result"]["result_unit"] == "USD"
+    assert "unit" not in positive_result["bounded_result"]
     assert positive_result["bounded_result"]["claim_alignment"]["posture"] == (
         "exact_match"
     )
     assert positive_result["validator_consumption"] == "consumed_by_component_dprime"
+    consumed_handoff = positive_plane["need_handoffs"][0]
+    dprime_ref = dict(consumed_handoff["validator_dprime_artifact_ref"])
+    specialist_authority = specialist_quantitative_authority_ref_from_handoff(
+        consumed_handoff,
+        applicable_dprime_ref=dprime_ref,
+    )
+    assert specialist_authority["canonical_unit"] == "USD"
+    assert specialist_authority["normalized_numeric_value_text"] == "1500"
+    assert specialist_authority["result_unit_contract_posture"] == (
+        "canonical_result_unit"
+    )
+    assert specialist_authority["applicable_dprime_consumption_ref"]["route"] == (
+        "component_dprime"
+    )
+    final_packet = positive_captured["author_runtime_scope"]["final_answer_packet"]
+    author_trace_ref = positive_captured["author_runtime_scope"][
+        "final_answer_author_payload"
+    ].to_trace_ref()
+    trace_authority_payload = author_trace_ref["authority_payload"]
+    assert "direct_component_entries" not in trace_authority_payload
+    assert "admitted_synthesis_entries" not in trace_authority_payload
+    assert trace_authority_payload["direct_component_entry_count"] > 0
+    assert trace_authority_payload["direct_component_entries_digest"]
+    assert trace_authority_payload["full_multicomponent_entries_included"] is False
+    component_entry = next(
+        entry
+        for entry in final_packet.direct_component_entries
+        if entry.get("specialist_quantitative_authority_ref")
+    )
+    assert component_entry["specialist_quantitative_authority_ref"] == (
+        specialist_authority
+    )
+    assert specialist_authority["claim_material_digest"] == sha256(
+        component_entry["claim_text"].encode("utf-8")
+    ).hexdigest()
+    component_manifest_entry = next(
+        entry
+        for entry in final_packet.quantitative_finalization_authority_manifest[
+            "authorized_numeric_claims"
+        ]
+        if entry["normalized_numeric_value_text"] == "1500"
+    )
+    assert component_manifest_entry["authority_kind"] == (
+        "specialist_derived_numeric"
+    )
+    assert component_manifest_entry["canonical_unit"] == "USD"
+
+    legacy = deepcopy(consumed_handoff)
+    legacy_bounded = legacy["result"]["bounded_result"]
+    legacy_bounded["unit"] = legacy_bounded.pop("result_unit")
+    legacy = _rekey_specialist_handoff(legacy)
+    legacy_authority = specialist_quantitative_authority_ref_from_handoff(
+        legacy,
+        applicable_dprime_ref=dprime_ref,
+    )
+    assert legacy_authority["result_unit_contract_posture"] == (
+        "explicit_legacy_unit_compatibility"
+    )
+
+    agreement = deepcopy(consumed_handoff)
+    agreement["result"]["bounded_result"]["unit"] = "USD"
+    agreement = _rekey_specialist_handoff(agreement)
+    agreement_authority = specialist_quantitative_authority_ref_from_handoff(
+        agreement,
+        applicable_dprime_ref=dprime_ref,
+    )
+    assert agreement_authority["result_unit_contract_posture"] == (
+        "canonical_result_unit_with_legacy_agreement"
+    )
+
+    invalid_handoffs = []
+    missing_unit = deepcopy(consumed_handoff)
+    missing_unit["result"]["bounded_result"].pop("result_unit")
+    invalid_handoffs.append(_rekey_specialist_handoff(missing_unit))
+    conflicting_unit = deepcopy(consumed_handoff)
+    conflicting_unit["result"]["bounded_result"]["unit"] = "km"
+    invalid_handoffs.append(_rekey_specialist_handoff(conflicting_unit))
+    noncomputed = deepcopy(consumed_handoff)
+    noncomputed["result"]["bounded_result"]["calculation_status"] = "contested"
+    invalid_handoffs.append(_rekey_specialist_handoff(noncomputed))
+    misaligned = deepcopy(consumed_handoff)
+    misaligned["result"]["bounded_result"]["claim_alignment"]["posture"] = (
+        "numeric_mismatch"
+    )
+    invalid_handoffs.append(_rekey_specialist_handoff(misaligned))
+    unconsumed = deepcopy(consumed_handoff)
+    unconsumed["validator_consumption"] = VALIDATOR_PENDING
+    unconsumed.pop("validator_consumption_terminal")
+    unconsumed.pop("validator_validation_status")
+    unconsumed.pop("validator_dprime_artifact_ref")
+    invalid_handoffs.append(_rekey_specialist_handoff(unconsumed))
+    stale = deepcopy(consumed_handoff)
+    stale["result"]["execution_posture"] = "stale"
+    stale["result"]["result_ref"]["execution_posture"] = "stale"
+    invalid_handoffs.append(_rekey_specialist_handoff(stale))
+    malformed = deepcopy(consumed_handoff)
+    malformed["handoff_digest"] = "malformed"
+    invalid_handoffs.append(malformed)
+    for invalid in invalid_handoffs:
+        assert specialist_quantitative_authority_ref_from_handoff(
+            invalid,
+            applicable_dprime_ref=dprime_ref,
+        ) == {}
     dprime_packet = positive_harness.specialist_dprime_inputs[0]
     assert "quantitative_specialist_proposal_contract" not in json.dumps(
         dprime_packet
@@ -1890,7 +2018,7 @@ def test_synthesis_origin_uses_same_product_capability_and_two_hop_handoff(
         _forbid_legacy_reducer,
     )
     harness = QuantitativeSynthesisNorthstarHarness(tmp_path)
-    outcome, kernel, _captured, _deps = _execute_product_run(
+    outcome, kernel, captured, _deps = _execute_product_run(
         harness=harness,
         monkeypatch=monkeypatch,
         run_id="quantitative-synthesis-positive",
@@ -1904,8 +2032,50 @@ def test_synthesis_origin_uses_same_product_capability_and_two_hop_handoff(
         result, sort_keys=True
     )
     assert result["bounded_result"]["numeric_value_text"] == "58800"
+    assert result["bounded_result"]["result_unit"] == "USD"
     assert result["bounded_result"]["claim_alignment"]["posture"] == "exact_match"
     assert result["validator_consumption"] == "consumed_by_synthesis_dprime"
+    consumed_handoff = plane["need_handoffs"][0]
+    specialist_authority = specialist_quantitative_authority_ref_from_handoff(
+        consumed_handoff,
+        applicable_dprime_ref=consumed_handoff["validator_dprime_artifact_ref"],
+    )
+    assert specialist_authority["canonical_unit"] == "USD"
+    assert specialist_authority["applicable_dprime_consumption_ref"]["route"] == (
+        "synthesis_dprime"
+    )
+    final_packet = captured["author_runtime_scope"]["final_answer_packet"]
+    author_trace_ref = captured["author_runtime_scope"][
+        "final_answer_author_payload"
+    ].to_trace_ref()
+    trace_authority_payload = author_trace_ref["authority_payload"]
+    assert "admitted_synthesis_entries" not in trace_authority_payload
+    assert trace_authority_payload["admitted_synthesis_entry_count"] > 0
+    assert trace_authority_payload["admitted_synthesis_entries_digest"]
+    synthesis_entry = next(
+        entry
+        for entry in final_packet.admitted_synthesis_entries
+        if entry.get("specialist_quantitative_authority_ref")
+    )
+    assert synthesis_entry["specialist_quantitative_authority_ref"] == (
+        specialist_authority
+    )
+    assert specialist_authority["claim_material_digest"] == sha256(
+        synthesis_entry["claim_text"].encode("utf-8")
+    ).hexdigest()
+    synthesis_manifest_entry = next(
+        entry
+        for entry in final_packet.quantitative_finalization_authority_manifest[
+            "authorized_numeric_claims"
+        ]
+        if entry["normalized_numeric_value_text"] == "58800"
+    )
+    assert synthesis_manifest_entry["authority_kind"] == (
+        "specialist_derived_numeric"
+    )
+    assert synthesis_manifest_entry["applicable_dprime_consumption_ref"][
+        "route"
+    ] == "synthesis_dprime"
     assert all(
         ref["underlying_evidence_match_posture"]
         == "exact_literal_found_in_underlying_evidence"

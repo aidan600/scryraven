@@ -52,7 +52,7 @@ from scripts.ag_live_s1_product_convergence_01_support import (  # noqa: E402
 )
 
 PHASE_ID = "AG-LIVE-S1-PRODUCT-CONVERGENCE-01"
-EXPECTED_STARTING_SHA = "10683322b1e115410ba082faf89caa494de1eb55"
+EXPECTED_STARTING_SHA = "10683322b1e115410ba082faf89caa494de1eb55"  # pragma: allowlist secret
 EXPECTED_BRANCH = "codex/live-s1-product-convergence-01"
 RUNNER_RELATIVE = Path("scripts/ag_live_bound_01_bounded_product_runner.py")
 QUERY_ORDER = tuple(query_id for query_id, _query in AG_LIVE_S1_FIXED_QUERIES)

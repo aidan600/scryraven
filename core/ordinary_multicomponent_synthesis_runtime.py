@@ -1566,10 +1566,21 @@ def _consume_scheduler_selected_artifact(
                 target_key=component_id,
             )
             if specialist_handoff:
-                run_kernel.consume_specialist_handoff_by_dprime(
+                specialist_state = run_kernel.consume_specialist_handoff_by_dprime(
                     handoff_id=str(specialist_handoff.get("handoff_id") or ""),
                     dprime_artifact_ref=role_artifact_ref(artifact),
                 )
+                consumed_handoff = handoff_for_target(
+                    specialist_state,
+                    target_kind="component",
+                    target_key=component_id,
+                    include_consumed=True,
+                )
+                if not consumed_handoff:
+                    raise OrdinaryMulticomponentRuntimeError(
+                        "component D-prime consumption lost the Specialist handoff"
+                    )
+                specialist_handoff = consumed_handoff
         bindable = drive_context["selected_bindables"].get(component_id)
         if bindable is None:
             raise OrdinaryMulticomponentRuntimeError(
@@ -1816,10 +1827,21 @@ def _consume_scheduler_selected_artifact(
                 target_key=synthesis_key,
             )
             if specialist_handoff:
-                run_kernel.consume_specialist_handoff_by_dprime(
+                specialist_state = run_kernel.consume_specialist_handoff_by_dprime(
                     handoff_id=str(specialist_handoff.get("handoff_id") or ""),
                     dprime_artifact_ref=role_artifact_ref(artifact),
                 )
+                consumed_handoff = handoff_for_target(
+                    specialist_state,
+                    target_kind="synthesis",
+                    target_key=synthesis_key,
+                    include_consumed=True,
+                )
+                if not consumed_handoff:
+                    raise OrdinaryMulticomponentRuntimeError(
+                        "synthesis D-prime consumption lost the Specialist handoff"
+                    )
+                specialist_handoff = consumed_handoff
         graph = validate_component_work_graph_v1(
             _safe_mapping(
                 run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)

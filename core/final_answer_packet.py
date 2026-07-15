@@ -748,6 +748,28 @@ class FinalAnswerAuthorInputPayload:
             self.quantitative_finalization_authority_manifest
         )
         trace_authority_payload = dict(self.authority_payload)
+        for entry_key, count_key, digest_key in (
+            (
+                "direct_component_entries",
+                "direct_component_entry_count",
+                "direct_component_entries_digest",
+            ),
+            (
+                "admitted_synthesis_entries",
+                "admitted_synthesis_entry_count",
+                "admitted_synthesis_entries_digest",
+            ),
+        ):
+            entries = trace_authority_payload.pop(entry_key, None)
+            if isinstance(entries, Sequence) and not isinstance(
+                entries, (str, bytes)
+            ):
+                trace_authority_payload[count_key] = len(entries)
+                trace_authority_payload[digest_key] = _stable_safe_json_digest(
+                    entries
+                )
+        if self.direct_component_entries or self.admitted_synthesis_entries:
+            trace_authority_payload["full_multicomponent_entries_included"] = False
         if "quantitative_finalization_authority_manifest" in trace_authority_payload:
             trace_authority_payload[
                 "quantitative_finalization_authority_manifest_trace_ref"

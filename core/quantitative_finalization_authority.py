@@ -17,6 +17,8 @@ from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 from core.quantitative_specialist_product_activation import (
+    QUANTITATIVE_CAPABILITY_ID,
+    QUANTITATIVE_CAPABILITY_VERSION,
     QuantitativeSpecialistProductError,
     parse_source_bound_numeric_literal,
 )
@@ -212,7 +214,6 @@ _SAFE_REF_KEY_SUFFIXES = (
 _AUTHORITY_KINDS = frozenset(
     {
         "direct_source_numeric",
-        "admitted_quantitative_claim",
         "specialist_derived_numeric",
     }
 )
@@ -712,6 +713,93 @@ def semantic_claim_fingerprint(assertion: str) -> str:
     return _text_digest(_normalized_claim_body(prose, literals))
 
 
+_SOURCE_EQUIVALENCE_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "are",
+        "at",
+        "has",
+        "have",
+        "is",
+        "of",
+        "the",
+        "to",
+        "was",
+        "were",
+    }
+)
+_SOURCE_EQUIVALENCE_TOKEN_NORMALIZATION = {
+    "applications": "application",
+    "due": "deadline",
+}
+
+
+def _source_equivalence_core(assertion: str) -> frozenset[str]:
+    literals = extract_quantitative_literals(assertion)
+    normalized = _normalized_claim_body(assertion, literals)
+    normalized = re.sub(r"quant\[[^\]]+\]", " ", normalized)
+    tokens: set[str] = set()
+    for token in re.findall(r"[a-z0-9]+(?:['â€™\-][a-z0-9]+)?", normalized):
+        if token in _SOURCE_EQUIVALENCE_STOPWORDS:
+            continue
+        tokens.add(_SOURCE_EQUIVALENCE_TOKEN_NORMALIZATION.get(token, token))
+    return frozenset(tokens)
+
+
+def _component_id_tail(value: Any) -> str:
+    return str(value or "").strip().rsplit(":", 1)[-1]
+
+
+def _component_source_lineage_matches(
+    admitted_claim: Mapping[str, Any],
+    direct_claim: Mapping[str, Any],
+) -> bool:
+    admitted_ref = _mapping(admitted_claim.get("evidence_or_specialist_ref"))
+    observation_ref = _mapping(admitted_ref.get("semantic_observation_ref"))
+    coverage_ref = _mapping(admitted_ref.get("component_coverage_ref"))
+    evidence_refs = _mapping_sequence(admitted_ref.get("evidence_refs"))
+    direct_material_ref = _mapping(direct_claim.get("fap_material_ref"))
+    admitted_component = _component_id_tail(
+        _mapping(admitted_claim.get("claim_ref")).get("component_id")
+    )
+    direct_component = _component_id_tail(
+        _mapping(direct_claim.get("claim_ref")).get("component_id")
+    )
+    exact_content_ref = any(
+        ref.get("content_ref_id") == direct_material_ref.get("content_ref_id")
+        and ref.get("content_digest") == direct_material_ref.get("content_digest")
+        for ref in evidence_refs
+    )
+    exact_coverage_ref = bool(
+        coverage_ref.get("coverage_record_id")
+        and coverage_ref.get("coverage_record_id")
+        == direct_material_ref.get("coverage_record_id")
+        and coverage_ref.get("coverage_record_digest")
+        == direct_material_ref.get("coverage_record_digest")
+    )
+    admitted_core = _source_equivalence_core(
+        str(admitted_claim.get("claim_text") or "")
+    )
+    direct_core = _source_equivalence_core(
+        str(direct_claim.get("claim_text") or "")
+    )
+    shared_core = admitted_core & direct_core
+    proposition_core_matches = bool(
+        len(shared_core) >= 2
+        and (admitted_core <= direct_core or direct_core <= admitted_core)
+    )
+    return bool(
+        observation_ref.get("observation_id")
+        and observation_ref.get("observation_digest")
+        and admitted_component
+        and admitted_component == direct_component
+        and exact_content_ref
+        and exact_coverage_ref
+        and proposition_core_matches
+    )
+
+
 def _claim_ref_from_entry(entry: Mapping[str, Any], *, fallback_key: str) -> dict[str, Any]:
     return {
         key: value
@@ -732,24 +820,78 @@ def specialist_quantitative_authority_ref_from_handoff(
 ) -> dict[str, Any]:
     """Project an exact completed Specialist/D-prime handoff without new authority."""
 
-    handoff = _mapping(specialist_need_handoff)
+    from core.specialist_graph_runtime import (
+        VALIDATOR_COMPONENT,
+        VALIDATOR_SYNTHESIS,
+        VALIDATOR_TERMINAL,
+        SpecialistGraphRuntimeError,
+        validate_specialist_need_handoff,
+    )
+
+    try:
+        handoff = validate_specialist_need_handoff(
+            _mapping(specialist_need_handoff)
+        )
+    except SpecialistGraphRuntimeError:
+        return {}
     result = _mapping(handoff.get("result"))
     result_ref = _mapping(result.get("result_ref"))
     bounded = _mapping(result.get("bounded_result"))
     alignment = _mapping(bounded.get("claim_alignment"))
+    alignment_binding = _mapping(alignment.get("literal_binding_ref"))
     dprime_ref = _safe_ref(applicable_dprime_ref)
+    target_kind = str(
+        _mapping(handoff.get("canonical_target_ref")).get("target_kind") or ""
+    )
+    expected_consumption = (
+        VALIDATOR_COMPONENT
+        if target_kind == "component"
+        else VALIDATOR_SYNTHESIS
+        if target_kind == "synthesis"
+        else ""
+    )
+    canonical_result_unit = _normalized_result_unit(bounded.get("result_unit"))
+    legacy_result_unit = _normalized_result_unit(bounded.get("unit"))
+    if canonical_result_unit:
+        if legacy_result_unit and legacy_result_unit != canonical_result_unit:
+            return {}
+        result_unit_contract_posture = (
+            "canonical_result_unit_with_legacy_agreement"
+            if legacy_result_unit
+            else "canonical_result_unit"
+        )
+        result_unit = canonical_result_unit
+    elif legacy_result_unit:
+        result_unit_contract_posture = "explicit_legacy_unit_compatibility"
+        result_unit = legacy_result_unit
+    else:
+        return {}
     if not (
         handoff.get("handoff_id")
         and handoff.get("handoff_digest")
         and result_ref.get("result_id")
         and result_ref.get("result_digest")
+        and result_ref.get("capability_id") == QUANTITATIVE_CAPABILITY_ID
+        and result_ref.get("capability_version")
+        == QUANTITATIVE_CAPABILITY_VERSION
+        and result_ref.get("execution_posture") == "completed"
         and result.get("execution_posture") == "completed"
         and bounded.get("calculation_status") == "computed"
         and bounded.get("numeric_value_text") is not None
-        and bounded.get("unit")
+        and result_unit
         and bounded.get("precision_posture")
         and alignment.get("posture") == "exact_match"
+        and _digest_text_is_valid(alignment_binding.get("source_material_digest"))
         and dprime_ref
+        and expected_consumption
+        and handoff.get("validator_consumption") == expected_consumption
+        and handoff.get("validator_consumption_terminal") == VALIDATOR_TERMINAL
+        and handoff.get("validator_validation_status")
+        in {"supported", "supported_with_caveats"}
+        and _safe_ref(handoff.get("validator_dprime_artifact_ref"))
+        == dprime_ref
+        and _safe_ref(result_ref.get("canonical_target_ref"))
+        == _safe_ref(handoff.get("canonical_target_ref"))
     ):
         return {}
     return {
@@ -760,15 +902,17 @@ def specialist_quantitative_authority_ref_from_handoff(
             "canonical_target_ref": _safe_ref(handoff.get("canonical_target_ref")),
         },
         "normalized_numeric_value_text": str(bounded.get("numeric_value_text")),
-        "canonical_unit": str(bounded.get("unit")),
+        "canonical_unit": result_unit,
         "precision_posture": str(bounded.get("precision_posture")),
+        "result_unit_contract_posture": result_unit_contract_posture,
         "claim_alignment_posture": "exact_match",
         "claim_alignment_ref_digest": _digest(alignment),
+        "claim_material_digest": alignment_binding.get("source_material_digest"),
         "applicable_dprime_ref": dprime_ref,
         "applicable_dprime_consumption_ref": {
             "route": (
                 "component_dprime"
-                if _mapping(handoff.get("canonical_target_ref")).get("target_kind") == "component"
+                if target_kind == "component"
                 else "synthesis_dprime"
             ),
             "handoff_id": handoff.get("handoff_id"),
@@ -779,10 +923,63 @@ def specialist_quantitative_authority_ref_from_handoff(
     }
 
 
+def _normalized_result_unit(value: Any) -> str:
+    unit = _clean_text(value, limit=80)
+    if not unit:
+        return ""
+    literals = extract_quantitative_literals(f"1 {unit}")
+    if len(literals) != 1:
+        return ""
+    return str(literals[0].get("canonical_unit") or "")
+
+
+def _specialist_ref_is_complete(specialist_ref: Mapping[str, Any]) -> bool:
+    result_ref = _mapping(specialist_ref.get("specialist_result_ref"))
+    handoff_ref = _mapping(specialist_ref.get("specialist_handoff_ref"))
+    target_ref = _mapping(handoff_ref.get("canonical_target_ref"))
+    dprime_ref = _mapping(specialist_ref.get("applicable_dprime_ref"))
+    consumption_ref = _mapping(
+        specialist_ref.get("applicable_dprime_consumption_ref")
+    )
+    return bool(
+        result_ref.get("result_id")
+        and result_ref.get("result_digest")
+        and result_ref.get("capability_id") == QUANTITATIVE_CAPABILITY_ID
+        and result_ref.get("capability_version")
+        == QUANTITATIVE_CAPABILITY_VERSION
+        and result_ref.get("execution_posture") == "completed"
+        and _mapping(result_ref.get("canonical_target_ref")) == target_ref
+        and handoff_ref.get("handoff_id")
+        and handoff_ref.get("handoff_digest")
+        and target_ref.get("target_kind") in {"component", "synthesis"}
+        and specialist_ref.get("normalized_numeric_value_text") is not None
+        and specialist_ref.get("canonical_unit")
+        and specialist_ref.get("precision_posture")
+        and specialist_ref.get("result_unit_contract_posture")
+        in {
+            "canonical_result_unit",
+            "canonical_result_unit_with_legacy_agreement",
+            "explicit_legacy_unit_compatibility",
+        }
+        and specialist_ref.get("claim_alignment_posture") == "exact_match"
+        and specialist_ref.get("claim_alignment_ref_digest")
+        and _digest_text_is_valid(specialist_ref.get("claim_material_digest"))
+        and dprime_ref
+        and consumption_ref.get("route")
+        == f"{target_ref.get('target_kind')}_dprime"
+        and consumption_ref.get("handoff_id") == handoff_ref.get("handoff_id")
+        and consumption_ref.get("handoff_digest")
+        == handoff_ref.get("handoff_digest")
+        and consumption_ref.get("consumption_posture")
+        == "consumed_by_applicable_dprime"
+        and _mapping(consumption_ref.get("dprime_artifact_ref")) == dprime_ref
+    )
+
+
 def _specialist_matches(
     literal: Mapping[str, Any], specialist_ref: Mapping[str, Any]
 ) -> bool:
-    if not specialist_ref:
+    if not _specialist_ref_is_complete(specialist_ref):
         return False
     if (
         str(literal.get("normalized_numeric_value_text"))
@@ -797,6 +994,17 @@ def _specialist_matches(
     ) or str(literal.get("precision_posture") or "") == specialist_precision
 
 
+def _specialist_claim_matches(
+    claim_text: str,
+    literals: Sequence[Mapping[str, Any]],
+    specialist_ref: Mapping[str, Any],
+) -> bool:
+    return bool(
+        specialist_ref.get("claim_material_digest") == _text_digest(claim_text)
+        and any(_specialist_matches(literal, specialist_ref) for literal in literals)
+    )
+
+
 def _claim_sources(
     *,
     direct_component_entries: Sequence[Mapping[str, Any]],
@@ -804,7 +1012,8 @@ def _claim_sources(
     semantic_author_materialization: Mapping[str, Any] | None,
     component_packet_entries: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    claims: list[dict[str, Any]] = []
+    direct_claims: list[dict[str, Any]] = []
+    admitted_claims: list[dict[str, Any]] = []
     for index, raw in enumerate(direct_component_entries, start=1):
         entry = _mapping(raw)
         dprime_ref = _safe_ref(entry.get("dprime_validation_ref"))
@@ -817,7 +1026,7 @@ def _claim_sources(
             and dprime_ref
         ):
             continue
-        claims.append(
+        admitted_claims.append(
             {
                 "source_kind": "admitted_quantitative_claim",
                 "claim_text": _clean_text(entry.get("claim_text"), limit=2000),
@@ -849,7 +1058,7 @@ def _claim_sources(
             and dprime_ref
         ):
             continue
-        claims.append(
+        admitted_claims.append(
             {
                 "source_kind": "admitted_quantitative_claim",
                 "claim_text": _clean_text(entry.get("claim_text"), limit=2000),
@@ -876,7 +1085,7 @@ def _claim_sources(
             and observation_ref
         ):
             continue
-        claims.append(
+        admitted_claims.append(
             {
                 "source_kind": "admitted_quantitative_claim",
                 "claim_text": claim_text,
@@ -907,7 +1116,7 @@ def _claim_sources(
             for assertion_index, assertion in enumerate(_assertions(bounded_text), start=1):
                 if not extract_quantitative_literals(assertion):
                     continue
-                claims.append(
+                direct_claims.append(
                     {
                         "source_kind": "direct_source_numeric",
                         "claim_text": assertion,
@@ -936,7 +1145,7 @@ def _claim_sources(
                         },
                     }
                 )
-    return claims
+    return [*direct_claims, *admitted_claims]
 
 
 def build_quantitative_finalization_authority_bundle(
@@ -957,7 +1166,24 @@ def build_quantitative_finalization_authority_bundle(
     )
     authorized: list[dict[str, Any]] = []
     renderings: dict[str, str] = {}
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, int]] = set()
+    direct_bindings: dict[
+        tuple[str, tuple[tuple[str, int], ...]], dict[str, Any]
+    ] = {}
+    direct_bindings_by_signature: dict[
+        tuple[tuple[str, int], ...], list[dict[str, Any]]
+    ] = {}
+    for claim in claims:
+        if claim.get("source_kind") != "direct_source_numeric":
+            continue
+        claim_text = str(claim.get("claim_text") or "")
+        literals = extract_quantitative_literals(claim_text)
+        if not literals:
+            continue
+        fingerprint = semantic_claim_fingerprint(claim_text)
+        signatures = tuple(sorted(Counter(_literal_signature(item) for item in literals).items()))
+        direct_bindings.setdefault((fingerprint, signatures), claim)
+        direct_bindings_by_signature.setdefault(signatures, []).append(claim)
     for claim_index, claim in enumerate(claims, start=1):
         claim_text = str(claim["claim_text"])
         literals = extract_quantitative_literals(claim_text)
@@ -968,16 +1194,46 @@ def build_quantitative_finalization_authority_bundle(
         local_claim_key = (
             f"quant-claim-{claim_index:03d}-{fingerprint[:12]}"
         )
-        renderings[local_claim_key] = claim_text
+        signatures = tuple(
+            sorted(Counter(_literal_signature(item) for item in literals).items())
+        )
+        source_binding = direct_bindings.get((fingerprint, signatures))
+        source_binding_posture = (
+            "exact_claim_fingerprint"
+            if source_binding is not None
+            else ""
+        )
+        if (
+            source_binding is None
+            and claim.get("source_kind") == "admitted_quantitative_claim"
+            and _mapping(claim.get("fap_material_ref")).get("entry_kind")
+            == "direct_component"
+        ):
+            source_binding = next(
+                (
+                    direct
+                    for direct in direct_bindings_by_signature.get(signatures, ())
+                    if _component_source_lineage_matches(claim, direct)
+                ),
+                None,
+            )
+            if source_binding is not None:
+                source_binding_posture = "component_source_lineage_equivalent"
+        specialist_ref = _safe_ref(claim.get("specialist_ref"))
+        specialist_claim_authorized = _specialist_claim_matches(
+            claim_text,
+            literals,
+            specialist_ref,
+        )
+        claim_authorized = False
         for literal_index, literal in enumerate(literals, start=1):
-            specialist_ref = _safe_ref(claim.get("specialist_ref"))
             authority_kind = str(claim.get("source_kind"))
             evidence_ref = _safe_ref(claim.get("evidence_or_specialist_ref"))
             dprime_ref = _safe_ref(claim.get("applicable_dprime_ref"))
             dprime_consumption_ref = _safe_ref(
                 claim.get("applicable_dprime_consumption_ref")
             )
-            if _specialist_matches(literal, specialist_ref):
+            if specialist_claim_authorized:
                 authority_kind = "specialist_derived_numeric"
                 evidence_ref = _safe_ref(
                     specialist_ref.get("specialist_result_ref")
@@ -986,20 +1242,36 @@ def build_quantitative_finalization_authority_bundle(
                 dprime_consumption_ref = _safe_ref(
                     specialist_ref.get("applicable_dprime_consumption_ref")
                 )
+            elif authority_kind == "admitted_quantitative_claim":
+                if source_binding is None:
+                    continue
+                authority_kind = "direct_source_numeric"
+                evidence_ref = _safe_ref(
+                    source_binding.get("evidence_or_specialist_ref")
+                )
+                dprime_ref = {}
+                dprime_consumption_ref = {}
             dedupe_key = (
                 fingerprint,
                 _literal_signature(literal),
-                authority_kind,
+                literal_index,
             )
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
+            claim_authorized = True
             authorized.append(
                 {
                     "local_claim_key": local_claim_key,
                     "claim_literal_ordinal": literal_index,
                     "current_claim_ref": claim_ref,
-                    "claim_authority_posture": claim.get("claim_authority_posture"),
+                    "claim_authority_posture": (
+                        "current_fap_authorized_source_bound_material_"
+                        + source_binding_posture
+                        if source_binding is not None
+                        and authority_kind == "direct_source_numeric"
+                        else claim.get("claim_authority_posture")
+                    ),
                     "authority_kind": authority_kind,
                     "normalized_numeric_value_text": literal.get(
                         "normalized_numeric_value_text"
@@ -1011,17 +1283,23 @@ def build_quantitative_finalization_authority_bundle(
                     "applicable_dprime_consumption_ref": dprime_consumption_ref,
                     "admitted_claim_ref": (
                         claim_ref
-                        if authority_kind
-                        in {"admitted_quantitative_claim", "specialist_derived_numeric"}
+                        if authority_kind == "specialist_derived_numeric"
                         else {}
                     ),
-                    "fap_material_ref": _safe_ref(claim.get("fap_material_ref")),
+                    "fap_material_ref": _safe_ref(
+                        source_binding.get("fap_material_ref")
+                        if authority_kind == "direct_source_numeric"
+                        and source_binding is not None
+                        else claim.get("fap_material_ref")
+                    ),
                     "semantic_claim_fingerprint_or_existing_equivalent": fingerprint,
                     "literal_signature_digest": _text_digest(
                         _literal_signature(literal)
                     ),
                 }
             )
+        if claim_authorized:
+            renderings[local_claim_key] = claim_text
     manifest_base = {
         "schema_version": QUANTITATIVE_FINALIZATION_AUTHORITY_MANIFEST_SCHEMA_VERSION,
         "source_fap_ref": _safe_ref(source_fap_ref),
