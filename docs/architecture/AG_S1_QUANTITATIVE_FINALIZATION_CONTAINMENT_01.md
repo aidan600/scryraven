@@ -3,10 +3,10 @@
 Status: current
 Authority: canonical:quantitative-finalization-containment
 Default-read: no
-Applies-to: claim-scoped quantitative authority in every active accepted-prose finalization route
+Applies-to: claim-scoped quantitative authority in the ordinary AuthorExecutor, deterministic AuthorProseFinalization, and AF5B response-finalization consumers
 Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: 57ede2b45bb98824a0b506ce42110518162ae82d
-Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or an active finalization entrypoint
+Verified-against-runtime: 5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2
+Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or a guarded finalization consumer
 
 ## Responsibility
 
@@ -144,13 +144,19 @@ all natural-language numbers.
 The older two-item quantitative consistency diagnostic remains observable but
 is subordinated. It no longer deletes or rewrites answer text.
 
-## Active Finalization Route Inventory
+## Guarded Finalization Consumer Inventory
 
-| Accepted-prose route | Manifest source | Validation point | Failure effect |
+| Guarded consumer | Manifest source | Validation point | Failure effect |
 | --- | --- | --- | --- |
 | Ordinary `AuthorExecutor` | ordinary FinalAnswerPacket Author payload | after the one model response is fully buffered, before display or `AUTHOR_OUTPUT_OBSERVED` | rejected prose is not displayed or reduced; no retry |
 | Deterministic `AuthorProseFinalization` | hardened FAP state/projection | before AuthorProse state or projection construction | no successful AuthorProse state |
-| Follow-up AF5B response finalization | serialized follow-up/current FAP authority | during the existing AF5B validation context, before authorization/reduction | no successful Author observation or final-answer outcome |
+| AF5B response-finalization capability | serialized follow-up/current FAP authority | during the existing AF5B validation context, before authorization/reduction | no successful Author observation or final-answer outcome |
+
+AF5B availability does not establish saved-thread product consumption. The
+active saved-thread follow-up UI path through `ui.pages_followup` and
+`core.followup` is not wired to AF5B or the shared quantitative validator and
+remains a known pre-live blocker. This inventory makes no claim that the active
+saved-thread product path consumes AF5B.
 
 No accepted-prose compatibility formatter bypasses the shared validator. The
 ordinary route has no existing safe structured partial renderer that can
