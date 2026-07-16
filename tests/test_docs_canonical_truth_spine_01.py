@@ -67,7 +67,7 @@ QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
 STRUCTURED_ROUTE_RUNTIME_SHA = (
-    "0c6308f22a0df0ffcb98a67c1ca26e9d4614b795"  # pragma: allowlist secret
+    "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = (
     STRUCTURED_ROUTE_RUNTIME_SHA

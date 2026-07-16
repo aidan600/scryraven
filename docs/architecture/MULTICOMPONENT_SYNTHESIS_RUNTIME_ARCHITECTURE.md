@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
-Verified-against-runtime: 0c6308f22a0df0ffcb98a67c1ca26e9d4614b795
+Verified-against-runtime: e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
