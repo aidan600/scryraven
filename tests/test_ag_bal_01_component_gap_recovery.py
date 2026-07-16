@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +9,7 @@ import pytest
 
 import core.component_gap_recovery_coordinator as recovery_coordinator
 import core.component_gap_recovery_runtime as recovery_runtime
+import core.final_evidence_bundle_builder as final_material_builder
 import core.pipeline_orchestrator as orchestrator
 from core.component_gap_recovery_runtime import (
     COMPONENT_GAP_RECOVERY_TRACE_KEY,
@@ -129,6 +130,12 @@ class _BalancedRecoveryHarness(OfflineOrdinaryPipelineHarness):
             enabled=True,
             offline_recovery_adapter=self.process_search_queries,
         )
+
+    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        if "ruthless fact-checker and logic auditor" in system_prompt:
+            self._record_model_call(system_prompt, kwargs)
+            return '{"verdict": "clean", "flags": []}'
+        return super().ask_model(prompt, system_prompt, **kwargs)
 
     def build_search_passages(self) -> list[dict[str, Any]]:
         if len(self.search_calls) == 1:
@@ -411,12 +418,21 @@ def test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author(
     }
     assert covered_component_ids == accepted_component_ids
 
-    assert len(captured["sufficiency_handoffs"]) >= 2
+    assert len(captured["sufficiency_handoffs"]) == 2
+    assert captured["sufficiency_projections"][0]["semantic_consumption"][
+        "missing_component_count"
+    ] == 1
+    assert captured["sufficiency_projections"][1]["semantic_consumption"][
+        "missing_component_count"
+    ] == 0
     sufficiency_projection = state.sufficiency_judgment_projection
     semantic_consumption = sufficiency_projection["semantic_consumption"]
     assert semantic_consumption["required_component_count"] == 2
     assert semantic_consumption["covered_component_count"] == 2
     assert semantic_consumption["missing_component_count"] == 0
+    assert captured["packet_runtime_scope"]["sufficiency_judgment_projection"] == (
+        captured["sufficiency_projections"][1]
+    )
 
     query_authority = captured["packet_runtime_scope"]["query_authority"]
     query_plan_trace = query_authority.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
@@ -438,6 +454,9 @@ def test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author(
 
     assert captured["packet_handoff_called"] is True
     assert captured["author_handoff_called"] is True
+    assert captured["author_runtime_scope"]["final_answer_packet"] == (
+        captured["packet_handoff"].packet
+    )
     packet = state.final_answer_packet
     packet_text = repr(packet)
     assert RECOVERED_SOURCE_URL in packet_text
@@ -550,20 +569,19 @@ def test_ag_bal_harden_01_poisoned_adapter_authority_is_neutral_before_rebuild(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pre_rebuild: dict[str, Any] = {}
-    original_rebuild = (
-        recovery_coordinator.build_final_evidence_runtime_handoff_from_scope
-    )
+    original_rebuild = orchestrator.build_final_material_runtime_handoff_from_scope
 
     def capture_pre_rebuild_scope(scope: Any, *args: Any, **kwargs: Any) -> Any:
-        pre_rebuild["evidence_ledger_projection"] = deepcopy(
-            scope["evidence_ledger_projection"]
-        )
-        pre_rebuild["all_passages"] = deepcopy(scope["all_passages"])
+        if kwargs.get("final_evidence_handoff") is None:
+            pre_rebuild["evidence_ledger_projection"] = deepcopy(
+                scope["run_kernel"].state.evidence_ledger.to_projection().to_dict()
+            )
+            pre_rebuild["all_passages"] = deepcopy(scope["all_passages"])
         return original_rebuild(scope, *args, **kwargs)
 
     monkeypatch.setattr(
-        recovery_coordinator,
-        "build_final_evidence_runtime_handoff_from_scope",
+        orchestrator,
+        "build_final_material_runtime_handoff_from_scope",
         capture_pre_rebuild_scope,
     )
     harness = _PoisonedAuthorityRecoveryHarness(tmp_path)
@@ -738,14 +756,16 @@ def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_obs
     assert RECOVERED_SOURCE_URL not in repr(state.final_answer_packet)
 
 
-def test_ag_bal_01_fast_mode_does_not_invoke_or_record_recovery(
+@pytest.mark.parametrize("mode", ("Fast", "Deep"))
+def test_ag_bal_01_ineligible_modes_do_not_invoke_or_record_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    mode: str,
 ) -> None:
     harness, captured = _run_blocked_offline_path(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
-        mode="Fast",
+        mode=mode,
     )
 
     assert harness.forbidden_live_calls == []
@@ -980,6 +1000,176 @@ def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
     assert adapter.calls == []
 
 
+def test_initial_and_recovered_material_use_one_shared_typed_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+    original_builder = orchestrator.build_final_material_runtime_handoff_from_scope
+
+    def shared_builder(scope: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs.get("final_evidence_handoff") is not None)
+        return original_builder(scope, *args, **kwargs)
+
+    monkeypatch.setattr(
+        orchestrator,
+        "build_final_material_runtime_handoff_from_scope",
+        shared_builder,
+    )
+    harness = _BalancedRecoveryHarness(tmp_path)
+
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-01-shared-material-session",
+            run_id="ag-bal-01-shared-material-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    assert calls == [True, False]
+    assert outcome.report == RAW_AUTHOR_RESPONSE
+
+
+def test_incomplete_post_recovery_shared_material_fails_closed_before_fap_or_author(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_count = 0
+    original_builder = orchestrator.build_final_material_runtime_handoff_from_scope
+
+    def incomplete_second_handoff(scope: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        handoff = original_builder(scope, *args, **kwargs)
+        if call_count == 2:
+            return replace(handoff, author_prompt="")
+        return handoff
+
+    monkeypatch.setattr(
+        orchestrator,
+        "build_final_material_runtime_handoff_from_scope",
+        incomplete_second_handoff,
+    )
+    harness = _BalancedRecoveryHarness(tmp_path)
+
+    with pytest.raises(
+        orchestrator.PipelineError,
+        match="shared final-material Author prompt is absent",
+    ):
+        orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-06-24",
+                session_id="ag-bal-01-incomplete-material-session",
+                run_id="ag-bal-01-incomplete-material-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert call_count == 2
+    assert harness.author_prompts == []
+    assert harness.author_kwargs == []
+
+
+def test_cycle_budget_exhaustion_blocks_before_another_adapter_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _WeakRecoveryHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(HANDOFF_PACKET,),
+    )
+    orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-01-exhausted-session",
+            run_id="ag-bal-01-exhausted-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    _remove_final_answer_packet_guard_state(captured)
+    adapter = _AdapterSpy()
+
+    result = execute_authorized_component_gap_recovery(
+        **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
+    )
+
+    assert result.stop_reason == "cycle_budget_exhausted"
+    assert adapter.calls == []
+
+
+def test_supported_cli_composition_leaves_recovery_adapter_absent() -> None:
+    repo = Path(__file__).resolve().parents[1]
+    cli_source = (repo / "proplex" / "__main__.py").read_text()
+    adapter_field = RunDeps.__dataclass_fields__["component_gap_recovery_adapter"]
+
+    assert adapter_field.default is None
+    assert "compose_component_gap_recovery_deps" not in cli_source
+    assert "component_gap_recovery_adapter=" not in cli_source
+
+
+def test_mode_policy_selection_is_policy_only_and_unsupported_modes_fail_closed() -> None:
+    balanced = recovery_coordinator.component_gap_recovery_policy_for_mode(
+        "Balanced"
+    )
+
+    assert balanced is not None
+    assert balanced.requested_mode == "Balanced"
+    assert balanced.max_cycles == 1
+    assert balanced.offline_only is True
+    assert balanced.existing_candidate_query_only is True
+    assert balanced.model_generated_query_text_allowed is False
+    assert balanced.provider_live_calls_allowed is False
+    assert balanced.accepted_amendments_allowed is False
+    assert balanced.deep_reconciliation_allowed is False
+    assert recovery_coordinator.component_gap_recovery_policy_for_mode("Fast") is None
+    assert recovery_coordinator.component_gap_recovery_policy_for_mode("Deep") is None
+    assert recovery_coordinator.component_gap_recovery_policy_for_mode("Unknown") is None
+    assert recovery_coordinator.component_gap_recovery_policy_for_mode("") is None
+
+
+def test_recovery_handoff_contains_no_final_or_author_material() -> None:
+    handoff_fields = {
+        item.name
+        for item in fields(recovery_coordinator.ComponentGapRecoveryPipelineHandoff)
+    }
+
+    assert handoff_fields == {
+        "result",
+        "recovered",
+        "all_passages",
+        "evidence_ledger_projection",
+        "semantic_state_facts",
+    }
+
+
+def test_shared_final_material_owner_is_typed_and_not_recovery_specific() -> None:
+    handoff_fields = {
+        item.name for item in fields(final_material_builder.FinalMaterialRuntimeHandoff)
+    }
+
+    assert handoff_fields == {
+        "final_evidence_handoff",
+        "author_evidence",
+        "author_evidence_block",
+        "author_prompt",
+        "author_notes",
+    }
+    assert callable(
+        final_material_builder.build_final_material_runtime_handoff_from_scope
+    )
+
+
 def test_ag_bal_harden_01_structural_guards() -> None:
     repo = Path(__file__).resolve().parents[1]
     runtime = (repo / "core" / "component_gap_recovery_runtime.py").read_text()
@@ -998,5 +1188,30 @@ def test_ag_bal_harden_01_structural_guards() -> None:
     assert "ComponentGapRecoveryPolicy(" not in orchestrator_text
     assert "build_component_gap_recovery_evidence_patch" not in orchestrator_text
     assert "execute_authorized_component_gap_recovery(" not in orchestrator_text
+    assert "execute_balanced_component_gap_recovery_from_scope" not in (
+        orchestrator_text + coordinator
+    )
+    assert 'if strategy == "Balanced"' not in orchestrator_text
+    assert "runtime_scope" not in coordinator
+    assert "locals()" not in coordinator
+    assert orchestrator_text.count(
+        "build_final_material_runtime_handoff_from_scope("
+    ) == 2
+    for forbidden_field in (
+        "final_top_evidence",
+        "unique_source_urls",
+        "ordered_sources",
+        "evidence_block",
+        "cached_prefix",
+        "author_evidence",
+        "author_evidence_block",
+        "author_prompt",
+        "author_notes",
+        "final_answer_packet",
+        "author_provider",
+        "author_model",
+        "author_effort",
+    ):
+        assert forbidden_field not in coordinator
     assert "Manifest" not in runtime + coordinator
     assert "Envelope" not in runtime + coordinator
