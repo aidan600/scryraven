@@ -80,6 +80,17 @@ class FinalEvidenceRuntimeHandoff:
     evidence_ledger_projection: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class FinalMaterialRuntimeHandoff:
+    """Typed ordinary final-evidence and Author-material compatibility handoff."""
+
+    final_evidence_handoff: FinalEvidenceRuntimeHandoff
+    author_evidence: list[Passage]
+    author_evidence_block: str
+    author_prompt: str
+    author_notes: str
+
+
 @dataclass(slots=True)
 class FinalEvidenceBundleInputs:
     """Inputs for rebuilding the final evidence bundle without policy decisions."""
@@ -376,6 +387,80 @@ def build_final_evidence_runtime_handoff_from_scope(
     )
 
 
+def require_complete_final_material_runtime_handoff(
+    handoff: Any,
+) -> FinalMaterialRuntimeHandoff:
+    """Fail closed when shared final material is absent or structurally incomplete."""
+
+    if not isinstance(handoff, FinalMaterialRuntimeHandoff):
+        raise ValueError("shared final-material handoff has an invalid type")
+    if not isinstance(handoff.final_evidence_handoff, FinalEvidenceRuntimeHandoff):
+        raise ValueError("shared final-material evidence handoff is absent")
+    if not isinstance(handoff.author_evidence, list):
+        raise ValueError("shared final-material Author evidence is absent")
+    if not isinstance(handoff.author_evidence_block, str):
+        raise ValueError("shared final-material Author evidence block is absent")
+    if not isinstance(handoff.author_prompt, str) or not handoff.author_prompt.strip():
+        raise ValueError("shared final-material Author prompt is absent")
+    if not isinstance(handoff.author_notes, str):
+        raise ValueError("shared final-material Author notes are absent")
+    return handoff
+
+
+def build_final_material_runtime_handoff_from_scope(
+    runtime_scope: Mapping[str, Any],
+    *,
+    final_evidence_handoff: FinalEvidenceRuntimeHandoff | None = None,
+    filter_top_evidence: FilterTopEvidence,
+    is_plausible_domain: PlausibleDomainPredicate,
+    recovered_evidence_visibility: RecoveredEvidenceVisibility | None = None,
+) -> FinalMaterialRuntimeHandoff:
+    """Build ordinary final and Author material through the existing owners."""
+
+    from core.final_authority_citation_survival import (
+        attach_selected_authority_evidence_handoff,
+    )
+    from core.runtime_prompt_assembly import build_author_prompt_from_scope
+
+    evidence_handoff = final_evidence_handoff
+    if evidence_handoff is None:
+        evidence_handoff = build_final_evidence_runtime_handoff_from_scope(
+            runtime_scope,
+            filter_top_evidence=filter_top_evidence,
+            is_plausible_domain=is_plausible_domain,
+            recovered_evidence_visibility=recovered_evidence_visibility,
+        )
+
+    authority_author_evidence = attach_selected_authority_evidence_handoff(
+        evidence_handoff.bundle,
+        precision_count=int(runtime_scope["precision_count"]),
+        active_source_class_recovery_lifecycle=runtime_scope[
+            "active_source_class_recovery_lifecycle"
+        ],
+    )
+    prompt_scope = {
+        **dict(runtime_scope),
+        "final_top_evidence": evidence_handoff.final_top_evidence,
+        "ordered_sources": evidence_handoff.ordered_sources,
+        "author_evidence": authority_author_evidence.author_evidence,
+        "author_evidence_block": (
+            authority_author_evidence.author_evidence_block
+        ),
+    }
+    prompt_assembly = build_author_prompt_from_scope(prompt_scope)
+    return require_complete_final_material_runtime_handoff(
+        FinalMaterialRuntimeHandoff(
+            final_evidence_handoff=evidence_handoff,
+            author_evidence=authority_author_evidence.author_evidence,
+            author_evidence_block=(
+                authority_author_evidence.author_evidence_block
+            ),
+            author_prompt=prompt_assembly.prompt,
+            author_notes=prompt_assembly.author_notes,
+        )
+    )
+
+
 def final_evidence_handoff_from_legacy_review(
     handoff: FinalEvidenceRuntimeHandoff,
     legacy_review_outcome: Any,
@@ -464,6 +549,7 @@ def build_final_evidence_bundle(
 __all__ = [
     "FinalEvidenceBundle",
     "FinalEvidenceBundleInputs",
+    "FinalMaterialRuntimeHandoff",
     "FinalEvidenceRuntimeHandoff",
     "FinalEvidencePostFinalSourceClassHandoff",
     "FinalEvidenceSourceIdentity",
@@ -475,10 +561,12 @@ __all__ = [
     "build_evidence_block",
     "build_final_evidence_bundle",
     "build_final_evidence_runtime_handoff_from_scope",
+    "build_final_material_runtime_handoff_from_scope",
     "build_final_source_telemetry_inputs",
     "build_ordered_sources",
     "final_evidence_bundle_inputs_from_scope",
     "final_evidence_handoff_from_legacy_review",
     "post_final_source_class_handoff_from_final_evidence_bundle",
+    "require_complete_final_material_runtime_handoff",
     "slice_author_evidence",
 ]

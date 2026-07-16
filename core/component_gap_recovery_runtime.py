@@ -86,11 +86,15 @@ class ComponentGapRecoveryStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ComponentGapRecoveryPolicy:
-    """Permission and budget envelope supplied by a mode policy."""
+    """Recovery slice of the shared temporary mode-policy envelope."""
 
     policy_label: str
     requested_mode: str
     allowed_requested_modes: tuple[str, ...] = field(default_factory=tuple)
+    mode_supported: bool = True
+    recovery_eligible: bool = True
+    closure_reason: str | None = None
+    temporary_compatibility_values: bool = False
     max_cycles: int = 1
     offline_only: bool = True
     existing_candidate_query_only: bool = True
@@ -104,6 +108,12 @@ class ComponentGapRecoveryPolicy:
             "policy_label": self.policy_label,
             "requested_mode": self.requested_mode,
             "allowed_requested_modes": list(self.allowed_requested_modes),
+            "mode_supported": bool(self.mode_supported),
+            "recovery_eligible": bool(self.recovery_eligible),
+            "closure_reason": self.closure_reason,
+            "temporary_compatibility_values": bool(
+                self.temporary_compatibility_values
+            ),
             "max_cycles": int(self.max_cycles),
             "offline_only": bool(self.offline_only),
             "existing_candidate_query_only": bool(
@@ -188,6 +198,12 @@ def execute_authorized_component_gap_recovery(
     seen_urls: set[str] | None = None,
 ) -> ComponentGapRecoveryResult:
     """Execute one shared, authorized, offline component-gap recovery cycle."""
+
+    if not policy.mode_supported or not policy.recovery_eligible:
+        return _closed_mode_policy_result(
+            policy=policy,
+            attempted_cycles=0,
+        )
 
     context = dict(runtime_context or {})
     query_plan = _extract_query_plan(query_plan_trace)
@@ -443,6 +459,45 @@ def execute_authorized_component_gap_recovery(
             coverage_result=coverage_result,
         ),
         adapter_invoked=True,
+    )
+
+
+def _closed_mode_policy_result(
+    *,
+    policy: ComponentGapRecoveryPolicy,
+    attempted_cycles: int,
+) -> ComponentGapRecoveryResult:
+    """Return an unrecorded closed-mode result with no adapter or state mutation."""
+
+    stop_reason = str(
+        policy.closure_reason
+        or (
+            "unsupported_mode_recovery_closed"
+            if not policy.mode_supported
+            else "recovery_closed_this_phase"
+        )
+    )
+    budget_record = {
+        "schema_version": COMPONENT_GAP_RECOVERY_SCHEMA_VERSION,
+        "owner": COMPONENT_GAP_RECOVERY_OWNER,
+        "mode_neutral_primitive": True,
+        **policy.to_dict(),
+        "attempted_cycles": int(attempted_cycles),
+        "adapter_invoked": False,
+        "authorized_query": None,
+        "idempotency_key": None,
+        "stop_reason": stop_reason,
+        "recovered_component_ids": [],
+        "canonical_history_recorded": False,
+    }
+    return ComponentGapRecoveryResult(
+        status=(
+            ComponentGapRecoveryStatus.BLOCKED
+            if not policy.mode_supported
+            else ComponentGapRecoveryStatus.NOT_APPLICABLE
+        ),
+        stop_reason=stop_reason,
+        budget_record=budget_record,
     )
 
 

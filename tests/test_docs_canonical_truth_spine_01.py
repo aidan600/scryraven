@@ -67,9 +67,12 @@ QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = (
+    "ffd6796e37fac468c826afd29767aafe1e235f41"  # pragma: allowlist secret
+)
+ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
+LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = (
     "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
 )
-LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 QUANT_CONTAINMENT_RUNTIME_SHA = (
     "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
 )
@@ -123,7 +126,7 @@ def test_temporal_authorities_are_unique_and_default_read() -> None:
         (
             "canonical:current-roadmap",
             ROADMAP,
-            LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA,
+            ROADMAP_RUNTIME_SHA,
         ),
     ):
         claim = f"Authority: {authority}"
@@ -283,6 +286,68 @@ def test_current_state_has_all_installed_capability_markers() -> None:
         assert current.count(f"`{marker}`") == 1
 
 
+def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
+    current = _collapsed(CURRENT_STATE)
+    roadmap = _collapsed(ROADMAP)
+    strangler = _collapsed(ORCHESTRATOR_STRANGLER)
+
+    for text in (current, roadmap, strangler):
+        assert CURRENT_STATE_RUNTIME_SHA in text
+        assert "mode-policy envelope" in text
+        assert "temporary compatibility values" in text
+        assert "Balanced" in text
+        assert "Fast" in text
+        assert "Deep" in text
+        assert "unsupported mode" in text.casefold()
+        assert "mode-neutral" in text
+        assert "no live recovery" in text.casefold()
+        assert "Deep pass-through" not in text
+        assert "Fast`, `Deep`, and unsupported modes return no policy" not in text
+
+    assert "no recovery adapter" in roadmap
+    assert "no component-gap recovery adapter" in current
+    assert "no component-gap recovery adapter" in strangler
+
+    for phrase in (
+        "Every supported mode now resolves the recovery-related slice of one shared mode-policy envelope",
+        "Fast` is recovery-closed in this phase",
+        "Deep` is recovery-closed pending a later explicit mode-policy decision",
+        "Unsupported modes resolve the same envelope shape",
+        "No permanent mode budget was selected",
+        "Every resolved envelope enters the same mode-neutral coordinator and recovery primitive",
+        "Closed Fast and Deep values return an unrecorded non-applicable result",
+        "RunKernel's canonical EvidenceLedger and semantic component-coverage state",
+        "same ordinary typed materialization handoff",
+        "Sufficiency runs again from the current canonical state before FAP",
+        "blocked FAP does not call Author",
+        "No live recovery composition",
+        "permanent Fast/Balanced/Deep recovery budget profile",
+    ):
+        assert phrase in current
+
+    for phrase in (
+        "recovery returns no final-evidence, source-list, FinalAnswerPacket, or Author-material fields",
+        "Every supported mode resolves the same recovery-related mode-policy envelope shape",
+        "Fast is closed in this phase",
+        "Deep is closed pending a later explicit mode-policy decision",
+        "This does not claim that the whole orchestrator is authority-free",
+        "Post-recovery material must match current RunKernel state",
+        "an incomplete shared handoff fails closed",
+        "neither invokes the adapter nor records recovery history or a recovery projection",
+        "These values are not permanent product design",
+        "Other `locals()` consumers",
+        "broader final-custody convergence remain unresolved",
+    ):
+        assert phrase in strangler
+
+    assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
+    assert (
+        "Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
+        in roadmap
+    )
+    assert "No live recovery" in roadmap
+
+
 def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     roadmap = _read(ROADMAP)
     normalized = _collapsed(ROADMAP)
@@ -302,9 +367,11 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Repair: Validation and Execution-Surface Ergonomics Closure"
     )
     mode_policy = roadmap.index(
-        "## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01"
+        "## Completed Repair: Mode-Policy Recovery Authority Containment"
     )
-    proposal = roadmap.index("### Specialist Proposal-Instance Admission Hardening")
+    proposal = roadmap.index(
+        "## Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
+    )
     structured_route = roadmap.index(
         "### Structured-List Route Qualification Repair"
     )
@@ -329,6 +396,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "CLI/UI product composition" not in roadmap
     assert "fixed ordinary CLI product composition" in normalized
     assert "## Active Next: Separately Licensed Complete-App Live Shakeout" not in roadmap
+    assert "## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" not in roadmap
     assert roadmap.count("## Active Next:") == 1
     assert "no product Specialist activation" in roadmap
     assert "Quantitative Specialist ordinary product activation is installed" in roadmap
@@ -346,7 +414,8 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "read-only, offline census" in normalized
     assert "without repairing, replacing, activating, or retiring" in normalized
     assert "changed no production runtime behavior" in normalized
-    assert "Verified-against-runtime` remains unchanged" in roadmap
+    assert "MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
+    assert "Specialist Proposal-Instance Admission Hardening" in roadmap
     assert "this roadmap grants no live license" in normalized
     for marker in MARKERS:
         assert marker not in roadmap
@@ -359,9 +428,9 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     safety = _collapsed(ECONOMIST_SAFETY)
     telemetry = _collapsed(ECONOMIST_TELEMETRY_POLICY)
 
-    for text in (current, roadmap, strangler, safety, telemetry):
+    for text in (strangler, safety, telemetry):
         assert (
-            "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
+            LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA
             in text
         )
 
@@ -377,7 +446,11 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
 
     assert "Completed Remediation: Legacy Economist Ordinary-Execution Retirement" in roadmap
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
-    assert "Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
+    assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
+    assert (
+        "Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
+        in roadmap
+    )
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 

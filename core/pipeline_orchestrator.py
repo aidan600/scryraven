@@ -39,7 +39,9 @@ from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
 from core.component_gap_recovery_coordinator import (
-    execute_balanced_component_gap_recovery_from_scope,
+    ComponentGapRecoveryPipelineInputs,
+    execute_component_gap_recovery,
+    resolve_component_gap_recovery_mode_policy,
 )
 from core.conflict_resolution_controller import (
     ConflictResolutionDecision,
@@ -93,14 +95,15 @@ from core.final_answer_packet_runtime import (
 )
 from core.final_authority_citation_survival import (
     apply_authority_citation_survival_outcome_guard,
-    attach_selected_authority_evidence_handoff,
     build_post_author_citation_survival_handoff,
 )
 from core.final_evidence_bundle_builder import (
     build_final_evidence_bundle,
     build_final_evidence_runtime_handoff_from_scope,
+    build_final_material_runtime_handoff_from_scope,
     final_evidence_bundle_inputs_from_scope,
     final_evidence_handoff_from_legacy_review,
+    require_complete_final_material_runtime_handoff,
 )
 from core.kb_review_persistence_context import build_kb_review_persistence_context
 
@@ -265,7 +268,6 @@ from core.run_logging import (
 )
 from core.runtime_prompt_assembly import (
     build_analyst_cached_prefix_from_scope,
-    build_author_prompt_from_scope,
     build_expander_prompt,
     build_image_context,
     evidence_slice_for_analyst,
@@ -3518,17 +3520,85 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _thin_body = (corpus_weak and not _efp_author) or _relevance_low
 
     precision_count = 4 if _thin_body else (10 if complexity == "high" else 8)
-    authority_author_evidence = attach_selected_authority_evidence_handoff(
-        final_evidence_bundle,
-        precision_count=precision_count,
-        active_source_class_recovery_lifecycle=active_source_class_recovery_lifecycle,
-    )
-    author_evidence = authority_author_evidence.author_evidence
-    author_evidence_block = authority_author_evidence.author_evidence_block
 
-    author_prompt_assembly = build_author_prompt_from_scope(locals())
-    author_prompt = author_prompt_assembly.prompt
-    author_notes = author_prompt_assembly.author_notes
+    def _final_material_runtime_scope() -> dict[str, Any]:
+        return {
+            "run_kernel": run_kernel,
+            "run_id": run_id,
+            "run_contract_projection": run_contract_projection,
+            "all_passages": all_passages,
+            "top_chunks": top_chunks,
+            "current_date": current_date,
+            "query": query,
+            "active_source_class_recovery_lifecycle": (
+                active_source_class_recovery_lifecycle
+            ),
+            "precision_count": precision_count,
+            "complexity": complexity,
+            "corpus_weak": corpus_weak,
+            "_efp_author": _efp_author,
+            "_relevance_low": _relevance_low,
+            "recency_notes": recency_notes,
+            "analysis": analysis,
+            "primary_entity": primary_entity,
+            "core_topic": core_topic,
+            "author_notes": author_notes,
+            "nutrition_lookup_telemetry": nutrition_lookup_telemetry,
+            "quant_retrieval_sufficiency_telemetry": (
+                quant_retrieval_sufficiency_telemetry
+            ),
+            "scrutineer_flags": scrutineer_flags,
+            "image_context": image_context,
+        }
+
+    def _consume_final_material_runtime_handoff(
+        handoff: Any,
+    ) -> tuple[Any, ...]:
+        try:
+            material = require_complete_final_material_runtime_handoff(handoff)
+        except ValueError as exc:
+            raise PipelineError(str(exc)) from exc
+        evidence = material.final_evidence_handoff
+        return (
+            evidence,
+            evidence.bundle,
+            evidence.final_top_evidence,
+            evidence.unique_source_urls,
+            evidence.ordered_sources,
+            evidence.evidence_ledger_projection,
+            evidence.evidence_block,
+            evidence.cached_prefix,
+            material.author_evidence,
+            material.author_evidence_block,
+            material.author_prompt,
+            material.author_notes,
+        )
+
+    initial_final_material_handoff = (
+        build_final_material_runtime_handoff_from_scope(
+            _final_material_runtime_scope(),
+            final_evidence_handoff=final_evidence_handoff,
+            filter_top_evidence=deps.filter_top_evidence,
+            is_plausible_domain=deps.is_plausible_domain,
+            recovered_evidence_visibility=(
+                apply_controller_recovered_evidence_visibility
+            ),
+        )
+    )
+    (
+        final_evidence_handoff,
+        final_evidence_bundle,
+        final_top_evidence,
+        unique_source_urls,
+        ordered_sources,
+        evidence_ledger_projection,
+        evidence_block,
+        cached_prefix,
+        author_evidence,
+        author_evidence_block,
+        author_prompt,
+        author_notes,
+    ) = _consume_final_material_runtime_handoff(initial_final_material_handoff)
 
     status.step("Judging final answer sufficiency...")
     execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
@@ -3618,50 +3688,46 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     sufficiency_judgment_projection = sufficiency_handoff.projection
 
-    if strategy == "Balanced":
-        component_gap_recovery_handoff = (
-            execute_balanced_component_gap_recovery_from_scope(
-                runtime_scope={
-                    "run_kernel": run_kernel,
-                    "run_id": run_id,
-                    "strategy": strategy,
-                    "query_authority": query_authority,
-                    "search_judgment_projection": search_judgment_projection,
-                    "evidence_ledger_projection": evidence_ledger_projection,
-                    "search_work_projection": run_kernel.state.projections.get(
-                        SEARCH_WORK_SHADOW_LANE_TRACE_KEY
-                    ),
-                    "query": query,
-                    "intent": intent,
-                    "complexity": complexity,
-                    "search_depth": search_depth,
-                    "results_per_query": results_per_query,
-                    "all_passages": all_passages,
-                    "top_chunks": top_chunks,
-                    "current_date": current_date,
-                    "run_contract_projection": run_contract_projection,
-                    "active_source_class_recovery_lifecycle": (
-                        active_source_class_recovery_lifecycle
-                    ),
-                    "precision_count": precision_count,
-                    "corpus_weak": corpus_weak,
-                    "_efp_author": _efp_author,
-                    "_relevance_low": _relevance_low,
-                    "recency_notes": recency_notes,
-                    "analysis": analysis,
-                    "primary_entity": primary_entity,
-                    "core_topic": core_topic,
-                    "author_notes": author_notes,
-                    "ordered_sources": ordered_sources,
-                    "nutrition_lookup_telemetry": nutrition_lookup_telemetry,
-                    "quant_retrieval_sufficiency_telemetry": (
-                        quant_retrieval_sufficiency_telemetry
-                    ),
-                    "scrutineer_flags": scrutineer_flags,
-                    "image_context": image_context,
-                },
-                offline_recovery_adapter=deps.component_gap_recovery_adapter,
-                seen_urls=seen_urls,
+    recovery_policy = resolve_component_gap_recovery_mode_policy(strategy)
+    component_gap_recovery_handoff = execute_component_gap_recovery(
+        inputs=ComponentGapRecoveryPipelineInputs(
+            run_kernel=run_kernel,
+            query_plan_trace=query_authority.to_trace_fragment(),
+            search_judgment_projection=search_judgment_projection,
+            evidence_ledger_projection=evidence_ledger_projection,
+            search_work_projection=run_kernel.state.projections.get(
+                SEARCH_WORK_SHADOW_LANE_TRACE_KEY
+            ),
+            query=query,
+            intent=intent,
+            complexity=complexity,
+            search_depth=search_depth,
+            results_per_query=results_per_query,
+            all_passages=all_passages,
+        ),
+        policy=recovery_policy,
+        offline_recovery_adapter=deps.component_gap_recovery_adapter,
+        seen_urls=seen_urls,
+    )
+    component_gap_recovery_result = component_gap_recovery_handoff.result
+    if component_gap_recovery_handoff.recovered:
+        if not component_gap_recovery_handoff.all_passages:
+            raise PipelineError(
+                "recovered component-gap material is absent"
+            )
+        canonical_recovery_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
+        )
+        if dict(
+            component_gap_recovery_handoff.evidence_ledger_projection or {}
+        ) != canonical_recovery_projection:
+            raise PipelineError(
+                "recovered component-gap EvidenceLedger projection is stale"
+            )
+        all_passages = list(component_gap_recovery_handoff.all_passages)
+        recovered_final_material_handoff = (
+            build_final_material_runtime_handoff_from_scope(
+                _final_material_runtime_scope(),
                 filter_top_evidence=deps.filter_top_evidence,
                 is_plausible_domain=deps.is_plausible_domain,
                 recovered_evidence_visibility=(
@@ -3669,66 +3735,45 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 ),
             )
         )
-        component_gap_recovery_result = component_gap_recovery_handoff.result
-        if component_gap_recovery_handoff.recovered:
-            all_passages = list(component_gap_recovery_handoff.all_passages or ())
-            final_evidence_handoff = (
-                component_gap_recovery_handoff.final_evidence_handoff
-                or final_evidence_handoff
+        (
+            final_evidence_handoff,
+            final_evidence_bundle,
+            final_top_evidence,
+            unique_source_urls,
+            ordered_sources,
+            evidence_ledger_projection,
+            evidence_block,
+            cached_prefix,
+            author_evidence,
+            author_evidence_block,
+            author_prompt,
+            author_notes,
+        ) = _consume_final_material_runtime_handoff(
+            recovered_final_material_handoff
+        )
+        current_evidence_ledger_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
+        )
+        if evidence_ledger_projection != current_evidence_ledger_projection:
+            raise PipelineError(
+                "shared final-material EvidenceLedger projection is stale"
             )
-            final_evidence_bundle = final_evidence_handoff.bundle
-            final_top_evidence = list(
-                component_gap_recovery_handoff.final_top_evidence
-                or final_evidence_handoff.final_top_evidence
-            )
-            unique_source_urls = (
-                component_gap_recovery_handoff.unique_source_urls
-                or final_evidence_handoff.unique_source_urls
-            )
-            ordered_sources = list(
-                component_gap_recovery_handoff.ordered_sources
-                or final_evidence_handoff.ordered_sources
-            )
-            evidence_ledger_projection = dict(
-                component_gap_recovery_handoff.evidence_ledger_projection
-                or evidence_ledger_projection
-            )
-            evidence_block = (
-                component_gap_recovery_handoff.evidence_block
-                or final_evidence_handoff.evidence_block
-            )
-            cached_prefix = (
-                component_gap_recovery_handoff.cached_prefix
-                or final_evidence_handoff.cached_prefix
-            )
-            author_evidence = list(
-                component_gap_recovery_handoff.author_evidence or author_evidence
-            )
-            author_evidence_block = (
-                component_gap_recovery_handoff.author_evidence_block
-                or author_evidence_block
-            )
-            author_prompt = (
-                component_gap_recovery_handoff.author_prompt or author_prompt
-            )
-            author_notes = (
-                component_gap_recovery_handoff.author_notes or author_notes
-            )
-            sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
-                run_kernel,
-                locals(),
-                ask_model=ask_model if run_authority_sufficiency_smart_model else None,
-                clean_json_response=deps.clean_json_response,
-                smart_model_enabled=run_authority_sufficiency_smart_model,
-                provider=smart_provider,
-                model=smart_model,
-                base_url=local_url,
-                api_key=or_api_key,
-                effort="high",
-                use_reasoning=use_reasoning,
-                measure_context_stage=_measure_context_stage,
-            )
-            sufficiency_judgment_projection = sufficiency_handoff.projection
+        evidence_ledger_projection = current_evidence_ledger_projection
+        sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
+            run_kernel,
+            locals(),
+            ask_model=ask_model if run_authority_sufficiency_smart_model else None,
+            clean_json_response=deps.clean_json_response,
+            smart_model_enabled=run_authority_sufficiency_smart_model,
+            provider=smart_provider,
+            model=smart_model,
+            base_url=local_url,
+            api_key=or_api_key,
+            effort="high",
+            use_reasoning=use_reasoning,
+            measure_context_stage=_measure_context_stage,
+        )
+        sufficiency_judgment_projection = sufficiency_handoff.projection
 
     status.update("Writing final report...")
 

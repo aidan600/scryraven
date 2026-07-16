@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 7bbfff0f604096e3437bfdadc3dd8b81ec56b57c
+Verified-against-runtime: ffd6796e37fac468c826afd29767aafe1e235f41
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -80,22 +80,34 @@ publication authority.
 `VALIDATION-EXECUTION-SURFACE-ERGONOMICS-CLOSURE-01` completed the bounded
 repository operating-system repair for partitioned validation delegation,
 validation consequence ownership, hosted-CI handoff posture, Cloud checkout
-hygiene, and command-level execution-surface classification. It changed no
-production runtime behavior, so `Verified-against-runtime` remains unchanged.
+hygiene, and command-level execution-surface classification. That checkpoint
+changed no production runtime behavior.
 
-## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01
+## Completed Repair: Mode-Policy Recovery Authority Containment
 
-The single active-next checkpoint is mode-policy recovery authority containment.
-It must keep the licensed authority boundary explicit and must not infer provider,
-model, search, retrieval, live-call, Specialist, route, final-custody, UI, or
-conversation authority from this roadmap entry.
+`MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01` contained the exact
+mode-conditioned component-gap recovery-to-Author authority island at
+`ffd6796e37fac468c826afd29767aafe1e235f41`. Balanced, Fast, and Deep now resolve
+one shared recovery-related mode-policy envelope shape with temporary
+compatibility values. Balanced preserves the existing bounded eligibility, Fast
+is closed in this phase, and Deep is closed pending a later explicit mode-policy
+decision; unsupported mode resolves the same shape and fails closed. All modes
+enter the same mode-neutral coordinator and primitive entry. Closed values
+invoke no adapter and record no recovery history or projection. Eligible
+recovered evidence and component coverage re-enter RunKernel custody, and final
+material follows the shared ordinary path before a second Sufficiency judgment
+and FAP. Supported ordinary CLI composition still supplies no recovery adapter.
+No permanent mode budget was selected. No live recovery, provider, model,
+query-generation, route, Specialist, citation, FAP-schema, Author-policy,
+persistence, or UI capability changed.
 
-## Approved Product Sequence
+## Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01
 
-After mode-policy recovery authority containment, the approved checkpoints
-remain ordered as follows.
-
-### Specialist Proposal-Instance Admission Hardening
+The single active-next checkpoint is Specialist Proposal-Instance Admission
+Hardening. It must enforce the current proposal contract at the actual admission
+boundary without expanding Specialist capability or route eligibility, and it
+must not infer provider, model, search, retrieval, live-call, final-custody, UI,
+or conversation authority from this roadmap entry.
 
 This checkpoint will:
 
@@ -107,6 +119,11 @@ This checkpoint will:
 - align canonical result-unit vocabulary.
 
 It must not expand Specialist capability or route eligibility.
+
+## Approved Product Sequence
+
+After Specialist Proposal-Instance Admission Hardening, the approved checkpoints
+remain ordered as follows.
 
 ### Structured-List Route Qualification Repair
 
