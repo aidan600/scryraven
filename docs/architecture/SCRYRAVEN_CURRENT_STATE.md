@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
+Verified-against-runtime: e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -26,6 +26,16 @@ multi-component behavior applies only to the named query class
 single-component requests retain their established direct ordinary path. The
 ordinary CLI/backend composition no longer injects or executes the legacy
 Economist callable.
+
+One deterministic query-shape assessment now qualifies explicit bullet,
+contiguous numbered, and bounded repeated-imperative requests containing two
+through five distinct factual components plus a separated request-level
+synthesis directive. It preserves component order and the exact directive
+through AnswerContract, scheduler context, and Cross-Component Analyst input.
+Malformed or ambiguous structured candidates remain unselected, and the
+existing general multipart fallback remains separate and does not grant route
+eligibility. Fast, Balanced, and Deep consume this same parser and route
+pipeline.
 
 The legacy Streamlit shell, its home-page UI, and saved-thread Streamlit
 follow-up are not ordinary product consumption. The retained `ui/` source is
@@ -233,7 +243,7 @@ acquisition, or general quantitative reasoning.
 ## Not Proved
 
 - No live validation was performed.
-- No route-qualification repair was performed.
+- Arbitrary-query decomposition and broad route qualification remain unproved.
 - No acquisition-completeness repair was performed.
 - No provider or model changed.
 - No S1 capability, route eligibility, budget, scheduling order, recursion, or

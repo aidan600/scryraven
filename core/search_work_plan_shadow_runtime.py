@@ -158,6 +158,7 @@ def _construction_input_from_records(
     selected_depth = _clean_token(runtime_input.selected_depth) or _clean_token(
         contract.get("selected_depth")
     )
+    assessment_metadata = _safe_mapping(assessment.metadata)
     return SearchWorkPlanConstructionInput(
         construction_id=f"construction:{contract_id}:ag96e1",
         requested_mode_source="run_config_or_run_contract_projection",
@@ -209,6 +210,11 @@ def _construction_input_from_records(
                 "query_plan_behavior_changed": False,
                 "provider_search_behavior_changed": False,
                 **dict(runtime_input.metadata or {}),
+                "route_qualification_behavior_changed": bool(
+                    assessment_metadata.get(
+                        "route_qualification_behavior_changed"
+                    )
+                ),
             }
         ),
     )
@@ -343,6 +349,7 @@ def _build_conservative_runtime_shadow_search_work_plan_input(
                 "query_plan_behavior_changed": False,
                 "provider_search_behavior_changed": False,
                 **dict(runtime_input.metadata or {}),
+                "route_qualification_behavior_changed": False,
             }
         ),
     )

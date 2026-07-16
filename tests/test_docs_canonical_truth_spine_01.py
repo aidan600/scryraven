@@ -66,11 +66,16 @@ QUANT_FINALIZATION_RUNTIME_SHA = (
 QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
+STRUCTURED_ROUTE_RUNTIME_SHA = (
+    "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
+)
 CURRENT_STATE_RUNTIME_SHA = (
-    "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
+    STRUCTURED_ROUTE_RUNTIME_SHA
 )
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
-SPECIALIST_ADMISSION_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
+SPECIALIST_ADMISSION_RUNTIME_SHA = (
+    "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
+)
 LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = (
     "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
 )
@@ -85,7 +90,7 @@ RUNTIME_SHA_BY_CONCERN = {
     "canonical:run-contract-semantic-loop": QUANT_FINALIZATION_RUNTIME_SHA,
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
     "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
-    "canonical:bounded-multicomponent-runtime": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:bounded-multicomponent-runtime": STRUCTURED_ROUTE_RUNTIME_SHA,
     "canonical:specialist-graph-substrate": SPECIALIST_ADMISSION_RUNTIME_SHA,
     "canonical:quantitative-specialist-product-activation": (
         SPECIALIST_ADMISSION_RUNTIME_SHA
@@ -264,12 +269,17 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             "does not project synthesis entries",
             "does not install a hardened synthesis sidecar",
             "No live validation was performed.",
-            "No route-qualification repair was performed.",
             "No acquisition-completeness repair was performed.",
             "No provider or model changed.",
             "No hardened synthesis path was activated.",
         ):
             assert phrase in text
+
+    assert "No route-qualification repair was performed." in containment
+    assert (
+        "Arbitrary-query decomposition and broad route qualification remain unproved."
+        in current
+    )
 
     for phrase in (
         "No new Specialist capability was added.",
@@ -283,6 +293,39 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
         "No S1 capability, route eligibility, budget, scheduling order, recursion, or parallelism expanded."
         in current
     )
+
+
+def test_structured_route_qualification_is_current_and_narrow() -> None:
+    owner = _collapsed(
+        CONCERN_OWNERS["canonical:bounded-multicomponent-runtime"]
+    )
+    current = _collapsed(CURRENT_STATE)
+    roadmap = _collapsed(ROADMAP)
+
+    for phrase in (
+        "One deterministic query-shape owner",
+        "bounded bullet lists",
+        "contiguous numbered lists",
+        "bounded repeated imperative clauses",
+        "two through five distinct factual components",
+        "request-level synthesis directive",
+        "general multipart fallback",
+        "Fast, Balanced, and Deep use the same parser and route pipeline",
+        "does not establish arbitrary-query decomposition",
+    ):
+        assert phrase in owner
+
+    for phrase in (
+        "One deterministic query-shape assessment",
+        "preserves component order and the exact directive",
+        "existing general multipart fallback remains separate",
+        "Fast, Balanced, and Deep consume this same parser and route pipeline",
+    ):
+        assert phrase in current
+
+    assert "No route-qualification repair was performed." not in current
+    assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
+    assert "Active Next: Provider Capability and Acquisition-Routing Proof" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -350,7 +393,8 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
-    assert "Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
+    assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
+    assert "Active Next: Provider Capability and Acquisition-Routing Proof" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -379,9 +423,9 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
     )
     structured_route = roadmap.index(
-        "## Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01"
+        "## Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01"
     )
-    provider = roadmap.index("### Provider Capability and Acquisition-Routing Proof")
+    provider = roadmap.index("## Active Next: Provider Capability and Acquisition-Routing Proof")
     convergence = roadmap.index("### Bounded Final-Custody Convergence")
     live = roadmap.index("### Separately Licensed Complete-App Live Shakeout")
 
@@ -454,7 +498,8 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
-    assert "Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
+    assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
+    assert "Active Next: Provider Capability and Acquisition-Routing Proof" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
