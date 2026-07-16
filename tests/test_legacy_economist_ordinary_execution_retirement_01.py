@@ -14,27 +14,21 @@ Why not fast_pr: detailed retirement proof overlaps broader durable lanes.
 from __future__ import annotations
 
 import ast
-import json
 import logging
 import os
 import subprocess
 import sys
-from dataclasses import MISSING, fields, replace
+from dataclasses import MISSING, fields
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-import core.pipeline_orchestrator as orchestrator
-from core.cost_accounting import CostAccumulator
 from core.prompts import DEFAULT_SYSTEM
-from core.protocols import NullStatusWriter
 from core.run_config import RunDeps
 from proplex.ordinary_live_entrypoint_dry_run import OrdinaryLiveEntrypointDryRunDeps
 from tests.helpers.offline_ordinary_pipeline import (
-    OfflineOrdinaryPipelineHarness,
-    offline_balanced_run_config,
-    scrub_offline_runtime,
+    run_post_retirement_ordinary_pipeline,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,100 +37,12 @@ CURRENT_COMPOSITION_ROOTS = (
     ROOT / "proplex" / "__main__.py",
     ROOT / "proplex" / "ordinary_live_entrypoint_dry_run.py",
     ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py",
-    ROOT / "tests" / "helpers" / "offline_ordinary_pipeline.py",
 )
 LEGACY_ECONOMIST_RETIREMENT_REASON = (
     "legacy_economist_ordinary_execution_retired"
 )
 LINKUP_CONTEXT_MARKER = "LINKUP_RETIREMENT_PARITY_CONTEXT"
 QUERY = "Compare Alpha and Beta operating rates using current evidence."
-
-
-class RetirementPipelineHarness(OfflineOrdinaryPipelineHarness):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.analyst_prompts: list[str] = []
-
-    def _record_model_call(self, system_prompt: str, kwargs: dict[str, Any]) -> None:
-        self.model_calls.append(
-            {
-                "system_prompt": system_prompt,
-                "stream": bool(kwargs.get("stream")),
-                "provider": kwargs.get("provider"),
-                "model": kwargs.get("model"),
-                "use_reasoning": kwargs.get("use_reasoning"),
-            }
-        )
-
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
-        if system_prompt == DEFAULT_SYSTEM["router"]:
-            self._record_model_call(system_prompt, kwargs)
-            return json.dumps(
-                {
-                    "intent": "general",
-                    "report_type": "quantitative_comparison",
-                    "image_mode": "none",
-                    "core_topic": self.core_topic,
-                    "is_academic": False,
-                    "query_type": "comparison",
-                    "entities": ["Alpha", "Beta"],
-                    "primary_entity": self.primary_entity,
-                }
-            )
-        if system_prompt == DEFAULT_SYSTEM["analyst"]:
-            self.analyst_prompts.append(prompt)
-        if system_prompt.startswith("You are a ruthless fact-checker"):
-            self._record_model_call(system_prompt, kwargs)
-            return json.dumps({"flags": []})
-        return super().ask_model(prompt, system_prompt, **kwargs)
-
-    def build_search_passages(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "source_id": index,
-                "title": f"{name} official operating report",
-                "url": f"https://{name.casefold()}.example/report-{index}",
-                "text": (
-                    f"The current official {name} operating rate is "
-                    f"{index + 10} units per hour."
-                ),
-                "score": 1.0 - (index * 0.01),
-                "credibility": 4,
-                "source_tier": "official",
-                "source_class": "primary_source_documents",
-                "currentness_signal": "current",
-                "readable_status": "readable",
-                "disposition": "accepted",
-                "_provider": "offline_fake_search",
-            }
-            for index, name in enumerate(("Alpha", "Beta", "Alpha", "Beta"), 1)
-        ]
-
-
-def _run_pipeline(
-    harness: RetirementPipelineHarness,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    mode: str,
-    deps: RunDeps,
-) -> Any:
-    config = replace(
-        offline_balanced_run_config(
-            query=harness.query,
-            current_date="July 15, 2026",
-            session_id=f"session-{mode.casefold()}",
-            run_id=f"run-{mode.casefold()}",
-        ),
-        mode=mode,
-        include_domains=["alpha.example"],
-        exclude_domains=["blocked.example"],
-    )
-    return orchestrator.run_pipeline(
-        config,
-        deps,
-        NullStatusWriter(),
-        CostAccumulator(),
-    )
 
 
 def _call_names(tree: ast.AST) -> set[str]:
@@ -250,9 +156,12 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scrub_offline_runtime(monkeypatch)
-    harness = RetirementPipelineHarness(
-        tmp_path=tmp_path,
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        report_type="quantitative_comparison",
+        query_type="comparison",
         query=QUERY,
         core_topic="Alpha and Beta operating rates",
         primary_entity="Alpha",
@@ -261,24 +170,13 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
             "The evidence supports a bounded qualitative comparison. "
             "[[1]](https://alpha.example/report-1)"
         ),
+        current_date="July 15, 2026",
+        environment_overrides={"OPENAI_API_KEY": "isolated-test-sentinel"},
     )
-    sentinel_calls: list[str] = []
-
-    def forbidden_legacy_economist(*_args: Any, **_kwargs: Any) -> str:
-        sentinel_calls.append("called")
-        raise AssertionError("retired legacy Economist was invoked")
-
-    deps = replace(
-        harness.deps(),
-        run_economist_step=forbidden_legacy_economist,
-    )
-    monkeypatch.setenv("OPENAI_API_KEY", "isolated-test-sentinel")
-
-    outcome = _run_pipeline(harness, monkeypatch, mode="Balanced", deps=deps)
     trace = outcome.execution_trace
     economist_handoff = trace["economist_handoff_contract"]
 
-    assert sentinel_calls == []
+    assert harness.economist_calls == []
     assert outcome.report == harness.raw_author_response
     assert trace["economist_ran"] is False
     assert trace["timing"]["economist_seconds"] == 0.0
@@ -315,9 +213,18 @@ def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scrub_offline_runtime(monkeypatch)
-    harness = RetirementPipelineHarness(
-        tmp_path=tmp_path,
+    linkup_calls: list[dict[str, Any]] = []
+
+    def fake_linkup(*args: Any, **kwargs: Any) -> str:
+        linkup_calls.append({"args": args, "kwargs": dict(kwargs)})
+        return f"\n\n{LINKUP_CONTEXT_MARKER}\n"
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Deep",
+        report_type="quantitative_comparison",
+        query_type="comparison",
         query=QUERY,
         core_topic="Alpha and Beta operating rates",
         primary_entity="Alpha",
@@ -326,29 +233,15 @@ def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
             "The evidence supports the comparison. "
             "[[1]](https://alpha.example/report-1)"
         ),
+        current_date="July 15, 2026",
+        deps_overrides={"fetch_linkup_precision_block": fake_linkup},
+        environment_overrides={
+            "LINKUP_API_KEY": "isolated-test-sentinel",
+            "OPENAI_API_KEY": "isolated-test-sentinel",
+        },
     )
-    linkup_calls: list[dict[str, Any]] = []
-    economist_calls: list[str] = []
 
-    def fake_linkup(*args: Any, **kwargs: Any) -> str:
-        linkup_calls.append({"args": args, "kwargs": dict(kwargs)})
-        return f"\n\n{LINKUP_CONTEXT_MARKER}\n"
-
-    def forbidden_legacy_economist(*_args: Any, **_kwargs: Any) -> str:
-        economist_calls.append("called")
-        raise AssertionError("retired legacy Economist was invoked")
-
-    deps = replace(
-        harness.deps(),
-        fetch_linkup_precision_block=fake_linkup,
-        run_economist_step=forbidden_legacy_economist,
-    )
-    monkeypatch.setenv("LINKUP_API_KEY", "isolated-test-sentinel")
-    monkeypatch.setenv("OPENAI_API_KEY", "isolated-test-sentinel")
-
-    outcome = _run_pipeline(harness, monkeypatch, mode="Deep", deps=deps)
-
-    assert economist_calls == []
+    assert harness.economist_calls == []
     assert len(linkup_calls) == 1
     call = linkup_calls[0]
     assert call["args"] == (
