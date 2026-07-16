@@ -5,7 +5,7 @@ Authority: canonical:quantitative-specialist-product-activation
 Default-read: no
 Applies-to: ordinary source-bound calculator capability, model-visible proposal contract, transient numeric source catalogs, evidence-quality projection, literal binding, numeric provenance, product registry/policy, claim alignment, and D-prime handoff
 Does-not-authorize: search, acquisition, provider/model calls, estimates, arbitrary formulas, recursion, parallelism, direct admission, FAP, Author, or live validation
-Verified-against-runtime: d5c5aef53e64ac072cc422767be76e02355b2847
+Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: merged change to the ordinary quantitative Specialist proposal contract, evidence bridge, source catalogs, parser, product composition, or validator handoff
 
 Installed runtime class: quantitative-specialist-product-activation-s1

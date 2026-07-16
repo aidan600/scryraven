@@ -5,7 +5,7 @@ Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
 Does-not-authorize: additional product capabilities, calculator scope expansion, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: d5c5aef53e64ac072cc422767be76e02355b2847
+Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
