@@ -71,6 +71,28 @@ promotion posture, read
   bucket manually.
 - Do not make full-suite pytest the default PR tax.
 
+## Consequence and hosted-CI posture
+
+Classify every expensive check as `HANDOFF_GATE`, `MERGE_GATE`, or
+`DIAGNOSTIC_ONLY` using [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md). Local
+focused deterministic proof is the normal handoff gate. Hosted asynchronous CI
+is never a handoff gate; normal exact-head PR CI is a merge gate and may remain
+pending when Codex returns its final bundle.
+
+After publication, take exactly one hosted-CI status snapshot and return
+immediately. Record the exact PR head, timestamp, current status, and workflow
+run ID if already visible; otherwise record `run not yet visible in the single
+authorized snapshot`. Do not wait, sleep, poll again, use `gh run watch`, chase
+status by rewriting the PR, or dispatch duplicate workflows. Strategy/Review
+owns later inspection.
+
+A separately dispatched hosted `full` run is unauthorized by default. An
+explicitly licensed dispatch must be classified separately as `MERGE_GATE` or
+`DIAGNOSTIC_ONLY`. Candidate-only known-red or unattributed broad validation is
+not automatically a merge gate; require paired baseline/candidate attribution
+or an exact branch-attributable causal rule tied to the licensed changed
+surface.
+
 ## Partitioned broad-validation runner
 
 For separately authorized exceptional broad validation, use
@@ -85,6 +107,17 @@ execution. A timeout, invalid pytest process, failed import-isolation probe,
 malformed required artifact, or exact-path cleanup failure is neither green nor
 red; it requires a valid rerun or infrastructure repair outside the semantic
 verdict.
+
+For candidate-only partitioned full validation, use the canonical wrapper:
+
+```powershell
+python scripts/validation/run_bucket.py full --partitioned
+```
+
+This defaults to 4 partitions and 2 maximum processes and delegates to the
+existing partitioned runner with `--repository <repo-root> --candidate HEAD`.
+Use `scripts/validation/run_partitioned_pytest.py` directly for paired
+baseline/candidate parity and advanced runner options.
 
 Ordinary PR routing remains unchanged: PRs use `docs_only` or `fast_pr`, and
 full/parity validation is not a pull-request default. CI adoption of the local

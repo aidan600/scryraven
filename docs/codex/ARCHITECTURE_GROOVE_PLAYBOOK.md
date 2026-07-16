@@ -67,18 +67,34 @@ Default workflow:
 5. At a coherent checkpoint, run phase-focus and immediate-owner proof.
 6. Create coherent milestone commits and one clean candidate checkpoint.
 7. Review the exact implementation diff and run the local final-candidate checks once.
-8. If authorized, push and update or open the PR, then wait for exact-head hosted CI.
-9. If separately authorized, run exceptional broad validation as its own job.
-10. Perform final independent or skeptical-maintainer review.
-11. Return one final phase bundle.
+8. If authorized, push and update or open the PR.
+9. If separately authorized, dispatch exceptional hosted validation as its own job.
+10. Perform exactly one hosted-CI status lookup and record the available snapshot.
+11. Return one final phase bundle immediately; Strategy/Review owns later inspection.
 ```
 
-Final-candidate validation is one checkpoint completed across the local checks
-in step 7 and exact-head hosted CI in step 8; publication does not restart the
-validation bundle.
+Final-candidate local validation is completed in step 7. Normal exact-head PR CI
+is a merge gate, not a handoff gate, unless a phase explicitly states a stronger
+branch-attributable rule. Publication does not restart the local validation
+bundle.
 
 GitHub is the review surface for a completed phase branch, not a sub-step
 synchronization layer. Codex must not merge the PR.
+
+Hosted CI must never keep Codex synchronously waiting after publication. After
+the coherent branch and draft PR are published, Codex performs exactly one
+hosted-CI status lookup, records the exact PR head, snapshot timestamp, visible
+status, and workflow run ID when already visible, then returns immediately. If
+the run is absent, record `run not yet visible in the single authorized
+snapshot`. Do not infer a result from silence, elapsed time, a pending status,
+or the absence of a visible workflow record.
+
+Do not run `gh run watch`, sleep while waiting for CI, poll repeatedly, rewrite
+the PR body to chase status changes, or dispatch duplicate workflows. A
+separately dispatched hosted `full` run is not authorized by default. When a
+phase explicitly authorizes one, it must classify the run as a merge gate or
+diagnostic only; Codex still takes only the single status snapshot and returns.
+Strategy/Review owns later hosted-CI inspection and the merge decision.
 
 Use the canonical [Review-Loop Validation Ramp](VALIDATION_BUCKETS.md#review-loop-validation-ramp)
 for continuation, coherent-checkpoint, and final-candidate routing. A review
@@ -94,6 +110,26 @@ git pull --ff-only origin main
 git status -sb
 git switch -c <phase-branch>
 ```
+
+### Codex Cloud task checkout rule
+
+Paste the complete prompt body into a Cloud task; never point it at a
+Windows-local prompt path unavailable to the Cloud checkout. Replace every SHA,
+path, branch, and task placeholder before launch. A prompt containing an
+unresolved marker such as `<NEW_MAIN_MERGE_SHA>` must not be launched.
+
+For a Cloud checkout, exact `git rev-parse HEAD` plus empty `git status --short`
+are authoritative. Branch name is diagnostic only. The absence of `origin` or
+any Git remote is acceptable when the checkout is already clean at the exact
+required SHA; do not require `main`, `work`, detached HEAD, or another branch
+spelling. If the exact SHA is present and the checkout is clean, continue. If
+the SHA differs and the task has no explicitly authorized way to obtain it,
+stop and request a fresh checkout.
+
+Do not fetch, reset, clean, checkout, merge, rebase, or otherwise mutate a
+read-only Cloud census task merely to satisfy an assumed branch or remote
+convention. These Cloud-task rules do not replace the ordinary local Path B
+branch rules.
 
 When giving PowerShell to the user for paste-back diagnostics, include a final
 `Set-Clipboard` summary block. Prefer robust `git -C <repo>` commands over

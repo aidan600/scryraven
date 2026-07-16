@@ -295,15 +295,22 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Remediation: Legacy Economist Ordinary-Execution Retirement"
     )
     census = roadmap.index(
-        "## Active Next: Post-Retirement Product Topology and Orchestrator "
+        "## Completed Proof: Post-Retirement Product Topology and Orchestrator "
         "Authority Census"
+    )
+    validation_repair = roadmap.index(
+        "## Completed Repair: Validation and Execution-Surface Ergonomics Closure"
+    )
+    mode_policy = roadmap.index(
+        "## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01"
     )
     proposal = roadmap.index("### Specialist Proposal-Instance Admission Hardening")
     structured_route = roadmap.index(
         "### Structured-List Route Qualification Repair"
     )
-    convergence = roadmap.index("### Bounded Remediation/Convergence Checkpoint")
-    live = roadmap.index("### Separately Licensed Quantitative Live Validation")
+    provider = roadmap.index("### Provider Capability and Acquisition-Routing Proof")
+    convergence = roadmap.index("### Bounded Final-Custody Convergence")
+    live = roadmap.index("### Separately Licensed Complete-App Live Shakeout")
 
     assert (
         s0
@@ -311,14 +318,17 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         < streamlit
         < economist
         < census
+        < validation_repair
+        < mode_policy
         < proposal
         < structured_route
+        < provider
         < convergence
         < live
     )
     assert "CLI/UI product composition" not in roadmap
     assert "fixed ordinary CLI product composition" in normalized
-    assert "## Active Next: Separately Licensed Quantitative Live Validation" not in roadmap
+    assert "## Active Next: Separately Licensed Complete-App Live Shakeout" not in roadmap
     assert roadmap.count("## Active Next:") == 1
     assert "no product Specialist activation" in roadmap
     assert "Quantitative Specialist ordinary product activation is installed" in roadmap
@@ -333,8 +343,11 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "must not be restored as a Streamlit callback" in normalized
     assert "No replacement UI framework has been selected" in normalized
     assert "claims that planned capabilities are installed" in roadmap
-    assert "read-only, offline `PROOF` phase" in roadmap
-    assert "must not repair, replace, activate, or retire" in normalized
+    assert "read-only, offline census" in normalized
+    assert "without repairing, replacing, activating, or retiring" in normalized
+    assert "changed no production runtime behavior" in normalized
+    assert "Verified-against-runtime` remains unchanged" in roadmap
+    assert "this roadmap grants no live license" in normalized
     for marker in MARKERS:
         assert marker not in roadmap
 
@@ -363,11 +376,9 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
         assert phrase in current
 
     assert "Completed Remediation: Legacy Economist Ordinary-Execution Retirement" in roadmap
-    assert (
-        "Active Next: Post-Retirement Product Topology and Orchestrator Authority Census"
-        in roadmap
-    )
-    assert "answer-producing path" in roadmap
+    assert "Completed Proof: Post-Retirement Product Topology" in roadmap
+    assert "Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
+    assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
     assert "no ordinary Economist execution callsite" in strangler

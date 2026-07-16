@@ -66,24 +66,34 @@ non-authoritative. Linkup is unchanged. This remediation installed no economic
 Specialist replacement and did not expand S1 beyond its existing bounded
 source-bound calculation capability.
 
-## Active Next: Post-Retirement Product Topology and Orchestrator Authority Census
+## Completed Proof: Post-Retirement Product Topology and Orchestrator Authority Census
 
-The next checkpoint is a read-only, offline `PROOF` phase. It must inventory:
+The read-only, offline census of current ordinary product roots, runtime
+consumers, compatibility and retired reference surfaces, answer-producing paths,
+and remaining orchestrator authority islands is completed. It classified the
+topology without repairing, replacing, activating, or retiring an inventoried
+surface and granted no provider, model, search, retrieval, live-call, UI, or
+publication authority.
 
-- every current ordinary product root and entrypoint;
-- current runtime paths and their ordinary consumers;
-- retained compatibility and retired reference surfaces;
-- every answer-producing path; and
-- remaining orchestrator authority islands and their intended owners.
+## Completed Repair: Validation and Execution-Surface Ergonomics Closure
 
-The census may classify debt and recommend later `BUILD` or `REPAIR` phases. It
-must not repair, replace, activate, or retire any inventoried surface. It grants
-no provider, model, search, retrieval, live-call, UI, or publication authority.
+`VALIDATION-EXECUTION-SURFACE-ERGONOMICS-CLOSURE-01` completed the bounded
+repository operating-system repair for partitioned validation delegation,
+validation consequence ownership, hosted-CI handoff posture, Cloud checkout
+hygiene, and command-level execution-surface classification. It changed no
+production runtime behavior, so `Verified-against-runtime` remains unchanged.
 
-## Approved Remediation Sequence
+## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01
 
-After the post-retirement topology and authority census, the approved product
-checkpoints remain ordered as follows.
+The single active-next checkpoint is mode-policy recovery authority containment.
+It must keep the licensed authority boundary explicit and must not infer provider,
+model, search, retrieval, live-call, Specialist, route, final-custody, UI, or
+conversation authority from this roadmap entry.
+
+## Approved Product Sequence
+
+After mode-policy recovery authority containment, the approved checkpoints
+remain ordered as follows.
 
 ### Specialist Proposal-Instance Admission Hardening
 
@@ -109,17 +119,24 @@ This checkpoint will:
 
 It must not alter providers, acquisition, prompts, or Specialist execution.
 
-### Bounded Remediation/Convergence Checkpoint
+### Provider Capability and Acquisition-Routing Proof
 
-The retirement and repair outcomes must converge through one bounded checkpoint
-before any quantitative live work is considered. This checkpoint does not
-itself authorize runtime changes or live validation.
+This checkpoint will establish the bounded provider-capability and
+acquisition-routing facts required by later product work. It grants no live-call
+authority and must not silently change provider or model selection.
 
-### Separately Licensed Quantitative Live Validation
+### Bounded Final-Custody Convergence
 
-Only after the post-retirement census, proposal-instance admission hardening,
-structured-list route qualification repair, and the bounded convergence
-checkpoint may separately licensed quantitative live validation be considered.
+The preceding repair outcomes must converge through one bounded final-custody
+checkpoint before any complete-app live work is considered. This checkpoint
+does not itself authorize live validation.
+
+### Separately Licensed Complete-App Live Shakeout
+
+Only after mode-policy recovery authority containment, Specialist
+proposal-instance admission hardening, structured-list route qualification,
+provider capability and acquisition-routing proof, and bounded final-custody
+convergence may a separately licensed complete-app live shakeout be considered.
 Offline proof does not authorize live work, and this roadmap grants no live
 license. Arbitrary-query coverage, broad quantitative reasoning quality, and
 product correctness remain unproved.
