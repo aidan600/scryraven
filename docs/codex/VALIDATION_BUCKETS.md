@@ -12,7 +12,7 @@ adds, promotes, demotes, or retires tests.
 | Bucket | Use when | Contents | Default routing |
 | --- | --- | --- | --- |
 | `docs_only` | Docs, runbooks, prompts, or operator-only markdown/text changed, with no code, test, manifest, script, or workflow changes. | Changed-file pre-commit and diff checks. No pytest by default. | Pull requests only when changed files are documentation/operator-only. |
-| `fast_pr` | Ordinary code PR validation. | Tiny sentinel set from `tests/buckets/fast_pr.txt`; target under about 3 minutes after dependency setup/cache. It is not the full Author lane. | Default pull-request bucket for non-docs-only changes. |
+| `fast_pr` | Ordinary code PR validation. | Full-suite collection guard followed by the tiny execution-sentinel set from `tests/buckets/fast_pr.txt`; target under about 3 minutes after dependency setup/cache. It collects, but does not execute, the full suite and is not the full Author lane. | Default pull-request bucket for non-docs-only changes. |
 | `phase_focus` | Local/Codex phase-specific proof. | The current phase test plus immediate producer/consumer tests chosen by the phase prompt. | Not a GitHub default bucket. Run locally with exact pytest node IDs or paths. |
 | `semantic_lane` | Semantic producer, semantic reducer, semantic sufficiency, component coverage, and semantic projection validation. | Durable semantic manifest in `tests/buckets/semantic_lane.txt`, including AG-SEM reducer contracts, semantic sufficiency consumption, ordinary semantic producer atomicity, and structural guards. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
 | `semantic_search_lane` | SearchJudgment and QueryPlan consumers of semantic missing assessments and semantic component gaps. | Durable semantic-search manifest in `tests/buckets/semantic_search_lane.txt`, including AG-GAP, SearchJudgment, and QueryPlan semantic-gap consumer tests. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
@@ -25,6 +25,11 @@ phase changes semantic record construction, ordinary semantic producer handoff,
 semantic sufficiency consumption, ledger-qualified coverage integrity,
 SearchJudgment consumption of semantic missing assessments, or QueryPlan handling
 of semantic component gaps. `fast_pr` remains the ordinary PR tax.
+
+In short: `fast_pr = full-suite collection guard + tiny execution sentinels`.
+The guard prevents missing imports and other collection failures outside the
+tiny manifest from passing ordinary PR validation without adding full-suite
+execution to that bucket.
 
 Run `author_lane` when a phase touches FinalAnswerPacket, Author payload, Author
 prompt/materialization, Author invocation/execution, citation handoff, or final

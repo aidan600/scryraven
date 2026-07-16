@@ -6,12 +6,9 @@ from typing import Any
 
 from core.db import execution_jsonl_to_run_row
 from scripts.summarize_economist_telemetry import summarize_log
-from tests.test_pre_analyst_gate import (
-    ECONOMIST_BLOCK,
-    _execution_event_from_log,
-    _run_pipeline_harness,
-    _run_post_economist_harness,
-    _valid_revenue_packet_telemetry,
+from tests.helpers.offline_ordinary_pipeline import (
+    execution_event_from_log,
+    run_post_retirement_ordinary_pipeline,
 )
 
 _MISSING = object()
@@ -133,20 +130,23 @@ def _assert_pinned_schema(row: dict[str, Any]) -> None:
 def test_execution_jsonl_rich_trace_schema_contract_for_synthetic_runs(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    _run_pipeline_harness(tmp_path / "healthy", healthy=True)
-    healthy = _execution_event_from_log(tmp_path / "healthy" / "execution.jsonl")
+    run_post_retirement_ordinary_pipeline(
+        tmp_path / "healthy", monkeypatch, healthy=True
+    )
+    healthy = execution_event_from_log(tmp_path / "healthy" / "execution.jsonl")
 
-    _run_pipeline_harness(tmp_path / "weak", healthy=False)
-    weak = _execution_event_from_log(tmp_path / "weak" / "execution.jsonl")
+    run_post_retirement_ordinary_pipeline(
+        tmp_path / "weak", monkeypatch, healthy=False
+    )
+    weak = execution_event_from_log(tmp_path / "weak" / "execution.jsonl")
 
-    _run_post_economist_harness(
+    quant_outcome, quant_harness = run_post_retirement_ordinary_pipeline(
         tmp_path / "quant",
         monkeypatch,
         report_type="quantitative_comparison",
-        economist_output=ECONOMIST_BLOCK,
-        economist_telemetry=_valid_revenue_packet_telemetry(),
+        query_type="comparison",
     )
-    quant = _execution_event_from_log(tmp_path / "quant" / "execution.jsonl")
+    quant = execution_event_from_log(tmp_path / "quant" / "execution.jsonl")
 
     for row in (healthy, weak, quant):
         _assert_pinned_schema(row)
@@ -154,10 +154,21 @@ def test_execution_jsonl_rich_trace_schema_contract_for_synthetic_runs(
     assert _rich_execution_value(healthy, "analyst_skipped") is False
     assert _rich_execution_value(weak, "analyst_skipped") is True
     assert _rich_execution_value(weak, "analyst_skip_reason") == "corpus_off_topic"
-    assert _rich_execution_value(quant, "quantitative_packet_present") is True
-    assert _rich_execution_value(quant, "author_quant_content_source") == "analyst_reviewed"
+    assert _rich_execution_value(quant, "quantitative_packet_present") is False
+    assert _rich_execution_value(quant, "quantitative_packet_valid") is False
+    assert _rich_execution_value(quant, "economist_preflight_allowed") is None
+    assert _rich_execution_value(quant, "economist_preflight_missing_entities") == []
+    assert _rich_execution_value(quant, "economist_preflight_block_reason") == (
+        "legacy_economist_ordinary_execution_retired"
+    )
     assert _rich_execution_value(quant, "author_received_raw_quant_packet") is False
+    assert _rich_execution_value(quant, "author_received_economist_framework") is False
     assert _rich_execution_value(quant, "economist_output_used_as_analysis") is False
+    assert quant_outcome.execution_trace["economist_ran"] is False
+    assert quant_outcome.execution_trace["timing"]["economist_seconds"] == 0.0
+    assert quant_harness.economist_calls == []
+    assert quant_harness.analyst_calls == 1
+    assert quant_harness.author_prompts
 
 
 def test_historical_execution_row_missing_safety_fields_stays_unknown(
@@ -192,14 +203,13 @@ def test_historical_execution_row_missing_safety_fields_stays_unknown(
 def test_sqlite_summary_is_not_the_complete_safety_trace(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    _run_post_economist_harness(
+    run_post_retirement_ordinary_pipeline(
         tmp_path / "quant",
         monkeypatch,
         report_type="quantitative_comparison",
-        economist_output=ECONOMIST_BLOCK,
-        economist_telemetry=_valid_revenue_packet_telemetry(),
+        query_type="comparison",
     )
-    row = _execution_event_from_log(tmp_path / "quant" / "execution.jsonl")
+    row = execution_event_from_log(tmp_path / "quant" / "execution.jsonl")
 
     sqlite_row = execution_jsonl_to_run_row(row)
     assert sqlite_row is not None

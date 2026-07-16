@@ -120,7 +120,7 @@ class OfflineOrdinaryPipelineHarness:
     author_kwargs: list[dict[str, Any]] = field(default_factory=list)
     forbidden_live_calls: list[str] = field(default_factory=list)
 
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+    def _record_model_call(self, system_prompt: str, kwargs: Mapping[str, Any]) -> None:
         self.model_calls.append(
             {
                 "system_prompt": system_prompt,
@@ -130,6 +130,9 @@ class OfflineOrdinaryPipelineHarness:
                 "use_reasoning": kwargs.get("use_reasoning"),
             }
         )
+
+    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        self._record_model_call(system_prompt, kwargs)
         if system_prompt == DEFAULT_SYSTEM["router"]:
             return json.dumps(
                 {
@@ -288,6 +291,192 @@ class OfflineOrdinaryPipelineHarness:
             policy_journal_path=self.tmp_path / "policy_journal.jsonl",
             strict_one_shot_smart_model_transport=self.strict_one_shot_smart_model_transport,
         )
+
+
+@dataclass
+class PostRetirementOrdinaryPipelineHarness(OfflineOrdinaryPipelineHarness):
+    """Current ordinary pipeline fixture with a fail-closed Economist sentinel."""
+
+    router_report_type: str = "general_research"
+    router_query_type: str = "other"
+    router_entities: Sequence[str] | None = None
+    healthy: bool = True
+    evidence_rows: Sequence[Mapping[str, Any]] | None = None
+    install_economist_sentinel: bool = True
+    analyst_prompts: list[str] = field(default_factory=list)
+    analyst_calls: int = 0
+    economist_calls: list[str] = field(default_factory=list)
+
+    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        if system_prompt == DEFAULT_SYSTEM["router"]:
+            self._record_model_call(system_prompt, kwargs)
+            entities = list(self.router_entities or (self.primary_entity,))
+            return json.dumps(
+                {
+                    "intent": "general",
+                    "report_type": self.router_report_type,
+                    "image_mode": "none",
+                    "core_topic": self.core_topic,
+                    "is_academic": False,
+                    "query_type": self.router_query_type,
+                    "entities": entities,
+                    "primary_entity": self.primary_entity,
+                }
+            )
+        if system_prompt == DEFAULT_SYSTEM["analyst"]:
+            self.analyst_calls += 1
+            self.analyst_prompts.append(prompt)
+        if system_prompt.startswith("You are a ruthless fact-checker"):
+            self._record_model_call(system_prompt, kwargs)
+            return json.dumps({"flags": []})
+        return super().ask_model(prompt, system_prompt, **kwargs)
+
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        if self.evidence_rows is not None:
+            rows = self.evidence_rows
+        elif self.healthy:
+            entities = list(self.router_entities or (self.primary_entity,))
+            names = [entities[(index - 1) % len(entities)] for index in range(1, 5)]
+            rows = [
+                {
+                    "title": f"{name} official operating report",
+                    "url": f"https://{name.casefold()}.example/report-{index}",
+                    "text": (
+                        f"The current official {name} operating rate is "
+                        f"{index + 10} units per hour."
+                    ),
+                    "credibility": 4,
+                    "source_tier": "official",
+                    "source_class": "primary_source_documents",
+                    "currentness_signal": "current",
+                    "readable_status": "readable",
+                    "disposition": "accepted",
+                }
+                for index, name in enumerate(names, 1)
+            ]
+        else:
+            rows = [
+                {
+                    "title": f"Unrelated general news {index}",
+                    "url": f"https://apnews.com/article/unrelated-{index}",
+                    "text": f"Unrelated Gadget general news excerpt {index}.",
+                    "credibility": 1,
+                    "source_tier": "unknown",
+                }
+                for index in range(1, 5)
+            ]
+
+        passages: list[dict[str, Any]] = []
+        for index, raw_row in enumerate(rows, 1):
+            row = dict(raw_row)
+            row.setdefault("source_id", index)
+            row.setdefault("score", 1.0 - ((index - 1) * 0.01))
+            row.setdefault("credibility", 3 if self.healthy else 1)
+            row.setdefault("source_tier", "official" if self.healthy else "unknown")
+            row.setdefault("_provider", "offline_fake_search")
+            passages.append(row)
+        return passages
+
+    def forbidden_legacy_economist(self, *_args: Any, **_kwargs: Any) -> str:
+        self.economist_calls.append("called")
+        raise AssertionError("retired legacy Economist was invoked")
+
+    def deps(self) -> RunDeps:
+        deps = super().deps()
+        return replace(
+            deps,
+            QUANT_REPORT_TYPES={"quantitative_comparison", "benchmark"},
+            run_economist_step=(
+                self.forbidden_legacy_economist
+                if self.install_economist_sentinel
+                else None
+            ),
+        )
+
+    @property
+    def model_system_prompts(self) -> list[str]:
+        return [str(call["system_prompt"]) for call in self.model_calls]
+
+
+def execution_event_from_log(path: Path) -> dict[str, Any]:
+    return next(
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line).get("event") == "execution"
+    )
+
+
+def run_post_retirement_ordinary_pipeline(
+    tmp_path: Path,
+    monkeypatch: Any,
+    *,
+    mode: str = "Balanced",
+    report_type: str = "general_research",
+    query_type: str = "other",
+    healthy: bool = True,
+    forced_corpus_state: str | None = None,
+    evidence_rows: Sequence[Mapping[str, Any]] | None = None,
+    query: str = "Compare Alpha and Beta operating rates using current evidence.",
+    core_topic: str = "Alpha and Beta operating rates",
+    primary_entity: str = "Alpha",
+    router_entities: Sequence[str] | None = None,
+    researcher_queries: Sequence[str] | None = None,
+    analyst_response: str = "The retrieved evidence supports a bounded comparison.",
+    raw_author_response: str = (
+        "The evidence supports a bounded qualitative comparison. "
+        "[[1]](https://alpha.example/report-1)"
+    ),
+    install_economist_sentinel: bool = True,
+    current_date: str = "2026-05-06",
+    deps_overrides: Mapping[str, Any] | None = None,
+    environment_overrides: Mapping[str, str] | None = None,
+) -> tuple[Any, PostRetirementOrdinaryPipelineHarness]:
+    scrub_offline_runtime(monkeypatch)
+    for key, value in (environment_overrides or {}).items():
+        monkeypatch.setenv(key, value)
+    if router_entities is None and query_type == "comparison":
+        router_entities = ("Alpha", "Beta")
+    harness = PostRetirementOrdinaryPipelineHarness(
+        tmp_path=tmp_path,
+        query=query,
+        core_topic=core_topic,
+        primary_entity=primary_entity,
+        researcher_queries=researcher_queries,
+        analyst_response=analyst_response,
+        raw_author_response=raw_author_response,
+        router_report_type=report_type,
+        router_query_type=query_type,
+        router_entities=router_entities,
+        healthy=healthy,
+        evidence_rows=evidence_rows,
+        install_economist_sentinel=install_economist_sentinel,
+    )
+    config = replace(
+        offline_balanced_run_config(
+            query=query,
+            current_date=current_date,
+            session_id=f"session-{mode.casefold()}",
+            run_id=f"run-{mode.casefold()}",
+        ),
+        mode=mode,
+        forced_corpus_state=(
+            forced_corpus_state
+            if forced_corpus_state is not None
+            else (None if healthy else "off_topic")
+        ),
+        include_domains=["alpha.example"],
+        exclude_domains=["blocked.example"],
+    )
+    deps = harness.deps()
+    if deps_overrides:
+        deps = replace(deps, **dict(deps_overrides))
+    outcome = orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    return outcome, harness
 
 
 def install_handoff_capture(

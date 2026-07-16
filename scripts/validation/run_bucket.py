@@ -25,7 +25,28 @@ def _read_bucket(name: str) -> list[str]:
     return selected
 
 
-def main() -> int:
+def _pytest_command(*, collect_only: bool, basetemp: str | None) -> list[str]:
+    command = [sys.executable, "-m", "pytest", "-q"]
+    if collect_only:
+        command.append("--collect-only")
+    if basetemp:
+        command.append(f"--basetemp={basetemp}")
+    return command
+
+
+def _default_basetemp(bucket: str) -> str | None:
+    configured = os.environ.get("SCRYRAVEN_PYTEST_BASETEMP")
+    if configured:
+        return configured
+    cache_tmp_root = ROOT / ".pytest_cache" / "basetemp"
+    try:
+        cache_tmp_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(cache_tmp_root / bucket)
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a ScryRaven validation bucket.")
     parser.add_argument("bucket", help="Bucket name, such as fast_pr, author_lane, or full.")
     parser.add_argument(
@@ -33,24 +54,9 @@ def main() -> int:
         action="store_true",
         help="Collect selected tests without running them.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    command = [sys.executable, "-m", "pytest", "-q"]
-    if args.collect_only:
-        command.append("--collect-only")
-
-    basetemp = os.environ.get("SCRYRAVEN_PYTEST_BASETEMP")
-    if not basetemp:
-        cache_tmp_root = ROOT / ".pytest_cache" / "basetemp"
-        try:
-            cache_tmp_root.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            cache_tmp_root = None
-        if cache_tmp_root is not None:
-            basetemp = str(cache_tmp_root / args.bucket)
-    if basetemp:
-        command.append(f"--basetemp={basetemp}")
-
+    selected: list[str] = []
     if args.bucket == "full":
         print("Selected validation bucket: full")
     else:
@@ -58,12 +64,25 @@ def main() -> int:
         print(f"Selected validation bucket: {args.bucket}")
         for item in selected:
             print(f"  {item}")
-        command.extend(selected)
-
     env = os.environ.copy()
     # Offline validation must not read local .env secrets during collection.
     env.setdefault("PYTHON_DOTENV_DISABLED", "1")
 
+    if args.bucket == "fast_pr":
+        print("Running full-suite collection guard before fast_pr tests.", flush=True)
+        guard_command = _pytest_command(
+            collect_only=True,
+            basetemp=_default_basetemp("fast_pr-full-collection"),
+        )
+        guard_return_code = subprocess.call(guard_command, cwd=ROOT, env=env)
+        if guard_return_code:
+            return guard_return_code
+
+    command = _pytest_command(
+        collect_only=args.collect_only,
+        basetemp=_default_basetemp(args.bucket),
+    )
+    command.extend(selected)
     return subprocess.call(command, cwd=ROOT, env=env)
 
 
