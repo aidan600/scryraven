@@ -1548,6 +1548,17 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
             proposal["capability_request"]["claim_binding"]["unknown_claim"] = True
         elif self.proposal_mutation == "forbidden_authority_field":
             proposal["capability_request"]["graph_ref"] = {"graph_id": "forbidden"}
+        elif self.proposal_mutation == "nested_input_ref_authority":
+            proposal["input_artifact_refs"] = [
+                {
+                    "local_artifact_key": "source_a",
+                    "nested": {
+                        "proposal_digest": "model-authored-proposal-digest",
+                        "author_authority": True,
+                        "runkernel_shadow": "model-authored-runkernel-state",
+                    },
+                }
+            ]
         elif self.proposal_mutation == "forbidden_url":
             proposal["capability_request"]["source_url"] = "https://invalid.example"
         elif self.proposal_mutation == "forbidden_path":
@@ -1763,6 +1774,57 @@ def test_invalid_parsed_quantitative_proposal_never_becomes_specialist_work(
     _assert_no_specialist_authority(
         kernel=kernel,
         captured=_captured,
+        harness=harness,
+    )
+
+
+def test_optional_nested_input_ref_authority_is_rejected_without_retention_or_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_adapter(_transient: Mapping[str, Any]) -> dict[str, Any]:
+        raise AssertionError("nested authority proposal reached the adapter")
+
+    monkeypatch.setattr(
+        quantitative_product,
+        "source_bound_quantitative_calculation_adapter",
+        forbidden_adapter,
+    )
+    harness = QuantitativeComponentNorthstarHarness(tmp_path)
+    harness.proposal_mutation = "nested_input_ref_authority"
+    outcome, kernel, captured, _deps = _execute_product_run(
+        harness=harness,
+        monkeypatch=monkeypatch,
+        run_id="quantitative-optional-nested-authority-rejection",
+    )
+
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    scheduler_context = kernel.state.multicomponent_scheduler_context
+    assert len(plane["proposal_rejections"]) == 1
+    rejection = plane["proposal_rejections"][0]
+    assert rejection["schema_version"] == "specialist_proposal_candidate_rejection_v1"
+    assert rejection["posture"] == "optional"
+    assert "1500 USD" not in outcome.report
+    retained = json.dumps(
+        {
+            "specialist_plane": plane,
+            "released_scheduler_context": scheduler_context,
+        },
+        sort_keys=True,
+    )
+    rejection_retained = json.dumps(rejection, sort_keys=True)
+    for forbidden in (
+        "proposal_digest",
+        "author_authority",
+        "runkernel_shadow",
+        "model-authored-proposal-digest",
+        "model-authored-runkernel-state",
+    ):
+        assert forbidden not in retained
+        assert forbidden not in rejection_retained
+    _assert_no_specialist_authority(
+        kernel=kernel,
+        captured=captured,
         harness=harness,
     )
 

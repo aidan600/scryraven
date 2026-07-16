@@ -140,39 +140,59 @@ _CAPABILITY_REQUEST_FORBIDDEN_KEYS = frozenset(
         "admission",
         "admission_status",
         "author",
+        "author_authority",
         "author_claim",
         "bounded_text",
         "canonical_action",
         "canonical_lease",
+        "canonical_state",
+        "challenge_id",
         "code",
         "component_id",
         "conversion_expression",
+        "db_row",
+        "edge_id",
+        "env",
         "executable_expression",
         "expression",
         "fap",
+        "fap_authority",
         "fetch",
         "field_path",
         "final_answer_packet",
         "formula",
         "formula_expression",
         "formula_string",
+        "full_prompt",
         "graph",
         "graph_id",
         "graph_ref",
+        "graph_revision",
         "json_path",
         "lease",
         "lease_id",
         "model",
+        "model_response",
         "node_id",
+        "node_revision",
+        "observation_id",
+        "password",
         "prompt",
+        "proposal_id",
         "provider",
         "read",
+        "request_id",
         "response",
         "retrieval",
+        "revision",
+        "run_id",
+        "runkernel_action",
+        "runkernel_observation",
         "search",
         "source_path",
         "source_text",
         "url",
+        "validation_id",
     }
 )
 _CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS = frozenset(
@@ -190,6 +210,9 @@ _CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS = frozenset(
         "secret",
         "search",
     }
+)
+_SPECIALIST_FORBIDDEN_AUTHORITY_OR_MATERIAL_KEYS = frozenset(
+    _CAPABILITY_REQUEST_FORBIDDEN_KEYS | _RAW_PRIVATE_KEYS
 )
 
 
@@ -334,26 +357,19 @@ def _exact_input_refs(value: Any) -> list[dict[str, Any]]:
             "invalid_generic_envelope",
             "Specialist proposal input_artifact_refs must be one bounded JSON list",
         )
-    refs: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, Mapping) or not item or any(
-            not isinstance(key, str) or not key for key in item
-        ):
-            raise SpecialistProposalCandidateError(
-                "invalid_generic_envelope",
-                "Specialist proposal input_artifact_refs must contain exact mappings",
-            )
-        _reject_private(item, context="Specialist input ref")
-        try:
-            safe = _json_safe(item)
-            json.dumps(safe, allow_nan=False)
-        except (TypeError, ValueError, SpecialistGraphRuntimeError) as exc:
-            raise SpecialistProposalCandidateError(
-                "invalid_generic_envelope",
-                "Specialist proposal input_artifact_refs contain non-JSON material",
-            ) from exc
-        refs.append(deepcopy(dict(safe)))
-    return refs
+    exact = _validate_exact_specialist_json(
+        value,
+        context="Specialist proposal input_artifact_refs",
+        enforce_bounds=True,
+    )
+    if not isinstance(exact, list) or any(
+        not isinstance(item, dict) or not item for item in exact
+    ):
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            "Specialist proposal input_artifact_refs must contain exact mappings",
+        )
+    return deepcopy(exact)
 
 
 def _safe_refs(value: Any) -> tuple[dict[str, Any], ...]:
@@ -393,92 +409,113 @@ def _normalized_key(value: Any) -> str:
     return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
 
 
-def normalize_specialist_capability_request(value: Any) -> dict[str, Any]:
-    """Validate and normalize one capability-generic proposal request envelope."""
+def _validate_exact_specialist_json(
+    value: Any,
+    *,
+    context: str,
+    enforce_bounds: bool,
+) -> Any:
+    """Validate exact generic proposal JSON without coercion or softening."""
 
-    if not isinstance(value, Mapping):
-        raise SpecialistGraphRuntimeError(
-            "Specialist capability_request must be one JSON mapping"
-        )
     mapping_key_count = 0
     list_item_count = 0
 
-    def normalize(item: Any, *, depth: int) -> Any:
+    def reject(reason: str, *, authority: bool = False) -> None:
+        raise SpecialistProposalCandidateError(
+            (
+                "forbidden_authority_or_material"
+                if authority
+                else "invalid_generic_envelope"
+            ),
+            reason,
+        )
+
+    def validate(item: Any, *, depth: int) -> Any:
         nonlocal mapping_key_count, list_item_count
-        if depth > SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH:
-            raise SpecialistGraphRuntimeError(
-                "Specialist capability_request exceeds maximum nesting depth"
-            )
+        if enforce_bounds and depth > SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH:
+            reject(f"{context} exceeds maximum nesting depth")
+        if not enforce_bounds and depth > 64:
+            reject(f"{context} exceeds safe recursive inspection depth")
         if callable(item) or isinstance(item, bytes | bytearray | memoryview):
-            raise SpecialistGraphRuntimeError(
-                "Specialist capability_request contains executable or binary material"
-            )
+            reject(f"{context} contains executable or binary material")
         if item is None or isinstance(item, bool | int):
             return item
         if isinstance(item, float):
             if not math.isfinite(item):
-                raise SpecialistGraphRuntimeError(
-                    "Specialist capability_request contains a non-finite number"
-                )
+                reject(f"{context} contains a non-finite number")
             return item
         if isinstance(item, str):
-            if len(item) > SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH:
-                raise SpecialistGraphRuntimeError(
-                    "Specialist capability_request string exceeds maximum length"
-                )
+            if (
+                enforce_bounds
+                and len(item) > SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH
+            ):
+                reject(f"{context} string exceeds maximum length")
             return item
         if isinstance(item, Mapping):
-            mapping_key_count += len(item)
-            if mapping_key_count > SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS:
-                raise SpecialistGraphRuntimeError(
-                    "Specialist capability_request exceeds maximum mapping keys"
-                )
-            normalized_mapping: dict[str, Any] = {}
+            if enforce_bounds:
+                mapping_key_count += len(item)
+                if (
+                    mapping_key_count
+                    > SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS
+                ):
+                    reject(f"{context} exceeds maximum mapping keys")
+            exact_mapping: dict[str, Any] = {}
             for key, child in item.items():
                 if not isinstance(key, str) or not key.strip():
-                    raise SpecialistGraphRuntimeError(
-                        "Specialist capability_request keys must be nonempty strings"
-                    )
+                    reject(f"{context} keys must be nonempty strings")
                 normalized_key = _normalized_key(key)
                 if (
-                    normalized_key in _CAPABILITY_REQUEST_FORBIDDEN_KEYS
+                    normalized_key
+                    in _SPECIALIST_FORBIDDEN_AUTHORITY_OR_MATERIAL_KEYS
+                    or normalized_key.endswith("_digest")
+                    or normalized_key.startswith("runkernel_")
                     or any(
                         part in normalized_key
                         for part in _CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS
                     )
                 ):
-                    raise SpecialistGraphRuntimeError(
-                        "Specialist capability_request contains forbidden authority or material"
+                    reject(
+                        f"{context} contains forbidden authority or material",
+                        authority=True,
                     )
-                normalized_mapping[str(key)] = normalize(
-                    child, depth=depth + 1
-                )
-            return normalized_mapping
-        if isinstance(item, Sequence) and not isinstance(item, str):
-            values = list(item)
-            list_item_count += len(values)
-            if list_item_count > SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS:
-                raise SpecialistGraphRuntimeError(
-                    "Specialist capability_request exceeds maximum list items"
-                )
-            return [normalize(child, depth=depth + 1) for child in values]
-        raise SpecialistGraphRuntimeError(
-            "Specialist capability_request contains an unknown object type"
-        )
+                exact_mapping[key] = validate(child, depth=depth + 1)
+            return exact_mapping
+        if isinstance(item, list):
+            if enforce_bounds:
+                list_item_count += len(item)
+                if list_item_count > SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS:
+                    reject(f"{context} exceeds maximum list items")
+            return [validate(child, depth=depth + 1) for child in item]
+        reject(f"{context} contains an unknown object type")
 
-    normalized = normalize(value, depth=1)
-    encoded = json.dumps(
-        normalized,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
-    if len(encoded) > SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES:
-        raise SpecialistGraphRuntimeError(
-            "Specialist capability_request exceeds maximum canonical JSON bytes"
+    exact = validate(value, depth=1)
+    if enforce_bounds:
+        encoded = json.dumps(
+            exact,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        if len(encoded) > SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES:
+            reject(f"{context} exceeds maximum canonical JSON bytes")
+    return exact
+
+
+def normalize_specialist_capability_request(value: Any) -> dict[str, Any]:
+    """Validate and preserve one exact capability-generic request envelope."""
+
+    if not isinstance(value, Mapping):
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            "Specialist capability_request must be one JSON mapping",
         )
-    return dict(normalized)
+    exact = _validate_exact_specialist_json(
+        value,
+        context="Specialist capability_request",
+        enforce_bounds=True,
+    )
+    return deepcopy(dict(exact))
 
 
 @dataclass(frozen=True, slots=True)
@@ -649,6 +686,11 @@ def validate_specialist_need_proposal_candidate(
             "Specialist proposal candidate must be one JSON mapping",
         )
     raw = deepcopy(dict(value))
+    _validate_exact_specialist_json(
+        raw,
+        context="Specialist proposal",
+        enforce_bounds=False,
+    )
     unknown = set(raw) - SPECIALIST_NEED_ALLOWED_FIELDS
     missing = SPECIALIST_NEED_REQUIRED_FIELDS - set(raw)
     if unknown:
@@ -676,18 +718,6 @@ def validate_specialist_need_proposal_candidate(
         raise SpecialistProposalCandidateError(
             "unsupported_proposal_schema",
             "Specialist proposal schema_version is unsupported",
-        )
-    _reject_private(raw, context="Specialist proposal")
-    forbidden_keys = _collect_keys(raw) & _CAPABILITY_REQUEST_FORBIDDEN_KEYS
-    forbidden_parts = {
-        key
-        for key in _collect_keys(raw)
-        if any(part in key for part in _CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS)
-    }
-    if forbidden_keys or forbidden_parts:
-        raise SpecialistProposalCandidateError(
-            "forbidden_authority_or_material",
-            "Specialist proposal contains forbidden authority or material",
         )
     target = raw.get("target")
     if not isinstance(target, Mapping) or set(target) != SPECIALIST_NEED_TARGET_FIELDS:

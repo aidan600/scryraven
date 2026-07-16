@@ -994,6 +994,121 @@ def test_generic_proposal_candidate_is_not_softened_into_validity(
         normalize_specialist_need_proposal(proposal)
 
 
+@pytest.mark.parametrize(
+    "authority_key",
+    (
+        "action_id",
+        "observation_id",
+        "run_id",
+        "request_id",
+        "proposal_id",
+        "validation_id",
+        "challenge_id",
+        "component_id",
+        "edge_id",
+        "graph_id",
+        "node_id",
+        "node_revision",
+        "graph_revision",
+        "revision",
+        "canonical_state",
+        "admission_status",
+        "runkernel_action",
+        "runkernel_observation",
+        "final_answer_packet",
+        "fap_authority",
+        "author_authority",
+        "proposal_digest",
+        "Proposal-Digest",
+        "runkernel_shadow",
+    ),
+)
+def test_generic_proposal_rejects_authority_anywhere_in_input_refs(
+    authority_key: str,
+) -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    proposal["input_artifact_refs"] = [
+        {"nested": {"deeper": {authority_key: "model-authored"}}}
+    ]
+
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+def test_generic_proposal_rejects_input_ref_depth_instead_of_softening() -> None:
+    nested: dict[str, Any] = {"local_artifact_key": "source_a"}
+    for _ in range(14):
+        nested = {"nested": nested}
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    proposal["input_artifact_refs"] = [nested]
+
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+@pytest.mark.parametrize(
+    "input_ref",
+    (
+        {"nested": {1: "coerced-key"}},
+        {"nested": {"": "empty-key"}},
+        {"nested": {f"key_{index}": "value" for index in range(65)}},
+        {"nested": ["value"] * 65},
+        {"nested": "x" * 1001},
+        {f"field_{index}": "x" * 1000 for index in range(17)},
+        {"nested": float("nan")},
+        {"nested": b"binary"},
+        {"nested": lambda: None},
+        {"nested": object()},
+    ),
+)
+def test_generic_proposal_rejects_nonexact_or_unbounded_input_refs(
+    input_ref: dict[Any, Any],
+) -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    proposal["input_artifact_refs"] = [input_ref]
+
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+def test_generic_proposal_preserves_safe_local_input_ref_exactly() -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    safe_ref = {
+        "local_artifact_key": "source_a",
+        "artifact_kind": "bounded_local_input",
+    }
+    proposal["input_artifact_refs"] = [safe_ref]
+
+    validated = normalize_specialist_need_proposal(proposal)
+
+    assert validated == proposal
+    assert validated["input_artifact_refs"] == [safe_ref]
+
+
 def test_registry_and_policy_are_closed_by_default_and_calculator_is_absent() -> None:
     registry = closed_specialist_registry().projection()
     policy = closed_specialist_execution_policy().projection()
