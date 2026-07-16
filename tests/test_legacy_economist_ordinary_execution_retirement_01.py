@@ -171,7 +171,9 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
             "[[1]](https://alpha.example/report-1)"
         ),
         current_date="July 15, 2026",
-        environment_overrides={"OPENAI_API_KEY": "isolated-test-sentinel"},
+        environment_overrides={
+            "OPENAI_API_KEY": "isolated-test-sentinel",  # pragma: allowlist secret
+        },
     )
     trace = outcome.execution_trace
     economist_handoff = trace["economist_handoff_contract"]
@@ -236,8 +238,8 @@ def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
         current_date="July 15, 2026",
         deps_overrides={"fetch_linkup_precision_block": fake_linkup},
         environment_overrides={
-            "LINKUP_API_KEY": "isolated-test-sentinel",
-            "OPENAI_API_KEY": "isolated-test-sentinel",
+            "LINKUP_API_KEY": "isolated-test-sentinel",  # pragma: allowlist secret
+            "OPENAI_API_KEY": "isolated-test-sentinel",  # pragma: allowlist secret
         },
     )
 
