@@ -1489,6 +1489,8 @@ def _consume_scheduler_selected_artifact(
     work: Mapping[str, Any],
     artifact: Mapping[str, Any],
     input_packet: Mapping[str, Any],
+    specialist_need_proposal_present: bool,
+    specialist_need_proposal_candidate: Mapping[str, Any] | None,
     drive_context: dict[str, Any],
 ) -> None:
     """Route one selected artifact to its installed deterministic owner."""
@@ -1504,8 +1506,7 @@ def _consume_scheduler_selected_artifact(
     synthesis_key = _clean_text(work.get("synthesis_key"), limit=180)
     evaluation_key = str(work.get("logical_evaluation_key") or "")
     if role == ROLE_COMPONENT_ANALYST:
-        output = _safe_mapping(artifact.get("semantic_output"))
-        if output.get("specialist_need_proposal"):
+        if specialist_need_proposal_present:
             accepted = (
                 run_kernel.state.current_answer_contract
                 or run_kernel.state.initial_answer_contract
@@ -1518,6 +1519,10 @@ def _consume_scheduler_selected_artifact(
             deps = drive_context["runtime_scope"].get("deps")
             run_kernel.bind_specialist_need_from_role_artifact(
                 role_artifact=artifact,
+                proposal_candidate=_safe_mapping(
+                    specialist_need_proposal_candidate
+                ),
+                role_input_packet=input_packet,
                 canonical_target_ref={
                     "target_kind": "component",
                     "target_key": component_id,
@@ -1725,12 +1730,9 @@ def _consume_scheduler_selected_artifact(
                 operation="structure",
                 graph_candidate=candidate,
             )
-            output = _safe_mapping(artifact.get("semantic_output"))
-            if output.get("specialist_need_proposal"):
+            if specialist_need_proposal_present:
                 target = _safe_mapping(
-                    _safe_mapping(output.get("specialist_need_proposal")).get(
-                        "target"
-                    )
+                    _safe_mapping(specialist_need_proposal_candidate).get("target")
                 )
                 graph = validate_component_work_graph_v1(
                     _safe_mapping(
@@ -1751,6 +1753,10 @@ def _consume_scheduler_selected_artifact(
                 deps = drive_context["runtime_scope"].get("deps")
                 run_kernel.bind_specialist_need_from_role_artifact(
                     role_artifact=artifact,
+                    proposal_candidate=_safe_mapping(
+                        specialist_need_proposal_candidate
+                    ),
+                    role_input_packet=input_packet,
                     canonical_target_ref={
                         "target_kind": "synthesis",
                         "target_key": (
@@ -1891,12 +1897,9 @@ def _consume_scheduler_selected_artifact(
                 scrutineer_artifact=artifact,
             ),
         )
-        output = _safe_mapping(artifact.get("semantic_output"))
-        if output.get("specialist_need_proposal"):
+        if specialist_need_proposal_present:
             target = _safe_mapping(
-                _safe_mapping(output.get("specialist_need_proposal")).get(
-                    "target"
-                )
+                _safe_mapping(specialist_need_proposal_candidate).get("target")
             )
             target_kind = str(target.get("target_kind") or "")
             target_key = str(target.get("target_key") or "")
@@ -1925,6 +1928,10 @@ def _consume_scheduler_selected_artifact(
             deps = drive_context["runtime_scope"].get("deps")
             run_kernel.bind_specialist_need_from_role_artifact(
                 role_artifact=artifact,
+                proposal_candidate=_safe_mapping(
+                    specialist_need_proposal_candidate
+                ),
+                role_input_packet=input_packet,
                 canonical_target_ref={
                     "target_kind": target_kind,
                     "target_key": target_key,
@@ -2352,16 +2359,23 @@ def _execute_run_kernel_selected_batch(
                 )
             artifact = None
         artifacts.append(artifact)
-    for work, artifact, input_packet in zip(
-        works, artifacts, packets, strict=True
+    for work, artifact, input_packet, result in zip(
+        works, artifacts, packets, results, strict=True
     ):
         if artifact is not None:
+            assert result is not None
             try:
                 _consume_scheduler_selected_artifact(
                     run_kernel=run_kernel,
                     work=work,
                     artifact=artifact,
                     input_packet=input_packet,
+                    specialist_need_proposal_present=(
+                        result.specialist_need_proposal_present
+                    ),
+                    specialist_need_proposal_candidate=(
+                        result.specialist_need_proposal_candidate
+                    ),
                     drive_context=drive_context,
                 )
             except Exception as exc:
@@ -2575,13 +2589,16 @@ def _execute_selected_lane(
             None,
         ),
     )
-    _drive_run_kernel_selected_semantic_work(
-        run_kernel=run_kernel,
-        runtime_scope=runtime_scope,
-        selected_bindables=selected,
-        component_analyst_input_packets=analyst_inputs,
-        query=query,
-    )
+    try:
+        _drive_run_kernel_selected_semantic_work(
+            run_kernel=run_kernel,
+            runtime_scope=runtime_scope,
+            selected_bindables=selected,
+            component_analyst_input_packets=analyst_inputs,
+            query=query,
+        )
+    finally:
+        run_kernel.release_multicomponent_scheduler_transient_context()
 
 
 def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(

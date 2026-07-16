@@ -77,6 +77,7 @@ from core.quantitative_specialist_product_activation import (
     quantitative_proposal_runtime_schema_facts,
     source_bound_quantitative_calculation_adapter,
     validate_quantitative_specialist_proposal_contract,
+    validate_quantitative_specialist_proposal_instance,
 )
 from core.run_config import RunDeps
 from core.specialist_graph_runtime import (
@@ -90,6 +91,7 @@ from core.specialist_graph_runtime import (
     SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS,
     SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS,
     SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH,
+    SPECIALIST_NEED_SCHEMA_VERSION,
     SPECIALIST_WORK_PLANE_STAGE,
     VALIDATOR_PENDING,
     SpecialistGraphRuntimeError,
@@ -440,6 +442,7 @@ def test_versioned_proposal_contract_is_shared_by_component_and_cross_inputs() -
         assert contract["contract_digest"] == QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST
         assert validate_quantitative_specialist_proposal_contract(contract) == contract
         assert contract["proposal_schema"]["fixed_fields"] == {
+            "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
             "capability_requirement": QUANTITATIVE_CAPABILITY_REQUIREMENT,
             "candidate_capability_hint": QUANTITATIVE_CAPABILITY_ID,
             "input_schema_ref": QUANTITATIVE_INPUT_SCHEMA_REF,
@@ -1230,6 +1233,7 @@ def _product_proposal(
     posture: str = "optional",
 ) -> dict[str, Any]:
     return {
+        "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
         "local_need_id": "quantitative-need-one",
         "capability_requirement": QUANTITATIVE_CAPABILITY_REQUIREMENT,
         "candidate_capability_hint": QUANTITATIVE_CAPABILITY_ID,
@@ -1437,6 +1441,7 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
     component_posture = "optional"
     also_synthesis_proposal = False
     later_synthesis_posture = "optional"
+    proposal_mutation: str | None = None
 
     def __init__(self, tmp_path: Path) -> None:
         super().__init__(tmp_path)
@@ -1491,7 +1496,7 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
         literals = re.findall(r"\b\d+(?:\.\d+)? USD\b", evidence_text)
         assert literals[:2] == ["1200 USD", "300 USD"]
         proposed = f"{sum(Decimal(item.split()[0]) for item in literals[:2]):f} USD"
-        return _contract_driven_quantitative_proposal(
+        proposal = _contract_driven_quantitative_proposal(
             role_packet=self._active_role_packet,
             target_key=target_key,
             posture=self.component_posture,
@@ -1503,6 +1508,75 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
             proposed_result_literal=proposed,
             expected_result_unit="USD",
         )
+        if self.proposal_mutation == "missing_schema":
+            proposal.pop("schema_version", None)
+        elif self.proposal_mutation == "stale_schema":
+            proposal["schema_version"] = "specialist_need_proposal_v0"
+        elif self.proposal_mutation == "non_string_schema":
+            proposal["schema_version"] = 1
+        elif self.proposal_mutation == "unknown_field":
+            proposal["unknown_proposal_field"] = "must not be discarded"
+        elif self.proposal_mutation == "unknown_target_field":
+            proposal["target"]["target_revision"] = "1"
+        elif self.proposal_mutation == "top_level_target_aliases":
+            proposal["target_kind"] = proposal["target"]["target_kind"]
+            proposal["target_key"] = proposal["target"]["target_key"]
+            proposal.pop("target")
+        elif self.proposal_mutation == "missing_hint":
+            proposal.pop("candidate_capability_hint")
+        elif self.proposal_mutation == "wrong_hint":
+            proposal["candidate_capability_hint"] = "specialist.other"
+        elif self.proposal_mutation == "wrong_requirement":
+            proposal["capability_requirement"] = "other_requirement"
+        elif self.proposal_mutation == "wrong_input_schema":
+            proposal["input_schema_ref"] = "other.request.v1"
+        elif self.proposal_mutation == "wrong_output_schema":
+            proposal["expected_output_schema_ref"] = "other.result.v1"
+        elif self.proposal_mutation == "nonzero_recursion":
+            proposal["recursion_depth"] = 1
+        elif self.proposal_mutation == "non_null_parent":
+            proposal["specialist_parent_ref"] = {"proposal_id": "parent"}
+        elif self.proposal_mutation == "missing_posture":
+            proposal.pop("posture")
+        elif self.proposal_mutation == "missing_request":
+            proposal.pop("capability_request")
+        elif self.proposal_mutation == "unknown_request_field":
+            proposal["capability_request"]["unknown_request_field"] = True
+        elif self.proposal_mutation == "unknown_operand_field":
+            proposal["capability_request"]["operands"][0]["unknown_operand"] = True
+        elif self.proposal_mutation == "unknown_claim_field":
+            proposal["capability_request"]["claim_binding"]["unknown_claim"] = True
+        elif self.proposal_mutation == "forbidden_authority_field":
+            proposal["capability_request"]["graph_ref"] = {"graph_id": "forbidden"}
+        elif self.proposal_mutation == "forbidden_url":
+            proposal["capability_request"]["source_url"] = "https://invalid.example"
+        elif self.proposal_mutation == "forbidden_path":
+            proposal["capability_request"]["field_path"] = "source.value"
+        elif self.proposal_mutation == "forbidden_provider":
+            proposal["capability_request"]["provider"] = "forbidden"
+        elif self.proposal_mutation == "forbidden_search":
+            proposal["capability_request"]["search"] = "forbidden"
+        elif self.proposal_mutation == "forbidden_prompt":
+            proposal["capability_request"]["prompt"] = "forbidden"
+        elif self.proposal_mutation == "forbidden_response":
+            proposal["capability_request"]["response"] = "forbidden"
+        elif self.proposal_mutation == "unsupported_request_kind":
+            proposal["capability_request"]["request_kind"] = "other_request"
+        elif self.proposal_mutation == "unsupported_calculation_kind":
+            proposal["capability_request"]["calculation_kind"] = "arbitrary"
+        elif self.proposal_mutation == "malformed_operand_roles":
+            proposal["capability_request"]["operands"][0]["operand_role"] = "factor"
+        elif self.proposal_mutation == "duplicate_operand_key":
+            proposal["capability_request"]["operands"][1]["local_operand_key"] = (
+                proposal["capability_request"]["operands"][0]["local_operand_key"]
+            )
+        elif self.proposal_mutation == "target_mismatch":
+            proposal["target"]["target_key"] = "component:stale-target"
+        elif self.proposal_mutation == "unknown_source_alias":
+            proposal["capability_request"]["operands"][0][
+                "source_local_key"
+            ] = "component_99"
+        return proposal
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         if system_prompt in ROLE_SYSTEM_PROMPTS.values():
@@ -1547,9 +1621,271 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
             nominated_claim = str(
                 dict(payload.get("nominated_claim") or {}).get("claim_text") or ""
             )
-            if payload.get("specialist_need_handoff") and "derived combined" in nominated_claim:
+            if "derived combined" in nominated_claim:
                 return _quantitative_dprime_response(payload)
         return raw
+
+
+def _assert_no_specialist_authority(
+    *,
+    kernel: Any,
+    captured: Mapping[str, Any],
+    harness: SpecialistNorthstarHarness,
+) -> None:
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    assert plane["proposals"] == []
+    assert plane["proposal_dispositions"] == []
+    assert plane["work_nodes"] == []
+    assert plane["result_artifacts"] == []
+    assert plane["need_handoffs"] == []
+    assert len(plane["proposal_rejections"]) == 1
+    rejection = plane["proposal_rejections"][0]
+    assert rejection["accepted_proposal_authority"] is False
+    assert rejection["specialist_work_authority"] is False
+    assert rejection["raw_candidate_retained"] is False
+    assert rejection["private_material_retained"] is False
+    retained_plane = json.dumps(plane, sort_keys=True)
+    assert "capability_request" not in retained_plane
+    assert "source_numeric_literal" not in retained_plane
+    assert "raw_model_response" not in retained_plane
+    pool = scheduler["specialist_compatibility_pool"]
+    assert pool["specialist_spent"] == 0
+    assert pool["specialist_reserved"] == 0
+    assert not any(
+        dict(item.get("work") or {}).get("work_kind")
+        == WORK_KIND_SPECIALIST_CAPABILITY
+        for item in scheduler["lease_history"]
+    )
+    assert not any(
+        item.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY
+        for item in scheduler["batch_history"]
+    )
+    assert not any(
+        item.get("work_kind") == WORK_KIND_SPECIALIST_CAPABILITY
+        for item in scheduler["last_ready_work"]
+    )
+    assert not any(
+        action.action_type.value
+        in {"specialist_capability_execute", "specialist_validator_consume"}
+        for action in kernel.state.issued_actions.values()
+    )
+    retained_context = json.dumps(
+        kernel.state.multicomponent_scheduler_context,
+        sort_keys=True,
+    )
+    assert "quantitative_specialist_proposal_contract" not in retained_context
+    assert "quantitative_source_catalog" not in retained_context
+    assert "capability_request" not in retained_context
+    assert not any(
+        packet.get("specialist_need_handoff")
+        for packet in harness.all_dprime_inputs
+    )
+    if not captured.get("author_handoff_called"):
+        assert captured.get("packet_handoff_called") is True
+        packet_handoff = captured["packet_handoff"]
+        assert packet_handoff.author_input_blocked is True
+        assert packet_handoff.blocked_reason == "blocked_final_answer_packet"
+        return
+    final_packet = captured["author_runtime_scope"]["final_answer_packet"]
+    entries = [
+        *final_packet.direct_component_entries,
+        *final_packet.admitted_synthesis_entries,
+    ]
+    assert not any(
+        dict(entry).get("specialist_quantitative_authority_ref")
+        for entry in entries
+    )
+    manifest = final_packet.quantitative_finalization_authority_manifest
+    assert not any(
+        item.get("authority_kind") == "specialist_derived_numeric"
+        for item in manifest["authorized_numeric_claims"]
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing_schema",
+        "stale_schema",
+        "non_string_schema",
+        "unknown_field",
+        "unknown_target_field",
+        "top_level_target_aliases",
+        "missing_hint",
+        "wrong_hint",
+        "wrong_requirement",
+        "wrong_input_schema",
+        "wrong_output_schema",
+        "nonzero_recursion",
+        "non_null_parent",
+        "missing_posture",
+        "missing_request",
+        "unknown_request_field",
+        "unknown_operand_field",
+        "unknown_claim_field",
+        "forbidden_authority_field",
+        "forbidden_url",
+        "forbidden_path",
+        "forbidden_provider",
+        "forbidden_search",
+        "forbidden_prompt",
+        "forbidden_response",
+        "unsupported_request_kind",
+        "unsupported_calculation_kind",
+        "malformed_operand_roles",
+        "duplicate_operand_key",
+        "target_mismatch",
+        "unknown_source_alias",
+    ),
+)
+def test_invalid_parsed_quantitative_proposal_never_becomes_specialist_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    def forbidden_adapter(_transient: Mapping[str, Any]) -> dict[str, Any]:
+        raise AssertionError("invalid proposal reached the quantitative adapter")
+
+    monkeypatch.setattr(
+        quantitative_product,
+        "source_bound_quantitative_calculation_adapter",
+        forbidden_adapter,
+    )
+    harness = QuantitativeComponentNorthstarHarness(tmp_path)
+    harness.proposal_mutation = mutation
+    outcome, kernel, _captured, _deps = _execute_product_run(
+        harness=harness,
+        monkeypatch=monkeypatch,
+        run_id=f"quantitative-invalid-admission-{mutation}",
+    )
+    assert outcome.report != harness.raw_author_response
+    _assert_no_specialist_authority(
+        kernel=kernel,
+        captured=_captured,
+        harness=harness,
+    )
+
+
+def test_quantitative_instance_validator_rejects_noncurrent_contract_and_target() -> None:
+    component_contract = build_quantitative_specialist_proposal_contract(
+        target_kind="component",
+        target_key_or_rule="component:current",
+        allowed_source_local_keys=("component_evidence",),
+    )
+    component_proposal = _product_proposal(
+        target_kind="component",
+        target_key="component:current",
+        capability_request=_request(),
+    )
+    canonical_component = {
+        "target_kind": "component",
+        "target_key": "component:current",
+        "target_revision": "1",
+        "target_digest": "current-component-digest",
+    }
+    assert validate_quantitative_specialist_proposal_instance(
+        component_proposal,
+        proposal_contract=component_contract,
+        canonical_target_ref=canonical_component,
+    ) == component_proposal
+
+    stale_contract = deepcopy(component_contract)
+    stale_contract["instance_digest"] = "0" * 64
+    with pytest.raises(ValueError):
+        validate_quantitative_specialist_proposal_instance(
+            component_proposal,
+            proposal_contract=stale_contract,
+            canonical_target_ref=canonical_component,
+        )
+
+    synthesis_contract = build_quantitative_specialist_proposal_contract(
+        target_kind="synthesis",
+        target_key_or_rule=QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
+        allowed_source_local_keys=("component_01", "component_02"),
+    )
+    synthesis_proposal = _product_proposal(
+        target_kind="synthesis",
+        target_key="stale-synthesis",
+        capability_request=_request(
+            operands=[
+                _operand("a", "10 USD", "term", source="component_01"),
+                _operand("b", "20 USD", "term", source="component_02"),
+            ]
+        ),
+    )
+    with pytest.raises(ValueError):
+        validate_quantitative_specialist_proposal_instance(
+            synthesis_proposal,
+            proposal_contract=synthesis_contract,
+            canonical_target_ref={
+                "target_kind": "synthesis",
+                "target_key": "stale-synthesis",
+                "target_revision": "1",
+                "target_digest": "stale-synthesis-digest",
+            },
+            same_artifact_synthesis_keys=("current-synthesis",),
+        )
+
+
+def test_required_invalid_proposal_blocks_dependent_claim_before_specialist_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_adapter(_transient: Mapping[str, Any]) -> dict[str, Any]:
+        raise AssertionError("required invalid proposal reached the adapter")
+
+    monkeypatch.setattr(
+        quantitative_product,
+        "source_bound_quantitative_calculation_adapter",
+        forbidden_adapter,
+    )
+    harness = QuantitativeComponentNorthstarHarness(tmp_path)
+    harness.component_posture = "required"
+    harness.proposal_mutation = "unknown_request_field"
+    outcome, kernel, captured, _deps = _execute_product_run(
+        harness=harness,
+        monkeypatch=monkeypatch,
+        run_id="quantitative-required-invalid-admission",
+    )
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    assert outcome.report != harness.raw_author_response
+    assert "1500 USD" not in outcome.report
+    assert scheduler["status"] == "blocked_required_specialist_proposal"
+    assert plane["proposal_rejections"][0]["posture"] == "required"
+    _assert_no_specialist_authority(
+        kernel=kernel,
+        captured=captured,
+        harness=harness,
+    )
+
+
+def test_optional_invalid_proposal_allows_only_independent_ordinary_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_adapter(_transient: Mapping[str, Any]) -> dict[str, Any]:
+        raise AssertionError("optional invalid proposal reached the adapter")
+
+    monkeypatch.setattr(
+        quantitative_product,
+        "source_bound_quantitative_calculation_adapter",
+        forbidden_adapter,
+    )
+    harness = SpecialistNorthstarHarness(tmp_path)
+    outcome, kernel, captured, _deps = _execute_product_run(
+        harness=harness,
+        monkeypatch=monkeypatch,
+        run_id="quantitative-optional-invalid-independent",
+    )
+    assert outcome.report == NORTHSTAR_REPORT
+    assert harness.all_dprime_inputs
+    _assert_no_specialist_authority(
+        kernel=kernel,
+        captured=captured,
+        harness=harness,
+    )
 
 
 class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
@@ -1705,11 +2041,42 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
                 },
             ]
             return json.dumps(output)
-        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME] and payload.get(
-            "specialist_need_handoff"
-        ):
-            return _quantitative_dprime_response(payload)
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:
+            nominated_claim = str(
+                dict(payload.get("nominated_claim") or {}).get("claim_text") or ""
+            )
+            if "difference between" in nominated_claim:
+                return _quantitative_dprime_response(payload)
         return raw
+
+
+def test_synthesis_target_absent_from_actual_cross_artifact_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_adapter(_transient: Mapping[str, Any]) -> dict[str, Any]:
+        raise AssertionError("invalid synthesis proposal reached the adapter")
+
+    monkeypatch.setattr(
+        quantitative_product,
+        "source_bound_quantitative_calculation_adapter",
+        forbidden_adapter,
+    )
+    harness = QuantitativeSynthesisNorthstarHarness(tmp_path)
+    harness.synthesis_target_key = "missing-synthesis"
+    harness.raw_author_response = "The proposed quantitative synthesis was not admitted."
+    outcome, kernel, captured, _deps = _execute_product_run(
+        harness=harness,
+        monkeypatch=monkeypatch,
+        run_id="quantitative-synthesis-target-absent",
+    )
+    assert outcome.report == harness.raw_author_response
+    assert "58800 USD" not in outcome.report
+    _assert_no_specialist_authority(
+        kernel=kernel,
+        captured=captured,
+        harness=harness,
+    )
 
 
 def _execute_product_run(

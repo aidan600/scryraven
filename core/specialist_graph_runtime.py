@@ -19,6 +19,9 @@ from typing import Any, Callable, Mapping, Sequence
 SPECIALIST_WORK_PLANE_STAGE = "specialist_work_plane"
 SPECIALIST_WORK_PLANE_OWNER = "RunKernel.SpecialistWorkPlane"
 SPECIALIST_NEED_SCHEMA_VERSION = "specialist_need_proposal_v1"
+SPECIALIST_PROPOSAL_REJECTION_SCHEMA_VERSION = (
+    "specialist_proposal_candidate_rejection_v1"
+)
 SPECIALIST_WORK_NODE_SCHEMA_VERSION = "specialist_work_node_v2"
 SPECIALIST_RESULT_SCHEMA_VERSION = "specialist_result_artifact_v1"
 SPECIALIST_DISPOSITION_SCHEMA_VERSION = "specialist_proposal_disposition_v1"
@@ -64,6 +67,43 @@ _TARGET_KINDS = frozenset(
     {"component", "synthesis", "edge", "subgraph", "graph", "whole_case"}
 )
 _POSTURES = frozenset({"required", "optional"})
+SPECIALIST_UNCLASSIFIED_POSTURE = "unclassified_fail_closed"
+SPECIALIST_NEED_ALLOWED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "local_need_id",
+        "capability_requirement",
+        "candidate_capability_hint",
+        "bounded_question",
+        "target",
+        "posture",
+        "input_schema_ref",
+        "expected_output_schema_ref",
+        "input_artifact_refs",
+        "assumptions",
+        "caveats",
+        "nonclaims",
+        "advisory_budget_posture",
+        "recursion_depth",
+        "specialist_parent_ref",
+        "capability_request",
+    }
+)
+SPECIALIST_NEED_REQUIRED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "local_need_id",
+        "capability_requirement",
+        "bounded_question",
+        "target",
+        "posture",
+        "input_schema_ref",
+        "expected_output_schema_ref",
+        "recursion_depth",
+        "specialist_parent_ref",
+    }
+)
+SPECIALIST_NEED_TARGET_FIELDS = frozenset({"target_kind", "target_key"})
 _EXECUTION_POSTURES = frozenset(
     {EXECUTION_COMPLETED, EXECUTION_FAILED, EXECUTION_BLOCKED, EXECUTION_CONTESTED}
 )
@@ -157,6 +197,14 @@ class SpecialistGraphRuntimeError(ValueError):
     """Raised when Specialist state would exceed the generic S0 contract."""
 
 
+class SpecialistProposalCandidateError(SpecialistGraphRuntimeError):
+    """Raised with one bounded category for an invalid parsed proposal."""
+
+    def __init__(self, rejection_category: str, reason: str) -> None:
+        super().__init__(reason)
+        self.rejection_category = rejection_category
+
+
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if depth > 12:
         return None
@@ -211,6 +259,101 @@ def _text_list(value: Any, *, limit: int = 500) -> tuple[str, ...]:
         if cleaned and cleaned not in result:
             result.append(cleaned)
     return tuple(result)
+
+
+def _exact_text(
+    value: Any,
+    *,
+    field: str,
+    limit: int,
+    required: bool = False,
+) -> str | None:
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or not value or len(value) > limit:
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            f"Specialist proposal {field} must be one bounded exact string",
+        )
+    if value != value.strip() or any(char in "\r\n\t" for char in value):
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            f"Specialist proposal {field} is not canonical bounded text",
+        )
+    return value
+
+
+def _exact_token(
+    value: Any,
+    *,
+    field: str,
+    limit: int = 180,
+    required: bool = False,
+) -> str | None:
+    token = _exact_text(
+        value,
+        field=field,
+        limit=limit,
+        required=required,
+    )
+    if token and any(char.isspace() for char in token):
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            f"Specialist proposal {field} cannot contain whitespace",
+        )
+    return token
+
+
+def _exact_text_list(value: Any, *, field: str, limit: int = 500) -> list[str]:
+    if not isinstance(value, list):
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            f"Specialist proposal {field} must be one JSON list",
+        )
+    if len(value) > 20:
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            f"Specialist proposal {field} exceeds its bounded list limit",
+        )
+    return [
+        str(
+            _exact_text(
+                item,
+                field=field,
+                limit=limit,
+                required=True,
+            )
+        )
+        for item in value
+    ]
+
+
+def _exact_input_refs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) > 20:
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            "Specialist proposal input_artifact_refs must be one bounded JSON list",
+        )
+    refs: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping) or not item or any(
+            not isinstance(key, str) or not key for key in item
+        ):
+            raise SpecialistProposalCandidateError(
+                "invalid_generic_envelope",
+                "Specialist proposal input_artifact_refs must contain exact mappings",
+            )
+        _reject_private(item, context="Specialist input ref")
+        try:
+            safe = _json_safe(item)
+            json.dumps(safe, allow_nan=False)
+        except (TypeError, ValueError, SpecialistGraphRuntimeError) as exc:
+            raise SpecialistProposalCandidateError(
+                "invalid_generic_envelope",
+                "Specialist proposal input_artifact_refs contain non-JSON material",
+            ) from exc
+        refs.append(deepcopy(dict(safe)))
+    return refs
 
 
 def _safe_refs(value: Any) -> tuple[dict[str, Any], ...]:
@@ -495,52 +638,152 @@ def closed_specialist_execution_policy() -> SpecialistExecutionPolicy:
     return SpecialistExecutionPolicy()
 
 
-def normalize_specialist_need_proposal(value: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalize proposal-only role output without creating authority ids."""
+def validate_specialist_need_proposal_candidate(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate one exact parsed generic proposal without softening it."""
 
-    raw = _mapping(value)
+    if not isinstance(value, Mapping):
+        raise SpecialistProposalCandidateError(
+            "invalid_generic_envelope",
+            "Specialist proposal candidate must be one JSON mapping",
+        )
+    raw = deepcopy(dict(value))
+    unknown = set(raw) - SPECIALIST_NEED_ALLOWED_FIELDS
+    missing = SPECIALIST_NEED_REQUIRED_FIELDS - set(raw)
+    if unknown:
+        raise SpecialistProposalCandidateError(
+            "unknown_proposal_field",
+            "Specialist proposal contains unknown top-level fields",
+        )
+    if missing:
+        category = (
+            "missing_proposal_schema"
+            if "schema_version" in missing
+            else "invalid_generic_envelope"
+        )
+        raise SpecialistProposalCandidateError(
+            category,
+            "Specialist proposal is missing required generic fields",
+        )
+    schema_version = raw.get("schema_version")
+    if not isinstance(schema_version, str):
+        raise SpecialistProposalCandidateError(
+            "non_string_proposal_schema",
+            "Specialist proposal schema_version must be a string",
+        )
+    if schema_version != SPECIALIST_NEED_SCHEMA_VERSION:
+        raise SpecialistProposalCandidateError(
+            "unsupported_proposal_schema",
+            "Specialist proposal schema_version is unsupported",
+        )
     _reject_private(raw, context="Specialist proposal")
-    target = _mapping(raw.get("target"))
-    target_kind = str(target.get("target_kind") or raw.get("target_kind") or "")
-    target_key = _token(target.get("target_key") or raw.get("target_key"), required=True)
-    posture = str(raw.get("posture") or "optional").strip().casefold()
-    if target_kind not in _TARGET_KINDS or posture not in _POSTURES:
-        raise SpecialistGraphRuntimeError("Specialist proposal target or posture is invalid")
-    if int(raw.get("recursion_depth") or 0) != 0 or raw.get("specialist_parent_ref"):
-        raise SpecialistGraphRuntimeError("Specialist recursion is not authorized")
-    normalized = {
-        "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
-        "local_need_id": _token(raw.get("local_need_id"), required=True),
-        "capability_requirement": _token(
-            raw.get("capability_requirement"), required=True
+    forbidden_keys = _collect_keys(raw) & _CAPABILITY_REQUEST_FORBIDDEN_KEYS
+    forbidden_parts = {
+        key
+        for key in _collect_keys(raw)
+        if any(part in key for part in _CAPABILITY_REQUEST_FORBIDDEN_KEY_PARTS)
+    }
+    if forbidden_keys or forbidden_parts:
+        raise SpecialistProposalCandidateError(
+            "forbidden_authority_or_material",
+            "Specialist proposal contains forbidden authority or material",
+        )
+    target = raw.get("target")
+    if not isinstance(target, Mapping) or set(target) != SPECIALIST_NEED_TARGET_FIELDS:
+        raise SpecialistProposalCandidateError(
+            "invalid_target_shape",
+            "Specialist proposal target must contain exactly target_kind and target_key",
+        )
+    target_kind = target.get("target_kind")
+    if not isinstance(target_kind, str) or target_kind not in _TARGET_KINDS:
+        raise SpecialistProposalCandidateError(
+            "invalid_target_shape",
+            "Specialist proposal target_kind is invalid",
+        )
+    target_key = _exact_token(
+        target.get("target_key"),
+        field="target.target_key",
+        required=True,
+    )
+    posture = raw.get("posture")
+    if not isinstance(posture, str) or posture not in _POSTURES:
+        raise SpecialistProposalCandidateError(
+            "invalid_posture",
+            "Specialist proposal posture is invalid",
+        )
+    if isinstance(raw.get("recursion_depth"), bool) or raw.get("recursion_depth") != 0:
+        raise SpecialistProposalCandidateError(
+            "invalid_fixed_generic_field",
+            "Specialist proposal recursion_depth must be exact integer zero",
+        )
+    if raw.get("specialist_parent_ref") is not None:
+        raise SpecialistProposalCandidateError(
+            "invalid_fixed_generic_field",
+            "Specialist proposal specialist_parent_ref must be null",
+        )
+    validated: dict[str, Any] = {
+        "schema_version": schema_version,
+        "local_need_id": _exact_token(
+            raw.get("local_need_id"), field="local_need_id", required=True
         ),
-        "candidate_capability_hint": _token(raw.get("candidate_capability_hint")),
-        "bounded_question": _text(raw.get("bounded_question"), limit=800, required=True),
+        "capability_requirement": _exact_token(
+            raw.get("capability_requirement"),
+            field="capability_requirement",
+            required=True,
+        ),
+        "bounded_question": _exact_text(
+            raw.get("bounded_question"),
+            field="bounded_question",
+            limit=800,
+            required=True,
+        ),
         "target": {"target_kind": target_kind, "target_key": target_key},
         "posture": posture,
-        "input_schema_ref": _token(raw.get("input_schema_ref"), required=True),
-        "expected_output_schema_ref": _token(
-            raw.get("expected_output_schema_ref"), required=True
+        "input_schema_ref": _exact_token(
+            raw.get("input_schema_ref"), field="input_schema_ref", required=True
         ),
-        "input_artifact_refs": list(_safe_refs(raw.get("input_artifact_refs"))),
-        "assumptions": list(_text_list(raw.get("assumptions"))),
-        "caveats": list(_text_list(raw.get("caveats"))),
-        "nonclaims": list(_text_list(raw.get("nonclaims"))),
-        "advisory_budget_posture": _text(
-            raw.get("advisory_budget_posture"), limit=240
+        "expected_output_schema_ref": _exact_token(
+            raw.get("expected_output_schema_ref"),
+            field="expected_output_schema_ref",
+            required=True,
         ),
         "recursion_depth": 0,
         "specialist_parent_ref": None,
-        "canonical_identity_claimed": False,
-        "lease_authority_claimed": False,
-        "dispatch_authority_claimed": False,
-        "admission_authority_claimed": False,
     }
+    if "candidate_capability_hint" in raw:
+        validated["candidate_capability_hint"] = _exact_token(
+            raw.get("candidate_capability_hint"),
+            field="candidate_capability_hint",
+            required=True,
+        )
+    if "input_artifact_refs" in raw:
+        validated["input_artifact_refs"] = _exact_input_refs(
+            raw.get("input_artifact_refs")
+        )
+    for field_name in ("assumptions", "caveats", "nonclaims"):
+        if field_name in raw:
+            validated[field_name] = _exact_text_list(
+                raw.get(field_name), field=field_name
+            )
+    if "advisory_budget_posture" in raw:
+        validated["advisory_budget_posture"] = _exact_text(
+            raw.get("advisory_budget_posture"),
+            field="advisory_budget_posture",
+            limit=240,
+            required=True,
+        )
     if "capability_request" in raw:
-        normalized["capability_request"] = normalize_specialist_capability_request(
+        validated["capability_request"] = normalize_specialist_capability_request(
             raw.get("capability_request")
         )
-    return _json_safe(normalized)
+    return deepcopy(validated)
+
+
+def normalize_specialist_need_proposal(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Compatibility name for exact generic candidate validation."""
+
+    return validate_specialist_need_proposal_candidate(value)
 
 
 def bind_specialist_need_proposal(
@@ -560,7 +803,14 @@ def bind_specialist_need_proposal(
 ) -> dict[str, Any]:
     """Bind a model-visible proposal to exact current authority and policy."""
 
-    normalized = normalize_specialist_need_proposal(proposal)
+    candidate = validate_specialist_need_proposal_candidate(proposal)
+    normalized = {
+        **candidate,
+        "canonical_identity_claimed": False,
+        "lease_authority_claimed": False,
+        "dispatch_authority_claimed": False,
+        "admission_authority_claimed": False,
+    }
     target = _mapping(normalized["target"])
     canonical_target = _mapping(canonical_target_ref)
     target_matches = (
@@ -648,6 +898,128 @@ def validate_bound_specialist_proposal(value: Mapping[str, Any]) -> dict[str, An
         raise SpecialistGraphRuntimeError("bound Specialist proposal is invalid")
     _reject_private(proposal, context="bound Specialist proposal")
     return {**proposal, "proposal_id": declared_id, "proposal_digest": declared_digest}
+
+
+def safe_specialist_candidate_posture(value: Any) -> str:
+    candidate = _mapping(value)
+    posture = candidate.get("posture")
+    return posture if posture in _POSTURES else SPECIALIST_UNCLASSIFIED_POSTURE
+
+
+def safe_specialist_candidate_target(value: Any) -> dict[str, str]:
+    candidate = _mapping(value)
+    target = candidate.get("target")
+    if not isinstance(target, Mapping) or set(target) != SPECIALIST_NEED_TARGET_FIELDS:
+        return {}
+    target_kind = target.get("target_kind")
+    target_key = target.get("target_key")
+    if (
+        not isinstance(target_kind, str)
+        or target_kind not in _TARGET_KINDS
+        or not isinstance(target_key, str)
+        or not target_key
+        or len(target_key) > 180
+        or target_key != target_key.strip()
+        or any(char.isspace() for char in target_key)
+    ):
+        return {}
+    return {"target_kind": target_kind, "target_key": target_key}
+
+
+def proposal_schema_posture(value: Any) -> str:
+    candidate = _mapping(value)
+    if "schema_version" not in candidate:
+        return "missing"
+    schema_version = candidate.get("schema_version")
+    if not isinstance(schema_version, str):
+        return "non_string"
+    return (
+        "supported"
+        if schema_version == SPECIALIST_NEED_SCHEMA_VERSION
+        else "unsupported"
+    )
+
+
+def build_specialist_proposal_rejection(
+    *,
+    proposal_candidate: Any,
+    rejection_category: str,
+    quantitative_contract_schema_version: str | None = None,
+    quantitative_contract_digest: str | None = None,
+    quantitative_contract_instance_digest: str | None = None,
+) -> dict[str, Any]:
+    """Build a bounded fail-closed receipt without retaining the candidate."""
+
+    category = _token(rejection_category, limit=100, required=True)
+    core = {
+        "schema_version": SPECIALIST_PROPOSAL_REJECTION_SCHEMA_VERSION,
+        "supported_proposal_schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
+        "supplied_proposal_schema_posture": proposal_schema_posture(
+            proposal_candidate
+        ),
+        "posture": safe_specialist_candidate_posture(proposal_candidate),
+        "safe_local_target": safe_specialist_candidate_target(proposal_candidate),
+        "rejection_category": category,
+        "proposal_authority": PROPOSAL_REJECTED,
+        "quantitative_contract_schema_version": _token(
+            quantitative_contract_schema_version
+        ),
+        "quantitative_contract_digest": _token(
+            quantitative_contract_digest
+        ),
+        "quantitative_contract_instance_digest": _token(
+            quantitative_contract_instance_digest
+        ),
+        "accepted_proposal_authority": False,
+        "specialist_work_authority": False,
+        "raw_candidate_retained": False,
+        "private_material_retained": False,
+    }
+    digest = specialist_digest(core)
+    return {
+        **core,
+        "rejection_id": f"specialist-proposal-rejection:{digest[:24]}",
+        "rejection_digest": digest,
+    }
+
+
+def validate_specialist_proposal_rejection(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    rejection = deepcopy(dict(value))
+    declared_id = rejection.pop("rejection_id", None)
+    declared_digest = rejection.pop("rejection_digest", None)
+    digest = specialist_digest(rejection)
+    if (
+        rejection.get("schema_version")
+        != SPECIALIST_PROPOSAL_REJECTION_SCHEMA_VERSION
+        or rejection.get("supported_proposal_schema_version")
+        != SPECIALIST_NEED_SCHEMA_VERSION
+        or rejection.get("supplied_proposal_schema_posture")
+        not in {"missing", "non_string", "supported", "unsupported"}
+        or rejection.get("posture")
+        not in {*_POSTURES, SPECIALIST_UNCLASSIFIED_POSTURE}
+        or _mapping(rejection.get("safe_local_target"))
+        != safe_specialist_candidate_target(
+            {"target": rejection.get("safe_local_target")}
+        )
+        or rejection.get("proposal_authority") != PROPOSAL_REJECTED
+        or rejection.get("accepted_proposal_authority") is not False
+        or rejection.get("specialist_work_authority") is not False
+        or rejection.get("raw_candidate_retained") is not False
+        or rejection.get("private_material_retained") is not False
+        or declared_digest != digest
+        or declared_id != f"specialist-proposal-rejection:{digest[:24]}"
+    ):
+        raise SpecialistGraphRuntimeError(
+            "Specialist proposal rejection receipt is invalid"
+        )
+    _reject_private(rejection, context="Specialist proposal rejection")
+    return {
+        **rejection,
+        "rejection_id": declared_id,
+        "rejection_digest": declared_digest,
+    }
 
 
 def build_specialist_work_node(
@@ -1434,6 +1806,7 @@ def initialize_specialist_work_plane(
             "recursion": False,
         },
         "proposals": [],
+        "proposal_rejections": [],
         "proposal_dispositions": [],
         "need_handoffs": [],
         "work_nodes": [],
@@ -1487,6 +1860,7 @@ def initialize_specialist_work_plane_from_projections(
             "recursion": False,
         },
         "proposals": [],
+        "proposal_rejections": [],
         "proposal_dispositions": [],
         "need_handoffs": [],
         "work_nodes": [],
@@ -1505,6 +1879,9 @@ def _refresh_state(value: Mapping[str, Any]) -> dict[str, Any]:
     state = deepcopy(dict(value))
     state.pop("state_digest", None)
     state["proposal_count"] = len(state.get("proposals") or ())
+    state["proposal_rejection_count"] = len(
+        state.get("proposal_rejections") or ()
+    )
     state["proposal_disposition_count"] = len(
         state.get("proposal_dispositions") or ()
     )
@@ -1524,6 +1901,20 @@ def append_bound_proposal(state: Mapping[str, Any], proposal: Mapping[str, Any])
     ):
         raise SpecialistGraphRuntimeError("duplicate Specialist proposal")
     current["proposals"].append(bound)
+    return _refresh_state(current)
+
+
+def append_specialist_proposal_rejection(
+    state: Mapping[str, Any], rejection: Mapping[str, Any]
+) -> dict[str, Any]:
+    current = validate_specialist_work_plane(state)
+    receipt = validate_specialist_proposal_rejection(rejection)
+    if any(
+        _mapping(item).get("rejection_id") == receipt.get("rejection_id")
+        for item in current.get("proposal_rejections") or ()
+    ):
+        raise SpecialistGraphRuntimeError("duplicate Specialist proposal rejection")
+    current["proposal_rejections"].append(receipt)
     return _refresh_state(current)
 
 
@@ -1811,6 +2202,10 @@ def validate_specialist_work_plane(value: Mapping[str, Any]) -> dict[str, Any]:
         validate_bound_specialist_proposal(_mapping(item))
         for item in state.get("proposals") or ()
     ]
+    rejections = [
+        validate_specialist_proposal_rejection(_mapping(item))
+        for item in state.get("proposal_rejections") or ()
+    ]
     dispositions = [
         validate_specialist_proposal_disposition(_mapping(item))
         for item in state.get("proposal_dispositions") or ()
@@ -1829,6 +2224,7 @@ def validate_specialist_work_plane(value: Mapping[str, Any]) -> dict[str, Any]:
     ]
     identity_groups = (
         (proposals, "proposal_id"),
+        (rejections, "rejection_id"),
         (dispositions, "disposition_id"),
         (handoffs, "handoff_id"),
         (work_nodes, "node_id"),
@@ -1894,6 +2290,11 @@ __all__ = [
     "PROPOSAL_UNSUPPORTED_TARGET",
     "RESOURCE_DETERMINISTIC_SPECIALIST",
     "SPECIALIST_NEED_SCHEMA_VERSION",
+    "SPECIALIST_NEED_ALLOWED_FIELDS",
+    "SPECIALIST_NEED_REQUIRED_FIELDS",
+    "SPECIALIST_NEED_TARGET_FIELDS",
+    "SPECIALIST_PROPOSAL_REJECTION_SCHEMA_VERSION",
+    "SPECIALIST_UNCLASSIFIED_POSTURE",
     "SPECIALIST_CAPABILITY_REQUEST_MAX_BYTES",
     "SPECIALIST_CAPABILITY_REQUEST_MAX_DEPTH",
     "SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS",
@@ -1908,7 +2309,9 @@ __all__ = [
     "SpecialistCapabilitySpec",
     "SpecialistExecutionPolicy",
     "SpecialistGraphRuntimeError",
+    "SpecialistProposalCandidateError",
     "append_bound_proposal",
+    "append_specialist_proposal_rejection",
     "append_specialist_disposition",
     "append_specialist_result",
     "bind_specialist_need_proposal",
@@ -1916,6 +2319,7 @@ __all__ = [
     "build_specialist_work_node",
     "build_specialist_need_handoff",
     "build_specialist_proposal_disposition",
+    "build_specialist_proposal_rejection",
     "build_specialist_terminal_result",
     "closed_specialist_execution_policy",
     "closed_specialist_registry",
@@ -1940,6 +2344,8 @@ __all__ = [
     "validate_specialist_result_artifact",
     "validate_specialist_need_handoff",
     "validate_specialist_proposal_disposition",
+    "validate_specialist_proposal_rejection",
+    "validate_specialist_need_proposal_candidate",
     "validate_specialist_work_node",
     "VALIDATOR_PENDING",
 ]

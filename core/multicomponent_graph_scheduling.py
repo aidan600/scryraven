@@ -685,17 +685,27 @@ def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
 def block_required_specialist_proposal(
     *, state: Any, proposal: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """Safely block an active V3 scheduler on one denied required proposal."""
+    """Safely block V3 on a denied required or unclassified proposal."""
 
     scheduler = validate_scheduler_state(
         _mapping(state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     )
     item = _mapping(proposal)
+    posture = item.get("posture")
+    rejection_id = item.get("rejection_id")
+    rejection_digest = item.get("rejection_digest")
+    proposal_id = item.get("proposal_id") or rejection_id
+    proposal_digest = item.get("proposal_digest") or rejection_digest
+    rejection_reason = item.get("rejection_reason") or item.get(
+        "rejection_category"
+    )
     if (
         scheduler.get("schema_version") != MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
         or scheduler.get("status") != "active"
-        or item.get("posture") != "required"
+        or posture not in {"required", "unclassified_fail_closed"}
         or item.get("proposal_authority") == "accepted"
+        or not proposal_id
+        or not proposal_digest
         or any(
             _mapping(lease).get("status") in _ACTIVE_STATUSES
             for lease in scheduler.get("lease_history") or ()
@@ -708,17 +718,17 @@ def block_required_specialist_proposal(
     scheduler["status"] = "blocked_required_specialist_proposal"
     scheduler["terminal_posture"] = "blocked_required_specialist_proposal"
     scheduler["failed_required_work_ref"] = {
-        "proposal_id": item.get("proposal_id"),
-        "proposal_digest": item.get("proposal_digest"),
+        "proposal_id": proposal_id,
+        "proposal_digest": proposal_digest,
         "proposal_authority": item.get("proposal_authority"),
-        "rejection_reason": item.get("rejection_reason"),
+        "rejection_reason": rejection_reason,
     }
     scheduler["transition_history"].append(
         {
             "transition": "blocked_required_specialist_proposal",
             "scheduler_revision": scheduler["scheduler_revision"],
-            "proposal_id": item.get("proposal_id"),
-            "rejection_reason": item.get("rejection_reason"),
+            "proposal_id": proposal_id,
+            "rejection_reason": rejection_reason,
         }
     )
     return _refresh_scheduler(scheduler)
@@ -852,6 +862,11 @@ def _work(
         "scheduler_revision": scheduler.get("scheduler_revision"),
         "output_schema_variant": output_schema_variant,
     }
+    specialist_handoff_digest = _mapping(
+        input_packet.get("specialist_need_handoff")
+    ).get("handoff_digest")
+    if specialist_handoff_digest:
+        core["specialist_handoff_digest"] = specialist_handoff_digest
     if scheduler.get("schema_version") == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION:
         core.update(
             {
@@ -1681,6 +1696,7 @@ def _work_ref(work: Mapping[str, Any]) -> dict[str, Any]:
         "executor_class": item.get("executor_class"),
         "capability_id": item.get("capability_id"),
         "capability_version": item.get("capability_version"),
+        "specialist_handoff_digest": item.get("specialist_handoff_digest"),
     }
 
 

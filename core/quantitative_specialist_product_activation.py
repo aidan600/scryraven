@@ -28,6 +28,7 @@ from core.specialist_graph_runtime import (
     SPECIALIST_CAPABILITY_REQUEST_MAX_LIST_ITEMS,
     SPECIALIST_CAPABILITY_REQUEST_MAX_MAPPING_KEYS,
     SPECIALIST_CAPABILITY_REQUEST_MAX_STRING_LENGTH,
+    SPECIALIST_NEED_SCHEMA_VERSION,
     SpecialistCapabilityRegistry,
     SpecialistCapabilitySpec,
     SpecialistExecutionPolicy,
@@ -55,12 +56,13 @@ NUMERIC_LITERAL_PARSER_DIGEST = sha256(
 MAX_OPERANDS = 8
 MAX_NUMERIC_LITERAL_LENGTH = 120
 QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION = (
-    "quantitative_specialist_proposal_contract.v1"
+    "quantitative_specialist_proposal_contract.v2"
 )
 QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE = (
     "must equal one synthesis_key proposed in the same artifact"
 )
 QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS = (
+    "schema_version",
     "local_need_id",
     "capability_requirement",
     "candidate_capability_hint",
@@ -79,6 +81,7 @@ QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS = (
     "capability_request",
 )
 QUANTITATIVE_PROPOSAL_REQUIRED_FIELDS = (
+    "schema_version",
     "local_need_id",
     "capability_requirement",
     "candidate_capability_hint",
@@ -310,6 +313,7 @@ def quantitative_proposal_runtime_schema_facts() -> dict[str, Any]:
                 if field not in proposal_required
             ],
             "fixed_fields": {
+                "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
                 "capability_requirement": QUANTITATIVE_CAPABILITY_REQUIREMENT,
                 "candidate_capability_hint": QUANTITATIVE_CAPABILITY_ID,
                 "input_schema_ref": QUANTITATIVE_INPUT_SCHEMA_REF,
@@ -322,6 +326,7 @@ def quantitative_proposal_runtime_schema_facts() -> dict[str, Any]:
                 for field in QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS
                 if field
                 not in {
+                    "schema_version",
                     "capability_requirement",
                     "candidate_capability_hint",
                     "input_schema_ref",
@@ -443,8 +448,29 @@ def validate_quantitative_specialist_proposal_contract(
 
     contract = deepcopy(dict(value))
     instance_digest = contract.pop("instance_digest", None)
+    contract_fields = {
+        "schema_version",
+        "contract_digest",
+        "proposal_schema",
+        "capability_request_schema",
+        "target_contract",
+        "allowed_source_local_keys",
+        "output_rule",
+    }
+    target_contract = _safe_mapping(contract.get("target_contract"))
+    target_kind = target_contract.get("target_kind")
+    allowed_source_keys = contract.get("allowed_source_local_keys")
+    source_keys = _safe_sequence(allowed_source_keys)
+    target_shape_valid = (
+        set(target_contract) == {"target_kind", "target_key"}
+        if target_kind == "component"
+        else set(target_contract) == {"target_kind", "target_key_rule"}
+        if target_kind == "synthesis"
+        else False
+    )
     if (
-        contract.get("schema_version")
+        set(contract) != contract_fields
+        or contract.get("schema_version")
         != QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION
         or contract.get("contract_digest")
         != QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST
@@ -455,12 +481,97 @@ def validate_quantitative_specialist_proposal_contract(
             "capability_request_schema"
         ]
         or instance_digest != _digest(contract)
+        or not target_shape_valid
+        or not isinstance(allowed_source_keys, list)
+        or not source_keys
+        or len(source_keys) != len(set(source_keys))
+        or any(
+            not isinstance(item, str) or not _LOCAL_KEY_RE.fullmatch(item)
+            for item in source_keys
+        )
     ):
         raise QuantitativeSpecialistProductError(
             "proposal_contract_drift",
             "quantitative Specialist proposal contract does not match runtime",
         )
     return {**contract, "instance_digest": instance_digest}
+
+
+def validate_quantitative_specialist_proposal_instance(
+    value: Mapping[str, Any],
+    *,
+    proposal_contract: Mapping[str, Any],
+    canonical_target_ref: Mapping[str, Any],
+    same_artifact_synthesis_keys: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Validate the exact current S1 proposal before RunKernel admission."""
+
+    contract = validate_quantitative_specialist_proposal_contract(
+        proposal_contract
+    )
+    proposal = deepcopy(dict(value))
+    allowed_fields = set(QUANTITATIVE_PROPOSAL_ALLOWED_FIELDS)
+    required_fields = set(QUANTITATIVE_PROPOSAL_REQUIRED_FIELDS)
+    if set(proposal) - allowed_fields or not required_fields <= set(proposal):
+        raise QuantitativeSpecialistProductError(
+            "proposal_field_set_mismatch",
+            "quantitative proposal has missing or unknown fields",
+        )
+    fixed_fields = _safe_mapping(
+        _safe_mapping(contract.get("proposal_schema")).get("fixed_fields")
+    )
+    if any(proposal.get(key) != expected for key, expected in fixed_fields.items()):
+        raise QuantitativeSpecialistProductError(
+            "proposal_fixed_field_mismatch",
+            "quantitative proposal fixed fields do not match the current contract",
+        )
+    target = _safe_mapping(proposal.get("target"))
+    canonical_target = _safe_mapping(canonical_target_ref)
+    target_contract = _safe_mapping(contract.get("target_contract"))
+    if set(target) != {"target_kind", "target_key"} or (
+        target.get("target_kind") != canonical_target.get("target_kind")
+        or target.get("target_key") != canonical_target.get("target_key")
+        or target.get("target_kind") != target_contract.get("target_kind")
+    ):
+        raise QuantitativeSpecialistProductError(
+            "proposal_target_mismatch",
+            "quantitative proposal target does not match current authority",
+        )
+    if target.get("target_kind") == "component":
+        if target.get("target_key") != target_contract.get("target_key"):
+            raise QuantitativeSpecialistProductError(
+                "proposal_target_mismatch",
+                "quantitative component target does not match its contract instance",
+            )
+    elif target.get("target_kind") == "synthesis":
+        keys = list(same_artifact_synthesis_keys)
+        if (
+            not keys
+            or len(keys) != len(set(keys))
+            or target.get("target_key") not in keys
+            or target_contract.get("target_key_rule")
+            != QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE
+        ):
+            raise QuantitativeSpecialistProductError(
+                "proposal_target_mismatch",
+                "quantitative synthesis target is not from the same current artifact",
+            )
+    else:
+        raise QuantitativeSpecialistProductError(
+            "proposal_target_mismatch",
+            "quantitative proposal target kind is unsupported",
+        )
+    request = _validate_request(_safe_mapping(proposal.get("capability_request")))
+    allowed_source_keys = set(contract.get("allowed_source_local_keys") or ())
+    if not allowed_source_keys or any(
+        operand.get("source_local_key") not in allowed_source_keys
+        for operand in request.get("operands") or ()
+    ):
+        raise QuantitativeSpecialistProductError(
+            "proposal_source_alias_mismatch",
+            "quantitative proposal source alias is not in the current contract instance",
+        )
+    return proposal
 
 
 def _text_digest(value: str) -> str:
@@ -1703,4 +1814,5 @@ __all__ = [
     "quantitative_proposal_runtime_schema_facts",
     "source_bound_quantitative_calculation_adapter",
     "validate_quantitative_specialist_proposal_contract",
+    "validate_quantitative_specialist_proposal_instance",
 ]

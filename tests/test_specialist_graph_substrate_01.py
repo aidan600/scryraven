@@ -73,6 +73,7 @@ from core.specialist_graph_runtime import (
     PROPOSAL_DENIED_POLICY,
     PROPOSAL_REJECTED,
     PROPOSAL_UNSUPPORTED_TARGET,
+    SPECIALIST_NEED_SCHEMA_VERSION,
     SPECIALIST_WORK_PLANE_STAGE,
     SpecialistCapabilityRegistry,
     SpecialistCapabilitySpec,
@@ -130,6 +131,7 @@ class SpecialistNorthstarHarness(NorthstarHarness):
     @staticmethod
     def _proposal(*, target_kind: str, target_key: str, hint: str, posture: str, requirement: str) -> dict[str, Any]:
         return {
+            "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
             "local_need_id": "need-one",
             "capability_requirement": requirement,
             "candidate_capability_hint": hint,
@@ -812,11 +814,13 @@ def test_cross_component_unknown_target_is_typed_rejected_and_optional(
             specialist_work_item_limit=1,
         ),
     )
-    proposal = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["proposals"][0]
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     assert outcome.report == NORTHSTAR_REPORT
-    assert proposal["proposal_authority"] == PROPOSAL_UNSUPPORTED_TARGET
-    assert proposal["rejection_reason"] == (
-        "proposal_target_does_not_match_canonical_origin_target"
+    assert plane["proposals"] == []
+    assert plane["proposal_dispositions"] == []
+    assert plane["need_handoffs"] == []
+    assert plane["proposal_rejections"][0]["rejection_category"] == (
+        "proposal_target_mismatch"
     )
     assert calls == []
 
@@ -934,6 +938,60 @@ def test_registry_resolution_ignores_hint_and_rejects_unknown_or_incompatible() 
     assert bind_specialist_need_proposal(proposal=incompatible, **common)[
         "proposal_authority"
     ] == PROPOSAL_REJECTED
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing_schema",
+        "stale_schema",
+        "non_string_schema",
+        "unknown_field",
+        "unknown_target_field",
+        "top_level_target_aliases",
+        "forbidden_nested_authority",
+        "forbidden_raw_material",
+        "missing_recursion_depth",
+        "missing_specialist_parent_ref",
+        "missing_posture",
+    ),
+)
+def test_generic_proposal_candidate_is_not_softened_into_validity(
+    mutation: str,
+) -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    if mutation == "missing_schema":
+        proposal.pop("schema_version")
+    elif mutation == "stale_schema":
+        proposal["schema_version"] = "specialist_need_proposal_v0"
+    elif mutation == "non_string_schema":
+        proposal["schema_version"] = 1
+    elif mutation == "unknown_field":
+        proposal["unknown_proposal_field"] = "must not be discarded"
+    elif mutation == "unknown_target_field":
+        proposal["target"]["target_revision"] = "1"
+    elif mutation == "top_level_target_aliases":
+        proposal["target_kind"] = proposal["target"]["target_kind"]
+        proposal["target_key"] = proposal["target"]["target_key"]
+        proposal.pop("target")
+    elif mutation == "forbidden_nested_authority":
+        proposal["capability_request"] = {"graph_ref": {"graph_id": "forbidden"}}
+    elif mutation == "forbidden_raw_material":
+        proposal["raw_model_response"] = "must never be retained"
+    elif mutation == "missing_recursion_depth":
+        proposal.pop("recursion_depth")
+    elif mutation == "missing_specialist_parent_ref":
+        proposal.pop("specialist_parent_ref")
+    elif mutation == "missing_posture":
+        proposal.pop("posture")
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
 
 
 def test_registry_and_policy_are_closed_by_default_and_calculator_is_absent() -> None:
@@ -1156,17 +1214,26 @@ def test_optional_capability_and_target_denials_are_visible_to_component_dprime(
     plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     assert outcome.report == NORTHSTAR_REPORT
     assert calls == []
-    assert plane["proposals"][0]["proposal_authority"] == expected_authority
-    assert (
-        plane["proposal_dispositions"][0]["execution_availability_posture"]
-        == expected_availability
-    )
-    assert (
-        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
-            "availability_posture"
-        ]
-        == expected_availability
-    )
+    if denial == "target":
+        assert plane["proposals"] == []
+        assert plane["proposal_dispositions"] == []
+        assert plane["need_handoffs"] == []
+        assert plane["proposal_rejections"][0]["rejection_category"] == (
+            "proposal_target_mismatch"
+        )
+        assert not harness.specialist_dprime_inputs
+    else:
+        assert plane["proposals"][0]["proposal_authority"] == expected_authority
+        assert (
+            plane["proposal_dispositions"][0]["execution_availability_posture"]
+            == expected_availability
+        )
+        assert (
+            harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+                "availability_posture"
+            ]
+            == expected_availability
+        )
 
 
 def _terminal_registry(
