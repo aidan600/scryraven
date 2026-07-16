@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
-Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
+Verified-against-runtime: 0c6308f22a0df0ffcb98a67c1ca26e9d4614b795
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -64,6 +64,30 @@ accepted explicit factual component structure and synthesis directive
 
 Broad or legacy Analyst prose is not relabeled as typed component authority.
 Component finals are not handed to Author for ungoverned glue.
+
+## Deterministic Route Qualification
+
+One deterministic query-shape owner assesses explicit structured route
+eligibility before the installed bounded lane is selected. It recognizes
+bounded bullet lists, contiguous numbered lists using one numbering style, and
+bounded repeated imperative clauses. A qualifying request supplies two through
+five distinct factual components in request order plus one separated,
+request-level synthesis directive. The directive is preserved exactly for the
+accepted AnswerContract and downstream Cross-Component Analyst input; it is not
+reinterpreted as another component.
+
+Malformed, nested, mixed-style, noncontiguous, duplicated, under-cap,
+over-cap, incomplete-directive, and otherwise ambiguous structured candidates
+fail closed as unselected. Nonqualifying requests continue through the existing
+general multipart fallback and direct ordinary lane. That fallback remains a
+separate decomposition aid and cannot itself license the bounded
+multi-component route.
+
+Fast, Balanced, and Deep use the same parser and route pipeline; no mode owns a
+parallel qualification rule. This installed repair widens only explicit route
+recognition. It does not establish arbitrary-query decomposition or add
+calculation, conversion, provider, search, retrieval, Specialist, or live-call
+authority.
 
 ## Role Ownership
 

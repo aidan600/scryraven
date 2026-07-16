@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
+Verified-against-runtime: 0c6308f22a0df0ffcb98a67c1ca26e9d4614b795
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -127,28 +127,31 @@ parallelism, recursion, provider/model selection, retrieval, arithmetic,
 D-prime standards, FAP, Author, citation, persistence, conversation, UI, or
 live-call authority.
 
-## Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01
+## Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01
 
-The sole active-next checkpoint is Structured-List Route Qualification Repair.
-It must remain within route qualification and must not infer provider, model,
-search, retrieval, Specialist-execution, live-call, final-custody, UI, or
-conversation authority from this roadmap entry.
+Structured-List Route Qualification Repair installed one deterministic owner
+for explicit route eligibility across Fast, Balanced, and Deep. It recognizes
+bounded bullet, contiguous numbered, and bounded repeated-imperative requests;
+preserves two through five ordered components and their separated request-level
+synthesis directive; and fails malformed or ambiguous structures closed to the
+existing direct path.
 
-This checkpoint will:
+This completed repair:
 
-- support numbered and imperative multi-component requests;
-- preserve trailing compare, calculate, and convert instructions;
-- route qualifying requests to the installed bounded path; and
-- keep nonqualifying requests direct.
-
-It must not alter providers, acquisition, prompts, or Specialist execution.
+- changed route qualification only;
+- preserved trailing compare, calculate, and convert instructions without
+  adding calculation or conversion authority;
+- kept general multipart fallback separate from route eligibility; and
+- made no provider, acquisition, prompt, retrieval, Specialist-execution,
+  live-call, final-custody, UI, or conversation change.
 
 ## Approved Product Sequence
 
-After the active route-qualification repair, the approved checkpoints remain
-ordered as follows.
+After the completed route-qualification repair, the approved checkpoints remain
+ordered as follows. Provider Capability and Acquisition-Routing Proof is the
+sole active-next checkpoint.
 
-### Provider Capability and Acquisition-Routing Proof
+## Active Next: Provider Capability and Acquisition-Routing Proof
 
 This checkpoint will establish the bounded provider-capability and
 acquisition-routing facts required by later product work. It grants no live-call
