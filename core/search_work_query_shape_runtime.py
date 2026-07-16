@@ -207,6 +207,11 @@ _IMPERATIVE_SENTENCE_BOUNDARY_RE = re.compile(
     rf"(?:then\s+)?{_DIRECTIVE_VERB_PATTERN})\b)",
     flags=re.IGNORECASE,
 )
+_BOUNDED_CONTEXTUAL_PREAMBLE_RE = re.compile(
+    r"^for\s+the\s+fictional\s+"
+    r"[a-z0-9][a-z0-9 '&()/.,-]{0,160}:$",
+    flags=re.IGNORECASE,
+)
 
 
 class _StructuredRoutePosture(str, Enum):
@@ -426,6 +431,10 @@ def _assess_structured_multicomponent_shape(
     if numbered_matches and bullet_matches:
         return _ambiguous_structured_shape()
     if numbered_matches:
+        if not _is_bounded_contextual_preamble(
+            text[: numbered_matches[0].start()]
+        ):
+            return _ambiguous_structured_shape()
         numbers = tuple(int(match.group("number")) for match in numbered_matches)
         punctuation = {match.group("punct") for match in numbered_matches}
         if numbers != tuple(range(1, len(numbers) + 1)) or len(punctuation) != 1:
@@ -435,6 +444,10 @@ def _assess_structured_multicomponent_shape(
             syntax_family="numbered",
         )
     if bullet_matches:
+        if not _is_bounded_contextual_preamble(
+            text[: bullet_matches[0].start()]
+        ):
+            return _ambiguous_structured_shape()
         punctuation = {match.group("punct") for match in bullet_matches}
         if len(punctuation) != 1:
             return _ambiguous_structured_shape()
@@ -443,9 +456,12 @@ def _assess_structured_multicomponent_shape(
             syntax_family="bullet",
         )
 
-    imperative_items = _bounded_imperative_clause_items(text)
-    if imperative_items is None:
+    imperative_sequence = _bounded_imperative_clause_items(text)
+    if imperative_sequence is None:
         return _not_structured_shape()
+    imperative_preamble, imperative_items = imperative_sequence
+    if not _is_bounded_contextual_preamble(imperative_preamble):
+        return _ambiguous_structured_shape()
     return _assess_structured_item_sequence(
         imperative_items,
         syntax_family="imperative_clauses",
@@ -464,22 +480,26 @@ def _marked_items(
     )
 
 
-def _bounded_imperative_clause_items(text: str) -> tuple[str, ...] | None:
+def _bounded_imperative_clause_items(
+    text: str,
+) -> tuple[str, tuple[str, ...]] | None:
     starts_with_retrieval = re.match(
         rf"^{_RETRIEVAL_VERB_PATTERN}\b",
         text,
         flags=re.IGNORECASE,
     )
+    contextual_preamble = ""
     body = text
     if starts_with_retrieval is None:
-        preamble = re.search(
+        introducer = re.search(
             rf":\s+(?={_RETRIEVAL_VERB_PATTERN}\b)",
             text,
             flags=re.IGNORECASE,
         )
-        if preamble is None:
+        if introducer is None:
             return None
-        body = text[preamble.end() :]
+        contextual_preamble = text[: introducer.start() + 1]
+        body = text[introducer.end() :]
     if ";" in body:
         items = tuple(part.strip() for part in re.split(r"\s*;\s*", body))
     else:
@@ -488,7 +508,25 @@ def _bounded_imperative_clause_items(text: str) -> tuple[str, ...] | None:
         )
     if len(items) < 2:
         return None
-    return items
+    return contextual_preamble, items
+
+
+def _is_bounded_contextual_preamble(text: str) -> bool:
+    cleaned = _clean_text(text, limit=1000) or ""
+    if not cleaned:
+        return True
+    if len(cleaned) > 180:
+        return False
+    if _NUMBERED_MARKER_RE.search(cleaned) or _BULLET_MARKER_RE.search(cleaned):
+        return False
+    if re.search(
+        rf"\b(?:{_RETRIEVAL_VERB_PATTERN}|{_DIRECTIVE_VERB_PATTERN}|"
+        rf"{_INTERROGATIVE_VERB_PATTERN})\b",
+        cleaned,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    return bool(_BOUNDED_CONTEXTUAL_PREAMBLE_RE.fullmatch(cleaned))
 
 
 def _assess_structured_item_sequence(
@@ -619,7 +657,8 @@ def _directive_contains_following_component(text: str) -> bool:
     return bool(
         re.search(
             rf"(?:[.!?;]\s+|,\s*and\s+|\band\s+)"
-            rf"(?:then\s+)?{_RETRIEVAL_VERB_PATTERN}\b",
+            rf"(?:then\s+)?(?:{_RETRIEVAL_VERB_PATTERN}\b|"
+            rf"{_INTERROGATIVE_VERB_PATTERN}\b[^?]{{2,240}}\?)",
             text,
             flags=re.IGNORECASE,
         )

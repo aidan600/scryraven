@@ -13,6 +13,7 @@ import core.ordinary_semantic_producer_runtime as semantic_producer_runtime
 import core.pipeline_orchestrator as orchestrator
 from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
 from core.cost_accounting import CostAccumulator
+from core.multicomponent_role_runtime import ROLE_SYSTEM_PROMPTS
 from core.protocols import NullStatusWriter
 from tests.helpers.offline_ordinary_pipeline import (
     OfflineOrdinaryPipelineHarness,
@@ -36,6 +37,15 @@ AMBIGUOUS_NUMBERED_QUERY = """For the fictional Example Program:
 1. Find the base rebate amount.
 3. Find the application deadline.
 4. Compare them and explain the difference."""
+
+ACTIONABLE_PREFIX_QUERY = """Compare them first.
+1. Find the base rebate amount.
+2. Find the application deadline.
+3. Explain how they relate."""
+
+INTERROGATIVE_SMUGGLING_QUERY = """1. Find the base rebate amount.
+2. Find the application deadline.
+3. Compare them and what is the third official value?"""
 
 
 @pytest.fixture(autouse=True)
@@ -82,15 +92,7 @@ class _TimingHarness(OfflineOrdinaryPipelineHarness):
         ]
 
 
-@pytest.mark.parametrize(
-    ("case_id", "component_count", "query"),
-    [
-        ("one-component", 1, ONE_COMPONENT_QUERY),
-        ("six-components", 6, SIX_COMPONENT_QUERY),
-        ("ambiguous-numbering", 2, AMBIGUOUS_NUMBERED_QUERY),
-    ],
-)
-def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
+def _assert_nonqualifying_defers_direct_producer_until_post_review(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     case_id: str,
@@ -247,3 +249,55 @@ def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
     assert not multicomponent_runtime.ordinary_multicomponent_path_selected(kernel)
     assert kernel.state.multicomponent_scheduler_context == {}
     assert COMPONENT_WORK_GRAPH_V1_STAGE not in kernel.state.projections
+    assert not any(
+        call["system_prompt"] in ROLE_SYSTEM_PROMPTS.values()
+        for call in harness.model_calls
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_id", "component_count", "query"),
+    [
+        ("one-component", 1, ONE_COMPONENT_QUERY),
+        ("six-components", 6, SIX_COMPONENT_QUERY),
+        ("ambiguous-numbering", 2, AMBIGUOUS_NUMBERED_QUERY),
+    ],
+    ids=("one-component", "six-components", "ambiguous-numbering"),
+)
+def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case_id: str,
+    component_count: int,
+    query: str,
+) -> None:
+    _assert_nonqualifying_defers_direct_producer_until_post_review(
+        tmp_path,
+        monkeypatch,
+        case_id,
+        component_count,
+        query,
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_id", "query"),
+    [
+        ("actionable-prefix", ACTIONABLE_PREFIX_QUERY),
+        ("interrogative-smuggling", INTERROGATIVE_SMUGGLING_QUERY),
+    ],
+    ids=("actionable-prefix", "interrogative-smuggling"),
+)
+def test_structured_route_accounting_near_miss_uses_post_review_direct_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case_id: str,
+    query: str,
+) -> None:
+    _assert_nonqualifying_defers_direct_producer_until_post_review(
+        tmp_path,
+        monkeypatch,
+        case_id,
+        2,
+        query,
+    )

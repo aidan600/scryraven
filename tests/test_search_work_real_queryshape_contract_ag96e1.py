@@ -227,6 +227,133 @@ def _component_questions(payload: dict[str, Any]) -> list[str]:
     ]
 
 
+def _assert_no_structured_route_authority(query: str) -> None:
+    metadata = _assessment_payload(query)["metadata"]
+
+    assert metadata["structured_route_posture"] == AMBIGUOUS
+    assert metadata["explicit_factual_component_list"] is False
+    assert metadata["requested_synthesis_directive"] is None
+    assert metadata["route_qualification_behavior_changed"] is False
+    assert metadata["query_plan_behavior_changed"] is False
+    assert metadata["provider_search_behavior_changed"] is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        (
+            "Compare them first. 1. Find the first value. "
+            "2. Find the second value. 3. Explain how they relate."
+        ),
+        (
+            "Calculate these first: - Find the first value. "
+            "- Find the second value. - Explain the result."
+        ),
+        (
+            "Compare these values: Find the first value; "
+            "find the second value; then explain the result."
+        ),
+        (
+            "Find the governing context first. 1. Find the first value. "
+            "2. Find the second value. 3. Compare them."
+        ),
+        (
+            "What is the governing context? - Find the first value. "
+            "- Find the second value. - Compare them."
+        ),
+    ],
+    ids=(
+        "directive-before-numbered",
+        "directive-before-bullets",
+        "directive-before-colon-imperatives",
+        "retrieval-before-numbered",
+        "interrogative-before-bullets",
+    ),
+)
+def test_actionable_structured_prefix_cannot_be_discarded(query: str) -> None:
+    _assert_no_structured_route_authority(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        (
+            "1. Find the first value. 2. Find the second value. "
+            "3. Compare them and what is the third value?"
+        ),
+        (
+            "1. Find the first value. 2. Find the second value. "
+            "Compare them. Who publishes the governing rule?"
+        ),
+        (
+            "1. Find the first value. 2. Find the second value. "
+            "3. Explain how they relate; where is the third source?"
+        ),
+    ],
+    ids=("and-what", "sentence-who", "semicolon-where"),
+)
+def test_interrogative_component_cannot_be_hidden_in_directive(
+    query: str,
+) -> None:
+    _assert_no_structured_route_authority(query)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_syntax_kind"),
+    [
+        (
+            "For the fictional Northstar program: 1. Find the first value. "
+            "2. Find the second value. 3. Compare them.",
+            "numbered_imperative",
+        ),
+        (
+            "For the fictional Northstar program: - Find the first value. "
+            "- Find the second value. - Compare them.",
+            "bullet_imperative",
+        ),
+        (
+            "For the fictional Northstar program: Find the first value; "
+            "find the second value; then compare them.",
+            "imperative_clauses",
+        ),
+    ],
+    ids=("numbered", "bullets", "imperative-clauses"),
+)
+def test_benign_contextual_preamble_remains_qualified(
+    query: str,
+    expected_syntax_kind: str,
+) -> None:
+    metadata = _assessment_payload(query)["metadata"]
+
+    assert metadata["structured_route_posture"] == QUALIFIED
+    assert metadata["structured_route_syntax_kind"] == expected_syntax_kind
+    assert metadata["explicit_factual_component_list"] is True
+
+
+@pytest.mark.parametrize(
+    "directive",
+    [
+        "Compare them and explain what the difference means.",
+        (
+            "Compare them, calculate the difference, and convert both values "
+            "to USD."
+        ),
+    ],
+    ids=("explain-what", "calculate-and-convert"),
+)
+def test_legitimate_combined_directive_remains_complete(
+    directive: str,
+) -> None:
+    query = (
+        "1. Find the first value. 2. Find the second value. 3. "
+        f"{directive}"
+    )
+    metadata = _assessment_payload(query)["metadata"]
+
+    assert metadata["structured_route_posture"] == QUALIFIED
+    assert metadata["requested_synthesis_directive"] == directive
+
+
 @pytest.mark.parametrize(
     (
         "query",
