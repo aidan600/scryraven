@@ -43,7 +43,9 @@ ROLE_SYSTEM_PROMPTS = {
         "When this exact component claim materially depends on a supported "
         "deterministic calculation, you may add one sibling "
         "specialist_need_proposal conforming exactly to the supplied contract. "
-        "Copy its supplied fixed capability and schema values exactly, use only "
+        "Include the supplied specialist_need_proposal_v1 schema_version; do "
+        "not omit, default, alias, or add proposal fields. Copy all supplied "
+        "fixed capability and schema values exactly, use only "
         "source_local_key component_evidence and exact supplied "
         "source_numeric_literal text, and omit the proposal when the contract "
         "cannot be satisfied. Include "
@@ -75,7 +77,9 @@ ROLE_SYSTEM_PROMPTS = {
         "one top-level object containing synthesis_proposals and, only when needed, "
         "one sibling specialist_need_proposal conforming exactly to the supplied "
         "contract. The Specialist proposal is not nested inside a synthesis "
-        "proposal. Copy the supplied fixed capability and schema values exactly. "
+        "proposal. Include the supplied specialist_need_proposal_v1 "
+        "schema_version; do not omit, default, alias, or add proposal fields. "
+        "Copy all supplied fixed capability and schema values exactly. "
         "Each synthesis proposal has a "
         "local synthesis_key, claim_text, relationship_type, component_inputs, "
         "synthesis_inputs, caveats, nonclaims, and blockers. You may add one "
@@ -229,6 +233,8 @@ class SafeMulticomponentWorkerResult:
     provider: str
     model: str
     normalized_semantic_output: Mapping[str, Any] | None
+    specialist_need_proposal_present: bool
+    specialist_need_proposal_candidate: Mapping[str, Any] | None
     failure_kind: str | None
     transport_submitted: bool
     transport_started: bool
@@ -342,8 +348,23 @@ def _parse_role_output(
                 "semantic role output must be one JSON object"
             )
         parsed = dict(parsed_value)
-    reject_model_authority_claims(parsed)
+    ordinary_output = dict(parsed)
+    ordinary_output.pop("specialist_need_proposal", None)
+    reject_model_authority_claims(ordinary_output)
     return parsed
+
+
+def _specialist_need_candidate(
+    payload: Mapping[str, Any],
+) -> tuple[bool, dict[str, Any] | None]:
+    if "specialist_need_proposal" not in payload:
+        return False, None
+    candidate = payload.get("specialist_need_proposal")
+    if not isinstance(candidate, Mapping):
+        raise MulticomponentRoleRuntimeError(
+            "specialist_need_proposal must be one exact JSON mapping"
+        )
+    return True, deepcopy(dict(candidate))
 
 
 def _local_key(value: Any) -> str:
@@ -356,15 +377,9 @@ def _local_key(value: Any) -> str:
 def _with_specialist_need(
     normalized: dict[str, Any], payload: Mapping[str, Any]
 ) -> dict[str, Any]:
-    """Preserve one optional proposal-only Specialist need from role output."""
+    """Keep parsed proposal candidates out of retained role artifacts."""
 
-    if "specialist_need_proposal" not in payload:
-        return normalized
-    from core.specialist_graph_runtime import normalize_specialist_need_proposal
-
-    normalized["specialist_need_proposal"] = normalize_specialist_need_proposal(
-        _safe_mapping(payload.get("specialist_need_proposal"))
-    )
+    del payload
     return normalized
 
 
@@ -728,6 +743,10 @@ def prepare_multicomponent_transport_call(
     if (
         any(not inputs.get(key) for key in required)
         or inputs.get("input_packet_digest") != input_digest
+        or inputs.get("specialist_handoff_digest")
+        != _safe_mapping(safe_input.get("specialist_need_handoff")).get(
+            "handoff_digest"
+        )
         or int(inputs.get("batch_index") if inputs.get("batch_index") is not None else -1)
         < 0
     ):
@@ -808,6 +827,8 @@ def execute_prepared_multicomponent_transport(
         "usage_estimated": False,
     }
     result_provider = normalize_canonical_model_provider(prepared.provider)
+    specialist_candidate_present = False
+    specialist_candidate: dict[str, Any] | None = None
     try:
         system_prompt = (
             SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
@@ -843,12 +864,16 @@ def execute_prepared_multicomponent_transport(
             normalized = None
             failure_kind = "model_transport_failure"
         else:
+            parsed_output = _parse_role_output(
+                transport_result.output_text,
+                clean_json_response=prepared.clean_json_response,
+            )
+            specialist_candidate_present, specialist_candidate = (
+                _specialist_need_candidate(parsed_output)
+            )
             normalized = _normalize_semantic_output(
                 prepared.role,
-                _parse_role_output(
-                    transport_result.output_text,
-                    clean_json_response=prepared.clean_json_response,
-                ),
+                parsed_output,
                 output_schema_variant=prepared.output_schema_variant,
             )
             failure_kind = None
@@ -879,6 +904,8 @@ def execute_prepared_multicomponent_transport(
         provider=result_provider,
         model=prepared.model,
         normalized_semantic_output=normalized,
+        specialist_need_proposal_present=specialist_candidate_present,
+        specialist_need_proposal_candidate=specialist_candidate,
         failure_kind=failure_kind,
         transport_submitted=True,
         transport_started=True,
@@ -923,6 +950,8 @@ def failed_unstarted_multicomponent_worker_result(
         provider=normalize_canonical_model_provider(prepared.provider),
         model=prepared.model,
         normalized_semantic_output=None,
+        specialist_need_proposal_present=False,
+        specialist_need_proposal_candidate=None,
         failure_kind=str(failure_kind or "failed_submission")[:100],
         transport_submitted=transport_submitted,
         transport_started=transport_started,
@@ -1142,6 +1171,9 @@ def execute_multicomponent_role_call(
             "semantic role transport requires a strict one-shot SmartModel transport"
         )
     input_digest = _digest(safe_input)
+    specialist_handoff_digest = _safe_mapping(
+        safe_input.get("specialist_need_handoff")
+    ).get("handoff_digest")
     canonical_provider = normalize_canonical_model_provider(provider)
     from core.multicomponent_graph_scheduling import (
         LEASE_FAILED,
@@ -1163,6 +1195,7 @@ def execute_multicomponent_role_call(
             input_packet_digest=input_digest,
             logical_evaluation_key=logical_evaluation_key,
             output_schema_variant=schema_variant,
+            specialist_handoff_digest=specialist_handoff_digest,
         )
     else:
         if lease_id:
@@ -1173,6 +1206,7 @@ def execute_multicomponent_role_call(
             role=normalized_role,
             input_packet_digest=input_digest,
             logical_evaluation_key=logical_evaluation_key,
+            specialist_handoff_digest=specialist_handoff_digest,
         )
     system_prompt = (
         SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT

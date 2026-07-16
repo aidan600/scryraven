@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: ffd6796e37fac468c826afd29767aafe1e235f41
+Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -53,8 +53,8 @@ configuration.
 | `MC-P5A-STRICT-ONE-SHOT` | Provider-faithful transport is strict one-shot: at most one provider request per child, no SDK retry, and no endpoint, provider, or model fallback. Unsupported providers fail closed with zero requests. |
 | `MC-P5A-SAMPLING-COMPAT` | OpenRouter and Local chat transport internally own temperature `0.3`; OpenAI Responses omits temperature; caller-authored temperature is rejected. |
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
-| `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one typed Specialist need proposal. With an explicitly injected registry and policy, RunKernel-owned Scheduler V3 can execute at most one registered deterministic capability from a separate serial compatibility pool and route one unified result-or-disposition handoff through component or synthesis D-prime. Predispatch reconstruction failure refunds once and creates the failed handoff; optional work remains nonblocking and required work safely blocks. Closed defaults register and enable no product capability. |
-| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive one repository-owned model-visible proposal contract whose schema facts also drive validation, and may nominate exact source literals through repository-owned transient catalogs. Candidate-primary source posture fails closed unless currentness, class, tier, conflict, and lineage are explicitly acceptable; synthesis inherits that posture. The deterministic adapter preserves source-explicit inputs, two-hop synthesis lineage, canonical `result_unit`, precision, assumptions, caveats, and exact claim alignment before the applicable D-prime reviews and consumes the handoff. The contract and source material are not retained in canonical projections. One serial Specialist unit gives eligible component work priority before later synthesis work. |
+| `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
+| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
@@ -106,7 +106,10 @@ number invention, and acquisition remain unsupported.
 
 The model-visible quantitative proposal contract is versioned and digest-bound;
 the same declarative field, operator, and bound facts are consumed by runtime
-validation. Missing source posture is not treated favorably, and component
+validation before Specialist work creation. The parsed proposal must supply the
+exact generic instance schema and is retained only transiently; unknown fields,
+fixed-value drift, target/source mismatch, and malformed requests are not
+softened. Missing source posture is not treated favorably, and component
 admission cannot upgrade underlying evidence. Contract, full catalog, and source
 material retention remains closed outside the transient role/adapter scope.
 
@@ -162,6 +165,9 @@ offline-only, existing-candidate-query eligibility; `Fast` is recovery-closed in
 this phase; and `Deep` is recovery-closed pending a later explicit mode-policy
 decision. Unsupported modes resolve the same envelope shape with
 `mode_supported=false` and fail closed. No permanent mode budget was selected.
+This contained recovery posture was installed at
+`ffd6796e37fac468c826afd29767aafe1e235f41` and remains unchanged by the later
+Specialist proposal-admission repair.
 
 Every resolved envelope enters the same mode-neutral coordinator and recovery
 primitive. Closed Fast and Deep values return an unrecorded non-applicable
@@ -230,7 +236,8 @@ acquisition, or general quantitative reasoning.
 - No route-qualification repair was performed.
 - No acquisition-completeness repair was performed.
 - No provider or model changed.
-- No S1 proposal or invocation policy expanded.
+- No S1 capability, route eligibility, budget, scheduling order, recursion, or
+  parallelism expanded.
 - No new Specialist capability was added.
 - No hardened synthesis path was activated.
 - Broad live correctness, answer quality, and production stability remain

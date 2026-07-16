@@ -73,6 +73,7 @@ from core.specialist_graph_runtime import (
     PROPOSAL_DENIED_POLICY,
     PROPOSAL_REJECTED,
     PROPOSAL_UNSUPPORTED_TARGET,
+    SPECIALIST_NEED_SCHEMA_VERSION,
     SPECIALIST_WORK_PLANE_STAGE,
     SpecialistCapabilityRegistry,
     SpecialistCapabilitySpec,
@@ -130,6 +131,7 @@ class SpecialistNorthstarHarness(NorthstarHarness):
     @staticmethod
     def _proposal(*, target_kind: str, target_key: str, hint: str, posture: str, requirement: str) -> dict[str, Any]:
         return {
+            "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
             "local_need_id": "need-one",
             "capability_requirement": requirement,
             "candidate_capability_hint": hint,
@@ -812,11 +814,13 @@ def test_cross_component_unknown_target_is_typed_rejected_and_optional(
             specialist_work_item_limit=1,
         ),
     )
-    proposal = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["proposals"][0]
+    plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     assert outcome.report == NORTHSTAR_REPORT
-    assert proposal["proposal_authority"] == PROPOSAL_UNSUPPORTED_TARGET
-    assert proposal["rejection_reason"] == (
-        "proposal_target_does_not_match_canonical_origin_target"
+    assert plane["proposals"] == []
+    assert plane["proposal_dispositions"] == []
+    assert plane["need_handoffs"] == []
+    assert plane["proposal_rejections"][0]["rejection_category"] == (
+        "proposal_target_mismatch"
     )
     assert calls == []
 
@@ -934,6 +938,175 @@ def test_registry_resolution_ignores_hint_and_rejects_unknown_or_incompatible() 
     assert bind_specialist_need_proposal(proposal=incompatible, **common)[
         "proposal_authority"
     ] == PROPOSAL_REJECTED
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing_schema",
+        "stale_schema",
+        "non_string_schema",
+        "unknown_field",
+        "unknown_target_field",
+        "top_level_target_aliases",
+        "forbidden_nested_authority",
+        "forbidden_raw_material",
+        "missing_recursion_depth",
+        "missing_specialist_parent_ref",
+        "missing_posture",
+    ),
+)
+def test_generic_proposal_candidate_is_not_softened_into_validity(
+    mutation: str,
+) -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    if mutation == "missing_schema":
+        proposal.pop("schema_version")
+    elif mutation == "stale_schema":
+        proposal["schema_version"] = "specialist_need_proposal_v0"
+    elif mutation == "non_string_schema":
+        proposal["schema_version"] = 1
+    elif mutation == "unknown_field":
+        proposal["unknown_proposal_field"] = "must not be discarded"
+    elif mutation == "unknown_target_field":
+        proposal["target"]["target_revision"] = "1"
+    elif mutation == "top_level_target_aliases":
+        proposal["target_kind"] = proposal["target"]["target_kind"]
+        proposal["target_key"] = proposal["target"]["target_key"]
+        proposal.pop("target")
+    elif mutation == "forbidden_nested_authority":
+        proposal["capability_request"] = {"graph_ref": {"graph_id": "forbidden"}}
+    elif mutation == "forbidden_raw_material":
+        proposal["raw_model_response"] = "must never be retained"
+    elif mutation == "missing_recursion_depth":
+        proposal.pop("recursion_depth")
+    elif mutation == "missing_specialist_parent_ref":
+        proposal.pop("specialist_parent_ref")
+    elif mutation == "missing_posture":
+        proposal.pop("posture")
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+@pytest.mark.parametrize(
+    "authority_key",
+    (
+        "action_id",
+        "observation_id",
+        "run_id",
+        "request_id",
+        "proposal_id",
+        "validation_id",
+        "challenge_id",
+        "component_id",
+        "edge_id",
+        "graph_id",
+        "node_id",
+        "node_revision",
+        "graph_revision",
+        "revision",
+        "canonical_state",
+        "admission_status",
+        "runkernel_action",
+        "runkernel_observation",
+        "final_answer_packet",
+        "fap_authority",
+        "author_authority",
+        "proposal_digest",
+        "Proposal-Digest",
+        "runkernel_shadow",
+    ),
+)
+def test_generic_proposal_rejects_authority_anywhere_in_input_refs(
+    authority_key: str,
+) -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    proposal["input_artifact_refs"] = [
+        {"nested": {"deeper": {authority_key: "model-authored"}}}
+    ]
+
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+def test_generic_proposal_rejects_input_ref_depth_instead_of_softening() -> None:
+    nested: dict[str, Any] = {"local_artifact_key": "source_a"}
+    for _ in range(14):
+        nested = {"nested": nested}
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    proposal["input_artifact_refs"] = [nested]
+
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+@pytest.mark.parametrize(
+    "input_ref",
+    (
+        {"nested": {1: "coerced-key"}},
+        {"nested": {"": "empty-key"}},
+        {"nested": {f"key_{index}": "value" for index in range(65)}},
+        {"nested": ["value"] * 65},
+        {"nested": "x" * 1001},
+        {f"field_{index}": "x" * 1000 for index in range(17)},
+        {"nested": float("nan")},
+        {"nested": b"binary"},
+        {"nested": lambda: None},
+        {"nested": object()},
+    ),
+)
+def test_generic_proposal_rejects_nonexact_or_unbounded_input_refs(
+    input_ref: dict[Any, Any],
+) -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    proposal["input_artifact_refs"] = [input_ref]
+
+    with pytest.raises(SpecialistGraphRuntimeError):
+        normalize_specialist_need_proposal(proposal)
+
+
+def test_generic_proposal_preserves_safe_local_input_ref_exactly() -> None:
+    proposal = SpecialistNorthstarHarness._proposal(
+        target_kind="component",
+        target_key="component-one",
+        hint="test.specialist.alpha",
+        posture="optional",
+        requirement=REQUIREMENT,
+    )
+    safe_ref = {
+        "local_artifact_key": "source_a",
+        "artifact_kind": "bounded_local_input",
+    }
+    proposal["input_artifact_refs"] = [safe_ref]
+
+    validated = normalize_specialist_need_proposal(proposal)
+
+    assert validated == proposal
+    assert validated["input_artifact_refs"] == [safe_ref]
 
 
 def test_registry_and_policy_are_closed_by_default_and_calculator_is_absent() -> None:
@@ -1156,17 +1329,26 @@ def test_optional_capability_and_target_denials_are_visible_to_component_dprime(
     plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     assert outcome.report == NORTHSTAR_REPORT
     assert calls == []
-    assert plane["proposals"][0]["proposal_authority"] == expected_authority
-    assert (
-        plane["proposal_dispositions"][0]["execution_availability_posture"]
-        == expected_availability
-    )
-    assert (
-        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
-            "availability_posture"
-        ]
-        == expected_availability
-    )
+    if denial == "target":
+        assert plane["proposals"] == []
+        assert plane["proposal_dispositions"] == []
+        assert plane["need_handoffs"] == []
+        assert plane["proposal_rejections"][0]["rejection_category"] == (
+            "proposal_target_mismatch"
+        )
+        assert not harness.specialist_dprime_inputs
+    else:
+        assert plane["proposals"][0]["proposal_authority"] == expected_authority
+        assert (
+            plane["proposal_dispositions"][0]["execution_availability_posture"]
+            == expected_availability
+        )
+        assert (
+            harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+                "availability_posture"
+            ]
+            == expected_availability
+        )
 
 
 def _terminal_registry(

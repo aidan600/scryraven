@@ -5,7 +5,7 @@ Authority: canonical:quantitative-specialist-product-activation
 Default-read: no
 Applies-to: ordinary source-bound calculator capability, model-visible proposal contract, transient numeric source catalogs, evidence-quality projection, literal binding, numeric provenance, product registry/policy, claim alignment, and D-prime handoff
 Does-not-authorize: search, acquisition, provider/model calls, estimates, arbitrary formulas, recursion, parallelism, direct admission, FAP, Author, or live validation
-Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
+Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: merged change to the ordinary quantitative Specialist proposal contract, evidence bridge, source catalogs, parser, product composition, or validator handoff
 
 Installed runtime class: quantitative-specialist-product-activation-s1
@@ -51,8 +51,11 @@ branch.
 ## Model-Visible Proposal Contract
 
 Repository code owns one declarative proposal contract with schema version
-`quantitative_specialist_proposal_contract.v1` and contract digest
-`b69fead70bd52a48d833a54e925132c4a9b251be81760cda952aaadc70a873be`.
+`quantitative_specialist_proposal_contract.v2` and contract digest
+`294bc7e9b7f658c07e02ee05f7beddbfffc96cf08733eb1fae4e98485e813900`.
+Each model-produced proposal instance must separately carry generic instance
+schema `specialist_need_proposal_v1`; the two schema versions are not
+interchangeable.
 The same declarative facts build the model-visible contract and drive runtime
 proposal/request validation: allowed, required, optional, fixed, and prohibited
 fields; operand fields; all eight operator/role policies; numeric-literal and
@@ -60,12 +63,27 @@ generic request bounds; and noncommutative role semantics. Contract drift,
 instance-digest drift, stale fixed values, extra fields, or unsupported roles
 fail closed.
 
-The fixed proposal facts are requirement
+The exact proposal field sets are:
+
+- allowed: `schema_version`, `local_need_id`, `capability_requirement`,
+  `candidate_capability_hint`, `bounded_question`, `target`, `posture`,
+  `input_schema_ref`, `expected_output_schema_ref`, `input_artifact_refs`,
+  `assumptions`, `caveats`, `nonclaims`, `advisory_budget_posture`,
+  `recursion_depth`, `specialist_parent_ref`, `capability_request`;
+- required: `schema_version`, `local_need_id`, `capability_requirement`,
+  `candidate_capability_hint`, `bounded_question`, `target`, `posture`,
+  `input_schema_ref`, `expected_output_schema_ref`, `recursion_depth`,
+  `specialist_parent_ref`, `capability_request`;
+- optional: `input_artifact_refs`, `assumptions`, `caveats`, `nonclaims`,
+  `advisory_budget_posture`.
+
+The fixed proposal facts are schema `specialist_need_proposal_v1`, requirement
 `source_bound_quantitative_calculation`, capability hint
 `specialist.source_bound_calculation`, input schema
 `specialist.source_bound_calculation.request.v1`, output schema
 `specialist.source_bound_calculation.result.v1`, recursion depth `0`, and null
-Specialist parent. Component Analyst receives the contract at the top level of
+Specialist parent. For S1 the capability hint is required and exact, not
+advisory. Component Analyst receives the contract at the top level of
 its ordinary input packet, bound to the exact component target and sole
 `component_evidence` alias. It may return at most one sibling
 `specialist_need_proposal` alongside the ordinary component fields.
@@ -80,6 +98,44 @@ surfaces. Component D-prime receives the exact ordinary component input without
 it; synthesis D-prime, selective Cross-Component Analyst, Scrutineer, and
 nonqualifying paths do not receive it. Those exclusions preserve role and
 product boundaries rather than creating another proposal authority.
+
+## Exact Proposal Admission
+
+The exact candidate is preserved transiently from the parsed role response and
+is not read back from a normalized semantic artifact. Before RunKernel may
+create work, the ordinary product path independently reproduces the current
+role input from runtime authority, checks the completed role artifact and its
+input digest, validates the current contract schema, contract digest, and exact
+instance digest, and then applies the executable S1 proposal and request
+validators.
+
+For a component proposal, the exact target must equal the current accepted
+component, the contract target, and the current Component Analyst input; every
+operand alias must be `component_evidence`. For a synthesis proposal, the key
+must be unique in the same Cross-Component Analyst artifact, the graph node must
+have been created from that artifact at the current revision, and every operand
+alias must be in that exact artifact's current `component_01`, `component_02`,
+... catalog. Missing, stale, extra, cross-artifact, target-mismatched, or unknown
+aliases fail before work creation.
+
+Capability-request validation now occurs at admission as well as at execution.
+Admission validates request/operator kind, exact request/operand/claim-binding
+field sets, bounds, operand count and roles, local-key uniqueness, occurrence
+and pair-key rules, and forbidden formula/code/authority/URL/path/provider/
+search/prompt/response material. Execution still exclusively owns numeric
+parsing, literal occurrence in reconstructed source material, source-quality
+sufficiency, two-hop evidence matching, calculation, unit derivation, and
+claim-value alignment.
+
+An invalid candidate produces only a bounded RunKernel rejection receipt and no
+accepted proposal, Specialist-ready work, budget spend, lease, batch, dispatch,
+adapter call, result, handoff, or Specialist-derived downstream authority. A
+required invalid proposal blocks its dependent claim and cannot reach FAP or
+Author as supported. An optional invalid proposal contributes zero authority;
+independently supported ordinary claims may continue, while a calculation-
+dependent claim still fails ordinary D-prime/readiness without the missing
+result. Valid component and synthesis proposals retain the existing one-unit,
+serial execution and D-prime handoff behavior.
 
 ## Source Catalogs And Literal Binding
 

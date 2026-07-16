@@ -67,9 +67,10 @@ QUANT_LINEAGE_RUNTIME_SHA = (
     "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = (
-    "ffd6796e37fac468c826afd29767aafe1e235f41"  # pragma: allowlist secret
+    "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
 )
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
+SPECIALIST_ADMISSION_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = (
     "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
 )
@@ -85,9 +86,9 @@ RUNTIME_SHA_BY_CONCERN = {
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
     "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:bounded-multicomponent-runtime": QUANT_FINALIZATION_RUNTIME_SHA,
-    "canonical:specialist-graph-substrate": S1_RUNTIME_SHA,
+    "canonical:specialist-graph-substrate": SPECIALIST_ADMISSION_RUNTIME_SHA,
     "canonical:quantitative-specialist-product-activation": (
-        QUANT_LINEAGE_RUNTIME_SHA
+        SPECIALIST_ADMISSION_RUNTIME_SHA
     ),
     "canonical:quantitative-finalization-containment": (
         QUANT_CONTAINMENT_RUNTIME_SHA
@@ -271,13 +272,17 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             assert phrase in text
 
     for phrase in (
-        "No S1 proposal or invocation policy expanded.",
         "No new Specialist capability was added.",
         "Broad live correctness, answer quality, and production stability remain unproved.",
         "Ordinary synthesis-origin S1 authority remains owned by the ordinary ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.",
     ):
         assert phrase in containment
         assert phrase in current
+    assert "No S1 proposal or invocation policy expanded." in containment
+    assert (
+        "No S1 capability, route eligibility, budget, scheduling order, recursion, or parallelism expanded."
+        in current
+    )
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -292,7 +297,10 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     strangler = _collapsed(ORCHESTRATOR_STRANGLER)
 
     for text in (current, roadmap, strangler):
-        assert CURRENT_STATE_RUNTIME_SHA in text
+        assert (
+            "ffd6796e37fac468c826afd29767aafe1e235f41"  # pragma: allowlist secret
+            in text
+        )
         assert "mode-policy envelope" in text
         assert "temporary compatibility values" in text
         assert "Balanced" in text
@@ -341,10 +349,8 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
         assert phrase in strangler
 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
-    assert (
-        "Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
-        in roadmap
-    )
+    assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
+    assert "Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -370,10 +376,10 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Repair: Mode-Policy Recovery Authority Containment"
     )
     proposal = roadmap.index(
-        "## Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
+        "## Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
     )
     structured_route = roadmap.index(
-        "### Structured-List Route Qualification Repair"
+        "## Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01"
     )
     provider = roadmap.index("### Provider Capability and Acquisition-Routing Proof")
     convergence = roadmap.index("### Bounded Final-Custody Convergence")
@@ -447,10 +453,8 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Remediation: Legacy Economist Ordinary-Execution Retirement" in roadmap
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
-    assert (
-        "Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
-        in roadmap
-    )
+    assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
+    assert "Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
@@ -478,7 +482,11 @@ def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries(
         "two-hop proof",
         "component calculation priority before a later synthesis calculation",
         "legacy RunKernel calculation reducer remains compatibility support only",
-        "quantitative_specialist_proposal_contract.v1",
+        "quantitative_specialist_proposal_contract.v2",
+        "specialist_need_proposal_v1",
+        "Capability-request validation now occurs at admission",
+        "required invalid proposal blocks its dependent claim",
+        "optional invalid proposal contributes zero authority",
         "The same declarative facts build the model-visible contract and drive runtime proposal/request validation",
         "structured candidate record as primary and passage metadata as an exact fallback",
         "Missing facts remain `unknown`",

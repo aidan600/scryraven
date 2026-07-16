@@ -5,7 +5,7 @@ Authority: canonical:specialist-graph-substrate
 Default-read: no
 Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
 Does-not-authorize: additional product capabilities, calculator scope expansion, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
 
 ## Responsibility
@@ -29,8 +29,10 @@ D-prime input. It does not make a Specialist result admitted truth.
 The installed sequence is:
 
 ```text
-role artifact with optional Specialist need proposal
--> RunKernel proposal normalization and current-target binding
+exact parsed Specialist proposal candidate from one role response
+-> generic schema/envelope/safety validation
+-> capability-specific exact contract-instance validation when installed
+-> RunKernel current artifact, input, target, registry, and policy binding
 -> registry resolution plus execution-policy decision
 -> Scheduler V3 Specialist lease in a separate compatibility pool
 -> either one registered deterministic capability execution or a typed nonexecution disposition
@@ -40,8 +42,15 @@ role artifact with optional Specialist need proposal
 ```
 
 Component Analyst, Cross-Component Analyst, and full Scrutineer may emit the
-same optional proposal shape. A proposal names a bounded question, capability
-requirement, optional capability hint, exact target, input/output schema refs,
+same optional proposal shape. The nested mapping is candidate JSON only, not
+work authority, and must explicitly carry
+`schema_version: specialist_need_proposal_v1`. Generic S0 requires the exact
+supported version and exact generic envelope, including a target containing
+only `target_kind` and `target_key`; unknown fields and top-level target aliases
+are rejected rather than discarded. No version, target, posture, recursion
+depth, or parent value is synthesized or defaulted. A proposal names a bounded
+question, capability requirement, optional capability hint, exact target,
+input/output schema refs,
 input artifact refs, assumptions, caveats, nonclaims, advisory budget posture,
 and a nonrecursive parent posture. An optional capability-generic
 `capability_request` is canonical-JSON bounded to 16 KiB, depth 6, 64 mapping
@@ -49,10 +58,16 @@ keys, 64 list items, and 1,000 characters per string. It rejects raw/private
 material, provider/model/search/retrieval fields, executable expressions, and
 caller-authored graph, lease, admission, FAP, or Author authority.
 
-RunKernel binds the proposal to the originating completed role action and
-artifact, current AnswerContract, current component or graph target revision,
-registry digest, and execution-policy digest. Caller-supplied authority cannot
-replace these canonical bindings.
+The parser preserves the exact candidate only in transient worker/driver scope;
+it is omitted from the retained semantic-role artifact. Generic S0 owns schema,
+envelope, bounded JSON, raw/private-material rejection, and authority
+exclusions. An installed capability owner may then require a stricter exact
+proposal instance without moving its operator or source semantics into S0.
+RunKernel alone admits the validated proposal, binding it to the originating
+completed role action and artifact, exact input digest, current AnswerContract,
+current component or graph target revision, registry digest, and
+execution-policy digest. Caller-supplied authority cannot replace these
+canonical bindings.
 
 ## Registry And Execution Policy
 
@@ -109,7 +124,19 @@ completion postures remain RunKernel-governed and terminally accounted.
 
 ## Disposition, Result, And Validator Lifecycle
 
-Every terminal proposal receives an immutable sibling disposition. The
+An invalid candidate is never appended as a proposal and receives no work node,
+ready work, lease, batch, dispatch, adapter invocation, result, or D-prime
+handoff. RunKernel retains only a bounded rejection receipt containing safe
+schema posture, required/optional or unclassified fail-closed posture, a safe
+local target when valid, one rejection category, and authorized contract digest
+refs. The malformed candidate and malformed values are not retained. Required
+rejections block dependent work through the existing scheduler terminal;
+optional rejections contribute no authority and allow only independently
+supported ordinary work to continue. Missing or invalid posture is not inferred
+as optional.
+
+Every admitted, policy-denied, capability-denied, or target-denied proposal
+receives an immutable sibling disposition. The
 disposition preserves the original proposal digest, origin and exact target,
 required/optional posture, capability and policy resolution, availability,
 assumptions, caveats, nonclaims, and any typed nonexecution reason. Availability
@@ -178,8 +205,13 @@ Capability adapters stay in injected runtime scope and are not serialized into
 RunKernel state.
 
 The S1 model-visible proposal contract, complete source catalogs, source
-material, and full evidence candidate records follow the same nonretention
-boundary. Bounded retained refs may preserve only the safe identity and source-
+material, exact parsed candidate, and full evidence candidate records follow
+the same nonretention boundary. After scheduler-driven semantic work becomes
+terminal, the in-memory exact role-packet context is released and only already
+authorized packet, registry, and policy digests remain. Delayed D-prime
+consumption re-proves the current completed action/artifact, target, exact input
+digest, and safe handoff digest without retaining the source-bearing role
+packet. Bounded retained refs may preserve only the safe identity and source-
 posture facts needed for exact result validation.
 
 The ordinary Cross graph boundary applies unconditional input reproof before

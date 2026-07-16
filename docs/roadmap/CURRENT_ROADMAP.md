@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: ffd6796e37fac468c826afd29767aafe1e235f41
+Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -101,31 +101,38 @@ No permanent mode budget was selected. No live recovery, provider, model,
 query-generation, route, Specialist, citation, FAP-schema, Author-policy,
 persistence, or UI capability changed.
 
-## Active Next: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01
+## Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01
 
-The single active-next checkpoint is Specialist Proposal-Instance Admission
-Hardening. It must enforce the current proposal contract at the actual admission
-boundary without expanding Specialist capability or route eligibility, and it
-must not infer provider, model, search, retrieval, live-call, final-custody, UI,
-or conversation authority from this roadmap entry.
+Specialist Proposal-Instance Admission Hardening completed at
+`d5c5aef53e64ac072cc422767be76e02355b2847`. The installed ordinary S1 path now
+preserves exact parsed candidates transiently, enforces the current generic and
+quantitative contract instances at the actual RunKernel admission boundary,
+and rejects malformed candidates before Specialist work or downstream derived
+authority.
 
-This checkpoint will:
+The repair:
 
-- enforce required fields;
-- reject unsupported schema versions;
-- reject unknown fields where the contract is exact;
-- validate actual model-produced proposal JSON through the real admission
-  boundary; and
-- align canonical result-unit vocabulary.
+- enforces required fields;
+- rejects unsupported schema versions;
+- rejects unknown fields where the contract is exact;
+- validates actual model-produced proposal JSON through the real admission
+  boundary;
+- preserves required-invalid blocking and optional-invalid independent-only
+  continuation; and
+- confirms canonical `result_unit` with unchanged narrow legacy `unit`
+  compatibility.
 
-It must not expand Specialist capability or route eligibility.
+It did not expand Specialist capability, route eligibility, budget,
+parallelism, recursion, provider/model selection, retrieval, arithmetic,
+D-prime standards, FAP, Author, citation, persistence, conversation, UI, or
+live-call authority.
 
-## Approved Product Sequence
+## Active Next: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01
 
-After Specialist Proposal-Instance Admission Hardening, the approved checkpoints
-remain ordered as follows.
-
-### Structured-List Route Qualification Repair
+The sole active-next checkpoint is Structured-List Route Qualification Repair.
+It must remain within route qualification and must not infer provider, model,
+search, retrieval, Specialist-execution, live-call, final-custody, UI, or
+conversation authority from this roadmap entry.
 
 This checkpoint will:
 
@@ -135,6 +142,11 @@ This checkpoint will:
 - keep nonqualifying requests direct.
 
 It must not alter providers, acquisition, prompts, or Specialist execution.
+
+## Approved Product Sequence
+
+After the active route-qualification repair, the approved checkpoints remain
+ordered as follows.
 
 ### Provider Capability and Acquisition-Routing Proof
 

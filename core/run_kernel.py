@@ -3686,32 +3686,35 @@ class RunKernel:
         self,
         *,
         role_artifact: Mapping[str, Any],
+        proposal_candidate: Mapping[str, Any],
+        role_input_packet: Mapping[str, Any],
         canonical_target_ref: Mapping[str, Any],
         specialist_capability_registry: Any,
         specialist_execution_policy: Any,
         scrutineer_leaf_target_authorized: bool = False,
     ) -> dict[str, Any]:
-        """Bind one optional role proposal without delegating authority to it."""
+        """Validate and admit or reject one transient exact role proposal."""
 
         from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
         from core.multicomponent_role_runtime import (
+            ROLE_COMPONENT_ANALYST,
+            ROLE_CROSS_COMPONENT_ANALYST,
             role_artifact_ref,
+            safe_packet_digest,
             validate_multicomponent_role_artifact,
         )
         from core.specialist_graph_runtime import (
             SpecialistCapabilityRegistry,
             SpecialistExecutionPolicy,
+            SpecialistProposalCandidateError,
             bind_specialist_need_proposal,
+            build_specialist_proposal_rejection,
+            validate_specialist_need_proposal_candidate,
         )
 
         artifact = validate_multicomponent_role_artifact(role_artifact)
-        proposal = _safe_mapping(
-            _safe_mapping(artifact.get("semantic_output")).get(
-                "specialist_need_proposal"
-            )
-        )
-        if not proposal:
-            return {}
+        candidate = deepcopy(dict(proposal_candidate))
+        transient_input = deepcopy(dict(role_input_packet))
         if not isinstance(
             specialist_capability_registry, SpecialistCapabilityRegistry
         ) or not isinstance(specialist_execution_policy, SpecialistExecutionPolicy):
@@ -3735,10 +3738,21 @@ class RunKernel:
             self.state.current_answer_contract or self.state.initial_answer_contract
         )
         contract_ref = {
+            "owner": contract.get("owner"),
+            "canonical_state": contract.get("canonical_state") is True,
             "run_id": self.state.run_id,
             "request_id": self.state.request_id,
             "accepted_contract_version": contract.get("accepted_contract_version"),
             "accepted_contract_digest": contract.get("accepted_contract_digest"),
+            "parent_question_meaning_record_id": contract.get(
+                "parent_question_meaning_record_id"
+            ),
+            "parent_question_meaning_record_digest": contract.get(
+                "parent_question_meaning_record_digest"
+            ),
+            "accepted_answer_component_count": contract.get(
+                "accepted_answer_component_count"
+            ),
         }
         graph = _safe_mapping(
             self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
@@ -3752,6 +3766,228 @@ class RunKernel:
             if graph
             else {}
         )
+        quantitative_contract: dict[str, Any] = {}
+        quantitative_schema_version: str | None = None
+        quantitative_contract_digest: str | None = None
+        quantitative_instance_digest: str | None = None
+        rejection_category: str | None = None
+        try:
+            proposal = validate_specialist_need_proposal_candidate(candidate)
+            target = _safe_mapping(proposal.get("target"))
+            canonical_target = _safe_mapping(canonical_target_ref)
+            if (
+                target.get("target_kind") != canonical_target.get("target_kind")
+                or target.get("target_key") != canonical_target.get("target_key")
+            ):
+                raise SpecialistProposalCandidateError(
+                    "proposal_target_mismatch",
+                    "Specialist proposal target does not match current authority",
+                )
+            action_ref = _safe_mapping(artifact.get("authorized_action_ref"))
+            current_artifact = _safe_mapping(
+                self.state.projections.get(str(action_ref.get("stage") or ""))
+            )
+            if (
+                current_artifact != artifact
+                or artifact.get("input_packet_digest")
+                != safe_packet_digest(transient_input)
+            ):
+                raise SpecialistProposalCandidateError(
+                    "proposal_context_binding_mismatch",
+                    "Specialist proposal role artifact or input is not current",
+                )
+            descriptors = registry_projection.get("capability_descriptors") or ()
+            from core.quantitative_specialist_product_activation import (
+                QUANTITATIVE_CAPABILITY_ID,
+                QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST,
+                QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION,
+                validate_quantitative_specialist_proposal_contract,
+                validate_quantitative_specialist_proposal_instance,
+            )
+
+            quantitative_installed = any(
+                _safe_mapping(item).get("capability_id")
+                == QUANTITATIVE_CAPABILITY_ID
+                for item in descriptors
+            )
+            if quantitative_installed:
+                quantitative_schema_version = (
+                    QUANTITATIVE_PROPOSAL_CONTRACT_SCHEMA_VERSION
+                )
+                quantitative_contract_digest = (
+                    QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST
+                )
+                role = str(artifact.get("role") or "")
+                context_packets = _safe_mapping(
+                    context.get("component_analyst_input_packets")
+                )
+                if role == ROLE_COMPONENT_ANALYST:
+                    from core.multicomponent_component_admission import (
+                        component_analyst_input_packet,
+                    )
+
+                    component_id = str(canonical_target.get("target_key") or "")
+                    component_ref = next(
+                        (
+                            _safe_mapping(item)
+                            for item in contract.get(
+                                "accepted_answer_component_refs"
+                            )
+                            or ()
+                            if _safe_mapping(item).get("component_id")
+                            == component_id
+                        ),
+                        {},
+                    )
+                    rebuilt_input = component_analyst_input_packet(
+                        run_id=self.state.run_id,
+                        request_id=self.state.request_id,
+                        accepted_contract=contract,
+                        component_ref=component_ref,
+                        evidence_input=_safe_mapping(
+                            transient_input.get("component_evidence")
+                        ),
+                    )
+                    if (
+                        not component_ref
+                        or transient_input != rebuilt_input
+                        or transient_input
+                        != _safe_mapping(context_packets.get(component_id))
+                        or canonical_target.get("target_revision")
+                        != component_ref.get("component_revision")
+                        or canonical_target.get("target_digest")
+                        != component_ref.get("component_digest")
+                    ):
+                        raise SpecialistProposalCandidateError(
+                            "proposal_context_binding_mismatch",
+                            "component proposal input does not match current authority",
+                        )
+                    same_artifact_synthesis_keys: tuple[str, ...] = ()
+                elif role == ROLE_CROSS_COMPONENT_ANALYST:
+                    from core.component_work_graph_v1 import (
+                        cross_component_input_packet,
+                    )
+
+                    rebuilt_input = cross_component_input_packet(
+                        component_nodes=graph.get("component_nodes") or (),
+                        accepted_contract_ref=contract_ref,
+                        requested_synthesis_directive=str(
+                            transient_input.get("requested_synthesis_directive")
+                            or ""
+                        ),
+                        component_analyst_input_packets=context_packets,
+                    )
+                    same_artifact_synthesis_keys = tuple(
+                        str(_safe_mapping(item).get("synthesis_key") or "")
+                        for item in _safe_mapping(
+                            artifact.get("semantic_output")
+                        ).get("synthesis_proposals")
+                        or ()
+                    )
+                    target_node = next(
+                        (
+                            _safe_mapping(item)
+                            for item in graph.get("synthesis_nodes") or ()
+                            if _safe_mapping(item).get("synthesis_key")
+                            == canonical_target.get("target_key")
+                        ),
+                        {},
+                    )
+                    graph_cross_ref = _safe_mapping(
+                        _safe_mapping(target_node.get("proposal_ref")).get(
+                            "cross_component_analyst_ref"
+                        )
+                    )
+                    if (
+                        not graph
+                        or transient_input != rebuilt_input
+                        or graph_cross_ref != role_artifact_ref(artifact)
+                        or not target_node
+                        or canonical_target.get("target_revision")
+                        != target_node.get("node_revision")
+                        or canonical_target.get("target_digest")
+                        != target_node.get("node_digest")
+                    ):
+                        raise SpecialistProposalCandidateError(
+                            "proposal_context_binding_mismatch",
+                            "synthesis proposal input does not match current authority",
+                        )
+                else:
+                    raise SpecialistProposalCandidateError(
+                        "proposal_context_binding_mismatch",
+                        "quantitative proposal origin role is unsupported",
+                    )
+                quantitative_contract = (
+                    validate_quantitative_specialist_proposal_contract(
+                        _safe_mapping(
+                            transient_input.get(
+                                "quantitative_specialist_proposal_contract"
+                            )
+                        )
+                    )
+                )
+                quantitative_instance_digest = str(
+                    quantitative_contract.get("instance_digest") or ""
+                )
+                proposal = validate_quantitative_specialist_proposal_instance(
+                    proposal,
+                    proposal_contract=quantitative_contract,
+                    canonical_target_ref=canonical_target,
+                    same_artifact_synthesis_keys=same_artifact_synthesis_keys,
+                )
+        except SpecialistProposalCandidateError as exc:
+            rejection_category = exc.rejection_category
+        except Exception as exc:
+            from core.quantitative_specialist_product_activation import (
+                QuantitativeSpecialistProductError,
+            )
+
+            rejection_category = (
+                exc.blocker_kind
+                if isinstance(exc, QuantitativeSpecialistProductError)
+                else "proposal_context_binding_mismatch"
+            )
+
+        if rejection_category:
+            rejection = build_specialist_proposal_rejection(
+                proposal_candidate=candidate,
+                rejection_category=rejection_category,
+                quantitative_contract_schema_version=(
+                    quantitative_schema_version
+                ),
+                quantitative_contract_digest=quantitative_contract_digest,
+                quantitative_contract_instance_digest=(
+                    quantitative_instance_digest
+                ),
+            )
+            action = self.authorize(
+                stage=f"specialist_proposal_rejection:{rejection['rejection_id']}",
+                action_type=ActionType.SPECIALIST_PROPOSAL_BIND,
+                reason="runkernel_reject_specialist_need_proposal_candidate",
+                inputs={
+                    "proposal_binding_kind": "rejected_candidate",
+                    "rejection_id": rejection["rejection_id"],
+                    "rejection_digest": rejection["rejection_digest"],
+                    "origin_action_id": _safe_mapping(
+                        artifact.get("authorized_action_ref")
+                    ).get("action_id"),
+                    "registry_digest": registry_projection["registry_digest"],
+                    "execution_policy_digest": policy_projection[
+                        "execution_policy_digest"
+                    ],
+                },
+                expected_observation_type=ObservationType.SPECIALIST_PROPOSAL_BOUND,
+            )
+            self.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.COMPLETED,
+                    payload={"specialist_proposal_rejection": rejection},
+                )
+            )
+            return deepcopy(rejection)
+
         bound = bind_specialist_need_proposal(
             run_id=self.state.run_id,
             request_id=self.state.request_id,
@@ -3771,6 +4007,7 @@ class RunKernel:
             action_type=ActionType.SPECIALIST_PROPOSAL_BIND,
             reason="runkernel_bind_specialist_need_proposal",
             inputs={
+                "proposal_binding_kind": "bound_proposal",
                 "proposal_id": bound["proposal_id"],
                 "proposal_digest": bound["proposal_digest"],
                 "origin_action_id": _safe_mapping(
@@ -4091,6 +4328,9 @@ class RunKernel:
             "expected_observation_type": observation_type.value,
             "logical_evaluation_key": work.get("logical_evaluation_key"),
             "input_packet_digest": work.get("input_packet_digest"),
+            "specialist_handoff_digest": work.get(
+                "specialist_handoff_digest"
+            ),
             "output_schema_variant": work.get("output_schema_variant"),
             "safe_target_ref": {
                 "target_kind": work.get("target_kind"),
@@ -4297,6 +4537,9 @@ class RunKernel:
             inputs={
                 "role": role,
                 "input_packet_digest": work.get("input_packet_digest"),
+                "specialist_handoff_digest": work.get(
+                    "specialist_handoff_digest"
+                ),
                 "logical_evaluation_key": work.get("logical_evaluation_key"),
                 "supported_query_class": (
                     "ordinary-bounded-multicomponent-factual-synthesis-v1"
@@ -4462,6 +4705,7 @@ class RunKernel:
         input_packet_digest: str,
         logical_evaluation_key: str,
         output_schema_variant: str | None = None,
+        specialist_handoff_digest: str | None = None,
     ) -> AuthorizedAction:
         """Issue the role action and reduce its exact pretransport spend."""
 
@@ -4518,6 +4762,7 @@ class RunKernel:
             lease_id=lease_id,
             dispatch_action_id=dispatch_action.action_id,
             output_schema_variant=output_schema_variant,
+            specialist_handoff_digest=specialist_handoff_digest,
         )
         role_action_ref = {
             "action_id": role_action.action_id,
@@ -4881,6 +5126,34 @@ class RunKernel:
         )
         return deepcopy(self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE])
 
+    def release_multicomponent_scheduler_transient_context(self) -> None:
+        """Drop exact role packets once scheduler-driven semantic work is terminal."""
+
+        from core.multicomponent_role_runtime import safe_packet_digest
+
+        context = _safe_mapping(self.state.multicomponent_scheduler_context)
+        if not context:
+            return
+        packet_digests = {
+            str(key): safe_packet_digest(_safe_mapping(value))
+            for key, value in _safe_mapping(
+                context.get("component_analyst_input_packets")
+            ).items()
+        }
+        self.state.multicomponent_scheduler_context = {
+            "transient_context_released": True,
+            "component_input_packet_digests": packet_digests,
+            "specialist_scheduler_enabled": (
+                context.get("specialist_scheduler_enabled") is True
+            ),
+            "specialist_registry_digest": _safe_mapping(
+                context.get("specialist_registry_projection")
+            ).get("registry_digest"),
+            "specialist_execution_policy_digest": _safe_mapping(
+                context.get("specialist_execution_policy_projection")
+            ).get("execution_policy_digest"),
+        }
+
     def multicomponent_work_lease_is_current(self, lease_id: str) -> bool:
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
@@ -4913,6 +5186,7 @@ class RunKernel:
         lease_id: str | None = None,
         dispatch_action_id: str | None = None,
         output_schema_variant: str | None = None,
+        specialist_handoff_digest: str | None = None,
     ) -> AuthorizedAction:
         """Authorize one exact semantic-role evaluation for the V1 lane."""
 
@@ -4927,11 +5201,19 @@ class RunKernel:
         role_name = _clean_text(role, limit=80)
         input_digest = _clean_text(input_packet_digest, limit=128)
         evaluation_key = _clean_text(logical_evaluation_key, limit=180)
+        handoff_digest = _clean_text(specialist_handoff_digest, limit=128)
         if role_name not in ROLE_SYSTEM_PROMPTS:
             raise RunKernelTransitionError("unknown multi-component semantic role")
         if not input_digest or not evaluation_key:
             raise RunKernelTransitionError(
                 "multi-component role execution requires exact input and logical bindings"
+            )
+        if handoff_digest and role_name not in {
+            "component_dprime",
+            "synthesis_dprime",
+        }:
+            raise RunKernelTransitionError(
+                "only D-prime role actions may bind a Specialist handoff digest"
             )
         role_types = {
             "component_analyst": (
@@ -5050,6 +5332,7 @@ class RunKernel:
                 "supported_query_class": (
                     "ordinary-bounded-multicomponent-factual-synthesis-v1"
                 ),
+                "specialist_handoff_digest": handoff_digest,
                 **lease_inputs,
             },
             expected_observation_type=observation_type,
@@ -7218,6 +7501,7 @@ class RunKernel:
             scheduler_required_work_blocked = scheduler.get("status") in {
                 "blocked_exhausted",
                 "blocked_required_work_failed",
+                "blocked_required_specialist_proposal",
             }
             if (
                 graph.get("graph_status") == "synthesis_validation_required"
@@ -18310,73 +18594,120 @@ class RunKernel:
                 SPECIALIST_WORK_PLANE_STAGE,
                 append_bound_proposal,
                 append_specialist_disposition,
+                append_specialist_proposal_rejection,
                 validate_bound_specialist_proposal,
+                validate_specialist_proposal_rejection,
             )
 
-            proposal = validate_bound_specialist_proposal(
-                _safe_mapping(observation.payload.get("bound_specialist_proposal"))
-            )
             origin_action_id = str(action.inputs.get("origin_action_id") or "")
-            if (
-                action.inputs.get("proposal_id") != proposal.get("proposal_id")
-                or action.inputs.get("proposal_digest")
-                != proposal.get("proposal_digest")
-                or _safe_mapping(proposal.get("origin_action_ref")).get(
-                    "action_id"
-                )
-                != origin_action_id
-                or origin_action_id not in self.state.reduced_action_ids
-                or action.inputs.get("registry_digest")
-                != proposal.get("registry_digest")
-                or action.inputs.get("execution_policy_digest")
-                != proposal.get("execution_policy_digest")
-            ):
-                raise RunKernelTransitionError(
-                    "Specialist proposal binding lacks exact current authority"
-                )
-            plane = append_bound_proposal(
-                _safe_mapping(
-                    self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
-                ),
-                proposal,
+            rejection_payload = _safe_mapping(
+                observation.payload.get("specialist_proposal_rejection")
             )
-            self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
-            self.state.projections[action.stage] = deepcopy(proposal)
-            if proposal.get("proposal_authority") != PROPOSAL_ACCEPTED:
-                disposition_contract = {
-                    PROPOSAL_DENIED_POLICY: (
-                        AVAILABILITY_POLICY,
-                        "denied_by_policy",
-                    ),
-                    PROPOSAL_REJECTED: (
-                        AVAILABILITY_CAPABILITY,
-                        "unknown_or_incompatible_capability",
-                    ),
-                    PROPOSAL_UNSUPPORTED_TARGET: (
-                        AVAILABILITY_TARGET,
-                        "unsupported_target",
-                    ),
-                }
-                availability, reason = disposition_contract[
-                    str(proposal.get("proposal_authority") or "")
-                ]
-                plane = append_specialist_disposition(
-                    plane,
-                    proposal=proposal,
-                    availability_posture=availability,
-                    nonexecution_reason=reason,
+            if rejection_payload:
+                rejection = validate_specialist_proposal_rejection(
+                    rejection_payload
                 )
+                plane = _safe_mapping(
+                    self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                )
+                if (
+                    action.inputs.get("proposal_binding_kind")
+                    != "rejected_candidate"
+                    or action.inputs.get("rejection_id")
+                    != rejection.get("rejection_id")
+                    or action.inputs.get("rejection_digest")
+                    != rejection.get("rejection_digest")
+                    or origin_action_id not in self.state.reduced_action_ids
+                    or action.inputs.get("registry_digest")
+                    != _safe_mapping(plane.get("registry_ref")).get(
+                        "registry_digest"
+                    )
+                    or action.inputs.get("execution_policy_digest")
+                    != _safe_mapping(plane.get("execution_policy_ref")).get(
+                        "execution_policy_digest"
+                    )
+                ):
+                    raise RunKernelTransitionError(
+                        "Specialist proposal rejection lacks exact current authority"
+                    )
+                plane = append_specialist_proposal_rejection(plane, rejection)
                 self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
-            if (
-                proposal.get("posture") == "required"
-                and proposal.get("proposal_authority") != PROPOSAL_ACCEPTED
-            ):
-                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
-                    block_required_specialist_proposal(
-                        state=self.state,
-                        proposal=proposal,
+                self.state.projections[action.stage] = deepcopy(rejection)
+                if rejection.get("posture") != "optional":
+                    self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                        block_required_specialist_proposal(
+                            state=self.state,
+                            proposal=rejection,
+                        )
+                    )
+            else:
+                proposal = validate_bound_specialist_proposal(
+                    _safe_mapping(
+                        observation.payload.get("bound_specialist_proposal")
                     )
                 )
+                if (
+                    action.inputs.get("proposal_binding_kind") != "bound_proposal"
+                    or action.inputs.get("proposal_id")
+                    != proposal.get("proposal_id")
+                    or action.inputs.get("proposal_digest")
+                    != proposal.get("proposal_digest")
+                    or _safe_mapping(proposal.get("origin_action_ref")).get(
+                        "action_id"
+                    )
+                    != origin_action_id
+                    or origin_action_id not in self.state.reduced_action_ids
+                    or action.inputs.get("registry_digest")
+                    != proposal.get("registry_digest")
+                    or action.inputs.get("execution_policy_digest")
+                    != proposal.get("execution_policy_digest")
+                ):
+                    raise RunKernelTransitionError(
+                        "Specialist proposal binding lacks exact current authority"
+                    )
+                plane = append_bound_proposal(
+                    _safe_mapping(
+                        self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                    ),
+                    proposal,
+                )
+                self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
+                self.state.projections[action.stage] = deepcopy(proposal)
+                if proposal.get("proposal_authority") != PROPOSAL_ACCEPTED:
+                    disposition_contract = {
+                        PROPOSAL_DENIED_POLICY: (
+                            AVAILABILITY_POLICY,
+                            "denied_by_policy",
+                        ),
+                        PROPOSAL_REJECTED: (
+                            AVAILABILITY_CAPABILITY,
+                            "unknown_or_incompatible_capability",
+                        ),
+                        PROPOSAL_UNSUPPORTED_TARGET: (
+                            AVAILABILITY_TARGET,
+                            "unsupported_target",
+                        ),
+                    }
+                    availability, reason = disposition_contract[
+                        str(proposal.get("proposal_authority") or "")
+                    ]
+                    plane = append_specialist_disposition(
+                        plane,
+                        proposal=proposal,
+                        availability_posture=availability,
+                        nonexecution_reason=reason,
+                    )
+                    self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = plane
+                if (
+                    proposal.get("posture") == "required"
+                    and proposal.get("proposal_authority") != PROPOSAL_ACCEPTED
+                ):
+                    self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
+                        block_required_specialist_proposal(
+                            state=self.state,
+                            proposal=proposal,
+                        )
+                    )
         elif action.action_type is ActionType.SPECIALIST_PROPOSAL_DISPOSE:
             from core.multicomponent_graph_scheduling import (
                 LEASE_CANCELLED,
@@ -18636,6 +18967,8 @@ class RunKernel:
                 or dprime_action.action_type is not expected_action_type
                 or dprime_action.inputs.get("role") != expected_role
                 or dprime_action.inputs.get("target_kind") != target_kind
+                or dprime_action.inputs.get("specialist_handoff_digest")
+                != handoff.get("handoff_digest")
             ):
                 raise RunKernelTransitionError(
                     "Specialist handoff requires the exact relevant completed D-prime"
@@ -18650,6 +18983,7 @@ class RunKernel:
                 )
             target_key = str(target.get("target_key") or "")
             node_ref = _safe_mapping(dprime_action.inputs.get("node_ref"))
+            reconstructed_packet_digest: str | None = None
             if target_kind == "component":
                 accepted = _safe_mapping(
                     self.state.current_answer_contract
@@ -18675,10 +19009,8 @@ class RunKernel:
                     ),
                     expected_role=ROLE_COMPONENT_ANALYST,
                 )
-                analyst_input = _safe_mapping(
-                    _safe_mapping(self.state.multicomponent_scheduler_context)
-                    .get("component_analyst_input_packets", {})
-                    .get(target_key)
+                scheduler_context = _safe_mapping(
+                    self.state.multicomponent_scheduler_context
                 )
                 if (
                     dprime_action.inputs.get("component_id") != target_key
@@ -18694,11 +19026,22 @@ class RunKernel:
                     raise RunKernelTransitionError(
                         "Specialist component handoff target is no longer exact"
                     )
-                packet = component_dprime_input_packet(
-                    analyst_artifact=analyst,
-                    analyst_input_packet=analyst_input,
-                    specialist_need_handoff=handoff,
-                )
+                if scheduler_context.get("transient_context_released") is True:
+                    reconstructed_packet_digest = str(
+                        dprime_action.inputs.get("input_packet_digest") or ""
+                    )
+                else:
+                    analyst_input = _safe_mapping(
+                        scheduler_context.get(
+                            "component_analyst_input_packets", {}
+                        ).get(target_key)
+                    )
+                    packet = component_dprime_input_packet(
+                        analyst_artifact=analyst,
+                        analyst_input_packet=analyst_input,
+                        specialist_need_handoff=handoff,
+                    )
+                    reconstructed_packet_digest = safe_packet_digest(packet)
                 route = "component_dprime"
             else:
                 graph = validate_component_work_graph_v1(
@@ -18756,8 +19099,9 @@ class RunKernel:
                     synthesis_key=target_key,
                     specialist_need_handoff=handoff,
                 )
+                reconstructed_packet_digest = safe_packet_digest(packet)
                 route = "synthesis_dprime"
-            if safe_packet_digest(packet) != dprime_action.inputs.get(
+            if reconstructed_packet_digest != dprime_action.inputs.get(
                 "input_packet_digest"
             ) or completed.get(
                 "input_packet_digest"
