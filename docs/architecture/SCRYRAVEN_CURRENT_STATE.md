@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 7bbfff0f604096e3437bfdadc3dd8b81ec56b57c
+Verified-against-runtime: ffd6796e37fac468c826afd29767aafe1e235f41
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -152,6 +152,38 @@ scheduler-owned component Analyst packets and their existing scheduler
 authority digest. Missing or stale reconstruction authority fails before graph
 reduction, and no packet, contract, catalog, or source material is newly
 retained or exported.
+
+## Component-Gap Recovery Eligibility And Custody
+
+Every supported mode now resolves the recovery-related slice of one shared
+mode-policy envelope. The installed values are temporary compatibility values,
+not permanent mode design: `Balanced` preserves the existing one-cycle,
+offline-only, existing-candidate-query eligibility; `Fast` is recovery-closed in
+this phase; and `Deep` is recovery-closed pending a later explicit mode-policy
+decision. Unsupported modes resolve the same envelope shape with
+`mode_supported=false` and fail closed. No permanent mode budget was selected.
+
+Every resolved envelope enters the same mode-neutral coordinator and recovery
+primitive. Closed Fast and Deep values return an unrecorded non-applicable
+result before adapter invocation, so they create no component-gap recovery
+history or projection; unsupported mode returns an unrecorded blocked result.
+Eligible Balanced execution requires an explicitly composed offline adapter.
+The primitive then uses RunKernel authorization and admits recovered evidence
+and component coverage through RunKernel's canonical EvidenceLedger and semantic
+component-coverage state. Only the canonically committed recovered passages
+return to the orchestrator. Initial and post-recovery final evidence,
+selected-authority Author evidence, and Author prompt material consume the same
+ordinary typed materialization handoff and its existing mechanical owners;
+recovery supplies none of those authority fields. Sufficiency runs again from
+the current canonical state before FAP can package material, and Author can run
+only from the resulting FAP payload.
+
+The supported ordinary CLI composition still supplies no component-gap recovery
+adapter. It therefore cannot complete this recovery cycle: required missing
+coverage remains fail-closed and a blocked FAP does not call Author. No live
+recovery composition, provider call, generated recovery query, accepted contract
+amendment, permanent Deep recovery behavior, or permanent Fast/Balanced/Deep
+recovery budget profile was installed.
 
 ## Retired Legacy Economist Ordinary Execution
 

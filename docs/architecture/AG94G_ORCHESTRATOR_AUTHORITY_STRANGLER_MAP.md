@@ -7,6 +7,19 @@ Maintenance update: legacy Economist ordinary execution was retired at
 `7bbfff0f604096e3437bfdadc3dd8b81ec56b57c`. This update changes the Economist
 callsite/debt disposition below; it does not reopen AG-94G's historical scope.
 
+Maintenance update: the exact mode-conditioned component-gap recovery-to-Author
+authority island was contained at
+`ffd6796e37fac468c826afd29767aafe1e235f41`. Every supported mode resolves the
+same recovery-related mode-policy envelope shape. Its temporary compatibility
+values preserve existing behavior: Balanced is eligible for the existing
+bounded cycle, Fast is closed in this phase, and Deep is closed pending a later
+explicit mode-policy decision. Unsupported mode resolves the same shape and
+fails closed. One mode-neutral coordinator and primitive own all execution, and
+recovery returns no final-evidence, source-list, FinalAnswerPacket, or
+Author-material fields. This does not claim that the whole orchestrator is
+authority-free or that its other mutable-scope and final-custody debt is
+resolved.
+
 Validation boundary: repo-visible files, static inspection, focused tests, and
 offline checks only. No live ScryRaven/proplex provider, model, search,
 retrieval, secret, `.env`, DB row, raw provider payload, raw prompt, private log,
@@ -81,6 +94,12 @@ lines. It still contains:
 - trace/export/session/report packaging;
 - compatibility mirrors into RunController state.
 
+The former `if strategy == "Balanced"` component-gap recovery island is no
+longer in that debt set. It no longer builds or returns final evidence, selected
+Author evidence, Author prompt/notes, FAP material, or Author settings. The
+orchestrator still contains other Author-adjacent and final-custody callsites
+listed below.
+
 Those are not all equally wrong. Some are already delegated; some are necessary
 temporary compatibility islands; some are safety-sensitive product/runtime
 callsite surfaces that should be changed only in dedicated licensed phases.
@@ -124,6 +143,7 @@ Buckets:
 | post-recovery stop and scout/expander/evaluator model loop, lines 2893-3256 | 4 / 5 | Runs scout, expander, gap evaluator, retrieval stop decisions, and continuation scheduling. | Bounded executors under QueryPlan/SearchJudgment/RunState. | High; model/search/query behavior; changed: no. | Dedicated continuation-loop strangler; no prompt/provider/depth change allowed. |
 | budget stop, lines 3258-3290 | 4 | Applies retrieval stop controller at iteration budget exhaustion. | RunState/SearchJudgment stop posture. | Medium/high; authority-bearing stop path; changed: no. | Migrate with retrieval stop target phase. |
 | pre-recovery source-class telemetry, EvidenceLedger reduction, AnswerContract compatibility, SearchJudgment, lines 3298-3505 | 1 / 3 / 4 | Reduces contract/ledger facts, builds compatibility AnswerContract, executes SearchJudgment. | EvidenceLedger and SearchJudgment own canonical decisions; AnswerContract should become compatibility-only adapter. | Medium; mixed delegated and compatibility authority; changed: no. | Demote AnswerContract fallback after canonical coverage tests. |
+| mode-policy component-gap recovery-to-Author seam, current post-containment surface | 1 / 3 | Balanced, Fast, and Deep resolve the same recovery-related mode-policy envelope with temporary compatibility values; unsupported mode resolves the same shape and fails closed. One mode-neutral coordinator invokes the existing primitive. Eligible execution admits evidence and coverage through RunKernel and returns only recovered passages, the canonical EvidenceLedger projection, semantic facts, and bounded result diagnostics; closed values invoke no adapter and record no recovery history or projection. The orchestrator then uses the same ordinary typed final-material handoff used before recovery and reruns Sufficiency before FAP. | Keep mode-policy resolution shared; keep execution mode-neutral; keep final evidence, selected-authority Author evidence, prompt assembly, Sufficiency, FAP, and Author with their shared ordinary owners. | High-custody island; changed: yes at `ffd6796e37fac468c826afd29767aafe1e235f41`. No permanent mode budget, provider, query-generation, citation, FAP-schema, or Author-policy change. | Contained. Reopen only if a later licensed phase composes recovery, makes an explicit mode-policy decision, or changes the shared final-custody chain. |
 | authoritative-source action, conflict lifecycle, checkpoint refresh, controller spine, and recovery dispatch, lines 3506-3787 | 4 / 5 | Consumes SearchJudgment through authoritative-source action adapter, updates source-class lifecycle, conflict lifecycle, checkpoint/spine, then runs source-class and conflict retrieval executors. | SearchJudgment/EvidenceLedger recovery permission plus bounded source-class/conflict executors. | High; authority-bearing dispatch and search execution; changed: no. | Second recommended target after retrieval stop: source-class recovery dispatch permission. |
 | final evidence bundle and EvidenceLedger final reductions, lines 3788-3821 | 1 / 2 / 3 | Builds final evidence bundle and reduces final evidence into EvidenceLedger. | EvidenceLedger and FinalAnswerPacket, with final evidence selection in owned bundle builder. | Medium; final evidence identity affects citations and Author input; changed: no. | Keep callsite until FinalAnswerPacket can consume a canonical final-evidence selection object directly. |
 | Linkup callsite and retired Economist compatibility region, current post-AG-94G surface | 5 / 4 / 6 | Independently gates and calls Linkup. Ordinary Economist gating, preflight, execution, dependency reads, and the quantitative-preflight Author note are retired. Passive legacy handoff/trace fields remain fixed to a non-running posture. | Linkup bounded retrieval executor; post-retirement topology census for any remaining legacy Economist compatibility owner. | High for Linkup provider behavior; low/medium for passive compatibility data; Economist ordinary execution changed: yes, retired at `7bbfff0`. | Keep Linkup parity. Inventory compatibility consumers before any later field or implementation cleanup; do not build a replacement here. |
@@ -151,6 +171,40 @@ Buckets:
 | Supplemental lanes | legacy review runtime, Scrutineer/remediation, synthesis evaluator | Dedicated bounded executors subordinated to canonical sufficiency/final packet state | Supplemental search and remediation cannot alter final context without a canonical RunAuthority handoff. |
 | Legacy Economist compatibility data | optional `RunDeps` field, Economist handoff contract, Analyst/post-Author projection, trace/session fields | No current execution owner; post-retirement census must identify every actual compatibility consumer before cleanup | Ordinary composition and orchestrator remain unable to invoke the Economist; any later cleanup is separately licensed. |
 | Post-author compatibility projections | post-author/session/runtime trace projection helpers plus orchestrator source-class recomputation | Trace/export/report observers derived from EvidenceLedger/FinalAnswerPacket | Projections cannot rebuild source obligation/final posture from trace-local facts. |
+
+## Contained Mode-Policy Recovery Authority Island
+
+The contained component-gap seam is now:
+
+```text
+shared mode-policy resolution
+-> shared RunKernel-governed recovery authorization entry
+-> mode-neutral authorized recovery primitive
+-> RunKernel EvidenceLedger and component-coverage admission
+-> bounded recovered material
+-> shared ordinary final-material handoff
+-> second Sufficiency judgment
+-> FinalAnswerPacket
+-> Author
+```
+
+The recovery coordinator's output is limited to its result, recovered posture,
+merged passages, canonical EvidenceLedger projection, and semantic-state facts.
+It has no final evidence, source ordering, evidence block, Author evidence,
+Author prompt or notes, FAP material, or Author provider/model/effort fields.
+Post-recovery material must match current RunKernel state and an incomplete
+shared handoff fails closed rather than retaining pre-recovery authority.
+Fast and Deep traverse that same resolver, coordinator, and primitive entry with
+temporary recovery-closed compatibility values; neither invokes the adapter nor
+records recovery history or a recovery projection. Unsupported mode traverses
+the same envelope and primitive shape and returns blocked. These values are not
+permanent product design.
+
+Containment is narrow. Other `locals()` consumers, other orchestrator authority
+islands, global Sufficiency/FAP/output-scope migration, and broader final-custody
+convergence remain unresolved. Supported ordinary CLI composition still has no
+component-gap recovery adapter, and no live recovery capability or permanent
+mode budget profile was installed.
 
 ## Licensed / Closed / Target / Historical Glossary
 
