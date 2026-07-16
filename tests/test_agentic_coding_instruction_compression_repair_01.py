@@ -283,6 +283,8 @@ def test_validation_consequences_and_hosted_ci_handoff_are_explicit() -> None:
 
     for consequence in ("handoff_gate", "merge_gate", "diagnostic_only"):
         assert consequence in validation
+    assert "full-suite collection guard" in ci
+    assert "tiny execution-sentinel manifest" in ci
     assert "hosted asynchronous ci must not be classified as a handoff gate" in validation
     assert "candidate-only broad run against a known-red or unattributed baseline" in validation
     assert "not automatically a merge gate" in validation

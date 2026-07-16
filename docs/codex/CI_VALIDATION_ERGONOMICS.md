@@ -18,7 +18,8 @@ promotion posture, read
   under about 3 minutes after dependency setup/cache.
 - For PRs, `fast_pr` is the normal target unless the phase explicitly licenses
   `author_lane` or `full`.
-- Do not add every new test to `fast_pr`; only true sentinels belong there.
+- Do not add every new test to `fast_pr`; only true execution sentinels belong
+  in its manifest.
 - Do not run full pytest unless the phase requires it.
 - Do not respond to timeouts by expanding CI scope or rerunning monolithic
   commands repeatedly. Split the command or report the timeout with the exact
@@ -29,8 +30,10 @@ promotion posture, read
 - `docs_only` is used for docs/runbooks/prompts/operator-only markdown/text
   changes and runs changed-file pre-commit/diff checks without pytest by
   default.
-- `fast_pr` is used for ordinary code pull requests and runs the tiny manifest
-  in `tests/buckets/fast_pr.txt`.
+- `fast_pr` is used for ordinary code pull requests. It first performs a
+  full-suite collection guard, then executes the tiny execution-sentinel
+  manifest in `tests/buckets/fast_pr.txt`. The full suite is collected but not
+  executed.
 - `semantic_lane` is not a default PR bucket. Use it through manual
   `workflow_dispatch` or when a phase explicitly licenses semantic producer,
   reducer, sufficiency, component coverage, or semantic projection validation.
