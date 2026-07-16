@@ -156,6 +156,53 @@ A surface can be current internal authority while still having only fixture-only
 offline-harness, or product-facing-dry-run proof. Use current product-consumed
 path only when ordinary product/CLI/app flow actually consumes the behavior.
 
+## Execution-surface classes
+
+Classify the exact command or invoked branch, not merely the Python module that
+contains it, as one of:
+
+```text
+PRODUCT
+OPERATOR
+VALIDATION
+LEGACY
+```
+
+`PRODUCT` is the supported ordinary user-query execution path. Representative
+commands and consumers include `python -m scryraven "<query>"`, the supported
+compatibility invocation `python -m proplex "<query>"`, and ordinary
+`run_pipeline()` consumption. Only PRODUCT execution can independently
+establish an actual application behavior delta.
+
+`OPERATOR` is an explicit status, dogfood, provider-decision, diagnostic,
+inspection, or operational branch for a maintainer or operator. Human-readable
+OPERATOR output is not ordinary product output.
+
+`VALIDATION` includes tests, dry-runs, fixtures, harnesses, brokers, replay
+tools, collection checks, validation buckets, and validation-only scripts. A
+VALIDATION surface may exercise a real product consumer and support offline
+product-path proof, but the validation root itself is not a user product
+entrypoint.
+
+`LEGACY` is a retired, tombstoned, compatibility-reference, or historical
+execution surface that is not current product consumption. A LEGACY surface
+cannot establish current product behavior.
+
+Every final bundle must list each executed root command with:
+
+```text
+Command:
+Execution surface class:
+Proof class supported:
+Product consumer reached, if any:
+Claim permitted:
+Claim forbidden:
+```
+
+Human-readable output from operator, validation, demo, dry-run, fixture, or
+legacy execution is not ordinary product execution merely because it is
+readable.
+
 ## Required phase fields
 
 Every phase brief and final bundle should include:

@@ -13,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 import scripts.validation.run_bucket as runner
 
 
@@ -89,3 +91,85 @@ def test_fast_pr_collect_only_keeps_guard_and_selected_collection_coherent(
     assert "--collect-only" in calls[0]["command"]
     assert "--collect-only" in calls[1]["command"]
     assert calls[1]["command"][-1] == "tests/test_sentinel.py::test_small"
+
+
+def test_partitioned_full_delegates_with_defaults_and_propagates_exit_code(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    calls = _configure_runner(monkeypatch, tmp_path, return_codes=[23])
+
+    assert runner.main(["full", "--partitioned"]) == 23
+
+    assert len(calls) == 1
+    assert calls[0]["command"] == [
+        "python-for-test",
+        str(Path("scripts") / "validation" / "run_partitioned_pytest.py"),
+        "--repository",
+        str(tmp_path),
+        "--candidate",
+        "HEAD",
+        "--partitions",
+        "4",
+        "--max-processes",
+        "2",
+    ]
+    assert "-m" not in calls[0]["command"]
+    assert "pytest" not in calls[0]["command"]
+    assert calls[0]["cwd"] == tmp_path
+    assert calls[0]["env"]["PYTHON_DOTENV_DISABLED"] == "1"
+
+
+def test_partitioned_full_preserves_explicit_numeric_values(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    calls = _configure_runner(monkeypatch, tmp_path, return_codes=[0])
+
+    assert (
+        runner.main(
+            [
+                "full",
+                "--partitioned",
+                "--partitions",
+                "7",
+                "--max-processes",
+                "3",
+            ]
+        )
+        == 0
+    )
+
+    assert calls[0]["command"][-4:] == [
+        "--partitions",
+        "7",
+        "--max-processes",
+        "3",
+    ]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["fast_pr", "--partitioned"],
+        ["full", "--partitioned", "--collect-only"],
+        ["full", "--partitions", "4"],
+        ["full", "--max-processes", "2"],
+        ["full", "--partitioned", "--partitions", "0"],
+        ["full", "--partitioned", "--partitions", "-1"],
+        ["full", "--partitioned", "--max-processes", "0"],
+        ["full", "--partitioned", "--max-processes", "-1"],
+    ],
+)
+def test_invalid_partitioned_flag_combinations_fail_before_subprocess(
+    monkeypatch: Any,
+    tmp_path: Path,
+    argv: list[str],
+) -> None:
+    calls = _configure_runner(monkeypatch, tmp_path, return_codes=[])
+
+    with pytest.raises(SystemExit) as exc_info:
+        runner.main(argv)
+
+    assert exc_info.value.code == 2
+    assert calls == []

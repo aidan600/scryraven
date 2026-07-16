@@ -37,6 +37,49 @@ response behavior. This lane is high-custody and comparatively expensive; it is
 not default PR tax. Run `full` for push-to-main, manual serious validation, or a
 phase that explicitly needs the complete offline suite.
 
+## Validation consequence classes
+
+Every expensive validation item named by a phase brief or final bundle must use
+exactly one consequence class:
+
+```text
+HANDOFF_GATE
+MERGE_GATE
+DIAGNOSTIC_ONLY
+```
+
+`HANDOFF_GATE` must complete before Codex returns its final bundle. It should
+normally be local, focused, deterministic prepublication proof. Hosted
+asynchronous CI must not be classified as a handoff gate.
+
+`MERGE_GATE` must reach its required conclusion before the maintainer merges,
+but it may remain pending when Codex returns. Normal exact-head PR CI is a merge
+gate unless the phase states otherwise. Strategy/Review, not a waiting Codex
+task, owns later inspection.
+
+`DIAGNOSTIC_ONLY` records repository health, timing, attribution, or exploratory
+evidence. It blocks neither handoff nor merge unless later review attributes the
+result to the candidate under an already stated causal rule; it must not
+silently expand the active phase.
+
+A candidate-only broad run against a known-red or unattributed baseline is not
+automatically a merge gate merely because it is red. It may be a merge gate only
+when the phase defines paired baseline/candidate attribution or an exact
+branch-attributable causal rule tied to the licensed changed surface. Silence,
+elapsed time, a pending status, or the absence of a visible workflow record
+proves nothing.
+
+For each expensive check, report:
+
+```text
+Check:
+Command or workflow:
+Classification:
+Decision it makes:
+Required terminal state:
+Inspection owner:
+```
+
 ## Review-Loop Validation Ramp
 
 Move expensive proof to the point where it answers a decision instead of
@@ -75,7 +118,8 @@ Once, after all known implementation and review blockers are closed, run:
 - only the durable lane or lanes directly affected by changed authority;
 - applicable documentation guards;
 - `pre-commit --all-files` when appropriate for a runtime PR;
-- exact-head hosted CI; and
+- applicable local handoff gates;
+- exact-head hosted CI as a merge gate after publication; and
 - a final complete-diff review.
 
 Route FinalAnswerPacket, Author, accepted prose, or response-finalization changes
@@ -233,16 +277,23 @@ python scripts/validation/run_bucket.py full
 ## Exceptional partitioned broad validation
 
 `scripts/validation/run_bucket.py` remains the bucket-selection authority.
-When a separately authorized broad-validation job risks a monolithic outer
-timeout, use the local partitioned runner rather than adding another bucket or
-expanding ordinary pull-request validation:
+When a separately authorized candidate-only broad-validation job risks a
+monolithic outer timeout, use its partitioned full delegation rather than
+adding another bucket or expanding ordinary pull-request validation:
 
 ```powershell
-py scripts\validation\run_partitioned_pytest.py --candidate HEAD --partitions 4 --max-processes 2
+python scripts/validation/run_bucket.py full --partitioned --partitions 4 --max-processes 2
 ```
 
-Use candidate-only mode when the candidate must be green independently. Use
-paired parity only when failures need baseline attribution:
+In partitioned mode, omitted numeric options default to 4 partitions and 2
+maximum processes. The bucket runner delegates with the current Python
+executable, explicit repository root, and `--candidate HEAD`; it does not own or
+reimplement partitioning, worktrees, aggregation, cleanup, timeouts,
+attribution, or artifact packets. Ordinary `run_bucket.py full` stays serial.
+
+Use candidate-only mode when the candidate must be green independently. Invoke
+the existing partitioned runner directly for paired parity when failures need
+baseline attribution:
 
 ```powershell
 py scripts\validation\run_partitioned_pytest.py --baseline <BASE_SHA> --candidate <CANDIDATE_SHA> --partitions 4 --max-processes 2

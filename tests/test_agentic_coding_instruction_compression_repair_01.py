@@ -39,6 +39,10 @@ TEMPLATE = CODEX / "PHASE_BRIEF_TEMPLATE.md"
 ADDENDA = CODEX / "PHASE_BRIEF_ADDENDA.md"
 GUIDANCE = CODEX / "CODEX_GUIDANCE_MAP.md"
 PUBLICATION = CODEX / "CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md"
+VALIDATION_BUCKETS = CODEX / "VALIDATION_BUCKETS.md"
+CI_ERGONOMICS = CODEX / "CI_VALIDATION_ERGONOMICS.md"
+PROOF_GATE = CODEX / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md"
+ROADMAP = ROOT / "docs" / "roadmap" / "CURRENT_ROADMAP.md"
 
 
 def _read(path: Path) -> str:
@@ -270,3 +274,67 @@ def test_safety_stops_and_checkpoint_nonpermissions_remain_explicit() -> None:
         "do not merge, rebase, force-push, delete branches",
     ):
         assert phrase in combined
+
+
+def test_validation_consequences_and_hosted_ci_handoff_are_explicit() -> None:
+    validation = _collapsed(VALIDATION_BUCKETS).casefold()
+    ci = _collapsed(CI_ERGONOMICS).casefold()
+    playbook = _collapsed(PLAYBOOK).casefold()
+
+    for consequence in ("handoff_gate", "merge_gate", "diagnostic_only"):
+        assert consequence in validation
+    assert "full-suite collection guard" in ci
+    assert "tiny execution-sentinel manifest" in ci
+    assert "hosted asynchronous ci must not be classified as a handoff gate" in validation
+    assert "candidate-only broad run against a known-red or unattributed baseline" in validation
+    assert "not automatically a merge gate" in validation
+    assert "exactly one hosted-ci status lookup" in playbook
+    assert "run not yet visible in the single authorized snapshot" in playbook
+    assert "strategy/review owns later hosted-ci inspection" in playbook
+    for forbidden_action in (
+        "do not run `gh run watch`",
+        "sleep while waiting for ci",
+        "poll repeatedly",
+        "dispatch duplicate workflows",
+    ):
+        assert forbidden_action in playbook
+    assert "take exactly one hosted-ci status snapshot and return immediately" in ci
+
+
+def test_cloud_tasks_use_exact_clean_sha_without_branch_or_remote_assumptions() -> None:
+    playbook = _collapsed(PLAYBOOK)
+
+    for phrase in (
+        "exact `git rev-parse HEAD` plus empty `git status --short` are authoritative",
+        "Branch name is diagnostic only",
+        "absence of `origin` or any Git remote is acceptable",
+        "do not require `main`, `work`, detached HEAD",
+        "`<NEW_MAIN_MERGE_SHA>` must not be launched",
+        "stop and request a fresh checkout",
+    ):
+        assert phrase in playbook
+
+
+def test_execution_surfaces_are_command_level_and_bound_product_claims() -> None:
+    proof = _collapsed(PROOF_GATE)
+
+    for surface in ("PRODUCT", "OPERATOR", "VALIDATION", "LEGACY"):
+        assert f"`{surface}`" in proof
+    assert "exact command or invoked branch, not merely the Python module" in proof
+    assert 'python -m scryraven "<query>"' in proof
+    assert 'python -m proplex "<query>"' in proof
+    assert "Only PRODUCT execution can independently establish" in proof
+    assert "Human-readable OPERATOR output is not ordinary product output" in proof
+    assert "validation root itself is not a user product entrypoint" in proof
+    assert "A LEGACY surface cannot establish current product behavior" in proof
+    assert "Execution surface class:" in proof
+    assert "Claim forbidden:" in proof
+
+
+def test_revised_roadmap_has_one_active_next_checkpoint() -> None:
+    roadmap = _read(ROADMAP)
+
+    assert "Completed Proof: Post-Retirement Product Topology" in roadmap
+    assert "Completed Repair: Validation and Execution-Surface Ergonomics Closure" in roadmap
+    assert "## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
+    assert roadmap.count("## Active Next:") == 1

@@ -54,7 +54,37 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Collect selected tests without running them.",
     )
+    parser.add_argument(
+        "--partitioned",
+        action="store_true",
+        help="Delegate the full bucket to the partitioned pytest runner.",
+    )
+    parser.add_argument(
+        "--partitions",
+        type=int,
+        default=None,
+        help="Partition count for --partitioned full (default: 4).",
+    )
+    parser.add_argument(
+        "--max-processes",
+        type=int,
+        default=None,
+        help="Maximum concurrent processes for --partitioned full (default: 2).",
+    )
     args = parser.parse_args(argv)
+
+    if args.partitioned and args.bucket != "full":
+        parser.error("--partitioned is supported only for the full bucket")
+    if args.partitioned and args.collect_only:
+        parser.error("--partitioned cannot be combined with --collect-only")
+    if args.partitions is not None and not args.partitioned:
+        parser.error("--partitions requires --partitioned")
+    if args.max_processes is not None and not args.partitioned:
+        parser.error("--max-processes requires --partitioned")
+    if args.partitions is not None and args.partitions <= 0:
+        parser.error("--partitions must be positive")
+    if args.max_processes is not None and args.max_processes <= 0:
+        parser.error("--max-processes must be positive")
 
     selected: list[str] = []
     if args.bucket == "full":
@@ -67,6 +97,23 @@ def main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     # Offline validation must not read local .env secrets during collection.
     env.setdefault("PYTHON_DOTENV_DISABLED", "1")
+
+    if args.partitioned:
+        partitions = args.partitions if args.partitions is not None else 4
+        max_processes = args.max_processes if args.max_processes is not None else 2
+        command = [
+            sys.executable,
+            str(Path("scripts") / "validation" / "run_partitioned_pytest.py"),
+            "--repository",
+            str(ROOT),
+            "--candidate",
+            "HEAD",
+            "--partitions",
+            str(partitions),
+            "--max-processes",
+            str(max_processes),
+        ]
+        return subprocess.call(command, cwd=ROOT, env=env)
 
     if args.bucket == "fast_pr":
         print("Running full-suite collection guard before fast_pr tests.", flush=True)
