@@ -11,6 +11,7 @@ import core.legacy_review_runtime_stage as legacy_review_runtime_stage
 import core.ordinary_multicomponent_synthesis_runtime as multicomponent_runtime
 import core.ordinary_semantic_producer_runtime as semantic_producer_runtime
 import core.pipeline_orchestrator as orchestrator
+from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
 from core.cost_accounting import CostAccumulator
 from core.protocols import NullStatusWriter
 from tests.helpers.offline_ordinary_pipeline import (
@@ -30,6 +31,11 @@ SIX_COMPONENT_QUERY = """For the fictional Example Program:
 - What agency publishes the official rule?
 
 Then explain how these facts relate for an eligible applicant."""
+
+AMBIGUOUS_NUMBERED_QUERY = """For the fictional Example Program:
+1. Find the base rebate amount.
+3. Find the application deadline.
+4. Compare them and explain the difference."""
 
 
 @pytest.fixture(autouse=True)
@@ -77,15 +83,17 @@ class _TimingHarness(OfflineOrdinaryPipelineHarness):
 
 
 @pytest.mark.parametrize(
-    ("component_count", "query"),
+    ("case_id", "component_count", "query"),
     [
-        (1, ONE_COMPONENT_QUERY),
-        (6, SIX_COMPONENT_QUERY),
+        ("one-component", 1, ONE_COMPONENT_QUERY),
+        ("six-components", 6, SIX_COMPONENT_QUERY),
+        ("ambiguous-numbering", 2, AMBIGUOUS_NUMBERED_QUERY),
     ],
 )
 def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    case_id: str,
     component_count: int,
     query: str,
 ) -> None:
@@ -96,8 +104,9 @@ def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
     )
     producer_calls: list[dict[str, Any]] = []
     handoff_calls: list[dict[str, Any]] = []
+    observed_kernel: dict[str, Any] = {"value": None}
     review_completed = {"value": False}
-    post_review_evidence_marker = {"marker": f"post-review-{component_count}"}
+    post_review_evidence_marker = {"marker": f"post-review-{case_id}"}
 
     real_producer = (
         multicomponent_runtime.execute_ordinary_semantic_producer_handoff_from_scope
@@ -138,6 +147,7 @@ def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
         *,
         execute_selected_lane: bool = True,
     ) -> Any:
+        observed_kernel["value"] = run_kernel
         if not execute_selected_lane:
             seam = "early_selection"
         elif review_completed["value"]:
@@ -203,8 +213,8 @@ def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
         offline_balanced_run_config(
             query=harness.query,
             current_date="2026-07-10",
-            session_id=f"timing-session-{component_count}",
-            run_id=f"timing-run-{component_count}",
+            session_id=f"timing-session-{case_id}",
+            run_id=f"timing-run-{case_id}",
         ),
         harness.deps(),
         NullStatusWriter(),
@@ -231,3 +241,9 @@ def test_orchestrator_nonqualifying_defers_direct_producer_until_post_review(
     assert len(producer_calls) == 1
     assert producer_calls[0]["review_completed"] is True
     assert producer_calls[0]["sees_post_review_marker"] is True
+    assert all(item["path_selected"] is False for item in handoff_calls)
+    kernel = observed_kernel["value"]
+    assert kernel is not None
+    assert not multicomponent_runtime.ordinary_multicomponent_path_selected(kernel)
+    assert kernel.state.multicomponent_scheduler_context == {}
+    assert COMPONENT_WORK_GRAPH_V1_STAGE not in kernel.state.projections

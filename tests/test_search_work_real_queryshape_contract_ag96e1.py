@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+import pytest
+
 from core.query_production_runtime import execute_query_production_action
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
@@ -26,6 +28,10 @@ from core.search_work_shadow_lane_runtime import run_search_work_shadow_lane
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 CLASSIFIER = ROOT / "core" / "search_work_query_shape_runtime.py"
+
+QUALIFIED = "QUALIFIED"
+NOT_STRUCTURED = "NOT_STRUCTURED"
+AMBIGUOUS = "AMBIGUOUS"
 
 
 class _Status:
@@ -214,6 +220,291 @@ def _component_obligation_kind_map(payload: dict[str, Any]) -> dict[str, set[str
     }
 
 
+def _component_questions(payload: dict[str, Any]) -> list[str]:
+    return [
+        str(item["user_facing_subquestion"])
+        for item in payload["component_candidates"]
+    ]
+
+
+@pytest.mark.parametrize(
+    (
+        "query",
+        "expected_questions",
+        "expected_directive",
+        "expected_syntax_kind",
+        "expected_behavior_changed",
+    ),
+    [
+        (
+            "For the fictional program: - What is the first value? "
+            "- What is the second value? Then explain how these facts relate.",
+            [
+                "Answer the first value component.",
+                "Answer the second value component.",
+            ],
+            "Then explain how these facts relate.",
+            "bullet_interrogative",
+            False,
+        ),
+        (
+            "1. What is the first value? 2. What is the second value? "
+            "3. Compare them and explain the difference.",
+            [
+                "Answer the first value component.",
+                "Answer the second value component.",
+            ],
+            "Compare them and explain the difference.",
+            "numbered_interrogative",
+            True,
+        ),
+        (
+            "1) Find the first reported value. 2) Find the second reported value. "
+            "3) Calculate the difference.",
+            [
+                "Answer the first reported value component.",
+                "Answer the second reported value component.",
+            ],
+            "Calculate the difference.",
+            "numbered_imperative",
+            True,
+        ),
+        (
+            "1. Find the first value. 2. Find the second value. "
+            "Convert both values to the requested unit and compare them.",
+            [
+                "Answer the first value component.",
+                "Answer the second value component.",
+            ],
+            "Convert both values to the requested unit and compare them.",
+            "numbered_imperative",
+            True,
+        ),
+        (
+            "For the fictional program: - Identify the first value. "
+            "- Locate the second value. - Show how they relate.",
+            [
+                "Answer the first value component.",
+                "Answer the second value component.",
+            ],
+            "Show how they relate.",
+            "bullet_imperative",
+            True,
+        ),
+        (
+            "Find the first official value; find the second official value; "
+            "then compare them and calculate the difference.",
+            [
+                "Answer the first official value component.",
+                "Answer the second official value component.",
+            ],
+            "then compare them and calculate the difference.",
+            "imperative_clauses",
+            True,
+        ),
+    ],
+)
+def test_explicit_structured_route_matrix_uses_one_authoritative_result(
+    query: str,
+    expected_questions: list[str],
+    expected_directive: str,
+    expected_syntax_kind: str,
+    expected_behavior_changed: bool,
+) -> None:
+    assessment = _assessment_payload(query)
+    repeated_assessment = _assessment_payload(query)
+    metadata = assessment["metadata"]
+    construction = _construction_input(query)
+
+    assert metadata["structured_route_posture"] == QUALIFIED
+    assert metadata["structured_route_syntax_kind"] == expected_syntax_kind
+    assert metadata["explicit_factual_component_list"] is True
+    assert metadata["requested_synthesis_directive"] == expected_directive
+    assert (
+        metadata["route_qualification_behavior_changed"]
+        is expected_behavior_changed
+    )
+    assert metadata["behavior_changed"] is False
+    assert metadata["query_plan_behavior_changed"] is False
+    assert metadata["provider_search_behavior_changed"] is False
+    assert _component_questions(assessment) == expected_questions
+    assert (
+        repeated_assessment["component_candidates"]
+        == assessment["component_candidates"]
+    )
+    assert all(
+        expected_directive not in question
+        for question in _component_questions(assessment)
+    )
+    assert (
+        construction.metadata["route_qualification_behavior_changed"]
+        is expected_behavior_changed
+    )
+    assert construction.metadata["query_plan_behavior_changed"] is False
+    assert construction.metadata["provider_search_behavior_changed"] is False
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_posture"),
+    [
+        ("1. Find the first value. 2. Compare it.", AMBIGUOUS),
+        (
+            "1. Find value one. 2. Find value two. 3. Find value three. "
+            "4. Find value four. 5. Find value five. 6. Find value six. "
+            "7. Compare them.",
+            AMBIGUOUS,
+        ),
+        ("1. Find the first value. 2. Find the second value.", AMBIGUOUS),
+        ("1. Open the app. 2. Click settings. 3. Save the form.", AMBIGUOUS),
+        (
+            "1. Find the first value. 3. Find the second value. 4. Compare them.",
+            AMBIGUOUS,
+        ),
+        (
+            "2. Find the first value. 3. Find the second value. 4. Compare them.",
+            AMBIGUOUS,
+        ),
+        (
+            "1. Find the first value. 2. Compare them. 3. Find the second value.",
+            AMBIGUOUS,
+        ),
+        (
+            "1. Find the first value. 2. Find the first value. 3. Compare them.",
+            AMBIGUOUS,
+        ),
+        (
+            "1. Find the first value. 2. 3. Find the second value. 4. Compare them.",
+            AMBIGUOUS,
+        ),
+        (
+            "- Program values: - Find the first value. - Find the second value. "
+            "- Compare them.",
+            AMBIGUOUS,
+        ),
+        (
+            "The release is version 1.2.3, costs $3.50, and changed by 4.5 percent.",
+            NOT_STRUCTURED,
+        ),
+        (
+            "On 2026-07-16 the value was $1.50 and the rate was 25.0%.",
+            NOT_STRUCTURED,
+        ),
+        ("See citations [1] and [2] for the two values.", NOT_STRUCTURED),
+        ("1 Find the first value and 2 find the second value.", NOT_STRUCTURED),
+        ("Find the current rule and summarize it.", NOT_STRUCTURED),
+        ("Convert 10 USD to EUR.", NOT_STRUCTURED),
+        (
+            "1. Find the first value and compare it. 2. Find the second value. "
+            "3. Explain the result.",
+            AMBIGUOUS,
+        ),
+        (
+            "1. Find the first value. 2. Find the second value. "
+            "3. Compare them and find a third value.",
+            AMBIGUOUS,
+        ),
+    ],
+)
+def test_rejected_or_unstructured_requests_never_gain_route_authority(
+    query: str,
+    expected_posture: str,
+) -> None:
+    assessment = _assessment_payload(query)
+    metadata = assessment["metadata"]
+
+    assert metadata["structured_route_posture"] == expected_posture
+    assert metadata["explicit_factual_component_list"] is False
+    assert metadata["requested_synthesis_directive"] is None
+    assert metadata["route_qualification_behavior_changed"] is False
+    assert metadata["query_plan_behavior_changed"] is False
+    assert metadata["provider_search_behavior_changed"] is False
+
+
+def test_ambiguous_explicit_structure_may_retain_fallback_components_without_route_authority() -> None:
+    query = (
+        "- Find the first value and compare it; - Find the second value; "
+        "Then explain how they relate."
+    )
+    assessment = _assessment_payload(query)
+    metadata = assessment["metadata"]
+
+    assert metadata["structured_route_posture"] == AMBIGUOUS
+    assert metadata["explicit_factual_component_list"] is False
+    assert metadata["requested_synthesis_directive"] is None
+    assert len(assessment["component_candidates"]) > 1
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        (
+            "1. What is the first value? 2. What is the second value? "
+            "3. Compare them and explain the difference."
+        ),
+        (
+            "Find the first official value; find the second official value; "
+            "then compare them and calculate the difference."
+        ),
+    ],
+)
+def test_fast_balanced_deep_share_identical_structured_route_assessment(
+    query: str,
+) -> None:
+    payloads = [
+        _assessment_payload(query, mode=mode)
+        for mode in ("Fast", "Balanced", "Deep")
+    ]
+    route_views = [
+        {
+            "structured_route_posture": payload["metadata"][
+                "structured_route_posture"
+            ],
+            "structured_route_syntax_kind": payload["metadata"][
+                "structured_route_syntax_kind"
+            ],
+            "component_questions": _component_questions(payload),
+            "explicit_factual_component_list": payload["metadata"][
+                "explicit_factual_component_list"
+            ],
+            "requested_synthesis_directive": payload["metadata"][
+                "requested_synthesis_directive"
+            ],
+            "route_qualification_behavior_changed": payload["metadata"][
+                "route_qualification_behavior_changed"
+            ],
+        }
+        for payload in payloads
+    ]
+
+    assert route_views[0] == route_views[1] == route_views[2]
+
+
+def test_structured_route_parser_has_one_mode_neutral_implementation() -> None:
+    tree = ast.parse(CLASSIFIER.read_text(encoding="utf-8"))
+    parsers = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_assess_structured_multicomponent_shape"
+    ]
+    parser_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_assess_structured_multicomponent_shape"
+    ]
+
+    assert len(parsers) == 1
+    assert len(parser_calls) == 1
+    parser_names = {
+        node.id for node in ast.walk(parsers[0]) if isinstance(node, ast.Name)
+    }
+    assert parser_names.isdisjoint(
+        {"requested_mode", "SearchMode", "FAST", "BALANCED", "DEEP"}
+    )
+
+
 def test_simple_lookup_produces_one_simple_component_without_strict_official_or_legal() -> None:
     assessment = _assessment_payload("Who founded SQLite?")
 
@@ -267,6 +558,11 @@ def test_multipart_query_produces_multiple_components_in_lane_projection() -> No
     assert kernel.state.search_work_plan_projection["component_count"] >= 3
     assert query_plan_shadow["work_counts"]["component_count"] >= 3
     assert len(query_plan_shadow["candidate_work_groups"]) >= 3
+    metadata = _assessment_payload(query)["metadata"]
+    assert metadata["structured_route_posture"] == NOT_STRUCTURED
+    assert metadata["explicit_factual_component_list"] is False
+    assert metadata["requested_synthesis_directive"] is None
+    assert metadata["route_qualification_behavior_changed"] is False
 
 
 def test_multipart_component_obligations_are_component_local() -> None:
@@ -313,6 +609,9 @@ def test_compare_query_marks_conflict_and_official_current_work_hints() -> None:
     assert SourceObligationKind.OFFICIAL_CURRENT.value in _obligation_kinds(assessment)
     assert SourceObligationKind.CONFLICT_RESOLUTION.value in _obligation_kinds(assessment)
     assert ProviderJobKind.CONFLICT_CURRENTNESS_CHECK.value in _provider_job_kinds(assessment)
+    assert assessment["metadata"]["structured_route_posture"] == NOT_STRUCTURED
+    assert assessment["metadata"]["explicit_factual_component_list"] is False
+    assert assessment["metadata"]["requested_synthesis_directive"] is None
 
 
 def test_fast_balanced_deep_modes_resolve_answer_contracts_without_queryplan_consumption() -> None:

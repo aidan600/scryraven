@@ -24,7 +24,7 @@ from core.multicomponent_role_runtime import (
 )
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
-from core.run_kernel import ActionType
+from core.run_kernel import ActionType, RunKernel
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -46,6 +46,35 @@ NORTHSTAR_QUERY = """For the fictional Northstar Home-Energy Rebate:
 Then explain how bonus eligibility changes the filing route and what an
 eligible applicant should do."""
 
+NORTHSTAR_DIRECTIVE = (
+    "Then explain how bonus eligibility changes the filing route and what an "
+    "eligible applicant should do."
+)
+
+NUMBERED_NORTHSTAR_DIRECTIVE = (
+    "Compare how bonus eligibility changes the filing route, calculate the "
+    "difference between the values, and convert both values to USD."
+)
+
+NUMBERED_NORTHSTAR_QUERY = f"""For the fictional Northstar Home-Energy Rebate:
+1. What is the base rebate?
+2. What is the application closing date?
+3. Who qualifies for the income-based bonus?
+4. Must bonus applicants use the paper application?
+5. Can ordinary applicants file online?
+6. {NUMBERED_NORTHSTAR_DIRECTIVE}"""
+
+IMPERATIVE_NORTHSTAR_DIRECTIVE = (
+    "then explain how bonus eligibility changes the filing route and what an "
+    "eligible applicant should do."
+)
+
+IMPERATIVE_NORTHSTAR_QUERY = f"""For the fictional Northstar Home-Energy Rebate:
+Find the base rebate amount; determine the application deadline; identify who
+qualifies for the income-based bonus; state whether bonus applicants must use
+the paper application; report whether ordinary applicants can file online;
+{IMPERATIVE_NORTHSTAR_DIRECTIVE}"""
+
 NORTHSTAR_REPORT = """Northstar Home-Energy Rebate
 
 The Northstar base rebate is $1,200. The Northstar application deadline is
@@ -61,10 +90,10 @@ def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class NorthstarHarness(OfflineOrdinaryPipelineHarness):
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, *, query: str = NORTHSTAR_QUERY) -> None:
         super().__init__(
             tmp_path=tmp_path,
-            query=NORTHSTAR_QUERY,
+            query=query,
             core_topic="Northstar Home-Energy Rebate",
             primary_entity="Northstar",
             researcher_queries=(
@@ -77,9 +106,14 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
             raw_author_response=NORTHSTAR_REPORT,
             logger_name="test_multicomponent_northstar",
         )
+        self.role_input_packets: list[dict[str, Any]] = []
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         if system_prompt in ROLE_SYSTEM_PROMPTS.values():
+            payload = json.loads(prompt)
+            self.role_input_packets.append(
+                {"system_prompt": system_prompt, "input_packet": payload}
+            )
             self.model_calls.append(
                 {
                     "system_prompt": system_prompt,
@@ -89,7 +123,6 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                     "use_reasoning": kwargs.get("use_reasoning"),
                 }
             )
-            payload = json.loads(prompt)
             if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
                 question = str(
                     payload.get("component_ref", {}).get("user_facing_question")
@@ -179,7 +212,7 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
     def _component_claim(question: str) -> str:
         if "base rebate" in question:
             return "The Northstar base rebate is $1,200."
-        if "deadline" in question:
+        if "deadline" in question or "application closing" in question:
             return "The Northstar application deadline is October 31, 2027."
         if "income" in question:
             return "The income bonus is available at or below $60,000."
@@ -310,6 +343,7 @@ def _assert_northstar_product_state(
     captured: dict[str, Any],
     harness: NorthstarHarness,
     outcome: Any,
+    expected_directive: str = NORTHSTAR_DIRECTIVE,
 ) -> None:
     kernel = captured["run_kernel"]
     graph = kernel.state.projections[COMPONENT_WORK_GRAPH_V1_STAGE]
@@ -321,6 +355,13 @@ def _assert_northstar_product_state(
     assert graph["scrutineer_required"] is True
     assert graph["scrutineer_status"] == "passed"
     assert graph["graph_status"] == "ready"
+    assert graph["requested_synthesis_directive"] == expected_directive
+    assert (
+        kernel.state.initial_answer_contract["question_meaning_metadata"][
+            "requested_synthesis_directive"
+        ]
+        == expected_directive
+    )
     assert [node["status"] for node in graph["synthesis_nodes"]] == [
         "admitted",
         "admitted",
@@ -564,6 +605,169 @@ def test_northstar_ordinary_pipeline_reaches_runoutcome_report(
         captured=captured,
         harness=harness,
         outcome=outcome,
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_id", "query", "expected_directive", "expected_syntax_kind"),
+    [
+        (
+            "numbered",
+            NUMBERED_NORTHSTAR_QUERY,
+            NUMBERED_NORTHSTAR_DIRECTIVE,
+            "numbered_interrogative",
+        ),
+        (
+            "imperative",
+            IMPERATIVE_NORTHSTAR_QUERY,
+            IMPERATIVE_NORTHSTAR_DIRECTIVE,
+            "imperative_clauses",
+        ),
+    ],
+)
+def test_numbered_and_imperative_northstar_queries_reach_same_governed_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case_id: str,
+    query: str,
+    expected_directive: str,
+    expected_syntax_kind: str,
+) -> None:
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = NorthstarHarness(tmp_path, query=query)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    assessments: list[dict[str, Any]] = []
+    question_meaning_records: list[dict[str, Any]] = []
+    scheduler_directives_before_release: list[str] = []
+    real_records_builder = (
+        multicomponent_runtime.build_deterministic_search_work_runtime_records
+    )
+    real_qmr_builder = (
+        multicomponent_runtime.build_question_meaning_record_from_search_work_plan
+    )
+    real_release_scheduler_context = (
+        RunKernel.release_multicomponent_scheduler_transient_context
+    )
+
+    def tracked_records_builder(runtime_input: Any) -> Any:
+        records = real_records_builder(runtime_input)
+        if runtime_input.safe_query_preview == query:
+            assessments.append(records.query_shape_assessment.to_dict())
+        return records
+
+    def tracked_qmr_builder(**kwargs: Any) -> Any:
+        record = real_qmr_builder(**kwargs)
+        if kwargs.get("query") == query and record is not None:
+            question_meaning_records.append(record.to_dict())
+        return record
+
+    def tracked_release_scheduler_context(run_kernel: RunKernel) -> None:
+        scheduler_directives_before_release.append(
+            str(
+                run_kernel.state.multicomponent_scheduler_context.get(
+                    "requested_synthesis_directive"
+                )
+                or ""
+            )
+        )
+        real_release_scheduler_context(run_kernel)
+
+    monkeypatch.setattr(
+        multicomponent_runtime,
+        "build_deterministic_search_work_runtime_records",
+        tracked_records_builder,
+    )
+    monkeypatch.setattr(
+        multicomponent_runtime,
+        "build_question_meaning_record_from_search_work_plan",
+        tracked_qmr_builder,
+    )
+    monkeypatch.setattr(
+        RunKernel,
+        "release_multicomponent_scheduler_transient_context",
+        tracked_release_scheduler_context,
+    )
+
+    try:
+        outcome = orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-10",
+                session_id=f"northstar-{case_id}-session",
+                run_id=f"northstar-{case_id}-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+    except multicomponent_runtime.OrdinaryMulticomponentRuntimeError as exc:
+        pytest.fail(f"structured Northstar lane failed: {exc}")
+
+    _assert_northstar_product_state(
+        captured=captured,
+        harness=harness,
+        outcome=outcome,
+        expected_directive=expected_directive,
+    )
+    assert len(assessments) == 1
+    assert len(question_meaning_records) == 1
+    assessment = assessments[0]
+    question_meaning_record = question_meaning_records[0]
+    kernel = captured["run_kernel"]
+    accepted = kernel.state.initial_answer_contract
+    cross_inputs = [
+        item["input_packet"]
+        for item in harness.role_input_packets
+        if item["system_prompt"]
+        == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
+    ]
+    assert len(cross_inputs) == 1
+    assert len(scheduler_directives_before_release) == 1
+
+    directive_values = [
+        assessment["metadata"]["requested_synthesis_directive"],
+        question_meaning_record["metadata"]["requested_synthesis_directive"],
+        accepted["question_meaning_metadata"]["requested_synthesis_directive"],
+        scheduler_directives_before_release[0],
+        cross_inputs[0]["requested_synthesis_directive"],
+    ]
+    assert directive_values == [expected_directive] * len(directive_values)
+    assert assessment["metadata"]["structured_route_posture"] == "QUALIFIED"
+    assert (
+        assessment["metadata"]["structured_route_syntax_kind"]
+        == expected_syntax_kind
+    )
+    assert assessment["metadata"]["route_qualification_behavior_changed"] is True
+    assert assessment["metadata"]["query_plan_behavior_changed"] is False
+    assert assessment["metadata"]["provider_search_behavior_changed"] is False
+
+    component_questions = [
+        item["user_facing_subquestion"]
+        for item in assessment["component_candidates"]
+    ]
+    assert len(component_questions) == 5
+    assert all(expected_directive not in question for question in component_questions)
+    for expected_fragment, question in zip(
+        ("base rebate", "application", "income", "paper", "online"),
+        component_questions,
+    ):
+        assert expected_fragment in question.casefold()
+    assert [
+        item["component_id"]
+        for item in assessment["component_candidates"]
+    ] == [f"component-{index}" for index in range(1, 6)]
+    assert len(accepted["accepted_answer_component_refs"]) == 5
+    assert not any(
+        action.action_type.value.startswith("specialist")
+        for action in kernel.state.issued_actions.values()
     )
 
 
@@ -950,5 +1154,15 @@ def test_query_shape_six_explicit_components_do_not_bypass_planning_authority() 
         records.query_shape_assessment.metadata.get(
             "explicit_factual_component_list"
         )
-        is True
+        is False
+    )
+    assert (
+        records.query_shape_assessment.metadata.get("structured_route_posture")
+        == "AMBIGUOUS"
+    )
+    assert (
+        records.query_shape_assessment.metadata.get(
+            "requested_synthesis_directive"
+        )
+        is None
     )

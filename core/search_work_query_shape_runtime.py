@@ -156,6 +156,72 @@ _CONFLICT_MARKERS = frozenset(
         "different sources",
     }
 )
+_STRUCTURED_COMPONENT_MINIMUM = 2
+_STRUCTURED_COMPONENT_MAXIMUM = 5
+_STRUCTURED_RETRIEVAL_VERBS = (
+    "find",
+    "identify",
+    "determine",
+    "state",
+    "report",
+    "locate",
+)
+_STRUCTURED_DIRECTIVE_VERBS = (
+    "compare",
+    "calculate",
+    "compute",
+    "convert",
+    "explain",
+    "show",
+    "relate",
+)
+_STRUCTURED_INTERROGATIVE_VERBS = (
+    "what",
+    "who",
+    "when",
+    "where",
+    "which",
+    "must",
+    "can",
+    "does",
+    "do",
+    "is",
+    "are",
+    "how",
+)
+_RETRIEVAL_VERB_PATTERN = "(?:" + "|".join(_STRUCTURED_RETRIEVAL_VERBS) + ")"
+_DIRECTIVE_VERB_PATTERN = "(?:" + "|".join(_STRUCTURED_DIRECTIVE_VERBS) + ")"
+_INTERROGATIVE_VERB_PATTERN = (
+    "(?:" + "|".join(_STRUCTURED_INTERROGATIVE_VERBS) + ")"
+)
+_NUMBERED_MARKER_RE = re.compile(
+    r"(?<!\S)(?P<number>\d{1,2})(?P<punct>[.)])\s+"
+)
+_BULLET_MARKER_RE = re.compile(r"(?<!\S)(?P<punct>[-*])\s+")
+_TRAILING_DIRECTIVE_BOUNDARY_RE = re.compile(
+    rf"(?<=[.!?])\s+(?=(?:then\s+)?{_DIRECTIVE_VERB_PATTERN}\b)",
+    flags=re.IGNORECASE,
+)
+_IMPERATIVE_SENTENCE_BOUNDARY_RE = re.compile(
+    rf"(?<=[.!?])\s+(?=(?:{_RETRIEVAL_VERB_PATTERN}|"
+    rf"(?:then\s+)?{_DIRECTIVE_VERB_PATTERN})\b)",
+    flags=re.IGNORECASE,
+)
+
+
+class _StructuredRoutePosture(str, Enum):
+    QUALIFIED = "QUALIFIED"
+    NOT_STRUCTURED = "NOT_STRUCTURED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+@dataclass(frozen=True, slots=True)
+class _StructuredMulticomponentShape:
+    posture: _StructuredRoutePosture
+    component_items: tuple[str, ...] = ()
+    requested_synthesis_directive: str | None = None
+    syntax_kind: str | None = None
+    newly_licensed_route_form: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +275,7 @@ def build_deterministic_search_work_runtime_records(
         or runtime_input.selected_depth
         or contract.get("selected_depth")
     )
+    structured_shape = _assess_structured_multicomponent_shape(safe_preview or "")
     requirement_obligations = _obligations_from_contract_requirements(contract)
     inferred_obligations = _inferred_obligation_kinds(text)
     obligation_kinds = _ordered_obligation_kinds(
@@ -219,6 +286,7 @@ def build_deterministic_search_work_runtime_records(
         safe_preview=safe_preview,
         route_facts=route_facts,
         obligation_kinds=obligation_kinds,
+        structured_shape=structured_shape,
     )
     obligation_candidates = _source_obligation_candidates(
         obligation_kinds=obligation_kinds,
@@ -278,11 +346,22 @@ def build_deterministic_search_work_runtime_records(
             "behavior_changed": False,
             "query_plan_behavior_changed": False,
             "provider_search_behavior_changed": False,
-            "explicit_factual_component_list": _has_explicit_question_list(
-                safe_preview or ""
+            "structured_route_posture": structured_shape.posture.value,
+            "structured_route_syntax_kind": structured_shape.syntax_kind,
+            "newly_licensed_route_form": (
+                structured_shape.newly_licensed_route_form
             ),
-            "requested_synthesis_directive": _requested_synthesis_directive(
-                safe_preview or ""
+            "route_qualification_behavior_changed": (
+                structured_shape.posture is _StructuredRoutePosture.QUALIFIED
+                and structured_shape.newly_licensed_route_form
+            ),
+            "explicit_factual_component_list": (
+                structured_shape.posture is _StructuredRoutePosture.QUALIFIED
+            ),
+            "requested_synthesis_directive": (
+                structured_shape.requested_synthesis_directive
+                if structured_shape.posture is _StructuredRoutePosture.QUALIFIED
+                else None
             ),
         },
     ).require_valid()
@@ -305,9 +384,14 @@ def _component_specs(
     safe_preview: str | None,
     route_facts: Mapping[str, Any],
     obligation_kinds: Sequence[SourceObligationKind],
+    structured_shape: _StructuredMulticomponentShape,
 ) -> tuple[dict[str, Any], ...]:
     preview = safe_preview or _clean_text(route_facts.get("core_topic"), limit=220)
-    raw_parts = _split_multipart(preview or "")
+    raw_parts = (
+        structured_shape.component_items
+        if structured_shape.posture is _StructuredRoutePosture.QUALIFIED
+        else _split_multipart(preview or "")
+    )
     if not raw_parts:
         raw_parts = (preview or _clean_text(route_facts.get("primary_entity"), limit=160) or "primary lookup",)
     specs: list[dict[str, Any]] = []
@@ -326,6 +410,244 @@ def _component_specs(
             }
         )
     return tuple(specs)
+
+
+def _assess_structured_multicomponent_shape(
+    preview: str,
+) -> _StructuredMulticomponentShape:
+    """Classify only explicit bounded structures that can authorize the lane."""
+
+    text = _clean_text(preview, limit=1000) or ""
+    if not text:
+        return _not_structured_shape()
+
+    numbered_matches = tuple(_NUMBERED_MARKER_RE.finditer(text))
+    bullet_matches = tuple(_BULLET_MARKER_RE.finditer(text))
+    if numbered_matches and bullet_matches:
+        return _ambiguous_structured_shape()
+    if numbered_matches:
+        numbers = tuple(int(match.group("number")) for match in numbered_matches)
+        punctuation = {match.group("punct") for match in numbered_matches}
+        if numbers != tuple(range(1, len(numbers) + 1)) or len(punctuation) != 1:
+            return _ambiguous_structured_shape()
+        return _assess_structured_item_sequence(
+            _marked_items(text, numbered_matches),
+            syntax_family="numbered",
+        )
+    if bullet_matches:
+        punctuation = {match.group("punct") for match in bullet_matches}
+        if len(punctuation) != 1:
+            return _ambiguous_structured_shape()
+        return _assess_structured_item_sequence(
+            _marked_items(text, bullet_matches),
+            syntax_family="bullet",
+        )
+
+    imperative_items = _bounded_imperative_clause_items(text)
+    if imperative_items is None:
+        return _not_structured_shape()
+    return _assess_structured_item_sequence(
+        imperative_items,
+        syntax_family="imperative_clauses",
+    )
+
+
+def _marked_items(
+    text: str,
+    matches: Sequence[re.Match[str]],
+) -> tuple[str, ...]:
+    return tuple(
+        text[match.end() : matches[index + 1].start()].strip()
+        if index + 1 < len(matches)
+        else text[match.end() :].strip()
+        for index, match in enumerate(matches)
+    )
+
+
+def _bounded_imperative_clause_items(text: str) -> tuple[str, ...] | None:
+    starts_with_retrieval = re.match(
+        rf"^{_RETRIEVAL_VERB_PATTERN}\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    body = text
+    if starts_with_retrieval is None:
+        preamble = re.search(
+            rf":\s+(?={_RETRIEVAL_VERB_PATTERN}\b)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if preamble is None:
+            return None
+        body = text[preamble.end() :]
+    if ";" in body:
+        items = tuple(part.strip() for part in re.split(r"\s*;\s*", body))
+    else:
+        items = tuple(
+            part.strip() for part in _IMPERATIVE_SENTENCE_BOUNDARY_RE.split(body)
+        )
+    if len(items) < 2:
+        return None
+    return items
+
+
+def _assess_structured_item_sequence(
+    items: Sequence[str],
+    *,
+    syntax_family: str,
+) -> _StructuredMulticomponentShape:
+    raw_items = list(items)
+    if not raw_items or any(not item for item in raw_items):
+        return _ambiguous_structured_shape()
+
+    split_component, split_directive = _split_trailing_directive(raw_items[-1])
+    if split_directive is not None:
+        raw_items[-1] = split_component or ""
+        raw_items.append(split_directive)
+    if any(not item for item in raw_items):
+        return _ambiguous_structured_shape()
+
+    kinds = tuple(_structured_item_kind(item) for item in raw_items)
+    if any(kind in {"invalid", "mixed"} for kind in kinds):
+        return _ambiguous_structured_shape()
+    directive_indexes = [
+        index for index, kind in enumerate(kinds) if kind == "directive"
+    ]
+    if directive_indexes != [len(raw_items) - 1]:
+        return _ambiguous_structured_shape()
+
+    component_kinds = kinds[:-1]
+    if not component_kinds or len(set(component_kinds)) != 1:
+        return _ambiguous_structured_shape()
+    if syntax_family == "imperative_clauses" and component_kinds[0] != "imperative":
+        return _ambiguous_structured_shape()
+
+    components = tuple(
+        _clean_structured_component(item, kind=component_kinds[index])
+        for index, item in enumerate(raw_items[:-1])
+    )
+    if any(not component for component in components):
+        return _ambiguous_structured_shape()
+    if not (
+        _STRUCTURED_COMPONENT_MINIMUM
+        <= len(components)
+        <= _STRUCTURED_COMPONENT_MAXIMUM
+    ):
+        return _ambiguous_structured_shape()
+    if len({component.casefold() for component in components}) != len(components):
+        return _ambiguous_structured_shape()
+
+    directive = _clean_text(raw_items[-1], limit=1000)
+    if (
+        directive is None
+        or len(directive) > 360
+        or _directive_contains_following_component(directive)
+    ):
+        return _ambiguous_structured_shape()
+    component_kind = component_kinds[0]
+    syntax_kind = (
+        syntax_family
+        if syntax_family == "imperative_clauses"
+        else f"{syntax_family}_{component_kind}"
+    )
+    return _StructuredMulticomponentShape(
+        posture=_StructuredRoutePosture.QUALIFIED,
+        component_items=components,
+        requested_synthesis_directive=directive,
+        syntax_kind=syntax_kind,
+        newly_licensed_route_form=(
+            syntax_family != "bullet" or component_kind == "imperative"
+        ),
+    )
+
+
+def _split_trailing_directive(item: str) -> tuple[str | None, str | None]:
+    if _starts_with_directive(item):
+        return item, None
+    boundary = _TRAILING_DIRECTIVE_BOUNDARY_RE.search(item)
+    if boundary is None:
+        return item, None
+    return item[: boundary.start()].strip(), item[boundary.end() :].strip()
+
+
+def _structured_item_kind(item: str) -> str:
+    cleaned = _clean_text(item, limit=500) or ""
+    if _starts_with_directive(cleaned):
+        return (
+            "mixed"
+            if _directive_contains_following_component(cleaned)
+            else "directive"
+        )
+    if re.match(
+        rf"^{_INTERROGATIVE_VERB_PATTERN}\b",
+        cleaned,
+        flags=re.IGNORECASE,
+    ):
+        if not cleaned.endswith("?") or _contains_directive_verb(cleaned):
+            return "mixed"
+        return "interrogative"
+    if re.match(
+        rf"^{_RETRIEVAL_VERB_PATTERN}\b",
+        cleaned,
+        flags=re.IGNORECASE,
+    ):
+        return "mixed" if _contains_directive_verb(cleaned) else "imperative"
+    return "invalid"
+
+
+def _starts_with_directive(text: str) -> bool:
+    return bool(
+        re.match(
+            rf"^(?:then\s+)?{_DIRECTIVE_VERB_PATTERN}\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _contains_directive_verb(text: str) -> bool:
+    return bool(
+        re.search(
+            rf"\b{_DIRECTIVE_VERB_PATTERN}\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _directive_contains_following_component(text: str) -> bool:
+    return bool(
+        re.search(
+            rf"(?:[.!?;]\s+|,\s*and\s+|\band\s+)"
+            rf"(?:then\s+)?{_RETRIEVAL_VERB_PATTERN}\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _clean_structured_component(item: str, *, kind: str) -> str:
+    if kind == "interrogative":
+        return _clean_question(item)
+    cleaned = _clean_text(item, limit=220) or ""
+    cleaned = re.sub(
+        rf"^{_RETRIEVAL_VERB_PATTERN}\s+(?:the\s+)?",
+        "",
+        cleaned,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip(" ?.,")
+
+
+def _not_structured_shape() -> _StructuredMulticomponentShape:
+    return _StructuredMulticomponentShape(
+        posture=_StructuredRoutePosture.NOT_STRUCTURED
+    )
+
+
+def _ambiguous_structured_shape() -> _StructuredMulticomponentShape:
+    return _StructuredMulticomponentShape(posture=_StructuredRoutePosture.AMBIGUOUS)
 
 
 def _split_multipart(preview: str) -> tuple[str, ...]:
@@ -378,26 +700,6 @@ def _explicit_question_list(text: str) -> tuple[str, ...]:
         for item in (_clean_question(match) for match in matches)
         if item and len(item.split()) >= 2
     )[:6]
-
-
-def _has_explicit_question_list(text: str) -> bool:
-    return len(_explicit_question_list(text)) >= 2
-
-
-def _requested_synthesis_directive(text: str) -> str | None:
-    lowered = text.casefold()
-    markers = (
-        "then explain ",
-        "explain how ",
-        "explain whether ",
-        "compare how ",
-        "show how ",
-    )
-    positions = [lowered.find(marker) for marker in markers if marker in lowered]
-    if not positions:
-        return None
-    start = min(position for position in positions if position >= 0)
-    return _clean_text(text[start:], limit=360)
 
 
 def _split_once_and(text: str) -> tuple[str, ...]:

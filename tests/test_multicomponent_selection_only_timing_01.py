@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 import core.ordinary_multicomponent_synthesis_runtime as runtime
+from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
 from core.run_kernel import RunKernel
 
 
@@ -74,6 +75,8 @@ def test_selection_only_near_miss_defers_direct_semantic_producer(
     assert early.status is runtime.OrdinaryMulticomponentStatus.NOT_QUALIFIED
     assert early.direct_handoff is None
     assert calls == []
+    assert kernel.state.multicomponent_scheduler_context == {}
+    assert COMPONENT_WORK_GRAPH_V1_STAGE not in kernel.state.projections
 
     later = runtime.execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         kernel,
@@ -82,3 +85,5 @@ def test_selection_only_near_miss_defers_direct_semantic_producer(
     assert later.status is runtime.OrdinaryMulticomponentStatus.NOT_QUALIFIED
     assert later.direct_handoff is sentinel
     assert len(calls) == 1
+    assert kernel.state.multicomponent_scheduler_context == {}
+    assert COMPONENT_WORK_GRAPH_V1_STAGE not in kernel.state.projections
