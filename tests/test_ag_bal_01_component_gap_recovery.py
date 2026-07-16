@@ -762,6 +762,18 @@ def test_ag_bal_01_ineligible_modes_do_not_invoke_or_record_recovery(
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
+    coordinator_policies: list[ComponentGapRecoveryPolicy] = []
+    original_coordinator = orchestrator.execute_component_gap_recovery
+
+    def shared_coordinator(*args: Any, **kwargs: Any) -> Any:
+        coordinator_policies.append(kwargs["policy"])
+        return original_coordinator(*args, **kwargs)
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_component_gap_recovery",
+        shared_coordinator,
+    )
     harness, captured = _run_blocked_offline_path(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
@@ -772,6 +784,10 @@ def test_ag_bal_01_ineligible_modes_do_not_invoke_or_record_recovery(
     assert harness.author_prompts == []
     assert len(harness.search_calls) == 1
     state = captured["run_kernel"].state
+    assert len(coordinator_policies) == 1
+    assert coordinator_policies[0].requested_mode == mode
+    assert coordinator_policies[0].recovery_eligible is False
+    assert state.component_gap_recovery_history == []
     assert COMPONENT_GAP_RECOVERY_TRACE_KEY not in state.projections
 
 
@@ -1118,13 +1134,19 @@ def test_supported_cli_composition_leaves_recovery_adapter_absent() -> None:
     assert "component_gap_recovery_adapter=" not in cli_source
 
 
-def test_mode_policy_selection_is_policy_only_and_unsupported_modes_fail_closed() -> None:
-    balanced = recovery_coordinator.component_gap_recovery_policy_for_mode(
+def test_mode_policy_resolution_uses_one_temporary_compatibility_envelope() -> None:
+    balanced = recovery_coordinator.resolve_component_gap_recovery_mode_policy(
         "Balanced"
     )
+    fast = recovery_coordinator.resolve_component_gap_recovery_mode_policy("Fast")
+    deep = recovery_coordinator.resolve_component_gap_recovery_mode_policy("Deep")
+    unsupported = recovery_coordinator.resolve_component_gap_recovery_mode_policy(
+        "Unknown"
+    )
 
-    assert balanced is not None
     assert balanced.requested_mode == "Balanced"
+    assert balanced.mode_supported is True
+    assert balanced.recovery_eligible is True
     assert balanced.max_cycles == 1
     assert balanced.offline_only is True
     assert balanced.existing_candidate_query_only is True
@@ -1132,10 +1154,50 @@ def test_mode_policy_selection_is_policy_only_and_unsupported_modes_fail_closed(
     assert balanced.provider_live_calls_allowed is False
     assert balanced.accepted_amendments_allowed is False
     assert balanced.deep_reconciliation_allowed is False
-    assert recovery_coordinator.component_gap_recovery_policy_for_mode("Fast") is None
-    assert recovery_coordinator.component_gap_recovery_policy_for_mode("Deep") is None
-    assert recovery_coordinator.component_gap_recovery_policy_for_mode("Unknown") is None
-    assert recovery_coordinator.component_gap_recovery_policy_for_mode("") is None
+    assert balanced.temporary_compatibility_values is True
+
+    assert fast.requested_mode == "Fast"
+    assert fast.mode_supported is True
+    assert fast.recovery_eligible is False
+    assert fast.max_cycles == 0
+    assert fast.closure_reason == "recovery_closed_this_phase"
+    assert fast.temporary_compatibility_values is True
+
+    assert deep.requested_mode == "Deep"
+    assert deep.mode_supported is True
+    assert deep.recovery_eligible is False
+    assert deep.max_cycles == 0
+    assert deep.closure_reason == (
+        "recovery_closed_pending_explicit_mode_policy_decision"
+    )
+    assert deep.temporary_compatibility_values is True
+
+    assert unsupported.requested_mode == "Unknown"
+    assert unsupported.mode_supported is False
+    assert unsupported.recovery_eligible is False
+    assert unsupported.max_cycles == 0
+    assert unsupported.closure_reason == "unsupported_mode_recovery_closed"
+    assert unsupported.temporary_compatibility_values is True
+
+
+def test_unsupported_mode_envelope_fails_closed_in_shared_primitive() -> None:
+    adapter = _AdapterSpy()
+    result = execute_authorized_component_gap_recovery(
+        run_kernel=object(),
+        policy=recovery_coordinator.resolve_component_gap_recovery_mode_policy(
+            "Unknown"
+        ),
+        query_plan_trace=None,
+        search_judgment_projection=None,
+        evidence_ledger_projection=None,
+        search_work_projection=None,
+        offline_recovery_adapter=adapter,
+    )
+
+    assert result.status.value == "blocked"
+    assert result.stop_reason == "unsupported_mode_recovery_closed"
+    assert result.budget_record["adapter_invoked"] is False
+    assert adapter.calls == []
 
 
 def test_recovery_handoff_contains_no_final_or_author_material() -> None:

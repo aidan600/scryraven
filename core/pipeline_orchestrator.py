@@ -40,8 +40,8 @@ from core.authoritative_source_action_orchestrator_adapter import (
 )
 from core.component_gap_recovery_coordinator import (
     ComponentGapRecoveryPipelineInputs,
-    component_gap_recovery_policy_for_mode,
     execute_component_gap_recovery,
+    resolve_component_gap_recovery_mode_policy,
 )
 from core.conflict_resolution_controller import (
     ConflictResolutionDecision,
@@ -3688,93 +3688,92 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     sufficiency_judgment_projection = sufficiency_handoff.projection
 
-    recovery_policy = component_gap_recovery_policy_for_mode(strategy)
-    if recovery_policy is not None:
-        component_gap_recovery_handoff = execute_component_gap_recovery(
-            inputs=ComponentGapRecoveryPipelineInputs(
-                run_kernel=run_kernel,
-                query_plan_trace=query_authority.to_trace_fragment(),
-                search_judgment_projection=search_judgment_projection,
-                evidence_ledger_projection=evidence_ledger_projection,
-                search_work_projection=run_kernel.state.projections.get(
-                    SEARCH_WORK_SHADOW_LANE_TRACE_KEY
-                ),
-                query=query,
-                intent=intent,
-                complexity=complexity,
-                search_depth=search_depth,
-                results_per_query=results_per_query,
-                all_passages=all_passages,
+    recovery_policy = resolve_component_gap_recovery_mode_policy(strategy)
+    component_gap_recovery_handoff = execute_component_gap_recovery(
+        inputs=ComponentGapRecoveryPipelineInputs(
+            run_kernel=run_kernel,
+            query_plan_trace=query_authority.to_trace_fragment(),
+            search_judgment_projection=search_judgment_projection,
+            evidence_ledger_projection=evidence_ledger_projection,
+            search_work_projection=run_kernel.state.projections.get(
+                SEARCH_WORK_SHADOW_LANE_TRACE_KEY
             ),
-            policy=recovery_policy,
-            offline_recovery_adapter=deps.component_gap_recovery_adapter,
-            seen_urls=seen_urls,
+            query=query,
+            intent=intent,
+            complexity=complexity,
+            search_depth=search_depth,
+            results_per_query=results_per_query,
+            all_passages=all_passages,
+        ),
+        policy=recovery_policy,
+        offline_recovery_adapter=deps.component_gap_recovery_adapter,
+        seen_urls=seen_urls,
+    )
+    component_gap_recovery_result = component_gap_recovery_handoff.result
+    if component_gap_recovery_handoff.recovered:
+        if not component_gap_recovery_handoff.all_passages:
+            raise PipelineError(
+                "recovered component-gap material is absent"
+            )
+        canonical_recovery_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
         )
-        component_gap_recovery_result = component_gap_recovery_handoff.result
-        if component_gap_recovery_handoff.recovered:
-            if not component_gap_recovery_handoff.all_passages:
-                raise PipelineError(
-                    "recovered component-gap material is absent"
-                )
-            canonical_recovery_projection = (
-                run_kernel.state.evidence_ledger.to_projection().to_dict()
+        if dict(
+            component_gap_recovery_handoff.evidence_ledger_projection or {}
+        ) != canonical_recovery_projection:
+            raise PipelineError(
+                "recovered component-gap EvidenceLedger projection is stale"
             )
-            if dict(
-                component_gap_recovery_handoff.evidence_ledger_projection or {}
-            ) != canonical_recovery_projection:
-                raise PipelineError(
-                    "recovered component-gap EvidenceLedger projection is stale"
-                )
-            all_passages = list(component_gap_recovery_handoff.all_passages)
-            recovered_final_material_handoff = (
-                build_final_material_runtime_handoff_from_scope(
-                    _final_material_runtime_scope(),
-                    filter_top_evidence=deps.filter_top_evidence,
-                    is_plausible_domain=deps.is_plausible_domain,
-                    recovered_evidence_visibility=(
-                        apply_controller_recovered_evidence_visibility
-                    ),
-                )
+        all_passages = list(component_gap_recovery_handoff.all_passages)
+        recovered_final_material_handoff = (
+            build_final_material_runtime_handoff_from_scope(
+                _final_material_runtime_scope(),
+                filter_top_evidence=deps.filter_top_evidence,
+                is_plausible_domain=deps.is_plausible_domain,
+                recovered_evidence_visibility=(
+                    apply_controller_recovered_evidence_visibility
+                ),
             )
-            (
-                final_evidence_handoff,
-                final_evidence_bundle,
-                final_top_evidence,
-                unique_source_urls,
-                ordered_sources,
-                evidence_ledger_projection,
-                evidence_block,
-                cached_prefix,
-                author_evidence,
-                author_evidence_block,
-                author_prompt,
-                author_notes,
-            ) = _consume_final_material_runtime_handoff(
-                recovered_final_material_handoff
+        )
+        (
+            final_evidence_handoff,
+            final_evidence_bundle,
+            final_top_evidence,
+            unique_source_urls,
+            ordered_sources,
+            evidence_ledger_projection,
+            evidence_block,
+            cached_prefix,
+            author_evidence,
+            author_evidence_block,
+            author_prompt,
+            author_notes,
+        ) = _consume_final_material_runtime_handoff(
+            recovered_final_material_handoff
+        )
+        current_evidence_ledger_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
+        )
+        if evidence_ledger_projection != current_evidence_ledger_projection:
+            raise PipelineError(
+                "shared final-material EvidenceLedger projection is stale"
             )
-            current_evidence_ledger_projection = (
-                run_kernel.state.evidence_ledger.to_projection().to_dict()
-            )
-            if evidence_ledger_projection != current_evidence_ledger_projection:
-                raise PipelineError(
-                    "shared final-material EvidenceLedger projection is stale"
-                )
-            evidence_ledger_projection = current_evidence_ledger_projection
-            sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
-                run_kernel,
-                locals(),
-                ask_model=ask_model if run_authority_sufficiency_smart_model else None,
-                clean_json_response=deps.clean_json_response,
-                smart_model_enabled=run_authority_sufficiency_smart_model,
-                provider=smart_provider,
-                model=smart_model,
-                base_url=local_url,
-                api_key=or_api_key,
-                effort="high",
-                use_reasoning=use_reasoning,
-                measure_context_stage=_measure_context_stage,
-            )
-            sufficiency_judgment_projection = sufficiency_handoff.projection
+        evidence_ledger_projection = current_evidence_ledger_projection
+        sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
+            run_kernel,
+            locals(),
+            ask_model=ask_model if run_authority_sufficiency_smart_model else None,
+            clean_json_response=deps.clean_json_response,
+            smart_model_enabled=run_authority_sufficiency_smart_model,
+            provider=smart_provider,
+            model=smart_model,
+            base_url=local_url,
+            api_key=or_api_key,
+            effort="high",
+            use_reasoning=use_reasoning,
+            measure_context_stage=_measure_context_stage,
+        )
+        sufficiency_judgment_projection = sufficiency_handoff.projection
 
     status.update("Writing final report...")
 

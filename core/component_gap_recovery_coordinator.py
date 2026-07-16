@@ -41,18 +41,59 @@ class ComponentGapRecoveryPipelineHandoff:
     semantic_state_facts: Mapping[str, Any] | None = None
 
 
-def component_gap_recovery_policy_for_mode(
-    requested_mode: str,
-) -> ComponentGapRecoveryPolicy | None:
-    """Select a bounded recovery policy without selecting an execution path."""
+_RECOVERY_MODE_COMPATIBILITY_VALUES: Mapping[str, Mapping[str, Any]] = {
+    "Balanced": {
+        "policy_label": "balanced_single_cycle_offline",
+        "recovery_eligible": True,
+        "closure_reason": None,
+        "max_cycles": 1,
+    },
+    "Fast": {
+        "policy_label": "fast_recovery_closed_compatibility",
+        "recovery_eligible": False,
+        "closure_reason": "recovery_closed_this_phase",
+        "max_cycles": 0,
+    },
+    "Deep": {
+        "policy_label": "deep_recovery_closed_compatibility",
+        "recovery_eligible": False,
+        "closure_reason": (
+            "recovery_closed_pending_explicit_mode_policy_decision"
+        ),
+        "max_cycles": 0,
+    },
+}
 
-    if requested_mode != "Balanced":
-        return None
+
+def resolve_component_gap_recovery_mode_policy(
+    requested_mode: str,
+) -> ComponentGapRecoveryPolicy:
+    """Resolve the recovery slice of one shared temporary mode-policy shape."""
+
+    compatibility_values = _RECOVERY_MODE_COMPATIBILITY_VALUES.get(requested_mode)
+    mode_supported = compatibility_values is not None
+    values = dict(
+        compatibility_values
+        or {
+            "policy_label": "unsupported_mode_recovery_closed",
+            "recovery_eligible": False,
+            "closure_reason": "unsupported_mode_recovery_closed",
+            "max_cycles": 0,
+        }
+    )
     return ComponentGapRecoveryPolicy(
-        policy_label="balanced_single_cycle_offline",
+        policy_label=str(values["policy_label"]),
         requested_mode=requested_mode,
-        allowed_requested_modes=("Balanced",),
-        max_cycles=1,
+        allowed_requested_modes=(requested_mode,) if mode_supported else (),
+        mode_supported=mode_supported,
+        recovery_eligible=bool(values["recovery_eligible"]),
+        closure_reason=(
+            str(values["closure_reason"])
+            if values.get("closure_reason") is not None
+            else None
+        ),
+        temporary_compatibility_values=True,
+        max_cycles=int(values["max_cycles"]),
         offline_only=True,
         existing_candidate_query_only=True,
         model_generated_query_text_allowed=False,
@@ -112,6 +153,6 @@ def execute_component_gap_recovery(
 __all__ = [
     "ComponentGapRecoveryPipelineHandoff",
     "ComponentGapRecoveryPipelineInputs",
-    "component_gap_recovery_policy_for_mode",
     "execute_component_gap_recovery",
+    "resolve_component_gap_recovery_mode_policy",
 ]
