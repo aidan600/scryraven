@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: e444c2e098e90b18c67bea34d057718a61b586d7
+Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -162,7 +162,7 @@ decisions, not completed runtime changes.
 
 ## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01
 
-Runtime/test commit `e444c2e098e90b18c67bea34d057718a61b586d7`
+Runtime/test commit `af87f5387fb5cd11a36c56754ee719400bb1bf0b`
 retired prompt-era semantic Scout ordinary execution and the ordinary Linkup
 `deep/sourcedAnswer` precision path. The ordinary product now makes no Scout
 prompt/model call, creates no Scout QueryPlan candidate or retrieval work, and

@@ -71,7 +71,7 @@ STRUCTURED_ROUTE_RUNTIME_SHA = (
     "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
 )
 SCOUT_RETIREMENT_RUNTIME_SHA = (
-    "e444c2e098e90b18c67bea34d057718a61b586d7"  # pragma: allowlist secret
+    "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = (
     SCOUT_RETIREMENT_RUNTIME_SHA

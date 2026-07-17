@@ -5,7 +5,7 @@ Authority: owner-approved provider acquisition target doctrine
 Default-read: no
 Applies-to: provider offerings, installed adapters, current consumers, provider-material authority, and migration dispositions
 Does-not-authorize: implementation, live calls, provider selection changes, or claims that target capabilities are installed
-Verified-against-runtime: e444c2e098e90b18c67bea34d057718a61b586d7
+Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
 Vendor-documentation-checked: 2026-07-16
 
 ## 1. Outcome and boundary
@@ -210,7 +210,7 @@ dispatcher. **Basis: CURRENT_RUNTIME.**
 
 ### 7.1 Completed semantic Scout retirement inventory
 
-Runtime/test commit `e444c2e098e90b18c67bea34d057718a61b586d7`
+Runtime/test commit `af87f5387fb5cd11a36c56754ee719400bb1bf0b`
 retired the complete ordinary-execution cluster, not just the active body of
 `core.scout.run_scout`:
 
@@ -379,7 +379,7 @@ current profile:
 
 Completed prerequisite:
 `LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01` at runtime/test commit
-`e444c2e098e90b18c67bea34d057718a61b586d7`.
+`af87f5387fb5cd11a36c56754ee719400bb1bf0b`.
 
 1. Provider-capability routing foundation: introduce provider-neutral
    acquisition jobs/qualifiers and installation availability; replace Tavily
