@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, scheduling, mechanical dispatch, and selected-candidate READ custody
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
+Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -32,7 +32,7 @@ SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners retain source custody.
 
 Runtime/test provenance:
-`6903b9801ee4a03c56f51c77d0455d865952ecd2`.
+`193c5caabe1f97da534f0e601d410acb98d3cdea`.
 
 ## Capability Status Matrix
 

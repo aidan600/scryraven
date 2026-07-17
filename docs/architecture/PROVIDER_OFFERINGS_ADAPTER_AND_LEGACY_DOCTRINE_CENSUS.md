@@ -5,7 +5,7 @@ Authority: owner-approved provider acquisition target doctrine
 Default-read: no
 Applies-to: provider offerings, installed adapters, current consumers, provider-material authority, and migration dispositions
 Does-not-authorize: further implementation, live calls, new adapters, provider-quality claims, or closed-surface changes
-Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
+Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
 Vendor-documentation-checked: 2026-07-16
 
 ## 1. Outcome and boundary
@@ -42,7 +42,7 @@ This census uses these non-equivalent states:
 | **Ordinary reachable** | A current product execution can reach the callsite when its key, gate, and request conditions are satisfied. |
 | **Ordinary consumed** | A deterministic current PRODUCT requester actually requests and consumes the capability. |
 | **Authority granted** | Returned material is permitted to affect queries, evidence, analysis, or final-answer custody; this is narrower than reachability and is stated per row. |
-| **Installed convergence** | Runtime/test commit `6903b9801ee4a03c56f51c77d0455d865952ecd2` proves current routing, adapters, typed READ consumption, explicit availability/budget/identity authority, truthful lineage, and escape closure offline. |
+| **Installed convergence** | Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea` proves current routing, adapters, typed READ consumption, explicit availability/budget/identity authority, truthful lineage, and escape closure offline. |
 
 `RETAIN`, `REPLACE`, `RETIRE`, and `DEFER_PENDING_PROOF` below are target
 dispositions remain target decisions unless a row explicitly cites the installed
@@ -50,7 +50,7 @@ foundation. **Basis: OWNER_DECISION.**
 
 ### 1.1 Installed routing and acquisition-runtime update
 
-Runtime/test commit `6903b9801ee4a03c56f51c77d0455d865952ecd2`
+Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea`
 preserves `core.routing` as the sole capability/catalog/selection-policy owner
 and installs the shared bounded acquisition contracts and mechanical adapters.
 Ordinary `run_pipeline()` now consumes one ProviderPlan decision per acquisition
@@ -448,7 +448,7 @@ Completed foundation:
 
 Completed combined adapter/runtime repair:
 `ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01` at runtime/test commit
-`6903b9801ee4a03c56f51c77d0455d865952ecd2`.
+`193c5caabe1f97da534f0e601d410acb98d3cdea`.
 
 1. `BOUNDED-FINAL-CUSTODY-CONVERGENCE-01` for currently product-consumed
    DISCOVER and READ artifacts only; do not manufacture dormant capability
@@ -524,7 +524,8 @@ Claim permitted:
 the acquisition stack uses one provider-capability policy owner; current
 ordinary discovery and selected-candidate READ consume completed route
 decisions; Linkup Fetch and Tavily Extract/Map/Crawl adapters enforce typed
-requests, bounded artifacts, and exact lineage; general Linkup Deep is
+requests, bounded artifacts, and provenance-labeled partial lineage without
+inventing unreported source metadata; general Linkup Deep is
 mechanically available only behind explicit bounded authorization; and current
 PRODUCT provider-name selection escape hatches are closed
 

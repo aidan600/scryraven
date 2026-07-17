@@ -53,8 +53,9 @@ The current loop is one authority flow, not a phase chronology:
    evidence.
 10. Fetch/read produces bounded sanitized content references from authorized
     candidates. Readable content is not semantic support.
-11. EvidenceLedger records candidate/content custody and exact lineage. Custody
-    is not admitted meaning or component satisfaction.
+11. EvidenceLedger records candidate/content custody and provenance-labeled
+    partial lineage for observed fields; it does not invent unobserved source
+    metadata. Custody is not admitted meaning or component satisfaction.
 12. Evidence-relative analysis proposes what the custodied material means,
     including findings, caveats, contradictions, and gaps.
 13. RunKernel admits eligible proposal-stage meaning as SemanticObservation

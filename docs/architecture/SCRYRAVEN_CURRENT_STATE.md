@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
+Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -231,7 +231,7 @@ acquisition, or general quantitative reasoning.
 
 ## Installed Acquisition Routing And Adapter Runtime
 
-Runtime/test commit `6903b9801ee4a03c56f51c77d0455d865952ecd2`
+Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea`
 preserves `core.routing` as the sole provider-capability policy owner and adds
 shared immutable acquisition requests, jobs, artifacts, lineage, and execution
 results. Mechanical adapters now implement Linkup Fetch; Tavily Extract, Map,

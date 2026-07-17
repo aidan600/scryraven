@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
+Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -199,7 +199,7 @@ change.
 
 ## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01
 
-Runtime/test commit `6903b9801ee4a03c56f51c77d0455d865952ecd2`
+Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea`
 installed the shared bounded acquisition contracts; Linkup Fetch; Tavily
 Extract, Map, and bounded Crawl; and mechanically authorized general Linkup
 `deep/searchResults`. `core.routing` remains the sole policy owner.

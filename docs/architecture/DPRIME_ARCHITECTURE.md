@@ -166,8 +166,9 @@ handoffs remain visible to the applicable D-prime. RunKernel independently
 rederives the exact current D-prime
 role, action, artifact, target, and handoff-bearing input digest before
 exactly-once consumption; it does not trust a caller-supplied route or status.
-A Specialist outcome preserves exact lineage, cannot validate itself, and
-cannot bypass D-prime or RunKernel.
+A Specialist outcome preserves provenance-labeled partial lineage for the
+fields its producer observed, cannot validate itself, and cannot bypass D-prime
+or RunKernel. It does not claim complete lineage for unobserved source metadata.
 
 The deterministic source-bound calculator is registered and activated by the
 fixed S1 ordinary product composition for the named bounded multi-component
