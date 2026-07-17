@@ -29,6 +29,15 @@ from tests.helpers.offline_ordinary_pipeline import (
 ROOT = Path(__file__).resolve().parents[1]
 ORCHESTRATOR = ROOT / "core" / "pipeline_orchestrator.py"
 CLI = ROOT / "proplex" / "__main__.py"
+ORDINARY_LIVE_DRY_RUN = ROOT / "proplex" / "ordinary_live_entrypoint_dry_run.py"
+BOUNDED_PRODUCT_RUNNER = (
+    ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py"
+)
+ORDINARY_COMPOSITION_ROOTS = (
+    CLI,
+    ORDINARY_LIVE_DRY_RUN,
+    BOUNDED_PRODUCT_RUNNER,
+)
 PROMPTS = ROOT / "core" / "prompts.py"
 SCOUT_COMPATIBILITY = ROOT / "core" / "scout.py"
 QUERY_PLAN_ADAPTER = ROOT / "core" / "query_plan_runtime_adapter.py"
@@ -41,6 +50,13 @@ LEGACY_REVIEW = ROOT / "core" / "legacy_review_runtime_stage.py"
 RETIREMENT_REASON = "legacy_semantic_scout_ordinary_execution_retired"
 PROVIDER_ANSWER_MARKER = "PROVIDER_WRITTEN_LINKUP_ANSWER_MUST_NOT_ENTER_ANALYST"
 QUERY = "Compare Alpha and Beta operating rates using current evidence."
+RETIRED_RUNDEPS_NAMES = frozenset(
+    {
+        "fetch_linkup_precision_block",
+        "run_scout",
+        "should_skip_quant_scout",
+    }
+)
 
 
 def _call_names(path: Path) -> set[str]:
@@ -71,6 +87,47 @@ def _rundeps_keywords(path: Path) -> set[str]:
             continue
         keywords.update(keyword.arg for keyword in node.keywords if keyword.arg)
     return keywords
+
+
+def _imported_names(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+    names = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    names.update(
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    )
+    return names
+
+
+@pytest.mark.parametrize(
+    "composition_root",
+    ORDINARY_COMPOSITION_ROOTS,
+    ids=("ordinary-cli", "ordinary-live-dry-run", "bounded-product-runner"),
+)
+def test_current_composition_root_does_not_import_or_inject_retired_dependencies(
+    composition_root: Path,
+) -> None:
+    imported_retired_names = RETIRED_RUNDEPS_NAMES & _imported_names(
+        composition_root
+    )
+    injected_retired_names = RETIRED_RUNDEPS_NAMES & _rundeps_keywords(
+        composition_root
+    )
+    assert not imported_retired_names, (
+        f"{composition_root} imports retired dependencies: "
+        f"{sorted(imported_retired_names)}"
+    )
+    assert not injected_retired_names, (
+        f"{composition_root} injects retired RunDeps fields: "
+        f"{sorted(injected_retired_names)}"
+    )
 
 
 def test_ordinary_semantic_scout_spy_is_inert_and_downstream_still_completes(
@@ -216,14 +273,6 @@ def test_static_ordinary_composition_prompt_queryplan_and_scheduler_are_closed()
     assert "fetch_linkup_precision_block" not in orchestrator_source
     assert "sourcedAnswer" not in orchestrator_source
     assert "run_scout" not in orchestrator_calls
-
-    cli_source = CLI.read_text(encoding="utf-8")
-    cli_keywords = _rundeps_keywords(CLI)
-    assert "run_scout" not in cli_source
-    assert "should_skip_quant_scout" not in cli_source
-    assert "fetch_linkup_precision_block" not in cli_keywords
-    assert "run_scout" not in cli_keywords
-    assert "should_skip_quant_scout" not in cli_keywords
 
     prompt_source = PROMPTS.read_text(encoding="utf-8")
     assert "SCOUT_PROMPTS" not in prompt_source
