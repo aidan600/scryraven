@@ -39,7 +39,6 @@ from core.single_relation_source_obligation_recovery_authorization import (
     AUTHORIZATION_STATUS_NOT_REQUIRED,
     AUTHORIZATION_STATUS_RECOVERY_CALL_AUTHORIZED,
     AUTHORIZATION_STATUS_RECOVERY_REQUIRED_CONFIRMATION_REQUIRED,
-    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
     DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
@@ -50,6 +49,9 @@ from core.single_relation_source_obligation_recovery_authorization import (
 )
 from core.source_of_record_recovery_provider_config import (
     SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
+)
+from proplex.live_semantic_coverage_status import (
+    BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
     DEFAULT_OUTPUT_DIR,
@@ -70,6 +72,10 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py"
 CORE_PATH = ROOT / "core" / "single_relation_source_obligation_recovery_authorization.py"
 RUN_KERNEL_PATH = ROOT / "core" / "run_kernel.py"
+OFFLINE_TAVILY_ROUTING_ENV = {  # pragma: allowlist secret
+    "PYTEST_CURRENT_TEST": "test",
+    "TAVILY_API_KEY": "offline",  # pragma: allowlist secret
+}
 
 
 def test_core_authorization_blocks_non_official_direct_support() -> None:
@@ -139,10 +145,12 @@ def test_core_authorization_blocks_non_official_direct_support() -> None:
     assert recovery_plan["provider_role"] == (
         SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
     )
-    assert recovery_plan["provider_role_config_ref"]["provider_role"] == (
-        SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
-    )
-    assert recovery_plan["provider_decision_global_default"] is False
+    assert recovery_plan["provider_neutral_requirement"] == {
+        "capability": "DISCOVER",
+        "discover_qualifier": "domain_targeted",
+        "provider_selection_owner": "core.routing",
+    }
+    assert "provider" not in recovery_plan
     assert recovery_plan["provider_decision_hardcoded_in_runner"] is False
     assert recovery_plan["closed_surface_flags"]["support_created"] is False
     assert recovery_plan["closed_surface_flags"]["source_authority_adjudicated"] is False
@@ -371,7 +379,7 @@ def test_non_official_direct_support_cannot_reach_pass_default_off(
         product_provider_acquisition_runner=_product_runner(calls),
         fetch_read_runner=_fetch_read_must_not_run,
         dprime_model_review_callable=_direct_support_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_TAVILY_ROUTING_ENV,
     )
 
     packet = result.packet
@@ -382,9 +390,7 @@ def test_non_official_direct_support_cannot_reach_pass_default_off(
 
     assert len(calls) == 1
     assert result.return_code == 2
-    assert result.decision == (
-        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED
-    )
+    assert result.decision == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
     assert packet["answer_text_present"] is False
     assert packet["product_answer_text"] == ""
     assert packet["source_display_entries"] == []
@@ -431,7 +437,9 @@ def test_non_official_direct_support_cannot_reach_pass_default_off(
     assert dprime_status["assessment_status"] == "assessed"
     assert dprime_status["support_relation"] == "directly_supports"
     assert dprime_status["validated_support_proposal_available"] is True
-    assert dprime_status["run_kernel_admission_decision_status"] == "challenged"
+    assert authorization["run_kernel_support_admission_decision_status"] == (
+        DPRIME_RUN_KERNEL_ADMISSION_DECISION_CHALLENGED
+    )
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
     assert dprime_status["objects_created"].get("final_answer_packet") is not True
@@ -462,7 +470,7 @@ def test_confirmed_fake_recovery_for_direct_support_stops_before_rereview(
         ),
         fetch_read_runner=_fetch_read_must_not_run,
         dprime_model_review_callable=_direct_support_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_TAVILY_ROUTING_ENV,
     )
 
     packet = result.packet
@@ -495,9 +503,7 @@ def test_confirmed_fake_recovery_for_direct_support_stops_before_rereview(
     assert recovery["source_obligation_satisfied"] is False
     assert recovery["citation_eligible"] is False
     assert recovery["answer_created"] is False
-    assert result.decision == (
-        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED
-    )
+    assert result.decision == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
     assert packet["dprime_model_review_calls_attempted"] == 1
     assert packet["answer_text_present"] is False
     assert packet["source_display_entries"] == []
@@ -577,8 +583,11 @@ def _acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         "acquisition_query": plan["search_query_seeds"][0],
         "answer_bearing_anchor_terms": ["small claims", "filing fee"],
         "artifact_source_terms": ["fee schedule"],
-        "extraction_provider": "tavily",
-        "provider_operation": "search",
+        "provider_neutral_requirement": {
+            "capability": "discover",
+            "discover_qualifier": "general",
+            "provider_selection_owner": "core.routing",
+        },
     }
 
 

@@ -75,6 +75,7 @@ def test_utilization_retry_disabled_by_cap_policy_records_trace(
         run_id="run-cap-retry",
         capture_stages=(),
         cap_policy=cap_policy,
+        provider_availability={"tavily": True},
     )
 
     assert all(
@@ -110,6 +111,7 @@ def test_search_dispatch_cap_overflow_fails_before_extra_dispatch(
             run_id="run-cap-search",
             capture_stages=(),
             cap_policy=cap_policy,
+            provider_availability={"tavily": True},
         )
 
     assert harness.search_calls == []
@@ -139,6 +141,7 @@ def test_author_model_cap_overflow_fails_before_author_call(
             run_id="run-cap-author",
             capture_stages=(),
             cap_policy=cap_policy,
+            provider_availability={"tavily": True},
         )
 
     assert harness.author_prompts == []

@@ -34,6 +34,59 @@ PROVIDER_NAMES = ("tavily", "linkup", "exa", "serper", "brave")
 
 
 @dataclass(frozen=True, slots=True)
+class GeneralDeepAuthorization:
+    """Explicit bounded authorization facts for non-Scrutineer Linkup Deep."""
+
+    parent_standard_acquisition_job_id: str
+    acquisition_lineage_id: str
+    obligation_reference: str
+    sequential_acquisition_required: bool
+    premium_authorized: bool
+    remaining_run_budget: int
+    general_escalations_used: int
+    queries: tuple[str, ...]
+    max_results_per_query: int
+    output_type: str = "searchResults"
+
+    @property
+    def valid(self) -> bool:
+        try:
+            remaining_budget = int(self.remaining_run_budget)
+            escalations_used = int(self.general_escalations_used)
+            max_results = int(self.max_results_per_query)
+        except (TypeError, ValueError):
+            return False
+        return bool(
+            str(self.parent_standard_acquisition_job_id).strip()
+            and str(self.acquisition_lineage_id).strip()
+            and str(self.obligation_reference).strip()
+            and self.sequential_acquisition_required
+            and self.premium_authorized
+            and remaining_budget > 0
+            and escalations_used == 0
+            and 1 <= len(self.queries) <= 2
+            and all(str(query).strip() for query in self.queries)
+            and 1 <= max_results <= 5
+            and self.output_type == "searchResults"
+        )
+
+    def to_trace(self) -> dict[str, object]:
+        return {
+            "parent_standard_acquisition_job_id": self.parent_standard_acquisition_job_id,
+            "acquisition_lineage_id": self.acquisition_lineage_id,
+            "obligation_reference": self.obligation_reference,
+            "sequential_acquisition_required": self.sequential_acquisition_required,
+            "premium_authorized": self.premium_authorized,
+            "remaining_run_budget": self.remaining_run_budget,
+            "general_escalations_used": self.general_escalations_used,
+            "query_count": len(self.queries),
+            "max_results_per_query": self.max_results_per_query,
+            "output_type": self.output_type,
+            "authorization_valid": self.valid,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderAvailability:
     """Boolean-only availability facts for the bounded provider set."""
 
@@ -59,17 +112,31 @@ class ProviderAvailability:
 class ProviderCapabilityRequest:
     capability: AcquisitionCapability
     qualifier: DiscoverQualifier | None = None
+    domain_constraints: tuple[str, ...] = ()
     include_domains: tuple[str, ...] = ()
     exclude_domains: tuple[str, ...] = ()
+    source_of_record_domain_constraints: tuple[str, ...] = ()
     derivation_reason: str = "explicit_capability_request"
+    general_deep_requested: bool = False
+    general_deep_authorization: GeneralDeepAuthorization | None = None
 
     def to_trace(self) -> dict[str, object]:
         return {
             "capability": self.capability.value,
             "qualifier": self.qualifier.value if self.qualifier is not None else None,
+            "domain_constraints": list(self.domain_constraints),
             "include_domains": list(self.include_domains),
             "exclude_domains": list(self.exclude_domains),
+            "source_of_record_domain_constraints": list(
+                self.source_of_record_domain_constraints
+            ),
             "derivation_reason": self.derivation_reason,
+            "general_deep_requested": self.general_deep_requested,
+            "general_deep_authorization": (
+                self.general_deep_authorization.to_trace()
+                if self.general_deep_authorization is not None
+                else None
+            ),
         }
 
 
@@ -92,6 +159,8 @@ class ProviderCapabilityCatalogEntry:
 class ProviderCapabilityCatalogStatus:
     entry: ProviderCapabilityCatalogEntry
     currently_available: bool
+    typed_runtime_reachable: bool
+    ordinary_product_reachable: bool
     currently_reachable: bool
 
     def __getattr__(self, name: str) -> object:
@@ -111,6 +180,8 @@ class ProviderCapabilityCatalogStatus:
             "adapter_installed": self.entry.adapter_installed,
             "ordinary_product_enabled": self.entry.ordinary_product_enabled,
             "currently_available": self.currently_available,
+            "typed_runtime_reachable": self.typed_runtime_reachable,
+            "ordinary_product_reachable": self.ordinary_product_reachable,
             "currently_reachable": self.currently_reachable,
             "returned_material_class": self.entry.returned_material_class,
             "authority_posture": self.entry.authority_posture,
@@ -130,6 +201,8 @@ class ProviderFallbackCandidate:
     adapter_installed: bool
     ordinary_product_enabled: bool
     currently_available: bool
+    typed_runtime_reachable: bool
+    ordinary_product_reachable: bool
     currently_reachable: bool
     returned_material_class: str
     authority_posture: str
@@ -149,6 +222,8 @@ class ProviderFallbackCandidate:
             adapter_installed=entry.adapter_installed,
             ordinary_product_enabled=entry.ordinary_product_enabled,
             currently_available=status.currently_available,
+            typed_runtime_reachable=status.typed_runtime_reachable,
+            ordinary_product_reachable=status.ordinary_product_reachable,
             currently_reachable=status.currently_reachable,
             returned_material_class=entry.returned_material_class,
             authority_posture=entry.authority_posture,
@@ -315,8 +390,6 @@ PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
         "fetch",
         "known_url",
         "markdown",
-        adapter_installed=False,
-        ordinary_product_enabled=False,
         returned_material_class="caller_selected_url_material",
     ),
     _entry(
@@ -326,8 +399,6 @@ PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
         "extract",
         "basic",
         "extractedContent",
-        adapter_installed=False,
-        ordinary_product_enabled=False,
         returned_material_class="caller_selected_url_material",
     ),
     _entry(
@@ -337,7 +408,6 @@ PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
         "extract",
         "query_focused",
         "extractedContent",
-        adapter_installed=False,
         ordinary_product_enabled=False,
         returned_material_class="caller_selected_url_material",
     ),
@@ -348,7 +418,6 @@ PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
         "map",
         "bounded",
         "siteUrlMap",
-        adapter_installed=False,
         ordinary_product_enabled=False,
         returned_material_class="site_url_map",
     ),
@@ -359,7 +428,6 @@ PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
         "crawl",
         "bounded",
         "pageMaterial",
-        adapter_installed=False,
         ordinary_product_enabled=False,
         returned_material_class="bounded_multi_page_material",
     ),
@@ -415,8 +483,18 @@ def materialize_provider_capability_catalog(
         ProviderCapabilityCatalogStatus(
             entry=entry,
             currently_available=snapshot.is_available(entry.provider),
+            typed_runtime_reachable=(
+                snapshot.is_available(entry.provider) and entry.adapter_installed
+            ),
+            ordinary_product_reachable=(
+                snapshot.is_available(entry.provider)
+                and entry.adapter_installed
+                and entry.ordinary_product_enabled
+            ),
             currently_reachable=(
-                snapshot.is_available(entry.provider) and entry.adapter_installed and entry.ordinary_product_enabled
+                snapshot.is_available(entry.provider)
+                and entry.adapter_installed
+                and entry.ordinary_product_enabled
             ),
         )
         for entry in PROVIDER_CAPABILITY_CATALOG
@@ -452,24 +530,6 @@ def is_quantitative_query(query_type: str | None, report_type: str | None) -> bo
         "cost_analysis",
         "unit_economics",
     }
-
-
-def should_allow_linkup_provider(
-    complexity: str | None,
-    *,
-    explicit_provider_override: bool = False,
-    premium_search_escalation: bool = False,
-) -> bool:
-    """Compatibility predicate for the nonordinary ``search_providers=None`` path.
-
-    Ordinary routing no longer consumes this complexity gate.  The retained
-    lower-level compatibility path is a residual provider-name owner for the
-    later acquisition-routing closure.
-    """
-
-    if explicit_provider_override or premium_search_escalation:
-        return True
-    return (complexity or "").strip().lower() == "high"
 
 
 def merge_search_provider_overrides(
@@ -582,6 +642,35 @@ def _matching_status(
     )
 
 
+def _status_reachable(
+    status: ProviderCapabilityCatalogStatus,
+    *,
+    typed_runtime_only: bool,
+) -> bool:
+    return (
+        status.typed_runtime_reachable
+        if typed_runtime_only
+        else status.ordinary_product_reachable
+    )
+
+
+def _operation_preferences(
+    capability: AcquisitionCapability,
+) -> tuple[tuple[str, str, RouteFidelity], ...]:
+    if capability is AcquisitionCapability.READ:
+        return (
+            ("linkup", "known_url", RouteFidelity.EXACT),
+            ("tavily", "basic", RouteFidelity.EXACT),
+        )
+    if capability is AcquisitionCapability.FOCUSED_EXTRACT:
+        return (("tavily", "query_focused", RouteFidelity.EXACT),)
+    if capability is AcquisitionCapability.MAP_SITE:
+        return (("tavily", "bounded", RouteFidelity.EXACT),)
+    if capability is AcquisitionCapability.CRAWL_SITE:
+        return (("tavily", "bounded", RouteFidelity.EXACT),)
+    return ()
+
+
 def _blocked_decision(
     *,
     request: ProviderCapabilityRequest,
@@ -617,6 +706,7 @@ def route_provider_capability(
     override_posture: str = "none",
     suppress_tavily: bool = False,
     scrutineer_deep_authorized: bool = False,
+    typed_runtime_only: bool = False,
 ) -> ProviderRouteDecision:
     """Choose one compatible implementation or return a typed blocked decision."""
 
@@ -638,17 +728,64 @@ def route_provider_capability(
         )
 
     if request.capability is not AcquisitionCapability.DISCOVER:
-        unavailable_candidates = tuple(
-            ProviderFallbackCandidate.from_status(status, fidelity=RouteFidelity.BLOCKED)
-            for status in statuses
-            if status.capability is request.capability
+        preferences = _operation_preferences(request.capability)
+        candidates: list[tuple[ProviderCapabilityCatalogStatus, RouteFidelity]] = []
+        for provider, variant, fidelity in preferences:
+            status = _matching_status(
+                statuses,
+                request=request,
+                provider=provider,
+                variant=variant,
+            )
+            if status is not None:
+                candidates.append((status, fidelity))
+        selected_index = next(
+            (
+                index
+                for index, (status, _) in enumerate(candidates)
+                if _status_reachable(status, typed_runtime_only=typed_runtime_only)
+            ),
+            None,
         )
-        return _blocked_decision(
+        fallback_candidates = tuple(
+            ProviderFallbackCandidate.from_status(status, fidelity=fidelity)
+            for index, (status, fidelity) in enumerate(candidates)
+            if index != selected_index
+        )
+        if selected_index is None:
+            return _blocked_decision(
+                request=request,
+                availability=availability,
+                candidates=fallback_candidates,
+                override_posture=override_posture,
+                reason=(
+                    "capability_not_ordinary_product_enabled"
+                    if not typed_runtime_only
+                    and any(status.typed_runtime_reachable for status, _ in candidates)
+                    else "capability_unavailable"
+                ),
+            )
+        selected, fidelity = candidates[selected_index]
+        return ProviderRouteDecision(
             request=request,
+            selected_provider=selected.provider,
+            operation=selected.operation,
+            variant=selected.variant,
+            output_type=selected.output_type,
+            fidelity=fidelity,
+            fallback_candidates=fallback_candidates,
             availability=availability,
-            candidates=unavailable_candidates,
+            availability_posture="selected_provider_reachable",
+            adapter_posture=(
+                "installed_typed_runtime_only"
+                if typed_runtime_only and not selected.ordinary_product_enabled
+                else "installed_and_ordinary_enabled"
+            ),
             override_posture=override_posture,
-            reason="capability_unavailable",
+            decision_reason="first_reachable_policy_preference_selected",
+            block_reason=None,
+            returned_material_class=selected.returned_material_class,
+            authority_posture=selected.authority_posture,
         )
 
     qualifier = request.qualifier or DiscoverQualifier.GENERAL
@@ -658,17 +795,43 @@ def route_provider_capability(
         else ProviderCapabilityRequest(
             capability=request.capability,
             qualifier=qualifier,
+            domain_constraints=request.domain_constraints,
             include_domains=request.include_domains,
             exclude_domains=request.exclude_domains,
+            source_of_record_domain_constraints=(
+                request.source_of_record_domain_constraints
+            ),
             derivation_reason=request.derivation_reason,
+            general_deep_requested=request.general_deep_requested,
+            general_deep_authorization=request.general_deep_authorization,
         )
     )
-    preferences = list(
-        _discover_preferences(
-            qualifier,
-            scrutineer_deep_authorized=scrutineer_deep_authorized,
+    if normalized_request.general_deep_requested and not scrutineer_deep_authorized:
+        authorization = normalized_request.general_deep_authorization
+        if authorization is None or not authorization.valid:
+            return _blocked_decision(
+                request=normalized_request,
+                availability=availability,
+                candidates=(),
+                override_posture=override_posture,
+                reason="general_deep_authorization_required",
+            )
+        if not typed_runtime_only:
+            return _blocked_decision(
+                request=normalized_request,
+                availability=availability,
+                candidates=(),
+                override_posture=override_posture,
+                reason="general_deep_no_ordinary_product_requester",
+            )
+        preferences = [("linkup", "deep", RouteFidelity.EXACT)]
+    else:
+        preferences = list(
+            _discover_preferences(
+                qualifier,
+                scrutineer_deep_authorized=scrutineer_deep_authorized,
+            )
         )
-    )
     if suppress_tavily:
         preferences = [preference for preference in preferences if preference[0] != "tavily"]
 
@@ -695,7 +858,16 @@ def route_provider_capability(
             candidates.append((status, fidelity))
 
     selected_index = next(
-        (index for index, (status, _) in enumerate(candidates) if status.currently_reachable),
+        (
+            index
+            for index, (status, _) in enumerate(candidates)
+            if _status_reachable(
+                status,
+                typed_runtime_only=(
+                    typed_runtime_only and normalized_request.general_deep_requested
+                ),
+            )
+        ),
         None,
     )
     fallback_candidates = tuple(
@@ -728,7 +900,11 @@ def route_provider_capability(
         fallback_candidates=fallback_candidates,
         availability=availability,
         availability_posture="selected_provider_reachable",
-        adapter_posture="installed_and_ordinary_enabled",
+        adapter_posture=(
+            "installed_authorized_runtime_only"
+            if normalized_request.general_deep_requested
+            else "installed_and_ordinary_enabled"
+        ),
         override_posture=override_posture,
         decision_reason=(
             "first_compatible_override_preference_selected"

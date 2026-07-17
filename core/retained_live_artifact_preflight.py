@@ -13,14 +13,18 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
+from core.routing import (
+    PROVIDER_CAPABILITY_CATALOG,
+    PROVIDER_NAMES,
+    AcquisitionCapability,
+    DiscoverQualifier,
+)
 from core.search_result_candidate_packet import (
     SearchResultCandidatePacketError,
     validate_search_result_candidate_packet,
 )
 
-DEFAULT_PROVIDER = "serper"
-EXTRACTION_PROVIDER = "tavily"
-ALLOWED_PROVIDERS = frozenset({DEFAULT_PROVIDER, EXTRACTION_PROVIDER})
+ALLOWED_PROVIDERS = frozenset(PROVIDER_NAMES)
 DEFAULT_OPERATION = "search"
 MAX_RESULTS = 5
 CURRENT_RUN_CANDIDATE_PACKET_NAME = "search_candidate_packet.json"
@@ -86,9 +90,22 @@ ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
     {
         "request_kind",
         "provider",
+        "capability",
+        "discover_qualifier",
         "operation",
+        "provider_variant",
+        "output_type",
         "result_count",
         "results",
+        "domain_constraints",
+        "include_domains",
+        "exclude_domains",
+        "source_of_record_domain_constraints",
+        "domain_constraints_acquisition_only",
+        "domain_constraints_create_source_authority",
+        "domain_constraints_satisfy_source_obligation",
+        "domain_constraints_citation_eligible",
+        "domain_constraints_claim_correctness",
         "raw_provider_payload_retained",
         "raw_search_response_retained",
     }
@@ -377,21 +394,12 @@ def _decode_sanitized_provider_results(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     envelope: dict[str, Any]
     raw_results: Any
-    if isinstance(decoded, list):
-        envelope = {
-            "provider": DEFAULT_PROVIDER,
-            "operation": DEFAULT_OPERATION,
-            "result_count": len(decoded),
-            "raw_provider_payload_retained": False,
-            "raw_search_response_retained": False,
-        }
-        raw_results = decoded
-    elif isinstance(decoded, Mapping):
+    if isinstance(decoded, Mapping):
         envelope = _validate_provider_results_envelope(decoded)
         raw_results = decoded.get("results")
     else:
         raise RetainedLiveArtifactPreflightError(
-            "sanitized provider results must be a list or generic sanitized object"
+            "sanitized provider results require a generic sanitized object"
         )
 
     if not isinstance(raw_results, list):
@@ -467,15 +475,39 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
         )
     _validate_false_retention(raw, context="provider results envelope")
     provider = _required_token(
-        raw.get("provider") or DEFAULT_PROVIDER,
+        raw.get("provider"),
         "provider results envelope requires provider",
         80,
     )
     operation = _required_token(
-        raw.get("operation") or DEFAULT_OPERATION,
+        raw.get("operation"),
         "provider results envelope requires operation",
         80,
     )
+    try:
+        capability = AcquisitionCapability(
+            _required_token(
+                raw.get("capability"),
+                "provider results envelope requires capability",
+                80,
+            )
+        )
+    except ValueError as exc:
+        raise RetainedLiveArtifactPreflightError(
+            "provider results envelope capability mismatch"
+        ) from exc
+    try:
+        discover_qualifier = DiscoverQualifier(
+            _required_token(
+                raw.get("discover_qualifier"),
+                "provider results envelope requires discover_qualifier",
+                80,
+            )
+        )
+    except ValueError as exc:
+        raise RetainedLiveArtifactPreflightError(
+            "provider results envelope discover_qualifier mismatch"
+        ) from exc
     if provider not in ALLOWED_PROVIDERS:
         raise RetainedLiveArtifactPreflightError(
             "provider results provider mismatch"
@@ -484,15 +516,95 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
         raise RetainedLiveArtifactPreflightError(
             "provider results operation mismatch"
         )
+    provider_variant = _required_token(
+        raw.get("provider_variant"),
+        "provider results envelope requires provider_variant",
+        80,
+    )
+    output_type = _required_token(
+        raw.get("output_type"),
+        "provider results envelope requires output_type",
+        80,
+    )
+    if not any(
+        entry.provider == provider
+        and entry.capability is capability
+        and entry.qualifier is discover_qualifier
+        and entry.operation == operation
+        and entry.variant == provider_variant
+        and entry.output_type == output_type
+        for entry in PROVIDER_CAPABILITY_CATALOG
+    ):
+        raise RetainedLiveArtifactPreflightError(
+            "provider results identity tuple mismatch"
+        )
+    domain_constraints = _canonical_provider_domains(raw, "domain_constraints")
+    include_domains = _canonical_provider_domains(raw, "include_domains")
+    exclude_domains = _canonical_provider_domains(raw, "exclude_domains")
+    source_of_record_domains = _canonical_provider_domains(
+        raw,
+        "source_of_record_domain_constraints",
+    )
+    if not (
+        domain_constraints == include_domains == source_of_record_domains
+    ):
+        raise RetainedLiveArtifactPreflightError(
+            "provider results envelope domain aliases disagree"
+        )
+    for field, expected in (
+        ("domain_constraints_acquisition_only", True),
+        ("domain_constraints_create_source_authority", False),
+        ("domain_constraints_satisfy_source_obligation", False),
+        ("domain_constraints_citation_eligible", False),
+        ("domain_constraints_claim_correctness", False),
+    ):
+        if raw.get(field) is not expected:
+            raise RetainedLiveArtifactPreflightError(
+                f"provider results envelope {field} posture mismatch"
+            )
     result_count = _bounded_int(raw.get("result_count"), default=0)
     return {
         "request_kind": raw.get("request_kind"),
         "provider": provider,
+        "capability": capability.value,
+        "discover_qualifier": discover_qualifier.value,
         "operation": operation,
+        "provider_variant": provider_variant,
+        "output_type": output_type,
         "result_count": result_count,
+        "domain_constraints": list(domain_constraints),
+        "include_domains": list(include_domains),
+        "exclude_domains": list(exclude_domains),
+        "source_of_record_domain_constraints": list(source_of_record_domains),
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
     }
+
+
+def _canonical_provider_domains(
+    raw: Mapping[str, Any],
+    field: str,
+) -> tuple[str, ...]:
+    value = raw.get(field)
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise RetainedLiveArtifactPreflightError(
+            f"provider results envelope requires canonical {field}"
+        )
+    domains: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        domain = _clean_domain(item)
+        if domain and domain.startswith("www."):
+            domain = domain[4:]
+        if not domain or "/" in domain or " " in domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+    if domains != value:
+        raise RetainedLiveArtifactPreflightError(
+            f"provider results envelope {field} is not canonical"
+        )
+    return tuple(domains)
 
 
 def _retained_preflight_result(

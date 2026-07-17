@@ -22,6 +22,7 @@ FAP/Author output, or product correctness.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,9 @@ from core.generic_product_provider_acquisition import (
     PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION,
     ProductProviderAcquisitionRequest,
     build_generic_product_provider_acquisition_runner,
+    complete_generic_product_provider_route,
 )
+from core.routing import DiscoverQualifier
 from core.source_of_record_recovery_provider_config import (
     SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
 )
@@ -76,6 +79,7 @@ def test_tavily_product_provider_results_normalize_raw_content(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
             max_results=5,
         )
     )
@@ -143,6 +147,7 @@ def test_tavily_provider_extracted_text_allows_benign_public_sk_substrings(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
     payload = json.loads(output_path.read_text(encoding="utf-8"))
@@ -190,6 +195,7 @@ def test_tavily_provider_extracted_text_redacts_strict_sk_token(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
     serialized = output_path.read_text(encoding="utf-8")
@@ -242,6 +248,7 @@ def test_provider_extracted_metadata_is_computed_after_retained_text_sanitation(
             output_path=output_path,
             query="official current filing fee",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
     serialized = output_path.read_text(encoding="utf-8")
@@ -296,6 +303,7 @@ def test_linkup_search_results_normalize_as_url_bound_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=LINKUP_EXTRACTION_PROVIDER,
+            available_providers={"linkup": True},
             acquisition_provider_role=SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
             max_results=5,
             include_domains=("uscis.gov",),
@@ -356,6 +364,7 @@ def test_linkup_sourced_answer_is_not_admitted_as_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=LINKUP_EXTRACTION_PROVIDER,
+            available_providers={"linkup": True},
         )
     )
     payload = json.loads(output_path.read_text(encoding="utf-8"))
@@ -399,6 +408,8 @@ def test_exa_text_results_normalize_as_url_bound_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=EXA_EXTRACTION_PROVIDER,
+            discover_qualifier=DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
+            available_providers={"exa": True},
             include_domains=("uscis.gov",),
         )
     )
@@ -456,6 +467,7 @@ def test_tavily_product_provider_preserves_source_digest_above_fetch_window_cap(
             output_path=output_path,
             query="official current fee schedule",
             provider="tavily",
+            available_providers={"tavily": True},
             max_results=5,
         )
     )
@@ -507,27 +519,108 @@ def test_neutral_domain_constraints_map_inside_current_tavily_adapter(
             output_path=output_path,
             query="official current fee schedule",
             provider="tavily",
+            available_providers={"tavily": True},
             acquisition_provider_role="extraction_provider",
             domain_constraints=("www.fees.agency.gov",),
-            include_domains=("fees.agency.gov",),
-            source_of_record_domain_constraints=("fees.agency.gov",),
+            include_domains=("forms.agency.gov",),
+            source_of_record_domain_constraints=("records.agency.gov",),
             exclude_domains=("example-law.invalid",),
         )
     )
     payload = json.loads(output_path.read_text(encoding="utf-8"))
 
     assert result.return_code == 0
-    assert calls[0]["include_domains"] == ["fees.agency.gov"]
+    assert calls[0]["include_domains"] == [
+        "fees.agency.gov",
+        "forms.agency.gov",
+        "records.agency.gov",
+    ]
     assert calls[0]["exclude_domains"] == ["example-law.invalid"]
     assert payload["acquisition_provider_role"] == "extraction_provider"
-    assert payload["domain_constraints"] == ["fees.agency.gov"]
-    assert payload["include_domains"] == ["fees.agency.gov"]
-    assert payload["source_of_record_domain_constraints"] == ["fees.agency.gov"]
+    canonical_domains = [
+        "fees.agency.gov",
+        "forms.agency.gov",
+        "records.agency.gov"
+    ]
+    assert payload["domain_constraints"] == canonical_domains
+    assert payload["include_domains"] == canonical_domains
+    assert payload["source_of_record_domain_constraints"] == canonical_domains
+    assert result.route_decision is not None
+    assert list(result.route_decision.request.domain_constraints) == canonical_domains
+    assert list(result.route_decision.request.include_domains) == canonical_domains
+    assert list(
+        result.route_decision.request.source_of_record_domain_constraints
+    ) == canonical_domains
+    assert payload["provider"] == "tavily"
+    assert payload["capability"] == "DISCOVER"
+    assert payload["discover_qualifier"] == "domain_targeted"
+    assert payload["operation"] == "search"
+    assert payload["provider_variant"] == "search"
+    assert payload["output_type"] == "searchResults"
     assert payload["domain_constraints_acquisition_only"] is True
     assert payload["domain_constraints_create_source_authority"] is False
     assert payload["domain_constraints_satisfy_source_obligation"] is False
     assert payload["domain_constraints_citation_eligible"] is False
     assert payload["domain_constraints_claim_correctness"] is False
+
+
+def test_precompleted_route_request_identity_conflicts_block_before_transport(
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        calls.append(kwargs)
+        return ([], [])
+
+    base_request = ProductProviderAcquisitionRequest(
+        repo_root=tmp_path,
+        output_path=tmp_path / "unused.json",
+        query="official current fee schedule",
+        available_providers={"tavily": True},
+        discover_qualifier=DiscoverQualifier.DOMAIN_TARGETED,
+        source_of_record_domain_constraints=("records.agency.gov",),
+    )
+    completed_route = complete_generic_product_provider_route(
+        base_request,
+        requested_provider=None,
+    )
+    conflicting_routes = (
+        replace(
+            completed_route,
+            request=replace(
+                completed_route.request,
+                qualifier=DiscoverQualifier.GENERAL,
+            ),
+        ),
+        replace(completed_route, operation="not-search"),
+        replace(
+            completed_route,
+            request=replace(
+                completed_route.request,
+                source_of_record_domain_constraints=("other.agency.gov",),
+            ),
+        ),
+    )
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    for index, conflicting_route in enumerate(conflicting_routes):
+        result = runner(
+            replace(
+                base_request,
+                output_path=tmp_path / f"conflict-{index}.json",
+                route_decision=conflicting_route,
+            )
+        )
+        assert result.return_code == 2
+        assert result.provider_calls_attempted == 0
+        assert result.blocker == (
+            BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE
+        )
+
+    assert calls == []
 
 
 def test_serper_scout_results_normalize_without_extracted_text(
@@ -559,6 +652,8 @@ def test_serper_scout_results_normalize_without_extracted_text(
             output_path=output_path,
             query="What is the current filing fee for the form?",
             provider="serper",
+            discover_qualifier=DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION,
+            available_providers={"serper": True},
             max_results=5,
         )
     )
@@ -609,6 +704,8 @@ def test_brave_scout_results_normalize_without_extracted_text(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=BRAVE_SCOUT_PROVIDER,
+            discover_qualifier=DiscoverQualifier.INDEPENDENT_INDEX,
+            available_providers={"brave": True},
             acquisition_provider_role="source_of_record_recovery_scout_provider",
         )
     )
@@ -645,6 +742,7 @@ def test_missing_tavily_credential_fails_closed_without_secret_leak(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
 
@@ -678,6 +776,8 @@ def test_missing_serper_credential_fails_closed_without_secret_leak(
             output_path=output_path,
             query="What is the current filing fee for the form?",
             provider="serper",
+            discover_qualifier=DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION,
+            available_providers={"serper": True},
         )
     )
 

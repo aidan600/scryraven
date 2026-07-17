@@ -3,206 +3,233 @@
 Status: current
 Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
-Applies-to: current ordinary acquisition routing, ProviderPlan projection, scheduling, and mechanical dispatch
-Does-not-authorize: live calls, provider-quality claims, new adapters, cross-provider retry, or downstream evidence authority
-Verified-against-runtime: 7626f1628a18bfb70c7abe58b120dc84001f2e71
-Update-trigger: change to capability vocabulary, catalog, request derivation, provider selection, variants, or provider-material authority
+Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, scheduling, mechanical dispatch, and selected-candidate READ custody
+Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
+Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
+Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
 
-This document owns the current provider-capability and acquisition-routing
-contract. `core.routing` is the sole provider-policy owner. It owns the immutable
-capability catalog, deterministic request derivation, compatibility and
-availability checks, ordered preference policy, typed route decisions, and typed
-blocked decisions.
+`core.routing` is the sole provider-capability policy owner. It owns capability
+compatibility, provider eligibility and preference, operation and variant
+selection, route-time fallback selection, typed blocks, and general Linkup Deep
+authorization compatibility.
 
-`core.provider_plan` records completed decisions. Retrieval scheduling,
-dispatch, provider transports, and `run_pipeline()` consume those records
-mechanically. They do not append, reorder, substitute, retry, or otherwise
-select providers. Query production, ranking, recovery semantics, source custody,
-evidence admission, Sufficiency, FinalAnswerPacket, and Author remain separate
-owners and are unchanged by this routing foundation.
+`core.acquisition_contracts` owns immutable bounded requests, job identity,
+operation limits, normalized artifacts, lineage, and execution results.
+`core.acquisition_adapters` consumes one completed route decision and remains
+mechanical: it constructs one selected provider request, normalizes bounded
+material, or returns a typed failure/block. It does not select, substitute,
+reorder, or retry providers.
+
+ProviderPlan records completed DISCOVER decisions. Retrieval scheduling and
+dispatch carry those decisions without policy. The orchestrator composes one
+boolean provider-availability snapshot from configured credential presence, or
+from explicitly injected offline-test facts, and passes that same snapshot to
+ProviderPlan and selected-candidate READ. Callables, transport objects, and
+ordered provider preferences do not establish availability. Existing
+SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
+and EvidenceLedger owners retain source custody.
 
 Runtime/test provenance:
-`7626f1628a18bfb70c7abe58b120dc84001f2e71`.
+`193c5caabe1f97da534f0e601d410acb98d3cdea`.
 
-## Capability Vocabulary
+## Capability Status Matrix
 
-The installed acquisition capabilities are:
+Availability is runtime-specific; the status below describes installed policy
+and consumers, not credential presence or live availability.
 
-- `DISCOVER`: obtain URL-bound candidate/source material;
-- `READ`: read a caller-selected known URL;
-- `FOCUSED_EXTRACT`: extract material from caller-selected URLs against a
-  bounded focus;
-- `MAP_SITE`: enumerate a bounded site URL map;
-- `CRAWL_SITE`: acquire a bounded set of pages from a site; and
-- `PROVIDER_SYNTHESIS`: a vendor-written answer or report surface.
+| Capability | Cataloged | Adapter installed | Typed-runtime reachable | Ordinary-product enabled | Ordinary-product reachable | Ordinary-product consumed |
+| --- | --- | --- | --- | --- | --- | --- |
+| `DISCOVER` | yes | yes | yes | yes | yes | yes, through current ProviderPlan, scheduler, dispatch, continuation, supplemental, and recovery consumers |
+| `READ` | yes | yes | yes | yes | yes | yes, through selected-candidate source custody |
+| `FOCUSED_EXTRACT` | yes | yes | yes | no | no requester | no |
+| `MAP_SITE` | yes | yes | yes | no | no requester | no |
+| `CRAWL_SITE` | yes | yes | yes | no | no requester | no |
+| General Linkup Deep | yes | mechanical support yes | authorized runtime only | no | no qualifying current requester | no |
+| Scrutineer Deep | yes | yes | yes | yes, behind existing remediation gates | yes | preserve existing bounded consumer |
+| `PROVIDER_SYNTHESIS` | yes, as disabled surfaces | disabled | blocked | no | no | no |
 
-The installed `DISCOVER` qualifiers are:
+Adapter installation or validation-constructed dispatch is not ordinary product
+consumption. No product requester was manufactured for focused extraction, site
+mapping, site crawling, or general Linkup Deep.
 
-- `general`;
-- `domain_targeted`;
-- `academic_technical_semantic`;
-- `lightweight_disambiguation`; and
-- `independent_index`.
+## Shared Request, Job, And Artifact Contracts
 
-Capabilities state what acquisition operation is required. Qualifiers narrow a
-discovery role. Provider identity, product mode, generic complexity, retrieval
-intensity, profile name, and caller metadata do not create a capability.
+One `AcquisitionRequest` carries only operation-relevant facts:
 
-## Request Derivation
+- capability and completed route decision;
+- acquisition job and parent-job identity;
+- selected URL(s) or explicit root URL;
+- an explicit bounded JavaScript-rendering posture;
+- bounded focus text, queries, domains, and paths;
+- result, page, depth, per-page, and aggregate limits;
+- candidate, query, acquisition-lineage, and obligation references; and
+- the completed route's explicit Deep authorization when applicable.
 
-Ordinary `run_pipeline()` currently derives one `DISCOVER` request from already
-existing deterministic facts:
+Normalized artifacts distinguish discovery candidates, selected-URL reads,
+focused selected-URL extractions, site topology, bounded page collections,
+provider failures, and policy/availability blocks. Requested and attempted URLs
+are request/dispatch facts. A URL returned by a provider is labeled
+`provider_reported_url`; resolved, final, canonical, page-status, and actual
+crawl-parent facts remain absent unless the transport/provider supplied them.
+`root_url` remains distinct from an observed page parent. Artifacts also retain
+provider/operation/variant/output, job lineage, title/timestamp, and bounded
+character/digest facts when known.
 
-1. an explicit bounded discovery-role qualifier wins;
-2. the existing academic signal derives
-   `academic_technical_semantic`;
-3. a nonempty include-domain or exclude-domain constraint derives
-   `domain_targeted`; and
-4. otherwise the request is `general`.
+Ephemeral execution may carry bounded sanitized text to the existing custody
+consumer. Durable traces omit that text and retain no raw HTML, raw provider
+payload, credentials, headers, cookies, or unrelated fetched content.
 
-News, currentness, comparison, quantitative status, report type, generic
-complexity, and Fast/Balanced/Deep mode do not change provider identity or
-activate a provider-specific variant. Domain constraints remain exact request
-constraints; a domain such as `reddit.com` grants no social interpretation,
-trust, representativeness, evidence, citation, or answer authority.
+## Installed Provider-Operation Matrix
 
-## Catalog And Decision Contracts
-
-Each catalog entry records:
-
-- provider, capability, qualifier, operation, variant, and output type;
-- whether the vendor operation is known;
-- whether an adapter is installed and ordinary-product enabled;
-- current boolean availability and derived reachability;
-- returned acquisition-material class; and
-- authority posture.
-
-The bounded availability snapshot contains booleans only for `tavily`,
-`linkup`, `exa`, `serper`, and `brave`. It never stores credential values,
-environment contents, raw diagnostics, or private material.
-
-Each route decision records the request, selected provider/operation/variant/
-output type, `exact` / `degraded` / `blocked` fidelity, descriptive fallback
-candidates, decision or block reason, returned material class, provider-
-synthesis-disabled posture, and social-authority posture. ProviderPlan may
-retain its compatibility field `providers`, but it contains exactly one
-provider or is empty.
-
-Fallback candidates are descriptive only. Every fallback projection has
-`dispatch_authorized=false`; scheduler and dispatch never consume fallback
-candidates. Provider failure does not authorize a cross-provider retry in this
-foundation.
-
-## Installed Provider-Role Matrix
-
-| Request | Exact selected implementation | Ordered degraded/fallback posture | Authority boundary |
+| Capability | Preferred selected implementation | Route-time alternative | Installed bounds and output |
 | --- | --- | --- | --- |
-| `DISCOVER(general)` | Linkup `search`, `standard/searchResults` | Tavily Search is the next descriptive compatible candidate | URL-bound non-authoritative acquisition material |
-| `DISCOVER(domain_targeted)` | Linkup `search`, `standard/searchResults` with exact caller constraints | Tavily Search is the next descriptive compatible candidate | Constraints create no domain or social authority |
-| `DISCOVER(academic_technical_semantic)` | Exa Search `neural_with_text/searchResults` | Linkup standard, then Tavily Search, are explicitly degraded candidates | Provider identity creates no academic truth authority |
-| `DISCOVER(lightweight_disambiguation)` | Serper Web Search | None | Directional candidate material only |
-| `DISCOVER(independent_index)` | Brave Web Search | None | Directional candidate material only |
+| `DISCOVER(general)` | Linkup `standard/searchResults` | Tavily Search if Linkup is unavailable before dispatch | one selected provider; URL-bound acquisition material |
+| `DISCOVER(domain_targeted)` | Linkup `standard/searchResults` with caller constraints | Tavily Search if Linkup is unavailable before dispatch | exact constraints; no domain/social authority |
+| `DISCOVER(academic_technical_semantic)` | Exa `neural_with_text/searchResults` | degraded Linkup standard, then Tavily | exact deterministic qualifier only |
+| `DISCOVER(lightweight_disambiguation)` | Serper Web Search | none | candidate/query direction only |
+| `DISCOVER(independent_index)` | Brave Web Search | none | candidate/query direction only |
+| `READ` | Linkup Fetch | Tavily Extract if Linkup is unavailable before dispatch | one caller-selected URL; 20,000 retained characters maximum |
+| `FOCUSED_EXTRACT` | Tavily Extract | none | caller-selected URLs only; 2,000-character focus maximum; 20 URLs maximum; bounded text |
+| `MAP_SITE` | Tavily Map | none | explicit same-site root; normalize/deduplicate; 100 URLs maximum; topology only |
+| `CRAWL_SITE` | Tavily Crawl | none | one job; depth 2; 10 pages; 20,000 characters/page; 100,000 aggregate; exact domain/path scope |
+| General Deep | Linkup `deep/searchResults` | none | explicit authorization; one query per mechanical job from at most two authorized queries; five results/query maximum |
+| Scrutineer Deep | existing Linkup `deep/searchResults` path | existing policy only | unchanged novel-query/remediation gates |
+| `PROVIDER_SYNTHESIS` | none | none | blocked before transport |
 
-Selection chooses the first installed, enabled, available, capability-compatible
-implementation. If none exists, the result is typed `blocked`, its provider
-projection is empty, and transport is not called. There is no phantom Tavily
-fallback and no ordinary provider ensemble.
+Tavily Research, Linkup Research, `sourcedAnswer`, and `structured` outputs are
+not installed acquisition operations.
 
-Overrides are ordered preferences, not fan-out requests. The router selects the
-first compatible and available preference. An override containing no compatible
-available implementation returns a typed blocked override decision; it does not
-silently escape to ordinary policy.
+Linkup-only remains valid for general/domain-targeted DISCOVER and preferred
+READ when configured. Provider subsets create no fan-out, and domain targeting
+grants no social interpretation or authority.
 
-## Provider Variants And Retrieval Intensity
+## READ Product Consumption And Fallback
 
-Provider variants are distinct from generic retrieval intensity. Ordinary
-Linkup discovery is explicitly `standard/searchResults` in Fast, Balanced, and
-Deep. Complexity and search depth may still control generic retrieval work, but
-they cannot promote Linkup to `deep`.
+The selected-candidate ordinary source-custody path is:
 
-The existing Scrutineer remediation consumer is the only current ordinary
-authorization for Linkup `deep/searchResults`. Its existing novel-query and
-remediation gates remain unchanged. This is provider-extracted search-result
-material, not provider synthesis, and it re-enters the existing downstream
-path without special truth authority. General Linkup Deep activation remains
-default-off and uninstalled.
+```text
+SearchResultCandidatePacket
+-> selected candidate URL
+-> completed READ route decision
+-> exactly one Linkup Fetch or Tavily Extract adapter
+-> normalized bounded read artifact
+-> existing FetchReadContentPacket
+-> existing EvidenceLedger custody reduction
+```
 
-## Provider Synthesis Closure
+Linkup Fetch is preferred. Tavily Extract is selected only when the explicit
+composition snapshot says Linkup is unavailable before dispatch. Injecting a
+Linkup callable or transport cannot make Linkup available. Once Linkup is
+selected, transport failure, malformed output, unreadable status, empty
+material, or URL mismatch returns a typed failure and makes zero Tavily calls.
+For Tavily READ, a generic provider-reported result URL must normalize to the
+one selected URL. A mismatch returns
+`read_provider_reported_url_mismatch` before FetchReadContentPacket creation;
+a matching provider-reported URL remains explicit through packet and
+EvidenceLedger custody. Redirect, final, and canonical fields remain separate
+observed facts and may differ when explicitly supplied.
 
-`PROVIDER_SYNTHESIS` is ordinary-product disabled. Cataloged Linkup sourced
-answers/Research and Tavily Research cannot be selected by ordinary routing.
-Provider synthesis remains disabled.
-Provider-written answers, reports, or structured synthesis gain no source,
-evidence, citation, Sufficiency, FinalAnswerPacket, or Author authority. The
-retired ordinary Linkup `deep/sourcedAnswer` path remains retired.
+After route/request validation and transport resolution, selected-candidate
+READ marks the current `RunCapPolicy` fetch/read budget exactly once immediately
+before the provider call. `RunCapExceeded` remains the product terminal and is
+not converted into a source-custody failure. Absence of a cap policy preserves
+uncapped ordinary behavior.
 
-## Installation Profiles
+Linkup Fetch carries the product's explicit `render_javascript=false` posture
+as `renderJs=false` and records it in the request trace. Minimal Linkup or Tavily
+material can succeed with only requested/attempted identity; missing or invalid
+page HTTP status and unreported redirect/canonical lineage remain unknown.
+Explicit provider-reported redirect and canonical facts survive unchanged.
 
-Profiles are diagnostic composition labels, not modes or routing
-implementations. They grant no authority, create no fan-out, require no exact
-provider set, and preserve arbitrary valid subsets:
+The adapter does not admit evidence. The existing FetchReadContentPacket and
+EvidenceLedger custody reducer continue to decide only their existing bounded
+custody facts; this phase changes no semantic support, citation, source-
+obligation, Sufficiency, FinalAnswerPacket, or Author authority.
 
-| Profile | Illustrative available subset | Resulting installed roles |
-| --- | --- | --- |
-| Minimal | Linkup | General and domain-targeted Linkup standard discovery |
-| Practical | Linkup + Serper | Minimal plus candidate-only lightweight disambiguation |
-| Research | Linkup + Serper + Exa + Tavily | Practical plus exact academic/technical/semantic Exa and descriptive Tavily fallback |
-| Diversity | Research + Brave | Research plus explicit candidate-only independent-index discovery |
+## Dormant Typed Capabilities
 
-Linkup-only remains valid. A profile name does not require every listed
-provider, activate a disabled capability, or cause duplicate dispatch.
+`FOCUSED_EXTRACT`, `MAP_SITE`, and `CRAWL_SITE` require
+`typed_runtime_only=true` and exact bounded requests. Ordinary routing returns
+`capability_not_ordinary_product_enabled` because no deterministic current
+PRODUCT requester exists.
 
-## Unavailable Catalog Entries And Future Adapter Sequence
+Map output is topology only. Crawl rejects out-of-domain or out-of-path pages
+and lineage. Provider-returned page/content excess is deterministically
+truncated with an explicit posture; request limits above the global ceilings
+block before transport.
 
-The catalog deliberately represents known but unavailable operations:
+## General Linkup Deep Authorization
 
-- Linkup Fetch -> `READ`;
-- Tavily Extract -> `READ` and `FOCUSED_EXTRACT`;
-- Tavily Map -> `MAP_SITE`;
-- Tavily Crawl -> `CRAWL_SITE`; and
-- Linkup/Tavily vendor synthesis surfaces -> disabled
-  `PROVIDER_SYNTHESIS`.
+Fast, Balanced, or Deep mode; high complexity; weak corpus; provider
+availability; adapter installation; and detailed-answer posture never authorize
+general Deep. A validation-only authorization must prove:
 
-Requests for these capabilities return typed unavailable decisions and make
-zero transport calls. The required implementation sequence is:
+- exact parent standard-acquisition job;
+- same acquisition and obligation lineage;
+- deterministic sequential-acquisition requirement;
+- explicit premium authorization and remaining run budget;
+- zero prior general escalation;
+- at most two authorized queries and five results per query; and
+- mandatory `searchResults` output.
 
-1. `KNOWN-URL-READ-FOUNDATION-01`: shared `READ` contract and Linkup Fetch
-   first;
-2. `TAVILY-EXTRACT-AND-MAP-ADAPTERS-01`: `FOCUSED_EXTRACT` and `MAP_SITE`;
-3. `TAVILY-BOUNDED-CRAWL-ADAPTER-01`: bounded crawl caps and lineage;
-4. `LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01`: bounded, default-off premium
-   `deep/searchResults` without mode/complexity activation;
-5. `ACQUISITION-ROUTING-CLOSURE-01` if residual provider-name owners block the
-   ordinary capability consumer;
-6. bounded final-custody convergence;
-7. separately licensed comparative live validation;
-8. separately designed social-source authority and Social Awareness; and
-9. transport-neutral conversation/UI work.
+The mechanical adapter accepts one authorized query per job. A valid record is
+typed-runtime reachable only; ordinary routing still blocks with
+`general_deep_no_ordinary_product_requester`. Scrutineer Deep remains separate
+and unchanged.
 
-Product mode and generic complexity must not trigger general Linkup Deep.
+## Product Roots And Residual Compatibility
 
-## Residual Compatibility Owners
+Current PRODUCT consumers:
 
-The current ordinary `run_pipeline()` path always supplies ProviderPlan's
-single selected provider. A lower-level `core.pipeline.process_search_queries`
-compatibility path still accepts `search_providers=None` and retains provider-
-name/complexity behavior. Legacy saved-thread follow-up and explicit
-operator/validation provider decisions also retain provider-specific surfaces.
-They are not ordinary route owners and remain candidates for the bounded
-acquisition-routing closure only if they block a later ordinary consumer.
+- ordinary main, continuation, supplemental, and recovery DISCOVER work through
+  ProviderPlan, scheduling, and dispatch;
+- selected-candidate READ/source custody through the ordinary pipeline; and
+- the generic single-relation acquisition root, which now supplies a completed
+  `core.routing` decision from an explicit provider-neutral DISCOVER qualifier
+  and availability before provider-specific callables are invoked. Ordinary
+  extraction uses `general` or `domain_targeted` without an acquisition-plan
+  provider override; a provider preference cannot create its own qualifier or
+  authorize itself.
 
-## Nonproofs And Closed Surfaces
+The lower-level `process_search_queries(search_providers=None)` escape is
+closed: absence of a completed provider list performs zero transport. It no
+longer manufactures Tavily/Linkup/Exa policy from environment or complexity.
 
-This offline foundation does not prove live provider quality, coverage,
-currentness, latency, cost, reliability, or empirical best-provider status. It
-does not install Linkup Fetch; Tavily Extract, Map, or Crawl; general Linkup
-Deep; provider-failure fallback execution; provider ensembles; social
-interpretation; or a provider-written synthesis path.
+Bounded residual compatibility:
 
-It changes no query semantics, prompts, ranking, recovery decision, source
-obligation, source custody, evidence correctness, citation eligibility,
-Sufficiency, FinalAnswerPacket, Author behavior, persistence, conversation, UI,
-or answer quality. No live provider, model, search, fetch/read, or retrieval
-call was performed by the foundation proof.
+- the source-of-record comparison script is VALIDATION and retains explicit
+  provider comparisons;
+- explicit provider preference fields in generic acquisition remain for
+  OPERATOR/VALIDATION callers but are resolved through `core.routing` first;
+- the lower-level Linkup `deep/sourcedAnswer` helper is LEGACY/VALIDATION-only
+  and absent from the ordinary orchestrator; and
+- retired saved-thread execution remains inert.
+
+These surfaces do not own current PRODUCT provider policy.
+
+## Authority Closure
+
+Provider response keys cannot create evidence, citation, obligation
+satisfaction, component coverage, Sufficiency, FinalAnswerPacket, Author,
+social, or final-answer authority. Raw/private response fields are rejected.
+Domain constraints and provider identity grant no source-of-record, official,
+social, trust, sampling, representativeness, or correctness authority.
+
+Provider synthesis remains disabled and unreachable. Fallback candidates remain descriptive
+and never dispatch after provider failure. Every migrated PRODUCT acquisition
+operation has exactly one selected provider or blocks with zero transport.
+
+## Next Checkpoint And Nonproofs
+
+The combined adapter/runtime repair is complete. The sole active next is
+`BOUNDED-FINAL-CUSTODY-CONVERGENCE-01`, applied only to currently product-
+consumed DISCOVER and READ artifacts. It does not manufacture consumers for
+dormant capabilities.
+
+This offline repair proves no live provider quality, availability, coverage,
+currentness, latency, price, reliability, or answer improvement. It does not
+prove evidence correctness, final-custody convergence, social authority,
+Sufficiency, FinalAnswerPacket, Author behavior, or complete-app correctness.
+No live provider, model, search, fetch, map, crawl, or retrieval call was made.

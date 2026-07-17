@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 7626f1628a18bfb70c7abe58b120dc84001f2e71
+Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -197,59 +197,59 @@ made no live calls and proves no provider quality, comparative superiority,
 evidence correctness, Sufficiency, FAP, Author, social, UI, or answer-quality
 change.
 
-## Approved Product Sequence
+## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01
 
-After semantic Scout/provider-synthesis retirement and the provider-capability
-routing foundation, the approved checkpoints remain ordered as follows.
-`KNOWN-URL-READ-FOUNDATION-01` is the sole active-next checkpoint.
+Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea`
+installed the shared bounded acquisition contracts; Linkup Fetch; Tavily
+Extract, Map, and bounded Crawl; and mechanically authorized general Linkup
+`deep/searchResults`. `core.routing` remains the sole policy owner.
 
-## Active Next: KNOWN-URL-READ-FOUNDATION-01
+Current ordinary DISCOVER consumers remain on completed ProviderPlan decisions.
+The selected-candidate source-custody entrypoint now consumes a typed READ
+decision, dispatches one Linkup Fetch or route-time Tavily Extract adapter, and
+feeds the normalized result to the existing FetchReadContentPacket and
+EvidenceLedger custody owners. The generic single-relation product root also
+supplies a completed route decision, and `process_search_queries(None)` no
+longer manufactures a provider policy.
 
-Install the shared `READ` contract and bounded caller-selected known-URL reading
-through Linkup Fetch first, with exact URL lineage and ordinary custody. This
-checkpoint must not install Linkup sourced answers, structured synthesis,
-Research, general deep acquisition, or provider authority over the selected
-URL.
+The merge-blocking authority continuation is also complete: one boolean
+provider-availability snapshot is shared by discovery and READ; callables,
+transports, and provider preferences cannot create availability; selected READ
+marks the existing fetch/read cap exactly once before transport; the rendering
+posture is explicit; and missing redirect, canonical, page-status, or crawl-parent facts
+remain unknown instead of being synthesized.
 
-### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01
+The final acquisition-identity continuation is complete: ordinary generic
+PRODUCT extraction supplies a provider-neutral `general` or `domain_targeted`
+qualifier and no acquisition-plan provider override; a requested provider name
+cannot create an academic, disambiguation, or independent-index capability.
+Tavily READ binds a provider-reported result URL to the selected candidate,
+retains a match through existing custody, and returns typed
+`read_provider_reported_url_mismatch` with zero packet or EvidenceLedger custody
+on mismatch.
 
-Install distinct `FOCUSED_EXTRACT` and `MAP_SITE` implementations through
-Tavily, retaining `READ` compatibility only where the shared contract requires
-it. This checkpoint must not preserve Tavily as a universal default or install
-Tavily Research.
+Focused extraction, site mapping, site crawling, and general Linkup Deep are
+installed typed-runtime capabilities but have no ordinary PRODUCT requester.
+They remain ordinary-product blocked. Scrutineer Deep remains unchanged,
+provider-failure retry and provider synthesis remain disabled, and the repair
+made no live calls or downstream authority change.
 
-### TAVILY-BOUNDED-CRAWL-ADAPTER-01
+## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01
 
-Install `CRAWL_SITE` only with explicit page/site caps, caller-visible lineage,
-and ordinary custody. No unbounded crawl or automatic site authority is
-authorized.
-
-### LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01
-
-Consider only bounded, default-off premium Linkup `deep/searchResults` with
-explicit triggers, caps, lineage, and custody/telemetry. Product mode and generic
-complexity must not trigger it. Provider synthesis remains disabled.
-
-### ACQUISITION-ROUTING-CLOSURE-01 If Required
-
-After the adapter phases, one bounded closure may retire residual provider-name
-roles, parallel selectors, compatibility fallbacks, or stale authority paths
-only if they prevent the ordinary consumer from using the capability plan.
-
-### Bounded Final-Custody Convergence
-
-The preceding repair outcomes must converge through one bounded final-custody
-checkpoint before any complete-app live work is considered. This checkpoint
-does not itself authorize live validation.
+Converge currently product-consumed DISCOVER and selected-candidate READ
+artifacts through the bounded final-custody checkpoint. This checkpoint must
+consume existing normalized acquisition/custody outputs; it must not create
+ordinary requesters for `FOCUSED_EXTRACT`, `MAP_SITE`, `CRAWL_SITE`, or general
+Linkup Deep, and it grants no live-call authority.
 
 ### Separately Licensed Comparative Live Validation
 
 Only after mode-policy recovery authority containment, Specialist
 proposal-instance admission hardening, structured-list route qualification,
-semantic Scout retirement, provider-capability routing, the approved acquisition
-adapter work, any required routing closure, and bounded final-custody convergence
-may separately licensed comparative live validation be considered. Offline
-proof does not authorize live work, and this roadmap grants no live license.
+semantic Scout retirement, provider-capability routing, acquisition-runtime
+convergence, and bounded final-custody convergence may separately licensed
+comparative live validation be considered. Offline proof does not authorize
+live work, and this roadmap grants no live license.
 Arbitrary-query coverage, broad quantitative reasoning quality, provider
 quality, and product correctness remain unproved.
 

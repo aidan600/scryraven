@@ -227,8 +227,9 @@ proposal, parallel Specialist execution, or arbitrary-query support.
 
 ## Nonproofs
 
-Offline tests prove generic contract reuse, exact lineage, ordinary bounded
-quantitative consumption, closed generic defaults, typed rejection, and
-deterministic scheduling. They do not prove live calculator correctness, answer
-quality, broad quantitative reasoning, additional capability coverage,
-arbitrary-query support, or useful hosted/Local capacity.
+Offline tests prove generic contract reuse, provenance-labeled partial lineage
+for observed fields, ordinary bounded quantitative consumption, closed generic
+defaults, typed rejection, and deterministic scheduling. They do not prove
+complete source lineage, live calculator correctness, answer quality, broad
+quantitative reasoning, additional capability coverage, arbitrary-query
+support, or useful hosted/Local capacity.

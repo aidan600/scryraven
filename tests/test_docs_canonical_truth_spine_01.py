@@ -76,7 +76,7 @@ SCOUT_RETIREMENT_RUNTIME_SHA = (
     "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
 )
 PROVIDER_ROUTING_RUNTIME_SHA = (
-    "7626f1628a18bfb70c7abe58b120dc84001f2e71"  # pragma: allowlist secret
+    "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = PROVIDER_ROUTING_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
@@ -282,7 +282,7 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             assert phrase in text
 
     assert "No provider or model changed." in containment
-    assert "No provider transport adapter or model changed; ordinary provider routing changed." in current
+    assert "No model adapter changed and no live provider transport was exercised." in current
 
     assert "No route-qualification repair was performed." in containment
     assert (
@@ -335,7 +335,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: KNOWN-URL-READ-FOUNDATION-01"
+        "Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
 
@@ -407,7 +407,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: KNOWN-URL-READ-FOUNDATION-01"
+        "Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "No live recovery" in roadmap
@@ -424,29 +424,24 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
         "Status: current",
         "Default-read: yes",
         f"Verified-against-runtime: {PROVIDER_ROUTING_RUNTIME_SHA}",
-        "`core.routing` is the sole provider-policy owner",
-        "exactly one provider or is empty",
-        "Fallback candidates are descriptive only",
-        "dispatch_authorized=false",
-        "Overrides are ordered preferences, not fan-out requests",
-        "Linkup `search`, `standard/searchResults`",
-        "Exa Search `neural_with_text/searchResults`",
+        "`core.routing` is the sole provider-capability policy owner",
+        "exactly one selected provider or blocks with zero transport",
+        "Fallback candidates remain descriptive",
+        "never dispatch after provider failure",
+        "Linkup `standard/searchResults`",
+        "Exa `neural_with_text/searchResults`",
         "Serper Web Search",
         "Brave Web Search",
-        "Fast, Balanced, and Deep",
-        "Scrutineer remediation consumer",
+        "Fast, Balanced, or Deep mode",
+        "Scrutineer Deep remains separate and unchanged",
         "Provider synthesis remains disabled",
-        "Linkup Fetch -> `READ`",
-        "Tavily Extract -> `READ` and `FOCUSED_EXTRACT`",
-        "Tavily Map -> `MAP_SITE`",
-        "Tavily Crawl -> `CRAWL_SITE`",
-        "`KNOWN-URL-READ-FOUNDATION-01`",
-        "`TAVILY-EXTRACT-AND-MAP-ADAPTERS-01`",
-        "`TAVILY-BOUNDED-CRAWL-ADAPTER-01`",
-        "`LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01`",
-        "`ACQUISITION-ROUTING-CLOSURE-01`",
+        "Linkup Fetch",
+        "Tavily Extract",
+        "Tavily Map",
+        "Tavily Crawl",
+        "`BOUNDED-FINAL-CUSTODY-CONVERGENCE-01`",
         "social interpretation",
-        "No live provider, model, search, fetch/read, or retrieval call",
+        "No live provider, model, search, fetch, map, crawl, or retrieval call",
     ):
         assert phrase in normalized
 
@@ -460,7 +455,70 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
     ):
         assert capability in routing
     assert "Linkup-only remains valid" in normalized
-    assert "Product mode and generic complexity must not trigger general Linkup Deep" in normalized
+    assert "mode; high complexity" in normalized
+
+
+def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> None:
+    routing = _collapsed(PROVIDER_ROUTING)
+    census = _collapsed(CENSUS)
+    current = _collapsed(CURRENT_STATE)
+    roadmap = _collapsed(ROADMAP)
+
+    for text in (routing, census, current, roadmap):
+        assert PROVIDER_ROUTING_RUNTIME_SHA in text
+
+    for text in (routing, census, current):
+        for phrase in (
+            "DISCOVER",
+            "READ",
+            "FOCUSED_EXTRACT",
+            "MAP_SITE",
+            "CRAWL_SITE",
+            "General Linkup Deep",
+            "Scrutineer Deep",
+            "PROVIDER_SYNTHESIS",
+        ):
+            assert phrase in text
+        assert "selected-candidate" in text
+        assert "Linkup Fetch" in text
+        assert "Tavily Extract" in text
+        assert "provider synthesis remains disabled" in text.casefold()
+
+    for phrase in (
+        "FOCUSED_EXTRACT | yes | yes | no",
+        "MAP_SITE | yes | yes | no",
+        "CRAWL_SITE | yes | yes | no",
+        "General Linkup Deep | mechanical support yes | authorized runtime only",
+    ):
+        assert phrase in current
+
+    assert "process_search_queries(search_providers=None)" in routing
+    assert "performs zero transport" in routing
+    assert "Provider failure never activates a fallback" in current
+    assert "ordinary-product consumption of focused extraction" in census
+    for phrase in (
+        "one boolean provider-availability snapshot",
+        "provider preferences cannot create availability",
+        "marks the existing fetch/read cap exactly once",
+        "rendering posture is explicit",
+        "remain unknown instead of being synthesized",
+    ):
+        assert phrase in roadmap
+    assert "provider_reported_url" in routing
+    assert "read_provider_reported_url_mismatch" in routing
+    assert "provider-neutral DISCOVER qualifier" in routing
+    assert "RunCapExceeded" in routing
+
+    assert roadmap.count("## Active Next:") == 1
+    assert "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01" in roadmap
+    for stale in (
+        "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
+        "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
+        "### TAVILY-BOUNDED-CRAWL-ADAPTER-01",
+        "### LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01",
+        "### ACQUISITION-ROUTING-CLOSURE-01 If Required",
+    ):
+        assert stale not in roadmap
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
@@ -502,7 +560,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
         "DISCOVER(lightweight_disambiguation)",
         "DISCOVER(independent_index)",
         "Source-of-record requirement",
-        "current ordinary run_pipeline() provider planning, ProviderPlan projection",
+            "current ordinary DISCOVER consumers; ProviderPlan, scheduling, and dispatch",
         "INSTALLED_FOUNDATION",
         "Minimal: Linkup",
         "Practical: Linkup + Serper",
@@ -527,11 +585,11 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
         assert basis in census
 
     assert "completed semantic Scout and ordinary provider-synthesis retirement" in normalized
-    assert "installed provider-capability routing foundation" in normalized
+    assert "acquisition-runtime adapter convergence" in normalized
     assert "ordinary precision violation closed" in census
     assert "No ordinary authority or reachability" in census
     assert "Default disabled optional premium escalation" in census
-    assert "Deep mode alone must not trigger it" in census
+    assert "Deep mode and complexity never authorize it" in census
     assert "Provider synthesis prohibition" in census
     assert "improved answer quality" in census
     assert "## 13. Unresolved decisions and live-proof register" in census
@@ -545,7 +603,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 1
     assert (
-        "## Active Next: KNOWN-URL-READ-FOUNDATION-01"
+        "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
@@ -593,12 +651,12 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     provider = roadmap.index(
         "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
     )
-    linkup_read = roadmap.index("## Active Next: KNOWN-URL-READ-FOUNDATION-01")
-    tavily_capabilities = roadmap.index("### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01")
-    tavily_crawl = roadmap.index("### TAVILY-BOUNDED-CRAWL-ADAPTER-01")
-    linkup_deep = roadmap.index("### LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01")
-    routing_closure = roadmap.index("### ACQUISITION-ROUTING-CLOSURE-01 If Required")
-    convergence = roadmap.index("### Bounded Final-Custody Convergence")
+    acquisition_runtime = roadmap.index(
+        "## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01"
+    )
+    convergence = roadmap.index(
+        "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
+    )
     live = roadmap.index("### Separately Licensed Comparative Live Validation")
 
     assert (
@@ -614,11 +672,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         < provider_census
         < scout_retirement
         < provider
-        < linkup_read
-        < tavily_capabilities
-        < tavily_crawl
-        < linkup_deep
-        < routing_closure
+        < acquisition_runtime
         < convergence
         < live
     )
@@ -649,7 +703,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "target decisions, not completed runtime changes" in normalized
     assert "provider synthesis disabled" in normalized
     assert PROVIDER_ROUTING_RUNTIME_SHA in roadmap
-    assert "Linkup sourced answers" in normalized
+    assert "deep/sourcedAnswer" in normalized
     assert "MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
     assert "Specialist Proposal-Instance Admission Hardening" in roadmap
     assert "this roadmap grants no live license" in normalized
@@ -696,7 +750,7 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
         in roadmap
     )
     assert (
-        "## Active Next: KNOWN-URL-READ-FOUNDATION-01" in roadmap
+        "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01" in roadmap
     )
     assert (
         "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
@@ -704,10 +758,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     )
     assert roadmap.index(
         "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
-    ) < roadmap.index("## Active Next: KNOWN-URL-READ-FOUNDATION-01")
+    ) < roadmap.index("## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01")
     for noninstalled in (
-        "Linkup Fetch",
-        "Tavily site acquisition",
+        "provider-failure retry",
+        "general Linkup Deep",
         "live-call authority",
     ):
         assert noninstalled in roadmap
@@ -742,7 +796,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: KNOWN-URL-READ-FOUNDATION-01"
+        "Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "answer-producing paths" in roadmap

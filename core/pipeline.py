@@ -34,7 +34,6 @@ from core.retrieval import (
     rrf_merge,
 )
 from core.retrieval_quality import jaccard_similarity, passage_mentions_entity_full_phrase
-from core.routing import should_allow_linkup_provider
 from core.run_logging import log_provider_error, log_retrieval_timeout
 from core.scout import (
     QUANT_REPORT_TYPES as QUANT_REPORT_TYPES,
@@ -2884,11 +2883,10 @@ def process_search_queries(
     source_custody_policy: Any | None = None,
 ):
     if search_providers is None:
-        search_providers = ["tavily"]
-        if os.getenv("LINKUP_API_KEY") and should_allow_linkup_provider(complexity):
-            search_providers.append("linkup")
-        if os.getenv("EXA_API_KEY") and intent == "general":
-            search_providers.append("exa")
+        # Provider selection is complete before mechanical dispatch.  The
+        # retained lower-level compatibility default no longer manufactures a
+        # provider-name policy or performs transport.
+        search_providers = []
 
     linkup_depth_map = {"low": "fast", "medium": "standard", "high": "standard"}
     linkup_depth = linkup_depth_override or linkup_depth_map.get(complexity, "standard")

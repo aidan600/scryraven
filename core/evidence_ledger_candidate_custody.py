@@ -235,6 +235,7 @@ def _custody_record_from_reference(
             "candidate_url": reference.get("candidate_url"),
             "candidate_domain": reference.get("candidate_domain"),
             "attempted_url": reference.get("attempted_url"),
+            "provider_reported_url": reference.get("provider_reported_url"),
             "resolved_url": reference.get("resolved_url"),
             "final_url": reference.get("final_url"),
             "canonical_url": reference.get("canonical_url"),

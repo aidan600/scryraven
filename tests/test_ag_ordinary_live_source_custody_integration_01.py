@@ -8,6 +8,8 @@ from typing import Any, Mapping, Sequence
 import pytest
 
 import core.pipeline_orchestrator as orchestrator
+from core.acquisition_adapters import AcquisitionTransports
+from core.cap_enforcement import RunCapExceeded, RunCapPolicy
 from core.fetch_read_content_reference import (
     validate_fetch_read_content_packet,
 )
@@ -18,6 +20,7 @@ from core.ordinary_live_source_custody_runtime import (
     ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY,
     execute_ordinary_live_source_custody,
 )
+from core.routing import ProviderRouteBlockedError
 from core.run_kernel import RunKernel
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_PACKET,
@@ -51,7 +54,10 @@ ANCHORS = (
 
 @pytest.fixture(autouse=True)
 def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    scrub_offline_runtime(monkeypatch)
+    scrub_offline_runtime(
+        monkeypatch,
+        available_search_providers=("tavily",),
+    )
 
 
 class _SourceCustodyHarness(OfflineOrdinaryPipelineHarness):
@@ -158,6 +164,9 @@ def _run_pipeline(
     source_enabled: bool,
     candidate_results: Sequence[dict[str, Any]] | Mapping[str, Any] | None = None,
     fetcher: Any | None = None,
+    acquisition_transports: AcquisitionTransports | None = None,
+    provider_availability: Mapping[str, object] | None = None,
+    cap_policy: RunCapPolicy | None = None,
 ) -> tuple[dict[str, Any], _SourceCustodyHarness, Any]:
     harness = _SourceCustodyHarness(tmp_path)
     captured, outcome = run_offline_ordinary_pipeline(
@@ -171,9 +180,26 @@ def _run_pipeline(
         ordinary_live_candidate_handoff_results=candidate_results,
         enable_ordinary_live_source_custody=source_enabled,
         ordinary_live_source_fetch_read=fetcher,
+        ordinary_live_source_acquisition_transports=acquisition_transports,
+        provider_availability=(
+            provider_availability
+            if provider_availability is not None
+            else {"linkup": True, "tavily": True}
+        ),
+        cap_policy=cap_policy,
         ordinary_live_source_custody_anchor_groups=ANCHORS,
     )
     return captured, harness, outcome
+
+
+def _cap_policy(*, max_fetch_read_operations: int) -> RunCapPolicy:
+    return RunCapPolicy(
+        max_search_dispatches=20,
+        max_fetch_read_operations=max_fetch_read_operations,
+        max_author_model_calls=20,
+        max_smart_search_judgment_model_calls=20,
+        max_retries=0,
+    )
 
 
 def test_default_disabled_run_pipeline_behavior_remains_unchanged(
@@ -291,6 +317,223 @@ def test_run_pipeline_consumes_candidate_packet_into_source_custody(
     assert captured["run_kernel"].state.search_executor_handoff_state == {}
     assert captured["run_kernel"].state.live_search_validation_state == {}
     assert harness.forbidden_live_calls == []
+
+
+def test_explicit_availability_selects_tavily_despite_injected_linkup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    linkup = FakeSourceFetchRead()
+    tavily_calls: list[dict[str, Any]] = []
+
+    def tavily_extract(payload: dict[str, Any]) -> dict[str, Any]:
+        tavily_calls.append(payload)
+        return {
+            "results": [
+                {
+                    "url": CANDIDATE_URL,
+                    "raw_content": (
+                        "The official current Example Program permit threshold "
+                        "is 500 units for the active program year."
+                    ),
+                }
+            ],
+            "failed_results": [],
+        }
+
+    source_results: list[Any] = []
+    original_source = orchestrator.execute_ordinary_live_source_custody
+
+    def spy_source(**kwargs: Any) -> Any:
+        result = original_source(**kwargs)
+        source_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_ordinary_live_source_custody",
+        spy_source,
+    )
+
+    _captured, _harness, outcome = _run_pipeline(
+        tmp_path,
+        monkeypatch,
+        candidate_enabled=True,
+        source_enabled=True,
+        candidate_results=_candidate_results(),
+        fetcher=linkup,
+        acquisition_transports=AcquisitionTransports(
+            tavily_extract=tavily_extract,
+        ),
+        provider_availability={"linkup": False, "tavily": True},
+    )
+
+    projection = outcome.execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY]
+    assert projection["failed_closed"] is False, json.dumps(
+        projection,
+        indent=2,
+        sort_keys=True,
+    )
+    assert projection["read_selected_provider"] == "tavily"
+    assert outcome.execution_trace["provider_plan"]["provider_availability"][
+        "linkup"
+    ] is False
+    assert outcome.execution_trace["provider_plan"]["provider_availability"][
+        "tavily"
+    ] is True
+    assert linkup.calls == []
+    assert len(tavily_calls) == 1
+    assert source_results
+    reference = source_results[0].sanitized_content_reference
+    assert reference is not None
+    assert reference["provider_reported_url"] == CANDIDATE_URL
+    ledger_records = source_results[0].evidence_ledger_projection[
+        "fetch_read_candidate_custody"
+    ]["fetch_read_candidate_custody_records"]
+    assert ledger_records[0]["provider_reported_url"] == CANDIDATE_URL
+
+
+def test_tavily_read_url_mismatch_creates_no_custody(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_results: list[Any] = []
+    original_source = orchestrator.execute_ordinary_live_source_custody
+
+    def spy_source(**kwargs: Any) -> Any:
+        result = original_source(**kwargs)
+        source_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_ordinary_live_source_custody",
+        spy_source,
+    )
+
+    _captured, _harness, outcome = _run_pipeline(
+        tmp_path,
+        monkeypatch,
+        candidate_enabled=True,
+        source_enabled=True,
+        candidate_results=_candidate_results(),
+        acquisition_transports=AcquisitionTransports(
+            tavily_extract=lambda _payload: {
+                "results": [
+                    {
+                        "url": "https://different.example.test/wrong-page",
+                        "raw_content": "Readable material from the wrong page.",
+                    }
+                ],
+                "failed_results": [],
+            }
+        ),
+        provider_availability={"linkup": False, "tavily": True},
+    )
+
+    projection = outcome.execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY]
+    assert projection["failed_closed"] is True
+    assert projection["first_failed_seam"] == "offline_fetch_read_result_invalid"
+    assert projection["fetch_read_content_packet_ref"] == {}
+    assert projection["evidence_ledger_custody_count"] == 0
+    assert source_results
+    assert source_results[0].fetch_read_content_packet is None
+    assert source_results[0].evidence_ledger_projection is None
+
+
+def test_explicit_no_provider_availability_blocks_before_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    linkup = FakeSourceFetchRead()
+    tavily_calls = 0
+
+    def tavily_extract(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal tavily_calls
+        tavily_calls += 1
+        return {}
+
+    source_results: list[Any] = []
+    original_source = orchestrator.execute_ordinary_live_source_custody
+
+    def spy_source(**kwargs: Any) -> Any:
+        result = original_source(**kwargs)
+        source_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_ordinary_live_source_custody",
+        spy_source,
+    )
+
+    with pytest.raises(ProviderRouteBlockedError):
+        _run_pipeline(
+            tmp_path,
+            monkeypatch,
+            candidate_enabled=True,
+            source_enabled=True,
+            candidate_results=_candidate_results(),
+            fetcher=linkup,
+            acquisition_transports=AcquisitionTransports(
+                tavily_extract=tavily_extract,
+            ),
+            provider_availability={"linkup": False, "tavily": False},
+        )
+
+    assert source_results
+    projection = source_results[0].projection
+    assert projection["failed_closed"] is True
+    assert projection["fetch_read_attempted_count"] == 0
+    assert linkup.calls == []
+    assert tavily_calls == 0
+
+
+def test_selected_read_cap_zero_raises_before_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetcher = FakeSourceFetchRead()
+    cap_policy = _cap_policy(max_fetch_read_operations=0)
+
+    with pytest.raises(RunCapExceeded, match="fetch_read_operations cap exceeded"):
+        _run_pipeline(
+            tmp_path,
+            monkeypatch,
+            candidate_enabled=True,
+            source_enabled=True,
+            candidate_results=_candidate_results(),
+            fetcher=fetcher,
+            provider_availability={"linkup": True, "tavily": False},
+            cap_policy=cap_policy,
+        )
+
+    assert cap_policy.fetch_read_operations == 0
+    assert fetcher.calls == []
+
+
+def test_selected_read_cap_one_marks_once_and_calls_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetcher = FakeSourceFetchRead()
+    cap_policy = _cap_policy(max_fetch_read_operations=1)
+
+    _captured, _harness, outcome = _run_pipeline(
+        tmp_path,
+        monkeypatch,
+        candidate_enabled=True,
+        source_enabled=True,
+        candidate_results=_candidate_results(),
+        fetcher=fetcher,
+        provider_availability={"linkup": True, "tavily": False},
+        cap_policy=cap_policy,
+    )
+
+    projection = outcome.execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY]
+    assert projection["failed_closed"] is False
+    assert cap_policy.fetch_read_operations == 1
+    assert len(fetcher.calls) == 1
 
 
 def test_source_custody_projection_preserves_child_kernel_boundary(

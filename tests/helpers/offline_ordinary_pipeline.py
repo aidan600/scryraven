@@ -636,6 +636,8 @@ def run_offline_ordinary_pipeline(
     ordinary_live_candidate_handoff_provider: str = "offline-fake-search",
     enable_ordinary_live_source_custody: bool = False,
     ordinary_live_source_fetch_read: Any | None = None,
+    ordinary_live_source_acquisition_transports: Any | None = None,
+    provider_availability: Mapping[str, object] | None = None,
     ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
     enable_ordinary_live_semantic_coverage: bool = False,
     enable_ordinary_live_authority_consolidation: bool = False,
@@ -648,6 +650,15 @@ def run_offline_ordinary_pipeline(
             deps,
             ordinary_live_source_fetch_read=ordinary_live_source_fetch_read,
         )
+    if ordinary_live_source_acquisition_transports is not None:
+        deps = replace(
+            deps,
+            ordinary_live_source_acquisition_transports=(
+                ordinary_live_source_acquisition_transports
+            ),
+        )
+    if provider_availability is not None:
+        deps = replace(deps, provider_availability=dict(provider_availability))
     outcome = orchestrator.run_pipeline(
         offline_balanced_run_config(
             query=harness.query,

@@ -70,7 +70,7 @@ def test_process_search_queries_logs_retrieval_timeout_on_requests_timeout() -> 
                 log_err.assert_not_called()
 
 
-def test_process_search_queries_medium_fallback_does_not_add_linkup() -> None:
+def test_process_search_queries_without_completed_route_performs_zero_transport() -> None:
     from core.pipeline import process_search_queries
 
     status = MagicMock()
@@ -101,8 +101,8 @@ def test_process_search_queries_medium_fallback_does_not_add_linkup() -> None:
                         status_container=status,
                         search_providers=None,
                     )
-                    tavily.assert_called_once()
-                    exa.assert_called_once()
+                    tavily.assert_not_called()
+                    exa.assert_not_called()
                     linkup.assert_not_called()
 
 
