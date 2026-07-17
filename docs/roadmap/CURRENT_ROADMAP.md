@@ -145,17 +145,65 @@ This completed repair:
 - made no provider, acquisition, prompt, retrieval, Specialist-execution,
   live-call, final-custody, UI, or conversation change.
 
+## Completed Audit: Provider Offerings, Adapter, and Legacy-Doctrine Census
+
+`PROVIDER-OFFERINGS-ADAPTER-AND-LEGACY-DOCTRINE-CENSUS-01` completed the
+read-only, offline census of dated vendor offerings, installed adapters,
+ordinary and validation/operator consumers, provider selection/depth rules,
+provider-material authority, legacy doctrine, and owner-approved target
+dispositions. The controlling decision record is
+[Provider Offerings, Adapter, and Legacy-Doctrine Census](../architecture/PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md).
+
+The audit installed no adapter, provider route, provider role, Linkup depth,
+known-URL read, site map/crawl, Scout retirement, source-obligation change,
+provider synthesis, live-call authority, or provider-quality conclusion. Its
+`RETAIN`, `REPLACE`, `RETIRE`, and `DEFER_PENDING_PROOF` entries are target
+decisions, not completed runtime changes.
+
 ## Approved Product Sequence
 
-After the completed route-qualification repair, the approved checkpoints remain
-ordered as follows. Provider Capability and Acquisition-Routing Proof is the
-sole active-next checkpoint.
+After the completed provider-offerings and doctrine census, the approved
+checkpoints remain ordered as follows. Legacy Semantic Scout Ordinary-Execution
+Retirement is the sole active-next checkpoint.
 
-## Active Next: Provider Capability and Acquisition-Routing Proof
+## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01
 
-This checkpoint will establish the bounded provider-capability and
-acquisition-routing facts required by later product work. It grants no live-call
-authority and must not silently change provider or model selection.
+This checkpoint will retire the prompt-era semantic Scout from ordinary
+execution, including its prompt/model call, query candidacy, named scheduling,
+hard-coded provider overrides, and execution-capable compatibility surfaces.
+It must preserve the durable QueryPlan, RunKernel, retrieval-stop,
+disambiguation, planning, and recovery authorities that Scout currently uses.
+It grants no live-call authority and must not silently change provider or model
+selection.
+
+### Provider-Capability Routing Foundation
+
+After semantic Scout retirement, this checkpoint will replace provider-name
+defaults and inherited complexity/depth couplings with provider-neutral
+acquisition capabilities and explicit installation availability. It will reuse
+the ordinary ProviderPlan consumer and keep provider synthesis disabled. It will
+install the owner-selected Linkup-standard-first target policy for ordinary
+general and domain-targeted discovery. That target policy is not a claim that
+Linkup has been empirically proved best, highest quality, fastest, cheapest, or
+most reliable, and the census itself installed no routing change.
+
+### Linkup Known-URL Read Adapter
+
+This checkpoint may install bounded caller-selected known-URL reading through
+Linkup Fetch, with URL lineage and ordinary custody. It must not install Linkup
+sourced answers, structured synthesis, Research, or deep acquisition.
+
+### Tavily Extract, Map, and Crawl
+
+This checkpoint may install distinct `READ` / `FOCUSED_EXTRACT`, `MAP_SITE`, and
+bounded `CRAWL_SITE` capabilities. It must not preserve Tavily as a universal
+default or install Tavily Research.
+
+### Acquisition-Routing Closure If Required
+
+After the adapter phases, one bounded closure may retire residual provider-name
+roles, parallel selectors, compatibility fallbacks, or stale authority paths
+that prevent the ordinary consumer from using the capability plan.
 
 ### Bounded Final-Custody Convergence
 
@@ -167,11 +215,12 @@ does not itself authorize live validation.
 
 Only after mode-policy recovery authority containment, Specialist
 proposal-instance admission hardening, structured-list route qualification,
-provider capability and acquisition-routing proof, and bounded final-custody
-convergence may a separately licensed complete-app live shakeout be considered.
-Offline proof does not authorize live work, and this roadmap grants no live
-license. Arbitrary-query coverage, broad quantitative reasoning quality, and
-product correctness remain unproved.
+semantic Scout retirement, provider-capability routing, the approved acquisition
+adapter work, any required routing closure, and bounded final-custody convergence
+may separately licensed live validation be considered. Offline proof does not
+authorize live work, and this roadmap grants no live license. Arbitrary-query
+coverage, broad quantitative reasoning quality, provider quality, and product
+correctness remain unproved.
 
 ## Later, Deliberately Underspecified
 
