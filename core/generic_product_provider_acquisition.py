@@ -10,13 +10,20 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlparse
 
+from core.routing import (
+    AcquisitionCapability,
+    DiscoverQualifier,
+    ProviderCapabilityRequest,
+    ProviderRouteDecision,
+    route_provider_capability,
+)
 from core.search_providers import (
     search_exa_results,
     search_linkup_results,
@@ -63,7 +70,9 @@ class ProductProviderAcquisitionRequest:
     repo_root: Path
     output_path: Path
     query: str
-    provider: str = DEFAULT_EXTRACTION_PROVIDER
+    route_decision: ProviderRouteDecision | None = None
+    available_providers: Mapping[str, object] = field(default_factory=dict)
+    provider: str | None = None
     acquisition_provider_role: str = "extraction_provider"
     operation: str = DEFAULT_OPERATION
     max_results: int = DEFAULT_MAX_RESULTS
@@ -81,6 +90,7 @@ class ProductProviderAcquisitionResult:
     provider_calls_completed: int
     blocker: str | None = None
     detail: str | None = None
+    route_decision: ProviderRouteDecision | None = None
 
 
 TavilyProductProviderCallable = Callable[..., tuple[list[dict[str, Any]], list[Any]]]
@@ -159,7 +169,28 @@ def run_generic_product_provider_acquisition(
 ) -> ProductProviderAcquisitionResult:
     """Acquire sanitized provider records through product provider surfaces."""
 
-    provider = _clean_provider(request.provider)
+    requested_provider = _clean_provider(request.provider)
+    route_decision = request.route_decision or complete_generic_product_provider_route(
+        request,
+        requested_provider=requested_provider,
+    )
+    if route_decision.blocked or route_decision.selected_provider is None:
+        detail = route_decision.block_reason or "provider capability route blocked"
+        if requested_provider and route_decision.block_reason == (
+            "override_no_compatible_available_provider"
+        ):
+            detail = (
+                f"{requested_provider} is not available for generic product provider "
+                "acquisition."
+            )
+        return _failed_result(
+            request,
+            blocker=BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
+            detail=detail,
+            provider_calls_attempted=0,
+            route_decision=route_decision,
+        )
+    provider = route_decision.selected_provider
     operation = _clean_operation(request.operation)
     max_results = _max_results(request.max_results)
     include_domains = _domain_constraints(
@@ -170,12 +201,13 @@ def run_generic_product_provider_acquisition(
         )
     )
     exclude_domains = _domain_constraints(request.exclude_domains)
-    if operation != DEFAULT_OPERATION:
+    if operation != DEFAULT_OPERATION or route_decision.operation != DEFAULT_OPERATION:
         return _failed_result(
             request,
             blocker=BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
             detail="Only search operation is available for product provider acquisition.",
             provider_calls_attempted=0,
+            route_decision=route_decision,
         )
     try:
         if provider == DEFAULT_EXTRACTION_PROVIDER:
@@ -200,8 +232,8 @@ def run_generic_product_provider_acquisition(
         elif provider == LINKUP_EXTRACTION_PROVIDER:
             linkup_kwargs: dict[str, Any] = {
                 "query": request.query,
-                "depth": "standard",
-                "output_type": "searchResults",
+                "depth": route_decision.variant,
+                "output_type": route_decision.output_type,
                 "intent": "general",
                 "max_results": max_results,
             }
@@ -215,7 +247,7 @@ def run_generic_product_provider_acquisition(
             results = normalize_linkup_product_provider_results(
                 provider_records,
                 provider_call_index=1,
-                output_type="searchResults",
+                output_type=route_decision.output_type or "searchResults",
             )
         elif provider == EXA_EXTRACTION_PROVIDER:
             exa_kwargs: dict[str, Any] = {
@@ -259,6 +291,7 @@ def run_generic_product_provider_acquisition(
             request,
             provider=provider,
             exc=exc,
+            route_decision=route_decision,
         )
 
     payload = {
@@ -291,6 +324,7 @@ def run_generic_product_provider_acquisition(
         output_path=request.output_path,
         provider_calls_attempted=1,
         provider_calls_completed=1,
+        route_decision=route_decision,
     )
 
 
@@ -462,6 +496,7 @@ def _provider_exception_result(
     *,
     provider: str,
     exc: Exception,
+    route_decision: ProviderRouteDecision,
 ) -> ProductProviderAcquisitionResult:
     credential_name = _credential_name_from_exception(provider=provider, exc=exc)
     if credential_name:
@@ -473,12 +508,14 @@ def _provider_exception_result(
                 "provider acquisition."
             ),
             provider_calls_attempted=1,
+            route_decision=route_decision,
         )
     return _failed_result(
         request,
         blocker=BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
         detail=f"{provider} product provider acquisition failed closed.",
         provider_calls_attempted=1,
+        route_decision=route_decision,
     )
 
 
@@ -488,6 +525,7 @@ def _failed_result(
     blocker: str,
     detail: str,
     provider_calls_attempted: int,
+    route_decision: ProviderRouteDecision | None = None,
 ) -> ProductProviderAcquisitionResult:
     return ProductProviderAcquisitionResult(
         return_code=2,
@@ -496,6 +534,52 @@ def _failed_result(
         provider_calls_completed=0,
         blocker=blocker,
         detail=detail,
+        route_decision=route_decision,
+    )
+
+
+def complete_generic_product_provider_route(
+    request: ProductProviderAcquisitionRequest,
+    *,
+    requested_provider: str,
+) -> ProviderRouteDecision:
+    """Route retained explicit provider preferences through ``core.routing``.
+
+    Product callers should supply ``route_decision``.  The compatibility fields
+    remain for operator/validation callers, but they no longer choose a callable
+    locally: provider compatibility and availability are resolved here first.
+    """
+
+    if requested_provider == DEFAULT_SCOUT_PROVIDER:
+        qualifier = DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION
+    elif requested_provider == BRAVE_SCOUT_PROVIDER:
+        qualifier = DiscoverQualifier.INDEPENDENT_INDEX
+    elif requested_provider == EXA_EXTRACTION_PROVIDER:
+        qualifier = DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC
+    elif request.domain_constraints or request.include_domains:
+        qualifier = DiscoverQualifier.DOMAIN_TARGETED
+    else:
+        qualifier = DiscoverQualifier.GENERAL
+    availability = dict(request.available_providers)
+    if not availability and requested_provider:
+        availability[requested_provider] = True
+    return route_provider_capability(
+        ProviderCapabilityRequest(
+            capability=AcquisitionCapability.DISCOVER,
+            qualifier=qualifier,
+            include_domains=_domain_constraints(
+                (*request.domain_constraints, *request.include_domains)
+            ),
+            exclude_domains=_domain_constraints(request.exclude_domains),
+            derivation_reason="generic_product_acquisition_completed_route",
+        ),
+        availability,
+        override=([requested_provider] if requested_provider else None),
+        override_posture=(
+            "residual_explicit_provider_preference"
+            if requested_provider
+            else "none"
+        ),
     )
 
 
@@ -564,7 +648,7 @@ def _canonical_retained_provider_extracted_text(
 
 
 def _clean_provider(value: Any) -> str:
-    return str(value or "").strip().casefold() or DEFAULT_EXTRACTION_PROVIDER
+    return str(value or "").strip().casefold()
 
 
 def _clean_operation(value: Any) -> str:
@@ -675,6 +759,7 @@ __all__ = [
     "SOURCE_OF_RECORD_RECOVERY_SCOUT_PROVIDER_ROLE",
     "build_generic_product_provider_acquisition_runner",
     "canonical_retained_provider_extracted_text_metadata",
+    "complete_generic_product_provider_route",
     "normalize_exa_product_provider_results",
     "normalize_linkup_product_provider_results",
     "normalize_scout_product_provider_results",

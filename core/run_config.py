@@ -156,8 +156,13 @@ class RunDeps:
     # Optional offline-only adapter for authorized component-gap recovery.
     component_gap_recovery_adapter: Callable[..., Any] | None = None
 
-    # Optional offline/fake fetch-read adapter for ordinary source custody.
+    # Retained compatibility adapter for ordinary selected-candidate READ.
     ordinary_live_source_fetch_read: Callable[..., Any] | None = None
+
+    # Typed Linkup/Tavily acquisition transports. When absent, an explicitly
+    # enabled ordinary source-custody run may use the installed one-shot
+    # transports selected by core.routing.
+    ordinary_live_source_acquisition_transports: Any | None = None
 
     # Optional Phase 5A strict one-shot SmartModel transport. When absent, the
     # ordinary multi-component runtime composes the repository-owned default.

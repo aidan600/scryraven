@@ -1,9 +1,10 @@
 """Default-off ordinary run_pipeline source-custody integration.
 
 This helper consumes the in-memory ``SearchResultCandidatePacket`` produced by
-the ordinary candidate handoff repair, accepts only injected offline/fake
-fetch-read material, builds the existing fetch/read content packet, and reduces
-candidate/content custody through the existing EvidenceLedger reducer.
+the ordinary candidate handoff repair, requests typed ``READ`` routing,
+dispatches one selected adapter, builds the existing fetch/read content packet,
+and reduces candidate/content custody through the existing EvidenceLedger
+reducer.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
+from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
+from core.acquisition_contracts import AcquisitionArtifact, AcquisitionRequest
 from core.evidence_ledger_lifecycle import (
     reduce_fetch_read_content_packet_into_evidence_ledger,
 )
@@ -21,6 +24,11 @@ from core.fetch_read_content_reference import (
     fetch_read_content_packet_ref_from_packet,
     select_bounded_answer_bearing_text,
     validate_fetch_read_content_packet,
+)
+from core.routing import (
+    AcquisitionCapability,
+    ProviderCapabilityRequest,
+    route_provider_capability,
 )
 from core.run_kernel import RunKernel, RunKernelTransitionError
 from core.search_result_candidate_packet import (
@@ -269,11 +277,13 @@ def execute_ordinary_live_source_custody(
     parent_request_id: str,
     candidate_packet: Mapping[str, Any] | None,
     fetch_read: Callable[..., Mapping[str, Any]] | None,
+    available_providers: Mapping[str, object] | None = None,
+    acquisition_transports: AcquisitionTransports | None = None,
     required_or_preferred_anchors: Sequence[Any] = (),
     component_text: str | None = None,
     claim_under_test: str | None = None,
 ) -> OrdinaryLiveSourceCustodyResult:
-    """Reduce one selected candidate into fetch/read custody with fake input."""
+    """Route and reduce one selected candidate into existing fetch/read custody."""
 
     base = _base_projection(
         parent_run_id=parent_run_id,
@@ -297,19 +307,41 @@ def execute_ordinary_live_source_custody(
                 "ordinary_candidate_handoff_run_kernel_missing",
                 "ordinary source custody requires the in-memory candidate RunKernel",
             )
-        if fetch_read is None:
-            raise OrdinaryLiveSourceCustodyError(
-                "offline_fetch_read_dependency_missing",
-                "ordinary source custody requires an injected offline fetch/read dependency",
-            )
         selected_candidate = _selected_candidate_from_packet(packet)
-        fetch_read_attempted = 1
-        raw_fetch_read = fetch_read(
-            candidate=dict(selected_candidate),
-            source_url=str(selected_candidate["url"]),
-            source_candidate_ref=_source_candidate_ref(selected_candidate),
+        transports = _source_custody_transports(
+            selected_candidate=selected_candidate,
+            fetch_read=fetch_read,
+            acquisition_transports=acquisition_transports,
         )
-        fetch_read_completed = 1
+        availability = _read_availability(
+            available_providers=available_providers,
+            fetch_read=fetch_read,
+            transports=transports,
+        )
+        route_decision = route_provider_capability(
+            ProviderCapabilityRequest(capability=AcquisitionCapability.READ),
+            availability,
+        )
+        request = AcquisitionRequest(
+            acquisition_job_id=(
+                f"{packet['run_id']}:read:{selected_candidate['candidate_id']}"
+            ),
+            parent_acquisition_job_id=str(packet.get("packet_id") or ""),
+            route_decision=route_decision,
+            selected_urls=(str(selected_candidate["url"]),),
+            max_retained_characters=20_000,
+            candidate_reference=str(selected_candidate["candidate_id"]),
+        )
+        execution = dispatch_acquisition(request, transports=transports)
+        fetch_read_attempted = execution.provider_calls_attempted
+        fetch_read_completed = execution.provider_calls_completed
+        if not execution.succeeded or len(execution.artifacts) != 1:
+            raise OrdinaryLiveSourceCustodyError(
+                _read_failure_seam(execution.failure_code or execution.block_code),
+                execution.detail or "typed READ acquisition failed closed",
+            )
+        artifact = execution.artifacts[0]
+        raw_fetch_read = _read_artifact_for_existing_custody(artifact)
         material, bounded_selection = _sanitized_material_from_fetch_read(
             raw_fetch_read,
             selected_candidate=selected_candidate,
@@ -344,6 +376,11 @@ def execute_ordinary_live_source_custody(
                 "source_candidate": _source_candidate_projection(selected_candidate),
                 "source_selected_from_search_result_candidate_packet": True,
                 "source_authority_source": "SearchResultCandidatePacket",
+                "read_route_decision": route_decision.to_trace(),
+                "read_acquisition_job": execution.to_trace(),
+                "read_selected_provider": route_decision.selected_provider,
+                "read_selected_operation": route_decision.operation,
+                "read_selected_variant": route_decision.variant,
                 "retrieval_diagnostics_used_as_source_authority": False,
                 "fetch_read_attempted_count": fetch_read_attempted,
                 "fetch_read_completed_count": fetch_read_completed,
@@ -430,6 +467,102 @@ def execute_ordinary_live_source_custody(
                 run_kernel=run_kernel,
             )
         )
+
+
+def _source_custody_transports(
+    *,
+    selected_candidate: Mapping[str, Any],
+    fetch_read: Callable[..., Mapping[str, Any]] | None,
+    acquisition_transports: AcquisitionTransports | None,
+) -> AcquisitionTransports | None:
+    if acquisition_transports is None and fetch_read is None:
+        return None
+    configured = acquisition_transports or AcquisitionTransports()
+    linkup_fetch = configured.linkup_fetch
+    if linkup_fetch is None and fetch_read is not None:
+
+        def legacy_linkup_fetch(payload: dict[str, Any]) -> Mapping[str, Any]:
+            source_url = str(payload.get("url") or selected_candidate["url"])
+            raw = fetch_read(
+                candidate=dict(selected_candidate),
+                source_url=source_url,
+                source_candidate_ref=_source_candidate_ref(selected_candidate),
+            )
+            material = dict(raw) if isinstance(raw, Mapping) else {}
+            material.setdefault(
+                "markdown",
+                material.get("sanitized_text") or material.get("readable_text"),
+            )
+            return material
+
+        linkup_fetch = legacy_linkup_fetch
+    return AcquisitionTransports(
+        linkup_fetch=linkup_fetch,
+        tavily_extract=configured.tavily_extract,
+        tavily_map=configured.tavily_map,
+        tavily_crawl=configured.tavily_crawl,
+        linkup_deep_search=configured.linkup_deep_search,
+    )
+
+
+def _read_availability(
+    *,
+    available_providers: Mapping[str, object] | None,
+    fetch_read: Callable[..., Mapping[str, Any]] | None,
+    transports: AcquisitionTransports | None,
+) -> dict[str, bool]:
+    if available_providers is not None:
+        return {
+            "linkup": bool(available_providers.get("linkup")),
+            "tavily": bool(available_providers.get("tavily")),
+        }
+    return {
+        "linkup": bool(fetch_read or (transports and transports.linkup_fetch)),
+        "tavily": bool(transports and transports.tavily_extract),
+    }
+
+
+def _read_failure_seam(code: str | None) -> str:
+    mapping = {
+        "provider_response_closed_fields_rejected": "offline_fetch_read_result_invalid",
+        "read_material_empty_or_unreadable": "offline_fetch_read_result_unreadable",
+        "read_http_status_unreadable": "offline_fetch_read_result_unreadable",
+        "read_provider_reported_failure": "offline_fetch_read_result_unreadable",
+        "read_result_cardinality_invalid": "offline_fetch_read_result_unreadable",
+        "read_requested_url_mismatch": "offline_fetch_read_result_invalid",
+        "read_attempted_url_mismatch": "offline_fetch_read_result_invalid",
+        "selected_adapter_transport_unavailable": "offline_fetch_read_dependency_missing",
+    }
+    return mapping.get(code or "", "typed_read_dispatch_failed")
+
+
+def _read_artifact_for_existing_custody(
+    artifact: AcquisitionArtifact,
+) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "fetch_read_status": "readable",
+            "attempted_url": artifact.attempted_url,
+            "resolved_url": artifact.resolved_url,
+            "final_url": artifact.final_url,
+            "canonical_url": artifact.canonical_url,
+            "resolved_domain": (
+                str(artifact.final_url or "").split("/", 3)[2]
+                if str(artifact.final_url or "").startswith(("http://", "https://"))
+                else None
+            ),
+            "http_status": artifact.http_status or 200,
+            "content_type": artifact.content_type,
+            "retrieved_or_observed_at": artifact.observed_at,
+            "content_title": artifact.title,
+            "content_length": artifact.retained_character_count,
+            "sanitized_text": artifact.retained_text,
+            "acquisition_job_id": artifact.acquisition_job_id,
+            "acquisition_provider": artifact.provider,
+            "acquisition_operation": artifact.operation,
+            "acquisition_variant": artifact.provider_variant,
+        }
+    )
 
 
 def _selected_candidate_from_packet(packet: Mapping[str, Any]) -> dict[str, Any]:

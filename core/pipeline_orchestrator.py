@@ -1092,6 +1092,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 else None
             ),
             fetch_read=deps.ordinary_live_source_fetch_read,
+            available_providers={
+                "linkup": bool(
+                    deps.ordinary_live_source_fetch_read
+                    or getattr(
+                        deps.ordinary_live_source_acquisition_transports,
+                        "linkup_fetch",
+                        None,
+                    )
+                    or os.getenv("LINKUP_API_KEY")
+                ),
+                "tavily": bool(
+                    getattr(
+                        deps.ordinary_live_source_acquisition_transports,
+                        "tavily_extract",
+                        None,
+                    )
+                    or os.getenv("TAVILY_API_KEY")
+                ),
+            },
+            acquisition_transports=(
+                deps.ordinary_live_source_acquisition_transports
+            ),
             required_or_preferred_anchors=(
                 config.ordinary_live_source_custody_anchor_groups
             ),

@@ -13,7 +13,7 @@ import json
 import os
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from html import unescape
@@ -76,6 +76,7 @@ from core.generic_product_provider_acquisition import (
     ProviderExtractedTextMetadataError,
     build_generic_product_provider_acquisition_runner,
     canonical_retained_provider_extracted_text_metadata,
+    complete_generic_product_provider_route,
     redact_provider_extracted_source_text,
 )
 from core.generic_query_to_relation_planning import (
@@ -849,22 +850,27 @@ def _provider_runner_from_product_acquisition_runner(
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner,
 ) -> ProviderProxyRunner:
     def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        acquisition_request = ProductProviderAcquisitionRequest(
+            repo_root=request.repo_root,
+            output_path=request.output_path,
+            query=request.query,
+            provider=request.provider,
+            acquisition_provider_role=request.acquisition_provider_role,
+            operation=request.operation,
+            max_results=request.max_results,
+            domain_constraints=tuple(request.domain_constraints),
+            include_domains=tuple(request.include_domains),
+            exclude_domains=tuple(request.exclude_domains),
+            source_of_record_domain_constraints=tuple(
+                request.source_of_record_domain_constraints
+            ),
+        )
+        completed_route = complete_generic_product_provider_route(
+            acquisition_request,
+            requested_provider=request.provider,
+        )
         result = product_provider_acquisition_runner(
-            ProductProviderAcquisitionRequest(
-                repo_root=request.repo_root,
-                output_path=request.output_path,
-                query=request.query,
-                provider=request.provider,
-                acquisition_provider_role=request.acquisition_provider_role,
-                operation=request.operation,
-                max_results=request.max_results,
-                domain_constraints=tuple(request.domain_constraints),
-                include_domains=tuple(request.include_domains),
-                exclude_domains=tuple(request.exclude_domains),
-                source_of_record_domain_constraints=tuple(
-                    request.source_of_record_domain_constraints
-                ),
-            )
+            replace(acquisition_request, route_decision=completed_route)
         )
         return _generic_result_from_product_acquisition_result(result)
 
