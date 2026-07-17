@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64
+Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -207,8 +207,9 @@ Legacy Economist execution is retired from the ordinary CLI/backend product
 path. The ordinary orchestrator no longer gates, preflights, schedules, or calls
 the Economist, and current dependency composition does not inject
 `run_economist_step`. Configuring `OPENAI_API_KEY` does not restore that path.
-The former quantitative-preflight Author note is likewise absent. Independent
-Linkup eligibility and call arguments are unchanged.
+The former quantitative-preflight Author note is likewise absent. Ordinary
+Linkup `searchResults` acquisition eligibility is unchanged; the separate
+provider-synthesis precision path is retired below.
 
 The `RunDeps.run_economist_step` field remains optional and unread as an
 isolated compatibility shape. The legacy implementation, its direct
@@ -225,10 +226,46 @@ exact selected source literals inside the named bounded multi-component class.
 It does not provide broad economic analysis, arbitrary formulas, estimates,
 acquisition, or general quantitative reasoning.
 
+## Retired Legacy Semantic Scout And Ordinary Provider Synthesis
+
+Legacy semantic Scout ordinary execution is retired. The ordinary product does
+not select a Scout prompt, make a Scout model call, create Scout QueryPlan
+candidates, consult a Scout continuation gate, or schedule Scout retrieval.
+The Scout-specific QueryPlan finalizer, scheduler stage
+`scout_directed_continuation`, provider role `scout_continuation`, and hard-coded
+`exa/linkup` override are absent from their current ordinary owners. Evaluator,
+expander, generic QueryPlan admission, RunKernel continuation authority,
+retrieval-stop policy, disambiguation, weak-corpus recovery, and source-class
+recovery remain installed.
+
+`core.scout` now exposes only fixed inert import compatibility for the retained
+`core.pipeline` re-export and bounded validation composition: `run_scout`
+returns no result and performs no prompt lookup, model call, parsing, or query
+production. Ordinary CLI composition does not inject the optional legacy Scout
+or Linkup precision dependencies. Retained Scout execution/session fields are
+passive compatibility projections for persistence, review, and aggregate
+consumers: ordinary values are fixed false, empty, retired, or zero, and the
+retired gate projection is not supplied to current continuation, retrieval-
+authority, or dispatch decisions.
+
+Ordinary Linkup provider synthesis is also retired. No ordinary eligibility,
+call, response-processing, or Analyst-context path uses Linkup
+`deep/sourcedAnswer`, so provider-written answers cannot enter ordinary Analyst
+input through the former precision block. The lower-level precision helper is
+retained only for named offline diagnostics and provider-error validation;
+generic acquisition continues to reject `sourcedAnswer`. Ordinary Linkup
+`searchResults`, including Scrutineer-authorized `deep/searchResults`
+remediation, remains unchanged.
+
+This repair installed no provider-capability routing, provider ordering, Linkup
+Fetch, Tavily site acquisition, replacement semantic role, or live validation.
+
 ## Not Installed
 
 - Arbitrary-query multi-component support.
 - Legacy Economist execution in ordinary CLI/backend runs.
+- Legacy semantic Scout execution in ordinary CLI/backend runs.
+- Ordinary Linkup provider-written answer synthesis.
 - A replacement economic Specialist or broad quantitative reasoning agent.
 - Social-source acquisition or a Social Awareness specialist.
 - Additional product Specialists, arbitrary formulas, estimates, or unit/currency conversion.
@@ -239,6 +276,8 @@ acquisition, or general quantitative reasoning.
 - Hosted or Local capacity characterization.
 - A selected current UI framework or final UI/productization work.
 - An ordinary saved-thread conversation or follow-up product workflow.
+- Provider-capability routing or the owner-selected Linkup-first target policy.
+- Linkup Fetch or Tavily Extract, Map, or Crawl acquisition.
 
 ## Not Proved
 

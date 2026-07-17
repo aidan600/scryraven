@@ -208,21 +208,6 @@ class QueryPlanRuntimeAdapter:
             phase="weak_corpus_recovery",
         )
 
-    def finalize_scout_continuation(
-        self,
-        queries: Sequence[str],
-        *,
-        max_len: int | None,
-    ) -> list[str]:
-        return self.finalize(
-            queries,
-            max_len=max_len,
-            include_official_bias=False,
-            origin="scout_continuation",
-            role=QueryPlanRole.CONTINUATION,
-            phase="scout_directed_continuation",
-        )
-
     def finalize_expander_continuation(
         self,
         queries: Sequence[str],

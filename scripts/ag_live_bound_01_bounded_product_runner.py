@@ -529,10 +529,7 @@ def _build_live_run_deps() -> Any:
     from core.llm import ask_model, compute_similarities, embed_texts
     from core.pipeline import (
         QUANT_REPORT_TYPES,
-        fetch_linkup_precision_block,
         process_search_queries,
-        run_scout,
-        should_skip_quant_scout,
     )
     from core.prompts import DEFAULT_SYSTEM
     from core.retrieval import (
@@ -555,9 +552,6 @@ def _build_live_run_deps() -> Any:
         filter_top_evidence=filter_top_evidence,
         is_plausible_domain=is_plausible_domain,
         anchor_query_to_topic=anchor_query_to_topic,
-        fetch_linkup_precision_block=fetch_linkup_precision_block,
-        run_scout=run_scout,
-        should_skip_quant_scout=should_skip_quant_scout,
         clean_json_response=clean_json_response,
         DEFAULT_SYSTEM=DEFAULT_SYSTEM,
         NEWS_PREFERRED_DOMAINS=list(NEWS_PREFERRED_DOMAINS),

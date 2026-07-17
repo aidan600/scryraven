@@ -125,9 +125,6 @@ class RunDeps:
     filter_top_evidence: Callable[..., Any]
     is_plausible_domain: Callable[..., Any]
     anchor_query_to_topic: Callable[..., Any]
-    fetch_linkup_precision_block: Callable[..., Any]
-    run_scout: Callable[..., Any]
-    should_skip_quant_scout: Callable[..., Any]
     clean_json_response: Callable[..., Any]
 
     # Prompt bundles and search constants
@@ -145,6 +142,12 @@ class RunDeps:
     kb_triggers_path: Any            # Path
     policy_state_path: Any           # Path
     policy_journal_path: Any         # Path
+
+    # Optional isolated compatibility fields. Current ordinary composition and
+    # runtime neither require, read, nor invoke these retired callables.
+    fetch_linkup_precision_block: Callable[..., Any] | None = None
+    run_scout: Callable[..., Any] | None = None
+    should_skip_quant_scout: Callable[..., Any] | None = None
 
     # Optional isolated legacy compatibility field. Current ordinary runtime
     # neither reads nor invokes this callable.

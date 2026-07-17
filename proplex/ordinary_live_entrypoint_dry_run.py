@@ -55,7 +55,6 @@ class OrdinaryLiveEntrypointDryRunDeps:
     logger: logging.Logger
     model_calls: list[dict[str, Any]] = field(default_factory=list)
     search_calls: list[dict[str, Any]] = field(default_factory=list)
-    closed_dependency_calls: list[str] = field(default_factory=list)
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         self.model_calls.append(
@@ -161,15 +160,6 @@ class OrdinaryLiveEntrypointDryRunDeps:
             "sanitized_text": text,
         }
 
-    def closed_dependency(self, name: str) -> Any:
-        def _called(*_args: Any, **_kwargs: Any) -> Any:
-            self.closed_dependency_calls.append(name)
-            if name == "run_scout":
-                return {}
-            return ""
-
-        return _called
-
     def to_run_deps(self) -> RunDeps:
         return RunDeps(
             ask_model=self.ask_model,
@@ -181,11 +171,6 @@ class OrdinaryLiveEntrypointDryRunDeps:
             filter_top_evidence=lambda passages, *_args, **_kwargs: list(passages),
             is_plausible_domain=lambda _url: True,
             anchor_query_to_topic=lambda query, _topic: query,
-            fetch_linkup_precision_block=self.closed_dependency(
-                "fetch_linkup_precision_block"
-            ),
-            run_scout=self.closed_dependency("run_scout"),
-            should_skip_quant_scout=lambda *_args, **_kwargs: True,
             clean_json_response=lambda value: value,
             DEFAULT_SYSTEM=DEFAULT_SYSTEM,
             NEWS_PREFERRED_DOMAINS=[],

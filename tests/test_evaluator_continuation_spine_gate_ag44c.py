@@ -383,32 +383,32 @@ def test_ag44c_runtime_evaluator_continuation_is_gated_before_second_search(
     ]
 
 
-def test_ag44c_scout_runtime_uses_scout_spine_gate(
+def test_ag44c_retired_scout_cannot_use_evaluator_continuation_gate(
     tmp_path: Path,
 ) -> None:
+    scout_queries = (
+        "Acme Widget benchmark adoption data",
+        "Acme Widget benchmark support matrix",
+    )
     outcome, harness = _run_passive_case(
         tmp_path,
         router_report_type="quantitative_comparison",
-        scout_queries=(
-            "Acme Widget benchmark adoption data",
-            "Acme Widget benchmark support matrix",
-        ),
+        scout_queries=scout_queries,
     )
     trace = outcome.execution_trace
 
-    assert len(harness.search_calls) == 2
-    assert trace[ORDINARY_CONTINUATION_TRACE_KEY]["source_path"] == (
+    assert all(call["queries"] != list(scout_queries) for call in harness.search_calls)
+    assert trace[ORDINARY_CONTINUATION_TRACE_KEY].get("source_path") != (
         SCOUT_DIRECTED_QUERIES
     )
-    assert trace[ORDINARY_CONTINUATION_TRACE_KEY]["used"] is True
-    assert trace[ORDINARY_CONTINUATION_TRACE_KEY][
-        "currently_spine_authorized"
-    ] is True
-    assert trace["targeted_retrieval_candidate_used"] is True
+    assert trace["scout_fired"] is False
     assert trace["evaluator_continuation_spine_gate_trace"]["available"] is False
     assert trace["scout_continuation_spine_gate_trace"][
         "targeted_retrieval_dispatch_authorized"
-    ] is True
+    ] is False
+    assert trace["scout_continuation_spine_gate_trace"]["reason"] == (
+        "legacy_semantic_scout_ordinary_execution_retired"
+    )
 
 
 def test_ag44c_conflict_resolving_queries_do_not_become_ordinary_next_queries(

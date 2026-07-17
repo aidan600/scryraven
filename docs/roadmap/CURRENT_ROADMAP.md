@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64
+Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -160,26 +160,33 @@ provider synthesis, live-call authority, or provider-quality conclusion. Its
 `RETAIN`, `REPLACE`, `RETIRE`, and `DEFER_PENDING_PROOF` entries are target
 decisions, not completed runtime changes.
 
+## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01
+
+Runtime/test commit `af87f5387fb5cd11a36c56754ee719400bb1bf0b`
+retired prompt-era semantic Scout ordinary execution and the ordinary Linkup
+`deep/sourcedAnswer` precision path. The ordinary product now makes no Scout
+prompt/model call, creates no Scout QueryPlan candidate or retrieval work, and
+has no Scout-specific scheduler stage, provider role, or hard-coded provider
+override. Provider-written Linkup answers no longer enter Analyst context.
+
+The repair preserved generic QueryPlan admission, evaluator and expander
+continuations, RunKernel and retrieval-stop authority, disambiguation,
+weak-corpus/source-class recovery, ordinary Linkup `searchResults`,
+Scrutineer-authorized `deep/searchResults`, and Serper/Brave lightweight
+discovery adapters. It installed no provider-capability routing, provider-order
+change, Linkup Fetch, Tavily site acquisition, replacement semantic role, or
+live-call authority.
+
 ## Approved Product Sequence
 
-After the completed provider-offerings and doctrine census, the approved
-checkpoints remain ordered as follows. Legacy Semantic Scout Ordinary-Execution
-Retirement is the sole active-next checkpoint.
+After semantic Scout and ordinary provider-synthesis retirement, the approved
+checkpoints remain ordered as follows. Provider-Capability Routing Foundation
+is the sole active-next checkpoint.
 
-## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01
+## Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01
 
-This checkpoint will retire the prompt-era semantic Scout from ordinary
-execution, including its prompt/model call, query candidacy, named scheduling,
-hard-coded provider overrides, and execution-capable compatibility surfaces.
-It must preserve the durable QueryPlan, RunKernel, retrieval-stop,
-disambiguation, planning, and recovery authorities that Scout currently uses.
-It grants no live-call authority and must not silently change provider or model
-selection.
-
-### Provider-Capability Routing Foundation
-
-After semantic Scout retirement, this checkpoint will replace provider-name
-defaults and inherited complexity/depth couplings with provider-neutral
+This checkpoint will replace provider-name defaults and inherited
+complexity/depth couplings with provider-neutral
 acquisition capabilities and explicit installation availability. It will reuse
 the ordinary ProviderPlan consumer and keep provider synthesis disabled. It will
 install the owner-selected Linkup-standard-first target policy for ordinary

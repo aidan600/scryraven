@@ -95,23 +95,23 @@ def test_main_scheduler_helper_preserves_main_action_metadata() -> None:
 def test_continuation_scheduler_preserves_query_order_and_forced_providers() -> None:
     plan = ProviderPlan.from_available_keys(_all_on())
     provider_record = plan.record_continuation(
-        role="scout_continuation",
+        role="expander_continuation",
         query_type="other",
         intent="general",
         complexity="high",
         report_type="general_research",
         is_academic=False,
         suppress_tavily=False,
-        override=["exa", "linkup"],
-        override_is_user=False,
+        override=None,
+        override_is_user=True,
     )
 
     action = schedule_continuation_action(
         RetrievalScheduleInput(
-            stage="scout_directed_continuation",
+            stage="expander_component_queries",
             current_queries=["component A", "component B"],
             iteration=2,
-            provider_role="scout_continuation",
+            provider_role="expander_continuation",
             provider_record=provider_record,
             continuation_authorized=True,
         )
@@ -225,13 +225,12 @@ def test_pipeline_continuation_branches_consume_scheduler_output() -> None:
     source = PIPELINE.read_text()
     assert "RetrievalScheduleInput" not in source
     assert "schedule_main_retrieval_from_kernel_action" in source
-    assert "schedule_scout_continuation_from_pipeline_scope" in source
+    assert "schedule_scout_continuation_from_pipeline_scope" not in source
     assert "schedule_expander_continuation_from_pipeline_scope" in source
     assert "schedule_evaluator_continuation" in source
     assert "schedule_weak_corpus_recovery_from_pipeline_scope" in source
     assert "retrieval_scheduled_action = schedule_main_retrieval_from_kernel_action" in source
     assert "main_retrieval_kernel_action = run_kernel.authorize_main_retrieval_pass" in source
-    assert "current_queries = list(authorized_scout_queries)" not in source
     assert "current_queries = list(authorized_expander_queries)" not in source
     assert "current_queries = list(authorized_evaluator_queries)" not in source
     assert "current_queries = weak_corpus_recovery_queries" not in source
