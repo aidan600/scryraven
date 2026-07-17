@@ -19,8 +19,9 @@ from core.current_source_component_answer_type_binding import (
     current_source_component_answer_type_binding_from_relation_plan,
     current_source_component_answer_type_binding_ref,
 )
+from core.routing import AcquisitionCapability, DiscoverQualifier
 from core.source_of_record_recovery_provider_config import (
-    get_source_of_record_recovery_extraction_provider_config,
+    SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
 )
 
 SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_SCHEMA_VERSION = (
@@ -82,8 +83,7 @@ DPRIME_RUN_KERNEL_ADMISSION_DECISION_CHALLENGED = "challenged"
 ANSWER_BEARING_CANDIDATE_WINDOW_ESTABLISHED = (
     "answer_bearing_candidate_window_established"
 )
-DEFAULT_EXTRACTION_PROVIDER = "tavily"
-DEFAULT_PROVIDER_OPERATION = "search"
+DISCOVER_OPERATION_REQUIREMENT = "search"
 DEFAULT_MAX_RESULTS = 5
 MAX_RECOVERY_PROVIDER_CALLS = 1
 
@@ -357,6 +357,9 @@ def build_single_relation_source_obligation_recovery_authorization(
             recovery_reason=recovery_reason,
             recovery_query=recovery_query,
             domains=domains,
+            provider_acquisition_attempt_counts=(
+                provider_acquisition_attempt_counts
+            ),
         )
         if source_posture_requires_gate
         else {}
@@ -595,9 +598,13 @@ def _current_answer_contract_projection(
             "component_id": acquisition_plan.get("component_id"),
             "search_requirement_id": acquisition_plan.get("search_requirement_id"),
             "source_obligation_id": acquisition_plan.get("source_obligation_id"),
-            "provider": acquisition_plan.get("extraction_provider"),
-            "provider_operation": acquisition_plan.get("provider_operation"),
+            "provider_neutral_requirement": _safe_mapping(
+                acquisition_plan.get("provider_neutral_requirement")
+            ),
         },
+        "completed_provider_route_ref": _safe_mapping(
+            provider_counts.get("completed_provider_route")
+        ),
         "provider_acquisition_attempt_refs": _provider_acquisition_attempt_refs(
             provider_counts
         ),
@@ -963,14 +970,12 @@ def _build_recovery_plan(
     recovery_reason: str,
     recovery_query: str,
     domains: Sequence[str],
+    provider_acquisition_attempt_counts: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    provider_config = get_source_of_record_recovery_extraction_provider_config()
-    configured_provider = _clean_text(provider_config.provider, limit=80)
-    configured_operation = _clean_text(provider_config.operation, limit=80)
-    configured_provider_role = _clean_text(provider_config.provider_role, limit=120)
-    configured_max_results = _bounded_int(
-        provider_config.max_results,
-        default=DEFAULT_MAX_RESULTS,
+    completed_route = _safe_mapping(
+        _safe_mapping(provider_acquisition_attempt_counts).get(
+            "completed_provider_route"
+        )
     )
     plan = {
         "schema_version": SOURCE_CHALLENGE_RECOVERY_PLAN_SCHEMA_VERSION,
@@ -1004,16 +1009,18 @@ def _build_recovery_plan(
         "domain_constraints": list(domains),
         "domain_constraints_acquisition_only": True,
         "recovery_query": recovery_query,
-        "provider": configured_provider or DEFAULT_EXTRACTION_PROVIDER,
-        "provider_role": configured_provider_role or "extraction_provider",
-        "provider_operation": configured_operation or DEFAULT_PROVIDER_OPERATION,
-        "max_results": configured_max_results or DEFAULT_MAX_RESULTS,
-        "provider_role_config_ref": provider_config.to_dict(),
-        "provider_decision_scope": provider_config.decision_scope,
-        "provider_decision_global_default": provider_config.global_default_provider,
-        "ordinary_first_stage_provider": acquisition_plan.get("extraction_provider")
-        or DEFAULT_EXTRACTION_PROVIDER,
-        "ordinary_first_stage_provider_unchanged": True,
+        "provider_neutral_requirement": {
+            "capability": AcquisitionCapability.DISCOVER.value,
+            "discover_qualifier": DiscoverQualifier.DOMAIN_TARGETED.value,
+            "provider_selection_owner": "core.routing",
+        },
+        "provider_role": SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
+        "requested_operation": DISCOVER_OPERATION_REQUIREMENT,
+        "max_results": DEFAULT_MAX_RESULTS,
+        "ordinary_first_stage_route_ref": completed_route,
+        "ordinary_first_stage_provider": completed_route.get(
+            "selected_provider"
+        ),
         "provider_decision_hardcoded_in_runner": False,
         "include_domains": list(domains),
         "exclude_domains": [],

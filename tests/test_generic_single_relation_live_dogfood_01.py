@@ -27,6 +27,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -98,6 +99,15 @@ SMALL_CLAIMS_QUERY = (
 )
 UNSUPPORTED_QUERY = "What does Reddit say about this paint?"
 PRIVATE_CANARY = "sk-synthetic-private-canary-do-not-retain"
+DIAGNOSTIC_COMPATIBILITY_PROVIDER_FIXTURE = "tavily"
+OFFLINE_PRODUCT_TEST_ENV = {  # pragma: allowlist secret
+    "PYTEST_CURRENT_TEST": "test",
+    "TAVILY_API_KEY": "offline",  # pragma: allowlist secret
+}
+OFFLINE_LINKUP_PRODUCT_TEST_ENV = {  # pragma: allowlist secret
+    "LINKUP_API_KEY": "offline",  # pragma: allowlist secret
+    "TAVILY_API_KEY": "offline",  # pragma: allowlist secret
+}
 
 
 def test_unsupported_query_blocks_before_live_and_does_not_retain_text(
@@ -295,7 +305,7 @@ def test_provider_failure_detail_redacts_synthetic_private_canary(
         supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
         provider_proxy_runner=failing_runner,
         fetch_read_runner=_fake_fetch_runner("unused"),
-        environ={},
+        environ={"TAVILY_API_KEY": "offline"},  # pragma: allowlist secret
     )
     serialized = json.dumps(result.packet, sort_keys=True)
 
@@ -440,7 +450,9 @@ def test_confirmed_product_path_with_missing_tavily_credential_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def missing_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
-        raise RuntimeError("TAVILY_API_KEY is not set; secret-value-not-retained")
+        raise RuntimeError(  # pragma: allowlist secret
+            "TAVILY_API_KEY is not set; secret-value-not-retained"
+        )
 
     monkeypatch.setattr(product_acquisition, "search_web_results", missing_tavily)
 
@@ -451,7 +463,9 @@ def test_confirmed_product_path_with_missing_tavily_credential_fails_closed(
         run_id="missing-tavily-credential",
         confirm_live_dogfood=True,
         fetch_read_runner=_fake_fetch_runner("unused"),
-        environ={},
+        environ={
+            "TAVILY_API_KEY": "offline-test-key",  # pragma: allowlist secret
+        },
     )
     detail = str(result.packet["blocker_detail"]).casefold()
 
@@ -511,7 +525,9 @@ def test_default_product_owned_adapter_supplies_tavily_results(
         run_id="default-product-provider-adapter",
         confirm_live_dogfood=True,
         fetch_read_runner=_recording_fake_fetch_runner(fetch_urls, "unused"),
-        environ={},
+        environ={
+            "TAVILY_API_KEY": "offline-test-key",  # pragma: allowlist secret
+        },
     )
 
     assert result.return_code == 2
@@ -553,6 +569,402 @@ def test_default_product_owned_adapter_supplies_tavily_results(
     assert reference["not_source_obligation_satisfaction"] is True
 
 
+def test_product_owned_general_route_accepts_and_retains_discover_qualifier(
+    tmp_path: Path,
+) -> None:
+    linkup_calls: list[dict[str, Any]] = []
+    tavily_calls = 0
+
+    def fake_linkup(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        linkup_calls.append(kwargs)
+        return (
+            [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "domain": "uscis.gov",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": "The current N-400 paper filing fee is $760.",
+                }
+            ],
+            [],
+        )
+
+    def forbidden_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        nonlocal tavily_calls
+        tavily_calls += 1
+        return ([], [])
+
+    runner = product_acquisition.build_generic_product_provider_acquisition_runner(
+        linkup_product_provider_callable=fake_linkup,
+        tavily_product_provider_callable=forbidden_tavily,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="provider-neutral-general-qualifier",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        product_provider_acquisition_runner=runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ=OFFLINE_LINKUP_PRODUCT_TEST_ENV,
+    )
+
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert len(linkup_calls) == 1
+    assert linkup_calls[0]["depth"] == "standard"
+    assert linkup_calls[0]["output_type"] == "searchResults"
+    assert tavily_calls == 0
+    provider_payload = json.loads(
+        (result.packet_path.parent / dogfood.SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert provider_payload["provider"] == "linkup"
+    assert provider_payload["capability"] == "DISCOVER"
+    assert provider_payload["discover_qualifier"] == "general"
+    assert provider_payload["operation"] == "search"
+    assert provider_payload["provider_variant"] == "standard"
+    assert provider_payload["output_type"] == "searchResults"
+    retained_provider_payload = json.loads(
+        (
+            Path(result.retained_artifact_root)
+            / dogfood.SEARCH_ARTIFACT_DIR
+            / dogfood.SANITIZED_PROVIDER_RESULTS_NAME
+        ).read_text(encoding="utf-8")
+    )
+    assert retained_provider_payload["discover_qualifier"] == "general"
+    assert retained_provider_payload["provider"] == "linkup"
+    assert retained_provider_payload["provider_variant"] == "standard"
+    assert retained_provider_payload["output_type"] == "searchResults"
+    candidate_packet = json.loads(
+        (
+            Path(result.retained_artifact_root)
+            / dogfood.SEARCH_ARTIFACT_DIR
+            / dogfood.SEARCH_RESULT_CANDIDATE_PACKET_NAME
+        ).read_text(encoding="utf-8")
+    )
+    assert candidate_packet["provider_authorized"] == "linkup"
+    assert candidate_packet["provider_used"] == "linkup"
+    assert result.packet["completed_provider_route"]["selected_provider"] == "linkup"
+
+
+def test_product_route_and_payload_qualifier_mismatch_blocks_before_candidate(
+    tmp_path: Path,
+) -> None:
+    def mismatched_runner(
+        request: product_acquisition.ProductProviderAcquisitionRequest,
+    ) -> product_acquisition.ProductProviderAcquisitionResult:
+        assert request.route_decision is not None
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(
+                {
+                    "request_kind": "generic_product_provider_acquisition_response",
+                    **_fixture_route_envelope_identity(request.route_decision),
+                    "discover_qualifier": "academic_technical_semantic",
+                    "result_count": 1,
+                    "results": [
+                        {
+                            "title": "USCIS Form N-400 Filing Fee",
+                            "url": "https://www.uscis.gov/forms/filing-fees",
+                            "domain": "uscis.gov",
+                            "snippet": "Current filing fee table.",
+                            "result_rank": 1,
+                            "provider_call_index": 1,
+                            "raw_provider_payload_retained": False,
+                            "raw_search_response_retained": False,
+                        }
+                    ],
+                    "raw_provider_payload_retained": False,
+                    "raw_search_response_retained": False,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return product_acquisition.ProductProviderAcquisitionResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+            route_decision=request.route_decision,
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="provider-qualifier-mismatch",
+        confirm_live_dogfood=True,
+        product_provider_acquisition_runner=mismatched_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ=OFFLINE_LINKUP_PRODUCT_TEST_ENV,
+    )
+
+    assert result.decision == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert "disagree on acquisition identity" in result.packet["blocker_detail"]
+    assert result.packet["search_tasks_attempted"] == 0
+    assert not list(tmp_path.rglob(dogfood.SEARCH_RESULT_CANDIDATE_PACKET_NAME))
+
+
+def test_provider_payload_rejects_uninstalled_discover_qualifier() -> None:
+    with pytest.raises(GenericSingleRelationLiveDogfoodRunError) as exc_info:
+        dogfood._validate_provider_payload(
+            {
+                "request_kind": "generic_product_provider_acquisition_response",
+                **_fixture_static_provider_envelope_identity(provider="linkup"),
+                "discover_qualifier": "provider_named_capability",
+                "result_count": 0,
+                "results": [],
+                "raw_provider_payload_retained": False,
+                "raw_search_response_retained": False,
+            }
+        )
+
+    assert (
+        exc_info.value.blocker
+        == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    )
+    assert "discover_qualifier must be one of" in exc_info.value.detail
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    (
+        "provider",
+        "capability",
+        "discover_qualifier",
+        "operation",
+        "provider_variant",
+        "output_type",
+    ),
+)
+def test_provider_payload_missing_identity_field_fails_closed(
+    missing_field: str,
+) -> None:
+    payload = {
+        "request_kind": "generic_product_provider_acquisition_response",
+        **_fixture_static_provider_envelope_identity(provider="linkup"),
+        "result_count": 0,
+        "results": [],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+    payload.pop(missing_field)
+
+    with pytest.raises(GenericSingleRelationLiveDogfoodRunError) as exc_info:
+        dogfood._validate_provider_payload(payload)
+
+    assert (
+        exc_info.value.blocker
+        == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered_value"),
+    (
+        ("provider", "tavily"),
+        ("capability", "READ"),
+        ("discover_qualifier", "academic_technical_semantic"),
+        ("operation", "fetch"),
+        ("provider_variant", "deep"),
+        ("output_type", "sourcedAnswer"),
+    ),
+)
+def test_product_route_payload_identity_tampering_blocks_before_candidate(
+    tmp_path: Path,
+    field: str,
+    tampered_value: str,
+) -> None:
+    def tampered_runner(
+        request: product_acquisition.ProductProviderAcquisitionRequest,
+    ) -> product_acquisition.ProductProviderAcquisitionResult:
+        assert request.route_decision is not None
+        identity = _fixture_route_envelope_identity(request.route_decision)
+        identity[field] = tampered_value
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(
+                {
+                    "request_kind": "generic_product_provider_acquisition_response",
+                    **identity,
+                    "result_count": 0,
+                    "results": [],
+                    "raw_provider_payload_retained": False,
+                    "raw_search_response_retained": False,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return product_acquisition.ProductProviderAcquisitionResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+            route_decision=request.route_decision,
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id=f"tampered-route-payload-{field}",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        product_provider_acquisition_runner=tampered_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ=OFFLINE_LINKUP_PRODUCT_TEST_ENV,
+    )
+
+    assert result.decision == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert not list(tmp_path.rglob(dogfood.SEARCH_RESULT_CANDIDATE_PACKET_NAME))
+
+
+def test_product_injected_runner_uses_wrapper_route_when_result_omits_it(
+    tmp_path: Path,
+) -> None:
+    seen_routes: list[Any] = []
+
+    def injected_runner(
+        request: GenericProviderProxyRunRequest,
+    ) -> GenericProviderProxyRunResult:
+        assert request.route_decision is not None
+        seen_routes.append(request.route_decision)
+        payload = {
+            "request_kind": "provider_proxy_search",
+            **_fixture_route_envelope_identity(request.route_decision),
+            "result_count": 1,
+            "results": [
+                _provider_extracted_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                    "The current N-400 paper filing fee is $760.",
+                )
+            ],
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return GenericProviderProxyRunResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="injected-wrapper-retains-route",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=injected_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ=OFFLINE_LINKUP_PRODUCT_TEST_ENV,
+    )
+
+    assert len(seen_routes) == 1
+    assert seen_routes[0].selected_provider == "linkup"
+    assert result.packet["completed_provider_route"]["selected_provider"] == "linkup"
+    assert list(tmp_path.rglob(dogfood.SEARCH_RESULT_CANDIDATE_PACKET_NAME))
+
+
+def test_product_injected_runner_cannot_replace_wrapper_completed_route(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def conflicting_runner(
+        request: GenericProviderProxyRunRequest,
+    ) -> GenericProviderProxyRunResult:
+        nonlocal calls
+        calls += 1
+        assert request.route_decision is not None
+        return GenericProviderProxyRunResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+            route_decision=replace(request.route_decision, operation="fetch"),
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="injected-route-conflict",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=conflicting_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ=OFFLINE_LINKUP_PRODUCT_TEST_ENV,
+    )
+
+    assert calls == 1
+    assert result.decision == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert not list(tmp_path.rglob(dogfood.SEARCH_RESULT_CANDIDATE_PACKET_NAME))
+
+
+def test_product_injected_runner_cannot_bypass_route_availability(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def forbidden_runner(
+        request: GenericProviderProxyRunRequest,
+    ) -> GenericProviderProxyRunResult:
+        nonlocal calls
+        calls += 1
+        raise AssertionError(f"injected runner must not receive {request.query}")
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="injected-route-unavailable",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=forbidden_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert calls == 0
+    assert result.decision == (
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE
+    )
+    assert not list(tmp_path.rglob(dogfood.SEARCH_RESULT_CANDIDATE_PACKET_NAME))
+
+
 def test_product_provider_extracted_text_redacts_strict_canary_before_handoff(
     tmp_path: Path,
 ) -> None:
@@ -587,7 +999,9 @@ def test_product_provider_extracted_text_redacts_strict_canary_before_handoff(
         confirm_live_dogfood=True,
         product_provider_acquisition_runner=runner,
         fetch_read_runner=_fake_fetch_runner("unused"),
-        environ={},
+        environ={
+            "TAVILY_API_KEY": "offline-test-key",  # pragma: allowlist secret
+        },
     )
     provider_output_text = (
         result.packet_path.parent / dogfood.SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
@@ -646,8 +1060,7 @@ def test_product_boundary_rewrites_stale_provider_extracted_digest_metadata(
     ) -> product_acquisition.ProductProviderAcquisitionResult:
         payload = {
             "request_kind": "generic_product_provider_acquisition_response",
-            "provider": "tavily",
-            "operation": "search",
+            **_fixture_route_envelope_identity(request.route_decision),
             "result_count": 1,
             "results": [
                 {
@@ -683,6 +1096,7 @@ def test_product_boundary_rewrites_stale_provider_extracted_digest_metadata(
             output_path=request.output_path,
             provider_calls_attempted=1,
             provider_calls_completed=1,
+            route_decision=request.route_decision,
         )
 
     result = build_generic_single_relation_live_dogfood_run_output(
@@ -697,7 +1111,9 @@ def test_product_boundary_rewrites_stale_provider_extracted_digest_metadata(
         supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
         product_provider_acquisition_runner=stale_product_runner,
         fetch_read_runner=_fake_fetch_runner("unused"),
-        environ={},
+        environ={
+            "TAVILY_API_KEY": "offline-test-key",  # pragma: allowlist secret
+        },
     )
     provider_output_path = (
         result.packet_path.parent
@@ -738,8 +1154,7 @@ def test_strict_provider_validator_rejects_post_boundary_digest_mismatch() -> No
     extracted_text = "Official fee schedule lists the current fee as 42."
     unsafe_payload = {
         "request_kind": "generic_product_provider_acquisition_response",
-        "provider": "tavily",
-        "operation": "search",
+        **_fixture_static_provider_envelope_identity(),
         "result_count": 1,
         "results": [
             {
@@ -782,8 +1197,7 @@ def test_provider_result_metadata_canary_still_fails_closed_without_value(
 ) -> None:
     unsafe_payload = {
         "request_kind": "provider_proxy_search",
-        "provider": "tavily",
-        "operation": "search",
+        **_fixture_static_provider_envelope_identity(),
         "result_count": 1,
         "results": [
             {
@@ -860,7 +1274,10 @@ def test_default_product_owned_adapter_uses_serper_scout_for_ambiguity(
         run_id="default-product-provider-ambiguous",
         confirm_live_dogfood=True,
         fetch_read_runner=_fake_fetch_runner("unused"),
-        environ={},
+        environ={
+            "SERPER_API_KEY": "offline-test-key",  # pragma: allowlist secret
+            "TAVILY_API_KEY": "offline-test-key",  # pragma: allowlist secret
+        },
     )
 
     assert result.return_code == 2
@@ -901,7 +1318,9 @@ def test_missing_serper_credential_for_ambiguous_scout_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def missing_scout(**_kwargs: Any) -> list[dict[str, Any]]:
-        raise RuntimeError("SERPER_API_KEY is not set; secret-value-not-retained")
+        raise RuntimeError(  # pragma: allowlist secret
+            "SERPER_API_KEY is not set; secret-value-not-retained"
+        )
 
     def tavily_must_not_run(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
         raise AssertionError("Tavily extraction must not run after scout failure")
@@ -916,7 +1335,10 @@ def test_missing_serper_credential_for_ambiguous_scout_fails_closed(
         run_id="missing-serper-credential",
         confirm_live_dogfood=True,
         fetch_read_runner=_fake_fetch_runner("unused"),
-        environ={},
+        environ={
+            "SERPER_API_KEY": "offline-test-key",  # pragma: allowlist secret
+            "TAVILY_API_KEY": "offline-test-key",  # pragma: allowlist secret
+        },
     )
     detail = str(result.packet["blocker_detail"]).casefold()
 
@@ -1318,7 +1740,8 @@ def test_clear_query_uses_extraction_provider_before_direct_fetch(
 
     assert result.return_code == 2
     assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
-    assert [call.provider for call in calls] == ["tavily"]
+    assert [call.provider for call in calls] == [None]
+    assert [call.discover_qualifier.value for call in calls] == ["general"]
     assert calls[0].query == result.packet["acquisition_query"]
     assert result.packet["relation_plan_search_query_seed"] == (
         plan["search_query_seeds"][0]
@@ -1402,7 +1825,11 @@ def test_ambiguous_query_uses_serper_scout_then_extraction_provider(
     )
 
     assert result.return_code == 2
-    assert [call.provider for call in calls] == ["serper", "tavily"]
+    assert [call.provider for call in calls] == [None, None]
+    assert [call.discover_qualifier.value for call in calls] == [
+        "lightweight_disambiguation",
+        "general",
+    ]
     assert result.packet["planner_marked_ambiguity"] is True
     assert result.packet["run_kernel_local_accounting_authorized_disambiguation"] is True
     assert result.packet["serper_scout_calls_attempted"] == 1
@@ -2055,7 +2482,7 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         ),
         fetch_read_runner=_failing_fetch_runner(fetch_urls),
         dprime_model_review_callable=fake_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     _assert_model_assisted_analyst_required_block(result)
@@ -2283,7 +2710,7 @@ def test_product_single_fact_same_component_multi_source_feeds_dprime_runtime(
         model_assisted_analyst_license=_model_assisted_license(),
         model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
         enable_dprime_same_component_multi_source=True,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     assert len(calls) == 1
@@ -2396,7 +2823,7 @@ def test_product_single_fact_same_component_multi_source_blocks_duplicate_source
         model_assisted_analyst_license=_model_assisted_license(),
         model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
         enable_dprime_same_component_multi_source=True,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     semantic = result.packet["semantic_status_payload"]
@@ -2478,7 +2905,7 @@ def test_product_single_fact_redacts_live_semantic_model_route_ref_canary(
             "USCIS lists the current Form N-400 paper filing fee as $760."
         ),
         dprime_model_review_callable=fake_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
     serialized = json.dumps(result.packet, sort_keys=True)
     route_ref = result.packet["semantic_status_payload"]["dprime_status"][
@@ -2546,7 +2973,7 @@ def test_product_single_fact_cli_reports_exact_dprime_answer_path_blocker(
             "USCIS lists the current Form N-400 paper filing fee as $760."
         ),
         dprime_model_review_callable=fake_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     _assert_model_assisted_analyst_required_block(result)
@@ -2669,7 +3096,7 @@ def test_product_single_fact_cli_blocks_when_fap_safe_claim_missing(
         ),
         fetch_read_runner=_fake_fetch_runner(answer_claim),
         dprime_model_review_callable=fake_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     _assert_model_assisted_analyst_required_block(result)
@@ -2811,7 +3238,7 @@ def test_product_single_fact_cli_blocks_when_claim_not_contract_accountable(
         ),
         fetch_read_runner=_fake_fetch_runner(answer_claim),
         dprime_model_review_callable=fake_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     _assert_model_assisted_analyst_required_block(result)
@@ -2894,7 +3321,7 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
         ),
         fetch_read_runner=_fake_fetch_runner(bounded_text),
         dprime_model_review_callable=fake_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
 
@@ -3149,7 +3576,7 @@ def test_ready_gateway_and_dprime_slice_still_block_without_source_citation_auth
         ),
         fetch_read_runner=_fake_fetch_runner(answer_claim),
         dprime_model_review_callable=lambda *_args, **_kwargs: {},
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     integration = result.packet["single_relation_dprime_authority_integration"]
@@ -3346,7 +3773,7 @@ def test_consumed_dprime_source_citation_authority_stops_at_display_boundary(
             "USCIS lists the current Form N-400 paper filing fee as $760."
         ),
         dprime_model_review_callable=lambda *_args, **_kwargs: {},
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     assert semantic_kwargs["dprime_source_citation_authority_enabled"] is True
@@ -3528,7 +3955,7 @@ def test_dprime_pass_without_stable_selected_value_fails_closed_at_gateway(
             "USCIS lists the current Form N-400 paper filing fee as $760."
         ),
         dprime_model_review_callable=lambda *_args, **_kwargs: {},
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ=OFFLINE_PRODUCT_TEST_ENV,
     )
 
     gateway = result.packet["source_readiness_gateway"]
@@ -3957,10 +4384,15 @@ def _recording_proxy_runner(
 ) -> Any:
     def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
         calls.append(request)
+        provider = _fixture_provider_for_request(request)
+        discover_qualifier = _fixture_discover_qualifier_for_request(request)
         payload = {
             "request_kind": "provider_proxy_search",
-            "provider": request.provider,
-            "operation": request.operation,
+            **_fixture_provider_envelope_identity(
+                request,
+                provider=provider,
+                discover_qualifier=discover_qualifier,
+            ),
             "result_count": len(results),
             "results": results,
             "raw_provider_payload_retained": False,
@@ -3976,6 +4408,7 @@ def _recording_proxy_runner(
             output_path=request.output_path,
             provider_calls_attempted=1,
             provider_calls_completed=1,
+            route_decision=request.route_decision,
         )
 
     return runner
@@ -3987,11 +4420,16 @@ def _routing_proxy_runner(
 ) -> Any:
     def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
         calls.append(request)
-        results = results_by_provider.get(request.provider, [])
+        provider = _fixture_provider_for_request(request)
+        discover_qualifier = _fixture_discover_qualifier_for_request(request)
+        results = results_by_provider.get(provider, [])
         payload = {
             "request_kind": "provider_proxy_search",
-            "provider": request.provider,
-            "operation": request.operation,
+            **_fixture_provider_envelope_identity(
+                request,
+                provider=provider,
+                discover_qualifier=discover_qualifier,
+            ),
             "result_count": len(results),
             "results": results,
             "raw_provider_payload_retained": False,
@@ -4007,9 +4445,121 @@ def _routing_proxy_runner(
             output_path=request.output_path,
             provider_calls_attempted=1,
             provider_calls_completed=1,
+            route_decision=request.route_decision,
         )
 
     return runner
+
+
+def _fixture_provider_for_request(request: GenericProviderProxyRunRequest) -> str:
+    if request.route_decision is not None:
+        assert request.route_decision.selected_provider is not None
+        return request.route_decision.selected_provider
+    if request.provider:
+        return request.provider
+    if _fixture_discover_qualifier_for_request(request) == "lightweight_disambiguation":
+        return dogfood.DEFAULT_SCOUT_PROVIDER
+    return DIAGNOSTIC_COMPATIBILITY_PROVIDER_FIXTURE
+
+
+def _fixture_discover_qualifier_for_request(
+    request: GenericProviderProxyRunRequest,
+) -> str:
+    if request.route_decision is not None:
+        assert request.route_decision.request.qualifier is not None
+        return request.route_decision.request.qualifier.value
+    if request.discover_qualifier is None:
+        return "general"
+    return request.discover_qualifier.value
+
+
+def _fixture_provider_envelope_identity(
+    request: GenericProviderProxyRunRequest,
+    *,
+    provider: str,
+    discover_qualifier: str,
+) -> dict[str, Any]:
+    route = request.route_decision
+    if route is not None:
+        return _fixture_route_envelope_identity(route)
+    variant_by_provider = {
+        "brave": "web",
+        "exa": "neural_with_text",
+        "linkup": "standard",
+        "serper": "web",
+        "tavily": "search",
+    }
+    return {
+        "provider": provider,
+        "capability": "DISCOVER",
+        "discover_qualifier": discover_qualifier,
+        "operation": request.operation,
+        "provider_variant": variant_by_provider[provider],
+        "output_type": "searchResults",
+        "domain_constraints": list(request.domain_constraints),
+        "include_domains": list(request.include_domains),
+        "exclude_domains": list(request.exclude_domains),
+        "source_of_record_domain_constraints": list(
+            request.source_of_record_domain_constraints
+        ),
+        **_fixture_domain_authority_posture(),
+    }
+
+
+def _fixture_domain_authority_posture() -> dict[str, bool]:
+    return {
+        "domain_constraints_acquisition_only": True,
+        "domain_constraints_create_source_authority": False,
+        "domain_constraints_satisfy_source_obligation": False,
+        "domain_constraints_citation_eligible": False,
+        "domain_constraints_claim_correctness": False,
+    }
+
+
+def _fixture_route_envelope_identity(route: Any) -> dict[str, Any]:
+    assert route.request.qualifier is not None
+    return {
+        "provider": route.selected_provider,
+        "capability": route.request.capability.value,
+        "discover_qualifier": route.request.qualifier.value,
+        "operation": route.operation,
+        "provider_variant": route.variant,
+        "output_type": route.output_type,
+        "domain_constraints": list(route.request.domain_constraints),
+        "include_domains": list(route.request.include_domains),
+        "exclude_domains": list(route.request.exclude_domains),
+        "source_of_record_domain_constraints": list(
+            route.request.source_of_record_domain_constraints
+        ),
+        **_fixture_domain_authority_posture(),
+    }
+
+
+def _fixture_static_provider_envelope_identity(
+    *,
+    provider: str = "tavily",
+    discover_qualifier: str = "general",
+) -> dict[str, Any]:
+    variant_by_provider = {
+        "brave": "web",
+        "exa": "neural_with_text",
+        "linkup": "standard",
+        "serper": "web",
+        "tavily": "search",
+    }
+    return {
+        "provider": provider,
+        "capability": "DISCOVER",
+        "discover_qualifier": discover_qualifier,
+        "operation": "search",
+        "provider_variant": variant_by_provider[provider],
+        "output_type": "searchResults",
+        "domain_constraints": [],
+        "include_domains": [],
+        "exclude_domains": [],
+        "source_of_record_domain_constraints": [],
+        **_fixture_domain_authority_posture(),
+    }
 
 
 def _fake_fetch_runner(text: str) -> Any:

@@ -105,7 +105,13 @@ from core.product_model_route_config import (
     MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
 )
-from core.routing import DiscoverQualifier
+from core.routing import (
+    PROVIDER_CAPABILITY_CATALOG,
+    PROVIDER_NAMES,
+    AcquisitionCapability,
+    DiscoverQualifier,
+    ProviderRouteDecision,
+)
 from core.run_kernel import (
     SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE,
     Observation,
@@ -271,8 +277,6 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_ENFORCEMENT = (
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE"
 )
-DEFAULT_PROVIDER = "tavily"
-DEFAULT_EXTRACTION_PROVIDER = "tavily"
 DEFAULT_SCOUT_PROVIDER = "serper"
 DEFAULT_OPERATION = "search"
 CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG = (
@@ -578,9 +582,13 @@ _ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
     {
         "request_kind",
         "provider",
+        "capability",
+        "discover_qualifier",
         "provider_role",
         "acquisition_provider_role",
         "operation",
+        "provider_variant",
+        "output_type",
         "result_count",
         "results",
         "domain_constraints",
@@ -764,6 +772,7 @@ class GenericProviderProxyRunRequest:
     repo_root: Path
     output_path: Path
     query: str
+    route_decision: ProviderRouteDecision | None = None
     provider: str | None = None
     available_providers: Mapping[str, object] = field(default_factory=dict)
     discover_qualifier: DiscoverQualifier | None = None
@@ -784,7 +793,7 @@ class GenericProviderProxyRunResult:
     provider_calls_completed: int
     blocker: str | None = None
     detail: str | None = None
-    selected_provider: str | None = None
+    route_decision: ProviderRouteDecision | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -857,10 +866,17 @@ def _select_generic_provider_acquisition_runner(
     legacy_injected_provider_runner: ProviderProxyRunner | None,
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None,
     provider_availability: Mapping[str, object],
+    require_completed_product_route: bool,
     counts: dict[str, Any],
 ) -> ProviderProxyRunner | None:
     if legacy_injected_provider_runner is not None:
         counts["product_provider_acquisition_adapter_used"] = 0
+        if require_completed_product_route:
+            return _provider_runner_from_injected_product_proxy_runner(
+                legacy_injected_provider_runner,
+                provider_availability=provider_availability,
+            )
+        counts["diagnostic_provider_runner_compatibility_used"] = 1
         return legacy_injected_provider_runner
     product_runner = (
         product_provider_acquisition_runner
@@ -886,6 +902,7 @@ def _provider_runner_from_product_acquisition_runner(
             repo_root=request.repo_root,
             output_path=request.output_path,
             query=request.query,
+            route_decision=request.route_decision,
             provider=request.provider,
             available_providers=available_providers,
             discover_qualifier=request.discover_qualifier,
@@ -900,20 +917,52 @@ def _provider_runner_from_product_acquisition_runner(
             ),
         )
         completed_route = complete_generic_product_provider_route(
-            acquisition_request,
+            replace(acquisition_request, route_decision=None),
             requested_provider=request.provider,
         )
+        route_conflict = _precompleted_generic_route_conflict(
+            request.route_decision,
+            expected_route=completed_route,
+        )
+        if completed_route.blocked or route_conflict:
+            return _blocked_generic_provider_route_result(
+                request,
+                route_decision=completed_route,
+                detail=(
+                    route_conflict
+                    or completed_route.block_reason
+                    or "provider capability route blocked"
+                ),
+            )
         result = product_provider_acquisition_runner(
             replace(acquisition_request, route_decision=completed_route)
         )
-        return _generic_result_from_product_acquisition_result(result)
+        return _generic_result_from_product_acquisition_result(
+            result,
+            completed_route=completed_route,
+        )
 
     return runner
 
 
 def _generic_result_from_product_acquisition_result(
     result: ProductProviderAcquisitionResult,
+    *,
+    completed_route: ProviderRouteDecision,
 ) -> GenericProviderProxyRunResult:
+    if result.route_decision is not None and result.route_decision != completed_route:
+        return GenericProviderProxyRunResult(
+            return_code=2,
+            output_path=result.output_path,
+            provider_calls_attempted=result.provider_calls_attempted,
+            provider_calls_completed=result.provider_calls_completed,
+            blocker=BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            detail=(
+                "Injected product runner returned a route that conflicts with "
+                "the wrapper-completed route."
+            ),
+            route_decision=completed_route,
+        )
     return GenericProviderProxyRunResult(
         return_code=result.return_code,
         output_path=result.output_path,
@@ -921,11 +970,98 @@ def _generic_result_from_product_acquisition_result(
         provider_calls_completed=result.provider_calls_completed,
         blocker=result.blocker,
         detail=result.detail,
-        selected_provider=(
-            result.route_decision.selected_provider
-            if result.route_decision is not None
-            else None
-        ),
+        route_decision=completed_route,
+    )
+
+
+def _provider_runner_from_injected_product_proxy_runner(
+    injected_runner: ProviderProxyRunner,
+    *,
+    provider_availability: Mapping[str, object],
+) -> ProviderProxyRunner:
+    def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        product_runner = _provider_runner_from_product_acquisition_runner(
+            lambda product_request: _product_result_from_injected_proxy_runner(
+                injected_runner,
+                product_request,
+            ),
+            provider_availability=provider_availability,
+        )
+        return product_runner(request)
+
+    return runner
+
+
+def _product_result_from_injected_proxy_runner(
+    injected_runner: ProviderProxyRunner,
+    request: ProductProviderAcquisitionRequest,
+) -> ProductProviderAcquisitionResult:
+    assert request.route_decision is not None
+    result = injected_runner(
+        GenericProviderProxyRunRequest(
+            repo_root=request.repo_root,
+            output_path=request.output_path,
+            query=request.query,
+            route_decision=request.route_decision,
+            provider=request.provider,
+            available_providers=request.available_providers,
+            discover_qualifier=request.discover_qualifier,
+            acquisition_provider_role=request.acquisition_provider_role,
+            operation=request.operation,
+            max_results=request.max_results,
+            domain_constraints=request.domain_constraints,
+            include_domains=request.include_domains,
+            exclude_domains=request.exclude_domains,
+            source_of_record_domain_constraints=(
+                request.source_of_record_domain_constraints
+            ),
+        )
+    )
+    if result.route_decision is not None and result.route_decision != request.route_decision:
+        return ProductProviderAcquisitionResult(
+            return_code=2,
+            output_path=result.output_path,
+            provider_calls_attempted=result.provider_calls_attempted,
+            provider_calls_completed=result.provider_calls_completed,
+            blocker=BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            detail="Injected provider runner contradicted the completed route.",
+            route_decision=request.route_decision,
+        )
+    return ProductProviderAcquisitionResult(
+        return_code=result.return_code,
+        output_path=result.output_path,
+        provider_calls_attempted=result.provider_calls_attempted,
+        provider_calls_completed=result.provider_calls_completed,
+        blocker=result.blocker,
+        detail=result.detail,
+        route_decision=request.route_decision,
+    )
+
+
+def _precompleted_generic_route_conflict(
+    route_decision: ProviderRouteDecision | None,
+    *,
+    expected_route: ProviderRouteDecision,
+) -> str | None:
+    if route_decision is not None and route_decision != expected_route:
+        return "Precompleted provider route conflicts with the canonical request."
+    return None
+
+
+def _blocked_generic_provider_route_result(
+    request: GenericProviderProxyRunRequest,
+    *,
+    route_decision: ProviderRouteDecision,
+    detail: str,
+) -> GenericProviderProxyRunResult:
+    return GenericProviderProxyRunResult(
+        return_code=2,
+        output_path=request.output_path,
+        provider_calls_attempted=0,
+        provider_calls_completed=0,
+        blocker=BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
+        detail=detail,
+        route_decision=route_decision,
     )
 
 
@@ -1088,6 +1224,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             legacy_injected_provider_runner=provider_proxy_runner,
             product_provider_acquisition_runner=product_provider_acquisition_runner,
             provider_availability=product_provider_availability,
+            require_completed_product_route=product_single_fact_answer_path_enabled,
             counts=counts,
         )
         if provider_runner is None:
@@ -1140,7 +1277,10 @@ def build_generic_single_relation_live_dogfood_run_output(
                         ),
                     ),
                 )
-            scout_payload = _load_sanitized_provider_output(scout_result.output_path)
+            scout_payload = _load_provider_payload_for_result(
+                scout_result,
+                require_completed_route=product_single_fact_answer_path_enabled,
+            )
             disambiguation_record = _disambiguation_record_from_scout_payload(
                 scout_payload,
                 acquisition_plan=acquisition_plan,
@@ -1151,18 +1291,25 @@ def build_generic_single_relation_live_dogfood_run_output(
             )
 
         search_query_seed = str(acquisition_plan["acquisition_query"])
-        product_domain_constraints = tuple(
-            str(item)
-            for item in _safe_sequence(acquisition_plan.get("domain_constraints"))
+        product_domain_constraints = _canonical_domain_constraints(
+            _safe_sequence(acquisition_plan.get("domain_constraints"))
         )
-        product_include_domains = tuple(
-            str(item)
-            for item in _safe_sequence(acquisition_plan.get("include_domains"))
+        product_include_domains = _canonical_domain_constraints(
+            _safe_sequence(acquisition_plan.get("include_domains"))
         )
-        product_source_of_record_domains = tuple(
-            str(item)
-            for item in _safe_sequence(
+        product_source_of_record_domains = _canonical_domain_constraints(
+            _safe_sequence(
                 acquisition_plan.get("source_of_record_domain_constraints")
+            )
+        )
+        product_requirement = _safe_mapping(
+            acquisition_plan.get("provider_neutral_requirement")
+        )
+        product_discover_qualifier = DiscoverQualifier(
+            _required_text(
+                product_requirement.get("discover_qualifier"),
+                "fast acquisition plan requires a DISCOVER qualifier",
+                80,
             )
         )
         provider_result = provider_runner(
@@ -1170,16 +1317,8 @@ def build_generic_single_relation_live_dogfood_run_output(
                 repo_root=root,
                 output_path=provider_output_path,
                 query=search_query_seed,
-                discover_qualifier=(
-                    DiscoverQualifier.DOMAIN_TARGETED
-                    if (
-                        product_domain_constraints
-                        or product_include_domains
-                        or product_source_of_record_domains
-                    )
-                    else DiscoverQualifier.GENERAL
-                ),
-                operation=str(acquisition_plan["provider_operation"]),
+                discover_qualifier=product_discover_qualifier,
+                operation=DEFAULT_OPERATION,
                 domain_constraints=product_domain_constraints,
                 include_domains=product_include_domains,
                 source_of_record_domain_constraints=(
@@ -1211,29 +1350,14 @@ def build_generic_single_relation_live_dogfood_run_output(
                 ),
             )
 
-        provider_payload = _load_sanitized_provider_output(provider_result.output_path)
-        route_selected_provider = _clean_text(
-            provider_result.selected_provider,
-            limit=80,
+        provider_payload = _load_provider_payload_for_result(
+            provider_result,
+            require_completed_route=product_single_fact_answer_path_enabled,
         )
-        payload_reported_provider = _clean_text(
-            provider_payload.get("provider"),
-            limit=80,
-        )
-        if (
-            route_selected_provider
-            and payload_reported_provider
-            and route_selected_provider != payload_reported_provider
-        ):
-            raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
-                "Completed route and provider acquisition payload disagree on provider identity.",
-            )
-        extraction_provider = route_selected_provider or payload_reported_provider
-        if not extraction_provider:
-            raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
-                "Completed product provider acquisition omitted selected provider identity.",
+        extraction_provider = provider_payload["provider"]
+        if provider_result.route_decision is not None:
+            counts["completed_provider_route"] = (
+                provider_result.route_decision.to_trace()
             )
         counts["extraction_provider_selected"] = extraction_provider
         results = _provider_results(provider_payload)
@@ -1542,6 +1666,7 @@ def build_generic_single_relation_live_dogfood_run_output(
                 confirm_live_source_challenge_recovery=(
                     confirm_live_source_challenge_recovery
                 ),
+                require_completed_route=product_single_fact_answer_path_enabled,
             )
             counts.update(
                 _source_challenge_recovery_counts(source_challenge_recovery)
@@ -6934,6 +7059,9 @@ def _build_source_obligation_recovery_authorization(
                 "extraction_provider_calls_completed",
                 0,
             ),
+            "completed_provider_route": _safe_mapping(
+                counts.get("completed_provider_route")
+            ),
         },
         "evidence_admission_ref": _safe_mapping(
             semantic.get("source_evidence_admission_ref")
@@ -7022,14 +7150,17 @@ def _run_source_challenge_recovery(
     provider_runner: ProviderProxyRunner,
     fetch_read_runner: FetchReadRunner,
     confirm_live_source_challenge_recovery: bool,
+    require_completed_route: bool,
 ) -> dict[str, Any]:
     del fetch_read_runner, first_stage_counts, first_stage_semantic_payload
     authorization = _source_obligation_authorization_dict(
         source_obligation_recovery_authorization
     )
-    plan = _recovery_plan_with_model_assisted_hints(
-        _safe_mapping(authorization.get("source_challenge_recovery_plan")),
-        recovery_model_planning_packet=recovery_model_planning_packet,
+    plan = dict(
+        _recovery_plan_with_model_assisted_hints(
+            _safe_mapping(authorization.get("source_challenge_recovery_plan")),
+            recovery_model_planning_packet=recovery_model_planning_packet,
+        )
     )
     if not plan:
         return {
@@ -7080,9 +7211,9 @@ def _run_source_challenge_recovery(
             repo_root=root,
             output_path=output_path,
             query=str(plan["recovery_query"]),
-            provider=str(plan["provider"]),
+            discover_qualifier=DiscoverQualifier.DOMAIN_TARGETED,
             acquisition_provider_role=str(plan["provider_role"]),
-            operation=str(plan["provider_operation"]),
+            operation=DEFAULT_OPERATION,
             max_results=_bounded_int(plan.get("max_results"), default=MAX_PROVIDER_RESULTS),
             domain_constraints=tuple(
                 str(item) for item in _safe_sequence(plan.get("domain_constraints"))
@@ -7125,7 +7256,18 @@ def _run_source_challenge_recovery(
             },
         }
 
-    provider_payload = _load_sanitized_provider_output(provider_result.output_path)
+    provider_payload = _load_provider_payload_for_result(
+        provider_result,
+        require_completed_route=require_completed_route,
+    )
+    if provider_result.route_decision is not None:
+        completed_recovery_route = provider_result.route_decision.to_trace()
+        plan["completed_provider_route"] = completed_recovery_route
+        plan["selected_provider"] = (
+            provider_result.route_decision.selected_provider
+        )
+    else:
+        completed_recovery_route = {}
     results = _provider_results(provider_payload)
     recovery_root = retained_root / SOURCE_CHALLENGE_RECOVERY_ARTIFACT_DIR
     recovery_run_id = f"{_clean_run_id(run_id)}-source-challenge-recovery"
@@ -7136,7 +7278,7 @@ def _run_source_challenge_recovery(
         provider_calls_attempted=provider_result.provider_calls_attempted,
         provider_calls_completed=provider_result.provider_calls_completed,
         search_query_seed=str(plan["recovery_query"]),
-        extraction_provider=str(plan["provider"]),
+        extraction_provider=provider_payload["provider"],
     )
     _write_search_artifacts(
         retained_root=recovery_root,
@@ -7172,6 +7314,8 @@ def _run_source_challenge_recovery(
         )
     )
     recovery_result = {
+        "completed_provider_route": completed_recovery_route,
+        "selected_provider": provider_payload["provider"],
         "provider_calls_attempted": provider_result.provider_calls_attempted,
         "provider_calls_completed": provider_result.provider_calls_completed,
         "provider_results_returned": len(results),
@@ -7419,15 +7563,9 @@ def _current_source_authorized_followup_execution_callback(
                     repo_root=root,
                     output_path=output_path,
                     query=followup_query,
-                    provider=str(
-                        acquisition_plan.get("extraction_provider")
-                        or DEFAULT_EXTRACTION_PROVIDER
-                    ),
+                    discover_qualifier=DiscoverQualifier.GENERAL,
                     acquisition_provider_role="current_source_followup_reentry",
-                    operation=str(
-                        acquisition_plan.get("provider_operation")
-                        or DEFAULT_OPERATION
-                    ),
+                    operation=DEFAULT_OPERATION,
                     max_results=MAX_PROVIDER_RESULTS,
                 )
             )
@@ -7479,7 +7617,10 @@ def _current_source_authorized_followup_execution_callback(
                 execution_status="attempted_failed",
             )
 
-        provider_payload = _load_sanitized_provider_output(provider_result.output_path)
+        provider_payload = _load_provider_payload_for_result(
+            provider_result,
+            require_completed_route=True,
+        )
         results = _provider_results(provider_payload)
         counts["followup_provider_results_returned"] = len(results)
         _enforce_caps(counts)
@@ -7491,10 +7632,7 @@ def _current_source_authorized_followup_execution_callback(
             provider_calls_attempted=provider_result.provider_calls_attempted,
             provider_calls_completed=provider_result.provider_calls_completed,
             search_query_seed=followup_query,
-            extraction_provider=str(
-                acquisition_plan.get("extraction_provider")
-                or DEFAULT_EXTRACTION_PROVIDER
-            ),
+            extraction_provider=provider_payload["provider"],
         )
         _write_search_artifacts(
             retained_root=followup_root,
@@ -8550,6 +8688,9 @@ def _base_packet(
         "extraction_provider": _clean_text(
             counts.get("extraction_provider_selected"),
             limit=80,
+        ),
+        "completed_provider_route": _safe_mapping(
+            counts.get("completed_provider_route")
         ),
         "extraction_provider_used": bool(
             counts.get("extraction_provider_calls_attempted", 0)
@@ -10319,8 +10460,11 @@ def _build_fast_acquisition_plan(
         "ambiguity_status": "required" if ambiguity_required else "clear",
         "disambiguation_query": relation_seed if ambiguity_required else None,
         "scout_query": relation_seed if ambiguity_required else None,
-        "extraction_provider": DEFAULT_EXTRACTION_PROVIDER,
-        "provider_operation": DEFAULT_OPERATION,
+        "provider_neutral_requirement": {
+            "capability": AcquisitionCapability.DISCOVER.value,
+            "discover_qualifier": DiscoverQualifier.GENERAL.value,
+            "provider_selection_owner": "core.routing",
+        },
         "max_provider_results": MAX_PROVIDER_RESULTS,
         "max_selected_source_content_candidates": MAX_EVIDENCE_LEDGER_ADMISSIONS,
         "selected_window_guidance": {
@@ -10809,10 +10953,25 @@ def _retained_provider_payload_for_candidate_packet(
         )
     return {
         "request_kind": provider_payload.get("request_kind"),
-        "provider": provider_payload.get("provider") or DEFAULT_PROVIDER,
-        "operation": provider_payload.get("operation") or DEFAULT_OPERATION,
+        "provider": provider_payload["provider"],
+        "capability": provider_payload["capability"],
+        "discover_qualifier": provider_payload["discover_qualifier"],
+        "operation": provider_payload["operation"],
+        "provider_variant": provider_payload["provider_variant"],
+        "output_type": provider_payload["output_type"],
         "result_count": len(results),
         "results": results,
+        "domain_constraints": list(provider_payload["domain_constraints"]),
+        "include_domains": list(provider_payload["include_domains"]),
+        "exclude_domains": list(provider_payload["exclude_domains"]),
+        "source_of_record_domain_constraints": list(
+            provider_payload["source_of_record_domain_constraints"]
+        ),
+        "domain_constraints_acquisition_only": True,
+        "domain_constraints_create_source_authority": False,
+        "domain_constraints_satisfy_source_obligation": False,
+        "domain_constraints_citation_eligible": False,
+        "domain_constraints_claim_correctness": False,
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
     }
@@ -13019,7 +13178,10 @@ def _provider_extracted_fetch_read_material(
 ) -> dict[str, Any]:
     bounded_text = selection.bounded_text
     provider_text = _provider_extracted_text(provider_result) or ""
-    provider = _clean_text(provider_result.get("provider"), limit=80) or DEFAULT_PROVIDER
+    provider = _required_provider_payload_text(
+        provider_result.get("provider"),
+        field="provider result provider",
+    )
     content_type = (
         _content_type_or_unknown(provider_result.get("provider_extracted_content_type"))
         if provider_result.get("provider_extracted_content_type")
@@ -13095,7 +13257,10 @@ def _provider_extracted_content_diagnostic(
 ) -> dict[str, Any]:
     selection_features = _safe_mapping(candidate.get("candidate_selection_features"))
     url = _clean_text(candidate.get("url"), limit=700)
-    provider = _clean_text(provider_result.get("provider"), limit=80) or DEFAULT_PROVIDER
+    provider = _required_provider_payload_text(
+        provider_result.get("provider"),
+        field="provider result provider",
+    )
     content_type = _content_type_or_unknown(
         provider_result.get("provider_extracted_content_type")
         or PROVIDER_EXTRACTED_CONTENT_TYPE
@@ -13899,6 +14064,65 @@ def _load_sanitized_provider_output(path: Path) -> dict[str, Any]:
     return validated
 
 
+def _load_provider_payload_for_result(
+    result: GenericProviderProxyRunResult,
+    *,
+    require_completed_route: bool,
+) -> dict[str, Any]:
+    payload = _load_sanitized_provider_output(result.output_path)
+    route_decision = result.route_decision
+    if route_decision is None:
+        if require_completed_route:
+            _blocked_output_hygiene(
+                "PRODUCT provider acquisition omitted its completed route."
+            )
+        return payload
+    _validate_provider_payload_route_identity(
+        payload,
+        route_decision=route_decision,
+    )
+    return payload
+
+
+def _validate_provider_payload_route_identity(
+    payload: Mapping[str, Any],
+    *,
+    route_decision: ProviderRouteDecision,
+) -> None:
+    route_request = route_decision.request
+    route_identity = {
+        "provider": route_decision.selected_provider,
+        "capability": route_request.capability.value,
+        "discover_qualifier": (
+            route_request.qualifier.value
+            if route_request.qualifier is not None
+            else None
+        ),
+        "operation": route_decision.operation,
+        "provider_variant": route_decision.variant,
+        "output_type": route_decision.output_type,
+        "domain_constraints": list(route_request.domain_constraints),
+        "include_domains": list(route_request.include_domains),
+        "exclude_domains": list(route_request.exclude_domains),
+        "source_of_record_domain_constraints": list(
+            route_request.source_of_record_domain_constraints
+        ),
+    }
+    payload_identity = {
+        field: payload.get(field)
+        for field in route_identity
+    }
+    if route_decision.blocked or any(value is None for value in route_identity.values()):
+        _blocked_output_hygiene(
+            "Completed provider route omitted required acquisition identity."
+        )
+    if payload_identity != route_identity:
+        _blocked_output_hygiene(
+            "Completed route and provider acquisition payload disagree on "
+            "acquisition identity."
+        )
+
+
 def _canonicalize_provider_payload_extracted_text_metadata(
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -13953,6 +14177,61 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
             "sanitized provider response retained raw search response.",
         )
+    provider = _required_provider_payload_text(raw.get("provider"), field="provider")
+    if provider not in PROVIDER_NAMES:
+        _blocked_output_hygiene("sanitized provider response provider is not installed.")
+    capability = _provider_payload_capability(raw.get("capability"))
+    discover_qualifier = _provider_payload_discover_qualifier(
+        raw.get("discover_qualifier")
+    )
+    operation = _required_provider_payload_text(
+        raw.get("operation"),
+        field="operation",
+    )
+    provider_variant = _required_provider_payload_text(
+        raw.get("provider_variant"),
+        field="provider_variant",
+    )
+    output_type = _required_provider_payload_text(
+        raw.get("output_type"),
+        field="output_type",
+    )
+    if not any(
+        entry.provider == provider
+        and entry.capability is capability
+        and entry.qualifier is discover_qualifier
+        and entry.operation == operation
+        and entry.variant == provider_variant
+        and entry.output_type == output_type
+        for entry in PROVIDER_CAPABILITY_CATALOG
+    ):
+        _blocked_output_hygiene(
+            "sanitized provider response identity tuple is not installed."
+        )
+    domain_constraints = _provider_payload_domain_set(raw, "domain_constraints")
+    include_domains = _provider_payload_domain_set(raw, "include_domains")
+    exclude_domains = _provider_payload_domain_set(raw, "exclude_domains")
+    source_of_record_domains = _provider_payload_domain_set(
+        raw,
+        "source_of_record_domain_constraints",
+    )
+    if not (
+        domain_constraints == include_domains == source_of_record_domains
+    ):
+        _blocked_output_hygiene(
+            "sanitized provider response domain aliases disagree."
+        )
+    for posture_field, expected in (
+        ("domain_constraints_acquisition_only", True),
+        ("domain_constraints_create_source_authority", False),
+        ("domain_constraints_satisfy_source_obligation", False),
+        ("domain_constraints_citation_eligible", False),
+        ("domain_constraints_claim_correctness", False),
+    ):
+        if raw.get(posture_field) is not expected:
+            _blocked_output_hygiene(
+                f"sanitized provider response {posture_field} posture is invalid."
+            )
     results = raw.get("results")
     if not isinstance(results, list):
         raise GenericSingleRelationLiveDogfoodRunError(
@@ -13975,18 +14254,81 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     ]
     return {
         "request_kind": raw.get("request_kind"),
-        "provider": str(raw.get("provider") or DEFAULT_PROVIDER),
-        "operation": str(raw.get("operation") or DEFAULT_OPERATION),
+        "provider": provider,
+        "capability": capability.value,
+        "discover_qualifier": discover_qualifier.value,
+        "operation": operation,
+        "provider_variant": provider_variant,
+        "output_type": output_type,
         "result_count": len(normalized),
         "results": normalized,
+        "domain_constraints": list(domain_constraints),
+        "include_domains": list(include_domains),
+        "exclude_domains": list(exclude_domains),
+        "source_of_record_domain_constraints": list(source_of_record_domains),
+        "domain_constraints_acquisition_only": True,
+        "domain_constraints_create_source_authority": False,
+        "domain_constraints_satisfy_source_obligation": False,
+        "domain_constraints_citation_eligible": False,
+        "domain_constraints_claim_correctness": False,
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
     }
 
 
+def _required_provider_payload_text(value: Any, *, field: str) -> str:
+    text = _clean_text(value, limit=120)
+    if not text:
+        _blocked_output_hygiene(
+            f"sanitized provider response requires {field}."
+        )
+    return text
+
+
+def _provider_payload_capability(value: Any) -> AcquisitionCapability:
+    try:
+        return AcquisitionCapability(
+            _required_provider_payload_text(value, field="capability")
+        )
+    except ValueError as exc:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider response capability is not installed.",
+        ) from exc
+
+
+def _provider_payload_domain_set(
+    raw: Mapping[str, Any],
+    field: str,
+) -> tuple[str, ...]:
+    value = raw.get(field)
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        _blocked_output_hygiene(
+            f"sanitized provider response requires canonical {field}."
+        )
+    canonical = _canonical_domain_constraints(value)
+    if list(canonical) != value:
+        _blocked_output_hygiene(
+            f"sanitized provider response {field} is not canonical."
+        )
+    return canonical
+
+
+def _provider_payload_discover_qualifier(value: Any) -> DiscoverQualifier:
+    try:
+        return DiscoverQualifier(str(value or "").strip())
+    except ValueError as exc:
+        installed = ", ".join(qualifier.value for qualifier in DiscoverQualifier)
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider response discover_qualifier must be one of: "
+            + installed,
+        ) from exc
+
+
 def _provider_results(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [
-        {**dict(item), "provider": payload.get("provider") or DEFAULT_PROVIDER}
+        {**dict(item), "provider": payload["provider"]}
         for item in payload.get("results", [])
         if isinstance(item, Mapping)
     ]
@@ -14452,6 +14794,8 @@ def _empty_counts() -> dict[str, Any]:
         "recovery_fast_model_planning_calls_completed": 0,
         "model_assisted_planning_context_kinds": (),
         "product_provider_acquisition_adapter_used": 0,
+        "diagnostic_provider_runner_compatibility_used": 0,
+        "completed_provider_route": {},
         "serper_scout_calls_attempted": 0,
         "serper_scout_calls_completed": 0,
         "provider_calls_attempted": 0,
@@ -15044,6 +15388,20 @@ def _clean_domain(value: Any) -> str | None:
         return None
     parsed = urlparse(f"https://{text}" if "://" not in text else text)
     return (parsed.netloc or parsed.path).lower().strip("/")
+
+
+def _canonical_domain_constraints(values: Sequence[Any]) -> tuple[str, ...]:
+    domains: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        domain = _clean_domain(value)
+        if domain and domain.startswith("www."):
+            domain = domain[4:]
+        if not domain or "/" in domain or " " in domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+    return tuple(domains[:MAX_PROVIDER_RESULTS])
 
 
 def _collapse_text(value: Any) -> str:

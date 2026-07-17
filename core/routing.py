@@ -112,8 +112,10 @@ class ProviderAvailability:
 class ProviderCapabilityRequest:
     capability: AcquisitionCapability
     qualifier: DiscoverQualifier | None = None
+    domain_constraints: tuple[str, ...] = ()
     include_domains: tuple[str, ...] = ()
     exclude_domains: tuple[str, ...] = ()
+    source_of_record_domain_constraints: tuple[str, ...] = ()
     derivation_reason: str = "explicit_capability_request"
     general_deep_requested: bool = False
     general_deep_authorization: GeneralDeepAuthorization | None = None
@@ -122,8 +124,12 @@ class ProviderCapabilityRequest:
         return {
             "capability": self.capability.value,
             "qualifier": self.qualifier.value if self.qualifier is not None else None,
+            "domain_constraints": list(self.domain_constraints),
             "include_domains": list(self.include_domains),
             "exclude_domains": list(self.exclude_domains),
+            "source_of_record_domain_constraints": list(
+                self.source_of_record_domain_constraints
+            ),
             "derivation_reason": self.derivation_reason,
             "general_deep_requested": self.general_deep_requested,
             "general_deep_authorization": (
@@ -789,8 +795,12 @@ def route_provider_capability(
         else ProviderCapabilityRequest(
             capability=request.capability,
             qualifier=qualifier,
+            domain_constraints=request.domain_constraints,
             include_domains=request.include_domains,
             exclude_domains=request.exclude_domains,
+            source_of_record_domain_constraints=(
+                request.source_of_record_domain_constraints
+            ),
             derivation_reason=request.derivation_reason,
             general_deep_requested=request.general_deep_requested,
             general_deep_authorization=request.general_deep_authorization,

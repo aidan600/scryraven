@@ -140,6 +140,7 @@ class AcquisitionPageArtifact:
     canonical_url: str | None = None
     parent_url: str | None = None
     content_type: str | None = None
+    normalized_representation_type: str | None = None
     http_status: int | None = None
     title: str | None = None
     retained_text: str | None = None
@@ -182,6 +183,7 @@ class AcquisitionArtifact:
     query_reference: str | None = None
     obligation_reference: str | None = None
     content_type: str | None = None
+    normalized_representation_type: str | None = None
     http_status: int | None = None
     title: str | None = None
     retained_text: str | None = None

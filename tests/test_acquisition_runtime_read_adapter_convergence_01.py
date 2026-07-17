@@ -138,6 +138,11 @@ def test_linkup_route_time_unavailable_selects_tavily_extract_once() -> None:
     assert artifact.final_url is None
     assert artifact.canonical_url is None
     assert artifact.http_status is None
+    assert artifact.content_type is None
+    assert artifact.normalized_representation_type == "text/markdown"
+    durable = artifact.to_dict()
+    assert "content_type" not in durable
+    assert durable["normalized_representation_type"] == "text/markdown"
 
 
 def test_tavily_read_rejects_mismatched_provider_reported_url() -> None:
@@ -440,6 +445,8 @@ def test_crawl_enforces_global_ceilings_and_page_lineage() -> None:
     assert page.canonical_url == page_url
     assert page.parent_url is None
     assert page.http_status is None
+    assert page.content_type is None
+    assert page.normalized_representation_type == "text/markdown"
 
 
 def test_minimal_crawl_retains_provider_url_without_invented_lineage() -> None:

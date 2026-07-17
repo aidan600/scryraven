@@ -22,6 +22,7 @@ FAP/Author output, or product correctness.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from core.generic_product_provider_acquisition import (
     PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION,
     ProductProviderAcquisitionRequest,
     build_generic_product_provider_acquisition_runner,
+    complete_generic_product_provider_route,
 )
 from core.routing import DiscoverQualifier
 from core.source_of_record_recovery_provider_config import (
@@ -520,25 +522,105 @@ def test_neutral_domain_constraints_map_inside_current_tavily_adapter(
             available_providers={"tavily": True},
             acquisition_provider_role="extraction_provider",
             domain_constraints=("www.fees.agency.gov",),
-            include_domains=("fees.agency.gov",),
-            source_of_record_domain_constraints=("fees.agency.gov",),
+            include_domains=("forms.agency.gov",),
+            source_of_record_domain_constraints=("records.agency.gov",),
             exclude_domains=("example-law.invalid",),
         )
     )
     payload = json.loads(output_path.read_text(encoding="utf-8"))
 
     assert result.return_code == 0
-    assert calls[0]["include_domains"] == ["fees.agency.gov"]
+    assert calls[0]["include_domains"] == [
+        "fees.agency.gov",
+        "forms.agency.gov",
+        "records.agency.gov",
+    ]
     assert calls[0]["exclude_domains"] == ["example-law.invalid"]
     assert payload["acquisition_provider_role"] == "extraction_provider"
-    assert payload["domain_constraints"] == ["fees.agency.gov"]
-    assert payload["include_domains"] == ["fees.agency.gov"]
-    assert payload["source_of_record_domain_constraints"] == ["fees.agency.gov"]
+    canonical_domains = [
+        "fees.agency.gov",
+        "forms.agency.gov",
+        "records.agency.gov"
+    ]
+    assert payload["domain_constraints"] == canonical_domains
+    assert payload["include_domains"] == canonical_domains
+    assert payload["source_of_record_domain_constraints"] == canonical_domains
+    assert result.route_decision is not None
+    assert list(result.route_decision.request.domain_constraints) == canonical_domains
+    assert list(result.route_decision.request.include_domains) == canonical_domains
+    assert list(
+        result.route_decision.request.source_of_record_domain_constraints
+    ) == canonical_domains
+    assert payload["provider"] == "tavily"
+    assert payload["capability"] == "DISCOVER"
+    assert payload["discover_qualifier"] == "domain_targeted"
+    assert payload["operation"] == "search"
+    assert payload["provider_variant"] == "search"
+    assert payload["output_type"] == "searchResults"
     assert payload["domain_constraints_acquisition_only"] is True
     assert payload["domain_constraints_create_source_authority"] is False
     assert payload["domain_constraints_satisfy_source_obligation"] is False
     assert payload["domain_constraints_citation_eligible"] is False
     assert payload["domain_constraints_claim_correctness"] is False
+
+
+def test_precompleted_route_request_identity_conflicts_block_before_transport(
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        calls.append(kwargs)
+        return ([], [])
+
+    base_request = ProductProviderAcquisitionRequest(
+        repo_root=tmp_path,
+        output_path=tmp_path / "unused.json",
+        query="official current fee schedule",
+        available_providers={"tavily": True},
+        discover_qualifier=DiscoverQualifier.DOMAIN_TARGETED,
+        source_of_record_domain_constraints=("records.agency.gov",),
+    )
+    completed_route = complete_generic_product_provider_route(
+        base_request,
+        requested_provider=None,
+    )
+    conflicting_routes = (
+        replace(
+            completed_route,
+            request=replace(
+                completed_route.request,
+                qualifier=DiscoverQualifier.GENERAL,
+            ),
+        ),
+        replace(completed_route, operation="not-search"),
+        replace(
+            completed_route,
+            request=replace(
+                completed_route.request,
+                source_of_record_domain_constraints=("other.agency.gov",),
+            ),
+        ),
+    )
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    for index, conflicting_route in enumerate(conflicting_routes):
+        result = runner(
+            replace(
+                base_request,
+                output_path=tmp_path / f"conflict-{index}.json",
+                route_decision=conflicting_route,
+            )
+        )
+        assert result.return_code == 2
+        assert result.provider_calls_attempted == 0
+        assert result.blocker == (
+            BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE
+        )
+
+    assert calls == []
 
 
 def test_serper_scout_results_normalize_without_extracted_text(
