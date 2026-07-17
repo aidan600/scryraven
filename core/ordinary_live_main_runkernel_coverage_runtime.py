@@ -13,7 +13,6 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core.acquisition_adapters import AcquisitionTransports
 from core.cap_enforcement import RunCapPolicy
-
 from core.component_coverage_record import (
     ComponentCoverageRecord,
     ConflictPosture,

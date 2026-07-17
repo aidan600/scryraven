@@ -76,7 +76,7 @@ SCOUT_RETIREMENT_RUNTIME_SHA = (
     "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
 )
 PROVIDER_ROUTING_RUNTIME_SHA = (
-    "73585c6db4ad31f7dff5205b82900c09f3a5b2c0"  # pragma: allowlist secret
+    "280277fcf50243c9e915a2b9344fa7779ff78d4d"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = PROVIDER_ROUTING_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
@@ -496,6 +496,16 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert "performs zero transport" in routing
     assert "Provider failure never activates a fallback" in current
     assert "ordinary-product consumption of focused extraction" in census
+    for phrase in (
+        "one boolean provider-availability snapshot",
+        "provider preferences cannot create availability",
+        "marks the existing fetch/read cap exactly once",
+        "rendering posture is explicit",
+        "remain unknown instead of being synthesized",
+    ):
+        assert phrase in roadmap
+    assert "provider_reported_url" in routing
+    assert "RunCapExceeded" in routing
 
     assert roadmap.count("## Active Next:") == 1
     assert "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01" in roadmap

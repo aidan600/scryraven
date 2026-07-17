@@ -20,8 +20,8 @@ from core.ordinary_live_source_custody_runtime import (
     ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY,
     execute_ordinary_live_source_custody,
 )
-from core.run_kernel import RunKernel
 from core.routing import ProviderRouteBlockedError
+from core.run_kernel import RunKernel
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_PACKET,
     OfflineOrdinaryPipelineHarness,

@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, scheduling, mechanical dispatch, and selected-candidate READ custody
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 73585c6db4ad31f7dff5205b82900c09f3a5b2c0
+Verified-against-runtime: 280277fcf50243c9e915a2b9344fa7779ff78d4d
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -23,12 +23,16 @@ material, or returns a typed failure/block. It does not select, substitute,
 reorder, or retry providers.
 
 ProviderPlan records completed DISCOVER decisions. Retrieval scheduling and
-dispatch carry those decisions without policy. The orchestrator composes
-dependencies. Existing SearchResultCandidatePacket, FetchReadContentPacket,
-SanitizedContentReference, and EvidenceLedger owners retain source custody.
+dispatch carry those decisions without policy. The orchestrator composes one
+boolean provider-availability snapshot from configured credential presence, or
+from explicitly injected offline-test facts, and passes that same snapshot to
+ProviderPlan and selected-candidate READ. Callables, transport objects, and
+ordered provider preferences do not establish availability. Existing
+SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
+and EvidenceLedger owners retain source custody.
 
 Runtime/test provenance:
-`73585c6db4ad31f7dff5205b82900c09f3a5b2c0`.
+`280277fcf50243c9e915a2b9344fa7779ff78d4d`.
 
 ## Capability Status Matrix
 
@@ -57,6 +61,7 @@ One `AcquisitionRequest` carries only operation-relevant facts:
 - capability and completed route decision;
 - acquisition job and parent-job identity;
 - selected URL(s) or explicit root URL;
+- an explicit bounded JavaScript-rendering posture;
 - bounded focus text, queries, domains, and paths;
 - result, page, depth, per-page, and aggregate limits;
 - candidate, query, acquisition-lineage, and obligation references; and
@@ -64,10 +69,13 @@ One `AcquisitionRequest` carries only operation-relevant facts:
 
 Normalized artifacts distinguish discovery candidates, selected-URL reads,
 focused selected-URL extractions, site topology, bounded page collections,
-provider failures, and policy/availability blocks. Applicable artifacts retain
-requested, attempted, resolved, final, canonical, root, and parent URLs;
-provider/operation/variant/output; job lineage; status, content type, title,
-timestamp; and bounded character/digest facts.
+provider failures, and policy/availability blocks. Requested and attempted URLs
+are request/dispatch facts. A URL returned by a provider is labeled
+`provider_reported_url`; resolved, final, canonical, page-status, and actual
+crawl-parent facts remain absent unless the transport/provider supplied them.
+`root_url` remains distinct from an observed page parent. Artifacts also retain
+provider/operation/variant/output, job lineage, title/timestamp, and bounded
+character/digest facts when known.
 
 Ephemeral execution may carry bounded sanitized text to the existing custody
 consumer. Durable traces omit that text and retain no raw HTML, raw provider
@@ -111,11 +119,23 @@ SearchResultCandidatePacket
 -> existing EvidenceLedger custody reduction
 ```
 
-Linkup Fetch is preferred. Tavily Extract is selected only when Linkup is known
-unavailable before dispatch. Once Linkup is selected, transport failure,
-malformed output, unreadable status, empty material, or URL mismatch returns a
-typed failure and makes zero Tavily calls. Redirect/resolved/final/canonical
-differences remain visible in normalized lineage.
+Linkup Fetch is preferred. Tavily Extract is selected only when the explicit
+composition snapshot says Linkup is unavailable before dispatch. Injecting a
+Linkup callable or transport cannot make Linkup available. Once Linkup is
+selected, transport failure, malformed output, unreadable status, empty
+material, or URL mismatch returns a typed failure and makes zero Tavily calls.
+
+After route/request validation and transport resolution, selected-candidate
+READ marks the current `RunCapPolicy` fetch/read budget exactly once immediately
+before the provider call. `RunCapExceeded` remains the product terminal and is
+not converted into a source-custody failure. Absence of a cap policy preserves
+uncapped ordinary behavior.
+
+Linkup Fetch carries the product's explicit `render_javascript=false` posture
+as `renderJs=false` and records it in the request trace. Minimal Linkup or Tavily
+material can succeed with only requested/attempted identity; missing or invalid
+page HTTP status and unreported redirect/canonical lineage remain unknown.
+Explicit provider-reported redirect and canonical facts survive unchanged.
 
 The adapter does not admit evidence. The existing FetchReadContentPacket and
 EvidenceLedger custody reducer continue to decide only their existing bounded
@@ -161,7 +181,8 @@ Current PRODUCT consumers:
   ProviderPlan, scheduling, and dispatch;
 - selected-candidate READ/source custody through the ordinary pipeline; and
 - the generic single-relation acquisition root, which now supplies a completed
-  `core.routing` decision before provider-specific callables are invoked.
+  `core.routing` decision from explicit availability before provider-specific
+  callables are invoked; a provider preference cannot authorize itself.
 
 The lower-level `process_search_queries(search_providers=None)` escape is
 closed: absence of a completed provider list performs zero transport. It no

@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 73585c6db4ad31f7dff5205b82900c09f3a5b2c0
+Verified-against-runtime: 280277fcf50243c9e915a2b9344fa7779ff78d4d
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -199,7 +199,7 @@ change.
 
 ## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01
 
-Runtime/test commit `73585c6db4ad31f7dff5205b82900c09f3a5b2c0`
+Runtime/test commit `280277fcf50243c9e915a2b9344fa7779ff78d4d`
 installed the shared bounded acquisition contracts; Linkup Fetch; Tavily
 Extract, Map, and bounded Crawl; and mechanically authorized general Linkup
 `deep/searchResults`. `core.routing` remains the sole policy owner.
@@ -211,6 +211,13 @@ feeds the normalized result to the existing FetchReadContentPacket and
 EvidenceLedger custody owners. The generic single-relation product root also
 supplies a completed route decision, and `process_search_queries(None)` no
 longer manufactures a provider policy.
+
+The merge-blocking authority continuation is also complete: one boolean
+provider-availability snapshot is shared by discovery and READ; callables,
+transports, and provider preferences cannot create availability; selected READ
+marks the existing fetch/read cap exactly once before transport; the rendering
+posture is explicit; and missing redirect, canonical, page-status, or crawl-parent facts
+remain unknown instead of being synthesized.
 
 Focused extraction, site mapping, site crawling, and general Linkup Deep are
 installed typed-runtime capabilities but have no ordinary PRODUCT requester.

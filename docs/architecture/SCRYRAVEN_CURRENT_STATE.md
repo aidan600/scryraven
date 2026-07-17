@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 73585c6db4ad31f7dff5205b82900c09f3a5b2c0
+Verified-against-runtime: 280277fcf50243c9e915a2b9344fa7779ff78d4d
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -231,7 +231,7 @@ acquisition, or general quantitative reasoning.
 
 ## Installed Acquisition Routing And Adapter Runtime
 
-Runtime/test commit `73585c6db4ad31f7dff5205b82900c09f3a5b2c0`
+Runtime/test commit `280277fcf50243c9e915a2b9344fa7779ff78d4d`
 preserves `core.routing` as the sole provider-capability policy owner and adds
 shared immutable acquisition requests, jobs, artifacts, lineage, and execution
 results. Mechanical adapters now implement Linkup Fetch; Tavily Extract, Map,
@@ -249,12 +249,22 @@ and bounded Crawl; and explicitly authorized Linkup `deep/searchResults`.
 | PROVIDER_SYNTHESIS | disabled | blocked | no |
 
 Ordinary DISCOVER continues through ProviderPlan, retrieval scheduling, and
-dispatch. The selected-candidate source-custody path now requests READ, selects
-Linkup Fetch or route-time Tavily Extract, normalizes exact URL lineage, and
-feeds the existing FetchReadContentPacket and EvidenceLedger custody reducer.
-The generic single-relation acquisition root supplies a completed capability
-decision, while the lower-level `process_search_queries(None)` compatibility
-escape performs zero transport.
+dispatch. Product composition creates one boolean provider-availability
+snapshot from configured credential presence, or explicit offline-test facts,
+and supplies the same snapshot to ProviderPlan and selected-candidate READ.
+Injected callables/transports and provider preferences cannot create
+availability.
+
+The selected-candidate source-custody path requests READ, selects Linkup Fetch
+or route-time Tavily Extract, marks the existing fetch/read cap exactly once
+immediately before transport, and feeds the bounded result to the existing
+FetchReadContentPacket and EvidenceLedger custody reducer. The Linkup rendering
+posture is explicit. Requested/attempted URL identity is retained, while
+provider-reported URL, redirect, canonical, HTTP-status, and crawl-parent facts
+remain separately labeled and absent when unreported. The generic
+single-relation acquisition root supplies a completed capability decision from
+explicit availability, while `process_search_queries(None)` performs zero
+transport.
 
 Provider failure never activates a fallback. Focused extraction, mapping,
 crawling, and general Deep remain ordinary blocked because no deterministic

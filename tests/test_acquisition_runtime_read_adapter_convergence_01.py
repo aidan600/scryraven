@@ -14,7 +14,6 @@ from core.acquisition_contracts import (
     AcquisitionExecutionStatus,
     AcquisitionRequest,
 )
-from core.cap_enforcement import RunCapExceeded
 from core.generic_product_provider_acquisition import (
     ProductProviderAcquisitionRequest,
     ProductProviderAcquisitionResult,
