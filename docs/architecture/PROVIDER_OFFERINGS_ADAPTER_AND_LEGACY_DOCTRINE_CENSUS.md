@@ -4,8 +4,8 @@ Status: current decision census
 Authority: owner-approved provider acquisition target doctrine
 Default-read: no
 Applies-to: provider offerings, installed adapters, current consumers, provider-material authority, and migration dispositions
-Does-not-authorize: implementation, live calls, provider selection changes, or claims that target capabilities are installed
-Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
+Does-not-authorize: further implementation, live calls, new adapters, provider-quality claims, or closed-surface changes
+Verified-against-runtime: 7626f1628a18bfb70c7abe58b120dc84001f2e71
 Vendor-documentation-checked: 2026-07-16
 
 ## 1. Outcome and boundary
@@ -16,8 +16,9 @@ vendors offer, what ScryRaven has adapted, what an ordinary product can reach,
 what material receives authority, and what the owner has selected as target
 doctrine. The original census changed none of those runtime facts; this current
 owner now records the completed semantic Scout and ordinary provider-synthesis
-retirement without changing the dated vendor-offering section or the selected
-target doctrine. **Basis: OWNER_DECISION, CURRENT_RUNTIME.**
+retirement plus the installed provider-capability routing foundation without
+changing the dated vendor-offering section. **Basis: OWNER_DECISION,
+CURRENT_RUNTIME.**
 
 The source-of-truth order is:
 
@@ -27,7 +28,8 @@ The source-of-truth order is:
 4. historical repository documents for migration evidence and rationale only.
 
 Historical rules are not retained merely because they exist. Target rules are
-not described as installed. **Basis: OWNER_DECISION.**
+described as installed only when current runtime and focused offline tests prove
+the ordinary consumer. **Basis: OWNER_DECISION.**
 
 This census uses these non-equivalent states:
 
@@ -38,9 +40,28 @@ This census uses these non-equivalent states:
 | **Ordinary enabled** | A current supported product composition includes the adapter, conditionally if configured. |
 | **Ordinary reachable** | A current product execution can reach the callsite when its key, gate, and request conditions are satisfied. |
 | **Authority granted** | Returned material is permitted to affect queries, evidence, analysis, or final-answer custody; this is narrower than reachability and is stated per row. |
+| **Installed foundation** | Runtime/test commit `7626f1628a18bfb70c7abe58b120dc84001f2e71` proves the current ordinary capability-routing consumer offline. |
 
 `RETAIN`, `REPLACE`, `RETIRE`, and `DEFER_PENDING_PROOF` below are target
-dispositions, not completed runtime changes. **Basis: OWNER_DECISION.**
+dispositions remain target decisions unless a row explicitly cites the installed
+foundation. **Basis: OWNER_DECISION.**
+
+### 1.1 Installed routing-foundation update
+
+Runtime/test commit `7626f1628a18bfb70c7abe58b120dc84001f2e71`
+installed `core.routing` as the sole capability/catalog/selection-policy owner.
+Ordinary `run_pipeline()` now consumes one ProviderPlan decision per acquisition
+job and dispatches exactly one capability-compatible provider or raises a typed
+blocked route with zero provider transport. General and domain-targeted
+discovery are Linkup `standard/searchResults` first with Tavily as a descriptive
+fallback; exact academic/technical/semantic discovery selects Exa; explicit
+Serper and Brave discovery roles remain candidate-only. Fallback candidates do
+not dispatch, mode and complexity do not activate provider variants, provider
+synthesis remains disabled, and provider material remains non-authoritative.
+
+Linkup Fetch, Tavily Extract/Map/Crawl, general Linkup Deep, cross-provider
+failure retry, provider ensembles, social authority, and live comparative proof
+remain uninstalled. The dated vendor documentation below is unchanged.
 
 ## 2. Dated external offerings
 
@@ -95,21 +116,21 @@ inference is explicitly marked.**
 | Provider | Vendor endpoint / operation | Dated vendor-offering fact | Current repository adapter | Actual parameters exposed now | Current ordinary product consumer | Validation / operator-only consumer | Returned material class | Authority posture | Current provider role | Current selection rule | Current depth / variant rule | Target role hypothesis | Disposition | Rationale | Required implementation phase | Live comparative proof? | Historical doctrine references |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Linkup | Search `fast/searchResults` | Fast search, no LLM query reinterpretation | `search_linkup_results` | `q`, `depth`, `outputType`, `maxResults`, images, include/exclude domains, from/to date | Main retrieval can reach it only through an explicit low-complexity Linkup override; no automatic selector chooses it | Generic acquisition tests and brokered diagnostics can select it | Search-result name, URL, content | Candidate/source material only after ordinary gates | No distinct current role | Explicit user override can bypass the normal high-complexity Linkup gate | Adapter accepts `fast`; main dispatcher maps low complexity to `fast` | Possible low-cost discovery variant, not selected doctrine | DEFER_PENDING_PROOF | Target doctrine selects standard as the owner-selected target; fast needs quality/cost proof | Provider-capability routing foundation, then comparative proof | Yes | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
-| Linkup | Search `standard/searchResults` | Single-iteration agentic acquisition; adjacent parallel searches; one supplied URL may be scraped | `search_linkup_results`; generic acquisition adapter | Same Search controls; `depth=standard`, `outputType=searchResults` | Main retrieval, continuation/supplemental retrieval when selected; generic single-relation product path when explicitly configured | Brokered discovery and source-of-record decision tools | URL-bound provider-extracted content | May become evidence material only through current ranking/custody path; provider name grants no truth | General/domain-targeted search today | Linkup available and high complexity, user override, or premium escalation; main dispatcher defaults medium/high to standard | `standard` except explicit override | Owner-selected target for ordinary general and domain-targeted `DISCOVER`; `OWNER_SELECTED_TARGET_NOT_INSTALLED` | REPLACE | Keep the operation and later replace inherited high-complexity/provider-name gating with capability routing. Provider material remains acquisition material. Comparative proof may revise the policy but is not required to select it. | Provider-capability routing foundation | Yes, before factual comparative quality, coverage, latency, cost, or reliability claims; not required for target selection | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG91C](../history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md) |
+| Linkup | Search `standard/searchResults` | Single-iteration agentic acquisition; adjacent parallel searches; one supplied URL may be scraped | `search_linkup_results`; generic acquisition adapter | Same Search controls; `depth=standard`, `outputType=searchResults` | Ordinary main, continuation, supplemental, and recovery acquisition through one ProviderPlan decision; generic single-relation product path when explicitly configured | Brokered discovery and source-of-record decision tools | URL-bound provider-extracted content | May become evidence material only through current ranking/custody path; provider name grants no truth | Installed general/domain-targeted `DISCOVER` implementation | First available compatible implementation for general/domain-targeted discovery; no complexity or mode gate | Explicit `standard`; generic retrieval intensity remains separate | Owner-selected ordinary general and domain-targeted `DISCOVER`; `INSTALLED_FOUNDATION` | ADAPT — installed | Retain the operation and capability owner. Provider material remains acquisition material. Comparative proof may revise the policy but is not required for target selection. | Known-URL read foundation; later comparative proof | Yes, before factual comparative quality, coverage, latency, cost, or reliability claims; not required for target selection | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG91C](../history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md) |
 | Linkup | Search `deep/searchResults` | Multi-iteration chained discovery and reading | Installed/carryable through `search_linkup_results` | `depth=deep`, `outputType=searchResults`, normal filters | Scrutineer remediation can select deep; legacy saved-thread follow-up carries deep but is not an ordinary product | Tests cover dispatch and operator paths | Multi-page URL-bound provider-extracted content | Current remediation results re-enter evidence integration; no special truth authority | High-complexity remediation/premium search | Scrutineer remediation hard-codes deep when its authorized novel-query path runs and Linkup is selected | Coupled to high-complexity eligibility in routing; not a separate acquisition-requirement decision | Optional premium, triggerable multi-iteration acquisition escalation | DEFER_PENDING_PROOF | Technically reachable, but triggers/custody/cost telemetry are not capability-owned and Deep mode alone must not trigger it | Provider-capability routing foundation, then bounded deep activation phase | Yes | [AG51B](../history/architecture/phases/AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md), [AG91C](../history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md) |
 | Linkup | Search `sourcedAnswer` | Vendor-written natural-language answer with citations | Installed in `search_linkup_results`; separate precision helper retained for named nonordinary validation | `outputType=sourcedAnswer`, commonly `depth=deep`; structured schema omitted | None; ordinary precision eligibility, call, and Analyst-context injection are retired | Diagnostics and provider-error tests observe the lower-level output type | Provider-written synthesis plus cited sources | No ordinary authority or reachability; generic acquisition rejects it | None | No ordinary selector | Lower-level helper can carry deep sourced answer only in named nonordinary tests | Disabled | RETIRE — completed ordinary retirement | ScryRaven acquires sources/material, not provider answers | Completed with semantic Scout retirement | No; doctrine decision is closed | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
 | Linkup | Search `structured` | Vendor-generated JSON under caller schema | Partial request carriage only: payload supports a schema, but no structured-response normalizer or caller was found | `outputType=structured`, `structuredOutputSchema` | None | None found | Provider-generated structured synthesis | No ordinary authority found | None | No installed selector | No installed rule | Disabled | RETIRE | It is a provider synthesis surface, not source acquisition | Provider-synthesis ordinary-product closure guard | No | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
 | Linkup | Fetch | Known-URL webpage extraction | None | None | None | None | Caller-selected URL-bound page material | None installed | None | None | None | `READ` leading hypothesis | DEFER_PENDING_PROOF | Operation fits known-URL reading, but custody, errors, rendering, and telemetry need design/validation | Linkup known-URL read adapter | Yes, for bounded live behavior | [AG96I3J](../history/architecture/phases/AG96I3J_OFFLINE_FETCH_READ_CURRENTNESS_VERIFICATION.md), [AG96I3K](../history/architecture/phases/AG96I3K_SANITIZED_READ_OBSERVATION_ADAPTER.md) |
 | Linkup | Research | Async provider research producing synthesized output | None | None | None | None | Provider-written research/report | None installed | None | None | None | Disabled | RETIRE | Provider research/report generation is outside source acquisition | Provider-synthesis ordinary-product closure guard | No | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
-| Tavily | Search | Search with basic/advanced, general/news, raw content and filters | `search_web_results`; generic acquisition adapter | JSON API key, query, depth, topic, answer false, images true, raw content true, max results, domains; news day window | Main, continuation, supplemental and recovery retrieval; supported single-relation product acquisition | Brokered diagnostics and provider-decision operator | Result URL/snippet plus provider-extracted raw content | May enter current evidence flow after gates; provider identity alone satisfies no obligation | Broad default/news/source-recovery search | News starts with Tavily; general includes it when available; several empty selections fall back to Tavily; source-of-record config defaults to Tavily | Basic/advanced follows ScryRaven complexity/depth policy | Possible fallback `DISCOVER`; not universal default | REPLACE | Preserve possible Search use but remove provider-name defaults and capability conflation | Provider-capability routing foundation | Yes | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
+| Tavily | Search | Search with basic/advanced, general/news, raw content and filters | `search_web_results`; generic acquisition adapter | JSON API key, query, depth, topic, answer false, images true, raw content true, max results, domains; news day window | Ordinary main, continuation, supplemental, and recovery acquisition when selected by ProviderPlan; supported single-relation product acquisition | Brokered diagnostics and provider-decision operator | Result URL/snippet plus provider-extracted raw content | May enter current evidence flow after gates; provider identity alone satisfies no obligation | Compatible fallback `DISCOVER`; not universal default | Selected for general/domain-targeted discovery only when Linkup is unavailable; no empty-selection fallback and no Tavily-first news identity | Basic/advanced remains generic transport intensity, separate from provider identity | Fallback `DISCOVER`; `INSTALLED_FOUNDATION` | ADAPT — installed | Preserve Search while keeping provider-name defaults and capability conflation retired | Tavily differentiated adapters; routing closure if required | Yes | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
 | Tavily | Extract | Read/extract specified URL(s), optionally query-focused | None | None | None | None | URL-bound extracted page material | None installed | None | None | None | Future `READ` / `FOCUSED_EXTRACT` | DEFER_PENDING_PROOF | Differentiated acquisition capability; not a reason for Tavily default search | Tavily Extract/Map/Crawl phase | Yes | [AG96I3J](../history/architecture/phases/AG96I3J_OFFLINE_FETCH_READ_CURRENTNESS_VERIFICATION.md) |
 | Tavily | Map | Discover site URLs/structure without content | None | None | None | None | Site URL map | None installed | None | None | None | Future `MAP_SITE` | DEFER_PENDING_PROOF | Needs bounded site/custody contract | Tavily Extract/Map/Crawl phase | Yes | None |
 | Tavily | Crawl | Traverse a site and extract bounded content | None | None | None | None | Multi-page site material | None installed | None | None | None | Future bounded `CRAWL_SITE` | DEFER_PENDING_PROOF | Needs scope, loop, cost, robots, and custody policy | Tavily Extract/Map/Crawl phase | Yes | None |
 | Tavily | Research | Provider searches/analyzes/generates a report | None | None | None | None | Provider-written research/report | None installed | None | None | None | Disabled | RETIRE | Provider synthesis is ordinary-product disabled | Provider-synthesis ordinary-product closure guard | No | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
-| Exa | Search with contents | Search plus content extraction | `search_exa_results`; generic acquisition adapter | `query`, result count, `type=neural`, `text=True`, domains, published-date window | Main, retained continuation, supplemental and recovery retrieval when selected; generic single-relation when configured | Provider-decision and offline tests | Search result URL plus provider-extracted text/score | May enter current evidence flow after gates; no truth from provider identity | Academic specialist and general fan-out | Academic selects Exa when available; general appends it when available; no Scout-specific override remains | No current depth; repository uses legacy SDK `type=neural` | Academic, technical, or semantic `DISCOVER` on exact acquisition signal | REPLACE | Retain specialist hypothesis; remove automatic general fan-out | Provider-capability routing foundation | Yes | [AG51B](../history/architecture/phases/AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md), [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
+| Exa | Search with contents | Search plus content extraction | `search_exa_results`; generic acquisition adapter | `query`, result count, `type=neural`, `text=True`, domains, published-date window | Ordinary acquisition when an exact academic/technical/semantic request selects it; generic single-relation when configured | Provider-decision and offline tests | Search result URL plus provider-extracted text/score | May enter current evidence flow after gates; no truth from provider identity | Academic, technical, or semantic discovery specialist | Exact deterministic academic/technical/semantic signal only; no automatic general fan-out | `neural_with_text`; generic retrieval depth is separate | Academic, technical, or semantic `DISCOVER`; `INSTALLED_FOUNDATION` | ADAPT — installed | Retain specialized role and capability boundary | Comparative proof; routing closure if required | Yes | [AG51B](../history/architecture/phases/AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md), [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
 | Exa | Contents for known URLs | Retrieve full content/summaries/metadata for specified URLs | None | None | None | None | URL-bound extracted content | None installed | None | None | None | Possible future `READ`, not selected over leading hypotheses | DEFER_PENDING_PROOF | Vendor offers it, but repository has no adapter and target choice is unresolved | Later acquisition-routing decision only if needed | Yes | None |
-| Serper | Web Search | Real-time Google search results | `search_scout_results`; generic acquisition adapter | `q`, `num`, optional Google-style freshness `tbs` | Explicit supported single-relation product can use it for ambiguity/candidate discovery; modern main ProviderPlan does not | Brokered discovery and provider-decision tools/tests | Title, URL, snippet, position/date | Generic acquisition marks observations non-evidence/directional; no direct evidence authority | “Scout” candidate discovery | No main-provider selector; explicit generic-product Scout provider only | Freshness supplied by provider-neutral policy when requested | `DISCOVER(lightweight_disambiguation)` | REPLACE | Keep lightweight job, retire SCOUT vocabulary and keep evidence boundary | Provider-capability routing foundation after semantic Scout retirement | Yes | [AG96I3G](../history/architecture/phases/AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md), [AG96I3H](../history/architecture/phases/AG96I3H_SERPER_CHEAP_SCOUT_DIAGNOSTIC_ADAPTER.md), [AG96I3I](../history/architecture/phases/AG96I3I_SCOUT_TO_ACQUISITION_HANDOFF_DIAGNOSTICS.md) |
-| Brave | Web Search | Independent-index web search with freshness controls | `search_scout_results`; `brave_reconnaissance` compatibility alias | `q`, `count`, no text decorations, English, optional freshness | Main ordinary pre-retrieval recon can call Brave for person/news/current/event queries; supported single-relation product can select it | Brokered discovery, follow-up validation, and provider-decision tools/tests | Title, URL, snippet, age | Main recon can shape queries/entity identity but does not directly create evidence; generic observations are non-evidence | Reconnaissance / “Scout” | Key present + qualifying query type + not already well scoped; separate explicit generic-product selection | Legacy alias forces past-week freshness; neutral adapter accepts policy freshness | Optional `DISCOVER(independent_index)` | REPLACE | Keep optional independent-index implementation; replace recon-specific/SCOUT naming and hard-coded freshness coupling | Provider-capability routing foundation after semantic Scout retirement | Yes | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG96I3G](../history/architecture/phases/AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md) |
+| Serper | Web Search | Real-time Google search results | `search_scout_results`; generic acquisition adapter | `q`, `num`, optional Google-style freshness `tbs` | Explicit supported single-relation product can use it for ambiguity/candidate discovery; ordinary main discovery does not add it automatically | Brokered discovery and provider-decision tools/tests | Title, URL, snippet, position/date | Directional candidate material; no evidence, citation, or answer authority | Lightweight disambiguation candidate discovery | Explicit `DISCOVER(lightweight_disambiguation)` only | Freshness supplied by provider-neutral policy when requested | `DISCOVER(lightweight_disambiguation)`; `INSTALLED_FOUNDATION` | ADAPT — installed | Keep lightweight explicit role and candidate-only boundary | Routing closure if required | Yes | [AG96I3G](../history/architecture/phases/AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md), [AG96I3H](../history/architecture/phases/AG96I3H_SERPER_CHEAP_SCOUT_DIAGNOSTIC_ADAPTER.md), [AG96I3I](../history/architecture/phases/AG96I3I_SCOUT_TO_ACQUISITION_HANDOFF_DIAGNOSTICS.md) |
+| Brave | Web Search | Independent-index web search with freshness controls | `search_scout_results`; `brave_reconnaissance` compatibility alias | `q`, `count`, no text decorations, English, optional freshness | Main ordinary pre-retrieval recon can call Brave under its retained explicit gate; supported single-relation product can select it; ordinary main discovery does not add it automatically | Brokered discovery, follow-up validation, and provider-decision tools/tests | Title, URL, snippet, age | Recon can shape query/entity candidates but grants no evidence or answer authority | Explicit independent-index candidate discovery | Explicit `DISCOVER(independent_index)` role; retained recon gate remains separate | Legacy alias forces past-week freshness; neutral adapter accepts policy freshness | Optional `DISCOVER(independent_index)`; `INSTALLED_FOUNDATION` | ADAPT — installed | Keep optional explicit role and candidate-only boundary; residual recon naming may close later | Routing closure if required | Yes | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG96I3G](../history/architecture/phases/AG96I3G_PROVIDER_NEUTRAL_SCOUT_FRESHNESS_POLICY.md) |
 | Brave | Answer/context/news-specific vendor surfaces | Not assessed as needed by installed web adapter | None | None | None | None | Potential provider context/answer or specialized results | No installed authority | None | None | None | Not installed; provider synthesis remains disabled | DEFER_PENDING_PROOF | This phase neither inventories unsupported endpoints as installed nor activates them | Only a later separately approved capability decision | Yes if ever proposed | None |
 
 ### 3.1 Offered, installed, enabled, reachable, and authoritative are separate
@@ -173,8 +194,8 @@ dispatcher. **Basis: CURRENT_RUNTIME.**
 
 | Material / decision | Producer | Current authority actually granted | Authority not granted | Target disposition | Basis |
 | --- | --- | --- | --- | --- | --- |
-| Provider availability | Environment key-presence booleans for Tavily/Linkup/Exa | Input to selection; no key values are needed in canonical state | No provider quality or truth authority | REPLACE with capability availability/install profile | CURRENT_RUNTIME, OWNER_DECISION |
-| `ProviderPlanRecord` | `core.provider_plan` delegating to current selectors | Records and supplies already-selected provider/depth facts to dispatch | Does not invent provider policy, call providers, or admit evidence | RETAIN as boundary; adapt to capabilities later | CURRENT_RUNTIME |
+| Provider availability | Boolean key-presence facts for Tavily/Linkup/Exa/Serper/Brave | Bounded input to catalog reachability and selection; no key values or environment contents enter the trace | No provider quality or truth authority | ADAPT — installed capability availability shape | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| `ProviderPlanRecord` | `core.provider_plan` recording a completed `core.routing` decision | Records exactly one selected provider or empty typed block plus operation/variant/output/fidelity and supplies it to scheduler/dispatch | Does not invent provider policy, call providers, dispatch fallback candidates, or admit evidence | ADAPT — installed capability boundary | CURRENT_RUNTIME, CURRENT_TEST |
 | Query candidates from Brave recon or Serper/Brave discovery | Discovery observations | QueryPlan may admit/order retained discovery queries; recon may affect canonical subject | No evidence, citation, sufficiency, or final-answer authority; semantic Scout produces no candidates | Discovery roles REPLACE vocabulary/owner; semantic Scout retirement completed | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Tavily raw content, Linkup search-result content, Exa text | Provider search/extraction adapters | Can be ranked and integrated as source material; at high complexity selected pages may instead be fetched | Provider identity does not satisfy source obligation, candidate fit, truth, or citation eligibility by itself | RETAIN material acquisition; strengthen capability/custody routing | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Linkup `sourcedAnswer` precision context | Linkup lower-level validation helper only | No ordinary authority; former Analyst-context injection is retired | No source custody, evidence, citation, sufficiency, or final-answer authority | RETIRE from ordinary product — completed | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
@@ -195,15 +216,15 @@ dispatcher. **Basis: CURRENT_RUNTIME.**
 | Current Scout prompt/model invocation | No ordinary prompt registry binding, dependency injection, or model call remains | Inert import compatibility plus ordinary composition and behavioral guards | RETIRE — completed | Compatibility exports perform no execution or query production | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Term `SCOUT` as future capability name | Used both for semantic model helper and provider-neutral lightweight discovery, creating two meanings | Runtime names, scripts, tests, historical AG96I3 docs | RETIRE | Use capability `DISCOVER` with qualifiers such as `lightweight_disambiguation` or `independent_index`; historical names may remain historical | CURRENT_RUNTIME, HISTORICAL_DOC, OWNER_DECISION |
 | Tavily source-of-record default | Explicit single-relation recovery config names Tavily extraction default | Config, authorization/product runner and tests | REPLACE | Express source-of-record as obligation; select an acquisition capability/implementation separately | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Tavily-first news | News/current selection seeds Tavily and adds preferred news domains | `core.routing`, query production/retrieval domain policy and tests | REPLACE | Freshness/source obligations choose capability; no inherited provider identity | CURRENT_RUNTIME, OWNER_DECISION |
-| Phantom Tavily fallback | Empty or unavailable selections can return `tavily` even when availability is false | Routing tests expose fallback behavior | RETIRE | Fail closed or resolve an installed capability explicitly; no uninstalled phantom provider | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Default multi-provider fan-out | General high/default can select Tavily + Linkup + Exa; lower general can select Tavily + Exa | Routing and provider-allocation tests | REPLACE | One capability plan with explicit diversity/recovery jobs, not automatic provider accumulation | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Linkup high-complexity-only restriction | Non-user Linkup use is usually removed unless complexity is high or premium escalation is explicit | Routing and provider-plan tests | REPLACE | Standard eligibility follows acquisition job; complexity is an input, not provider permission | CURRENT_RUNTIME, OWNER_DECISION |
-| Linkup deep coupled to generic complexity | Scrutineer remediation hard-codes deep; Linkup eligibility itself is high-complexity gated | Dispatch/legacy-review tests | REPLACE | Explicit sequential-acquisition trigger plus caps/custody/telemetry | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Linkup depth coupled to ScryRaven mode | Mode maps directly to complexity; Deep maps to high; current high still influences Linkup `searchResults` eligibility and remediation depth, while ordinary precision synthesis is retired | Query production, routing, remediation and follow-up tests | REPLACE | Linkup deep is not an automatic ScryRaven Deep-mode consequence | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Exa automatic general fan-out | General selection appends Exa whenever available | Routing tests | REPLACE | Select only for an academic, technical, or semantic acquisition signal | CURRENT_RUNTIME, OWNER_DECISION |
-| Serper lightweight discovery | Adapter and explicit generic-product/broker consumers use “scout” role | AG96I3G/H/I tests and history | REPLACE | `DISCOVER(lightweight_disambiguation)`; candidate-only | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Brave lightweight discovery/recon | Ordinary recon and generic/broker Scout paths use Brave web search | Recon, query-production and AG96I3 tests | REPLACE | Optional `DISCOVER(independent_index)`; keep observations subordinate to query/custody owners | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Tavily-first news | Retired from ordinary provider policy; news/currentness does not create provider identity | `core.routing`, ProviderPlan and focused tests | RETIRE — completed | General discovery uses the installed Linkup-first capability policy; domain/freshness constraints remain separate | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Phantom Tavily fallback | Retired; empty or unavailable selection returns a typed blocked decision and empty provider projection | Routing and real offline `run_pipeline()` tests | RETIRE — completed | No uninstalled phantom provider | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Default multi-provider fan-out | Retired; each ordinary acquisition job selects one provider or blocks | Routing, ProviderPlan, scheduler, dispatch and provider-allocation tests | RETIRE — completed | Diversity requires a separately authorized future acquisition job, not provider accumulation | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Linkup high-complexity-only restriction | Retired from ordinary ProviderPlan routing; standard eligibility follows the capability request | Routing and provider-plan tests | RETIRE — completed ordinary path | Complexity remains generic retrieval intensity, not provider permission | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Linkup deep coupled to generic complexity | Ordinary general discovery no longer promotes to deep. Existing Scrutineer remediation retains its explicit authorized deep variant. | Dispatch/legacy-review and provider-capability tests | RETIRE — completed ordinary path | A future general sequential-acquisition trigger requires caps/custody/telemetry | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Linkup depth coupled to ScryRaven mode | Retired from ordinary acquisition routing; Fast/Balanced/Deep all select standard. Existing Scrutineer-authorized deep remediation remains explicit. Legacy follow-up and lower-level compatibility are residual. | Query production, routing, remediation and provider-capability tests | RETIRE — completed ordinary path | General Linkup deep remains default-off pending a separate phase | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Exa automatic general fan-out | Retired; Exa selects only for an exact academic/technical/semantic acquisition signal | Routing and product-path tests | RETIRE — completed | Preserve exact specialized role and degraded alternatives | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Serper lightweight discovery | Capability vocabulary now represents the explicit role as `DISCOVER(lightweight_disambiguation)` | Capability catalog plus AG96I3G/H/I consumers/tests | ADAPT — installed foundation | Candidate-only; residual adapter naming may close later | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Brave lightweight discovery/recon | Capability vocabulary represents explicit independent-index discovery; retained recon remains a separate consumer | Capability catalog, recon, query-production and AG96I3 tests | ADAPT — installed foundation | Candidate-only and subordinate to query/custody owners; residual recon naming may close later | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Provider synthesis surfaces | Linkup sourcedAnswer/structured/Research and Tavily Research remain vendor/lower-level surfaces; none is ordinary reachable | Lower-level precision diagnostics and generic-acquisition rejection tests | RETIRE — ordinary closure completed | Keep provider-written answer/report/structured synthesis disabled in ordinary product | CURRENT_RUNTIME, CURRENT_TEST, DATED_VENDOR_DOCUMENTATION, OWNER_DECISION |
 | Provider answers entering ordinary evidence/answer paths | Former Linkup precision Analyst-context injection is absent; lower-level adapter output cannot reach ordinary context without a current consumer | Ordinary product-path retirement and aggregate diagnostics | RETIRE — completed | Source-material-only ordinary acquisition; no provider answer in evidence/analysis payloads | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Source-of-record as provider-specific role | Config role/default embeds provider identity in acquisition decision | Single-relation recovery config/authorization/operator decision | REPLACE | Source obligation owns requirement; capability routing chooses implementation | CURRENT_RUNTIME, OWNER_DECISION |
@@ -243,22 +264,24 @@ OWNER_DECISION.**
 
 ## 8. Linkup standard/deep decision
 
-Current premium policy lives in `core.routing.should_allow_linkup_provider`: it
-permits Linkup for high complexity, an explicit user provider override, or an
-explicit premium-search escalation. The policy contains no dated price constant.
-It is provider-name/complexity policy rather than a capability-owned acquisition
-decision. **Basis: CURRENT_RUNTIME.**
+Current ordinary policy lives in `core.routing.route_provider_capability`.
+Linkup standard is capability-selected for general/domain-targeted discovery;
+mode and complexity do not grant eligibility or select a variant. The retained
+`should_allow_linkup_provider` predicate applies only to the lower-level
+`search_providers=None` compatibility path and is a residual closure candidate.
+The policy contains no dated price constant. **Basis: CURRENT_RUNTIME,
+CURRENT_TEST.**
 
 | Property | `standard/searchResults` | `deep/searchResults` |
 | --- | --- | --- |
 | Vendor acquisition topology | One agentic iteration; adjacent searches may run in parallel; one supplied URL can be scraped; no result-chained later step in the same call | Multiple provider-controlled iterations; later discovery/read steps may depend on earlier results; multiple pages may be found and read |
 | Adapter installed | Yes | Yes; the same adapter can carry it |
 | Current ordinary reachability | Main/continuation/supplemental and generic acquisition when Linkup is selected | Scrutineer remediation can reach it; legacy saved-thread follow-up is non-ordinary |
-| Current coupling | Linkup normally requires high complexity; main dispatcher uses standard at medium/high | Remediation hard-codes deep while routing also normally limits Linkup to high complexity; therefore complexity, mode and depth are indirectly conflated |
-| Target posture | Owner-selected target for ordinary general/domain-targeted discovery; `OWNER_SELECTED_TARGET_NOT_INSTALLED` | Default disabled optional premium escalation |
+| Current coupling | Explicit capability-selected standard; separate from mode, complexity and generic retrieval intensity | Existing Scrutineer remediation explicitly authorizes deep; general activation remains default-off |
+| Target posture | Owner-selected ordinary general/domain-targeted discovery; `INSTALLED_FOUNDATION` | Default disabled optional premium escalation |
 | Target triggers | Ordinary `DISCOVER`, including domain-targeted discovery | Inherently sequential acquisition; multiple unknown pages must be found/read; authorized recovery after bounded standard failure; fragmented material not selectable by URL; explicit premium escalation |
 | Non-triggers | Not applicable | ScryRaven Deep mode, generic high complexity, detailed-answer request, news, or social-domain targeting alone |
-| Disposition | REPLACE current eligibility with capability routing | DEFER_PENDING_PROOF |
+| Disposition | ADAPT — installed capability route | DEFER_PENDING_PROOF |
 
 Before any deep activation, one authority must record: acquisition requirement
 and trigger; caller/user premium authorization; bounded iteration/page/result
@@ -300,7 +323,7 @@ CURRENT_TEST, OWNER_DECISION.**
 
 Leading implementation: Linkup `standard/searchResults`
 
-Target status: `OWNER_SELECTED_TARGET_NOT_INSTALLED`
+Target status: `INSTALLED_FOUNDATION`
 
 Authority boundary: Candidate URLs and provider-extracted context only. Provider
 identity grants no source, evidence, claim, citation, Sufficiency,
@@ -315,7 +338,7 @@ replace this policy.
 Leading implementation: Linkup `standard/searchResults` with bounded domain
 constraints
 
-Target status: `OWNER_SELECTED_TARGET_NOT_INSTALLED`
+Target status: `INSTALLED_FOUNDATION`
 
 Authority boundary: Candidate URLs and provider-extracted context only. Bounded
 domain constraints and provider identity grant no source, evidence, claim,
@@ -329,10 +352,10 @@ The remaining target choices retain their existing status:
 
 | Capability | Leading implementation hypothesis | Target authority boundary | Status now | Basis |
 | --- | --- | --- | --- | --- |
-| `DISCOVER(academic_technical_semantic)` | Exa search with content only when exact signal requires it | Candidate/source material under custody | Hypothesis; current Exa routing is broader | OWNER_DECISION, CURRENT_RUNTIME |
-| `DISCOVER(lightweight_disambiguation)` | Serper | Candidate/query direction only | Adapter exists; modern main job not installed | OWNER_DECISION, CURRENT_RUNTIME |
-| `DISCOVER(independent_index)` | Brave | Optional candidate/query direction only | Adapter and ordinary recon exist under legacy role | OWNER_DECISION, CURRENT_RUNTIME |
-| Fallback `DISCOVER` | Tavily Search | Explicit installed fallback only; no phantom default | Hypothesis; current defaulting is broader | OWNER_DECISION, CURRENT_RUNTIME |
+| `DISCOVER(academic_technical_semantic)` | Exa `neural_with_text/searchResults` only when exact signal requires it | Candidate/source material under custody | `INSTALLED_FOUNDATION`; degraded Linkup/Tavily alternatives are explicit | OWNER_DECISION, CURRENT_RUNTIME, CURRENT_TEST |
+| `DISCOVER(lightweight_disambiguation)` | Serper | Candidate/query direction only | `INSTALLED_FOUNDATION`; explicit role only | OWNER_DECISION, CURRENT_RUNTIME, CURRENT_TEST |
+| `DISCOVER(independent_index)` | Brave | Optional candidate/query direction only | `INSTALLED_FOUNDATION`; explicit role/recon consumer only | OWNER_DECISION, CURRENT_RUNTIME, CURRENT_TEST |
+| Fallback `DISCOVER` | Tavily Search | Explicit compatible fallback only; no phantom default | `INSTALLED_FOUNDATION`; descriptive candidate does not dispatch unless selected | OWNER_DECISION, CURRENT_RUNTIME, CURRENT_TEST |
 | `READ` known URL | Linkup Fetch leading hypothesis | Caller-selected URL, source-bound extracted material | Not adapted | OWNER_DECISION, DATED_VENDOR_DOCUMENTATION |
 | `READ` / `FOCUSED_EXTRACT` | Tavily Extract | Selected URL(s), optional query focus, source-bound material | Not adapted | OWNER_DECISION, DATED_VENDOR_DOCUMENTATION |
 | `MAP_SITE` | Tavily Map | URL discovery only | Not adapted | OWNER_DECISION, DATED_VENDOR_DOCUMENTATION |
@@ -381,24 +404,28 @@ Completed prerequisite:
 `LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01` at runtime/test commit
 `af87f5387fb5cd11a36c56754ee719400bb1bf0b`.
 
-1. Provider-capability routing foundation: introduce provider-neutral
-   acquisition jobs/qualifiers and installation availability; replace Tavily
-   phantom/default doctrine, automatic general fan-out, Exa general fan-out,
-   Tavily-first news, provider-specific source-of-record, Linkup complexity-only
-   eligibility, and mode/depth coupling. Reuse ProviderPlan as the ordinary
-   consumed boundary.
-2. Linkup known-URL read adapter: implement bounded `READ` through Fetch with
-   source/custody lineage and no synthesis.
-3. Tavily Extract/Map/Crawl: install distinct `READ`/`FOCUSED_EXTRACT`,
-   `MAP_SITE`, and bounded `CRAWL_SITE` capabilities.
-4. Acquisition-routing closure if required: retire residual provider-name roles,
-   compatibility defaults, or parallel selectors discovered by the preceding
-   implementation phases.
-5. Bounded final-custody convergence.
-6. Separately licensed live comparative validation, including any Linkup deep
-   activation decision. Offline census does not license it.
-7. Social-source authority and Social Awareness Specialist design/validation.
-8. Conversation and UI work through transport-neutral product services.
+Completed foundation:
+`PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01` at runtime/test commit
+`7626f1628a18bfb70c7abe58b120dc84001f2e71`.
+
+1. `KNOWN-URL-READ-FOUNDATION-01`: install the shared `READ` contract and
+   Linkup Fetch first, with caller-selected URL lineage and no synthesis.
+2. `TAVILY-EXTRACT-AND-MAP-ADAPTERS-01`: install
+   `FOCUSED_EXTRACT` and `MAP_SITE`; retain `READ` compatibility where the
+   shared contract requires it.
+3. `TAVILY-BOUNDED-CRAWL-ADAPTER-01`: install bounded `CRAWL_SITE` with
+   explicit page/site caps and lineage.
+4. `LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01`: consider bounded, default-off
+   premium `deep/searchResults` only; mode and generic complexity must not
+   trigger it, and provider synthesis remains disabled.
+5. `ACQUISITION-ROUTING-CLOSURE-01` if required: retire residual
+   provider-name roles, compatibility defaults, or parallel selectors that
+   block the ordinary capability consumer.
+6. Bounded final-custody convergence.
+7. Separately licensed comparative live validation. Offline proof does not
+   license it.
+8. Social-source authority and Social Awareness Specialist design/validation.
+9. Conversation and UI work through transport-neutral product services.
 
 **Basis: OWNER_DECISION.**
 
@@ -430,11 +457,12 @@ comparative evidence in this audit.**
 
 ## 14. Nonproofs
 
-This current census plus the cited offline retirement does not prove or install:
+This current census plus the cited offline routing foundation does not prove or
+install:
 
-- provider routing, ordering, quality, availability, price, latency or capacity;
-- empirical Linkup standard superiority, installed Linkup-first routing, or deep
-  activation;
+- provider quality, empirical superiority, live availability, price, latency or
+  capacity;
+- Linkup Fetch, Tavily Extract/Map/Crawl, or general Linkup deep activation;
 - known-URL reading, focused extraction, site mapping, site crawling or Research;
 - evidence correctness, source-obligation satisfaction, citation eligibility,
   final custody or improved answer quality;
@@ -452,17 +480,18 @@ Execution surface class:
 VALIDATION
 
 Product consumer reached:
-ordinary CLI/backend runtime through the cited offline retirement commit; this
-document is the canonical projection of that runtime evidence
+current ordinary run_pipeline() provider planning, ProviderPlan projection,
+retrieval scheduling, and mechanical provider dispatch
 
 Claim permitted:
-semantic Scout ordinary execution and ordinary Linkup provider synthesis are
-retired; retained provider adapters, ordinary consumers, authority posture,
-legacy doctrine, and owner-approved target dispositions remain explicitly
-inventoried and separated
+ordinary acquisition selects exactly one capability-compatible provider or
+blocks, installs Linkup standard/searchResults as the owner-selected general and
+domain-targeted discovery implementation, preserves Exa/Serper/Brave
+specialized roles, and keeps provider material non-authoritative
 
 Claim forbidden:
-provider routing changes, Linkup deep activation, known-URL reading, site
-mapping or crawling, live provider quality, evidence correctness, or improved
-answer quality
+live provider quality, empirical best-provider claims, Linkup Fetch, Tavily
+Extract/Map/Crawl, general Linkup Deep activation, provider-failure fallback
+execution, social interpretation, evidence correctness, Sufficiency, FAP,
+Author changes, or improved answer quality
 ```

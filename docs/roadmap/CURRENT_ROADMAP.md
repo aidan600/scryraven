@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
+Verified-against-runtime: 7626f1628a18bfb70c7abe58b120dc84001f2e71
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -177,40 +177,64 @@ discovery adapters. It installed no provider-capability routing, provider-order
 change, Linkup Fetch, Tavily site acquisition, replacement semantic role, or
 live-call authority.
 
+## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01
+
+Runtime/test commit `7626f1628a18bfb70c7abe58b120dc84001f2e71`
+installed `core.routing` as the sole capability/catalog/selection-policy owner
+for ordinary acquisition. The current `run_pipeline()` ProviderPlan consumer now
+selects exactly one compatible provider or returns a typed block; scheduler and
+dispatch carry the completed decision mechanically. General and domain-targeted
+discovery are Linkup `standard/searchResults` first, exact
+academic/technical/semantic discovery selects Exa, Tavily is a compatible
+descriptive fallback, and explicit Serper/Brave roles remain candidate-only.
+
+The repair retired phantom Tavily fallback, ordinary provider fan-out,
+Tavily-first news identity, Exa general fan-out, and mode/complexity activation
+of Linkup Deep from the ordinary route. It retained provider material as
+non-authoritative acquisition material, kept provider synthesis disabled, and
+preserved the existing Scrutineer-authorized `deep/searchResults` boundary. It
+made no live calls and proves no provider quality, comparative superiority,
+evidence correctness, Sufficiency, FAP, Author, social, UI, or answer-quality
+change.
+
 ## Approved Product Sequence
 
-After semantic Scout and ordinary provider-synthesis retirement, the approved
-checkpoints remain ordered as follows. Provider-Capability Routing Foundation
-is the sole active-next checkpoint.
+After semantic Scout/provider-synthesis retirement and the provider-capability
+routing foundation, the approved checkpoints remain ordered as follows.
+`KNOWN-URL-READ-FOUNDATION-01` is the sole active-next checkpoint.
 
-## Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01
+## Active Next: KNOWN-URL-READ-FOUNDATION-01
 
-This checkpoint will replace provider-name defaults and inherited
-complexity/depth couplings with provider-neutral
-acquisition capabilities and explicit installation availability. It will reuse
-the ordinary ProviderPlan consumer and keep provider synthesis disabled. It will
-install the owner-selected Linkup-standard-first target policy for ordinary
-general and domain-targeted discovery. That target policy is not a claim that
-Linkup has been empirically proved best, highest quality, fastest, cheapest, or
-most reliable, and the census itself installed no routing change.
+Install the shared `READ` contract and bounded caller-selected known-URL reading
+through Linkup Fetch first, with exact URL lineage and ordinary custody. This
+checkpoint must not install Linkup sourced answers, structured synthesis,
+Research, general deep acquisition, or provider authority over the selected
+URL.
 
-### Linkup Known-URL Read Adapter
+### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01
 
-This checkpoint may install bounded caller-selected known-URL reading through
-Linkup Fetch, with URL lineage and ordinary custody. It must not install Linkup
-sourced answers, structured synthesis, Research, or deep acquisition.
+Install distinct `FOCUSED_EXTRACT` and `MAP_SITE` implementations through
+Tavily, retaining `READ` compatibility only where the shared contract requires
+it. This checkpoint must not preserve Tavily as a universal default or install
+Tavily Research.
 
-### Tavily Extract, Map, and Crawl
+### TAVILY-BOUNDED-CRAWL-ADAPTER-01
 
-This checkpoint may install distinct `READ` / `FOCUSED_EXTRACT`, `MAP_SITE`, and
-bounded `CRAWL_SITE` capabilities. It must not preserve Tavily as a universal
-default or install Tavily Research.
+Install `CRAWL_SITE` only with explicit page/site caps, caller-visible lineage,
+and ordinary custody. No unbounded crawl or automatic site authority is
+authorized.
 
-### Acquisition-Routing Closure If Required
+### LINKUP-DEEP-SEQUENTIAL-ACQUISITION-01
+
+Consider only bounded, default-off premium Linkup `deep/searchResults` with
+explicit triggers, caps, lineage, and custody/telemetry. Product mode and generic
+complexity must not trigger it. Provider synthesis remains disabled.
+
+### ACQUISITION-ROUTING-CLOSURE-01 If Required
 
 After the adapter phases, one bounded closure may retire residual provider-name
 roles, parallel selectors, compatibility fallbacks, or stale authority paths
-that prevent the ordinary consumer from using the capability plan.
+only if they prevent the ordinary consumer from using the capability plan.
 
 ### Bounded Final-Custody Convergence
 
@@ -218,16 +242,29 @@ The preceding repair outcomes must converge through one bounded final-custody
 checkpoint before any complete-app live work is considered. This checkpoint
 does not itself authorize live validation.
 
-### Separately Licensed Complete-App Live Shakeout
+### Separately Licensed Comparative Live Validation
 
 Only after mode-policy recovery authority containment, Specialist
 proposal-instance admission hardening, structured-list route qualification,
 semantic Scout retirement, provider-capability routing, the approved acquisition
 adapter work, any required routing closure, and bounded final-custody convergence
-may separately licensed live validation be considered. Offline proof does not
-authorize live work, and this roadmap grants no live license. Arbitrary-query
-coverage, broad quantitative reasoning quality, provider quality, and product
-correctness remain unproved.
+may separately licensed comparative live validation be considered. Offline
+proof does not authorize live work, and this roadmap grants no live license.
+Arbitrary-query coverage, broad quantitative reasoning quality, provider
+quality, and product correctness remain unproved.
+
+### Social Authority And Social Awareness
+
+Social-source acquisition authority, sampling, representativeness, trust,
+sentiment, and a possible Social Awareness Specialist require their own later
+design and offline validation. A domain-targeted discovery constraint grants
+none of those properties.
+
+### Conversation And UI
+
+Conversation, follow-up, and UI work remains later and must consume
+transport-neutral product services. It is not part of acquisition routing or
+the adapter sequence.
 
 ## Later, Deliberately Underspecified
 
