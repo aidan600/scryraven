@@ -316,7 +316,7 @@ def schedule_main_retrieval_from_kernel_action(
 def schedule_continuation_action(
     schedule_input: RetrievalScheduleInput,
 ) -> RetrievalScheduledAction:
-    """Schedule ordinary Scout/Expander/Evaluator next-pass continuation."""
+    """Schedule an ordinary retained-producer next-pass continuation."""
 
     providers = _providers_from_input(schedule_input)
     authorized = bool(schedule_input.continuation_authorized)
@@ -414,48 +414,6 @@ def schedule_provider_continuation_with_plan(
         provider_record=provider_record,
         continuation_authorized=continuation_authorized,
         query_source=query_source,
-    )
-
-
-def schedule_scout_continuation_from_pipeline_scope(
-    scope: Mapping[str, Any],
-    *,
-    current_queries: Sequence[str],
-    iteration: int,
-    continuation_authorized: bool,
-) -> RetrievalScheduledAction:
-    """Schedule Scout continuation from fixed provider-policy inputs."""
-
-    values = _require_scope(
-        scope,
-        (
-            "provider_plan",
-            "query_type",
-            "intent",
-            "complexity",
-            "report_type",
-            "is_academic",
-            "suppress_tavily",
-            "select_provider_list",
-        ),
-    )
-    return schedule_provider_continuation_with_plan(
-        provider_plan=values["provider_plan"],
-        stage="scout_directed_continuation",
-        current_queries=current_queries,
-        iteration=iteration,
-        provider_role="scout_continuation",
-        query_source="scout",
-        continuation_authorized=continuation_authorized,
-        query_type=values["query_type"],
-        intent=values["intent"],
-        complexity=values["complexity"],
-        report_type=values["report_type"],
-        is_academic=values["is_academic"],
-        suppress_tavily=values["suppress_tavily"],
-        override=["exa", "linkup"],
-        override_is_user=False,
-        select_provider_list=values["select_provider_list"],
     )
 
 

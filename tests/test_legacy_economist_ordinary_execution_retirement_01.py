@@ -211,7 +211,7 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
     assert "Precision Evidence" in harness.author_prompts[-1]
 
 
-def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
+def test_linkup_precision_compatibility_dependency_is_inert_in_ordinary_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -230,7 +230,7 @@ def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
         query=QUERY,
         core_topic="Alpha and Beta operating rates",
         primary_entity="Alpha",
-        analyst_response="The retrieved evidence and Linkup context agree.",
+        analyst_response="The retrieved source evidence supports the comparison.",
         raw_author_response=(
             "The evidence supports the comparison. "
             "[[1]](https://alpha.example/report-1)"
@@ -244,28 +244,16 @@ def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
     )
 
     assert harness.economist_calls == []
-    assert len(linkup_calls) == 1
-    call = linkup_calls[0]
-    assert call["args"] == (
-        "Alpha and Beta operating rates",
-        "general",
-        "high",
-        ["alpha.example"],
-        ["blocked.example"],
-    )
-    assert set(call["kwargs"]) == {
-        "provider_diagnostics",
-        "cost_accumulator",
-        "cost_phase",
-    }
-    assert isinstance(call["kwargs"]["provider_diagnostics"], list)
-    assert call["kwargs"]["cost_phase"] == "retrieval"
+    assert linkup_calls == []
     assert harness.analyst_prompts
-    assert LINKUP_CONTEXT_MARKER in harness.analyst_prompts[-1]
+    assert "<evidence_block>" in harness.analyst_prompts[-1]
+    assert LINKUP_CONTEXT_MARKER not in harness.analyst_prompts[-1]
     assert outcome.execution_trace["economist_ran"] is False
     assert outcome.execution_trace["timing"]["economist_seconds"] == 0.0
     assert outcome.execution_trace["quantitative_packet"] is None
 
+    # Lower-level transport remains only for named validation/error tests; the
+    # ordinary orchestrator no longer imports, wraps, injects, or calls it.
     linkup_source = (ROOT / "core" / "pipeline.py").read_text(encoding="utf-8")
     linkup_body = linkup_source.split(
         "def fetch_linkup_precision_block(", maxsplit=1
@@ -273,6 +261,9 @@ def test_linkup_keeps_existing_eligibility_arguments_and_analyst_integration(
     assert 'depth="deep"' in linkup_body
     assert 'output_type="sourcedAnswer"' in linkup_body
     assert "max_results=8" in linkup_body
+    assert "fetch_linkup_precision_block" not in ORCHESTRATOR.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_current_composition_and_cli_help_work_without_economist_callable(

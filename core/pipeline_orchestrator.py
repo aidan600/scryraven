@@ -130,22 +130,16 @@ from core.ordinary_continuation_candidate import (
 from core.ordinary_continuation_spine_gate import (
     EvaluatorContinuationSpineGateFacts,
     ExpanderContinuationSpineGateFacts,
-    ScoutContinuationSpineGateFacts,
     authorize_evaluator_continuation_spine_gate,
     authorize_expander_continuation_spine_gate,
-    authorize_scout_continuation_spine_gate,
     build_evaluator_continuation_candidate,
     build_evaluator_continuation_spine_pregate,
     build_expander_continuation_candidate,
     build_expander_continuation_spine_pregate,
-    build_scout_continuation_candidate,
-    build_scout_continuation_spine_pregate,
     evaluator_continuation_spine_gate_defaults,
     evaluator_continuation_spine_gate_exception_trace,
     expander_continuation_spine_gate_defaults,
     expander_continuation_spine_gate_exception_trace,
-    scout_continuation_spine_gate_defaults,
-    scout_continuation_spine_gate_exception_trace,
 )
 from core.ordinary_live_authority_consolidation_runtime import (
     ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY,
@@ -183,7 +177,6 @@ from core.post_author_output_projection import (
     build_post_author_trace_packaging_from_scope,
     build_run_outcome_from_scope,
 )
-from core.prompts import SCOUT_REGISTRY
 from core.protocols import StatusWriter
 from core.provider_diagnostics import supported_diagnostic_kwargs
 from core.provider_plan import ProviderPlan
@@ -228,7 +221,6 @@ from core.retrieval_scheduler import (
     schedule_evaluator_continuation,
     schedule_expander_continuation_from_pipeline_scope,
     schedule_main_retrieval_from_kernel_action,
-    schedule_scout_continuation_from_pipeline_scope,
     schedule_weak_corpus_recovery_from_pipeline_scope,
 )
 from core.retrieval_stop_controller import (
@@ -630,20 +622,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             return base(*args, **kw)
         return wrapped
 
-    def _linkup(*, phase: str = "retrieval"):
-        base = deps.fetch_linkup_precision_block
-        def wrapped(*args: Any, **kw: Any) -> Any:
-            diagnostic_kw = {
-                key: kw.pop(key)
-                for key in ("provider_diagnostics",)
-                if key in kw
-            }
-            kw.update(supported_diagnostic_kwargs(base, diagnostic_kw))
-            kw.setdefault("cost_accumulator", accumulator)
-            kw.setdefault("cost_phase", phase)
-            return base(*args, **kw)
-        return wrapped
-
     def _cap_model_phase(base: Any, phase: str) -> Any:
         if cap_policy is None:
             return base
@@ -660,7 +638,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ask_model = _ask()
     embed_texts = _embed()
     process_search_queries = _search()
-    fetch_linkup_precision_block = _linkup()
 
     DEFAULT_SYSTEM = deps.DEFAULT_SYSTEM
     NEWS_PREFERRED_DOMAINS = deps.NEWS_PREFERRED_DOMAINS
@@ -742,7 +719,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     scout_fired = False
     scout_key_used = None
     scout_queries: list[str] = []
-    scout_skip_reason: str | None = None
+    scout_skip_reason: str | None = "legacy_semantic_scout_ordinary_execution_retired"
     economist_preflight_allowed: bool | None = None
     economist_preflight_block_reason: str | None = (
         "legacy_economist_ordinary_execution_retired"
@@ -1147,7 +1124,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     iteration = 1
     iterations_run = 0
     is_sufficient = False
-    scout_context = None
     suppress_tavily = False
     scrutineer_high_count = 0
     queries_by_iteration: dict[int, list[str]] = {}
@@ -1180,9 +1156,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     expander_continuation_spine_gate_trace: dict[str, Any] = (
         expander_continuation_spine_gate_defaults()
     )
-    scout_continuation_spine_gate_trace: dict[str, Any] = (
-        scout_continuation_spine_gate_defaults()
-    )
+    # Passive compatibility projection only. It is never supplied to a current
+    # continuation, retrieval-authority, or dispatch decision.
+    scout_continuation_spine_gate_trace: dict[str, Any] = {
+        "available": False,
+        "reason": "legacy_semantic_scout_ordinary_execution_retired",
+        "targeted_retrieval_dispatch_authorized": False,
+        "targeted_retrieval_executor_dispatched": False,
+        "authorized_queries": [],
+        "query_provenance": None,
+    }
     retrieval_batch_dispatch_trace: dict[str, Any] = (
         retrieval_batch_dispatch_defaults()
     )
@@ -1491,9 +1474,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     ),
                     expander_continuation_spine_gate_trace=(
                         expander_continuation_spine_gate_trace
-                    ),
-                    scout_continuation_spine_gate_trace=(
-                        scout_continuation_spine_gate_trace
                     ),
                 )
             )
@@ -1979,238 +1959,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
             return False, []
 
-    def _authorize_scout_continuation_before_scheduling(
-        *,
-        scout_queries_for_gate: list[str],
-    ) -> tuple[bool, list[str]]:
-        nonlocal evidence_integration_checkpoint_trace
-        nonlocal evidence_integration_checkpoint_handoff
-        nonlocal evidence_integration_checkpoint_decided
-        nonlocal ordinary_continuation_candidate_trace
-        nonlocal targeted_retrieval_lifecycle_trace
-        nonlocal scout_continuation_spine_gate_trace
-
-        ordinary_continuation_candidate_trace = build_scout_continuation_candidate(
-            scout_queries=scout_queries_for_gate,
-            prior_queries=queries_by_iteration.get(iteration, []),
-            current_iteration=iteration,
-            max_iterations=max_iterations,
-        )
-        try:
-            source_tier_snapshot = source_tier_telemetry(all_passages)
-            source_domain_snapshot = source_domain_telemetry(
-                all_passages,
-                domain_anchor=primary_entity or core_topic,
-            )
-            source_class_recommendation = build_source_class_recovery_recommendation(
-                query=query,
-                current_date=current_date,
-                intent=intent,
-                report_type=report_type,
-                query_type=query_type,
-                core_topic=core_topic,
-                primary_entity=primary_entity,
-                anchor_packet=anchor_packet_telemetry,
-                source_tier_counts=source_tier_snapshot["source_tier_counts"],
-                source_domain_counts=source_domain_snapshot["source_domain_counts"],
-                top_source_domains=source_domain_snapshot["top_source_domains"],
-                official_evidence_found=source_tier_snapshot[
-                    "official_evidence_found"
-                ],
-            )
-            source_class_observability = build_source_class_observability_telemetry(
-                query=query,
-                intent=intent,
-                report_type=report_type,
-                query_type=query_type,
-                core_topic=core_topic,
-                primary_entity=primary_entity,
-                anchor_packet=anchor_packet_telemetry,
-                final_top_evidence=all_passages,
-                final_answer_source_ids=None,
-            )
-            (
-                _scout_conflict_state,
-                scout_conflict_projection,
-            ) = _build_runtime_conflict_state_projection(
-                query=query,
-                core_topic=core_topic,
-                primary_entity=primary_entity,
-                current_date=current_date,
-                final_top_evidence=all_passages,
-                source_tier_counts=source_tier_snapshot["source_tier_counts"],
-                source_domain_telemetry=source_domain_snapshot,
-                source_class_observability={
-                    **source_class_recommendation,
-                    **source_class_observability,
-                },
-            )
-            source_class_lifecycle = source_class_recovery_lifecycle_defaults()
-            answer_contract_result = build_runtime_answer_contract_handoff(
-                RuntimeAnswerContractFacts(
-                    query=query,
-                    intent=intent,
-                    report_type=report_type,
-                    query_type=query_type,
-                    mode=strategy,
-                    current_date=current_date,
-                    core_topic=core_topic,
-                    evidence_available=bool(all_passages),
-                    evidence_sufficient=bool(is_sufficient),
-                    source_tier_counts=source_tier_snapshot["source_tier_counts"],
-                    source_class_recovery_telemetry={
-                        **source_class_recommendation,
-                        **source_class_observability,
-                    },
-                    active_source_class_recovery_lifecycle=source_class_lifecycle,
-                    weak_corpus=bool(corpus_weak),
-                    weak_corpus_reason=(
-                        (weak_corpus_recovery_skip_reason or corpus_state)
-                        if corpus_weak
-                        else None
-                    ),
-                    weak_corpus_recovery_considered=bool(
-                        weak_corpus_recovery_considered
-                    ),
-                    weak_corpus_recovery_used=bool(weak_corpus_recovery_used),
-                    weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                    conflicts_present=scout_conflict_projection[
-                        "conflicts_present"
-                    ],
-                    conflict_notes=scout_conflict_projection["conflict_notes"],
-                    resolving_queries=scout_conflict_projection[
-                        "resolving_queries"
-                    ],
-                    retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                    retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                    queries_by_iteration=queries_by_iteration,
-                    final_top_evidence=all_passages,
-                    iteration=iteration,
-                    max_iterations=max_iterations,
-                    max_recovery_attempts=1,
-                )
-            )
-            checkpoint_snapshot = _build_evidence_integration_snapshot_from_runtime(
-                answer_contract_result=answer_contract_result,
-                source_class_recovery_recommendation=source_class_recommendation,
-                active_source_class_recovery_lifecycle=source_class_lifecycle,
-                strategy=strategy,
-                is_sufficient=is_sufficient,
-                corpus_weak=corpus_weak,
-                corpus_state=corpus_state,
-                weak_corpus_recovery_used=weak_corpus_recovery_used,
-                weak_corpus_recovery_attempted=weak_corpus_recovery_attempted,
-                weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                iterations_run=iteration,
-                max_iterations=max_iterations,
-            )
-            checkpoint_decision = decide_evidence_integration_checkpoint(
-                checkpoint_snapshot
-            )
-            checkpoint_trace = build_evidence_integration_checkpoint_trace(
-                snapshot=checkpoint_snapshot,
-                decision=checkpoint_decision,
-                legacy_runtime_branch="scout_continuation_gate",
-            )
-            checkpoint_handoff = checkpoint_decision.to_handoff_reference()
-            weak_corpus_lifecycle_for_gate = (
-                _weak_corpus_lifecycle_facts(weak_corpus_decision_for_checkpoint_gate)
-                if weak_corpus_recovery_considered
-                else None
-            )
-            conflict_resolution_lifecycle_for_gate = (
-                _conflict_resolution_lifecycle_facts(
-                    decision=conflict_resolution_decision_for_checkpoint_gate,
-                    lifecycle_trace=active_conflict_resolution_lifecycle,
-                )
-            )
-            gate_facts = ScoutContinuationSpineGateFacts.from_traces(
-                scout_queries=scout_queries_for_gate,
-                prior_queries=queries_by_iteration.get(iteration, []),
-                current_iteration=iteration,
-                max_iterations=max_iterations,
-                checkpoint_trace=checkpoint_trace,
-                checkpoint_handoff=checkpoint_handoff,
-                source_class_lifecycle_trace=source_class_lifecycle,
-                weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                conflict_resolution_lifecycle_trace=(
-                    conflict_resolution_lifecycle_for_gate
-                ),
-                ordinary_continuation_candidate_trace=(
-                    ordinary_continuation_candidate_trace
-                ),
-            )
-            pregate_result = build_scout_continuation_spine_pregate(gate_facts)
-            ordinary_continuation_candidate_trace = (
-                pregate_result.ordinary_continuation_candidate_trace
-            )
-            targeted_trace = _build_targeted_retrieval_lifecycle_from_runtime(
-                answer_contract_result=answer_contract_result,
-                source_class_recovery_telemetry=source_class_recommendation,
-                active_source_class_recovery_lifecycle=source_class_lifecycle,
-                weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                active_conflict_resolution_lifecycle=(
-                    active_conflict_resolution_lifecycle
-                ),
-                retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                controller_loop_spine_result=(
-                    pregate_result.controller_loop_spine_result
-                ),
-                ordinary_continuation_candidate_trace=(
-                    ordinary_continuation_candidate_trace
-                ),
-                max_iterations=max_iterations,
-            )
-            gate_output = authorize_scout_continuation_spine_gate(
-                ScoutContinuationSpineGateFacts.from_traces(
-                    scout_queries=scout_queries_for_gate,
-                    prior_queries=queries_by_iteration.get(iteration, []),
-                    current_iteration=iteration,
-                    max_iterations=max_iterations,
-                    checkpoint_trace=checkpoint_trace,
-                    checkpoint_handoff=checkpoint_handoff,
-                    source_class_lifecycle_trace=source_class_lifecycle,
-                    weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                    conflict_resolution_lifecycle_trace=(
-                        conflict_resolution_lifecycle_for_gate
-                    ),
-                    ordinary_continuation_candidate_trace=(
-                        ordinary_continuation_candidate_trace
-                    ),
-                    targeted_retrieval_lifecycle_trace=targeted_trace,
-                )
-            )
-            evidence_integration_checkpoint_trace = gate_output.checkpoint_trace
-            evidence_integration_checkpoint_handoff = gate_output.checkpoint_handoff
-            evidence_integration_checkpoint_decided = gate_output.checkpoint_decided
-            ordinary_continuation_candidate_trace = (
-                gate_output.ordinary_continuation_candidate_trace
-            )
-            targeted_retrieval_lifecycle_trace = (
-                gate_output.targeted_retrieval_lifecycle_trace
-            )
-            scout_continuation_spine_gate_trace = (
-                gate_output.scout_continuation_spine_gate_trace
-            )
-            return _authorize_retrieval_batch_dispatch_for_current_continuation(
-                source_class_lifecycle_trace=source_class_lifecycle,
-                weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                conflict_resolution_lifecycle_trace=(
-                    conflict_resolution_lifecycle_for_gate
-                ),
-            )
-        except Exception as exc:
-            run_log.warning(
-                "Non-fatal scout continuation spine gate omitted: %s",
-                exc,
-            )
-            scout_continuation_spine_gate_trace = (
-                scout_continuation_spine_gate_exception_trace()
-            )
-            return False, []
-
     # ------------------------------------------------------------------
     # Main retrieval loop
     # ------------------------------------------------------------------
@@ -2502,86 +2250,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
         if iteration < max_iterations and not (corpus_weak and iteration == 1):
             expander_fired = False
-
-            # --- SCOUT ---
-            if iteration == 1 and complexity != "low":
-                scout_config = SCOUT_REGISTRY.get(report_type)
-                if scout_config and scout_config.get("fires_on_iteration") == iteration:
-                    scout_chunks = all_passages[:scout_config["max_input_chunks"]]
-                    if deps.should_skip_quant_scout(report_type, scout_chunks):
-                        status.step("Evidence quality sufficient for direct comparison - skipping scout.")
-                        scout_skip_reason = "numeric_evidence_sufficient"
-                        scout_config = None
-                if scout_config and scout_config.get("fires_on_iteration") == iteration:
-                    scout_fired = True
-                    scout_key_used = scout_config.get("prompt_key")
-                    status.step(f"Running {scout_config['prompt_key']} to identify evidence requirements...")
-                    _scout_t0 = time.monotonic()
-                    scout_context = deps.run_scout(
-                        scout_key=scout_config["prompt_key"],
-                        core_topic=core_topic,
-                        chunks=scout_chunks,
-                        ask_model=ask_model,
-                        clean_json_response=deps.clean_json_response,
-                        fast_provider=fast_provider,
-                        fast_model=fast_model,
-                        base_url=local_url,
-                        api_key=or_api_key,
-                        status_container=status,
-                    )
-                    scout_llm_seconds += max(0.0, time.monotonic() - _scout_t0)
-                    if scout_context and scout_config.get("replaces_expander"):
-                        directed = scout_context.get("directed_queries", [])
-                        if directed:
-                            status.step(f"Scout identified {len(directed)} targeted queries: {directed}")
-                            scout_query_cap = 4
-                            finalized_scout_queries = query_authority.finalize_scout_continuation(
-                                [
-                                    str(q)[:300]
-                                    for q in directed[:scout_query_cap]
-                                    if str(q).strip()
-                                ],
-                                max_len=scout_query_cap,
-                            )
-                            scout_queries = list(finalized_scout_queries)
-                            scout_stop_decision = _decide_retrieval_loop_stop_continue(
-                                stage="scout_directed_continuation",
-                                evaluator_sufficient=None,
-                                prior_queries=queries_by_iteration.get(
-                                    iteration, []
-                                ),
-                                next_queries=finalized_scout_queries,
-                                query_source="scout",
-                            )
-                            if (
-                                scout_stop_decision.decision
-                                is not RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
-                            ):
-                                is_sufficient = True
-                                continue
-                            (
-                                scout_continuation_authorized,
-                                authorized_scout_queries,
-                            ) = _authorize_scout_continuation_before_scheduling(
-                                scout_queries_for_gate=finalized_scout_queries,
-                            )
-                            expander_fired = True
-                            if not scout_continuation_authorized:
-                                is_sufficient = True
-                                continue
-                            scout_continuation_schedule = schedule_scout_continuation_from_pipeline_scope(
-                                locals(),
-                                current_queries=authorized_scout_queries,
-                                iteration=iteration + 1,
-                                continuation_authorized=scout_continuation_authorized,
-                            )
-                            current_queries, force_component_providers = (
-                                continuation_action_values(scout_continuation_schedule)
-                            )
-                            _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
-                            iterations_run += 1
-                            iteration += 1
-                            continue
 
             # --- QUERY EXPANDER ---
             if iteration == 1 and complexity in ("medium", "high") and intent != "news":
@@ -3219,7 +2887,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             evaluator_continuation_spine_gate_trace
         ),
         expander_continuation_spine_gate_trace=expander_continuation_spine_gate_trace,
-        scout_continuation_spine_gate_trace=scout_continuation_spine_gate_trace,
         logger=run_log,
         decide_checkpoint=decide_evidence_integration_checkpoint,
         build_checkpoint_trace=build_evidence_integration_checkpoint_trace,
@@ -3289,24 +2956,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     evidence_block = final_evidence_handoff.evidence_block
     cached_prefix = final_evidence_handoff.cached_prefix
     author_notes = ""
-
-    # --- LINKUP (high tier) ---
-    # Linkup remains an independent high-complexity retrieval supplement. The
-    # legacy Economist ordinary-execution branch has been retired.
-    need_linkup = complexity == "high" and bool(os.getenv("LINKUP_API_KEY")) and not corpus_weak
-    if need_linkup:
-        status.step("Fetching Linkup deep precision block...")
-        linkup_block = fetch_linkup_precision_block(
-            core_topic,
-            intent,
-            complexity,
-            include_domains,
-            exclude_domains,
-            provider_diagnostics=provider_diagnostics,
-        )
-        if linkup_block:
-            status.step("Integrated Linkup precision context.")
-        cached_prefix += linkup_block
 
     if (
         not economist_safety_telemetry.get("economist_schema_version")
