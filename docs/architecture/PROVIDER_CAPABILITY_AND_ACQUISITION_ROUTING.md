@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, scheduling, mechanical dispatch, and selected-candidate READ custody
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 280277fcf50243c9e915a2b9344fa7779ff78d4d
+Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -32,7 +32,7 @@ SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners retain source custody.
 
 Runtime/test provenance:
-`280277fcf50243c9e915a2b9344fa7779ff78d4d`.
+`6903b9801ee4a03c56f51c77d0455d865952ecd2`.
 
 ## Capability Status Matrix
 
@@ -124,6 +124,12 @@ composition snapshot says Linkup is unavailable before dispatch. Injecting a
 Linkup callable or transport cannot make Linkup available. Once Linkup is
 selected, transport failure, malformed output, unreadable status, empty
 material, or URL mismatch returns a typed failure and makes zero Tavily calls.
+For Tavily READ, a generic provider-reported result URL must normalize to the
+one selected URL. A mismatch returns
+`read_provider_reported_url_mismatch` before FetchReadContentPacket creation;
+a matching provider-reported URL remains explicit through packet and
+EvidenceLedger custody. Redirect, final, and canonical fields remain separate
+observed facts and may differ when explicitly supplied.
 
 After route/request validation and transport resolution, selected-candidate
 READ marks the current `RunCapPolicy` fetch/read budget exactly once immediately
@@ -181,8 +187,11 @@ Current PRODUCT consumers:
   ProviderPlan, scheduling, and dispatch;
 - selected-candidate READ/source custody through the ordinary pipeline; and
 - the generic single-relation acquisition root, which now supplies a completed
-  `core.routing` decision from explicit availability before provider-specific
-  callables are invoked; a provider preference cannot authorize itself.
+  `core.routing` decision from an explicit provider-neutral DISCOVER qualifier
+  and availability before provider-specific callables are invoked. Ordinary
+  extraction uses `general` or `domain_targeted` without an acquisition-plan
+  provider override; a provider preference cannot create its own qualifier or
+  authorize itself.
 
 The lower-level `process_search_queries(search_providers=None)` escape is
 closed: absence of a completed provider list performs zero transport. It no

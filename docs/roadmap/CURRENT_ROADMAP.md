@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 280277fcf50243c9e915a2b9344fa7779ff78d4d
+Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -199,7 +199,7 @@ change.
 
 ## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01
 
-Runtime/test commit `280277fcf50243c9e915a2b9344fa7779ff78d4d`
+Runtime/test commit `6903b9801ee4a03c56f51c77d0455d865952ecd2`
 installed the shared bounded acquisition contracts; Linkup Fetch; Tavily
 Extract, Map, and bounded Crawl; and mechanically authorized general Linkup
 `deep/searchResults`. `core.routing` remains the sole policy owner.
@@ -218,6 +218,15 @@ transports, and provider preferences cannot create availability; selected READ
 marks the existing fetch/read cap exactly once before transport; the rendering
 posture is explicit; and missing redirect, canonical, page-status, or crawl-parent facts
 remain unknown instead of being synthesized.
+
+The final acquisition-identity continuation is complete: ordinary generic
+PRODUCT extraction supplies a provider-neutral `general` or `domain_targeted`
+qualifier and no acquisition-plan provider override; a requested provider name
+cannot create an academic, disambiguation, or independent-index capability.
+Tavily READ binds a provider-reported result URL to the selected candidate,
+retains a match through existing custody, and returns typed
+`read_provider_reported_url_mismatch` with zero packet or EvidenceLedger custody
+on mismatch.
 
 Focused extraction, site mapping, site crawling, and general Linkup Deep are
 installed typed-runtime capabilities but have no ordinary PRODUCT requester.

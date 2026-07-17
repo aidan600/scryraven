@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 280277fcf50243c9e915a2b9344fa7779ff78d4d
+Verified-against-runtime: 6903b9801ee4a03c56f51c77d0455d865952ecd2
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -231,7 +231,7 @@ acquisition, or general quantitative reasoning.
 
 ## Installed Acquisition Routing And Adapter Runtime
 
-Runtime/test commit `280277fcf50243c9e915a2b9344fa7779ff78d4d`
+Runtime/test commit `6903b9801ee4a03c56f51c77d0455d865952ecd2`
 preserves `core.routing` as the sole provider-capability policy owner and adds
 shared immutable acquisition requests, jobs, artifacts, lineage, and execution
 results. Mechanical adapters now implement Linkup Fetch; Tavily Extract, Map,
@@ -261,10 +261,13 @@ immediately before transport, and feeds the bounded result to the existing
 FetchReadContentPacket and EvidenceLedger custody reducer. The Linkup rendering
 posture is explicit. Requested/attempted URL identity is retained, while
 provider-reported URL, redirect, canonical, HTTP-status, and crawl-parent facts
-remain separately labeled and absent when unreported. The generic
-single-relation acquisition root supplies a completed capability decision from
-explicit availability, while `process_search_queries(None)` performs zero
-transport.
+remain separately labeled and absent when unreported. Tavily READ rejects a
+provider-reported result URL that does not bind to the selected candidate before
+FetchReadContentPacket or EvidenceLedger custody. The generic single-relation
+acquisition root supplies a provider-neutral `general`, `domain_targeted`, or
+other explicitly licensed qualifier and completed capability decision from
+explicit availability; the acquisition plan's provider name is not an ordinary
+override. `process_search_queries(None)` performs zero transport.
 
 Provider failure never activates a fallback. Focused extraction, mapping,
 crawling, and general Deep remain ordinary blocked because no deterministic

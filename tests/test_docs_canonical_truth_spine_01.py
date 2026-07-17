@@ -76,7 +76,7 @@ SCOUT_RETIREMENT_RUNTIME_SHA = (
     "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
 )
 PROVIDER_ROUTING_RUNTIME_SHA = (
-    "280277fcf50243c9e915a2b9344fa7779ff78d4d"  # pragma: allowlist secret
+    "6903b9801ee4a03c56f51c77d0455d865952ecd2"  # pragma: allowlist secret
 )
 CURRENT_STATE_RUNTIME_SHA = PROVIDER_ROUTING_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
@@ -505,6 +505,8 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     ):
         assert phrase in roadmap
     assert "provider_reported_url" in routing
+    assert "read_provider_reported_url_mismatch" in routing
+    assert "provider-neutral DISCOVER qualifier" in routing
     assert "RunCapExceeded" in routing
 
     assert roadmap.count("## Active Next:") == 1
