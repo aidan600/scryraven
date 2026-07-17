@@ -64,6 +64,7 @@ class AcquisitionRequest:
     query_reference: str | None = None
     selected_urls: tuple[str, ...] = ()
     root_url: str | None = None
+    render_javascript: bool = False
     queries: tuple[str, ...] = ()
     focus_text: str | None = None
     include_domains: tuple[str, ...] = ()
@@ -103,6 +104,7 @@ class AcquisitionRequest:
                 "route_decision": self.route_decision.to_trace(),
                 "selected_urls": list(self.selected_urls),
                 "root_url": self.root_url,
+                "render_javascript": self.render_javascript,
                 "query_count": len(self.queries),
                 "focus_character_count": len(self.focus_text or ""),
                 "include_domains": list(self.include_domains),
@@ -128,14 +130,15 @@ class AcquisitionRequest:
 
 @dataclass(frozen=True, slots=True)
 class AcquisitionPageArtifact:
-    requested_url: str
-    attempted_url: str
-    resolved_url: str
-    final_url: str
-    canonical_url: str
-    parent_url: str
     status: str
     observed_at: str
+    requested_url: str | None = None
+    attempted_url: str | None = None
+    provider_reported_url: str | None = None
+    resolved_url: str | None = None
+    final_url: str | None = None
+    canonical_url: str | None = None
+    parent_url: str | None = None
     content_type: str | None = None
     http_status: int | None = None
     title: str | None = None
@@ -169,6 +172,7 @@ class AcquisitionArtifact:
     acquisition_lineage_id: str | None = None
     requested_url: str | None = None
     attempted_url: str | None = None
+    provider_reported_url: str | None = None
     resolved_url: str | None = None
     final_url: str | None = None
     canonical_url: str | None = None
@@ -267,6 +271,11 @@ def validate_acquisition_request(request: AcquisitionRequest) -> None:
         raise AcquisitionContractError(
             "acquisition_job_id_missing",
             "acquisition requests require an acquisition_job_id",
+        )
+    if not isinstance(request.render_javascript, bool):
+        raise AcquisitionContractError(
+            "render_javascript_invalid",
+            "render_javascript must be an explicit boolean posture",
         )
     decision = request.route_decision
     if decision.blocked or decision.selected_provider is None:

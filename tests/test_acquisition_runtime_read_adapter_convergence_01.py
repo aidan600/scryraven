@@ -14,6 +14,7 @@ from core.acquisition_contracts import (
     AcquisitionExecutionStatus,
     AcquisitionRequest,
 )
+from core.cap_enforcement import RunCapExceeded
 from core.generic_product_provider_acquisition import (
     ProductProviderAcquisitionRequest,
     ProductProviderAcquisitionResult,
@@ -129,7 +130,47 @@ def test_linkup_route_time_unavailable_selects_tavily_extract_once() -> None:
     assert result.succeeded is True
     assert result.provider_calls_attempted == 1
     assert len(calls) == 1
-    assert calls[0]["urls"] == READ_URL
+    artifact = result.artifacts[0]
+    assert artifact.requested_url == READ_URL
+    assert artifact.attempted_url == READ_URL
+    assert artifact.provider_reported_url == READ_URL
+    assert artifact.resolved_url is None
+    assert artifact.final_url is None
+    assert artifact.canonical_url is None
+    assert artifact.http_status is None
+
+
+def test_minimal_linkup_read_preserves_unknown_lineage_and_explicit_rendering() -> None:
+    payloads: list[dict[str, Any]] = []
+    request = _read_request()
+
+    def linkup_fetch(payload: dict[str, Any]) -> dict[str, Any]:
+        payloads.append(payload)
+        return {"markdown": "Readable minimal Linkup material."}
+
+    result = dispatch_acquisition(
+        request,
+        transports=AcquisitionTransports(linkup_fetch=linkup_fetch),
+    )
+
+    assert result.succeeded is True
+    assert payloads == [
+        {
+            "url": READ_URL,
+            "extractImages": False,
+            "includeRawHtml": False,
+            "renderJs": False,
+        }
+    ]
+    assert request.to_trace()["render_javascript"] is False
+    artifact = result.artifacts[0]
+    assert artifact.requested_url == READ_URL
+    assert artifact.attempted_url == READ_URL
+    assert artifact.provider_reported_url is None
+    assert artifact.resolved_url is None
+    assert artifact.final_url is None
+    assert artifact.canonical_url is None
+    assert artifact.http_status is None
 
 
 def test_selected_linkup_failure_is_typed_and_never_calls_tavily() -> None:
@@ -367,13 +408,52 @@ def test_crawl_enforces_global_ceilings_and_page_lineage() -> None:
     page = artifact.pages[0]
     assert calls[0]["max_depth"] == 2
     assert calls[0]["limit"] == 10
-    assert page.requested_url == page_url
+    assert page.requested_url is None
     assert page.attempted_url == page_url
+    assert page.provider_reported_url == page_url
     assert page.resolved_url == page_url
     assert page.final_url == page_url
     assert page.canonical_url == page_url
-    assert page.parent_url == ROOT_URL
-    assert len(calls) == 1
+    assert page.parent_url is None
+    assert page.http_status is None
+
+
+def test_minimal_crawl_retains_provider_url_without_invented_lineage() -> None:
+    page_url = f"{ROOT_URL}/minimal"
+    request = _tavily_typed_request(
+        AcquisitionCapability.CRAWL_SITE,
+        root_url=ROOT_URL,
+        include_domains=("docs.example.test",),
+        max_pages=1,
+        max_depth=1,
+        max_retained_characters=20_000,
+        max_aggregate_retained_characters=20_000,
+    )
+
+    result = dispatch_acquisition(
+        request,
+        transports=AcquisitionTransports(
+            tavily_crawl=lambda _payload: {
+                "results": [
+                    {
+                        "url": page_url,
+                        "raw_content": "Minimal bounded crawl material.",
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert result.succeeded is True
+    page = result.artifacts[0].pages[0]
+    assert page.provider_reported_url == page_url
+    assert page.requested_url is None
+    assert page.attempted_url is None
+    assert page.resolved_url is None
+    assert page.final_url is None
+    assert page.canonical_url is None
+    assert page.parent_url is None
+    assert page.http_status is None
 
 
 def test_crawl_excess_is_explicitly_truncated_and_out_of_scope_is_rejected() -> None:
@@ -651,10 +731,76 @@ def test_generic_single_relation_acquisition_consumes_core_routing(
             output_path=tmp_path / "product-bridge.json",
             query="current official threshold",
             provider="linkup",
+            available_providers={"linkup": True},
         )
     )
     assert completed_requests[0].route_decision is not None
     assert completed_requests[0].route_decision.selected_provider == "linkup"
+
+
+def test_generic_provider_preference_cannot_create_availability(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def forbidden_linkup(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        nonlocal calls
+        calls += 1
+        return ([], [])
+
+    result = run_generic_product_provider_acquisition(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=tmp_path / "undeclared-linkup.json",
+            query="current official threshold",
+            provider="linkup",
+            available_providers={},
+        ),
+        linkup_product_provider_callable=forbidden_linkup,
+    )
+
+    assert result.return_code == 2
+    assert result.provider_calls_attempted == 0
+    assert result.route_decision is not None
+    assert result.route_decision.blocked is True
+    assert calls == 0
+
+
+def test_generic_provider_preference_with_explicit_availability_calls_once(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def linkup(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        nonlocal calls
+        calls += 1
+        return (
+            [
+                {
+                    "title": "Explicitly available source",
+                    "url": "https://source.example.test/item",
+                    "raw_content": "bounded source material",
+                }
+            ],
+            [],
+        )
+
+    result = run_generic_product_provider_acquisition(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=tmp_path / "available-linkup.json",
+            query="current official threshold",
+            provider="linkup",
+            available_providers={"linkup": True},
+        ),
+        linkup_product_provider_callable=linkup,
+    )
+
+    assert result.return_code == 0
+    assert result.provider_calls_attempted == 1
+    assert result.route_decision is not None
+    assert result.route_decision.selected_provider == "linkup"
+    assert calls == 1
 
 
 def test_migrated_product_operations_select_one_provider_or_zero_transport(

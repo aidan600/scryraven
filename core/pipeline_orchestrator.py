@@ -179,7 +179,7 @@ from core.post_author_output_projection import (
 )
 from core.protocols import StatusWriter
 from core.provider_diagnostics import supported_diagnostic_kwargs
-from core.provider_plan import ProviderPlan
+from core.provider_plan import ProviderAvailabilitySnapshot, ProviderPlan
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     execute_query_plan_admission_action,
@@ -569,6 +569,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     current_date = config.current_date
     cap_policy = config.cap_policy
     source_custody_policy = config.source_custody_policy
+    provider_availability_snapshot = ProviderAvailabilitySnapshot.from_mapping(
+        deps.provider_availability
+        if deps.provider_availability is not None
+        else {
+            "tavily": bool(os.getenv("TAVILY_API_KEY")),
+            "linkup": bool(os.getenv("LINKUP_API_KEY")),
+            "exa": bool(os.getenv("EXA_API_KEY")),
+            "serper": bool(os.getenv("SERPER_API_KEY")),
+            "brave": bool(os.getenv("BRAVE_API_KEY")),
+        }
+    )
 
     a5_provider_override: list[str] | None = None
     if config.provider_override:
@@ -1092,28 +1103,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 else None
             ),
             fetch_read=deps.ordinary_live_source_fetch_read,
-            available_providers={
-                "linkup": bool(
-                    deps.ordinary_live_source_fetch_read
-                    or getattr(
-                        deps.ordinary_live_source_acquisition_transports,
-                        "linkup_fetch",
-                        None,
-                    )
-                    or os.getenv("LINKUP_API_KEY")
-                ),
-                "tavily": bool(
-                    getattr(
-                        deps.ordinary_live_source_acquisition_transports,
-                        "tavily_extract",
-                        None,
-                    )
-                    or os.getenv("TAVILY_API_KEY")
-                ),
-            },
+            available_providers=(
+                provider_availability_snapshot.to_capability_available_keys()
+            ),
             acquisition_transports=(
                 deps.ordinary_live_source_acquisition_transports
             ),
+            cap_policy=cap_policy,
             required_or_preferred_anchors=(
                 config.ordinary_live_source_custody_anchor_groups
             ),
@@ -1223,14 +1219,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     query_embedding = execute_embedding_action(embedding_action, embed_texts)
     analyst_effort = {"low": "low", "medium": "medium", "high": "high"}.get(complexity, "low")
     entity_hint_for_retrieval = (primary_entity or core_topic or "").strip() or None
-    provider_plan = ProviderPlan.from_available_keys(
-        {
-            "tavily": bool(os.getenv("TAVILY_API_KEY")),
-            "linkup": bool(os.getenv("LINKUP_API_KEY")),
-            "exa": bool(os.getenv("EXA_API_KEY")),
-            "serper": bool(os.getenv("SERPER_API_KEY")),
-            "brave": bool(os.getenv("BRAVE_API_KEY")),
-        }
+    provider_plan = ProviderPlan(
+        availability=provider_availability_snapshot,
+        selector_available_keys=(
+            provider_availability_snapshot.to_capability_available_keys()
+        ),
     )
     available_keys, (select_provider_list, merge_provider_overrides) = provider_plan.available_keys(), (select_providers, merge_search_provider_overrides)
     current_search_depth_for_recovery = search_depth
@@ -3793,6 +3786,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 candidate_results=config.ordinary_live_candidate_handoff_results,
                 provider_authorized=config.ordinary_live_candidate_handoff_provider,
                 fetch_read=deps.ordinary_live_source_fetch_read,
+                available_providers=(
+                    provider_availability_snapshot.to_capability_available_keys()
+                ),
+                acquisition_transports=(
+                    deps.ordinary_live_source_acquisition_transports
+                ),
+                cap_policy=cap_policy,
                 required_or_preferred_anchors=(
                     config.ordinary_live_source_custody_anchor_groups
                 ),

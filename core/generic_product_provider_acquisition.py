@@ -561,8 +561,6 @@ def complete_generic_product_provider_route(
     else:
         qualifier = DiscoverQualifier.GENERAL
     availability = dict(request.available_providers)
-    if not availability and requested_provider:
-        availability[requested_provider] = True
     return route_provider_capability(
         ProviderCapabilityRequest(
             capability=AcquisitionCapability.DISCOVER,

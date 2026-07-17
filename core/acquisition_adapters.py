@@ -85,6 +85,7 @@ def dispatch_acquisition(
     request: AcquisitionRequest,
     *,
     transports: AcquisitionTransports | None = None,
+    before_transport: Callable[[], None] | None = None,
 ) -> AcquisitionExecutionResult:
     """Dispatch exactly one completed route decision or return a typed block."""
 
@@ -100,6 +101,8 @@ def dispatch_acquisition(
             code="selected_adapter_transport_unavailable",
             detail="the selected provider adapter has no available transport",
         )
+    if before_transport is not None:
+        before_transport()
     try:
         response = transport(_request_payload(request))
     except Exception as exc:  # noqa: BLE001 - provider failure is typed and sanitized.
@@ -169,7 +172,7 @@ def _request_payload(request: AcquisitionRequest) -> dict[str, Any]:
                 "url": request.selected_urls[0],
                 "extractImages": False,
                 "includeRawHtml": False,
-                "renderJs": False,
+                "renderJs": request.render_javascript,
             }
         return _tavily_extract_payload(request, focused=False)
     if capability is AcquisitionCapability.FOCUSED_EXTRACT:
@@ -319,22 +322,17 @@ def _normalize_read(
             "read_material_empty_or_unreadable",
             "selected URL read returned no readable material",
         )
-    http_status = _http_status(
-        source.get("http_status") or source.get("status_code")
-    )
-    if not 200 <= http_status < 400:
+    http_status = _reported_http_status(source)
+    if http_status is not None and not 200 <= http_status < 400:
         raise AcquisitionContractError(
             "read_http_status_unreadable",
             "selected URL read returned an unreadable HTTP status",
         )
     retained, posture = _bounded_text(text, request.max_retained_characters)
-    final_url = (
-        _url(source.get("final_url"))
-        or _url(source.get("url"))
-        or selected_url
-    )
-    resolved_url = _url(source.get("resolved_url")) or final_url
-    canonical_url = _url(source.get("canonical_url")) or final_url
+    provider_reported_url = _url(source.get("url"))
+    final_url = _url(source.get("final_url"))
+    resolved_url = _url(source.get("resolved_url"))
+    canonical_url = _url(source.get("canonical_url"))
     return _artifact(
         request,
         kind=AcquisitionArtifactKind.SELECTED_URL_READ,
@@ -342,6 +340,7 @@ def _normalize_read(
         observed_at=_observed_at(source),
         requested_url=selected_url,
         attempted_url=attempted,
+        provider_reported_url=provider_reported_url,
         resolved_url=resolved_url,
         final_url=final_url,
         canonical_url=canonical_url,
@@ -368,8 +367,10 @@ def _normalize_focused_extract(
     selected = {_normalized_url(url): url for url in request.selected_urls}
     artifacts: list[AcquisitionArtifact] = []
     for source in results:
-        attempted = _url(source.get("attempted_url")) or _url(source.get("url"))
-        if not attempted or _normalized_url(attempted) not in selected:
+        provider_reported_url = _url(source.get("url"))
+        reported_attempted = _url(source.get("attempted_url"))
+        binding_url = reported_attempted or provider_reported_url
+        if not binding_url or _normalized_url(binding_url) not in selected:
             raise AcquisitionContractError(
                 "focused_extract_url_mismatch",
                 "FOCUSED_EXTRACT returned material for an unselected URL",
@@ -381,8 +382,7 @@ def _normalize_focused_extract(
                 "FOCUSED_EXTRACT returned unreadable material",
             )
         retained, posture = _bounded_text(text, request.max_retained_characters)
-        selected_url = selected[_normalized_url(attempted)]
-        final_url = _url(source.get("final_url")) or _url(source.get("url")) or selected_url
+        selected_url = selected[_normalized_url(binding_url)]
         artifacts.append(
             _artifact(
                 request,
@@ -391,9 +391,10 @@ def _normalize_focused_extract(
                 observed_at=_observed_at(source),
                 requested_url=selected_url,
                 attempted_url=selected_url,
-                resolved_url=_url(source.get("resolved_url")) or final_url,
-                final_url=final_url,
-                canonical_url=_url(source.get("canonical_url")) or final_url,
+                provider_reported_url=provider_reported_url,
+                resolved_url=_url(source.get("resolved_url")),
+                final_url=_url(source.get("final_url")),
+                canonical_url=_url(source.get("canonical_url")),
                 content_type=_scalar_text(source.get("content_type")) or "text/markdown",
                 title=_scalar_text(source.get("title")),
                 retained_text=retained,
@@ -444,9 +445,6 @@ def _normalize_map(
         root_url=request.root_url,
         requested_url=request.root_url,
         attempted_url=request.root_url,
-        resolved_url=request.root_url,
-        final_url=request.root_url,
-        canonical_url=request.root_url,
         urls=retained,
         retained_character_count=sum(len(url) for url in retained),
         retained_digest=retained_text_digest("\n".join(retained)),
@@ -480,6 +478,7 @@ def _normalize_crawl(
             "resolved_url",
             "final_url",
             "canonical_url",
+            "parent_url",
         ):
             lineage_url = _url(source.get(lineage_key))
             if lineage_url and not url_is_within_request_scope(lineage_url, request):
@@ -499,10 +498,8 @@ def _normalize_crawl(
                 "crawl_page_unreadable",
                 "CRAWL_SITE returned an unreadable page",
             )
-        http_status = _http_status(
-            source.get("http_status") or source.get("status_code")
-        )
-        if not 200 <= http_status < 400:
+        http_status = _reported_http_status(source)
+        if http_status is not None and not 200 <= http_status < 400:
             raise AcquisitionContractError(
                 "crawl_page_unreadable",
                 "CRAWL_SITE returned an unreadable page status",
@@ -517,14 +514,15 @@ def _normalize_crawl(
         aggregate_remaining -= len(retained)
         pages.append(
             AcquisitionPageArtifact(
-                requested_url=url,
-                attempted_url=_url(source.get("attempted_url")) or url,
-                resolved_url=_url(source.get("resolved_url")) or url,
-                final_url=_url(source.get("final_url")) or url,
-                canonical_url=_url(source.get("canonical_url")) or url,
-                parent_url=request.root_url or url,
                 status="readable",
                 observed_at=_observed_at(source),
+                requested_url=None,
+                attempted_url=_url(source.get("attempted_url")),
+                provider_reported_url=url,
+                resolved_url=_url(source.get("resolved_url")),
+                final_url=_url(source.get("final_url")),
+                canonical_url=_url(source.get("canonical_url")),
+                parent_url=_url(source.get("parent_url")),
                 content_type=_scalar_text(source.get("content_type")) or "text/markdown",
                 http_status=http_status,
                 title=_scalar_text(source.get("title")),
@@ -552,9 +550,6 @@ def _normalize_crawl(
         root_url=request.root_url,
         requested_url=request.root_url,
         attempted_url=request.root_url,
-        resolved_url=request.root_url,
-        final_url=request.root_url,
-        canonical_url=request.root_url,
         pages=tuple(pages),
         retained_character_count=sum(page.retained_character_count for page in pages),
         retained_digest=retained_text_digest(
@@ -596,8 +591,9 @@ def _normalize_deep_discovery(
                 status="candidate_returned",
                 observed_at=_observed_at(source),
                 requested_url=None,
-                final_url=url,
-                canonical_url=url,
+                provider_reported_url=url,
+                final_url=_url(source.get("final_url")),
+                canonical_url=_url(source.get("canonical_url")),
                 title=_scalar_text(source.get("name") or source.get("title")),
                 retained_text=retained or None,
                 retained_character_count=len(retained),
@@ -723,12 +719,21 @@ def _scalar_text(value: Any) -> str | None:
     return text or None
 
 
-def _http_status(value: Any) -> int:
+def _http_status(value: Any) -> int | None:
     try:
         parsed = int(value)
     except (TypeError, ValueError):
-        return 200
-    return parsed if 100 <= parsed <= 599 else 200
+        return None
+    return parsed if 100 <= parsed <= 599 else None
+
+
+def _reported_http_status(source: Mapping[str, Any]) -> int | None:
+    value = (
+        source.get("http_status")
+        if "http_status" in source
+        else source.get("status_code")
+    )
+    return _http_status(value)
 
 
 def _url(value: Any) -> str | None:

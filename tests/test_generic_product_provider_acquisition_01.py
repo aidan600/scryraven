@@ -76,6 +76,7 @@ def test_tavily_product_provider_results_normalize_raw_content(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
             max_results=5,
         )
     )
@@ -143,6 +144,7 @@ def test_tavily_provider_extracted_text_allows_benign_public_sk_substrings(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
     payload = json.loads(output_path.read_text(encoding="utf-8"))
@@ -190,6 +192,7 @@ def test_tavily_provider_extracted_text_redacts_strict_sk_token(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
     serialized = output_path.read_text(encoding="utf-8")
@@ -242,6 +245,7 @@ def test_provider_extracted_metadata_is_computed_after_retained_text_sanitation(
             output_path=output_path,
             query="official current filing fee",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
     serialized = output_path.read_text(encoding="utf-8")
@@ -296,6 +300,7 @@ def test_linkup_search_results_normalize_as_url_bound_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=LINKUP_EXTRACTION_PROVIDER,
+            available_providers={"linkup": True},
             acquisition_provider_role=SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
             max_results=5,
             include_domains=("uscis.gov",),
@@ -356,6 +361,7 @@ def test_linkup_sourced_answer_is_not_admitted_as_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=LINKUP_EXTRACTION_PROVIDER,
+            available_providers={"linkup": True},
         )
     )
     payload = json.loads(output_path.read_text(encoding="utf-8"))
@@ -399,6 +405,7 @@ def test_exa_text_results_normalize_as_url_bound_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=EXA_EXTRACTION_PROVIDER,
+            available_providers={"exa": True},
             include_domains=("uscis.gov",),
         )
     )
@@ -456,6 +463,7 @@ def test_tavily_product_provider_preserves_source_digest_above_fetch_window_cap(
             output_path=output_path,
             query="official current fee schedule",
             provider="tavily",
+            available_providers={"tavily": True},
             max_results=5,
         )
     )
@@ -507,6 +515,7 @@ def test_neutral_domain_constraints_map_inside_current_tavily_adapter(
             output_path=output_path,
             query="official current fee schedule",
             provider="tavily",
+            available_providers={"tavily": True},
             acquisition_provider_role="extraction_provider",
             domain_constraints=("www.fees.agency.gov",),
             include_domains=("fees.agency.gov",),
@@ -559,6 +568,7 @@ def test_serper_scout_results_normalize_without_extracted_text(
             output_path=output_path,
             query="What is the current filing fee for the form?",
             provider="serper",
+            available_providers={"serper": True},
             max_results=5,
         )
     )
@@ -609,6 +619,7 @@ def test_brave_scout_results_normalize_without_extracted_text(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=BRAVE_SCOUT_PROVIDER,
+            available_providers={"brave": True},
             acquisition_provider_role="source_of_record_recovery_scout_provider",
         )
     )
@@ -645,6 +656,7 @@ def test_missing_tavily_credential_fails_closed_without_secret_leak(
             output_path=output_path,
             query="What is the current USCIS Form N-400 paper filing fee?",
             provider="tavily",
+            available_providers={"tavily": True},
         )
     )
 
@@ -678,6 +690,7 @@ def test_missing_serper_credential_fails_closed_without_secret_leak(
             output_path=output_path,
             query="What is the current filing fee for the form?",
             provider="serper",
+            available_providers={"serper": True},
         )
     )
 

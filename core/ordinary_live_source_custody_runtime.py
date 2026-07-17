@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
 from core.acquisition_contracts import AcquisitionArtifact, AcquisitionRequest
+from core.cap_enforcement import RunCapExceeded, RunCapPolicy
 from core.evidence_ledger_lifecycle import (
     reduce_fetch_read_content_packet_into_evidence_ledger,
 )
@@ -279,6 +280,7 @@ def execute_ordinary_live_source_custody(
     fetch_read: Callable[..., Mapping[str, Any]] | None,
     available_providers: Mapping[str, object] | None = None,
     acquisition_transports: AcquisitionTransports | None = None,
+    cap_policy: RunCapPolicy | None = None,
     required_or_preferred_anchors: Sequence[Any] = (),
     component_text: str | None = None,
     claim_under_test: str | None = None,
@@ -315,8 +317,6 @@ def execute_ordinary_live_source_custody(
         )
         availability = _read_availability(
             available_providers=available_providers,
-            fetch_read=fetch_read,
-            transports=transports,
         )
         route_decision = route_provider_capability(
             ProviderCapabilityRequest(capability=AcquisitionCapability.READ),
@@ -331,8 +331,17 @@ def execute_ordinary_live_source_custody(
             selected_urls=(str(selected_candidate["url"]),),
             max_retained_characters=20_000,
             candidate_reference=str(selected_candidate["candidate_id"]),
+            render_javascript=False,
         )
-        execution = dispatch_acquisition(request, transports=transports)
+        execution = dispatch_acquisition(
+            request,
+            transports=transports,
+            before_transport=(
+                cap_policy.mark_fetch_read_operation
+                if cap_policy is not None
+                else None
+            ),
+        )
         fetch_read_attempted = execution.provider_calls_attempted
         fetch_read_completed = execution.provider_calls_completed
         if not execution.succeeded or len(execution.artifacts) != 1:
@@ -456,6 +465,8 @@ def execute_ordinary_live_source_custody(
                 run_kernel=run_kernel,
             )
         )
+    except RunCapExceeded:
+        raise
     except Exception as exc:
         return OrdinaryLiveSourceCustodyResult(
             projection=_fail_projection(
@@ -508,17 +519,10 @@ def _source_custody_transports(
 def _read_availability(
     *,
     available_providers: Mapping[str, object] | None,
-    fetch_read: Callable[..., Mapping[str, Any]] | None,
-    transports: AcquisitionTransports | None,
 ) -> dict[str, bool]:
-    if available_providers is not None:
-        return {
-            "linkup": bool(available_providers.get("linkup")),
-            "tavily": bool(available_providers.get("tavily")),
-        }
     return {
-        "linkup": bool(fetch_read or (transports and transports.linkup_fetch)),
-        "tavily": bool(transports and transports.tavily_extract),
+        "linkup": bool((available_providers or {}).get("linkup")),
+        "tavily": bool((available_providers or {}).get("tavily")),
     }
 
 
@@ -551,7 +555,7 @@ def _read_artifact_for_existing_custody(
                 if str(artifact.final_url or "").startswith(("http://", "https://"))
                 else None
             ),
-            "http_status": artifact.http_status or 200,
+            "http_status": artifact.http_status,
             "content_type": artifact.content_type,
             "retrieved_or_observed_at": artifact.observed_at,
             "content_title": artifact.title,
@@ -617,23 +621,20 @@ def _sanitized_material_from_fetch_read(
         claim_under_test=claim_under_test,
     )
     candidate_url = str(selected_candidate["url"])
-    candidate_domain = str(selected_candidate.get("domain") or "")
     material = _without_empty(
         {
             "candidate_id": selected_candidate.get("candidate_id"),
             "candidate_digest": selected_candidate.get("candidate_digest"),
             "fetch_read_status": status,
             "attempted_url": _clean_url(raw.get("attempted_url")) or candidate_url,
-            "resolved_url": _clean_url(raw.get("resolved_url")) or candidate_url,
-            "final_url": _clean_url(raw.get("final_url")) or candidate_url,
-            "canonical_url": _clean_url(raw.get("canonical_url")) or candidate_url,
-            "resolved_domain": (
-                _clean_text(raw.get("resolved_domain"), limit=260)
-                or candidate_domain
+            "resolved_url": _clean_url(raw.get("resolved_url")),
+            "final_url": _clean_url(raw.get("final_url")),
+            "canonical_url": _clean_url(raw.get("canonical_url")),
+            "resolved_domain": _clean_text(
+                raw.get("resolved_domain"),
+                limit=260,
             ),
-            "http_status": _bounded_int(
-                raw.get("http_status") or raw.get("status_code")
-            ),
+            "http_status": _optional_http_status(raw),
             "content_type": _clean_text(raw.get("content_type"), limit=160),
             "retrieved_or_observed_at": _clean_text(
                 raw.get("retrieved_or_observed_at"),
@@ -953,6 +954,19 @@ def _bounded_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return max(0, parsed)
+
+
+def _optional_http_status(value: Mapping[str, Any]) -> int | None:
+    raw = (
+        value.get("http_status")
+        if "http_status" in value
+        else value.get("status_code")
+    )
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 100 <= parsed <= 599 else None
 
 
 def _collect_keys(value: Any) -> set[str]:

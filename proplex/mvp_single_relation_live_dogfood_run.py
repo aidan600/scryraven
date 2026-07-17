@@ -13,7 +13,7 @@ import json
 import os
 import re
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from html import unescape
@@ -695,6 +695,13 @@ _PUBLIC_CREDENTIAL_NAME_REFERENCES = frozenset(
         "TAVILY_API_KEY",
     }
 )
+_PRODUCT_PROVIDER_CREDENTIAL_KEYS = {
+    "tavily": "TAVILY_API_KEY",
+    "linkup": "LINKUP_API_KEY",
+    "exa": "EXA_API_KEY",
+    "serper": "SERPER_API_KEY",
+    "brave": "BRAVE_API_KEY",
+}
 
 
 class GenericSingleRelationLiveDogfoodRunError(ValueError):
@@ -757,6 +764,7 @@ class GenericProviderProxyRunRequest:
     output_path: Path
     query: str
     provider: str = DEFAULT_PROVIDER
+    available_providers: Mapping[str, object] = field(default_factory=dict)
     acquisition_provider_role: str = "extraction_provider"
     operation: str = DEFAULT_OPERATION
     max_results: int = MAX_PROVIDER_RESULTS
@@ -829,10 +837,23 @@ ProviderProxyRunner = Callable[
 FetchReadRunner = Callable[[str], GenericLiveFetchReadResult]
 
 
+def _configured_product_provider_availability(
+    environ: Mapping[str, str] | None,
+) -> dict[str, bool]:
+    """Compose boolean availability from credential/configuration facts only."""
+
+    configured = os.environ if environ is None else environ
+    return {
+        provider: bool(str(configured.get(env_key) or "").strip())
+        for provider, env_key in _PRODUCT_PROVIDER_CREDENTIAL_KEYS.items()
+    }
+
+
 def _select_generic_provider_acquisition_runner(
     *,
     legacy_injected_provider_runner: ProviderProxyRunner | None,
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None,
+    provider_availability: Mapping[str, object],
     counts: dict[str, Any],
 ) -> ProviderProxyRunner | None:
     if legacy_injected_provider_runner is not None:
@@ -843,18 +864,27 @@ def _select_generic_provider_acquisition_runner(
         or build_generic_product_provider_acquisition_runner()
     )
     counts["product_provider_acquisition_adapter_used"] = 1
-    return _provider_runner_from_product_acquisition_runner(product_runner)
+    return _provider_runner_from_product_acquisition_runner(
+        product_runner,
+        provider_availability=provider_availability,
+    )
 
 
 def _provider_runner_from_product_acquisition_runner(
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner,
+    *,
+    provider_availability: Mapping[str, object] | None = None,
 ) -> ProviderProxyRunner:
     def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        available_providers = dict(request.available_providers)
+        if not available_providers and provider_availability is not None:
+            available_providers = dict(provider_availability)
         acquisition_request = ProductProviderAcquisitionRequest(
             repo_root=request.repo_root,
             output_path=request.output_path,
             query=request.query,
             provider=request.provider,
+            available_providers=available_providers,
             acquisition_provider_role=request.acquisition_provider_role,
             operation=request.operation,
             max_results=request.max_results,
@@ -977,6 +1007,9 @@ def build_generic_single_relation_live_dogfood_run_output(
         require_model_assisted_planning=require_model_assisted_planning,
         planner_callable=fast_model_planner_callable,
     )
+    product_provider_availability = _configured_product_provider_availability(
+        environ
+    )
 
     try:
         relation_plan = build_generic_query_relation_plan(query)
@@ -1045,6 +1078,7 @@ def build_generic_single_relation_live_dogfood_run_output(
         provider_runner = _select_generic_provider_acquisition_runner(
             legacy_injected_provider_runner=provider_proxy_runner,
             product_provider_acquisition_runner=product_provider_acquisition_runner,
+            provider_availability=product_provider_availability,
             counts=counts,
         )
         if provider_runner is None:

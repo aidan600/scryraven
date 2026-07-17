@@ -11,6 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
+from core.acquisition_adapters import AcquisitionTransports
+from core.cap_enforcement import RunCapPolicy
+
 from core.component_coverage_record import (
     ComponentCoverageRecord,
     ConflictPosture,
@@ -225,6 +228,9 @@ def execute_ordinary_live_main_runkernel_coverage(
     candidate_results: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
     provider_authorized: str = "offline-fake-search",
     fetch_read: Callable[..., Mapping[str, Any]] | None = None,
+    available_providers: Mapping[str, object] | None = None,
+    acquisition_transports: AcquisitionTransports | None = None,
+    cap_policy: RunCapPolicy | None = None,
     required_or_preferred_anchors: Sequence[Any] = (),
 ) -> OrdinaryLiveMainRunKernelCoverageResult:
     """Reduce one ordinary source into main-owned semantic coverage."""
@@ -298,6 +304,9 @@ def execute_ordinary_live_main_runkernel_coverage(
             parent_request_id=main_run_kernel.state.request_id,
             candidate_packet=candidate_result.candidate_packet,
             fetch_read=fetch_read,
+            available_providers=available_providers,
+            acquisition_transports=acquisition_transports,
+            cap_policy=cap_policy,
             required_or_preferred_anchors=required_or_preferred_anchors,
             component_text=core_topic,
             claim_under_test=None,
