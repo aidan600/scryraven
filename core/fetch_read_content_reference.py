@@ -450,6 +450,7 @@ class SanitizedContentReference:
         )
         text_payload = _bounded_text_payload(material)
         attempted_url = _clean_url(material.get("attempted_url"))
+        provider_reported_url = _clean_url(material.get("provider_reported_url"))
         resolved_url = _clean_url(material.get("resolved_url"))
         final_url = _clean_url(material.get("final_url"))
         canonical_url = _clean_url(material.get("canonical_url"))
@@ -464,6 +465,7 @@ class SanitizedContentReference:
             candidate=candidate,
             material=material,
             attempted_url=attempted_url,
+            provider_reported_url=provider_reported_url,
             resolved_url=resolved_url,
             final_url=final_url,
             canonical_url=canonical_url,
@@ -702,6 +704,7 @@ class SanitizedContentReference:
                     material.get("original_source_domain")
                 ),
                 "attempted_url": attempted_url,
+                "provider_reported_url": provider_reported_url,
                 "resolved_url": resolved_url,
                 "final_url": final_url,
                 "canonical_url": canonical_url,
@@ -1278,6 +1281,7 @@ def _validate_url_domain_binding(
     candidate: Mapping[str, Any],
     material: Mapping[str, Any],
     attempted_url: str | None,
+    provider_reported_url: str | None,
     resolved_url: str | None,
     final_url: str | None,
     canonical_url: str | None,
@@ -1293,7 +1297,14 @@ def _validate_url_domain_binding(
     )
     status = _fetch_read_status(material.get("fetch_read_status"))
     if status == "readable" and not any(
-        (attempted_url, resolved_url, final_url, canonical_url, resolved_domain)
+        (
+            attempted_url,
+            provider_reported_url,
+            resolved_url,
+            final_url,
+            canonical_url,
+            resolved_domain,
+        )
     ):
         raise FetchReadContentReferenceError(
             "readable content reference requires URL or domain identity"
@@ -1303,6 +1314,13 @@ def _validate_url_domain_binding(
     ):
         raise FetchReadContentReferenceError(
             "sanitized fetch/read material attempted_url does not match candidate URL"
+        )
+    if provider_reported_url and _normalized_url(
+        provider_reported_url
+    ) != _normalized_url(candidate_url):
+        raise FetchReadContentReferenceError(
+            "sanitized fetch/read material provider_reported_url does not match "
+            "candidate URL"
         )
     for label, url in (
         ("resolved_url", resolved_url),

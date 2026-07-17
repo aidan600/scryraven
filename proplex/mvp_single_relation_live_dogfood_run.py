@@ -105,6 +105,7 @@ from core.product_model_route_config import (
     MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
 )
+from core.routing import DiscoverQualifier
 from core.run_kernel import (
     SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE,
     Observation,
@@ -763,8 +764,9 @@ class GenericProviderProxyRunRequest:
     repo_root: Path
     output_path: Path
     query: str
-    provider: str = DEFAULT_PROVIDER
+    provider: str | None = None
     available_providers: Mapping[str, object] = field(default_factory=dict)
+    discover_qualifier: DiscoverQualifier | None = None
     acquisition_provider_role: str = "extraction_provider"
     operation: str = DEFAULT_OPERATION
     max_results: int = MAX_PROVIDER_RESULTS
@@ -782,6 +784,7 @@ class GenericProviderProxyRunResult:
     provider_calls_completed: int
     blocker: str | None = None
     detail: str | None = None
+    selected_provider: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -885,6 +888,7 @@ def _provider_runner_from_product_acquisition_runner(
             query=request.query,
             provider=request.provider,
             available_providers=available_providers,
+            discover_qualifier=request.discover_qualifier,
             acquisition_provider_role=request.acquisition_provider_role,
             operation=request.operation,
             max_results=request.max_results,
@@ -917,6 +921,11 @@ def _generic_result_from_product_acquisition_result(
         provider_calls_completed=result.provider_calls_completed,
         blocker=result.blocker,
         detail=result.detail,
+        selected_provider=(
+            result.route_decision.selected_provider
+            if result.route_decision is not None
+            else None
+        ),
     )
 
 
@@ -1104,7 +1113,9 @@ def build_generic_single_relation_live_dogfood_run_output(
                     repo_root=root,
                     output_path=scout_output_path,
                     query=str(acquisition_plan["disambiguation_query"]),
-                    provider=DEFAULT_SCOUT_PROVIDER,
+                    discover_qualifier=(
+                        DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION
+                    ),
                     operation=DEFAULT_OPERATION,
                 )
             )
@@ -1140,14 +1151,40 @@ def build_generic_single_relation_live_dogfood_run_output(
             )
 
         search_query_seed = str(acquisition_plan["acquisition_query"])
-        extraction_provider = str(acquisition_plan["extraction_provider"])
+        product_domain_constraints = tuple(
+            str(item)
+            for item in _safe_sequence(acquisition_plan.get("domain_constraints"))
+        )
+        product_include_domains = tuple(
+            str(item)
+            for item in _safe_sequence(acquisition_plan.get("include_domains"))
+        )
+        product_source_of_record_domains = tuple(
+            str(item)
+            for item in _safe_sequence(
+                acquisition_plan.get("source_of_record_domain_constraints")
+            )
+        )
         provider_result = provider_runner(
             GenericProviderProxyRunRequest(
                 repo_root=root,
                 output_path=provider_output_path,
                 query=search_query_seed,
-                provider=extraction_provider,
+                discover_qualifier=(
+                    DiscoverQualifier.DOMAIN_TARGETED
+                    if (
+                        product_domain_constraints
+                        or product_include_domains
+                        or product_source_of_record_domains
+                    )
+                    else DiscoverQualifier.GENERAL
+                ),
                 operation=str(acquisition_plan["provider_operation"]),
+                domain_constraints=product_domain_constraints,
+                include_domains=product_include_domains,
+                source_of_record_domain_constraints=(
+                    product_source_of_record_domains
+                ),
             )
         )
         counts["provider_calls_attempted"] = provider_result.provider_calls_attempted
@@ -1175,6 +1212,30 @@ def build_generic_single_relation_live_dogfood_run_output(
             )
 
         provider_payload = _load_sanitized_provider_output(provider_result.output_path)
+        route_selected_provider = _clean_text(
+            provider_result.selected_provider,
+            limit=80,
+        )
+        payload_reported_provider = _clean_text(
+            provider_payload.get("provider"),
+            limit=80,
+        )
+        if (
+            route_selected_provider
+            and payload_reported_provider
+            and route_selected_provider != payload_reported_provider
+        ):
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+                "Completed route and provider acquisition payload disagree on provider identity.",
+            )
+        extraction_provider = route_selected_provider or payload_reported_provider
+        if not extraction_provider:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+                "Completed product provider acquisition omitted selected provider identity.",
+            )
+        counts["extraction_provider_selected"] = extraction_provider
         results = _provider_results(provider_payload)
         counts["provider_results_returned"] = len(results)
         _enforce_caps(counts)
@@ -8486,8 +8547,10 @@ def _base_packet(
             if disambiguation
             else "not_attempted_clear_query"
         ),
-        "extraction_provider": acquisition.get("extraction_provider")
-        or DEFAULT_EXTRACTION_PROVIDER,
+        "extraction_provider": _clean_text(
+            counts.get("extraction_provider_selected"),
+            limit=80,
+        ),
         "extraction_provider_used": bool(
             counts.get("extraction_provider_calls_attempted", 0)
         ),

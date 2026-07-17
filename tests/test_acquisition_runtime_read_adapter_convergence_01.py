@@ -17,6 +17,7 @@ from core.acquisition_contracts import (
 from core.generic_product_provider_acquisition import (
     ProductProviderAcquisitionRequest,
     ProductProviderAcquisitionResult,
+    complete_generic_product_provider_route,
     run_generic_product_provider_acquisition,
 )
 from core.provider_plan import ProviderPlan
@@ -137,6 +138,30 @@ def test_linkup_route_time_unavailable_selects_tavily_extract_once() -> None:
     assert artifact.final_url is None
     assert artifact.canonical_url is None
     assert artifact.http_status is None
+
+
+def test_tavily_read_rejects_mismatched_provider_reported_url() -> None:
+    request = _read_request(linkup=False, tavily=True)
+
+    result = dispatch_acquisition(
+        request,
+        transports=AcquisitionTransports(
+            tavily_extract=lambda _payload: {
+                "results": [
+                    {
+                        "url": "https://different.example.test/wrong-page",
+                        "raw_content": "Readable material from the wrong page.",
+                    }
+                ],
+                "failed_results": [],
+            }
+        ),
+    )
+
+    assert result.status is AcquisitionExecutionStatus.FAILED
+    assert result.failure_code == "read_provider_reported_url_mismatch"
+    assert len(result.artifacts) == 1
+    assert result.artifacts[0].kind is AcquisitionArtifactKind.PROVIDER_FAILURE
 
 
 def test_minimal_linkup_read_preserves_unknown_lineage_and_explicit_rendering() -> None:
@@ -729,12 +754,38 @@ def test_generic_single_relation_acquisition_consumes_core_routing(
             repo_root=tmp_path,
             output_path=tmp_path / "product-bridge.json",
             query="current official threshold",
-            provider="linkup",
-            available_providers={"linkup": True},
+            available_providers={"linkup": True, "tavily": True},
         )
     )
     assert completed_requests[0].route_decision is not None
+    assert completed_requests[0].provider is None
     assert completed_requests[0].route_decision.selected_provider == "linkup"
+    assert completed_requests[0].route_decision.variant == "standard"
+    assert completed_requests[0].route_decision.output_type == "searchResults"
+    assert completed_requests[0].route_decision.request.qualifier is (
+        DiscoverQualifier.GENERAL
+    )
+
+
+def test_requested_exa_cannot_create_academic_semantic_capability(
+    tmp_path: Path,
+) -> None:
+    request = ProductProviderAcquisitionRequest(
+        repo_root=tmp_path,
+        output_path=tmp_path / "exa-preference.json",
+        query="ordinary extraction request",
+        provider="exa",
+        available_providers={"exa": True},
+    )
+
+    decision = complete_generic_product_provider_route(
+        request,
+        requested_provider="exa",
+    )
+
+    assert decision.request.qualifier is DiscoverQualifier.GENERAL
+    assert decision.block_reason == "override_no_compatible_available_provider"
+    assert decision.providers() == ()
 
 
 def test_generic_provider_preference_cannot_create_availability(

@@ -39,6 +39,7 @@ from core.generic_product_provider_acquisition import (
     ProductProviderAcquisitionRequest,
     build_generic_product_provider_acquisition_runner,
 )
+from core.routing import DiscoverQualifier
 from core.source_of_record_recovery_provider_config import (
     SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
 )
@@ -405,6 +406,7 @@ def test_exa_text_results_normalize_as_url_bound_extracted_content(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=EXA_EXTRACTION_PROVIDER,
+            discover_qualifier=DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
             available_providers={"exa": True},
             include_domains=("uscis.gov",),
         )
@@ -568,6 +570,7 @@ def test_serper_scout_results_normalize_without_extracted_text(
             output_path=output_path,
             query="What is the current filing fee for the form?",
             provider="serper",
+            discover_qualifier=DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION,
             available_providers={"serper": True},
             max_results=5,
         )
@@ -619,6 +622,7 @@ def test_brave_scout_results_normalize_without_extracted_text(
             output_path=output_path,
             query="USCIS N-400 paper filing fee",
             provider=BRAVE_SCOUT_PROVIDER,
+            discover_qualifier=DiscoverQualifier.INDEPENDENT_INDEX,
             available_providers={"brave": True},
             acquisition_provider_role="source_of_record_recovery_scout_provider",
         )
@@ -690,6 +694,7 @@ def test_missing_serper_credential_fails_closed_without_secret_leak(
             output_path=output_path,
             query="What is the current filing fee for the form?",
             provider="serper",
+            discover_qualifier=DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION,
             available_providers={"serper": True},
         )
     )

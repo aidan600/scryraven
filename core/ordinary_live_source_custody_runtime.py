@@ -535,6 +535,7 @@ def _read_failure_seam(code: str | None) -> str:
         "read_result_cardinality_invalid": "offline_fetch_read_result_unreadable",
         "read_requested_url_mismatch": "offline_fetch_read_result_invalid",
         "read_attempted_url_mismatch": "offline_fetch_read_result_invalid",
+        "read_provider_reported_url_mismatch": "offline_fetch_read_result_invalid",
         "selected_adapter_transport_unavailable": "offline_fetch_read_dependency_missing",
     }
     return mapping.get(code or "", "typed_read_dispatch_failed")
@@ -547,6 +548,7 @@ def _read_artifact_for_existing_custody(
         {
             "fetch_read_status": "readable",
             "attempted_url": artifact.attempted_url,
+            "provider_reported_url": artifact.provider_reported_url,
             "resolved_url": artifact.resolved_url,
             "final_url": artifact.final_url,
             "canonical_url": artifact.canonical_url,
@@ -627,6 +629,7 @@ def _sanitized_material_from_fetch_read(
             "candidate_digest": selected_candidate.get("candidate_digest"),
             "fetch_read_status": status,
             "attempted_url": _clean_url(raw.get("attempted_url")) or candidate_url,
+            "provider_reported_url": _clean_url(raw.get("provider_reported_url")),
             "resolved_url": _clean_url(raw.get("resolved_url")),
             "final_url": _clean_url(raw.get("final_url")),
             "canonical_url": _clean_url(raw.get("canonical_url")),

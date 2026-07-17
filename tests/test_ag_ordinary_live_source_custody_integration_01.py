@@ -341,6 +341,20 @@ def test_explicit_availability_selects_tavily_despite_injected_linkup(
             "failed_results": [],
         }
 
+    source_results: list[Any] = []
+    original_source = orchestrator.execute_ordinary_live_source_custody
+
+    def spy_source(**kwargs: Any) -> Any:
+        result = original_source(**kwargs)
+        source_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_ordinary_live_source_custody",
+        spy_source,
+    )
+
     _captured, _harness, outcome = _run_pipeline(
         tmp_path,
         monkeypatch,
@@ -369,6 +383,62 @@ def test_explicit_availability_selects_tavily_despite_injected_linkup(
     ] is True
     assert linkup.calls == []
     assert len(tavily_calls) == 1
+    assert source_results
+    reference = source_results[0].sanitized_content_reference
+    assert reference is not None
+    assert reference["provider_reported_url"] == CANDIDATE_URL
+    ledger_records = source_results[0].evidence_ledger_projection[
+        "fetch_read_candidate_custody"
+    ]["fetch_read_candidate_custody_records"]
+    assert ledger_records[0]["provider_reported_url"] == CANDIDATE_URL
+
+
+def test_tavily_read_url_mismatch_creates_no_custody(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_results: list[Any] = []
+    original_source = orchestrator.execute_ordinary_live_source_custody
+
+    def spy_source(**kwargs: Any) -> Any:
+        result = original_source(**kwargs)
+        source_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_ordinary_live_source_custody",
+        spy_source,
+    )
+
+    _captured, _harness, outcome = _run_pipeline(
+        tmp_path,
+        monkeypatch,
+        candidate_enabled=True,
+        source_enabled=True,
+        candidate_results=_candidate_results(),
+        acquisition_transports=AcquisitionTransports(
+            tavily_extract=lambda _payload: {
+                "results": [
+                    {
+                        "url": "https://different.example.test/wrong-page",
+                        "raw_content": "Readable material from the wrong page.",
+                    }
+                ],
+                "failed_results": [],
+            }
+        ),
+        provider_availability={"linkup": False, "tavily": True},
+    )
+
+    projection = outcome.execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY]
+    assert projection["failed_closed"] is True
+    assert projection["first_failed_seam"] == "offline_fetch_read_result_invalid"
+    assert projection["fetch_read_content_packet_ref"] == {}
+    assert projection["evidence_ledger_custody_count"] == 0
+    assert source_results
+    assert source_results[0].fetch_read_content_packet is None
+    assert source_results[0].evidence_ledger_projection is None
 
 
 def test_explicit_no_provider_availability_blocks_before_transport(

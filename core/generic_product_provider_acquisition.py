@@ -73,6 +73,7 @@ class ProductProviderAcquisitionRequest:
     route_decision: ProviderRouteDecision | None = None
     available_providers: Mapping[str, object] = field(default_factory=dict)
     provider: str | None = None
+    discover_qualifier: DiscoverQualifier | None = None
     acquisition_provider_role: str = "extraction_provider"
     operation: str = DEFAULT_OPERATION
     max_results: int = DEFAULT_MAX_RESULTS
@@ -297,6 +298,11 @@ def run_generic_product_provider_acquisition(
     payload = {
         "request_kind": PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND,
         "provider": provider,
+        "discover_qualifier": (
+            route_decision.request.qualifier.value
+            if route_decision.request.qualifier is not None
+            else None
+        ),
         "provider_role": _clean_provider_role(request.acquisition_provider_role),
         "acquisition_provider_role": _clean_provider_role(
             request.acquisition_provider_role
@@ -541,24 +547,23 @@ def _failed_result(
 def complete_generic_product_provider_route(
     request: ProductProviderAcquisitionRequest,
     *,
-    requested_provider: str,
+    requested_provider: str | None,
 ) -> ProviderRouteDecision:
-    """Route retained explicit provider preferences through ``core.routing``.
+    """Complete a provider-neutral requirement through ``core.routing``.
 
-    Product callers should supply ``route_decision``.  The compatibility fields
-    remain for operator/validation callers, but they no longer choose a callable
-    locally: provider compatibility and availability are resolved here first.
+    Product callers should supply an explicit ``discover_qualifier`` or domain
+    constraints. ``provider`` remains only a residual explicit preference for
+    licensed operator/validation callers; it never creates the qualifier.
     """
 
-    if requested_provider == DEFAULT_SCOUT_PROVIDER:
-        qualifier = DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION
-    elif requested_provider == BRAVE_SCOUT_PROVIDER:
-        qualifier = DiscoverQualifier.INDEPENDENT_INDEX
-    elif requested_provider == EXA_EXTRACTION_PROVIDER:
-        qualifier = DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC
-    elif request.domain_constraints or request.include_domains:
+    qualifier = request.discover_qualifier
+    if qualifier is None and (
+        request.domain_constraints
+        or request.include_domains
+        or request.source_of_record_domain_constraints
+    ):
         qualifier = DiscoverQualifier.DOMAIN_TARGETED
-    else:
+    elif qualifier is None:
         qualifier = DiscoverQualifier.GENERAL
     availability = dict(request.available_providers)
     return route_provider_capability(
