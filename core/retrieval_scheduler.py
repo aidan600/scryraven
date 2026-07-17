@@ -23,6 +23,7 @@ from core.run_kernel import (
 
 class RetrievalScheduleReason(str, Enum):
     MAIN_PASS_SCHEDULED = "main_pass_scheduled"
+    MAIN_PASS_BLOCKED = "main_pass_blocked"
     CONTINUATION_SCHEDULED = "continuation_scheduled"
     CONTINUATION_BLOCKED = "continuation_blocked"
     WEAK_CORPUS_RECOVERY_SCHEDULED = "weak_corpus_recovery_scheduled"
@@ -52,6 +53,10 @@ class RetrievalScheduledAction:
     provider_role: str
     providers: tuple[str, ...]
     search_depth: str
+    provider_operation: str | None
+    provider_variant: str | None
+    provider_output_type: str | None
+    route_blocked: bool
     force_component_providers: tuple[str, ...]
     continue_retrieval: bool
     recovery_active: bool
@@ -75,6 +80,10 @@ class RetrievalScheduledAction:
             "provider_role": self.provider_role,
             "providers": list(self.providers),
             "search_depth": self.search_depth,
+            "provider_operation": self.provider_operation,
+            "provider_variant": self.provider_variant,
+            "provider_output_type": self.provider_output_type,
+            "route_blocked": self.route_blocked,
             "force_component_providers": list(self.force_component_providers),
             "continue_retrieval": self.continue_retrieval,
             "recovery_active": self.recovery_active,
@@ -128,6 +137,20 @@ def _depth_from_input(schedule_input: RetrievalScheduleInput) -> str:
     return str(depth or "basic")
 
 
+def _route_fields(
+    provider_record: Any | None,
+) -> tuple[str | None, str | None, str | None, bool]:
+    decision = getattr(provider_record, "route_decision", None)
+    if decision is None:
+        return None, None, None, False
+    return (
+        getattr(decision, "operation", None),
+        getattr(decision, "variant", None),
+        getattr(decision, "output_type", None),
+        bool(getattr(decision, "blocked", False)),
+    )
+
+
 def _provider_record_metadata(provider_record: Any | None) -> dict[str, Any]:
     if provider_record is None:
         return {}
@@ -145,6 +168,7 @@ def schedule_main_retrieval_action(
     """Schedule one main-loop retrieval pass from consumed QueryPlan/ProviderPlan facts."""
 
     providers = _providers_from_input(schedule_input)
+    operation, variant, output_type, route_blocked = _route_fields(schedule_input.provider_record)
     return RetrievalScheduledAction(
         stage=schedule_input.stage,
         current_queries=_clean_queries(schedule_input.current_queries),
@@ -152,10 +176,16 @@ def schedule_main_retrieval_action(
         provider_role=schedule_input.provider_role,
         providers=providers,
         search_depth=_depth_from_input(schedule_input),
+        provider_operation=operation,
+        provider_variant=variant,
+        provider_output_type=output_type,
+        route_blocked=route_blocked,
         force_component_providers=(),
-        continue_retrieval=bool(schedule_input.current_queries),
+        continue_retrieval=bool(schedule_input.current_queries) and bool(providers),
         recovery_active=bool(schedule_input.recovery_active),
-        reason=RetrievalScheduleReason.MAIN_PASS_SCHEDULED,
+        reason=(
+            RetrievalScheduleReason.MAIN_PASS_BLOCKED if route_blocked else RetrievalScheduleReason.MAIN_PASS_SCHEDULED
+        ),
         metadata={
             **_provider_record_metadata(schedule_input.provider_record),
             **dict(schedule_input.metadata or {}),
@@ -183,9 +213,7 @@ def schedule_main_retrieval_from_provider_record(
             provider_record=provider_record,
             recovery_active=recovery_active,
             metadata={
-                "force_component_providers_consumed": list(
-                    force_component_providers or ()
-                ),
+                "force_component_providers_consumed": list(force_component_providers or ()),
             },
         )
     )
@@ -207,6 +235,8 @@ def schedule_main_retrieval_with_provider_plan(
     current_queries: Sequence[str],
     recovery_active: bool,
     choose_search_depth: Callable[[str, str | None, int], str],
+    include_domains: Sequence[str] = (),
+    exclude_domains: Sequence[str] = (),
     merge_provider_overrides: Callable[..., list[str] | None] | None = None,
     select_provider_list: Callable[..., list[str]] | None = None,
 ) -> RetrievalScheduledAction:
@@ -230,6 +260,8 @@ def schedule_main_retrieval_with_provider_plan(
         primary_override=primary_override,
         scout_override=forced if forced else None,
         choose_search_depth=choose_search_depth,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
         **selector_kwargs,
     )
     return schedule_main_retrieval_from_provider_record(
@@ -265,6 +297,8 @@ def schedule_main_retrieval_from_pipeline_scope(
             "iteration",
             "a5_provider_override",
             "force_component_providers",
+            "include_domains",
+            "exclude_domains",
             "merge_provider_overrides",
             "select_provider_list",
         ),
@@ -284,6 +318,8 @@ def schedule_main_retrieval_from_pipeline_scope(
         current_queries=current_queries,
         recovery_active=recovery_active,
         choose_search_depth=choose_search_depth,
+        include_domains=values["include_domains"],
+        exclude_domains=values["exclude_domains"],
         merge_provider_overrides=values["merge_provider_overrides"],
         select_provider_list=values["select_provider_list"],
     )
@@ -319,6 +355,7 @@ def schedule_continuation_action(
     """Schedule an ordinary retained-producer next-pass continuation."""
 
     providers = _providers_from_input(schedule_input)
+    operation, variant, output_type, route_blocked = _route_fields(schedule_input.provider_record)
     authorized = bool(schedule_input.continuation_authorized)
     queries = _clean_queries(schedule_input.current_queries) if authorized else ()
     return RetrievalScheduledAction(
@@ -328,12 +365,16 @@ def schedule_continuation_action(
         provider_role=schedule_input.provider_role,
         providers=providers,
         search_depth=_depth_from_input(schedule_input),
+        provider_operation=operation,
+        provider_variant=variant,
+        provider_output_type=output_type,
+        route_blocked=route_blocked,
         force_component_providers=providers,
-        continue_retrieval=authorized and bool(queries),
+        continue_retrieval=authorized and bool(queries) and bool(providers),
         recovery_active=False,
         reason=(
             RetrievalScheduleReason.CONTINUATION_SCHEDULED
-            if authorized and queries
+            if authorized and queries and providers
             else RetrievalScheduleReason.CONTINUATION_BLOCKED
         ),
         metadata={
@@ -385,15 +426,13 @@ def schedule_provider_continuation_with_plan(
     suppress_tavily: bool,
     override: Sequence[str] | None,
     override_is_user: bool,
+    include_domains: Sequence[str] = (),
+    exclude_domains: Sequence[str] = (),
     select_provider_list: Callable[..., list[str]] | None = None,
 ) -> RetrievalScheduledAction:
     """Record continuation ProviderPlan facts and schedule the next pass."""
 
-    selector_kwargs = (
-        {"select_provider_list": select_provider_list}
-        if select_provider_list is not None
-        else {}
-    )
+    selector_kwargs = {"select_provider_list": select_provider_list} if select_provider_list is not None else {}
     provider_record = provider_plan.record_continuation(
         role=provider_role,
         query_type=query_type,
@@ -404,6 +443,8 @@ def schedule_provider_continuation_with_plan(
         suppress_tavily=suppress_tavily,
         override=override,
         override_is_user=override_is_user,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
         **selector_kwargs,
     )
     return schedule_provider_continuation_from_record(
@@ -436,6 +477,8 @@ def schedule_expander_continuation_from_pipeline_scope(
             "report_type",
             "is_academic",
             "suppress_tavily",
+            "include_domains",
+            "exclude_domains",
             "select_provider_list",
         ),
     )
@@ -455,6 +498,8 @@ def schedule_expander_continuation_from_pipeline_scope(
         suppress_tavily=values["suppress_tavily"],
         override=None,
         override_is_user=True,
+        include_domains=values["include_domains"],
+        exclude_domains=values["exclude_domains"],
         select_provider_list=values["select_provider_list"],
     )
 
@@ -496,6 +541,10 @@ def schedule_weak_corpus_recovery_action(
         provider_role=schedule_input.provider_role,
         providers=providers,
         search_depth=_depth_from_input(schedule_input),
+        provider_operation=None,
+        provider_variant=None,
+        provider_output_type=None,
+        route_blocked=False,
         force_component_providers=providers,
         continue_retrieval=authorized and bool(queries),
         recovery_active=authorized and bool(queries),

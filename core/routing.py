@@ -1,8 +1,427 @@
-"""Centralized search-provider selection (Phase A4)."""
+"""Sole policy owner for provider-capability routing."""
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass
+from enum import Enum
+from typing import Mapping, Optional, Sequence
+
+
+class AcquisitionCapability(str, Enum):
+    DISCOVER = "DISCOVER"
+    READ = "READ"
+    FOCUSED_EXTRACT = "FOCUSED_EXTRACT"
+    MAP_SITE = "MAP_SITE"
+    CRAWL_SITE = "CRAWL_SITE"
+    PROVIDER_SYNTHESIS = "PROVIDER_SYNTHESIS"
+
+
+class DiscoverQualifier(str, Enum):
+    GENERAL = "general"
+    DOMAIN_TARGETED = "domain_targeted"
+    ACADEMIC_TECHNICAL_SEMANTIC = "academic_technical_semantic"
+    LIGHTWEIGHT_DISAMBIGUATION = "lightweight_disambiguation"
+    INDEPENDENT_INDEX = "independent_index"
+
+
+class RouteFidelity(str, Enum):
+    EXACT = "exact"
+    DEGRADED = "degraded"
+    BLOCKED = "blocked"
+
+
+PROVIDER_NAMES = ("tavily", "linkup", "exa", "serper", "brave")
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAvailability:
+    """Boolean-only availability facts for the bounded provider set."""
+
+    tavily: bool = False
+    linkup: bool = False
+    exa: bool = False
+    serper: bool = False
+    brave: bool = False
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, object] | None) -> "ProviderAvailability":
+        source = values or {}
+        return cls(**{provider: bool(source.get(provider)) for provider in PROVIDER_NAMES})
+
+    def to_mapping(self) -> dict[str, bool]:
+        return {provider: bool(getattr(self, provider)) for provider in PROVIDER_NAMES}
+
+    def is_available(self, provider: str) -> bool:
+        return bool(self.to_mapping().get(str(provider).strip().lower(), False))
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCapabilityRequest:
+    capability: AcquisitionCapability
+    qualifier: DiscoverQualifier | None = None
+    include_domains: tuple[str, ...] = ()
+    exclude_domains: tuple[str, ...] = ()
+    derivation_reason: str = "explicit_capability_request"
+
+    def to_trace(self) -> dict[str, object]:
+        return {
+            "capability": self.capability.value,
+            "qualifier": self.qualifier.value if self.qualifier is not None else None,
+            "include_domains": list(self.include_domains),
+            "exclude_domains": list(self.exclude_domains),
+            "derivation_reason": self.derivation_reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCapabilityCatalogEntry:
+    provider: str
+    capability: AcquisitionCapability
+    qualifier: DiscoverQualifier | None
+    operation: str
+    variant: str
+    output_type: str
+    vendor_operation_known: bool
+    adapter_installed: bool
+    ordinary_product_enabled: bool
+    returned_material_class: str
+    authority_posture: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCapabilityCatalogStatus:
+    entry: ProviderCapabilityCatalogEntry
+    currently_available: bool
+    currently_reachable: bool
+
+    def __getattr__(self, name: str) -> object:
+        if name in ProviderCapabilityCatalogEntry.__dataclass_fields__:
+            return getattr(self.entry, name)
+        raise AttributeError(name)
+
+    def to_trace(self) -> dict[str, object]:
+        return {
+            "provider": self.entry.provider,
+            "capability": self.entry.capability.value,
+            "qualifier": self.entry.qualifier.value if self.entry.qualifier is not None else None,
+            "operation": self.entry.operation,
+            "variant": self.entry.variant,
+            "output_type": self.entry.output_type,
+            "vendor_operation_known": self.entry.vendor_operation_known,
+            "adapter_installed": self.entry.adapter_installed,
+            "ordinary_product_enabled": self.entry.ordinary_product_enabled,
+            "currently_available": self.currently_available,
+            "currently_reachable": self.currently_reachable,
+            "returned_material_class": self.entry.returned_material_class,
+            "authority_posture": self.entry.authority_posture,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderFallbackCandidate:
+    """A descriptive candidate that never authorizes dispatch."""
+
+    provider: str
+    operation: str
+    variant: str
+    output_type: str
+    fidelity: RouteFidelity
+    vendor_operation_known: bool
+    adapter_installed: bool
+    ordinary_product_enabled: bool
+    currently_available: bool
+    currently_reachable: bool
+    returned_material_class: str
+    authority_posture: str
+
+    @classmethod
+    def from_status(
+        cls, status: ProviderCapabilityCatalogStatus, *, fidelity: RouteFidelity
+    ) -> "ProviderFallbackCandidate":
+        entry = status.entry
+        return cls(
+            provider=entry.provider,
+            operation=entry.operation,
+            variant=entry.variant,
+            output_type=entry.output_type,
+            fidelity=fidelity,
+            vendor_operation_known=entry.vendor_operation_known,
+            adapter_installed=entry.adapter_installed,
+            ordinary_product_enabled=entry.ordinary_product_enabled,
+            currently_available=status.currently_available,
+            currently_reachable=status.currently_reachable,
+            returned_material_class=entry.returned_material_class,
+            authority_posture=entry.authority_posture,
+        )
+
+    def to_trace(self) -> dict[str, object]:
+        return {
+            **{name: getattr(self, name) for name in self.__dataclass_fields__ if name != "fidelity"},
+            "fidelity": self.fidelity.value,
+            "dispatch_authorized": False,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderRouteDecision:
+    request: ProviderCapabilityRequest
+    selected_provider: str | None
+    operation: str | None
+    variant: str | None
+    output_type: str | None
+    fidelity: RouteFidelity
+    fallback_candidates: tuple[ProviderFallbackCandidate, ...]
+    availability: ProviderAvailability
+    availability_posture: str
+    adapter_posture: str
+    override_posture: str
+    decision_reason: str
+    block_reason: str | None
+    returned_material_class: str
+    authority_posture: str
+    provider_synthesis_disabled: bool = True
+    social_authority_granted: bool = False
+
+    @property
+    def capability(self) -> AcquisitionCapability:
+        return self.request.capability
+
+    @property
+    def qualifier(self) -> DiscoverQualifier | None:
+        return self.request.qualifier
+
+    @property
+    def blocked(self) -> bool:
+        return self.fidelity is RouteFidelity.BLOCKED
+
+    def providers(self) -> tuple[str, ...]:
+        return (self.selected_provider,) if self.selected_provider is not None else ()
+
+    def to_trace(self) -> dict[str, object]:
+        return {
+            **self.request.to_trace(),
+            "selected_provider": self.selected_provider,
+            "operation": self.operation,
+            "variant": self.variant,
+            "output_type": self.output_type,
+            "fidelity": self.fidelity.value,
+            "fallback_candidates": [candidate.to_trace() for candidate in self.fallback_candidates],
+            "availability": self.availability.to_mapping(),
+            "availability_posture": self.availability_posture,
+            "adapter_posture": self.adapter_posture,
+            "override_posture": self.override_posture,
+            "decision_reason": self.decision_reason,
+            "block_reason": self.block_reason,
+            "returned_material_class": self.returned_material_class,
+            "authority_posture": self.authority_posture,
+            "provider_synthesis_disabled": self.provider_synthesis_disabled,
+            "social_authority_granted": self.social_authority_granted,
+        }
+
+
+class ProviderRouteBlockedError(RuntimeError):
+    """Typed fail-closed terminal for an ordinary acquisition job."""
+
+    def __init__(self, decision: ProviderRouteDecision) -> None:
+        if not decision.blocked:
+            raise ValueError("ProviderRouteBlockedError requires a blocked decision")
+        self.decision = decision
+        super().__init__(decision.block_reason or "provider_route_blocked")
+
+
+_NONAUTHORITATIVE = "non_authoritative_acquisition_material"
+_CANDIDATE_ONLY = "candidate_only_no_evidence_authority"
+_SYNTHESIS_DISABLED = "provider_synthesis_disabled_no_authority"
+
+
+def _entry(
+    provider: str,
+    capability: AcquisitionCapability,
+    qualifier: DiscoverQualifier | None,
+    operation: str,
+    variant: str,
+    output_type: str,
+    *,
+    adapter_installed: bool = True,
+    ordinary_product_enabled: bool = True,
+    returned_material_class: str = "url_bound_acquisition_material",
+    authority_posture: str = _NONAUTHORITATIVE,
+) -> ProviderCapabilityCatalogEntry:
+    return ProviderCapabilityCatalogEntry(
+        provider=provider,
+        capability=capability,
+        qualifier=qualifier,
+        operation=operation,
+        variant=variant,
+        output_type=output_type,
+        vendor_operation_known=True,
+        adapter_installed=adapter_installed,
+        ordinary_product_enabled=ordinary_product_enabled,
+        returned_material_class=returned_material_class,
+        authority_posture=authority_posture,
+    )
+
+
+PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
+    *(
+        _entry("linkup", AcquisitionCapability.DISCOVER, qualifier, "search", variant, "searchResults")
+        for variant in ("standard", "deep")
+        for qualifier in (
+            DiscoverQualifier.GENERAL,
+            DiscoverQualifier.DOMAIN_TARGETED,
+            DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
+        )
+    ),
+    *(
+        _entry("tavily", AcquisitionCapability.DISCOVER, qualifier, "search", "search", "searchResults")
+        for qualifier in (
+            DiscoverQualifier.GENERAL,
+            DiscoverQualifier.DOMAIN_TARGETED,
+            DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
+        )
+    ),
+    _entry(
+        "exa",
+        AcquisitionCapability.DISCOVER,
+        DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
+        "search",
+        "neural_with_text",
+        "searchResults",
+    ),
+    _entry(
+        "serper",
+        AcquisitionCapability.DISCOVER,
+        DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION,
+        "search",
+        "web",
+        "searchResults",
+        returned_material_class="directional_candidate_material",
+        authority_posture=_CANDIDATE_ONLY,
+    ),
+    _entry(
+        "brave",
+        AcquisitionCapability.DISCOVER,
+        DiscoverQualifier.INDEPENDENT_INDEX,
+        "search",
+        "web",
+        "searchResults",
+        returned_material_class="directional_candidate_material",
+        authority_posture=_CANDIDATE_ONLY,
+    ),
+    _entry(
+        "linkup",
+        AcquisitionCapability.READ,
+        None,
+        "fetch",
+        "known_url",
+        "markdown",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="caller_selected_url_material",
+    ),
+    _entry(
+        "tavily",
+        AcquisitionCapability.READ,
+        None,
+        "extract",
+        "basic",
+        "extractedContent",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="caller_selected_url_material",
+    ),
+    _entry(
+        "tavily",
+        AcquisitionCapability.FOCUSED_EXTRACT,
+        None,
+        "extract",
+        "query_focused",
+        "extractedContent",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="caller_selected_url_material",
+    ),
+    _entry(
+        "tavily",
+        AcquisitionCapability.MAP_SITE,
+        None,
+        "map",
+        "bounded",
+        "siteUrlMap",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="site_url_map",
+    ),
+    _entry(
+        "tavily",
+        AcquisitionCapability.CRAWL_SITE,
+        None,
+        "crawl",
+        "bounded",
+        "pageMaterial",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="bounded_multi_page_material",
+    ),
+    _entry(
+        "linkup",
+        AcquisitionCapability.PROVIDER_SYNTHESIS,
+        None,
+        "search",
+        "deep",
+        "sourcedAnswer",
+        ordinary_product_enabled=False,
+        returned_material_class="provider_written_synthesis",
+        authority_posture=_SYNTHESIS_DISABLED,
+    ),
+    _entry(
+        "linkup",
+        AcquisitionCapability.PROVIDER_SYNTHESIS,
+        None,
+        "research",
+        "async",
+        "researchReport",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="provider_written_synthesis",
+        authority_posture=_SYNTHESIS_DISABLED,
+    ),
+    _entry(
+        "tavily",
+        AcquisitionCapability.PROVIDER_SYNTHESIS,
+        None,
+        "research",
+        "async",
+        "researchReport",
+        adapter_installed=False,
+        ordinary_product_enabled=False,
+        returned_material_class="provider_written_synthesis",
+        authority_posture=_SYNTHESIS_DISABLED,
+    ),
+)
+
+
+def materialize_provider_capability_catalog(
+    availability: ProviderAvailability | Mapping[str, object],
+) -> tuple[ProviderCapabilityCatalogStatus, ...]:
+    """Bind immutable catalog facts to one boolean availability snapshot."""
+
+    snapshot = (
+        availability
+        if isinstance(availability, ProviderAvailability)
+        else ProviderAvailability.from_mapping(availability)
+    )
+    return tuple(
+        ProviderCapabilityCatalogStatus(
+            entry=entry,
+            currently_available=snapshot.is_available(entry.provider),
+            currently_reachable=(
+                snapshot.is_available(entry.provider) and entry.adapter_installed and entry.ordinary_product_enabled
+            ),
+        )
+        for entry in PROVIDER_CAPABILITY_CATALOG
+    )
+
 
 QUERY_TYPE_ENUM = frozenset(
     {
@@ -22,7 +441,8 @@ QUERY_TYPE_ENUM = frozenset(
 
 
 def is_quantitative_query(query_type: str | None, report_type: str | None) -> bool:
-    """True when retrieval/corpus logic should treat the run as comparison or benchmark-heavy."""
+    """True when retrieval/corpus logic should treat the run as comparison-heavy."""
+
     qt = (query_type or "other").strip().lower()
     rt = (report_type or "").strip().lower()
     return qt in {"comparison", "quantitative_comparison"} or rt in {
@@ -40,7 +460,13 @@ def should_allow_linkup_provider(
     explicit_provider_override: bool = False,
     premium_search_escalation: bool = False,
 ) -> bool:
-    """Return True when Linkup is justified despite its premium cost profile."""
+    """Compatibility predicate for the nonordinary ``search_providers=None`` path.
+
+    Ordinary routing no longer consumes this complexity gate.  The retained
+    lower-level compatibility path is a residual provider-name owner for the
+    later acquisition-routing closure.
+    """
+
     if explicit_provider_override or premium_search_escalation:
         return True
     return (complexity or "").strip().lower() == "high"
@@ -54,54 +480,265 @@ def merge_search_provider_overrides(
     complexity: str | None = None,
     secondary_premium_escalation: bool = False,
 ) -> list[str] | None:
-    """Merge scout/expander overrides with user retry overrides; preserve order, dedupe."""
+    """Merge ordered preferences without converting them into provider fan-out.
+
+    Availability and capability compatibility are intentionally resolved only
+    by :func:`route_provider_capability`.  Retaining unavailable or unsupported
+    names here ensures an explicit but unsatisfied override becomes a typed
+    block instead of silently falling back to ordinary policy.
+    """
+
+    del available_keys, complexity, secondary_premium_escalation
     if not primary and not secondary:
         return None
     seen: set[str] = set()
-    out: list[str] = []
-    for source, providers in (("primary", primary or []), ("secondary", secondary or [])):
-        for p in providers:
-            key = str(p).strip().lower()
-            if not key or key in seen or not available_keys.get(key):
+    preferences: list[str] = []
+    for providers in (primary or (), secondary or ()):
+        for provider in providers:
+            normalized = str(provider).strip().lower()
+            if not normalized or normalized in seen:
                 continue
-            if (
-                key == "linkup"
-                and complexity is not None
-                and not should_allow_linkup_provider(
-                    complexity,
-                    explicit_provider_override=source == "primary",
-                    premium_search_escalation=source == "secondary" and secondary_premium_escalation,
-                )
-            ):
-                continue
-            seen.add(key)
-            out.append(key)
-    return out or None
+            seen.add(normalized)
+            preferences.append(normalized)
+    return preferences
 
 
-def _filter_available_override_providers(
-    override: list[str],
-    available_keys: dict[str, bool],
-    complexity: str,
+def derive_provider_capability_request(
     *,
-    override_is_user: bool,
-    premium_search_escalation: bool,
-) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for p in override:
-        key = str(p).strip().lower()
-        if not key or key in seen or not available_keys.get(key):
-            continue
-        if key == "linkup" and not should_allow_linkup_provider(
-            complexity,
-            explicit_provider_override=override_is_user,
-            premium_search_escalation=premium_search_escalation,
-        ):
-            continue
-        seen.add(key)
-        out.append(key)
-    return out
+    query_type: str | None,
+    intent: str | None,
+    is_academic: bool,
+    include_domains: Sequence[str] = (),
+    exclude_domains: Sequence[str] = (),
+    discover_qualifier: DiscoverQualifier | str | None = None,
+) -> ProviderCapabilityRequest:
+    """Derive a DISCOVER request from existing deterministic acquisition facts."""
+
+    del query_type, intent
+    included = tuple(str(domain) for domain in include_domains if str(domain).strip())
+    excluded = tuple(str(domain) for domain in exclude_domains if str(domain).strip())
+    if discover_qualifier is not None:
+        qualifier = DiscoverQualifier(discover_qualifier)
+        reason = "explicit_discovery_role"
+    elif is_academic:
+        qualifier = DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC
+        reason = "existing_is_academic_route_fact"
+    elif included or excluded:
+        qualifier = DiscoverQualifier.DOMAIN_TARGETED
+        reason = "bounded_domain_constraint_present"
+    else:
+        qualifier = DiscoverQualifier.GENERAL
+        reason = "ordinary_general_discovery"
+    return ProviderCapabilityRequest(
+        capability=AcquisitionCapability.DISCOVER,
+        qualifier=qualifier,
+        include_domains=included,
+        exclude_domains=excluded,
+        derivation_reason=reason,
+    )
+
+
+def _discover_preferences(
+    qualifier: DiscoverQualifier,
+    *,
+    scrutineer_deep_authorized: bool,
+) -> tuple[tuple[str, str, RouteFidelity], ...]:
+    linkup_variant = "deep" if scrutineer_deep_authorized else "standard"
+    if qualifier in {DiscoverQualifier.GENERAL, DiscoverQualifier.DOMAIN_TARGETED}:
+        return (
+            ("linkup", linkup_variant, RouteFidelity.EXACT),
+            ("tavily", "search", RouteFidelity.EXACT),
+        )
+    if qualifier is DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC:
+        return (
+            ("exa", "neural_with_text", RouteFidelity.EXACT),
+            ("linkup", linkup_variant, RouteFidelity.DEGRADED),
+            ("tavily", "search", RouteFidelity.DEGRADED),
+        )
+    if qualifier is DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION:
+        return (("serper", "web", RouteFidelity.EXACT),)
+    if qualifier is DiscoverQualifier.INDEPENDENT_INDEX:
+        return (("brave", "web", RouteFidelity.EXACT),)
+    return ()
+
+
+def _matching_status(
+    statuses: Sequence[ProviderCapabilityCatalogStatus],
+    *,
+    request: ProviderCapabilityRequest,
+    provider: str,
+    variant: str,
+) -> ProviderCapabilityCatalogStatus | None:
+    return next(
+        (
+            status
+            for status in statuses
+            if status.provider == provider
+            and status.capability is request.capability
+            and status.qualifier is request.qualifier
+            and status.variant == variant
+        ),
+        None,
+    )
+
+
+def _blocked_decision(
+    *,
+    request: ProviderCapabilityRequest,
+    availability: ProviderAvailability,
+    candidates: Sequence[ProviderFallbackCandidate],
+    override_posture: str,
+    reason: str,
+) -> ProviderRouteDecision:
+    return ProviderRouteDecision(
+        request=request,
+        selected_provider=None,
+        operation=None,
+        variant=None,
+        output_type=None,
+        fidelity=RouteFidelity.BLOCKED,
+        fallback_candidates=tuple(candidates),
+        availability=availability,
+        availability_posture="no_compatible_provider_reachable",
+        adapter_posture="unavailable_or_incompatible",
+        override_posture=override_posture,
+        decision_reason=reason,
+        block_reason=reason,
+        returned_material_class="none",
+        authority_posture="blocked_no_acquisition_authority",
+    )
+
+
+def route_provider_capability(
+    request: ProviderCapabilityRequest,
+    available_keys: dict[str, object],
+    *,
+    override: Sequence[str] | None = None,
+    override_posture: str = "none",
+    suppress_tavily: bool = False,
+    scrutineer_deep_authorized: bool = False,
+) -> ProviderRouteDecision:
+    """Choose one compatible implementation or return a typed blocked decision."""
+
+    availability = ProviderAvailability.from_mapping(available_keys)
+    statuses = materialize_provider_capability_catalog(availability)
+
+    if request.capability is AcquisitionCapability.PROVIDER_SYNTHESIS:
+        synthesis_candidates = tuple(
+            ProviderFallbackCandidate.from_status(status, fidelity=RouteFidelity.BLOCKED)
+            for status in statuses
+            if status.capability is AcquisitionCapability.PROVIDER_SYNTHESIS
+        )
+        return _blocked_decision(
+            request=request,
+            availability=availability,
+            candidates=synthesis_candidates,
+            override_posture=override_posture,
+            reason="provider_synthesis_disabled",
+        )
+
+    if request.capability is not AcquisitionCapability.DISCOVER:
+        unavailable_candidates = tuple(
+            ProviderFallbackCandidate.from_status(status, fidelity=RouteFidelity.BLOCKED)
+            for status in statuses
+            if status.capability is request.capability
+        )
+        return _blocked_decision(
+            request=request,
+            availability=availability,
+            candidates=unavailable_candidates,
+            override_posture=override_posture,
+            reason="capability_unavailable",
+        )
+
+    qualifier = request.qualifier or DiscoverQualifier.GENERAL
+    normalized_request = (
+        request
+        if request.qualifier is not None
+        else ProviderCapabilityRequest(
+            capability=request.capability,
+            qualifier=qualifier,
+            include_domains=request.include_domains,
+            exclude_domains=request.exclude_domains,
+            derivation_reason=request.derivation_reason,
+        )
+    )
+    preferences = list(
+        _discover_preferences(
+            qualifier,
+            scrutineer_deep_authorized=scrutineer_deep_authorized,
+        )
+    )
+    if suppress_tavily:
+        preferences = [preference for preference in preferences if preference[0] != "tavily"]
+
+    explicit_preferences = None
+    if override is not None:
+        explicit_preferences = [str(provider).strip().lower() for provider in override]
+        preference_by_provider = {
+            provider: (provider, variant, fidelity) for provider, variant, fidelity in preferences
+        }
+        preferences = [
+            preference_by_provider[provider] for provider in explicit_preferences if provider in preference_by_provider
+        ]
+        override_posture = override_posture if override_posture != "none" else "ordered_preferences"
+
+    candidates: list[tuple[ProviderCapabilityCatalogStatus, RouteFidelity]] = []
+    for provider, variant, fidelity in preferences:
+        status = _matching_status(
+            statuses,
+            request=normalized_request,
+            provider=provider,
+            variant=variant,
+        )
+        if status is not None:
+            candidates.append((status, fidelity))
+
+    selected_index = next(
+        (index for index, (status, _) in enumerate(candidates) if status.currently_reachable),
+        None,
+    )
+    fallback_candidates = tuple(
+        ProviderFallbackCandidate.from_status(status, fidelity=fidelity)
+        for index, (status, fidelity) in enumerate(candidates)
+        if index != selected_index
+    )
+    if selected_index is None:
+        reason = (
+            "override_no_compatible_available_provider"
+            if explicit_preferences is not None
+            else "no_compatible_provider_available"
+        )
+        return _blocked_decision(
+            request=normalized_request,
+            availability=availability,
+            candidates=fallback_candidates,
+            override_posture=override_posture,
+            reason=reason,
+        )
+
+    selected, fidelity = candidates[selected_index]
+    return ProviderRouteDecision(
+        request=normalized_request,
+        selected_provider=selected.provider,
+        operation=selected.operation,
+        variant=selected.variant,
+        output_type=selected.output_type,
+        fidelity=fidelity,
+        fallback_candidates=fallback_candidates,
+        availability=availability,
+        availability_posture="selected_provider_reachable",
+        adapter_posture="installed_and_ordinary_enabled",
+        override_posture=override_posture,
+        decision_reason=(
+            "first_compatible_override_preference_selected"
+            if explicit_preferences is not None
+            else "first_reachable_policy_preference_selected"
+        ),
+        block_reason=None,
+        returned_material_class=selected.returned_material_class,
+        authority_posture=selected.authority_posture,
+    )
 
 
 def select_providers(
@@ -115,59 +752,30 @@ def select_providers(
     override: Optional[list[str]] = None,
     override_is_user: bool = True,
     premium_search_escalation: bool = False,
+    include_domains: Sequence[str] = (),
+    exclude_domains: Sequence[str] = (),
+    discover_qualifier: DiscoverQualifier | str | None = None,
 ) -> list[str]:
+    """Compatibility projection of the typed route decision.
+
+    Complexity, report type, news/currentness, comparison, and quantitative
+    posture do not select providers or activate provider-specific variants.
     """
-    Returns ordered provider list.
-    Override (from UI or scout) bypasses matrix logic and keeps only providers
-    that are available.
-    Comparison / quantitative paths drop Exa in favor of Tavily/Linkup.
-    """
 
-    def ensure_non_empty(result: list[str]) -> list[str]:
-        return result if result else ["tavily"]
-
-    if override is not None:
-        return ensure_non_empty(
-            _filter_available_override_providers(
-                override,
-                available_keys,
-                complexity,
-                override_is_user=override_is_user,
-                premium_search_escalation=premium_search_escalation,
-            )
-        )
-
-    qt = (query_type or "other").strip().lower()
-    is_quant = is_quantitative_query(query_type, report_type)
-    linkup_allowed = should_allow_linkup_provider(
-        complexity,
-        premium_search_escalation=premium_search_escalation,
+    del complexity, report_type, premium_search_escalation
+    request = derive_provider_capability_request(
+        query_type=query_type,
+        intent=intent,
+        is_academic=is_academic,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
+        discover_qualifier=discover_qualifier,
     )
-
-    if intent == "news" or qt in {"news", "current_events", "event"}:
-        result = ["tavily"]
-        if available_keys.get("linkup") and linkup_allowed:
-            result.append("linkup")
-        return ensure_non_empty(result)
-
-    if is_quant:
-        result = []
-        if (not suppress_tavily) and available_keys.get("tavily"):
-            result.append("tavily")
-        if available_keys.get("linkup") and linkup_allowed:
-            result.append("linkup")
-        return ensure_non_empty(result or (["tavily"] if available_keys.get("tavily") else []))
-
-    if is_academic:
-        if available_keys.get("exa"):
-            return ["exa"]
-        return ensure_non_empty(["tavily"])
-
-    result = []
-    if (not suppress_tavily) and available_keys.get("tavily"):
-        result.append("tavily")
-    if available_keys.get("linkup") and linkup_allowed:
-        result.append("linkup")
-    if available_keys.get("exa"):
-        result.append("exa")
-    return ensure_non_empty(result)
+    decision = route_provider_capability(
+        request,
+        available_keys,
+        override=override,
+        override_posture=("user_ordered_preferences" if override_is_user else "internal_ordered_preferences"),
+        suppress_tavily=suppress_tavily,
+    )
+    return list(decision.providers())

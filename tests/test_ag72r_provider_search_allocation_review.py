@@ -78,7 +78,7 @@ def _record_irs_lifecycle(controller: RunController) -> dict[str, Any]:
     )
 
 
-def test_ag72r_medium_general_provider_policy_excludes_linkup_without_escalation() -> None:
+def test_ag72r_general_provider_policy_selects_one_linkup_standard_route() -> None:
     providers = select_providers(
         "other",
         "general",
@@ -88,8 +88,7 @@ def test_ag72r_medium_general_provider_policy_excludes_linkup_without_escalation
         is_academic=False,
     )
 
-    assert providers == ["tavily", "exa"]
-    assert "linkup" not in providers
+    assert providers == ["linkup"]
     assert choose_retrieval_search_depth("medium", "basic", iteration=1) == "basic"
 
 
@@ -159,9 +158,8 @@ def test_ag72r_recovery_reuses_existing_allocation_with_official_domain_overlay(
     assert result["attempted"] is True
     assert captured["queries"] == _IRS_RECOVERY_QUERIES
     assert captured["search_depth"] == "basic"
-    assert captured["search_providers"] == ["tavily", "exa"]
+    assert captured["search_providers"] == ["linkup"]
     assert captured["provider_role"] == "source_class_recovery"
-    assert "linkup" not in captured["search_providers"]
     assert set(_SECONDARY_CORRIDOR).issubset(captured["include_domains"])
     assert {"irs.gov", "federalregister.gov"}.issubset(
         captured["include_domains"]
@@ -173,7 +171,7 @@ def test_ag72r_recovery_reuses_existing_allocation_with_official_domain_overlay(
     pass_record = retrieval_pass_records[0]
     assert pass_record["stage"] == "source_class_recovery"
     assert pass_record["queries"] == _IRS_RECOVERY_QUERIES
-    assert pass_record["providers"] == ["tavily", "exa"]
+    assert pass_record["providers"] == ["linkup"]
     assert pass_record["provider_role"] == "source_class_recovery"
     assert pass_record["search_depth"] == "basic"
     assert pass_record["results_per_query"] == 6

@@ -238,7 +238,12 @@ from core.retrieval_stop_trace_projection import (
     retrieval_stop_shadow_defaults,
 )
 from core.review_flags import recent_recurring_kb_hints
-from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
+from core.routing import (
+    ProviderRouteBlockedError,
+    is_quantitative_query,
+    merge_search_provider_overrides,
+    select_providers,
+)
 from core.routing_runtime import execute_route_request_action
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_authority_search_judgment_adapter import (
@@ -1201,6 +1206,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "tavily": bool(os.getenv("TAVILY_API_KEY")),
             "linkup": bool(os.getenv("LINKUP_API_KEY")),
             "exa": bool(os.getenv("EXA_API_KEY")),
+            "serper": bool(os.getenv("SERPER_API_KEY")),
+            "brave": bool(os.getenv("BRAVE_API_KEY")),
         }
     )
     available_keys, (select_provider_list, merge_provider_overrides) = provider_plan.available_keys(), (select_providers, merge_search_provider_overrides)
@@ -2006,6 +2013,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recovery_active=weak_corpus_recovery_used and iteration > 1,
             choose_search_depth=choose_retrieval_search_depth,
         )
+        if retrieval_scheduled_action.route_blocked:
+            raise ProviderRouteBlockedError(provider_plan.records[-1].route_decision)
         current_queries, current_search_depth, loop_providers, force_component_providers = main_retrieval_action_values(retrieval_scheduled_action)
         current_search_depth_for_recovery = current_search_depth
         status.step(f"--- **Iteration {iteration}/{max_iterations}** ---")
@@ -3745,6 +3754,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         code_version_metadata_builder=current_code_version_metadata,
     )
     execution_trace = post_author_output_packaging.execution_trace
+    execution_trace["provider_plan"] = provider_plan.to_trace()
     if final_answer_packet_handoff.author_input_blocked:
         execution_trace.update(
             build_blocked_fap_terminal_trace_fragment(blocked_fap_summary)

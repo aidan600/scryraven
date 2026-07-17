@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: af87f5387fb5cd11a36c56754ee719400bb1bf0b
+Verified-against-runtime: 7626f1628a18bfb70c7abe58b120dc84001f2e71
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -66,6 +66,7 @@ configuration.
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
+| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and route policy. Ordinary `run_pipeline()` records one capability-compatible provider or a typed block in ProviderPlan, carries the decision through scheduling, and dispatches mechanically. General/domain-targeted discovery is Linkup `standard/searchResults` first with Tavily as a descriptive fallback; exact academic/technical/semantic discovery selects Exa; explicit Serper/Brave roles remain candidate-only. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -207,9 +208,11 @@ Legacy Economist execution is retired from the ordinary CLI/backend product
 path. The ordinary orchestrator no longer gates, preflights, schedules, or calls
 the Economist, and current dependency composition does not inject
 `run_economist_step`. Configuring `OPENAI_API_KEY` does not restore that path.
-The former quantitative-preflight Author note is likewise absent. Ordinary
-Linkup `searchResults` acquisition eligibility is unchanged; the separate
-provider-synthesis precision path is retired below.
+The former quantitative-preflight Author note is likewise absent. That
+retirement did not itself change Linkup acquisition; current Linkup
+`searchResults` eligibility is now owned by the later provider-capability
+routing foundation below. The separate provider-synthesis precision path is
+retired.
 
 The `RunDeps.run_economist_step` field remains optional and unread as an
 isolated compatibility shape. The legacy implementation, its direct
@@ -225,6 +228,33 @@ bounded quantitative Specialist: it performs deterministic calculations from
 exact selected source literals inside the named bounded multi-component class.
 It does not provide broad economic analysis, arbitrary formulas, estimates,
 acquisition, or general quantitative reasoning.
+
+## Installed Provider-Capability Routing
+
+Runtime/test commit `7626f1628a18bfb70c7abe58b120dc84001f2e71`
+replaced the ordinary provider-name-first selector with one provider-neutral
+capability decision. `core.routing` is the sole policy owner;
+`ProviderPlan`, retrieval scheduling, dispatch, and `run_pipeline()` are
+ordinary consumers. Each acquisition job has exactly one selected provider or
+a typed blocked decision. Empty or unavailable selection does not manufacture
+Tavily, fallback candidates never dispatch, and ordinary selection no longer
+creates a Tavily/Linkup/Exa ensemble.
+
+General and domain-targeted discovery select Linkup
+`standard/searchResults` when available and otherwise select compatible Tavily
+Search. Academic/technical/semantic discovery selects Exa exactly, with Linkup
+standard and Tavily recorded only as degraded alternatives when applicable.
+Explicit Serper lightweight-disambiguation and Brave independent-index roles
+remain candidate-only. News, quantitative posture, mode, and generic complexity
+do not create a provider identity or promote Linkup to deep. Exact include and
+exclude domains are preserved without granting social authority.
+
+Provider availability records booleans only for Tavily, Linkup, Exa, Serper,
+and Brave. Provider material remains non-authoritative acquisition material
+until existing downstream custody acts. Provider synthesis remains disabled,
+and Scrutineer-authorized `deep/searchResults` remediation remains the only
+current ordinary Linkup Deep boundary. The full contract is owned by
+[Provider Capability And Acquisition Routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md).
 
 ## Retired Legacy Semantic Scout And Ordinary Provider Synthesis
 
@@ -276,15 +306,15 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Hosted or Local capacity characterization.
 - A selected current UI framework or final UI/productization work.
 - An ordinary saved-thread conversation or follow-up product workflow.
-- Provider-capability routing or the owner-selected Linkup-first target policy.
 - Linkup Fetch or Tavily Extract, Map, or Crawl acquisition.
+- General Linkup Deep activation or provider-failure cross-provider retry.
 
 ## Not Proved
 
 - No live validation was performed.
 - Arbitrary-query decomposition and broad route qualification remain unproved.
 - No acquisition-completeness repair was performed.
-- No provider or model changed.
+- No provider transport adapter or model changed; ordinary provider routing changed.
 - No S1 capability, route eligibility, budget, scheduling order, recursion, or
   parallelism expanded.
 - No new Specialist capability was added.

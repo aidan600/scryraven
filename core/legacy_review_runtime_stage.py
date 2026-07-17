@@ -295,6 +295,8 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                     suppress_tavily=request.suppress_tavily,
                     base_search_depth=request.search_depth,
                     choose_search_depth=deps.choose_supplemental_search_depth,
+                    include_domains=request.scope.get("include_domains", ()),
+                    exclude_domains=request.scope.get("exclude_domains", ()),
                     select_provider_list=deps.select_providers,
                 )
                 supp_search_depth = supplemental_provider_record.search_depth or request.search_depth
@@ -302,7 +304,8 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                 request.collector.record_dispatch(providers=supp_providers, search_depth=supp_search_depth)
                 supplemental_ran = True
                 supplemental_outcome = deps.execute_supplemental_search(
-                    request.scope, queries=synth_queries, search_depth=supp_search_depth, providers=supp_providers
+                    request.scope, queries=synth_queries, search_depth=supp_search_depth, providers=supp_providers,
+                    provider_variant=supplemental_provider_record.provider_variant,
                 )
                 supp_passages = supplemental_outcome.passages
                 delta_urls_supplemental = supplemental_outcome.seen_url_delta
@@ -462,6 +465,8 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                                     is_academic=request.is_academic,
                                     suppress_tavily=request.suppress_tavily,
                                     search_depth=request.search_depth,
+                                    include_domains=request.scope.get("include_domains", ()),
+                                    exclude_domains=request.scope.get("exclude_domains", ()),
                                     select_provider_list=deps.select_providers,
                                 )
                                 remed_providers = remediation_provider_record.providers_list()
