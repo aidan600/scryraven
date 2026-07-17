@@ -22,6 +22,7 @@ ARCH = DOCS / "architecture"
 GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
+CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
 ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
@@ -325,7 +326,10 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Next: Provider Capability and Acquisition-Routing Proof" in roadmap
+    assert (
+        "Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        in roadmap
+    )
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -394,8 +398,79 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Next: Provider Capability and Acquisition-Routing Proof" in roadmap
+    assert (
+        "Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        in roadmap
+    )
     assert "No live recovery" in roadmap
+
+
+def test_provider_offerings_census_is_current_complete_and_non_installing() -> None:
+    census = _read(CENSUS)
+    normalized = _collapsed(CENSUS)
+
+    for phrase in (
+        "Status: current decision census",
+        "Authority: owner-approved provider acquisition target doctrine",
+        "Verified-against-runtime: 628dbe38a438313df1f9a19088ca1327864c49aa",
+        "Vendor-documentation-checked: 2026-07-16",
+        "Vendor offered",
+        "Adapter installed",
+        "Ordinary enabled",
+        "Ordinary reachable",
+        "Authority granted",
+        "## 2. Dated external offerings",
+        "## 3. Consolidated required census matrix",
+        "### 3.1 Offered, installed, enabled, reachable, and authoritative are separate",
+        "## 4. Current adapter matrix",
+        "## 5. Current ordinary-consumer matrix",
+        "## 6. Current authority matrix",
+        "## 7. Legacy-doctrine disposition matrix",
+        "## 8. Linkup standard/deep decision",
+        "## 9. Provider-synthesis closure",
+        "## 10. Owner-approved target constellation",
+        "## 11. Installation-profile hypotheses",
+        "## 12. Exact recommended implementation sequence",
+        "## 14. Nonproofs",
+        "## 15. Principal proof classification",
+        "RETAIN",
+        "REPLACE",
+        "RETIRE",
+        "DEFER_PENDING_PROOF",
+        "Linkup `sourcedAnswer` precision context",
+        "Tavily source-of-record default",
+        "Phantom Tavily fallback",
+        "Exa automatic general fan-out",
+        "DISCOVER(lightweight_disambiguation)",
+        "DISCOVER(independent_index)",
+        "Source-of-record requirement",
+        "none; read-only repository and provider-offerings census",
+    ):
+        assert phrase in census
+
+    for provider in ("Linkup", "Tavily", "Exa", "Serper", "Brave"):
+        assert provider in census
+    for basis in (
+        "CURRENT_RUNTIME",
+        "CURRENT_TEST",
+        "CURRENT_CANONICAL_DOC",
+        "HISTORICAL_DOC",
+        "OWNER_DECISION",
+        "DATED_VENDOR_DOCUMENTATION",
+        "INFERENCE",
+    ):
+        assert basis in census
+
+    assert "target dispositions, not completed runtime changes" in normalized
+    assert "Default disabled optional premium escalation" in census
+    assert "Deep mode alone must not trigger it" in census
+    assert "Provider synthesis prohibition" in census
+    assert "improved answer quality" in census
+
+    historical_links = _links(CENSUS)
+    assert historical_links
+    for target in historical_links:
+        assert target.is_file(), target
 
 
 def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
@@ -425,7 +500,16 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     structured_route = roadmap.index(
         "## Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01"
     )
-    provider = roadmap.index("## Active Next: Provider Capability and Acquisition-Routing Proof")
+    provider_census = roadmap.index(
+        "## Completed Audit: Provider Offerings, Adapter, and Legacy-Doctrine Census"
+    )
+    scout_retirement = roadmap.index(
+        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+    )
+    provider = roadmap.index("### Provider-Capability Routing Foundation")
+    linkup_read = roadmap.index("### Linkup Known-URL Read Adapter")
+    tavily_capabilities = roadmap.index("### Tavily Extract, Map, and Crawl")
+    routing_closure = roadmap.index("### Acquisition-Routing Closure If Required")
     convergence = roadmap.index("### Bounded Final-Custody Convergence")
     live = roadmap.index("### Separately Licensed Complete-App Live Shakeout")
 
@@ -439,7 +523,12 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         < mode_policy
         < proposal
         < structured_route
+        < provider_census
+        < scout_retirement
         < provider
+        < linkup_read
+        < tavily_capabilities
+        < routing_closure
         < convergence
         < live
     )
@@ -464,6 +553,12 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "read-only, offline census" in normalized
     assert "without repairing, replacing, activating, or retiring" in normalized
     assert "changed no production runtime behavior" in normalized
+    assert "provider offerings, adapter, and legacy-doctrine census" in (
+        normalized.casefold()
+    )
+    assert "target decisions, not completed runtime changes" in normalized
+    assert "provider synthesis disabled" in normalized
+    assert "Linkup sourced answers" in normalized
     assert "MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
     assert "Specialist Proposal-Instance Admission Hardening" in roadmap
     assert "this roadmap grants no live license" in normalized
@@ -499,7 +594,10 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Next: Provider Capability and Acquisition-Routing Proof" in roadmap
+    assert (
+        "Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        in roadmap
+    )
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
