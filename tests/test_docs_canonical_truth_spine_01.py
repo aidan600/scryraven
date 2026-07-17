@@ -70,8 +70,11 @@ QUANT_LINEAGE_RUNTIME_SHA = (
 STRUCTURED_ROUTE_RUNTIME_SHA = (
     "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
 )
+SCOUT_RETIREMENT_RUNTIME_SHA = (
+    "e444c2e098e90b18c67bea34d057718a61b586d7"  # pragma: allowlist secret
+)
 CURRENT_STATE_RUNTIME_SHA = (
-    STRUCTURED_ROUTE_RUNTIME_SHA
+    SCOUT_RETIREMENT_RUNTIME_SHA
 )
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 SPECIALIST_ADMISSION_RUNTIME_SHA = (
@@ -327,7 +330,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        "Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
         in roadmap
     )
 
@@ -399,7 +402,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        "Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
         in roadmap
     )
     assert "No live recovery" in roadmap
@@ -412,7 +415,7 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
     for phrase in (
         "Status: current decision census",
         "Authority: owner-approved provider acquisition target doctrine",
-        "Verified-against-runtime: 628dbe38a438313df1f9a19088ca1327864c49aa",
+        f"Verified-against-runtime: {SCOUT_RETIREMENT_RUNTIME_SHA}",
         "Vendor-documentation-checked: 2026-07-16",
         "Vendor offered",
         "Adapter installed",
@@ -444,7 +447,7 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
         "DISCOVER(lightweight_disambiguation)",
         "DISCOVER(independent_index)",
         "Source-of-record requirement",
-        "none; read-only repository and provider-offerings census",
+        "ordinary CLI/backend runtime through the cited offline retirement commit",
         "OWNER_SELECTED_TARGET_NOT_INSTALLED",
         "Minimal: Linkup",
         "Practical: Linkup + Serper",
@@ -468,7 +471,9 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
     ):
         assert basis in census
 
-    assert "target dispositions, not completed runtime changes" in normalized
+    assert "completed semantic Scout and ordinary provider-synthesis retirement" in normalized
+    assert "ordinary precision violation closed" in census
+    assert "No ordinary authority or reachability" in census
     assert "Default disabled optional premium escalation" in census
     assert "Deep mode alone must not trigger it" in census
     assert "Provider synthesis prohibition" in census
@@ -484,7 +489,7 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 1
     assert (
-        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        "## Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
         in roadmap
     )
     assert (
@@ -530,9 +535,11 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Audit: Provider Offerings, Adapter, and Legacy-Doctrine Census"
     )
     scout_retirement = roadmap.index(
-        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
     )
-    provider = roadmap.index("### Provider-Capability Routing Foundation")
+    provider = roadmap.index(
+        "## Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
+    )
     linkup_read = roadmap.index("### Linkup Known-URL Read Adapter")
     tavily_capabilities = roadmap.index("### Tavily Extract, Map, and Crawl")
     routing_closure = roadmap.index("### Acquisition-Routing Closure If Required")
@@ -592,6 +599,63 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         assert marker not in roadmap
 
 
+def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow() -> None:
+    current = _collapsed(CURRENT_STATE)
+    census = _collapsed(CENSUS)
+    roadmap = _read(ROADMAP)
+
+    for phrase in (
+        "Legacy semantic Scout ordinary execution is retired",
+        "does not select a Scout prompt, make a Scout model call, create Scout QueryPlan candidates",
+        "scout_directed_continuation",
+        "scout_continuation",
+        "Evaluator, expander, generic QueryPlan admission",
+        "Ordinary Linkup provider synthesis is also retired",
+        "provider-written answers cannot enter ordinary Analyst input",
+        "generic acquisition continues to reject `sourcedAnswer`",
+        "Scrutineer-authorized `deep/searchResults` remediation, remains unchanged",
+        "This repair installed no provider-capability routing",
+        "No live validation was performed",
+    ):
+        assert phrase in current
+
+    for phrase in (
+        SCOUT_RETIREMENT_RUNTIME_SHA,
+        "RETIRE — completed ordinary retirement",
+        "No ordinary authority or reachability",
+        "No ordinary prompt/model call, query candidate, gate selection, or retrieval dispatch remains",
+        "ordinary precision violation closed",
+        "lower-level `deep/sourcedAnswer` helper remains explicitly nonordinary",
+        "Generic QueryPlan admission, RunKernel continuation authority, retrieval-stop policy",
+        "Provider-capability routing foundation",
+        "Offline census does not license it",
+    ):
+        assert phrase in census
+
+    assert roadmap.count("## Active Next:") == 1
+    assert (
+        "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        in roadmap
+    )
+    assert (
+        "## Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
+    )
+    assert (
+        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        not in roadmap
+    )
+    assert roadmap.index(
+        "## Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
+    ) < roadmap.index("### Linkup Known-URL Read Adapter")
+    for noninstalled in (
+        "installed no provider-capability routing",
+        "Linkup Fetch",
+        "Tavily site acquisition",
+        "live-call authority",
+    ):
+        assert noninstalled in roadmap
+
+
 def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() -> None:
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
@@ -608,7 +672,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     for phrase in (
         "ordinary CLI/backend composition no longer injects or executes",
         "ordinary orchestrator no longer gates, preflights, schedules, or calls",
-        "Independent Linkup eligibility and call arguments are unchanged",
+        "Ordinary Linkup `searchResults` acquisition eligibility is unchanged",
         "passive handoff/trace fields remain repository-visible legacy material",
         "installs no replacement economic Specialist",
         "specialist.source_bound_calculation",
@@ -621,7 +685,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        "Active Next: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
         in roadmap
     )
     assert "answer-producing paths" in roadmap
