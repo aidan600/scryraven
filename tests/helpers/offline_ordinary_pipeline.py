@@ -17,9 +17,19 @@ OFFLINE_PROVIDER_ENV_KEYS = (
     "TAVILY_API_KEY",
     "LINKUP_API_KEY",
     "EXA_API_KEY",
+    "SERPER_API_KEY",
     "OPENAI_API_KEY",
     "OPENROUTER_API_KEY",
 )
+
+OFFLINE_SEARCH_PROVIDER_ENV_KEYS = {
+    "tavily": "TAVILY_API_KEY",
+    "linkup": "LINKUP_API_KEY",
+    "exa": "EXA_API_KEY",
+    "serper": "SERPER_API_KEY",
+    "brave": "BRAVE_API_KEY",
+}
+OFFLINE_PROVIDER_AVAILABILITY_PLACEHOLDER = "offline-provider-availability"
 
 HANDOFF_SEMANTIC = "semantic"
 HANDOFF_SUFFICIENCY = "sufficiency"
@@ -27,9 +37,30 @@ HANDOFF_PACKET = "packet"
 HANDOFF_AUTHOR = "author"
 
 
-def scrub_offline_runtime(monkeypatch: Any) -> None:
+def scrub_offline_runtime(
+    monkeypatch: Any,
+    *,
+    available_search_providers: Sequence[str] = (),
+) -> None:
+    requested_providers = tuple(
+        str(provider).strip().casefold() for provider in available_search_providers
+    )
+    unknown_providers = tuple(
+        provider
+        for provider in requested_providers
+        if provider not in OFFLINE_SEARCH_PROVIDER_ENV_KEYS
+    )
+    if unknown_providers:
+        raise ValueError(
+            "unknown offline search provider(s): " + ", ".join(unknown_providers)
+        )
     for key in OFFLINE_PROVIDER_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
+    for provider in requested_providers:
+        monkeypatch.setenv(
+            OFFLINE_SEARCH_PROVIDER_ENV_KEYS[provider],
+            OFFLINE_PROVIDER_AVAILABILITY_PLACEHOLDER,
+        )
     monkeypatch.setattr(orchestrator, "DB_ENABLED", False)
     monkeypatch.setattr(orchestrator, "kb_review_agent", lambda *_args, **_kwargs: {})
 

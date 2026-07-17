@@ -26,7 +26,10 @@ RAW_AUTHOR_RESPONSE = (
 
 @pytest.fixture(autouse=True)
 def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    scrub_offline_runtime(monkeypatch)
+    scrub_offline_runtime(
+        monkeypatch,
+        available_search_providers=("linkup",),
+    )
 
 
 class _GapHarness(OfflineOrdinaryPipelineHarness):
