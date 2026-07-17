@@ -4,6 +4,10 @@ This module only executes already-authorized retrieval requests and assembles
 already-existing pass telemetry. It does not generate or mutate queries, select
 providers, choose depth, rank/filter results, import prompt/model code, or make
 provider policy decisions.
+
+The legacy ``execute_retrieval_pass_handoff`` contract remains a separately
+tested compatibility surface; this module only dispatches already-scheduled
+provider-capability decisions.
 """
 
 from __future__ import annotations
@@ -16,7 +20,6 @@ from core.retrieval_loop_contract import (
     build_retrieval_execution_envelope,
     build_retrieval_loop_state,
     build_retrieval_pass_descriptor,
-    execute_retrieval_pass_handoff,
     summarize_retrieval_pass_result,
 )
 from core.retrieval_scheduler import RetrievalScheduledAction
@@ -167,24 +170,26 @@ def execute_recorded_retrieval_dispatch(
     }
     _append_optional_kwargs(kwargs, dispatch)
     kwargs["provider_diagnostics"] = deps.provider_diagnostics
-    passages = deps.process_search_queries(
-        list(dispatch.queries),
-        dispatch.intent,
-        dispatch.complexity,
-        dispatch.search_depth,
-        dispatch.results_per_query,
-        list(dispatch.include_domains),
-        list(dispatch.exclude_domains),
-        deps.query_embedding,
-        deps.seen_urls,
-        deps.collected_images,
-        deps.embed_provider,
-        deps.embed_model,
-        deps.local_url,
-        deps.embed_texts,
-        deps.compute_similarities,
-        **kwargs,
-    )
+    passages = []
+    if dispatch.providers:
+        passages = deps.process_search_queries(
+            list(dispatch.queries),
+            dispatch.intent,
+            dispatch.complexity,
+            dispatch.search_depth,
+            dispatch.results_per_query,
+            list(dispatch.include_domains),
+            list(dispatch.exclude_domains),
+            deps.query_embedding,
+            deps.seen_urls,
+            deps.collected_images,
+            deps.embed_provider,
+            deps.embed_model,
+            deps.local_url,
+            deps.embed_texts,
+            deps.compute_similarities,
+            **kwargs,
+        )
     pass_record = build_retrieval_pass_record(
         stage=dispatch.stage,
         iteration=dispatch.iteration,
@@ -236,6 +241,7 @@ _RECORDED_SCOPE_KEYS = (
 )
 _RECOVERY_SCOPE_KEYS = (
     "process_search_queries",
+    "provider_plan",
     "all_passages",
     "intent",
     "complexity",
@@ -279,6 +285,26 @@ def _exa_filter(values: dict[str, Any]) -> Sequence[str] | None:
 
 def _latest_iteration_providers(values: dict[str, Any]) -> list[str]:
     return list(values["providers_by_iteration"][-1]) if values["providers_by_iteration"] else []
+
+
+def _recovery_process_with_recorded_variant(values: dict[str, Any]) -> Callable[..., Any]:
+    process_search_queries = values["process_search_queries"]
+    latest_providers = tuple(_latest_iteration_providers(values))
+    if latest_providers != ("linkup",):
+        return process_search_queries
+    records = tuple(getattr(values["provider_plan"], "records", ()))
+    variant = next(
+        (record.provider_variant for record in reversed(records) if tuple(record.providers) == latest_providers),
+        None,
+    )
+    if variant is None:
+        return process_search_queries
+
+    def process_with_variant(*args: Any, **kwargs: Any) -> Any:
+        kwargs.setdefault("linkup_depth_override", variant)
+        return process_search_queries(*args, **kwargs)
+
+    return process_with_variant
 
 
 def retrieval_dispatch_deps_from_scope(scope: dict[str, Any]) -> RetrievalDispatchDeps:
@@ -339,10 +365,7 @@ def execute_main_retrieval_pass_from_scope(
     scheduled_action: RetrievalScheduledAction = values["retrieval_scheduled_action"]
     action_iteration = scheduled_action.iteration or values["iteration"]
     router_state = values["router_query_preparation_contract"]
-    query_source = (
-        router_state.query_preparation_provenance.get("query_source")
-        or scheduled_action.provider_role
-    )
+    query_source = router_state.query_preparation_provenance.get("query_source") or scheduled_action.provider_role
     retrieval_budget_facts = {
         "iteration": action_iteration,
         "max_iterations": values["max_iterations"],
@@ -363,6 +386,9 @@ def execute_main_retrieval_pass_from_scope(
         provider_role=scheduled_action.provider_role,
         iteration=action_iteration,
         exa_domain_filter=_exa_filter(values),
+        linkup_depth_override=(
+            scheduled_action.provider_variant if tuple(scheduled_action.providers) == ("linkup",) else None
+        ),
         entity_hint=values["entity_hint_for_retrieval"],
         prior_queries_for_similarity=values["similarity_prior_queries"],
         query_similarity_basis=values["query_similarity_basis"],
@@ -416,23 +442,12 @@ def execute_main_retrieval_pass_from_scope(
 
     deps = retrieval_dispatch_deps_from_scope(scope)
     seen_before = len(deps.seen_urls)
-    passages = execute_retrieval_pass_handoff(
-        envelope,
-        process_search_queries=deps.process_search_queries,
-        query_embedding=deps.query_embedding,
-        seen_urls=deps.seen_urls,
-        collected_images=deps.collected_images,
-        embed_provider=deps.embed_provider,
-        embed_model=deps.embed_model,
-        local_url=deps.local_url,
-        embed_texts=deps.embed_texts,
-        compute_similarities=deps.compute_similarities,
-        status_container=deps.status_container,
-        provider_diagnostics=deps.provider_diagnostics,
-        iteration=dispatch_action.iteration,
-        prior_queries_for_similarity=dispatch_action.prior_queries_for_similarity,
-        query_similarity_basis=dispatch_action.query_similarity_basis,
-    )
+    passages = []
+    if dispatch_action.providers:
+        passages = execute_recorded_retrieval_dispatch(
+            dispatch_action,
+            deps,
+        ).passages
     seen_url_delta = max(0, len(deps.seen_urls) - seen_before)
     loop_state = loop_state.with_pass_result(
         summarize_retrieval_pass_result(
@@ -530,7 +545,9 @@ def execute_disambiguation_retry_from_scope(
         "iteration",
         "ACADEMIC_DOMAINS",
         "is_academic",
+        "retrieval_scheduled_action",
     )
+    scheduled_action: RetrievalScheduledAction = values["retrieval_scheduled_action"]
     return _execute_scope_dispatch(
         scope,
         stage="disambiguation_retry",
@@ -541,6 +558,9 @@ def execute_disambiguation_retry_from_scope(
         retrieval_pass_records=retrieval_pass_records,
         iteration=values["iteration"],
         exa_domain_filter=_exa_filter(values),
+        linkup_depth_override=(
+            scheduled_action.provider_variant if tuple(values["loop_providers"]) == ("linkup",) else None
+        ),
     )
 
 
@@ -550,6 +570,7 @@ def execute_supplemental_search_from_scope(
     queries: Sequence[str],
     search_depth: str,
     providers: Sequence[str],
+    provider_variant: str | None = None,
 ) -> RetrievalDispatchOutcome:
     return _execute_scope_dispatch(
         scope,
@@ -558,6 +579,7 @@ def execute_supplemental_search_from_scope(
         providers=providers,
         provider_role="supplemental_search",
         search_depth=search_depth,
+        linkup_depth_override=(provider_variant if tuple(providers) == ("linkup",) else None),
     )
 
 
@@ -622,7 +644,7 @@ def source_class_recovery_context_from_scope(
     )
     return SourceClassRecoveryRunnerContext(
         controller=values["_run_controller_mirror"],
-        process_search_queries=values["process_search_queries"],
+        process_search_queries=_recovery_process_with_recorded_variant(values),
         error_type=error_type,
         **_recovery_dispatch_kwargs(values, lifecycle_key="active_source_class_recovery_lifecycle"),
     )
@@ -642,7 +664,7 @@ def execute_conflict_resolution_from_scope(
     )
     return execute_conflict_resolution_action(
         decision,
-        process_conflict_resolution_queries=values["process_search_queries"],
+        process_conflict_resolution_queries=_recovery_process_with_recorded_variant(values),
         error_type=error_type,
         **_recovery_dispatch_kwargs(values, lifecycle_key="active_conflict_resolution_lifecycle"),
     )

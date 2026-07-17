@@ -1,16 +1,34 @@
-"""Tests for core/routing.py (Phase A4)."""
+"""Focused tests for the sole provider-capability policy owner."""
 
 from __future__ import annotations
 
-from core.routing import QUERY_TYPE_ENUM, is_quantitative_query, merge_search_provider_overrides, select_providers
+import pytest
+
+from core.routing import (
+    QUERY_TYPE_ENUM,
+    AcquisitionCapability,
+    DiscoverQualifier,
+    ProviderCapabilityRequest,
+    RouteFidelity,
+    is_quantitative_query,
+    merge_search_provider_overrides,
+    route_provider_capability,
+    select_providers,
+)
 
 
 def _all_on() -> dict[str, bool]:
-    return {"tavily": True, "linkup": True, "exa": True}
+    return {
+        "tavily": True,
+        "linkup": True,
+        "exa": True,
+        "serper": True,
+        "brave": True,
+    }
 
 
 def _all_off() -> dict[str, bool]:
-    return {"tavily": False, "linkup": False, "exa": False}
+    return {provider: False for provider in _all_on()}
 
 
 def test_query_type_enum_includes_router_and_spec_types() -> None:
@@ -19,181 +37,195 @@ def test_query_type_enum_includes_router_and_spec_types() -> None:
     assert "place" in QUERY_TYPE_ENUM
 
 
-def test_is_quantitative_query_honors_query_types() -> None:
+def test_is_quantitative_query_honors_query_and_report_types() -> None:
     assert is_quantitative_query("comparison", "general_research") is True
     assert is_quantitative_query("quantitative_comparison", "general_research") is True
+    assert is_quantitative_query("product", "comparative_analysis") is True
+    assert is_quantitative_query("other", "benchmark") is True
     assert is_quantitative_query("product", "general_research") is False
 
 
-def test_is_quantitative_query_honors_report_types() -> None:
-    assert is_quantitative_query("product", "comparative_analysis") is True
-    assert is_quantitative_query("other", "benchmark") is True
-    assert is_quantitative_query(None, "quantitative_comparison") is True
-    assert is_quantitative_query("concept", "cost_analysis") is True
-
-
-def test_quantitative_comparison_overrides_academic_for_providers() -> None:
-    prov = select_providers(
-        "quantitative_comparison",
-        "general",
-        "high",
+@pytest.mark.parametrize(
+    ("query_type", "intent", "complexity", "report_type"),
+    [
+        ("product", "news", "high", "general_research"),
+        ("current_events", "general", "low", "general_research"),
+        ("quantitative_comparison", "general", "high", "quantitative_comparison"),
+        ("comparison", "general", "medium", "general_research"),
+        ("product", "general", "low", "general_research"),
+        ("product", "general", "medium", "benchmark"),
+        ("product", "general", "high", "cost_analysis"),
+    ],
+)
+def test_general_news_and_quantitative_requests_share_linkup_first_discovery(
+    query_type: str,
+    intent: str,
+    complexity: str,
+    report_type: str,
+) -> None:
+    assert select_providers(
+        query_type,
+        intent,
+        complexity,
         _all_on(),
-        report_type="quantitative_comparison",
-        is_academic=True,
-    )
-    assert prov == ["tavily", "linkup"]
-    assert "exa" not in prov
+        report_type=report_type,
+    ) == ["linkup"]
 
 
-def test_news_intent_returns_tavily_linkup() -> None:
-    prov = select_providers("product", "news", "high", _all_on(), report_type="general_research")
-    assert prov == ["tavily", "linkup"]
-
-
-def test_newsish_query_type_returns_tavily_linkup() -> None:
-    prov = select_providers("current_events", "general", "high", _all_on())
-    assert prov == ["tavily", "linkup"]
-
-
-def test_academic_prefers_exa_when_available() -> None:
+def test_academic_prefers_exa_and_uses_explicitly_degraded_fallbacks() -> None:
     assert select_providers("concept", "general", "high", _all_on(), is_academic=True) == ["exa"]
 
+    linkup_fallback = route_provider_capability(
+        ProviderCapabilityRequest(
+            capability=AcquisitionCapability.DISCOVER,
+            qualifier=DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
+        ),
+        {"linkup": True, "tavily": True},
+    )
+    tavily_fallback = route_provider_capability(
+        ProviderCapabilityRequest(
+            capability=AcquisitionCapability.DISCOVER,
+            qualifier=DiscoverQualifier.ACADEMIC_TECHNICAL_SEMANTIC,
+        ),
+        {"tavily": True},
+    )
 
-def test_academic_falls_back_tavily_when_no_exa() -> None:
-    keys = {"tavily": True, "linkup": True, "exa": False}
-    assert select_providers("concept", "general", "high", keys, is_academic=True) == ["tavily"]
-
-
-def test_quant_query_type_drops_exa() -> None:
-    prov = select_providers("quantitative_comparison", "general", "high", _all_on())
-    assert prov == ["tavily", "linkup"]
-    assert "exa" not in prov
-
-
-def test_medium_quantitative_query_skips_linkup_by_default() -> None:
-    prov = select_providers("quantitative_comparison", "general", "medium", _all_on())
-    assert prov == ["tavily"]
-    assert "linkup" not in prov
-
-
-def test_comparison_query_type_drops_exa() -> None:
-    prov = select_providers("comparison", "general", "medium", _all_on())
-    assert prov == ["tavily"]
-    assert "linkup" not in prov
+    assert linkup_fallback.selected_provider == "linkup"
+    assert linkup_fallback.fidelity is RouteFidelity.DEGRADED
+    assert tavily_fallback.selected_provider == "tavily"
+    assert tavily_fallback.fidelity is RouteFidelity.DEGRADED
 
 
-def test_quantitative_report_type_drops_exa_even_if_query_type_other() -> None:
-    prov = select_providers("product", "general", "high", _all_on(), report_type="quantitative_comparison")
-    assert prov == ["tavily", "linkup"]
-    assert "exa" not in prov
+def test_domain_constraints_select_same_linkup_first_policy() -> None:
+    decision = route_provider_capability(
+        ProviderCapabilityRequest(
+            capability=AcquisitionCapability.DISCOVER,
+            qualifier=DiscoverQualifier.DOMAIN_TARGETED,
+            include_domains=("reddit.com",),
+            exclude_domains=("blocked.example",),
+        ),
+        _all_on(),
+    )
+
+    assert decision.selected_provider == "linkup"
+    assert decision.request.include_domains == ("reddit.com",)
+    assert decision.request.exclude_domains == ("blocked.example",)
+    assert decision.social_authority_granted is False
 
 
-def test_comparative_analysis_report_type_drops_exa() -> None:
-    prov = select_providers("product", "general", "high", _all_on(), report_type="comparative_analysis")
-    assert prov == ["tavily", "linkup"]
-    assert "exa" not in prov
+def test_suppress_tavily_never_manufactures_a_fallback() -> None:
+    assert select_providers("product", "general", "high", _all_on(), suppress_tavily=True) == ["linkup"]
+    assert (
+        select_providers(
+            "product",
+            "general",
+            "high",
+            {"tavily": True},
+            suppress_tavily=True,
+        )
+        == []
+    )
 
 
-def test_benchmark_report_type_drops_exa() -> None:
-    prov = select_providers("product", "general", "high", _all_on(), report_type="benchmark")
-    assert prov == ["tavily", "linkup"]
-    assert "exa" not in prov
-
-
-def test_cost_analysis_report_type_drops_exa() -> None:
-    prov = select_providers("product", "general", "high", _all_on(), report_type="cost_analysis")
-    assert prov == ["tavily", "linkup"]
-    assert "exa" not in prov
-
-
-def test_default_general_gets_exa_on_deep() -> None:
-    prov = select_providers("product", "general", "high", _all_on(), report_type="general_research")
-    assert prov == ["tavily", "linkup", "exa"]
-
-
-def test_default_medium_general_skips_linkup() -> None:
-    prov = select_providers("product", "general", "medium", _all_on(), report_type="general_research")
-    assert prov == ["tavily", "exa"]
-    assert "linkup" not in prov
-
-
-def test_default_low_complexity_no_linkup() -> None:
-    prov = select_providers("other", "general", "low", _all_on())
-    assert prov == ["tavily", "exa"]
-
-
-def test_low_news_complexity_no_linkup_by_default() -> None:
-    prov = select_providers("news", "news", "low", _all_on())
-    assert prov == ["tavily"]
-
-
-def test_suppress_tavily_skips_tavily_in_default() -> None:
-    prov = select_providers("product", "general", "high", _all_on(), suppress_tavily=True)
-    assert prov == ["linkup", "exa"]
-    assert "tavily" not in prov
-
-
-def test_explicit_user_override_allows_medium_linkup() -> None:
-    prov = select_providers("other", "general", "medium", _all_on(), override=["linkup"])
-    assert prov == ["linkup"]
-
-
-def test_internal_medium_override_does_not_force_linkup() -> None:
-    prov = select_providers(
+def test_override_selects_first_available_compatible_preference() -> None:
+    assert select_providers(
         "other",
         "general",
         "medium",
-        _all_on(),
-        override=["exa", "linkup"],
-        override_is_user=False,
-    )
-    assert prov == ["exa"]
-
-
-def test_override_filters_by_availability() -> None:
-    prov = select_providers(
+        {"tavily": True, "linkup": True},
+        override=["tavily", "linkup"],
+    ) == ["tavily"]
+    assert select_providers(
         "other",
         "general",
-        "high",
-        {"tavily": True, "linkup": False, "exa": True},
-        override=["exa", "linkup"],
+        "medium",
+        {"tavily": False, "linkup": True},
+        override=["tavily", "linkup"],
+    ) == ["linkup"]
+
+
+def test_incompatible_or_unavailable_override_blocks_instead_of_falling_back() -> None:
+    assert (
+        select_providers(
+            "other",
+            "general",
+            "high",
+            {"serper": True, "linkup": True},
+            override=["serper"],
+        )
+        == []
     )
-    assert prov == ["exa"]
+    assert (
+        select_providers(
+            "other",
+            "general",
+            "high",
+            {"linkup": False, "tavily": True},
+            override=["linkup"],
+        )
+        == []
+    )
 
 
-def test_no_keys_fallback_tavily() -> None:
-    assert select_providers("other", "general", "high", _all_off()) == ["tavily"]
+def test_no_keys_returns_empty_provider_projection() -> None:
+    assert select_providers("other", "general", "high", _all_off()) == []
 
 
-def test_merge_override_primary_first_then_scout() -> None:
-    keys = {"tavily": True, "linkup": True, "exa": True}
-    m = merge_search_provider_overrides(["exa"], ["tavily", "linkup"], keys)
-    assert m == ["exa", "tavily", "linkup"]
-
-
-def test_merge_override_keeps_primary_medium_linkup() -> None:
-    keys = {"tavily": True, "linkup": True, "exa": True}
-    m = merge_search_provider_overrides(["linkup"], ["exa"], keys, complexity="medium")
-    assert m == ["linkup", "exa"]
-
-
-def test_merge_override_filters_secondary_medium_linkup() -> None:
-    keys = {"tavily": True, "linkup": True, "exa": True}
-    m = merge_search_provider_overrides(None, ["exa", "linkup"], keys, complexity="medium")
-    assert m == ["exa"]
-
-
-def test_merge_override_dedupes() -> None:
-    keys = {"tavily": True, "linkup": True, "exa": False}
-    m = merge_search_provider_overrides(["tavily"], ["tavily", "linkup"], keys)
-    assert m == ["tavily", "linkup"]
-
-
-def test_merge_override_filters_unavailable() -> None:
+def test_merge_override_preserves_order_and_unsatisfied_preferences() -> None:
     keys = {"tavily": True, "linkup": False, "exa": False}
-    m = merge_search_provider_overrides(["linkup"], ["exa"], keys)
-    assert m is None
+    assert merge_search_provider_overrides(["linkup"], ["tavily", "linkup"], keys, complexity="medium") == [
+        "linkup",
+        "tavily",
+    ]
+    assert merge_search_provider_overrides(["unknown"], ["exa"], keys) == [
+        "unknown",
+        "exa",
+    ]
+    assert merge_search_provider_overrides(None, None, keys) is None
 
 
-def test_merge_override_none_when_both_empty() -> None:
-    assert merge_search_provider_overrides(None, None, _all_on()) is None
+@pytest.mark.parametrize(
+    ("qualifier", "provider"),
+    [
+        (DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION, "serper"),
+        (DiscoverQualifier.INDEPENDENT_INDEX, "brave"),
+    ],
+)
+def test_explicit_candidate_only_roles_do_not_enter_general_discovery(
+    qualifier: DiscoverQualifier,
+    provider: str,
+) -> None:
+    decision = route_provider_capability(
+        ProviderCapabilityRequest(
+            capability=AcquisitionCapability.DISCOVER,
+            qualifier=qualifier,
+        ),
+        {provider: True},
+    )
+
+    assert decision.selected_provider == provider
+    assert decision.authority_posture == "candidate_only_no_evidence_authority"
+    assert select_providers("other", "general", "high", {provider: True}) == []
+
+
+@pytest.mark.parametrize(
+    "capability",
+    [
+        AcquisitionCapability.READ,
+        AcquisitionCapability.FOCUSED_EXTRACT,
+        AcquisitionCapability.MAP_SITE,
+        AcquisitionCapability.CRAWL_SITE,
+        AcquisitionCapability.PROVIDER_SYNTHESIS,
+    ],
+)
+def test_noninstalled_or_disabled_capability_requests_are_typed_blocks(
+    capability: AcquisitionCapability,
+) -> None:
+    decision = route_provider_capability(
+        ProviderCapabilityRequest(capability=capability),
+        _all_on(),
+    )
+
+    assert decision.fidelity is RouteFidelity.BLOCKED
+    assert decision.selected_provider is None
+    assert decision.providers() == ()

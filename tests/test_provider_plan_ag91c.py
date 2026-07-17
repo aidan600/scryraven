@@ -122,7 +122,7 @@ def test_provider_override_merge_and_selection_order_parity() -> None:
     assert record.providers_list() == expected_providers
 
 
-def test_scout_expander_internal_override_behavior_unchanged_when_selected_directly() -> None:
+def test_internal_override_keeps_only_the_first_capability_compatible_provider() -> None:
     assert select_providers(
         "other",
         "general",
@@ -133,7 +133,7 @@ def test_scout_expander_internal_override_behavior_unchanged_when_selected_direc
         suppress_tavily=False,
         override=["exa", "linkup"],
         override_is_user=False,
-    ) == ["exa"]
+    ) == ["linkup"]
     assert select_providers(
         "other",
         "general",
@@ -144,7 +144,7 @@ def test_scout_expander_internal_override_behavior_unchanged_when_selected_direc
         suppress_tavily=False,
         override=["exa", "linkup"],
         override_is_user=False,
-    ) == ["exa", "linkup"]
+    ) == ["linkup"]
 
 
 def test_scout_continuation_provider_plan_override_parity_cases() -> None:
@@ -311,7 +311,7 @@ def test_continuation_dispatch_receives_same_providers_after_main_loop_merge() -
     assert main_record.providers_list() == legacy_dispatch_providers
 
 
-def test_supplemental_depth_provider_injection_parity_when_legacy_stage_is_untouched() -> None:
+def test_supplemental_depth_is_generic_while_provider_selection_is_single_route() -> None:
     available_keys = _all_on()
     assert choose_supplemental_search_depth("medium", "basic") == "basic"
     assert choose_supplemental_search_depth("high", "basic") == "advanced"
@@ -324,7 +324,7 @@ def test_supplemental_depth_provider_injection_parity_when_legacy_stage_is_untou
         is_academic=False,
         suppress_tavily=False,
         override=None,
-    ) == ["tavily", "linkup"]
+    ) == ["linkup"]
 
 
 def test_provider_plan_trace_projection_matches_consumed_values() -> None:
@@ -428,7 +428,8 @@ def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
     assert "schedule_main_retrieval_from_kernel_action" in source
     assert "provider_record = provider_plan.record_main_retrieval" in scheduler_source
     assert "provider_record = provider_plan.record_continuation" in scheduler_source
-    assert "main_retrieval_action_values(retrieval_scheduled_action)" in source
+    assert "main_retrieval_action_values(" in source
+    assert "retrieval_scheduled_action" in source
 
 
 def test_supplemental_provider_plan_record_matches_legacy_depth_and_provider_selection() -> None:

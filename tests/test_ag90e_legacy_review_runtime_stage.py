@@ -130,7 +130,7 @@ class Harness:
 
     def select_providers(self, *args: Any, **kwargs: Any) -> list[str]:
         self.select_calls.append((args, kwargs))
-        return ["brave", "exa"]
+        return ["linkup"]
 
     def choose_depth(self, complexity: str, search_depth: str) -> str:
         return f"{complexity}:{search_depth}"
@@ -167,7 +167,7 @@ def _request(**overrides: Any) -> LegacyReviewRuntimeRequest:
         search_depth="standard",
         query_type="news",
         intent="research",
-        available_keys={"brave": True},
+        available_keys={"linkup": True},
         report_type="brief",
         is_academic=False,
         suppress_tavily=True,
@@ -264,13 +264,14 @@ def test_supplemental_search_dispatch_shape_and_analyst_rerun_shape() -> None:
     outcome = execute_legacy_review_runtime_stage(request, _deps(harness))
 
     assert harness.select_calls[0] == (
-        ("news", "research", "medium", {"brave": True}),
+        ("news", "research", "medium", {"linkup": True}),
         {"report_type": "brief", "is_academic": False, "suppress_tavily": True, "override": None},
     )
     assert harness.supplemental_calls[0][1] == {
         "queries": ["date query"],
         "search_depth": "medium:standard",
-        "providers": ["brave", "exa"],
+        "providers": ["linkup"],
+        "provider_variant": "standard",
     }
     analyst_call = harness.model_calls[-1]
     assert analyst_call[1:] == (
@@ -374,7 +375,7 @@ def test_scrutineer_remediation_dispatch_shape_and_resynthesis() -> None:
 
     assert harness.remediation_calls[0][1] == {
         "queries": ["fresh update"],
-        "providers": ["brave", "exa"],
+        "providers": ["linkup"],
     }
     assert outcome.scrutineer_remediation_dispatch_authorized is True
     assert outcome.scrutineer_remediation_dispatch_posture == "completed"
