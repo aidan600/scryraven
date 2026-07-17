@@ -211,7 +211,6 @@ def test_explicit_candidate_only_roles_do_not_enter_general_discovery(
 @pytest.mark.parametrize(
     "capability",
     [
-        AcquisitionCapability.READ,
         AcquisitionCapability.FOCUSED_EXTRACT,
         AcquisitionCapability.MAP_SITE,
         AcquisitionCapability.CRAWL_SITE,
@@ -229,3 +228,14 @@ def test_noninstalled_or_disabled_capability_requests_are_typed_blocks(
     assert decision.fidelity is RouteFidelity.BLOCKED
     assert decision.selected_provider is None
     assert decision.providers() == ()
+
+
+def test_read_is_an_installed_ordinary_product_route() -> None:
+    decision = route_provider_capability(
+        ProviderCapabilityRequest(capability=AcquisitionCapability.READ),
+        _all_on(),
+    )
+
+    assert decision.fidelity is RouteFidelity.EXACT
+    assert decision.selected_provider == "linkup"
+    assert decision.operation == "fetch"

@@ -287,7 +287,7 @@ def test_real_run_pipeline_no_provider_records_typed_block_and_zero_transport(
     assert harness.search_calls == []
 
 
-def test_uninstalled_capabilities_and_provider_synthesis_fail_closed() -> None:
+def test_read_is_installed_while_provider_synthesis_still_fails_closed() -> None:
     available = {provider: True for provider in _PROVIDER_ENV_KEYS}
 
     read_decision = route_provider_capability(
@@ -299,13 +299,13 @@ def test_uninstalled_capabilities_and_provider_synthesis_fail_closed() -> None:
         available,
     )
 
-    assert read_decision.fidelity is RouteFidelity.BLOCKED
-    assert read_decision.block_reason == "capability_unavailable"
+    assert read_decision.fidelity is RouteFidelity.EXACT
+    assert read_decision.selected_provider == "linkup"
+    assert read_decision.operation == "fetch"
     assert {candidate.provider for candidate in read_decision.fallback_candidates} == {
-        "linkup",
         "tavily",
     }
-    assert all(not candidate.adapter_installed for candidate in read_decision.fallback_candidates)
+    assert all(candidate.adapter_installed for candidate in read_decision.fallback_candidates)
     assert synthesis_decision.fidelity is RouteFidelity.BLOCKED
     assert synthesis_decision.block_reason == "provider_synthesis_disabled"
     assert synthesis_decision.provider_synthesis_disabled is True
