@@ -92,8 +92,8 @@ inference is explicitly marked.**
 
 | Provider | Vendor endpoint / operation | Dated vendor-offering fact | Current repository adapter | Actual parameters exposed now | Current ordinary product consumer | Validation / operator-only consumer | Returned material class | Authority posture | Current provider role | Current selection rule | Current depth / variant rule | Target role hypothesis | Disposition | Rationale | Required implementation phase | Live comparative proof? | Historical doctrine references |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Linkup | Search `fast/searchResults` | Fast search, no LLM query reinterpretation | `search_linkup_results` | `q`, `depth`, `outputType`, `maxResults`, images, include/exclude domains, from/to date | Main retrieval can reach it only through an explicit low-complexity Linkup override; no automatic selector chooses it | Generic acquisition tests and brokered diagnostics can select it | Search-result name, URL, content | Candidate/source material only after ordinary gates | No distinct current role | Explicit user override can bypass the normal high-complexity Linkup gate | Adapter accepts `fast`; main dispatcher maps low complexity to `fast` | Possible low-cost discovery variant, not selected doctrine | DEFER_PENDING_PROOF | Target doctrine selects standard as the default hypothesis; fast needs quality/cost proof | Provider-capability routing foundation, then comparative proof | Yes | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
-| Linkup | Search `standard/searchResults` | Single-iteration agentic acquisition; adjacent parallel searches; one supplied URL may be scraped | `search_linkup_results`; generic acquisition adapter | Same Search controls; `depth=standard`, `outputType=searchResults` | Main retrieval, continuation/supplemental retrieval when selected; generic single-relation product path when explicitly configured | Brokered discovery and source-of-record decision tools | URL-bound provider-extracted content | May become evidence material only through current ranking/custody path; provider name grants no truth | General/domain-targeted search today | Linkup available and high complexity, user override, or premium escalation; main dispatcher defaults medium/high to standard | `standard` except explicit override | Candidate ordinary general and domain-targeted `DISCOVER` primary | REPLACE | Keep operation, replace inherited high-complexity/provider-name gating with capability routing | Provider-capability routing foundation | Yes, before declaring primary quality/cost | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG91C](../history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md) |
+| Linkup | Search `fast/searchResults` | Fast search, no LLM query reinterpretation | `search_linkup_results` | `q`, `depth`, `outputType`, `maxResults`, images, include/exclude domains, from/to date | Main retrieval can reach it only through an explicit low-complexity Linkup override; no automatic selector chooses it | Generic acquisition tests and brokered diagnostics can select it | Search-result name, URL, content | Candidate/source material only after ordinary gates | No distinct current role | Explicit user override can bypass the normal high-complexity Linkup gate | Adapter accepts `fast`; main dispatcher maps low complexity to `fast` | Possible low-cost discovery variant, not selected doctrine | DEFER_PENDING_PROOF | Target doctrine selects standard as the owner-selected target; fast needs quality/cost proof | Provider-capability routing foundation, then comparative proof | Yes | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
+| Linkup | Search `standard/searchResults` | Single-iteration agentic acquisition; adjacent parallel searches; one supplied URL may be scraped | `search_linkup_results`; generic acquisition adapter | Same Search controls; `depth=standard`, `outputType=searchResults` | Main retrieval, continuation/supplemental retrieval when selected; generic single-relation product path when explicitly configured | Brokered discovery and source-of-record decision tools | URL-bound provider-extracted content | May become evidence material only through current ranking/custody path; provider name grants no truth | General/domain-targeted search today | Linkup available and high complexity, user override, or premium escalation; main dispatcher defaults medium/high to standard | `standard` except explicit override | Owner-selected target for ordinary general and domain-targeted `DISCOVER`; `OWNER_SELECTED_TARGET_NOT_INSTALLED` | REPLACE | Keep the operation and later replace inherited high-complexity/provider-name gating with capability routing. Provider material remains acquisition material. Comparative proof may revise the policy but is not required to select it. | Provider-capability routing foundation | Yes, before factual comparative quality, coverage, latency, cost, or reliability claims; not required for target selection | [AG91A](../history/architecture/phases/AG91A_PRE_RETRIEVAL_QUERY_DEPTH_PROVIDER_AUTHORITY_MAP.md), [AG91C](../history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md) |
 | Linkup | Search `deep/searchResults` | Multi-iteration chained discovery and reading | Installed/carryable through `search_linkup_results` | `depth=deep`, `outputType=searchResults`, normal filters | Scrutineer remediation can select deep; legacy saved-thread follow-up carries deep but is not an ordinary product | Tests cover dispatch and operator paths | Multi-page URL-bound provider-extracted content | Current remediation results re-enter evidence integration; no special truth authority | High-complexity remediation/premium search | Scrutineer remediation hard-codes deep when its authorized novel-query path runs and Linkup is selected | Coupled to high-complexity eligibility in routing; not a separate acquisition-requirement decision | Optional premium, triggerable multi-iteration acquisition escalation | DEFER_PENDING_PROOF | Technically reachable, but triggers/custody/cost telemetry are not capability-owned and Deep mode alone must not trigger it | Provider-capability routing foundation, then bounded deep activation phase | Yes | [AG51B](../history/architecture/phases/AG51B_SOURCE_ACQUISITION_ARCHITECTURE_REVIEW.md), [AG91C](../history/architecture/phases/AG91C_PROVIDERPLAN_SEARCH_DEPTH_AUTHORITY_SEED.md) |
 | Linkup | Search `sourcedAnswer` | Vendor-written natural-language answer with citations | Installed in `search_linkup_results`; separate precision helper | `outputType=sourcedAnswer`, commonly `depth=deep`; structured schema omitted | High-complexity ordinary Linkup precision block places the answer in Analyst context | Diagnostics and aggregate-quality tests observe output type | Provider-written synthesis plus cited sources | Answer-influencing ordinary context without source-material-only custody; generic acquisition correctly rejects it | Precision context | High complexity + Linkup configured + non-weak corpus | Deep sourced answer | Disabled | RETIRE | ScryRaven acquires sources/material, not provider answers | Provider-synthesis ordinary-product closure, included with Scout retirement or immediately following | No; doctrine decision is closed | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
 | Linkup | Search `structured` | Vendor-generated JSON under caller schema | Partial request carriage only: payload supports a schema, but no structured-response normalizer or caller was found | `outputType=structured`, `structuredOutputSchema` | None | None found | Provider-generated structured synthesis | No ordinary authority found | None | No installed selector | No installed rule | Disabled | RETIRE | It is a provider synthesis surface, not source acquisition | Provider-synthesis ordinary-product closure guard | No | [AG96B0](../history/architecture/phases/AG96B0_OFFICIAL_SEARCH_STACK_DOCTRINE.md) |
@@ -251,7 +251,7 @@ decision. **Basis: CURRENT_RUNTIME.**
 | Adapter installed | Yes | Yes; the same adapter can carry it |
 | Current ordinary reachability | Main/continuation/supplemental and generic acquisition when Linkup is selected | Scrutineer remediation can reach it; legacy saved-thread follow-up is non-ordinary |
 | Current coupling | Linkup normally requires high complexity; main dispatcher uses standard at medium/high | Remediation hard-codes deep while routing also normally limits Linkup to high complexity; therefore complexity, mode and depth are indirectly conflated |
-| Target posture | Candidate ordinary default for general/domain-targeted discovery | Default disabled optional premium escalation |
+| Target posture | Owner-selected target for ordinary general/domain-targeted discovery; `OWNER_SELECTED_TARGET_NOT_INSTALLED` | Default disabled optional premium escalation |
 | Target triggers | Ordinary `DISCOVER`, including domain-targeted discovery | Inherently sequential acquisition; multiple unknown pages must be found/read; authorized recovery after bounded standard failure; fragmented material not selectable by URL; explicit premium escalation |
 | Non-triggers | Not applicable | ScryRaven Deep mode, generic high complexity, detailed-answer request, news, or social-domain targeting alone |
 | Disposition | REPLACE current eligibility with capability routing | DEFER_PENDING_PROOF |
@@ -290,10 +290,39 @@ OWNER_DECISION.**
 
 ## 10. Owner-approved target constellation
 
+### `DISCOVER(general)`
+
+Leading implementation: Linkup `standard/searchResults`
+
+Target status: `OWNER_SELECTED_TARGET_NOT_INSTALLED`
+
+Authority boundary: Candidate URLs and provider-extracted context only. Provider
+identity grants no source, evidence, claim, citation, Sufficiency,
+FinalAnswerPacket, or Author authority.
+
+Empirical posture: No claim that Linkup is objectively the best provider has
+been proved. Later licensed comparative evidence may validate, refine, or
+replace this policy.
+
+### `DISCOVER(domain_targeted)`
+
+Leading implementation: Linkup `standard/searchResults` with bounded domain
+constraints
+
+Target status: `OWNER_SELECTED_TARGET_NOT_INSTALLED`
+
+Authority boundary: Candidate URLs and provider-extracted context only. Bounded
+domain constraints and provider identity grant no source, evidence, claim,
+citation, Sufficiency, FinalAnswerPacket, Author, domain, or social authority.
+
+Empirical posture: No claim that Linkup is objectively the best provider has
+been proved. Later licensed comparative evidence may validate, refine, or
+replace this policy.
+
+The remaining target choices retain their existing status:
+
 | Capability | Leading implementation hypothesis | Target authority boundary | Status now | Basis |
 | --- | --- | --- | --- | --- |
-| `DISCOVER(general)` | Linkup `standard/searchResults` | Finds candidates/material; no source truth from provider identity | Hypothesis, not installed routing | OWNER_DECISION |
-| `DISCOVER(domain_targeted)` | Linkup `standard/searchResults` with domain constraints | Constraints do not grant domain/social authority | Hypothesis, not installed routing | OWNER_DECISION |
 | `DISCOVER(academic_technical_semantic)` | Exa search with content only when exact signal requires it | Candidate/source material under custody | Hypothesis; current Exa routing is broader | OWNER_DECISION, CURRENT_RUNTIME |
 | `DISCOVER(lightweight_disambiguation)` | Serper | Candidate/query direction only | Adapter exists; modern main job not installed | OWNER_DECISION, CURRENT_RUNTIME |
 | `DISCOVER(independent_index)` | Brave | Optional candidate/query direction only | Adapter and ordinary recon exist under legacy role | OWNER_DECISION, CURRENT_RUNTIME |
@@ -310,17 +339,35 @@ Social-domain discovery may use ordinary domain-targeted discovery such as a
 `reddit.com` constraint. It grants no social authority, representativeness,
 sentiment, identity, or trust posture. **Basis: OWNER_DECISION.**
 
-## 11. Installation-profile hypotheses
+## 11. Installation profiles and capability overlays
 
-These are future composition hypotheses, not configuration already installed:
+Profile labels are future composition and diagnostic labels; profile labels are
+not product modes. Profile labels create no authority and do not create automatic provider fan-out.
+Arbitrary valid provider subsets remain supported,
+and capability resolution derives from the providers and adapters actually
+installed and available. No installation must exactly match a named profile.
+Linkup-only remains valid. Comparative proof may revise policy but is not required to select the target.
 
-| Profile | Candidate installed capabilities | Explicit exclusions | Proof needed |
+These deployment profiles describe a future progression, not routing installed
+by this census:
+
+| Profile | Providers | Target capabilities | Boundaries |
 | --- | --- | --- | --- |
-| `discovery_minimal` | Serper lightweight disambiguation plus one explicit fallback Search implementation | No provider synthesis, deep, site map/crawl, or social authority | Offline routing/custody; live recall/cost comparison |
-| `discovery_general` | Linkup standard general/domain discovery, Exa academic/technical/semantic, Serper lightweight, optional Brave independent index, Tavily explicit fallback | No automatic fan-out or provider-name source-of-record role | Offline capability-routing matrix; comparative live proof |
-| `known_url_read` | Linkup Fetch and/or Tavily Extract after separate adapter phases | No Research/sourcedAnswer; no authority from extraction provider | URL lineage, rendering/error, readability and custody proof; bounded live validation |
-| `site_acquisition` | Tavily Map plus bounded Crawl and Extract | No unbounded crawl or automatic site authority | Scope/robots/cost/loop/custody design and bounded live proof |
-| `premium_sequential` | Linkup deep fixed to `searchResults` | Default off; no mode-only trigger or synthesis output | Trigger/cap/telemetry/custody implementation and live comparative proof |
+| Minimal: Linkup | Linkup | Linkup `standard/searchResults` for general `DISCOVER`; Linkup `standard/searchResults` for domain-targeted `DISCOVER`. | Linkup-only remains a valid ordinary installation; Serper is not required; known-URL `READ` remains unavailable until the separately licensed Linkup Fetch phase; no provider synthesis; no automatic fan-out. |
+| Practical: Linkup + Serper | Linkup + Serper | Linkup general and domain-targeted discovery; Serper lightweight disambiguation and candidate discovery. | Serper remains candidate/query direction only; Serper is not evidence authority; no provider fan-out merely because both providers are configured. |
+| Research: Linkup + Serper + Exa + Tavily | Linkup + Serper + Exa + Tavily | Linkup general and domain-targeted discovery; Serper lightweight disambiguation; Exa academic, technical, or semantic discovery when an exact acquisition signal requests it; Tavily explicit fallback discovery and future differentiated site-acquisition implementations. | Exa is not an automatic general co-provider; Tavily is not a universal default; no provider-name source-of-record authority; no automatic provider ensemble. |
+| Diversity: Linkup + Serper + Exa + Tavily + Brave | Linkup + Serper + Exa + Tavily + Brave | All Research profile capabilities; Brave as optional independent-index discovery. | Brave is not an ordinary duplicate call; Brave does not become a main evidence or answer provider merely because it is configured; diversity requires an explicit future acquisition job or recovery policy. |
+
+Optional future capability overlays remain separate from the deployment
+profiles. They extend a valid provider composition only after their separately
+licensed implementation; they do not place noninstalled capabilities in a
+current profile:
+
+| Capability overlay | Future composition | Noninstalled boundary |
+| --- | --- | --- |
+| `known_url_read` | Linkup Fetch and/or other selected URL-reader adapters | Depends on later Linkup Fetch and/or other selected URL-reader adapter phases; no Research/sourcedAnswer and no authority from the extraction provider. |
+| `site_acquisition` | Tavily Extract, Map, and bounded Crawl | Depends on Tavily Extract, Map, and Crawl work; no unbounded crawl or automatic site authority. |
+| `premium_sequential` | Linkup `deep/searchResults` | Depends on separately licensed triggers, caps, lineage, premium authorization, and custody/telemetry proof; default off, with no mode-only trigger or synthesis output. |
 
 ## 12. Exact recommended implementation sequence
 
@@ -352,8 +399,9 @@ These are future composition hypotheses, not configuration already installed:
 
 The following remain deliberately unresolved:
 
-- whether Linkup standard should become the general primary after comparative
-  quality, coverage, latency, and cost evidence;
+- whether later comparative quality, coverage, latency, and cost evidence should
+  cause the owner-selected Linkup-first general-discovery policy to be retained,
+  refined, or replaced;
 - whether Linkup fast has a useful bounded role;
 - exact Linkup deep triggers, caps and premium authorization representation;
 - whether Linkup Fetch, Tavily Extract, or Exa Contents should fill each known-
@@ -362,7 +410,7 @@ The following remain deliberately unresolved:
 - whether and when provider diversity warrants more than one discovery job;
 - current `exa_py type="neural"` compatibility with the vendor's current API/
   SDK vocabulary;
-- exact install profiles for Hosted and Local deployments; and
+- exact Hosted and Local provider subsets and capability availability; and
 - social-source authority, sampling, representativeness, trust and Specialist
   policy.
 
@@ -379,7 +427,8 @@ This census does not prove or install:
 
 - provider routing, ordering, quality, availability, price, latency or capacity;
 - semantic Scout retirement or any prompt/query change;
-- Linkup standard primacy or deep activation;
+- empirical Linkup standard superiority, installed Linkup-first routing, or deep
+  activation;
 - known-URL reading, focused extraction, site mapping, site crawling or Research;
 - evidence correctness, source-obligation satisfaction, citation eligibility,
   final custody or improved answer quality;

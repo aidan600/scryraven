@@ -429,7 +429,7 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
         "## 8. Linkup standard/deep decision",
         "## 9. Provider-synthesis closure",
         "## 10. Owner-approved target constellation",
-        "## 11. Installation-profile hypotheses",
+        "## 11. Installation profiles and capability overlays",
         "## 12. Exact recommended implementation sequence",
         "## 14. Nonproofs",
         "## 15. Principal proof classification",
@@ -445,6 +445,13 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
         "DISCOVER(independent_index)",
         "Source-of-record requirement",
         "none; read-only repository and provider-offerings census",
+        "OWNER_SELECTED_TARGET_NOT_INSTALLED",
+        "Minimal: Linkup",
+        "Practical: Linkup + Serper",
+        "Research: Linkup + Serper + Exa + Tavily",
+        "Diversity: Linkup + Serper + Exa + Tavily + Brave",
+        "Linkup-only remains valid",
+        "Comparative proof may revise policy but is not required to select the target",
     ):
         assert phrase in census
 
@@ -466,6 +473,25 @@ def test_provider_offerings_census_is_current_complete_and_non_installing() -> N
     assert "Deep mode alone must not trigger it" in census
     assert "Provider synthesis prohibition" in census
     assert "improved answer quality" in census
+    assert "## 13. Unresolved decisions and live-proof register" in census
+    assert "provider synthesis remains disabled" in census
+    assert "Profile labels create no authority" in census
+    assert "do not create automatic provider fan-out" in census
+    assert "installed Linkup-first routing" in census
+    assert "OWNER_SELECTED_TARGET_NOT_INSTALLED" in census
+    assert "Linkup-first routing is installed" not in census
+
+    roadmap = _read(ROADMAP)
+    assert roadmap.count("## Active Next:") == 1
+    assert (
+        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        in roadmap
+    )
+    assert (
+        "owner-selected Linkup-standard-first target policy for ordinary"
+        in roadmap
+    )
+    assert "the census itself installed no routing change" in roadmap
 
     historical_links = _links(CENSUS)
     assert historical_links

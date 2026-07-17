@@ -181,7 +181,11 @@ selection.
 After semantic Scout retirement, this checkpoint will replace provider-name
 defaults and inherited complexity/depth couplings with provider-neutral
 acquisition capabilities and explicit installation availability. It will reuse
-the ordinary ProviderPlan consumer and keep provider synthesis disabled.
+the ordinary ProviderPlan consumer and keep provider synthesis disabled. It will
+install the owner-selected Linkup-standard-first target policy for ordinary
+general and domain-targeted discovery. That target policy is not a claim that
+Linkup has been empirically proved best, highest quality, fastest, cheapest, or
+most reliable, and the census itself installed no routing change.
 
 ### Linkup Known-URL Read Adapter
 
