@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: a06b63d68a12e69fa9060531b38e0b6745aecc9a
+Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -251,10 +251,12 @@ controller derives capability independently; `core.routing` remains the sole
 provider selector; and low-level adapters remain mechanical and RunKernel-
 independent.
 
-Selected-candidate READ now traverses the complete RunKernel chain before the
-existing FetchReadContentPacket and EvidenceLedger custody reducers. The
-ordinary composition remains default-disabled and has no default live CLI
-activation. Focused Extract is recognized but returns
+At that checkpoint, the default-disabled source-custody composition traversed
+the complete RunKernel chain before the existing FetchReadContentPacket and
+EvidenceLedger custody reducers. The later initial-discovery retirement removed
+its false automatic selected-candidate proposal trigger while retaining the
+controller and adapters for a separate current material need. Focused Extract
+is recognized but returns
 `focused_extract_requester_not_installed`; Map and Crawl return
 `map_candidate_reentry_not_installed` and
 `crawl_page_custody_not_installed`; general premium sequential acquisition
@@ -262,24 +264,59 @@ returns `premium_sequential_acquisition_not_licensed`. No live calls, initial
 DISCOVER redesign, direct `core.pipeline` fetch migration, Map/Crawl PRODUCT
 transport, general Deep, or downstream authority change was made.
 
+## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
+
+Runtime/test commit `2d936d958f7a4802961d4f1dc554c204394ce618`
+
+Ordinary Fast, Balanced, and Deep/high-complexity discovery now ranks and
+selects candidates only from normalized provider-returned title, snippet/
+excerpt, URL, and scalar lineage metadata. The historical
+`core.pipeline.process_search_queries` selective page fetch,
+`_apply_source_custody_fetch_read_policy`, and
+`core.retrieval.fetch_page` / `fetch_url_text` transports are retired. Provider
+search dispatch remains installed; zero separate candidate-URL transport occurs
+before selection across main, continuation, supplemental, planner-assisted,
+weak-corpus, conflict, and source-class recovery discovery.
+
+Candidate selection now supplies URL provenance only. Without a separately
+established current material need it creates no acquisition proposal, work
+order, route, exact-URL cap charge, transport, custody packet, semantic
+continuation, or late main coverage. The historical live source-custody
+validation profile is non-executable, and late main coverage cannot reacquire.
+The RunKernel acquisition controller, `core.routing`, guarded PRODUCT executor,
+and typed Linkup/Tavily mechanical adapters remain installed for the next
+post-selection phase. QueryPlan, ProviderPlan, provider routing, ranking/
+filtering mechanics, candidate selection, SearchResultCandidatePacket,
+EvidenceLedger meaning, and downstream answer authority were not redesigned.
+No live call was made.
+
 ## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
 The sole active next checkpoint is the grounded Build brief at
 [EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-It must inventory and converge genuinely ordinary-product-consumed exact-URL
-DISCOVER and READ paths beneath the installed RunKernel chain, activate Focused
-Extract only through a real exact URL/focus/current-lineage producer, and carry
-the resulting material through one bounded final-custody continuation. It must
-not absorb Map selection or Crawl page custody and grants no live-call
-authority.
+It must install a real independent current-material-need producer, route
+post-selection READ through the installed RunKernel chain, and carry the
+resulting exact-URL material through one bounded final-custody continuation.
+Focused Extract may activate only through a real exact URL/focus/current-
+lineage producer. Initial discovery must retain zero candidate-URL transport.
+The phase must not absorb planner disambiguation, Map selection, or Crawl page
+custody and grants no live-call authority.
+
+## Queued: PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01
+
+This checkpoint follows only after exact-URL/final-custody convergence. It may
+connect provider-neutral lightweight disambiguation and bounded query-direction
+hints, but must not fetch candidate pages, trigger READ or Focused Extract, rank
+with newly fetched page text, or become a second exact-URL authority.
 
 ## Queued: SITE-TOPOLOGY-SELECTION-AUTHORITY-01
 
 [SITE-TOPOLOGY-SELECTION-AUTHORITY-01](SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md)
-follows only after exact-URL/final-custody convergence. It may activate Map,
-admit canonical topology, and add explicit RunKernel URL-selection authority.
-Provider result order cannot become relevance, topology cannot become evidence,
-and no automatic Map-to-Crawl is allowed.
+follows only after exact-URL/final-custody and planner-disambiguation acquisition
+convergence. It may activate Map, admit canonical topology, and add explicit
+RunKernel URL-selection authority. Provider result order cannot become
+relevance, topology cannot become evidence, and no automatic Map-to-Crawl is
+allowed.
 
 ## Queued Split: CRAWL-PAGE-CUSTODY-CONVERGENCE-01
 
@@ -295,8 +332,9 @@ A separately licensed comparative live-validation phase may be considered only
 after mode-policy recovery authority containment, Specialist proposal-instance
 admission hardening, structured-list route qualification, semantic Scout
 retirement, provider-capability routing, acquisition-runtime convergence,
-RunKernel acquisition-control foundation, and exact-URL bounded final-custody
-convergence. Offline proof does not authorize live work, and this roadmap
+RunKernel acquisition-control foundation, initial-discovery selective-fetch
+retirement, and exact-URL bounded final-custody convergence. Offline proof does
+not authorize live work, and this roadmap
 grants no live license. The queued Map and Crawl briefs are not installed
 behavior and authorize no work in the active exact-URL phase.
 Arbitrary-query coverage, broad quantitative reasoning quality, provider

@@ -80,13 +80,19 @@ criteria, allowed invocation modes, and live/no-live status for:
 | Profile | Purpose | Current live status |
 | --- | --- | --- |
 | `AG-LIVE-SMOKE` | Can one bounded live product run complete? | Succeeded once by direct human private shell after local env was loaded into process env. |
-| `AG-LIVE-SOURCE-CUSTODY` | Can an official-doc fact be fetched/read/admitted into custody? | Not run. |
+| `AG-LIVE-SOURCE-CUSTODY` | Historical pre-selection fetch/read expectation metadata only. | Retired and non-executable at runtime/test `2d936d958f7a4802961d4f1dc554c204394ce618`; absent from direct-runner and broker choices. |
 | `AG-LIVE-MULTI-COMPONENT` | Can two answer components map to obligations, evidence bindings, and packet-owned Author material? | Not run. |
 | `AG-LIVE-DISAMBIG` | Can ambiguous entities/components produce explicit disambiguation/search work without hidden provider or routing changes? | Not run. |
 
 The successful #304 local private-shell run is classifiable as
 `AG-LIVE-SMOKE` only. It is not sufficient proof for source custody,
 multi-component binding, or disambiguation.
+
+Initial discovery no longer owns source-page transport. The retained source-
+custody expectation cannot construct a `RunConfig` policy, trigger READ, charge
+the fetch/read cap, or invoke a transport. Future exact-URL validation must
+consume a separately authorized post-selection material need through the
+RunKernel acquisition controller.
 
 ## Go/No-Go Decision
 

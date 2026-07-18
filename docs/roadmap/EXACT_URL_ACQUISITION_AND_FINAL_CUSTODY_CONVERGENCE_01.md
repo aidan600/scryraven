@@ -3,17 +3,19 @@
 Status: sole active next checkpoint
 Mode: BUILD
 Proof class: offline_product_path_proof
-Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01
-Does-not-authorize: live calls, initial DISCOVER planning redesign, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
+Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 and INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
+Starting-runtime/test: 2d936d958f7a4802961d4f1dc554c204394ce618
+Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
 
 ## Outcome
 
 Converge every genuinely ordinary-product-consumed exact-URL acquisition path
-for DISCOVER-derived material, selected-candidate READ, and a newly justified
-FOCUSED_EXTRACT requester under one RunKernel post-discovery authority chain and
-one bounded final-custody continuation. Remove or subordinate bypasses so the
-ordinary consumer cannot acquire the same exact URL through competing policy or
-execution authority.
+for separately justified post-selection READ and FOCUSED_EXTRACT material under
+one RunKernel post-discovery authority chain and one bounded final-custody
+continuation. Initial DISCOVER material remains provider-returned candidate
+material with zero separate candidate-URL transport. Remove or subordinate
+post-selection bypasses so the ordinary consumer cannot acquire the same exact
+URL through competing policy or execution authority.
 
 The completed product path must reach the existing main-RunKernel
 candidate/source/semantic/ComponentCoverage consumer in offline composition.
@@ -25,35 +27,38 @@ and proves that product decision.
 - `core.run_kernel`, `core.acquisition_control`, and
   `core.authorized_acquisition_runtime` own the complete proposal-to-custody
   control chain.
-- `core.ordinary_live_source_custody_runtime` migrates packet-selected READ
-  through that chain into the existing `FetchReadContentPacket` and
-  EvidenceLedger reducers.
+- `core.ordinary_live_source_custody_runtime` treats selected URL provenance as
+  a nontrigger. It validates, but never manufactures, an independently supplied
+  current material-need proposal before entering the installed controller.
 - The controller also recognizes one provider-neutral `explicit_known_url`
   READ without manufacturing a search-candidate identity; its operation
   identity binds a controller-derived normalized-URL digest.
-- `core.ordinary_live_main_runkernel_coverage_runtime` already composes
-  candidate handoff, source custody, semantic admission, and ComponentCoverage
-  on the main RunKernel behind a default-false gate.
-- `core.pipeline` still contains selective page fetches as DISCOVER-internal
-  work. The foundation did not claim or migrate those callsites.
+- `core.ordinary_live_main_runkernel_coverage_runtime` can consume prior custody
+  for semantic admission and ComponentCoverage, but cannot reacquire.
+- Ordinary Fast, Balanced, Deep/high-complexity, planner-assisted, and recovery
+  DISCOVER paths rank only normalized provider-returned material. Historical
+  `core.pipeline` selective page fetching and `core.retrieval.fetch_page` /
+  `fetch_url_text` are retired.
 - FOCUSED_EXTRACT is mechanically installed and deterministically recognized,
   but the controller returns `focused_extract_requester_not_installed` because
   no current producer supplies exact pre-acquisition focus with complete
   contract/component/obligation lineage.
-- Final custody across DISCOVER, READ, and Focused Extract is not proved.
+- No ordinary current-material-need producer reaches READ or Focused Extract.
+- Final custody across authorized READ and Focused Extract is not proved.
 
 ## Required Build
 
-1. Inventory every ordinary exact-URL fetch/read callsite and classify it
-   `REUSE`, `ADAPT`, `UPGRADE`, `RETIRE`, or `REPLACE`. Treat the direct
-   `core.pipeline.fetch_page` lane as an explicit migration or retirement
-   decision, not as implicitly controlled DISCOVER work.
+1. Establish one canonical independent current-material-need producer for the
+   actual ordinary post-selection consumer. Candidate selection, URL presence,
+   short/absent provider material, weak corpus, complexity, mode, adapter
+   installation, and provider availability must remain nontriggers.
 2. Where a product-consumed exact URL has no SearchResultCandidate identity,
    consume the installed `explicit_known_url` proposal shape and its
    controller-derived normalized-URL identity. Do not populate `candidate_ref`
    with synthetic candidate IDs or weaken selected-candidate packet membership
    checks.
-3. Establish one exact FOCUSED_EXTRACT proposal producer. It must bind one to
+3. Establish one exact FOCUSED_EXTRACT proposal producer if the same canonical
+   material-need owner can truthfully supply its facts. It must bind one to
    twenty exact URLs, exact material shape, bounded focus, current
    AnswerContract, current source obligation, and current component revision.
    The producer may propose only; RunKernel must derive the capability.
@@ -66,7 +71,7 @@ and proves that product decision.
    capability, work-order, route, execution, terminal, and custody actions.
    Preserve `core.routing` as sole provider selector and
    `execute_authorized_acquisition_work_order()` as the only PRODUCT dispatcher.
-6. Extend custody only as needed to consume exact URL-bound Focused artifacts.
+6. Extend custody only as needed to consume exact URL-bound READ or Focused artifacts.
    Preserve one source identity per selected URL. Do not aggregate unrelated
    URLs into one source, manufacture search candidates, or let provider output
    create authority.
@@ -75,9 +80,10 @@ and proves that product decision.
    EvidenceRelativeAnalysisPacket, SemanticObservation, and main-RunKernel
    ComponentCoverage owners. Any new Focused handoff must have one named
    ordinary consumer and no shadow final-custody path.
-8. Delete, bypass, or explicitly subordinate the superseded exact-URL path.
-   Preserve initial search QueryPlan/ProviderPlan ownership and do not redesign
-   candidate ranking or selection.
+8. Delete, bypass, or explicitly subordinate any superseded post-selection
+   exact-URL path. Preserve initial QueryPlan/ProviderPlan ownership, provider-
+   returned-material ranking, candidate selection, and the structural zero-
+   candidate-URL-transport boundary.
 9. Decide and document the default-disabled product flag posture. Offline
    composition may remain injected/default-off, but the result must state
    plainly whether the default CLI consumes it.
@@ -99,14 +105,14 @@ and proves that product decision.
 
 ## Verification
 
-- Static census proves no ordinary exact-URL acquisition bypass remains or
-  records one explicit separate owner outside the claimed envelope.
+- Static census proves no ordinary post-selection exact-URL acquisition bypass
+  remains and that initial discovery still cannot transport candidate URLs.
 - Product tests traverse every RunKernel action exactly once for READ and
   activated Focused Extract, with current contract/component/obligation lineage.
 - Focused tests prove exact URL/focus identity, one source per URL, stale and
   duplicate rejection, no provider authority in the proposal, and no new model
   call unless an explicitly licensed producer contract requires one.
-- Directly affected DISCOVER, routing, acquisition adapter, candidate packet,
+- Directly affected discovery-boundary, routing, acquisition adapter, candidate packet,
   FetchReadContentPacket, EvidenceLedger, semantic admission, ComponentCoverage,
   and main ordinary composition owners pass offline.
 - RunCap fetch/read accounting remains exactly once per attempted transport.
@@ -126,5 +132,9 @@ the controller to preserve an artificial one-PR plan.
 ## Mandatory Following Checkpoint
 
 After this Build is complete, the next planned checkpoint is
-[`SITE-TOPOLOGY-SELECTION-AUTHORITY-01`](SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md).
-It must not be started as part of this PR.
+`PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01`. It may connect only
+provider-neutral lightweight disambiguation and bounded query-direction hints;
+it must not fetch candidate pages or become a second exact-URL authority. Map
+selection under
+[`SITE-TOPOLOGY-SELECTION-AUTHORITY-01`](SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md)
+and Crawl custody remain later. None may be started as part of this PR.

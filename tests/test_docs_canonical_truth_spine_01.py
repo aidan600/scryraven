@@ -22,6 +22,11 @@ ARCH = DOCS / "architecture"
 GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
+EXACT_URL_BRIEF = (
+    DOCS
+    / "roadmap"
+    / "EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md"
+)
 CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
@@ -80,8 +85,9 @@ PROVIDER_ROUTING_RUNTIME_SHA = (
     "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
 )
 ACQUISITION_CONTROL_RUNTIME_SHA = (
-    "a06b63d68a12e69fa9060531b38e0b6745aecc9a"  # pragma: allowlist secret
+    "2d936d958f7a4802961d4f1dc554c204394ce618"  # pragma: allowlist secret
 )
+INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 CURRENT_STATE_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 SPECIALIST_ADMISSION_RUNTIME_SHA = (
@@ -98,7 +104,9 @@ S1_RUNTIME_SHA = (
 )
 RUNTIME_SHA_BY_CONCERN = {
     "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
-    "canonical:run-contract-semantic-loop": QUANT_FINALIZATION_RUNTIME_SHA,
+    "canonical:run-contract-semantic-loop": (
+        INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA
+    ),
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
     "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:bounded-multicomponent-runtime": STRUCTURED_ROUTE_RUNTIME_SHA,
@@ -536,6 +544,62 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
         assert stale not in roadmap
 
 
+def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -> None:
+    current = _collapsed(CURRENT_STATE)
+    routing = _collapsed(PROVIDER_ROUTING)
+    acquisition = _collapsed(ACQUISITION_CONTROL)
+    loop = _collapsed(CONCERN_OWNERS["canonical:run-contract-semantic-loop"])
+    roadmap = _collapsed(ROADMAP)
+    exact_url = _collapsed(EXACT_URL_BRIEF)
+
+    for owner in (
+        CURRENT_STATE,
+        PROVIDER_ROUTING,
+        ACQUISITION_CONTROL,
+        CONCERN_OWNERS["canonical:run-contract-semantic-loop"],
+        ROADMAP,
+        EXACT_URL_BRIEF,
+    ):
+        assert INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA in _read(owner)
+
+    for phrase in (
+        "zero separate candidate-URL transport",
+        "provider_returned_snippet",
+        "provider_returned_excerpt",
+        "Candidate selection supplies URL provenance only",
+        "`AcquisitionNeedProposalV1`",
+        "core.pipeline._apply_source_custody_fetch_read_policy",
+        "core.retrieval.fetch_page",
+        "fetch_url_text",
+    ):
+        assert phrase in current
+    assert "selected-candidate nontrigger" in routing.casefold()
+    assert "no exact-URL cap charge" in acquisition
+    assert "opens a candidate source URL" in loop
+    assert (
+        "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
+        in _read(ROADMAP)
+    )
+    assert "PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01" in roadmap
+    assert "Initial DISCOVER material remains provider-returned" in exact_url
+    assert "must not fetch candidate pages" in exact_url
+
+    roadmap_folded = roadmap.casefold()
+    exact_index = roadmap_folded.index(
+        "## active next: exact-url-acquisition-and-final-custody-convergence-01"
+    )
+    planner_index = roadmap_folded.index(
+        "## queued: planner-disambiguation-acquisition-convergence-01"
+    )
+    map_index = roadmap_folded.index(
+        "## queued: site-topology-selection-authority-01"
+    )
+    crawl_index = roadmap_folded.index(
+        "## queued split: crawl-page-custody-convergence-01"
+    )
+    assert exact_index < planner_index < map_index < crawl_index
+
+
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
     census = _read(CENSUS)
     normalized = _collapsed(CENSUS)
@@ -669,6 +733,12 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     acquisition_runtime = roadmap.index(
         "## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01"
     )
+    acquisition_control = roadmap.index(
+        "## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01"
+    )
+    discovery_retirement = roadmap.index(
+        "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
+    )
     convergence = roadmap.index(
         "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
     )
@@ -688,6 +758,8 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         < scout_retirement
         < provider
         < acquisition_runtime
+        < acquisition_control
+        < discovery_retirement
         < convergence
         < live
     )

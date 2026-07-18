@@ -251,7 +251,7 @@ Do not add a test to `fast_pr` merely because the phase added it. A promoted
 
 ## Current `fast_pr` Sentinels
 
-The manifest has four entries:
+The manifest has five entries:
 
 - `tests/test_run_kernel_ag91h.py::test_run_kernel_start_creates_run_state_with_request_identity`
   keeps a minimal RunKernel authority/start-state sentinel.
@@ -263,6 +263,10 @@ The manifest has four entries:
 - `tests/test_ag96i3af6a_broker_alignment.py::test_af6a_fake_mode_has_sanitized_output_without_model_call_budget`
   keeps one cheap broker-alignment fake/deferred sentinel with no live model
   budget.
+- `tests/test_initial_discovery_selective_fetch_retirement_01.py::test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary`
+  prevents canonical `core`/`proplex` modules from regaining direct source-URL
+  transport, pins provider HTTP calls to DISCOVER endpoints, and preserves the
+  RunKernel pre-transport claim around the sole exact-URL dispatcher.
 
 ## Commands
 

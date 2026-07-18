@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 4e095c7db287ab29fbe748bdd5c24cf4f2545e15
+Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -48,11 +48,16 @@ The current loop is one authority flow, not a phase chronology:
    `current_answer_contract`.
 8. SearchExecutorHandoff derives contract-bound search intent; it is not search
    execution or evidence.
-9. Separately authorized acquisition may return sanitized search-result
-   candidates. Candidates are discovery records, not readable content or
-   evidence.
-10. Fetch/read produces bounded sanitized content references from authorized
-    candidates. Readable content is not semantic support.
+9. Provider-neutral DISCOVER returns sanitized candidate URLs, titles,
+   snippets/excerpts, and bounded scalar lineage metadata. Existing ranking,
+   filtering, and selection consume only that provider-returned material; no
+   initial-planning, planner-disambiguation, discovery, recovery, ranking, or
+   candidate-selection step opens a candidate source URL.
+10. `SearchResultCandidatePacket` is URL provenance and a non-evidence handoff,
+    not a material need. Fetch/read may produce bounded sanitized content only
+    after a separate current need, exact lineage validation, RunKernel READ or
+    Focused Extract authorization, `core.routing` selection, and the guarded
+    PRODUCT executor. No ordinary material-need producer is currently installed.
 11. EvidenceLedger records candidate/content custody and provenance-labeled
     partial lineage for observed fields; it does not invent unobserved source
     metadata. Custody is not admitted meaning or component satisfaction.
@@ -115,7 +120,7 @@ rendering reduce deterministically on the main thread.
 
 | Stage | What it establishes | What it does not establish |
 | --- | --- | --- |
-| Search candidate | A sanitized discovery candidate tied to authorized search intent. | Readability, custody, evidence, citation eligibility, or support. |
+| Search candidate | A sanitized provider-returned discovery candidate tied to authorized search intent. | A separate exact-URL transport, readability, custody, evidence, citation eligibility, material need, or support. |
 | Readable content | Bounded sanitized content obtained from a candidate. | Custody, semantic support, or source-obligation satisfaction. |
 | EvidenceLedger custody | Canonical possession and lineage for candidate/content material. | Meaning, coverage, readiness, or answer authority. |
 | Semantic proposal | Analyst- or worker-proposed interpretation, gap, amendment, or validation. | Admitted meaning or canonical mutation. |
@@ -127,8 +132,9 @@ rendering reduce deterministically on the main thread.
 | Author | Presentation of packet-authorized material. | New claims, synthesis, evidence, support, or authority. |
 | Quantitative finalization validation | Deterministic claim/literal binding before accepted prose. | Semantic equivalence inference, calculation, conversion, claim admission, or prose repair. |
 
-These boundaries prevent common laundering errors: search candidates are not
-evidence; fetch/read content is not semantic support; custody is not coverage;
+These boundaries prevent common laundering errors: provider-returned snippets
+and excerpts are not fetched/read page content; search candidates are not
+evidence or acquisition need; fetch/read content is not semantic support; custody is not coverage;
 Analyst proposal is not RunKernel authority; graph admission is not readiness;
 and readable prose is not product correctness.
 
