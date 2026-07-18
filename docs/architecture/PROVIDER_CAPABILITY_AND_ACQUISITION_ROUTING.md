@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary DISCOVER routing, shared acquisition contracts, ProviderPlan projection, retained RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -33,21 +33,63 @@ is [RunKernel Post-Discovery Acquisition
 Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md).
 
 ProviderPlan records completed DISCOVER decisions. Retrieval scheduling and
-dispatch carry those decisions without policy. Ordinary discovery consumes only
-normalized provider-returned candidate material and never opens a candidate URL
-to rank, filter, or select it. The orchestrator composes one boolean provider-
+dispatch carry those decisions without policy.
+`retrieval.DiscoverySourceResultIdentity` owns one immutable text-free identity
+per ordered provider-result occurrence before URL deduplication, chunking, or
+ranking. `retrieval.DiscoveryResultMaterialStore` owns the bounded run-local
+provider material and duplicate-contributor lineage. Existing ranking and
+selection now feed the ordinary origin of the canonical
+`RunKernel.SearchResultCandidatePacket`. Ordinary discovery never opens a
+candidate URL to rank, filter, select, or populate that packet. The orchestrator
+composes one boolean provider-
 availability snapshot from configured credential presence, or from explicitly
 injected offline-test facts, and passes it to ProviderPlan. Callables, transport
 objects, and ordered provider preferences do not establish availability. The
 same snapshot remains available to the retained future READ controller, but
-candidate selection alone creates no proposal and never reaches it. Existing
+candidate selection alone creates no proposal and never reaches it. The
 SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
-and EvidenceLedger owners are unchanged.
+and EvidenceLedger owners remain unchanged.
 
 Current runtime/test provenance:
+`6fbca602afac5a00bb6bafa2a6888b6ec31d5065`.
+The initial-discovery transport retirement remains historically installed at
 `48a309124764d813cf27081bf5871d5a9612db79`.
 The mechanical adapter foundation remains historically installed at
 `193c5caabe1f97da534f0e601d410acb98d3cdea`.
+
+## Ordinary DISCOVER Result Boundary
+
+Provider-call ordinals are reserved before concurrent submission, and results
+reduce in submission order rather than completion order. Within a returned
+sequence, `provider_result_rank` is the original one-based provider position.
+Existing relevance/chunk/RRF scoring remains separate, and
+`selected_candidate_rank` is the final selected order. Duplicate normalized
+URLs retain distinct occurrence identities and material; the selected
+representative carries up to eight contributor refs plus overflow facts and a
+digest of the complete contributor sequence.
+
+The exact bounds are the existing 5/6/8 provider results per call and 8/20/40
+selected candidates for Fast/Balanced/Deep, 80 identities per run, 4,096
+canonical bytes per identity, 20,000 material characters per occurrence, 8
+contributor refs, and a 16 KiB text-free RunKernel reference projection.
+Provider result text, chunks, embeddings, and raw payloads do not enter that
+projection.
+
+The ordinary `RunKernel.SearchExecutorHandoff` and
+`RunKernel.SearchResultCandidatePacket` use origin `ordinary_query_provider`,
+revision 1. This is the immutable initial post-DISCOVER selection before later
+SearchPlanner/AnswerContract admission and source recovery/synthesis in this
+ordinary composition. The main RunKernel has no accepted AnswerContract or
+source obligation at that exact snapshot point, so neither is fabricated. This
+does not negate later accepted contract lineage or contract-bound historical
+SearchExecutor flows. It is reachable through the
+unflagged Fast/Balanced/Deep CLI/backend composition and does not use the
+separate `live_search_validation` origin. Serper
+`lightweight_disambiguation` remains excluded.
+
+The ordinary packet digest binds the ordered candidate-record digests. Its
+compact RunKernel ref retains that aggregate digest and lineage/count fields,
+not candidate URLs, snippets, or provider text.
 
 ## Capability Status Matrix
 
@@ -233,7 +275,8 @@ Current PRODUCT consumers:
 
 - ordinary main, continuation, supplemental, and recovery DISCOVER work through
   ProviderPlan, scheduling, and dispatch, using provider-returned material with
-  zero separate candidate-URL transport;
+  zero separate candidate-URL transport; the immutable initial selection feeds
+  the ordinary revision-1 SearchExecutorHandoff and canonical candidate packet;
 - no selected-candidate READ/source-custody consumer; the default-disabled
   composition is a nontrigger until an independent material-need producer is
   installed; and
@@ -283,24 +326,25 @@ environment, prompt, or user preference owns provider order.
 The explicit maintainer sequencing override placed RunKernel post-discovery
 acquisition control before final-custody convergence. The controller and
 mechanical adapters remain installed, while historical pre-selection source
-fetching and the false selected-candidate trigger are retired. The sole active
-next is
-[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md),
-covering truthful provider-result lineage into the existing canonical
-`SearchResultCandidatePacket`. It must retain zero candidate-page transport and
-must not synthesize packet fields from ranked passage chunks.
+fetching and the false selected-candidate trigger are retired.
+[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md)
+now supplies truthful provider-result lineage to the ordinary branch of the
+existing canonical `SearchResultCandidatePacket`, with zero candidate-page
+transport and no ranked-passage reconstruction.
 
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
-remains queued until that packet is populated. It will cover a real independent
-material-need producer, genuinely product-consumed READ exact-URL work, and
-final custody. Focused Extract may follow only when a real producer is proved.
-Planner disambiguation remains queued after exact-URL convergence; Map selection
-and Crawl page custody remain later.
+The sole active next is
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It must install a real independent current-material-need producer, genuinely
+product-consumed READ exact-URL work, and final custody while retaining the
+selected-candidate nontrigger. Focused Extract may follow only when a real
+producer is proved. Planner disambiguation remains queued after exact-URL
+convergence; Map selection and Crawl page custody remain later.
 
 This offline Build proves no live provider quality, availability, coverage,
 currentness, latency, price, reliability, or answer improvement. It does not
 prove evidence correctness, final-custody convergence, social authority,
-Sufficiency, FinalAnswerPacket, Author behavior, or complete-app correctness.
+Sufficiency, FinalAnswerPacket, Author behavior, Serper connection, Focused
+Extract, Map, Crawl, compatibility rename, or complete-app correctness.
 The direct selective page-fetch lane inside `core.pipeline` is retired rather
 than governed by the post-discovery controller. No live provider, model,
 search, fetch, map, crawl, or retrieval call was made.

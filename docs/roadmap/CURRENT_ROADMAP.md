@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -290,30 +290,51 @@ filtering mechanics, candidate selection, SearchResultCandidatePacket,
 EvidenceLedger meaning, and downstream answer authority were not redesigned.
 No live call was made.
 
-Canonical ordinary DISCOVER still does not populate
-`SearchResultCandidatePacket`. Its existing default-disabled seam is a separate
-pre-retrieval child-RunKernel path over injected structured candidates;
-ordinary multi-query/provider ranking output lacks the canonical task,
-provider-call, rank, AnswerContract, and SearchExecutorHandoff mapping that seam
-requires. No page fetch was restored and no packet field was synthesized from
-ranked passages. This missing handoff is the separate next Build below.
+## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
 
-## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
+Runtime/test commit `6fbca602afac5a00bb6bafa2a6888b6ec31d5065`
+
+[DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01](DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md)
+installs one immutable, text-free identity per ordered provider-result
+occurrence before URL deduplication, chunking, and ranking. The retrieval-owned
+run-local material store retains bounded normalized provider material, while
+existing QueryPlan, ProviderPlan, routing, RRF/relevance, URL filtering, and
+selection owners remain in place. Provider-call ordinals are reserved before
+concurrent dispatch and results reduce in submission order; provider-result
+rank and selected-candidate rank remain distinct.
+
+The unflagged Fast, Balanced, and Deep path now produces revision 1 of the
+ordinary `RunKernel.SearchExecutorHandoff` and the existing canonical
+`RunKernel.SearchResultCandidatePacket` directly from truthful identity and
+material refs. Revision 1 is the initial post-DISCOVER selection before later
+source recovery or synthesis; it does not invent an AnswerContract or source
+obligation. Duplicate URL occurrences retain separate identity/material
+lineage and bounded contributor refs. The ordinary branch does not use
+`live_search_validation`.
+
+Hard bounds are 5/6/8 provider results per call for Fast/Balanced/Deep, 80
+identities per run, 4,096 canonical bytes per identity, 20,000 provider-material
+characters per occurrence, 8 contributor refs, 8/20/40 selected candidates,
+and a 16 KiB reference-only RunKernel projection. Selection causes no provider
+call, acquisition proposal, READ or Focused Extract work, exact-URL cap charge,
+or URL transport. Serper lightweight disambiguation and compatibility renaming
+remain deferred. No live call was made.
+
+## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
 The sole active next checkpoint is
-[DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01](DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md).
-It must populate the existing canonical selected-candidate packet from truthful
-provider-result lineage while retaining zero candidate-page transport and the
-selected-candidate nontrigger. It must not manufacture SearchExecutorHandoff
-task, provider-call, rank, or material-label facts from ranked passage chunks.
-
-## Queued: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
-
-[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
-follows only after canonical ordinary DISCOVER populates the selected-candidate
-packet. Ordinary exact-URL READ and Focused Extract remain future work. Initial
-discovery must retain zero candidate-URL transport, and this checkpoint must not
-absorb planner disambiguation, Map selection, or Crawl page custody.
+[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It may proceed now that canonical ordinary DISCOVER supplies the selected-
+candidate packet. It must install a real independent current-material-need
+producer, genuinely product-consumed exact-URL READ and conditional Focused
+Extract, and final custody while preserving the selected-candidate nontrigger.
+The same checkpoint covers separately justified Focused Extract when the
+current material-need owner can truthfully supply exact bounded focus and the
+required lineage. The sequence is
+exact-URL READ and Focused Extract with final custody, then planner-
+disambiguation acquisition convergence, site-topology selection authority, and
+Crawl page custody. This checkpoint must not absorb planner disambiguation, Map
+selection, or Crawl page custody.
 
 ## Queued: PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01
 

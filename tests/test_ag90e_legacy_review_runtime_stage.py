@@ -267,12 +267,21 @@ def test_supplemental_search_dispatch_shape_and_analyst_rerun_shape() -> None:
         ("news", "research", "medium", {"linkup": True}),
         {"report_type": "brief", "is_academic": False, "suppress_tavily": True, "override": None},
     )
-    assert harness.supplemental_calls[0][1] == {
+    supplemental_kwargs = dict(harness.supplemental_calls[0][1])
+    supplemental_record = supplemental_kwargs.pop("provider_record")
+    assert supplemental_kwargs == {
         "queries": ["date query"],
         "search_depth": "medium:standard",
         "providers": ["linkup"],
         "provider_variant": "standard",
     }
+    assert supplemental_record.role == "supplemental_search"
+    assert supplemental_record.to_ref()["provider_plan_record_id"].startswith(
+        "provider-plan-1:record:"
+    )
+    assert supplemental_record.route_ref()["route_decision_id"].endswith(
+        ":route"
+    )
     analyst_call = harness.model_calls[-1]
     assert analyst_call[1:] == (
         DEFAULT_SYSTEM["analyst"],
@@ -373,10 +382,19 @@ def test_scrutineer_remediation_dispatch_shape_and_resynthesis() -> None:
 
     outcome = execute_legacy_review_runtime_stage(request, _deps(harness))
 
-    assert harness.remediation_calls[0][1] == {
+    remediation_kwargs = dict(harness.remediation_calls[0][1])
+    remediation_record = remediation_kwargs.pop("provider_record")
+    assert remediation_kwargs == {
         "queries": ["fresh update"],
         "providers": ["linkup"],
     }
+    assert remediation_record.role == "scrutineer_remediation"
+    assert remediation_record.to_ref()["provider_plan_record_id"].startswith(
+        "provider-plan-1:record:"
+    )
+    assert remediation_record.route_ref()["route_decision_id"].endswith(
+        ":route"
+    )
     assert outcome.scrutineer_remediation_dispatch_authorized is True
     assert outcome.scrutineer_remediation_dispatch_posture == "completed"
     assert outcome.scrutineer_remediation_provider_role == "scrutineer_remediation"

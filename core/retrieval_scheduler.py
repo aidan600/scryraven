@@ -8,8 +8,10 @@ prompt/model behavior.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field, replace
 from enum import Enum
+from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
 from core.run_kernel import (
@@ -28,6 +30,7 @@ class RetrievalScheduleReason(str, Enum):
     CONTINUATION_BLOCKED = "continuation_blocked"
     WEAK_CORPUS_RECOVERY_SCHEDULED = "weak_corpus_recovery_scheduled"
     WEAK_CORPUS_RECOVERY_BLOCKED = "weak_corpus_recovery_blocked"
+    RECORDED_DISCOVERY_SCHEDULED = "recorded_discovery_scheduled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +65,14 @@ class RetrievalScheduledAction:
     recovery_active: bool
     reason: RetrievalScheduleReason
     metadata: Mapping[str, Any]
+    retrieval_action_ref: Mapping[str, Any] = field(default_factory=dict)
+    query_plan_ref: Mapping[str, Any] = field(default_factory=dict)
+    query_plan_item_refs: tuple[Mapping[str, Any], ...] = ()
+    provider_plan_ref: Mapping[str, Any] = field(default_factory=dict)
+    provider_plan_record_ref: Mapping[str, Any] = field(default_factory=dict)
+    provider_route_ref: Mapping[str, Any] = field(default_factory=dict)
+    provider_capability: str | None = None
+    provider_qualifier: str | None = None
 
     def queries_list(self) -> list[str]:
         return list(self.current_queries)
@@ -73,7 +84,7 @@ class RetrievalScheduledAction:
         return list(self.force_component_providers)
 
     def to_trace(self) -> dict[str, Any]:
-        return {
+        trace = {
             "stage": self.stage,
             "current_queries": list(self.current_queries),
             "iteration": self.iteration,
@@ -90,6 +101,27 @@ class RetrievalScheduledAction:
             "reason": self.reason.value,
             "metadata": dict(self.metadata),
         }
+        if self.retrieval_action_ref:
+            trace["retrieval_action_ref"] = dict(self.retrieval_action_ref)
+        if self.query_plan_ref:
+            trace["query_plan_ref"] = dict(self.query_plan_ref)
+        if self.query_plan_item_refs:
+            trace["query_plan_item_refs"] = [
+                dict(item_ref) for item_ref in self.query_plan_item_refs
+            ]
+        if self.provider_plan_ref:
+            trace["provider_plan_ref"] = dict(self.provider_plan_ref)
+        if self.provider_plan_record_ref:
+            trace["provider_plan_record_ref"] = dict(
+                self.provider_plan_record_ref
+            )
+        if self.provider_route_ref:
+            trace["provider_route_ref"] = dict(self.provider_route_ref)
+        if self.provider_capability is not None:
+            trace["provider_capability"] = self.provider_capability
+        if self.provider_qualifier is not None:
+            trace["provider_qualifier"] = self.provider_qualifier
+        return trace
 
 
 def main_retrieval_action_values(
@@ -160,6 +192,227 @@ def _provider_record_metadata(provider_record: Any | None) -> dict[str, Any]:
         "provider_record_role": str(role) if role is not None else None,
         "provider_record": trace,
     }
+
+
+def _enum_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    enum_value = getattr(value, "value", value)
+    text = str(enum_value).strip()
+    return text or None
+
+
+def _canonical_digest(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def schedule_recorded_discovery_dispatch(
+    *,
+    stage: str,
+    current_queries: Sequence[str],
+    iteration: int | None,
+    provider_role: str,
+    search_depth: str,
+    provider_record: Any,
+    authority_source: str,
+    authority_ref_digest: str,
+) -> RetrievalScheduledAction:
+    """Schedule an already-approved non-main DISCOVER dispatch.
+
+    The caller supplies query, depth, and provider decisions from their
+    existing owners.  This helper only records the mechanical action.
+    """
+
+    operation, variant, output_type, route_blocked = _route_fields(
+        provider_record
+    )
+    queries = _clean_queries(current_queries)
+    providers = tuple(getattr(provider_record, "providers", ()))
+    if not queries:
+        raise ValueError("recorded discovery dispatch requires queries")
+    if not providers:
+        raise ValueError("recorded discovery dispatch requires a provider route")
+    route = getattr(provider_record, "route_decision", None)
+    capability = _enum_value(getattr(route, "capability", None))
+    qualifier = _enum_value(getattr(route, "qualifier", None))
+    if capability != "DISCOVER":
+        raise ValueError("recorded discovery requires DISCOVER capability")
+    if qualifier == "lightweight_disambiguation" or "serper" in {
+        provider.casefold() for provider in providers
+    }:
+        raise ValueError(
+            "lightweight-disambiguation/Serper cannot enter ordinary discovery"
+        )
+    return RetrievalScheduledAction(
+        stage=str(stage),
+        current_queries=queries,
+        iteration=iteration,
+        provider_role=str(provider_role),
+        providers=providers,
+        search_depth=str(search_depth),
+        provider_operation=operation,
+        provider_variant=variant,
+        provider_output_type=output_type,
+        route_blocked=route_blocked,
+        force_component_providers=(),
+        continue_retrieval=not route_blocked,
+        recovery_active=provider_role in {
+            "source_class_recovery",
+            "conflict_resolution",
+        },
+        reason=RetrievalScheduleReason.RECORDED_DISCOVERY_SCHEDULED,
+        metadata={
+            **_provider_record_metadata(provider_record),
+            "authority_source": str(authority_source),
+            "authority_ref_digest": str(authority_ref_digest),
+        },
+    )
+
+
+def bind_recorded_discovery_lineage(
+    scheduled_action: RetrievalScheduledAction,
+    *,
+    query_plan: Any,
+    query_plan_item_refs: Sequence[Mapping[str, Any]],
+    provider_plan: Any,
+    provider_record: Any,
+    authority_ref_digest: str,
+) -> RetrievalScheduledAction:
+    """Attach exact QueryPlan/ProviderPlan refs to one recorded action."""
+
+    item_refs = tuple(dict(item) for item in query_plan_item_refs)
+    queries = tuple(str(item.get("authorized_query") or "") for item in item_refs)
+    if not item_refs or queries != scheduled_action.current_queries:
+        raise ValueError(
+            "recorded discovery queries do not match exact QueryPlan items"
+        )
+    if tuple(getattr(provider_record, "providers", ())) != (
+        scheduled_action.providers
+    ):
+        raise ValueError(
+            "recorded discovery providers do not match ProviderPlan record"
+        )
+    route = getattr(provider_record, "route_decision", None)
+    capability = _enum_value(getattr(route, "capability", None))
+    qualifier = _enum_value(getattr(route, "qualifier", None))
+    if capability != "DISCOVER":
+        raise ValueError("recorded discovery requires DISCOVER capability")
+    if qualifier == "lightweight_disambiguation" or "serper" in {
+        provider.casefold() for provider in scheduled_action.providers
+    }:
+        raise ValueError(
+            "lightweight-disambiguation/Serper cannot enter ordinary discovery"
+        )
+    action_basis = {
+        "stage": scheduled_action.stage,
+        "queries": list(scheduled_action.current_queries),
+        "iteration": scheduled_action.iteration,
+        "provider_role": scheduled_action.provider_role,
+        "providers": list(scheduled_action.providers),
+        "search_depth": scheduled_action.search_depth,
+        "provider_operation": scheduled_action.provider_operation,
+        "provider_variant": scheduled_action.provider_variant,
+        "provider_output_type": scheduled_action.provider_output_type,
+        "provider_plan_record_ref": provider_record.to_ref(),
+        "provider_route_ref": provider_record.route_ref(),
+        "authority_ref_digest": authority_ref_digest,
+    }
+    scheduled_digest = _canonical_digest(action_basis)
+    return replace(
+        scheduled_action,
+        retrieval_action_ref={
+            "action_id": f"scheduled-discovery:{scheduled_digest[:32]}",
+            "action_type": "scheduled_discovery_dispatch",
+            "stage": scheduled_action.stage,
+            # Scheduler-owned actions are not RunKernel-sequenced.  Zero is the
+            # existing ref contract's explicit unsequenced value.
+            "sequence": 0,
+        },
+        query_plan_ref=query_plan.to_ref(),
+        query_plan_item_refs=item_refs,
+        provider_plan_ref=provider_plan.to_ref(),
+        provider_plan_record_ref=provider_record.to_ref(),
+        provider_route_ref=provider_record.route_ref(),
+        provider_capability=capability,
+        provider_qualifier=qualifier,
+    )
+
+
+def _bind_main_retrieval_lineage(
+    scheduled_action: RetrievalScheduledAction,
+    *,
+    kernel_action: AuthorizedAction,
+    scope: Mapping[str, Any],
+) -> RetrievalScheduledAction:
+    """Bind ordinary main-pass authority refs without affecting legacy callers."""
+
+    query_authority = scope.get("query_authority")
+    if query_authority is None:
+        # Compatibility for direct historical scheduler callers. The ordinary
+        # product path always supplies QueryPlanRuntimeAdapter in its scope.
+        return scheduled_action
+    query_plan = getattr(query_authority, "plan", None)
+    if query_plan is None or not hasattr(query_plan, "execution_item_refs"):
+        raise ValueError("ordinary main retrieval requires QueryPlan execution refs")
+    iteration = scheduled_action.iteration
+    if iteration is None:
+        raise ValueError("ordinary main retrieval requires an iteration")
+    item_refs = tuple(query_plan.execution_item_refs(iteration))
+    authorized_queries = tuple(
+        str(item_ref.get("authorized_query") or "") for item_ref in item_refs
+    )
+    if not item_refs or authorized_queries != scheduled_action.current_queries:
+        raise ValueError(
+            "ordinary main retrieval queries must match exact QueryPlan execution items"
+        )
+    if not hasattr(query_plan, "to_ref"):
+        raise ValueError("ordinary main retrieval requires a canonical QueryPlan ref")
+
+    provider_plan = scope.get("provider_plan")
+    records = tuple(getattr(provider_plan, "records", ()))
+    if provider_plan is None or not records:
+        raise ValueError("ordinary main retrieval requires a ProviderPlan record")
+    provider_record = records[-1]
+    if tuple(getattr(provider_record, "providers", ())) != scheduled_action.providers:
+        raise ValueError("scheduled providers do not match latest ProviderPlan record")
+    if not all(
+        hasattr(owner, method)
+        for owner, method in (
+            (provider_plan, "to_ref"),
+            (provider_record, "to_ref"),
+            (provider_record, "route_ref"),
+        )
+    ):
+        raise ValueError("ordinary main retrieval requires canonical provider refs")
+
+    route_decision = getattr(provider_record, "route_decision", None)
+    capability = _enum_value(getattr(route_decision, "capability", None))
+    qualifier = _enum_value(getattr(route_decision, "qualifier", None))
+    if capability != "DISCOVER":
+        raise ValueError("ordinary main retrieval requires DISCOVER capability")
+
+    return replace(
+        scheduled_action,
+        retrieval_action_ref={
+            "action_id": kernel_action.action_id,
+            "action_type": kernel_action.action_type.value,
+            "stage": kernel_action.stage,
+            "sequence": kernel_action.sequence,
+        },
+        query_plan_ref=query_plan.to_ref(),
+        query_plan_item_refs=item_refs,
+        provider_plan_ref=provider_plan.to_ref(),
+        provider_plan_record_ref=provider_record.to_ref(),
+        provider_route_ref=provider_record.route_ref(),
+        provider_capability=capability,
+        provider_qualifier=qualifier,
+    )
 
 
 def schedule_main_retrieval_action(
@@ -335,17 +588,22 @@ def schedule_main_retrieval_from_kernel_action(
 ) -> RetrievalScheduledAction:
     """Schedule main retrieval only after RunKernel authorizes the pass."""
 
-    validate_authorized_action(
+    kernel_action = validate_authorized_action(
         action,
         action_type=ActionType.MAIN_RETRIEVAL_PASS,
         stage=MAIN_RETRIEVAL_STAGE,
         expected_observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
     )
-    return schedule_main_retrieval_from_pipeline_scope(
+    scheduled_action = schedule_main_retrieval_from_pipeline_scope(
         scope,
         current_queries=current_queries,
         recovery_active=recovery_active,
         choose_search_depth=choose_search_depth,
+    )
+    return _bind_main_retrieval_lineage(
+        scheduled_action,
+        kernel_action=kernel_action,
+        scope=scope,
     )
 
 

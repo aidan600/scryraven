@@ -124,6 +124,7 @@ _DIRECT_SCOPE_FIELD_NAMES = tuple(f.name for f in fields(LegacyReviewRuntimeRequ
 _RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES = (
     "process_search_queries", "query_embedding", "seen_urls", "collected_images", "embed_provider", "embed_model",
     "embed_texts", "deps", "provider_diagnostics", "results_per_query", "include_domains", "exclude_domains",
+    "discovery_result_store", "run_kernel", "run_id", "request_id", "iterations_run", "iteration",
 )
 _SCOPE_KEYS = frozenset(_DIRECT_SCOPE_FIELD_NAMES + _RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES + (
     "status", "synthesis_evaluator_supplemental_search_collector", "ordered_sources", "evidence_block", "cached_prefix",
@@ -306,6 +307,7 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                 supplemental_outcome = deps.execute_supplemental_search(
                     request.scope, queries=synth_queries, search_depth=supp_search_depth, providers=supp_providers,
                     provider_variant=supplemental_provider_record.provider_variant,
+                    provider_record=supplemental_provider_record,
                 )
                 supp_passages = supplemental_outcome.passages
                 delta_urls_supplemental = supplemental_outcome.seen_url_delta
@@ -472,7 +474,8 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                                 remed_providers = remediation_provider_record.providers_list()
                                 scrutineer_remediation_providers = list(remed_providers)
                                 remediation_outcome = deps.execute_scrutineer_remediation(
-                                    request.scope, queries=novel_queries, providers=remed_providers
+                                    request.scope, queries=novel_queries, providers=remed_providers,
+                                    provider_record=remediation_provider_record,
                                 )
                                 remed_passages = remediation_outcome.passages
                                 if remed_passages:

@@ -3,10 +3,16 @@ import json
 import logging
 import os
 import re
-from typing import Any, Callable, Dict, List, Optional
+from hashlib import sha256
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from core.calculations import ALLOWED_CALCULATIONS, sanitize_to_float
 from core.cost_accounting import CostAccumulator
+from core.discovery_source_result import (
+    DiscoveryResultMaterialStore,
+    DiscoverySourceResultError,
+    normalize_discovery_result_url,
+)
 from core.nutrition_lookup import (
     NUTRITION_MACRO_METRICS as NUTRITION_MACRO_METRICS,
 )
@@ -2691,6 +2697,21 @@ def _provider_returned_candidate_material(
     return snippet[:20000], _PROVIDER_RETURNED_SNIPPET_MATERIAL
 
 
+def _provider_returned_candidate_material_for_store(
+    result: dict[str, Any],
+) -> tuple[str, str]:
+    """Expose original provider material only to its bounded run-local owner."""
+
+    excerpt = result.get("raw_content")
+    if isinstance(excerpt, str) and excerpt.strip():
+        return excerpt, _PROVIDER_RETURNED_EXCERPT_MATERIAL
+    snippet = result.get("snippet")
+    return (
+        snippet if isinstance(snippet, str) else "",
+        _PROVIDER_RETURNED_SNIPPET_MATERIAL,
+    )
+
+
 def _material_fields(material_type: str) -> dict[str, Any]:
     return {
         "evidence_material_type": "snippet_only",
@@ -2728,7 +2749,10 @@ def _provider_candidate_passage_fields(source: dict[str, Any]) -> dict[str, Any]
         ),
     }
     for key in (
+        "provider_call_ordinal",
         "provider_rank_or_position",
+        "query_digest",
+        "normalized_url",
         "source_class",
         "currentness_signal",
         "published_date",
@@ -2770,12 +2794,21 @@ def process_search_queries(
     iteration: int | None = None,
     prior_queries_for_similarity: list[str] | None = None,
     query_similarity_basis: str | None = None,
+    discovery_result_context: Mapping[str, Any] | None = None,
+    discovery_result_store: DiscoveryResultMaterialStore | None = None,
 ):
     if search_providers is None:
         # Provider selection is complete before mechanical dispatch.  The
         # retained lower-level compatibility default no longer manufactures a
         # provider-name policy or performs transport.
         search_providers = []
+
+    if (discovery_result_context is None) is not (
+        discovery_result_store is None
+    ):
+        raise DiscoverySourceResultError(
+            "ordinary discovery identity requires both context and material store"
+        )
 
     linkup_depth_map = {"low": "fast", "medium": "standard", "high": "standard"}
     linkup_depth = linkup_depth_override or linkup_depth_map.get(complexity, "standard")
@@ -2786,10 +2819,74 @@ def process_search_queries(
     pre_pass_seen_domains = _diagnostic_domains(pre_pass_seen_urls)
     attempt_diagnostics: list[tuple[dict[str, Any], set[str]]] = []
 
+    query_item_refs: list[Mapping[str, Any] | None]
+    if discovery_result_context is not None:
+        raw_query_item_refs = discovery_result_context.get(
+            "query_plan_item_refs"
+        )
+        if not isinstance(raw_query_item_refs, (list, tuple)) or len(
+            raw_query_item_refs
+        ) != len(queries_list):
+            raise DiscoverySourceResultError(
+                "ordinary discovery context must bind every ordered query"
+            )
+        query_item_refs = []
+        for query, raw_ref in zip(queries_list, raw_query_item_refs):
+            if not isinstance(raw_ref, Mapping):
+                raise DiscoverySourceResultError(
+                    "ordinary discovery query item ref must be a mapping"
+                )
+            if str(raw_ref.get("authorized_query") or "") != str(query):
+                raise DiscoverySourceResultError(
+                    "ordinary discovery query text does not match QueryPlan item"
+                )
+            query_item_refs.append(dict(raw_ref))
+    else:
+        query_item_refs = [None for _ in queries_list]
+
+    normalized_seen_urls: set[str] = set()
+    for seen_url in seen_urls_set:
+        try:
+            normalized_seen_urls.add(normalize_discovery_result_url(seen_url))
+        except DiscoverySourceResultError:
+            continue
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(queries_list) * len(search_providers))) as executor:
         futures = {}
-        for q in queries_list:
+        for q, query_item_ref in zip(queries_list, query_item_refs):
+            def call_lineage(
+                provider_name: str,
+            ) -> tuple[int, dict[str, Any] | None]:
+                call_ordinal = (
+                    discovery_result_store.reserve_provider_call_ordinal()
+                    if discovery_result_store is not None
+                    else len(futures) + 1
+                )
+                if discovery_result_context is None or query_item_ref is None:
+                    return call_ordinal, None
+                base_context = dict(discovery_result_context)
+                provider_contexts = base_context.pop("provider_contexts", None)
+                if provider_contexts is not None:
+                    if not isinstance(provider_contexts, Mapping) or not isinstance(
+                        provider_contexts.get(provider_name), Mapping
+                    ):
+                        raise DiscoverySourceResultError(
+                            "ordinary discovery requires exact lineage for every provider"
+                        )
+                    base_context.update(dict(provider_contexts[provider_name]))
+                elif len(search_providers) > 1:
+                    raise DiscoverySourceResultError(
+                        "multi-provider discovery requires per-provider route lineage"
+                    )
+                return call_ordinal, {
+                    **base_context,
+                    "query_plan_item_ref": dict(query_item_ref),
+                    "query_role": query_item_ref.get("query_plan_role"),
+                    "provider": provider_name,
+                }
+
             if "tavily" in search_providers:
+                call_ordinal, result_context = call_lineage("tavily")
                 futures[executor.submit(
                     search_web_results,
                     q,
@@ -2801,8 +2898,9 @@ def process_search_queries(
                     exclude_domains=exclude_domains,
                     cost_accumulator=cost_accumulator,
                     cost_phase=cost_phase,
-                )] = ("tavily", q)
+                )] = ("tavily", q, call_ordinal, result_context)
             if "linkup" in search_providers and os.getenv("LINKUP_API_KEY"):
+                call_ordinal, result_context = call_lineage("linkup")
                 futures[executor.submit(
                     search_linkup_results,
                     q,
@@ -2816,9 +2914,10 @@ def process_search_queries(
                     to_date=to_date,
                     cost_accumulator=cost_accumulator,
                     cost_phase=cost_phase,
-                )] = ("linkup", q)
+                )] = ("linkup", q, call_ordinal, result_context)
             if "exa" in search_providers and os.getenv("EXA_API_KEY"):
                 exa_domains = exa_domain_filter if exa_domain_filter else include_domains
+                call_ordinal, result_context = call_lineage("exa")
                 futures[executor.submit(
                     search_exa_results,
                     q,
@@ -2830,13 +2929,13 @@ def process_search_queries(
                     to_date=to_date,
                     cost_accumulator=cost_accumulator,
                     cost_phase=cost_phase,
-                )] = ("exa", q)
+                )] = ("exa", q, call_ordinal, result_context)
 
         # Futures execute concurrently, but provider material is reduced in stable
         # submission order (query order, then the existing provider order).  Thread
         # completion timing must not become candidate rank or duplicate-URL authority.
         for future in futures:
-            provider, q = futures[future]
+            provider, q, call_ordinal, result_context = futures[future]
             success = True
             failure_type = None
             try:
@@ -2874,18 +2973,57 @@ def process_search_queries(
             raw_url_overlap_count = len(raw_unique_urls & pre_pass_seen_urls)
             raw_domain_overlap_count = len(raw_domains & pre_pass_seen_domains)
             provider_result_summaries: list[dict[str, Any]] = []
-            for rank, item in enumerate(results, start=1):
+            result_limit = max(0, int(max_results or 0))
+            if discovery_result_store is not None:
+                discovery_result_store.note_call(
+                    returned_count=len(results),
+                    admitted_limit=result_limit,
+                )
+            bounded_results = list(results)[:result_limit]
+            for rank, raw_item in enumerate(bounded_results, start=1):
+                item = dict(raw_item)
+                identity = None
+                if discovery_result_store is not None:
+                    if result_context is None:
+                        raise DiscoverySourceResultError(
+                            "ordinary discovery call lacks result lineage"
+                        )
+                    material_text, material_class = (
+                        _provider_returned_candidate_material_for_store(item)
+                    )
+                    identity = discovery_result_store.admit_result(
+                        context=result_context,
+                        provider=provider,
+                        call_ordinal=call_ordinal,
+                        result_rank=rank,
+                        result=item,
+                        material_text=material_text,
+                        material_class=material_class,
+                    )
+                    if identity is None:
+                        continue
+                    item["source_result_ref"] = identity.ref()
+                    item["source_material_ref"] = dict(identity.material_ref)
+                    item["source_result_material_class"] = identity.material_class
+                    item["source_result_material_digest"] = identity.material_digest
+                    item["provider_call_ordinal"] = identity.provider_call_ordinal
+                    item["provider_rank_or_position"] = identity.result_rank
+                    item["query_digest"] = identity.query_digest
+                    item["normalized_url"] = identity.normalized_url
+                    item["url"] = identity.normalized_url
+
                 url = item.get("url", "")
+                dedupe_url = str(item.get("normalized_url") or url)
                 plausible = is_plausible_domain(url)
                 accepted = (
                     plausible
-                    and url not in seen_urls_set
-                    and url not in provider_seen_urls
+                    and dedupe_url not in normalized_seen_urls
+                    and dedupe_url not in provider_seen_urls
                 )
                 non_representation_reason = None
-                if plausible and url in seen_urls_set:
+                if plausible and dedupe_url in normalized_seen_urls:
                     non_representation_reason = "duplicate_seen_url"
-                elif plausible and url in provider_seen_urls:
+                elif plausible and dedupe_url in provider_seen_urls:
                     non_representation_reason = "duplicate_provider_url"
                 elif not plausible and url:
                     non_representation_reason = "non_plausible_url"
@@ -2902,8 +3040,8 @@ def process_search_queries(
                             non_representation_reason=non_representation_reason,
                         )
                     )
-                if plausible and url not in seen_urls_set:
-                    attempt_new_urls.add(url)
+                if plausible and dedupe_url not in normalized_seen_urls:
+                    attempt_new_urls.add(dedupe_url)
                 if accepted:
                     item["_provider"] = provider
                     item["_query"] = q
@@ -2914,11 +3052,11 @@ def process_search_queries(
                         f"{provider_role}:"
                         f"{iteration if iteration is not None else 'unknown'}"
                     )
-                    item["provider_rank_or_position"] = rank
+                    item.setdefault("provider_rank_or_position", rank)
                     provider_buckets[provider].append(item)
-                    provider_seen_urls.add(url)
-                    new_urls_this_pass.add(url)
-                    accepted_urls.add(url)
+                    provider_seen_urls.add(dedupe_url)
+                    new_urls_this_pass.add(dedupe_url)
+                    accepted_urls.add(dedupe_url)
                     accepted_url_count += 1
             if imgs:
                 for img in imgs:
@@ -3003,7 +3141,34 @@ def process_search_queries(
         for r in provider_results:
             if r.get("credibility", 0) < -1:
                 continue
-            text_content, material_type = _provider_returned_candidate_material(r)
+            source_result_ref = r.get("source_result_ref")
+            source_material_ref = r.get("source_material_ref")
+            contributor_facts: dict[str, Any] = {}
+            if discovery_result_store is not None:
+                if not isinstance(source_result_ref, Mapping) or not isinstance(
+                    source_material_ref, Mapping
+                ):
+                    raise DiscoverySourceResultError(
+                        "ranked provider material requires canonical source refs"
+                    )
+                material_record = discovery_result_store.material_for_ref(
+                    source_result_ref
+                )
+                if material_record is None or material_record.ref() != dict(
+                    source_material_ref
+                ):
+                    raise DiscoverySourceResultError(
+                        "source-result material ref does not resolve"
+                    )
+                text_content = material_record.material_text
+                material_type = material_record.material_class
+                contributor_facts = discovery_result_store.contributors_for_url(
+                    material_record.normalized_url
+                )
+            else:
+                text_content, material_type = (
+                    _provider_returned_candidate_material(r)
+                )
             if len(text_content) > minimum_length:
                 _tier_snip = text_content[:2000]
                 _source_tier = classify_source(
@@ -3012,10 +3177,39 @@ def process_search_queries(
                     _tier_snip,
                     source_context=entity_hint or "",
                 )
-                for chunk in chunk_text(text_content, chunk_size=chunk_size):
+                for chunk_index, chunk in enumerate(
+                    chunk_text(text_content, chunk_size=chunk_size),
+                    start=1,
+                ):
                     if len(chunk) < 150:
                         continue
                     prefix = "[SNIPPET] " if complexity == "high" else ""
+                    ranked_text = prefix + chunk
+                    source_ref_fields: dict[str, Any] = {}
+                    if source_result_ref and source_material_ref:
+                        source_ref_fields = {
+                            "source_result_ref": dict(source_result_ref),
+                            "source_material_ref": dict(source_material_ref),
+                            "material_label": material_type,
+                            "chunk_index": chunk_index,
+                            "chunk_digest": sha256(
+                                ranked_text.encode("utf-8")
+                            ).hexdigest(),
+                            "contributing_source_result_refs": list(
+                                contributor_facts.get(
+                                    "contributing_source_result_refs", []
+                                )
+                            ),
+                            "contributor_count": contributor_facts.get(
+                                "contributor_count", 0
+                            ),
+                            "contributor_overflow_count": contributor_facts.get(
+                                "contributor_overflow_count", 0
+                            ),
+                            "full_contributor_digest": contributor_facts.get(
+                                "full_contributor_digest"
+                            ),
+                        }
                     new_passages.append(
                         {
                             "title": _bounded_provider_text(
@@ -3026,13 +3220,14 @@ def process_search_queries(
                                 r.get("domain"), limit=500
                             ),
                             "credibility": r.get("credibility", 0),
-                            "text": prefix + chunk,
+                            "text": ranked_text,
                             "score": 0,
                             "rrf_score": r.get("rrf_score", 0.0),
                             "_provider": r.get("_provider", ""),
                             "source_tier": _source_tier,
                             **_material_fields(material_type),
                             **_provider_candidate_passage_fields(r),
+                            **source_ref_fields,
                         }
                     )
 

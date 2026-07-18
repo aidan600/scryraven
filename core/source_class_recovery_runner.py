@@ -43,6 +43,7 @@ class SourceClassRecoveryRunnerContext:
     entity_hint: str | None
     provider_diagnostics: list[dict[str, Any]]
     retrieval_pass_records: list[dict[str, Any]]
+    bind_process_search_queries: Any | None = None
     error_type: type[Exception] = RuntimeError
 
 
@@ -162,6 +163,7 @@ def _provider_search_allocation_execution_context(
             else None
         ),
         entity_hint=context.entity_hint,
+        bind_process_search_queries=context.bind_process_search_queries,
     )
 
 
@@ -183,9 +185,28 @@ def run_source_class_recovery_dispatch(
 
     provider_search_allocation: ProviderSearchAllocationGateResult | None = None
     if canonical_dispatch_authorized:
+        process_search_queries = context.process_search_queries
+        active_action = _active_source_class_recovery_action(context.controller)
+        if callable(process_search_queries) and callable(
+            context.bind_process_search_queries
+        ):
+            process_search_queries = context.bind_process_search_queries(
+                stage="source_class_recovery",
+                query_origin="source_class_recovery_controller",
+                query_role="recovery",
+                authority_source="controller_action_envelope.source_class_recovery",
+                authority_anchor={
+                    "action": (
+                        active_action.to_dict()
+                        if active_action is not None
+                        else {}
+                    ),
+                    "dispatch_reason": dispatch_reason,
+                },
+            )
         blocker_reason = (
             "missing_process_search_queries"
-            if not callable(context.process_search_queries)
+            if not callable(process_search_queries)
             else "missing_search_providers"
             if not context.search_providers
             else None
@@ -201,7 +222,7 @@ def run_source_class_recovery_dispatch(
             source_class_recovery_execution = execute_source_class_recovery_action(
                 context.controller,
                 lifecycle_trace=context.lifecycle_trace,
-                process_search_queries=context.process_search_queries,
+                process_search_queries=process_search_queries,
                 all_passages=context.all_passages,
                 intent=context.intent,
                 complexity=context.complexity,

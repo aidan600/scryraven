@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from hashlib import sha256
+from math import isfinite
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
@@ -28,6 +29,19 @@ SEARCH_RESULT_CANDIDATE_RECORD_KIND = "search_result_candidate_record"
 SEARCH_RESULT_CANDIDATE_PACKET_POSTURE = (
     "non_evidence_candidate_discovery_handoff_before_fetch_read"
 )
+ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_SCHEMA_VERSION = (
+    "search_result_candidate_packet_ordinary_query_provider_v1"
+)
+ORDINARY_SEARCH_RESULT_CANDIDATE_RECORD_SCHEMA_VERSION = (
+    "search_result_candidate_record_ordinary_query_provider_v1"
+)
+SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER = (
+    "ordinary_query_provider"
+)
+ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION = 1
+ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_MAX_CANDIDATES = 40
+ORDINARY_SEARCH_RESULT_CANDIDATE_MAX_CONTRIBUTOR_REFS = 8
+ORDINARY_SEARCH_RESULT_CANDIDATE_SNIPPET_MAX_CHARS = 500
 
 _SAFE_FALSE_RETENTION_KEYS = frozenset(
     {
@@ -539,12 +553,473 @@ def build_search_result_candidate_record_from_live_candidate(
     return record
 
 
+def build_search_result_candidate_packet_from_ordinary_discovery(
+    *,
+    run_id: str,
+    request_id: str,
+    search_executor_handoff_ref: Mapping[str, Any],
+    source_result_identity_set_ref: Mapping[str, Any],
+    candidates: Sequence[Mapping[str, Any]],
+    selected_candidate_inputs_digest: str,
+    answer_contract_ref: Mapping[str, Any] | None = None,
+    packet_revision: int = ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION,
+) -> dict[str, Any]:
+    """Build the sole candidate packet from already-resolved ordinary results.
+
+    The source-result and material identities must already exist.  This builder
+    validates and consumes those references; it never reconstructs identity
+    from URL/title/snippet fields and never performs acquisition or fetch work.
+    """
+
+    clean_run_id = _required_token(run_id, "ordinary packet requires run_id")
+    clean_request_id = _required_token(
+        request_id,
+        "ordinary packet requires request_id",
+    )
+    if packet_revision != ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet requires revision 1"
+        )
+    if isinstance(candidates, str | bytes) or not isinstance(candidates, Sequence):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet requires candidate mappings"
+        )
+    if not candidates:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet requires at least one selected candidate"
+        )
+    if len(candidates) > ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_MAX_CANDIDATES:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet exceeds the 40-candidate cap"
+        )
+    expected_candidate_inputs_digest = ordinary_candidate_inputs_digest(
+        candidates
+    )
+    if selected_candidate_inputs_digest != expected_candidate_inputs_digest:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet candidate-input authorization digest mismatch"
+        )
+    identity_set_ref = _ordinary_identity_set_ref_or_error(
+        source_result_identity_set_ref
+    )
+    handoff_ref = _ordinary_handoff_ref_or_error(search_executor_handoff_ref)
+    if (
+        handoff_ref["source_result_identity_set_ref"]
+        != identity_set_ref
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet identity-set ref does not match handoff"
+        )
+    contract_ref = _optional_contract_ref(answer_contract_ref)
+    handoff_contract_ref = _safe_mapping(handoff_ref.get("answer_contract_ref"))
+    if handoff_contract_ref != contract_ref:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet answer-contract ref does not match handoff"
+        )
+    records = [
+        build_search_result_candidate_record_from_ordinary_candidate(
+            candidate,
+            run_id=clean_run_id,
+            request_id=clean_request_id,
+            search_executor_handoff_ref=handoff_ref,
+            answer_contract_ref=contract_ref,
+        )
+        for candidate in candidates
+    ]
+    ordered_candidate_record_digests_digest = (
+        _ordinary_ordered_candidate_record_digests_digest(records)
+    )
+    selected_source_refs = [
+        _safe_mapping(record.get("source_result_ref")) for record in records
+    ]
+    if selected_source_refs != _safe_list(
+        handoff_ref.get("selected_source_result_refs")
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet selected source refs do not match handoff order"
+        )
+    if len(selected_source_refs) > identity_set_ref["source_result_identity_count"]:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet selects more results than the identity set"
+        )
+    full_selected_source_result_refs_digest = _digest_json(
+        selected_source_refs
+    )
+    packet_base = _without_empty(
+        {
+            "schema_version": (
+                ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_SCHEMA_VERSION
+            ),
+            "packet_kind": SEARCH_RESULT_CANDIDATE_PACKET_KIND,
+            "trace_key": SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
+            "owner": SEARCH_RESULT_CANDIDATE_PACKET_OWNER,
+            "origin_kind": (
+                SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER
+            ),
+            "packet_revision": ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION,
+            "canonical_state": True,
+            "trace_only": False,
+            "storage_only": False,
+            "packet_posture": SEARCH_RESULT_CANDIDATE_PACKET_POSTURE,
+            "run_id": clean_run_id,
+            "request_id": clean_request_id,
+            "answer_contract_ref": contract_ref,
+            "search_executor_handoff_ref": handoff_ref,
+            "search_executor_handoff_digest": handoff_ref["handoff_digest"],
+            "source_result_identity_set_ref": identity_set_ref,
+            "selected_source_result_refs": selected_source_refs,
+            "full_selected_source_result_refs_digest": (
+                full_selected_source_result_refs_digest
+            ),
+            "selected_candidate_inputs_digest": (
+                expected_candidate_inputs_digest
+            ),
+            "candidate_count": len(records),
+            "ordered_candidate_record_digests_digest": (
+                ordered_candidate_record_digests_digest
+            ),
+            "candidate_records": records,
+            **_POSTURE_TRUE_FLAGS,
+            **_CLOSED_FALSE_FLAGS,
+            **_ordinary_closed_runtime_fields(),
+        }
+    )
+    packet_digest = ordinary_search_result_candidate_packet_binding_digest(
+        packet_base
+    )
+    packet = {
+        **packet_base,
+        "packet_id": (
+            "search-result-candidate-packet:"
+            f"{_clean_token(clean_request_id, limit=120)}:"
+            f"{packet_digest[:16]}"
+        ),
+        "packet_digest": packet_digest,
+    }
+    return validate_ordinary_search_result_candidate_packet(packet)
+
+
+def build_search_result_candidate_record_from_ordinary_candidate(
+    candidate: Mapping[str, Any],
+    *,
+    run_id: str,
+    request_id: str,
+    search_executor_handoff_ref: Mapping[str, Any],
+    answer_contract_ref: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build one ordinary packet record from pre-existing identity/material refs."""
+
+    raw = _required_mapping(candidate, "ordinary search-result candidate")
+    _reject_forbidden_surface_claims(raw, context="ordinary search-result candidate")
+    source_result_ref = _ordinary_source_result_ref_or_error(
+        raw.get("source_result_ref") or raw.get("source_identity_ref") or raw
+    )
+    source_material_input = _safe_mapping(
+        raw.get("source_material_ref") or raw.get("material_ref")
+    )
+    if raw.get("material_class") and not source_material_input.get(
+        "material_class"
+    ):
+        source_material_input["material_class"] = raw.get("material_class")
+    source_material_ref = _ordinary_source_material_ref_or_error(
+        source_material_input
+    )
+    provider_used = _required_token(
+        raw.get("provider_used") or raw.get("provider"),
+        "ordinary candidate requires provider",
+        limit=120,
+    )
+    provider_authorized = _required_token(
+        raw.get("provider_authorized") or provider_used,
+        "ordinary candidate requires authorized provider",
+        limit=120,
+    )
+    provider_call_ordinal = _positive_int(
+        raw.get("provider_call_ordinal")
+        or raw.get("provider_call_index")
+        or raw.get("call_ordinal"),
+        "ordinary candidate requires provider call ordinal",
+    )
+    provider_result_rank = _positive_int(
+        raw.get("provider_result_rank") or raw.get("result_rank"),
+        "ordinary candidate requires provider result rank",
+    )
+    selected_candidate_rank = _positive_int(
+        raw.get("selected_candidate_rank") or raw.get("selected_rank"),
+        "ordinary candidate requires selected candidate rank",
+    )
+    url = _required_url(raw.get("normalized_url") or raw.get("url"))
+    title = _clean_text(raw.get("title"), limit=220)
+    relevance_score = _ordinary_score_or_error(
+        raw.get("relevance_score")
+        if raw.get("relevance_score") is not None
+        else raw.get("ranking_score", raw.get("score"))
+    )
+    scoring_provenance = _ordinary_scoring_provenance_or_error(raw)
+    contributor_refs, overflow_count, overflow_digest = (
+        _ordinary_contributor_refs(raw)
+    )
+    handoff_ref = _ordinary_handoff_ref_or_error(search_executor_handoff_ref)
+    contract_ref = _optional_contract_ref(answer_contract_ref)
+    candidate_core = _without_empty(
+        {
+            "source_result_ref": source_result_ref,
+            "source_material_ref": source_material_ref,
+            "selected_candidate_rank": selected_candidate_rank,
+            "search_executor_handoff_ref": handoff_ref,
+        }
+    )
+    candidate_digest = _digest_json(candidate_core)
+    record = _without_empty(
+        {
+            "schema_version": (
+                ORDINARY_SEARCH_RESULT_CANDIDATE_RECORD_SCHEMA_VERSION
+            ),
+            "record_kind": SEARCH_RESULT_CANDIDATE_RECORD_KIND,
+            "record_posture": SEARCH_RESULT_CANDIDATE_PACKET_POSTURE,
+            "origin_kind": (
+                SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER
+            ),
+            "packet_revision": ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION,
+            "run_id": _required_token(run_id, "ordinary record requires run_id"),
+            "request_id": _required_token(
+                request_id,
+                "ordinary record requires request_id",
+            ),
+            "answer_contract_ref": contract_ref,
+            "search_executor_handoff_ref": handoff_ref,
+            "search_executor_handoff_digest": handoff_ref["handoff_digest"],
+            "source_result_ref": source_result_ref,
+            "source_material_ref": source_material_ref,
+            "provider_authorized": provider_authorized,
+            "provider_used": provider_used,
+            "provider_call_ordinal": provider_call_ordinal,
+            "provider_result_rank": provider_result_rank,
+            "selected_candidate_rank": selected_candidate_rank,
+            "title": title,
+            "normalized_url": url,
+            "domain": _clean_domain(raw.get("domain")) or _domain_from_url(url),
+            "snippet": _clean_text(
+                raw.get("snippet"),
+                limit=ORDINARY_SEARCH_RESULT_CANDIDATE_SNIPPET_MAX_CHARS,
+            ),
+            "published_or_observed_date": _clean_token(
+                raw.get("published_or_observed_date") or raw.get("date"),
+                limit=80,
+            ),
+            "relevance_score": relevance_score,
+            "scoring_provenance": scoring_provenance,
+            "contributing_source_result_refs": contributor_refs,
+            "contributor_ref_count": len(contributor_refs),
+            "contributor_overflow_count": overflow_count,
+            "contributor_overflow_digest": overflow_digest,
+            "candidate_id": (
+                "search-result-candidate:ordinary:"
+                f"{source_result_ref['source_result_id']}:"
+                f"{selected_candidate_rank}"
+            ),
+            "candidate_digest": candidate_digest,
+            **_POSTURE_TRUE_FLAGS,
+            **_CLOSED_FALSE_FLAGS,
+            **_ordinary_closed_runtime_fields(),
+        }
+    )
+    record["record_digest"] = _digest_json(_record_digest_payload(record))
+    _validate_ordinary_candidate_record(record)
+    return record
+
+
+def validate_ordinary_search_result_candidate_packet(
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the ordinary-origin branch under the canonical packet owner."""
+
+    raw = _required_mapping(packet, "ordinary search-result candidate packet")
+    _reject_forbidden_surface_claims(
+        raw,
+        context="ordinary search-result candidate packet",
+    )
+    safe = _safe_mapping(raw)
+    if (
+        safe.get("schema_version")
+        != ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_SCHEMA_VERSION
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet schema mismatch"
+        )
+    if safe.get("packet_kind") != SEARCH_RESULT_CANDIDATE_PACKET_KIND:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet kind mismatch"
+        )
+    if safe.get("owner") != SEARCH_RESULT_CANDIDATE_PACKET_OWNER:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet owner mismatch"
+        )
+    if (
+        safe.get("origin_kind")
+        != SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet origin mismatch"
+        )
+    if (
+        safe.get("packet_revision")
+        != ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet revision mismatch"
+        )
+    if safe.get("packet_posture") != SEARCH_RESULT_CANDIDATE_PACKET_POSTURE:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet posture mismatch"
+        )
+    _validate_closed_flags(safe, context="ordinary candidate packet")
+    _validate_posture_flags(safe, context="ordinary candidate packet")
+    _validate_ordinary_closed_runtime_fields(
+        safe,
+        context="ordinary candidate packet",
+    )
+    run_id = _required_token(safe.get("run_id"), "ordinary packet requires run_id")
+    request_id = _required_token(
+        safe.get("request_id"),
+        "ordinary packet requires request_id",
+    )
+    contract_ref = _optional_contract_ref(safe.get("answer_contract_ref"))
+    handoff_ref = _ordinary_handoff_ref_or_error(
+        safe.get("search_executor_handoff_ref")
+    )
+    if safe.get("search_executor_handoff_digest") != handoff_ref["handoff_digest"]:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet handoff digest mismatch"
+        )
+    if _safe_mapping(handoff_ref.get("answer_contract_ref")) != contract_ref:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet contract ref does not match handoff"
+        )
+    identity_set_ref = _ordinary_identity_set_ref_or_error(
+        safe.get("source_result_identity_set_ref")
+    )
+    if (
+        _safe_mapping(handoff_ref.get("source_result_identity_set_ref"))
+        != identity_set_ref
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet identity-set ref does not match handoff"
+        )
+    records = _safe_list(safe.get("candidate_records"))
+    if not records:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet requires candidate records"
+        )
+    if len(records) > ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_MAX_CANDIDATES:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet exceeds the 40-candidate cap"
+        )
+    if safe.get("candidate_count") != len(records):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet candidate_count mismatch"
+        )
+    selected_refs = [
+        _ordinary_source_result_ref_or_error(item)
+        for item in _safe_list(safe.get("selected_source_result_refs"))
+    ]
+    if len(selected_refs) != len(records):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet selected-source count mismatch"
+        )
+    if selected_refs != _safe_list(handoff_ref.get("selected_source_result_refs")):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet selected-source refs do not match handoff"
+        )
+    selected_source_refs_digest = _digest_json(selected_refs)
+    if safe.get("full_selected_source_result_refs_digest") != (
+        selected_source_refs_digest
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet selected-source digest mismatch"
+        )
+    _required_sha256(
+        safe.get("selected_candidate_inputs_digest"),
+        "ordinary packet requires selected candidate-input digest",
+    )
+    if len(selected_refs) > identity_set_ref["source_result_identity_count"]:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet selected-source count exceeds identity set"
+        )
+    seen_source_ids: set[str] = set()
+    seen_selected_ranks: set[int] = set()
+    for index, record in enumerate(records, start=1):
+        _validate_ordinary_candidate_record(
+            record,
+            run_id=run_id,
+            request_id=request_id,
+            answer_contract_ref=contract_ref,
+            search_executor_handoff_ref=handoff_ref,
+            expected_source_result_ref=selected_refs[index - 1],
+        )
+        source_id = _safe_mapping(record.get("source_result_ref")).get(
+            "source_result_id"
+        )
+        selected_rank = _positive_int(
+            record.get("selected_candidate_rank"),
+            "ordinary record requires selected candidate rank",
+        )
+        if source_id in seen_source_ids:
+            raise SearchResultCandidatePacketError(
+                "ordinary candidate packet contains duplicate source-result refs"
+            )
+        if selected_rank in seen_selected_ranks:
+            raise SearchResultCandidatePacketError(
+                "ordinary candidate packet contains duplicate selected ranks"
+            )
+        if selected_rank != index:
+            raise SearchResultCandidatePacketError(
+                "ordinary candidate packet selected ranks must be contiguous"
+            )
+        seen_source_ids.add(str(source_id))
+        seen_selected_ranks.add(selected_rank)
+    ordered_candidate_record_digests_digest = (
+        _ordinary_ordered_candidate_record_digests_digest(records)
+    )
+    if safe.get("ordered_candidate_record_digests_digest") != (
+        ordered_candidate_record_digests_digest
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet ordered candidate-record digest mismatch"
+        )
+    declared_digest = _required_token(
+        safe.get("packet_digest"),
+        "ordinary candidate packet requires packet_digest",
+        limit=128,
+    )
+    if declared_digest != (
+        ordinary_search_result_candidate_packet_binding_digest(safe)
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet digest mismatch"
+        )
+    expected_packet_id = (
+        "search-result-candidate-packet:"
+        f"{_clean_token(request_id, limit=120)}:"
+        f"{declared_digest[:16]}"
+    )
+    if safe.get("packet_id") != expected_packet_id:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet id mismatch"
+        )
+    return safe
+
+
 def validate_search_result_candidate_packet(
     packet: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Validate and return a sanitized candidate packet."""
 
     raw = _required_mapping(packet, "search result candidate packet")
+    if raw.get("schema_version") == (
+        ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_SCHEMA_VERSION
+    ):
+        return validate_ordinary_search_result_candidate_packet(raw)
     _reject_forbidden_surface_claims(raw, context="search result candidate packet")
     safe = _safe_mapping(raw)
     if safe.get("schema_version") != SEARCH_RESULT_CANDIDATE_PACKET_SCHEMA_VERSION:
@@ -616,12 +1091,42 @@ def search_result_candidate_packet_ref_from_packet(
     packet_digest = _clean_token(safe.get("packet_digest"), limit=128)
     if not packet_id or not packet_digest:
         return {}
-    return {
+    full_handoff_ref = _safe_mapping(safe.get("search_executor_handoff_ref"))
+    compact_handoff_ref = _without_empty(
+        {
+            "handoff_id": full_handoff_ref.get("handoff_id"),
+            "handoff_digest": full_handoff_ref.get("handoff_digest"),
+            "schema_version": full_handoff_ref.get("schema_version"),
+            "origin_kind": full_handoff_ref.get("origin_kind"),
+            "handoff_revision": full_handoff_ref.get("handoff_revision"),
+        }
+    )
+    return _without_empty({
         "packet_id": packet_id,
         "packet_digest": packet_digest,
         "schema_version": _clean_token(safe.get("schema_version")),
+        "run_id": _clean_token(safe.get("run_id"), limit=260),
+        "request_id": _clean_token(safe.get("request_id"), limit=260),
         "candidate_count": _bounded_int(safe.get("candidate_count")),
-    }
+        "origin_kind": _clean_token(safe.get("origin_kind")),
+        "packet_revision": _bounded_int(safe.get("packet_revision")),
+        "full_selected_source_result_refs_digest": _clean_token(
+            safe.get("full_selected_source_result_refs_digest"),
+            limit=128,
+        ),
+        "selected_candidate_inputs_digest": _clean_token(
+            safe.get("selected_candidate_inputs_digest"),
+            limit=128,
+        ),
+        "ordered_candidate_record_digests_digest": _clean_token(
+            safe.get("ordered_candidate_record_digests_digest"),
+            limit=128,
+        ),
+        "source_result_identity_set_ref": _safe_mapping(
+            safe.get("source_result_identity_set_ref")
+        ),
+        "search_executor_handoff_ref": compact_handoff_ref,
+    })
 
 
 def _build_packet_from_source(
@@ -757,6 +1262,205 @@ def _validate_candidate_record(
     )
     if declared_digest != _digest_json(_record_digest_payload(safe)):
         raise SearchResultCandidatePacketError("candidate record digest mismatch")
+
+
+def _validate_ordinary_candidate_record(
+    record: Mapping[str, Any],
+    *,
+    run_id: str | None = None,
+    request_id: str | None = None,
+    answer_contract_ref: Mapping[str, Any] | None = None,
+    search_executor_handoff_ref: Mapping[str, Any] | None = None,
+    expected_source_result_ref: Mapping[str, Any] | None = None,
+) -> None:
+    safe = _safe_mapping(record)
+    if safe.get("schema_version") != ORDINARY_SEARCH_RESULT_CANDIDATE_RECORD_SCHEMA_VERSION:
+        raise SearchResultCandidatePacketError("ordinary candidate record schema mismatch")
+    if safe.get("record_kind") != SEARCH_RESULT_CANDIDATE_RECORD_KIND:
+        raise SearchResultCandidatePacketError("ordinary candidate record kind mismatch")
+    if safe.get("origin_kind") != SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER:
+        raise SearchResultCandidatePacketError("ordinary candidate record origin mismatch")
+    _validate_closed_flags(safe, context="ordinary candidate record")
+    _validate_posture_flags(safe, context="ordinary candidate record")
+    _validate_ordinary_closed_runtime_fields(safe, context="ordinary candidate record")
+    record_run_id = _required_token(safe.get("run_id"), "ordinary record requires run_id")
+    record_request_id = _required_token(safe.get("request_id"), "ordinary record requires request_id")
+    if run_id is not None and record_run_id != run_id:
+        raise SearchResultCandidatePacketError("ordinary candidate record run_id mismatch")
+    if request_id is not None and record_request_id != request_id:
+        raise SearchResultCandidatePacketError("ordinary candidate record request_id mismatch")
+    contract_ref = _optional_contract_ref(safe.get("answer_contract_ref"))
+    if answer_contract_ref is not None and contract_ref != _safe_mapping(answer_contract_ref):
+        raise SearchResultCandidatePacketError("ordinary candidate record contract ref mismatch")
+    handoff_ref = _ordinary_handoff_ref_or_error(safe.get("search_executor_handoff_ref"))
+    if search_executor_handoff_ref is not None and handoff_ref != _safe_mapping(search_executor_handoff_ref):
+        raise SearchResultCandidatePacketError("ordinary candidate record handoff ref mismatch")
+    if safe.get("search_executor_handoff_digest") != handoff_ref["handoff_digest"]:
+        raise SearchResultCandidatePacketError("ordinary candidate record handoff digest mismatch")
+    source_ref = _ordinary_source_result_ref_or_error(safe.get("source_result_ref"))
+    if expected_source_result_ref is not None and source_ref != _safe_mapping(expected_source_result_ref):
+        raise SearchResultCandidatePacketError("ordinary candidate source-result ref mismatch")
+    _ordinary_source_material_ref_or_error(safe.get("source_material_ref"))
+    _required_token(safe.get("provider_used"), "ordinary candidate requires provider")
+    _required_token(safe.get("provider_authorized"), "ordinary candidate requires authorized provider")
+    _positive_int(safe.get("provider_call_ordinal"), "ordinary candidate requires provider call ordinal")
+    _positive_int(safe.get("provider_result_rank"), "ordinary candidate requires provider result rank")
+    selected_rank = _positive_int(safe.get("selected_candidate_rank"), "ordinary candidate requires selected rank")
+    _required_url(safe.get("normalized_url"))
+    if safe.get("title") not in (None, ""):
+        _clean_text(safe.get("title"), limit=220)
+    _ordinary_score_or_error(safe.get("relevance_score"))
+    if not _safe_mapping(safe.get("scoring_provenance")):
+        raise SearchResultCandidatePacketError("ordinary candidate requires scoring provenance")
+    refs = [_ordinary_source_result_ref_or_error(item) for item in _safe_list(safe.get("contributing_source_result_refs"))]
+    if len(refs) > ORDINARY_SEARCH_RESULT_CANDIDATE_MAX_CONTRIBUTOR_REFS:
+        raise SearchResultCandidatePacketError("ordinary candidate contributor cap exceeded")
+    if safe.get("contributor_ref_count") != len(refs):
+        raise SearchResultCandidatePacketError("ordinary candidate contributor count mismatch")
+    overflow_count = _bounded_int(safe.get("contributor_overflow_count"))
+    overflow_digest = _clean_token(safe.get("contributor_overflow_digest"), limit=128)
+    if (overflow_count > 0) != bool(overflow_digest):
+        raise SearchResultCandidatePacketError("ordinary candidate overflow count/digest mismatch")
+    expected_candidate_id = f"search-result-candidate:ordinary:{source_ref['source_result_id']}:{selected_rank}"
+    if safe.get("candidate_id") != expected_candidate_id:
+        raise SearchResultCandidatePacketError("ordinary candidate id mismatch")
+    candidate_core = _without_empty({
+        "source_result_ref": source_ref,
+        "source_material_ref": _safe_mapping(safe.get("source_material_ref")),
+        "selected_candidate_rank": selected_rank,
+        "search_executor_handoff_ref": handoff_ref,
+    })
+    if safe.get("candidate_digest") != _digest_json(candidate_core):
+        raise SearchResultCandidatePacketError("ordinary candidate digest mismatch")
+    if safe.get("record_digest") != _digest_json(_record_digest_payload(safe)):
+        raise SearchResultCandidatePacketError("ordinary candidate record digest mismatch")
+
+
+def _ordinary_handoff_ref_or_error(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    if ref.get("origin_kind") != SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER:
+        raise SearchResultCandidatePacketError("ordinary packet requires ordinary-origin handoff ref")
+    handoff_id = _required_token(ref.get("handoff_id"), "ordinary packet requires handoff id", limit=260)
+    handoff_digest = _required_token(ref.get("handoff_digest"), "ordinary packet requires handoff digest", limit=128)
+    query_plan_ref = _ordinary_named_digest_ref(ref.get("query_plan_ref"), "query_plan_id", "query_plan_digest", "QueryPlan")
+    provider_plan_ref = _ordinary_named_digest_ref(ref.get("provider_plan_ref"), "provider_plan_id", "provider_plan_digest", "ProviderPlan")
+    identity_set_ref = _ordinary_identity_set_ref_or_error(ref.get("source_result_identity_set_ref"))
+    selected_refs = [_ordinary_source_result_ref_or_error(item) for item in _safe_list(ref.get("selected_source_result_refs"))]
+    if not selected_refs or len(selected_refs) > ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_MAX_CANDIDATES:
+        raise SearchResultCandidatePacketError("ordinary handoff ref requires bounded selected source refs")
+    retrieval_refs = _safe_list(ref.get("retrieval_action_refs"))
+    if not retrieval_refs or any(
+        not _clean_token(_safe_mapping(item).get("action_id"))
+        or not _clean_token(
+            _safe_mapping(item).get("retrieval_action_digest"),
+            limit=128,
+        )
+        for item in retrieval_refs
+    ):
+        raise SearchResultCandidatePacketError("ordinary handoff ref requires retrieval action refs")
+    return _without_empty({
+        "handoff_id": handoff_id,
+        "handoff_digest": handoff_digest,
+        "schema_version": _clean_token(ref.get("schema_version")),
+        "origin_kind": SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER,
+        "handoff_revision": _bounded_int(ref.get("handoff_revision")),
+        "dedupe_key": _clean_token(ref.get("dedupe_key"), limit=128),
+        "answer_contract_ref": _optional_contract_ref(ref.get("answer_contract_ref")),
+        "query_plan_ref": query_plan_ref,
+        "selected_query_plan_item_refs": _safe_list(ref.get("selected_query_plan_item_refs")),
+        "provider_plan_ref": provider_plan_ref,
+        "provider_plan_record_refs": _safe_list(ref.get("provider_plan_record_refs")),
+        "provider_route_refs": _safe_list(ref.get("provider_route_refs")),
+        "retrieval_action_refs": retrieval_refs,
+        "source_result_identity_set_ref": identity_set_ref,
+        "selected_source_result_refs": selected_refs,
+        "selected_source_result_count": len(selected_refs),
+    })
+
+
+def _ordinary_named_digest_ref(value: Any, id_key: str, digest_key: str, label: str) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    ref_id = _required_token(ref.get(id_key), f"ordinary packet requires {label} ref id", limit=260)
+    digest = _required_token(ref.get(digest_key), f"ordinary packet requires {label} ref digest", limit=128)
+    return _without_empty({id_key: ref_id, digest_key: digest, "schema_version": _clean_token(ref.get("schema_version")), "revision": ref.get("revision")})
+
+
+def _ordinary_identity_set_ref_or_error(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    identity_set_id = _required_token(ref.get("source_result_identity_set_id") or ref.get("identity_set_id"), "ordinary packet requires identity-set id", limit=260)
+    digest = _required_token(ref.get("source_result_identity_set_digest") or ref.get("identity_set_digest"), "ordinary packet requires identity-set digest", limit=128)
+    count = _bounded_int(ref.get("source_result_identity_count") if ref.get("source_result_identity_count") is not None else ref.get("identity_count", ref.get("count")))
+    if count < 1 or count > 128:
+        raise SearchResultCandidatePacketError("ordinary packet identity-set count must be between 1 and 128")
+    return _without_empty({"source_result_identity_set_id": identity_set_id, "source_result_identity_set_digest": digest, "source_result_identity_count": count, "schema_version": _clean_token(ref.get("schema_version"))})
+
+
+def _ordinary_source_result_ref_or_error(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    source_id = _required_token(ref.get("source_result_id") or ref.get("identity_id"), "ordinary candidate requires source-result id", limit=320)
+    digest = _required_token(ref.get("source_result_digest") or ref.get("identity_digest"), "ordinary candidate requires source-result digest", limit=128)
+    return _without_empty({"source_result_id": source_id, "source_result_digest": digest, "schema_version": _clean_token(ref.get("schema_version")), "revision": ref.get("revision")})
+
+
+def _ordinary_source_material_ref_or_error(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    material_id = _required_token(ref.get("source_material_id") or ref.get("material_id"), "ordinary candidate requires source-material id", limit=320)
+    digest = _required_token(ref.get("source_material_digest") or ref.get("material_digest"), "ordinary candidate requires source-material digest", limit=128)
+    return _without_empty({"source_material_id": material_id, "source_material_digest": digest, "material_class": _clean_token(ref.get("material_class"), limit=120), "schema_version": _clean_token(ref.get("schema_version"))})
+
+
+def _optional_contract_ref(value: Any) -> dict[str, Any]:
+    return _contract_ref_or_error(value) if _safe_mapping(value) else {}
+
+
+def _ordinary_score_or_error(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError) as exc:
+        raise SearchResultCandidatePacketError("ordinary candidate requires relevance score") from exc
+    if not isfinite(score):
+        raise SearchResultCandidatePacketError("ordinary candidate relevance score must be finite")
+    return score
+
+
+def _ordinary_scoring_provenance_or_error(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    provenance = _safe_mapping(candidate.get("scoring_provenance") or candidate.get("ranking_provenance") or candidate.get("scoring_provenance_ref"))
+    if not provenance:
+        provenance = _without_empty({key: candidate.get(key) for key in ("relevance_score", "ranking_score", "semantic_score", "rrf_score", "cross_encoder_score", "ranking_method")})
+    _reject_forbidden_surface_claims(provenance, context="ordinary candidate scoring provenance")
+    if not provenance or len(json.dumps(provenance, sort_keys=True)) > 4096:
+        raise SearchResultCandidatePacketError("ordinary candidate requires bounded scoring provenance")
+    return provenance
+
+
+def _ordinary_contributor_refs(candidate: Mapping[str, Any]) -> tuple[list[dict[str, Any]], int, str | None]:
+    raw_refs = _safe_list(candidate.get("contributing_source_result_refs") or candidate.get("contributor_refs"))
+    normalized = [_ordinary_source_result_ref_or_error(item) for item in raw_refs]
+    kept = normalized[:ORDINARY_SEARCH_RESULT_CANDIDATE_MAX_CONTRIBUTOR_REFS]
+    omitted = normalized[ORDINARY_SEARCH_RESULT_CANDIDATE_MAX_CONTRIBUTOR_REFS:]
+    declared_count = _bounded_int(candidate.get("contributor_overflow_count"))
+    declared_digest = _clean_token(
+        candidate.get("contributor_overflow_digest")
+        or candidate.get("full_contributor_digest"),
+        limit=128,
+    )
+    if omitted:
+        if declared_count not in (0, len(omitted)) or (declared_digest and declared_digest != _digest_json(omitted)):
+            raise SearchResultCandidatePacketError("ordinary candidate contributor overflow metadata mismatch")
+        return kept, len(omitted), _digest_json(omitted)
+    if declared_count > 0 and not declared_digest:
+        raise SearchResultCandidatePacketError("ordinary candidate overflow digest required")
+    return kept, declared_count, declared_digest if declared_count > 0 else None
+
+
+def _ordinary_closed_runtime_fields() -> dict[str, Any]:
+    return {"acquisition_need_proposal_created": False, "exact_url_transport_executed": False, "exact_url_cap_charged": False, "urls_fetched": 0}
+
+
+def _validate_ordinary_closed_runtime_fields(value: Mapping[str, Any], *, context: str) -> None:
+    for key, expected in _ordinary_closed_runtime_fields().items():
+        if value.get(key) != expected:
+            raise SearchResultCandidatePacketError(f"{context} must keep {key} at {expected!r}")
 
 
 def _validate_live_candidate_digest(candidate: Mapping[str, Any]) -> None:
@@ -1111,12 +1815,184 @@ def _packet_digest_payload(packet: Mapping[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def ordinary_candidate_inputs_digest(
+    candidates: Sequence[Mapping[str, Any]],
+) -> str:
+    """Digest the exact bounded selected inputs authorized for packet build."""
+
+    if isinstance(candidates, str | bytes) or not isinstance(
+        candidates, Sequence
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate inputs must be a sequence"
+        )
+    values = list(candidates)
+    if not values or any(not isinstance(item, Mapping) for item in values):
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate inputs must contain mappings"
+        )
+    return _digest_json(values)
+
+
+def _ordinary_compact_handoff_binding_ref(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    return _without_empty(
+        {
+            "handoff_id": ref.get("handoff_id"),
+            "handoff_digest": ref.get("handoff_digest"),
+            "schema_version": ref.get("schema_version"),
+            "origin_kind": ref.get("origin_kind"),
+            "handoff_revision": ref.get("handoff_revision"),
+        }
+    )
+
+
+def _ordinary_packet_binding_basis(value: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    selected_refs = _safe_list(safe.get("selected_source_result_refs"))
+    if selected_refs:
+        selected_refs_digest = _digest_json(selected_refs)
+        if safe.get("full_selected_source_result_refs_digest") not in (
+            None,
+            selected_refs_digest,
+        ):
+            raise SearchResultCandidatePacketError(
+                "ordinary packet selected-source binding digest mismatch"
+            )
+    else:
+        selected_refs_digest = _required_sha256(
+            safe.get("full_selected_source_result_refs_digest"),
+            "ordinary packet requires selected-source binding digest",
+        )
+    candidate_inputs_digest = _required_sha256(
+        safe.get("selected_candidate_inputs_digest"),
+        "ordinary packet requires selected candidate-input digest",
+    )
+    records = _safe_list(safe.get("candidate_records"))
+    if records:
+        ordered_record_digests_digest = (
+            _ordinary_ordered_candidate_record_digests_digest(records)
+        )
+        if safe.get("ordered_candidate_record_digests_digest") not in (
+            None,
+            ordered_record_digests_digest,
+        ):
+            raise SearchResultCandidatePacketError(
+                "ordinary packet ordered candidate-record binding digest mismatch"
+            )
+    else:
+        ordered_record_digests_digest = _required_sha256(
+            safe.get("ordered_candidate_record_digests_digest"),
+            "ordinary packet requires ordered candidate-record binding digest",
+        )
+    candidate_count = _positive_int(
+        safe.get("candidate_count"),
+        "ordinary packet requires candidate_count",
+    )
+    return {
+        "schema_version": safe.get("schema_version"),
+        "origin_kind": safe.get("origin_kind"),
+        "packet_revision": safe.get("packet_revision"),
+        "run_id": safe.get("run_id"),
+        "request_id": safe.get("request_id"),
+        "search_executor_handoff_ref": (
+            _ordinary_compact_handoff_binding_ref(
+                safe.get("search_executor_handoff_ref")
+            )
+        ),
+        "source_result_identity_set_ref": _safe_mapping(
+            safe.get("source_result_identity_set_ref")
+        ),
+        "candidate_count": candidate_count,
+        "full_selected_source_result_refs_digest": selected_refs_digest,
+        "selected_candidate_inputs_digest": candidate_inputs_digest,
+        "ordered_candidate_record_digests_digest": (
+            ordered_record_digests_digest
+        ),
+    }
+
+
+def _ordinary_ordered_candidate_record_digests_digest(
+    records: Sequence[Mapping[str, Any]],
+) -> str:
+    """Bind ordered bounded records without retaining their text in RunKernel."""
+
+    record_digests = [
+        _required_sha256(
+            _safe_mapping(record).get("record_digest"),
+            "ordinary packet candidate record requires record_digest",
+        )
+        for record in records
+    ]
+    if not record_digests:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet requires ordered candidate record digests"
+        )
+    return _digest_json(record_digests)
+
+
+def ordinary_search_result_candidate_packet_binding_digest(
+    value: Mapping[str, Any],
+) -> str:
+    """Return the text-free packet identity digest RunKernel can rederive."""
+
+    return _digest_json(_ordinary_packet_binding_basis(value))
+
+
+def validate_ordinary_search_result_candidate_packet_binding(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate a full or compact packet ref against its bounded bindings."""
+
+    safe = _safe_mapping(value)
+    declared_digest = _required_sha256(
+        safe.get("packet_digest"),
+        "ordinary packet requires packet_digest",
+    )
+    expected_digest = ordinary_search_result_candidate_packet_binding_digest(
+        safe
+    )
+    if declared_digest != expected_digest:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet binding digest mismatch"
+        )
+    request_id = _required_token(
+        safe.get("request_id"),
+        "ordinary packet requires request_id",
+    )
+    expected_id = (
+        "search-result-candidate-packet:"
+        f"{_clean_token(request_id, limit=120)}:{declared_digest[:16]}"
+    )
+    if safe.get("packet_id") != expected_id:
+        raise SearchResultCandidatePacketError(
+            "ordinary candidate packet binding id mismatch"
+        )
+    return safe
+
+
 def _digest_json(value: Any) -> str:
     encoded = json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"))
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _required_sha256(value: Any, message: str) -> str:
+    digest = _required_token(value, message, limit=128).casefold()
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise SearchResultCandidatePacketError(message)
+    return digest
+
+
 __all__ = [
+    "ORDINARY_SEARCH_RESULT_CANDIDATE_MAX_CONTRIBUTOR_REFS",
+    "ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_MAX_CANDIDATES",
+    "ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_REVISION",
+    "ORDINARY_SEARCH_RESULT_CANDIDATE_PACKET_SCHEMA_VERSION",
+    "ORDINARY_SEARCH_RESULT_CANDIDATE_RECORD_SCHEMA_VERSION",
+    "ORDINARY_SEARCH_RESULT_CANDIDATE_SNIPPET_MAX_CHARS",
+    "SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER",
     "SEARCH_RESULT_CANDIDATE_PACKET_KIND",
     "SEARCH_RESULT_CANDIDATE_PACKET_OWNER",
     "SEARCH_RESULT_CANDIDATE_PACKET_POSTURE",
@@ -1129,8 +2005,14 @@ __all__ = [
     "SearchResultCandidateRecord",
     "build_search_result_candidate_packet_from_live_search_validation_output",
     "build_search_result_candidate_packet_from_live_validation_state",
+    "build_search_result_candidate_packet_from_ordinary_discovery",
     "build_search_result_candidate_record_from_live_candidate",
+    "build_search_result_candidate_record_from_ordinary_candidate",
     "reduce_live_search_validation_candidates_to_packet",
+    "ordinary_candidate_inputs_digest",
+    "ordinary_search_result_candidate_packet_binding_digest",
     "search_result_candidate_packet_ref_from_packet",
     "validate_search_result_candidate_packet",
+    "validate_ordinary_search_result_candidate_packet",
+    "validate_ordinary_search_result_candidate_packet_binding",
 ]

@@ -93,8 +93,21 @@ ACQUISITION_CONTROL_RUNTIME_SHA = (
     "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 )
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
-CURRENT_STATE_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
+DISCOVER_HANDOFF_RUNTIME_SHA = (
+    "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
+)
+CURRENT_STATE_RUNTIME_SHA = DISCOVER_HANDOFF_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
+HISTORICAL_SEARCH_EXECUTOR_RECORD = (
+    "Historical merge-stable SearchExecutor record: PR #330 / "
+    "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
+    "when present; Scout/revision material is search direction only; handoff "
+    "creates search task records and a search work packet; no live "
+    "search/provider/fetch/read/retrieval calls were run; no "
+    "EvidenceLedger/citations/source-obligation satisfaction; next "
+    "implementation gate after AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01 is "
+    "AG-LIVE-XAXIS-VALIDATION-01A."
+)
 SPECIALIST_ADMISSION_RUNTIME_SHA = (
     "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
 )
@@ -110,7 +123,7 @@ S1_RUNTIME_SHA = (
 RUNTIME_SHA_BY_CONCERN = {
     "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:run-contract-semantic-loop": (
-        INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA
+        DISCOVER_HANDOFF_RUNTIME_SHA
     ),
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
     "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
@@ -245,6 +258,8 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
     )
     for path in CONCERN_OWNERS.values():
         text = _collapsed(path).casefold()
+        if path == CONCERN_OWNERS["canonical:run-contract-semantic-loop"]:
+            text = text.replace(HISTORICAL_SEARCH_EXECUTOR_RECORD.casefold(), "")
         for phrase in forbidden:
             assert phrase not in text, (path, phrase)
 
@@ -253,8 +268,11 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
     assert "Review and admission alone do not prove" in dprime
     assert "approved general ordinary component Analyst" not in dprime
 
-    semantic = _collapsed(CONCERN_OWNERS["canonical:run-contract-semantic-loop"])
-    assert "PR #" not in _read(CONCERN_OWNERS["canonical:run-contract-semantic-loop"])
+    semantic_path = CONCERN_OWNERS["canonical:run-contract-semantic-loop"]
+    semantic_text = _read(semantic_path)
+    semantic = _collapsed(semantic_path)
+    assert semantic_text.count(HISTORICAL_SEARCH_EXECUTOR_RECORD) == 1
+    assert "PR #" not in semantic_text.replace(HISTORICAL_SEARCH_EXECUTOR_RECORD, "")
     assert "Workers propose. RunKernel authorizes and reduces." in semantic
 
     dag = _collapsed(CONCERN_OWNERS["canonical:component-dag-scheduling-concurrency"])
@@ -352,7 +370,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-            "Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
 
@@ -424,7 +442,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-            "Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "No live recovery" in roadmap
@@ -440,7 +458,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
     for phrase in (
         "Status: current",
         "Default-read: yes",
-        f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_SHA}",
+        f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}",
         "`core.routing` is the sole provider-capability policy owner",
         "exactly one selected provider or blocks with zero transport",
         "Fallback candidates remain descriptive",
@@ -484,7 +502,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert PROVIDER_ROUTING_RUNTIME_SHA in census
     for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING, CURRENT_STATE, ROADMAP):
         assert (
-            f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_SHA}"
+            f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}"
             in _read(owner)
         )
     assert (
@@ -537,7 +555,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert roadmap.count("## Active Next:") == 1
     assert roadmap.count("## Blocked Next:") == 0
     assert (
-        "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     for stale in (
@@ -550,7 +568,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
         assert stale not in roadmap
 
 
-def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -> None:
+def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> None:
     current = _collapsed(CURRENT_STATE)
     routing = _collapsed(PROVIDER_ROUTING)
     acquisition = _collapsed(ACQUISITION_CONTROL)
@@ -574,23 +592,23 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
         "zero separate candidate-URL transport",
         "provider_returned_snippet",
         "provider_returned_excerpt",
-        "Candidate selection supplies URL provenance only",
         "`AcquisitionNeedProposalV1`",
         "core.pipeline._apply_source_custody_fetch_read_policy",
         "core.retrieval.fetch_page",
         "fetch_url_text",
-        "The requested final handoff from ordinary discovered candidates",
-        "not populated by canonical ordinary DISCOVER",
-        "sole active next checkpoint",
+        "`retrieval.DiscoverySourceResultIdentity` owns immutable occurrence identity",
+        "`retrieval.DiscoveryResultMaterialStore` owns run-local bounded provider material",
+        "`RunKernel.SearchResultCandidatePacket` owner consumes that exact handoff",
+        "does not use `live_search_validation`",
     ):
         assert phrase in current
     assert "selected-candidate nontrigger" in routing.casefold()
     assert "no exact-URL cap charge" in acquisition
     assert "opens a candidate source URL" in loop
-    assert "`discover_candidate_urls_admitted` counts newly admitted" in _read(
+    assert "`discover_candidate_urls_admitted` counts provider-result" in _read(
         CURRENT_STATE
     )
-    assert "`urls_fetched` counts actual separate source/exact-URL" in _read(
+    assert "`urls_fetched` counts actual separate exact-URL" in _read(
         CURRENT_STATE
     )
     assert "`total_urls_fetched` / `urls_fetched`" not in _read(CURRENT_STATE)
@@ -598,18 +616,44 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
         "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
         in _read(ROADMAP)
     )
-    assert "Status: sole active next checkpoint" in _read(DISCOVER_HANDOFF_BRIEF)
-    assert "must not synthesize packet fields" in handoff
+    assert "Status: completed Build" in _read(DISCOVER_HANDOFF_BRIEF)
+    assert DISCOVER_HANDOFF_RUNTIME_SHA in _read(DISCOVER_HANDOFF_BRIEF)
+    assert "canonical ordinary-origin revision-1 packet" in handoff
+    assert "No shadow planner" in _read(DISCOVER_HANDOFF_BRIEF)
+    assert "zero candidate-page or exact-URL transport" in handoff
     assert "PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01" in roadmap
+    assert "Status: sole active next checkpoint" in _read(EXACT_URL_BRIEF)
+    assert DISCOVER_HANDOFF_RUNTIME_SHA in _read(EXACT_URL_BRIEF)
+    assert "Canonical ordinary DISCOVER now populates revision 1" in exact_url
+    assert "post-selection READ and FOCUSED_EXTRACT material" in exact_url
+    assert "one to twenty exact URLs" in exact_url
+    assert (
+        "The producer may propose only; RunKernel must derive the capability"
+        in exact_url
+    )
+    assert "URL presence, or free-form tool instructions" in exact_url
+    assert "READ and activated Focused Extract" in exact_url
+    assert "Focused Extract remains a separate future checkpoint" not in exact_url
+    assert (
+        "If exact focus requires a distinct semantic producer, model-visible proposal"
+        in exact_url
+    )
+    assert (
+        "rather than weakening the controller or fabricating focus"
+        in exact_url
+    )
     assert "Initial DISCOVER material remains provider-returned" in exact_url
     assert "must not fetch candidate pages" in exact_url
+    assert "does not yet populate" not in exact_url
+    assert "remains blocked until" not in exact_url
+    assert "SQLite does not store the full packet" in handoff
 
     roadmap_folded = roadmap.casefold()
     handoff_index = roadmap_folded.index(
-        "## active next: discover-result-candidate-handoff-convergence-01"
+        "## completed build: discover-result-candidate-handoff-convergence-01"
     )
     exact_index = roadmap_folded.index(
-        "## queued: exact-url-acquisition-and-final-custody-convergence-01"
+        "## active next: exact-url-acquisition-and-final-custody-convergence-01"
     )
     planner_index = roadmap_folded.index(
         "## queued: planner-disambiguation-acquisition-convergence-01"
@@ -621,6 +665,15 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
         "## queued split: crawl-page-custody-convergence-01"
     )
     assert handoff_index < exact_index < planner_index < map_index < crawl_index
+    assert (
+        "exact-URL READ and Focused Extract with final custody, then planner-"
+        in roadmap
+    )
+    assert (
+        "site-topology selection authority, and Crawl page custody"
+        in roadmap
+    )
+    assert "exact-URL READ and Focused Extract with final custody" in current
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
@@ -706,7 +759,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     assert roadmap.count("## Active Next:") == 1
     assert roadmap.count("## Blocked Next:") == 0
     assert (
-            "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+            "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
@@ -764,10 +817,10 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
     )
     candidate_handoff = roadmap.index(
-        "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+        "## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
     )
     convergence = roadmap.index(
-        "## Queued: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
     )
     live = roadmap.index("### Separately Licensed Comparative Live Validation")
 
@@ -867,7 +920,7 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
         in roadmap
     )
     assert (
-            "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+            "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
             in roadmap
     )
     assert (
@@ -877,7 +930,7 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.index(
         "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
     ) < roadmap.index(
-        "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -916,7 +969,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-            "Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
+            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "answer-producing paths" in roadmap

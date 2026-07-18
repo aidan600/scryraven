@@ -1,11 +1,14 @@
 # EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
-Status: queued after DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
+Status: sole active next checkpoint
 Mode: BUILD
 Proof class: offline_product_path_proof
 Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01, INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01, and DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
-Starting-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
-Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
+Predecessor-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
+Starting-runtime/test: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Does-not-authorize: live calls, initial DISCOVER transport or planning redesign,
+planner disambiguation, Map selection, Crawl custody, general Deep, provider-
+failure fallback, or citation/final-answer authority by assertion
 
 ## Outcome
 
@@ -39,16 +42,15 @@ and proves that product decision.
   DISCOVER paths rank only normalized provider-returned material. Historical
   `core.pipeline` selective page fetching and `core.retrieval.fetch_page` /
   `fetch_url_text` are retired.
+- Canonical ordinary DISCOVER now populates revision 1 of the existing
+  `RunKernel.SearchResultCandidatePacket` from truthful provider-result identity
+  and material refs. The selected-candidate packet remains a nontrigger.
 - FOCUSED_EXTRACT is mechanically installed and deterministically recognized,
   but the controller returns `focused_extract_requester_not_installed` because
   no current producer supplies exact pre-acquisition focus with complete
   contract/component/obligation lineage.
 - No ordinary current-material-need producer reaches READ or Focused Extract.
 - Final custody across authorized READ and Focused Extract is not proved.
-- Canonical ordinary DISCOVER does not yet populate
-  `SearchResultCandidatePacket`; this Build remains blocked until the preceding
-  candidate-handoff convergence checkpoint supplies truthful selected-candidate
-  lineage without synthetic packet fields.
 
 ## Required Build
 
@@ -63,22 +65,24 @@ and proves that product decision.
    checks.
 3. Establish one exact FOCUSED_EXTRACT proposal producer if the same canonical
    material-need owner can truthfully supply its facts. It must bind one to
-   twenty exact URLs, exact material shape, bounded focus, current
-   AnswerContract, current source obligation, and current component revision.
+   twenty exact URLs, exact bounded focus, exact material shape, current
+   AnswerContract, current component, and current source obligation.
    The producer may propose only; RunKernel must derive the capability.
 4. If current admitted product facts cannot supply that focus, add the smallest
    explicit producer contract to the actual ordinary consumer. Do not derive
    focus from generic mode, complexity, provider features, post-READ display
-   anchors, or free-form tool instructions. A model/prompt contract change
-   requires its own exact schema and the semantic validation lane.
-5. Route each accepted exact-URL operation through the installed RunKernel
-   capability, work-order, route, execution, terminal, and custody actions.
+   anchors, URL presence, or free-form tool instructions. A model-visible
+   proposal or prompt contract change requires its own exact schema and the
+   semantic validation lane.
+5. Route each accepted exact-URL READ or FOCUSED_EXTRACT operation through the
+   installed RunKernel capability, work-order, route, execution, terminal, and
+   custody actions.
    Preserve `core.routing` as sole provider selector and
    `execute_authorized_acquisition_work_order()` as the only PRODUCT dispatcher.
-6. Extend custody only as needed to consume exact URL-bound READ or Focused artifacts.
-   Preserve one source identity per selected URL. Do not aggregate unrelated
-   URLs into one source, manufacture search candidates, or let provider output
-   create authority.
+6. Extend custody only as needed to consume exact URL-bound READ or Focused
+   artifacts. Preserve one source identity per selected URL. Do not aggregate
+   unrelated URLs into one source, manufacture search candidates, or let
+   provider output create authority.
 7. Converge the admitted exact-URL material through existing
    `FetchReadContentPacket` / `SanitizedContentReference`, EvidenceLedger,
    EvidenceRelativeAnalysisPacket, SemanticObservation, and main-RunKernel
@@ -112,7 +116,8 @@ and proves that product decision.
 - Static census proves no ordinary post-selection exact-URL acquisition bypass
   remains and that initial discovery still cannot transport candidate URLs.
 - Product tests traverse every RunKernel action exactly once for READ and
-  activated Focused Extract, with current contract/component/obligation lineage.
+  activated Focused Extract, with current contract/component/obligation
+  lineage.
 - Focused tests prove exact URL/focus identity, one source per URL, stale and
   duplicate rejection, no provider authority in the proposal, and no new model
   call unless an explicitly licensed producer contract requires one.
@@ -127,11 +132,10 @@ and proves that product decision.
 
 ## Stop And Split Conditions
 
-Stop for a product decision instead of fabricating authority if exact focus
-requires an unresolved semantic producer, prompt redesign, ranking policy, or
-source-obligation change. Split a focused-producer phase if that decision has a
-different rollback boundary from exact-URL custody convergence. Do not weaken
-the controller to preserve an artificial one-PR plan.
+If exact focus requires a distinct semantic producer, model-visible proposal
+contract, prompt redesign, source-obligation change, or materially different
+rollback boundary, stop and return that repository-grounded architecture
+decision rather than weakening the controller or fabricating focus.
 
 ## Mandatory Following Checkpoint
 

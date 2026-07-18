@@ -27,6 +27,17 @@ SEARCH_EXECUTOR_HANDOFF_REASON = (
 SEARCH_EXECUTOR_HANDOFF_TRACE_KEY = "search_executor_handoff"
 SEARCH_EXECUTOR_HANDOFF_OWNER = "RunKernel.SearchExecutorHandoff"
 
+ORDINARY_SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION = (
+    "search_executor_handoff_ordinary_query_provider_v1"
+)
+SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER = (
+    "ordinary_query_provider"
+)
+ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION = 1
+ORDINARY_SEARCH_EXECUTOR_HANDOFF_EXECUTION_MODE = (
+    "post_discovery_reference_handoff_only"
+)
+
 CONTRACT_PARENT_CURRENT = "current_answer_contract"
 CONTRACT_PARENT_INITIAL_FALLBACK = "initial_answer_contract_fallback"
 EXECUTION_MODE = "offline_handoff_only"
@@ -200,6 +211,111 @@ _REQUIRED_ACTION_INPUT_KEYS = (
 
 class SearchExecutorHandoffRuntimeError(ValueError):
     """Raised when handoff construction or RunKernel reduction fails."""
+
+
+@dataclass(frozen=True, slots=True)
+class OrdinarySearchExecutorHandoffInput:
+    """Reference-only handoff input for the ordinary QueryPlan/ProviderPlan path.
+
+    Discovery has already happened when this object is built.  Consequently it
+    carries only immutable authority and result-identity references; it never
+    recreates SearchPlanner/QMR tasks or causes provider, fetch, or read work.
+    """
+
+    run_id: str
+    request_id: str
+    query_plan_ref: Mapping[str, Any]
+    selected_query_plan_item_refs: Sequence[Mapping[str, Any]]
+    provider_plan_ref: Mapping[str, Any]
+    provider_plan_record_refs: Sequence[Mapping[str, Any]]
+    provider_route_refs: Sequence[Mapping[str, Any]]
+    retrieval_action_refs: Sequence[Mapping[str, Any]]
+    source_result_identity_set_ref: Mapping[str, Any]
+    selected_source_result_refs: Sequence[Mapping[str, Any]]
+    answer_contract_ref: Mapping[str, Any] = field(default_factory=dict)
+    handoff_revision: int = ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION
+
+    def to_payload(self) -> dict[str, Any]:
+        run_id = _required_token(
+            self.run_id,
+            "ordinary handoff input requires run_id",
+        )
+        request_id = _required_token(
+            self.request_id,
+            "ordinary handoff input requires request_id",
+        )
+        if self.handoff_revision != ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION:
+            raise SearchExecutorHandoffRuntimeError(
+                "ordinary handoff input requires revision 1"
+            )
+        query_plan_ref = _ordinary_query_plan_ref_or_raise(self.query_plan_ref)
+        selected_item_refs = _ordinary_ref_list_or_raise(
+            self.selected_query_plan_item_refs,
+            label="selected QueryPlan item refs",
+            normalizer=_ordinary_query_plan_item_ref_or_raise,
+            maximum=128,
+        )
+        provider_plan_ref = _ordinary_provider_plan_ref_or_raise(
+            self.provider_plan_ref
+        )
+        provider_record_refs = _ordinary_ref_list_or_raise(
+            self.provider_plan_record_refs,
+            label="ProviderPlan record refs",
+            normalizer=_ordinary_provider_plan_record_ref_or_raise,
+            maximum=128,
+        )
+        provider_route_refs = _ordinary_ref_list_or_raise(
+            self.provider_route_refs,
+            label="provider route refs",
+            normalizer=_ordinary_provider_route_ref_or_raise,
+            maximum=128,
+        )
+        retrieval_action_refs = _ordinary_ref_list_or_raise(
+            self.retrieval_action_refs,
+            label="retrieval action refs",
+            normalizer=_ordinary_retrieval_action_ref_or_raise,
+            maximum=128,
+        )
+        identity_set_ref = _ordinary_identity_set_ref_or_raise(
+            self.source_result_identity_set_ref
+        )
+        selected_source_refs = _ordinary_ref_list_or_raise(
+            self.selected_source_result_refs,
+            label="selected source-result refs",
+            normalizer=_ordinary_source_result_ref_or_raise,
+            maximum=40,
+        )
+        answer_contract_ref = _contract_ref_or_empty(self.answer_contract_ref)
+        payload = _without_empty(
+            {
+                "schema_version": ORDINARY_SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION,
+                "origin_kind": (
+                    SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER
+                ),
+                "handoff_revision": ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION,
+                "run_id": run_id,
+                "request_id": request_id,
+                "answer_contract_ref": answer_contract_ref,
+                "query_plan_ref": query_plan_ref,
+                "selected_query_plan_item_refs": selected_item_refs,
+                "selected_query_plan_item_count": len(selected_item_refs),
+                "provider_plan_ref": provider_plan_ref,
+                "provider_plan_record_refs": provider_record_refs,
+                "provider_plan_record_count": len(provider_record_refs),
+                "provider_route_refs": provider_route_refs,
+                "provider_route_count": len(provider_route_refs),
+                "retrieval_action_refs": retrieval_action_refs,
+                "retrieval_action_count": len(retrieval_action_refs),
+                "source_result_identity_set_ref": identity_set_ref,
+                "selected_source_result_refs": selected_source_refs,
+                "selected_source_result_count": len(selected_source_refs),
+            }
+        )
+        _reject_forbidden_surface_claims(
+            payload,
+            context="ordinary SearchExecutor handoff input",
+        )
+        return _json_safe(payload)
 
 
 @dataclass(frozen=True, slots=True)
@@ -827,6 +943,397 @@ def handoff_ref_from_handoff_state(
             state.get("parent_scout_disambiguation_report_ref")
         ),
     }
+
+
+def build_ordinary_search_executor_handoff(
+    handoff_input: OrdinarySearchExecutorHandoffInput | Mapping[str, Any],
+    *,
+    authorized_action_id: str | None = None,
+) -> dict[str, Any]:
+    """Build the canonical ordinary-origin handoff without executing work."""
+
+    input_payload = _ordinary_handoff_input_payload(handoff_input)
+    action_id = _required_token(
+        authorized_action_id,
+        "ordinary SearchExecutor handoff requires authorized_action_id",
+        limit=200,
+    )
+    handoff_base = {
+        **input_payload,
+        "trace_key": SEARCH_EXECUTOR_HANDOFF_TRACE_KEY,
+        "owner": SEARCH_EXECUTOR_HANDOFF_OWNER,
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "authorized_action_id": action_id,
+        "execution_mode": ORDINARY_SEARCH_EXECUTOR_HANDOFF_EXECUTION_MODE,
+        "discovery_provider_calls_preceded_handoff": True,
+        "provider_call_caused_by_handoff": False,
+        "retrieval_action_caused_by_handoff": False,
+        "acquisition_need_proposal_created": False,
+        "exact_url_transport_executed": False,
+        "exact_url_fetch_executed": False,
+        "fetch_read_retrieval_executed": False,
+        "read_executed": False,
+        "evidence_admitted": False,
+        "evidence_ledger_custody_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+        "sufficiency_decided": False,
+        "final_answer_packet_created": False,
+        "author_input_created": False,
+        "search_executor_handoff_created": True,
+    }
+    dedupe_key = _ordinary_handoff_dedupe_key(handoff_base)
+    handoff_id = (
+        "search-executor-handoff:ordinary:"
+        f"{_clean_token(input_payload.get('request_id'), limit=120)}:"
+        f"{dedupe_key[:16]}"
+    )
+    handoff_without_digest = {
+        **handoff_base,
+        "handoff_id": handoff_id,
+        "dedupe_key": dedupe_key,
+    }
+    handoff = {
+        **handoff_without_digest,
+        "handoff_digest": _ordinary_handoff_binding_digest(
+            handoff_without_digest
+        ),
+    }
+    return validate_ordinary_search_executor_handoff(handoff)
+
+
+def validate_ordinary_search_executor_handoff(
+    handoff: Mapping[str, Any],
+    *,
+    run_id: str | None = None,
+    request_id: str | None = None,
+    authorized_action_id: str | None = None,
+) -> dict[str, Any]:
+    """Validate the ordinary QueryPlan/ProviderPlan handoff branch."""
+
+    raw = _required_mapping(handoff, "ordinary SearchExecutor handoff")
+    _reject_forbidden_surface_claims(
+        raw,
+        context="ordinary SearchExecutor handoff",
+    )
+    safe = _safe_mapping(raw)
+    if safe.get("schema_version") != ORDINARY_SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff schema version does not match"
+        )
+    if (
+        safe.get("origin_kind")
+        != SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff origin does not match"
+        )
+    if safe.get("owner") != SEARCH_EXECUTOR_HANDOFF_OWNER:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff owner does not match"
+        )
+    if safe.get("trace_key") != SEARCH_EXECUTOR_HANDOFF_TRACE_KEY:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff trace key does not match"
+        )
+    if safe.get("handoff_revision") != ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff revision does not match"
+        )
+    clean_run_id = _required_token(
+        safe.get("run_id"),
+        "ordinary SearchExecutor handoff requires run_id",
+    )
+    clean_request_id = _required_token(
+        safe.get("request_id"),
+        "ordinary SearchExecutor handoff requires request_id",
+    )
+    _required_token(
+        safe.get("authorized_action_id"),
+        "ordinary SearchExecutor handoff requires authorized_action_id",
+        limit=200,
+    )
+    if run_id is not None and clean_run_id != _required_token(
+        run_id,
+        "ordinary handoff validation requires run_id",
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff run_id does not match"
+        )
+    if request_id is not None and clean_request_id != _required_token(
+        request_id,
+        "ordinary handoff validation requires request_id",
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff request_id does not match"
+        )
+    if authorized_action_id is not None and safe.get(
+        "authorized_action_id"
+    ) != _required_token(
+        authorized_action_id,
+        "ordinary handoff validation requires authorized_action_id",
+        limit=200,
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff action binding does not match"
+        )
+    if safe.get("answer_contract_ref"):
+        _contract_ref_or_empty(safe.get("answer_contract_ref")) or _raise_ordinary(
+            "ordinary SearchExecutor handoff answer contract ref is incomplete"
+        )
+    _ordinary_query_plan_ref_or_raise(safe.get("query_plan_ref"))
+    selected_item_refs = _ordinary_ref_list_or_raise(
+        safe.get("selected_query_plan_item_refs"),
+        label="selected QueryPlan item refs",
+        normalizer=_ordinary_query_plan_item_ref_or_raise,
+        maximum=128,
+    )
+    _ordinary_provider_plan_ref_or_raise(safe.get("provider_plan_ref"))
+    provider_record_refs = _ordinary_ref_list_or_raise(
+        safe.get("provider_plan_record_refs"),
+        label="ProviderPlan record refs",
+        normalizer=_ordinary_provider_plan_record_ref_or_raise,
+        maximum=128,
+    )
+    provider_route_refs = _ordinary_ref_list_or_raise(
+        safe.get("provider_route_refs"),
+        label="provider route refs",
+        normalizer=_ordinary_provider_route_ref_or_raise,
+        maximum=128,
+    )
+    retrieval_action_refs = _ordinary_ref_list_or_raise(
+        safe.get("retrieval_action_refs"),
+        label="retrieval action refs",
+        normalizer=_ordinary_retrieval_action_ref_or_raise,
+        maximum=128,
+    )
+    identity_set_ref = _ordinary_identity_set_ref_or_raise(
+        safe.get("source_result_identity_set_ref")
+    )
+    selected_source_refs = _ordinary_ref_list_or_raise(
+        safe.get("selected_source_result_refs"),
+        label="selected source-result refs",
+        normalizer=_ordinary_source_result_ref_or_raise,
+        maximum=40,
+    )
+    _ordinary_count_matches(
+        safe,
+        "selected_query_plan_item_count",
+        len(selected_item_refs),
+    )
+    _ordinary_count_matches(
+        safe,
+        "provider_plan_record_count",
+        len(provider_record_refs),
+    )
+    _ordinary_count_matches(
+        safe,
+        "provider_route_count",
+        len(provider_route_refs),
+    )
+    _ordinary_count_matches(
+        safe,
+        "retrieval_action_count",
+        len(retrieval_action_refs),
+    )
+    _ordinary_count_matches(
+        safe,
+        "selected_source_result_count",
+        len(selected_source_refs),
+    )
+    if (
+        len(selected_source_refs)
+        > identity_set_ref["source_result_identity_count"]
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary handoff selects more source results than the identity set"
+        )
+    for key in (
+        "parent_search_planner_proposal_ref",
+        "parent_search_planner_revision_ref",
+        "parent_question_meaning_record_ref",
+        "question_meaning_record",
+        "query_intent_records",
+        "search_task_records",
+        "answer_component_refs",
+        "source_obligation_candidate_refs",
+    ):
+        if safe.get(key) not in (None, {}, []):
+            raise SearchExecutorHandoffRuntimeError(
+                f"ordinary SearchExecutor handoff cannot carry {key}"
+            )
+    for key, expected in _ordinary_closed_flags().items():
+        if safe.get(key) is not expected:
+            raise SearchExecutorHandoffRuntimeError(
+                f"ordinary SearchExecutor handoff must keep {key} false"
+            )
+    if safe.get("discovery_provider_calls_preceded_handoff") is not True:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary handoff must follow discovery provider calls"
+        )
+    if safe.get("search_executor_handoff_created") is not True:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary handoff must declare its creation"
+        )
+    if safe.get("execution_mode") != ORDINARY_SEARCH_EXECUTOR_HANDOFF_EXECUTION_MODE:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff execution mode does not match"
+        )
+    for key, expected in {
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+    }.items():
+        if safe.get(key) is not expected:
+            raise SearchExecutorHandoffRuntimeError(
+                f"ordinary SearchExecutor handoff must keep {key}={expected!r}"
+            )
+    declared_digest = _required_token(
+        safe.get("handoff_digest"),
+        "ordinary SearchExecutor handoff requires handoff_digest",
+        limit=128,
+    )
+    if declared_digest != _ordinary_handoff_binding_digest(safe):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff digest does not match"
+        )
+    if safe.get("dedupe_key") != _ordinary_handoff_dedupe_key(safe):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff dedupe key does not match"
+        )
+    expected_id = (
+        "search-executor-handoff:ordinary:"
+        f"{_clean_token(clean_request_id, limit=120)}:"
+        f"{str(safe['dedupe_key'])[:16]}"
+    )
+    if safe.get("handoff_id") != expected_id:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff id does not match"
+        )
+    return safe
+
+
+def build_ordinary_search_executor_handoff_projection(
+    *,
+    handoff_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project bounded refs/counts from ordinary canonical handoff state."""
+
+    state = validate_ordinary_search_executor_handoff(handoff_state)
+    selected_item_refs = _safe_list(state.get("selected_query_plan_item_refs"))
+    provider_record_refs = _safe_list(state.get("provider_plan_record_refs"))
+    provider_route_refs = _safe_list(state.get("provider_route_refs"))
+    retrieval_action_refs = _safe_list(state.get("retrieval_action_refs"))
+    selected_source_refs = _safe_list(state.get("selected_source_result_refs"))
+    return _without_empty(
+        {
+            "schema_version": state.get("schema_version"),
+            "origin_kind": state.get("origin_kind"),
+            "handoff_revision": state.get("handoff_revision"),
+            "trace_key": SEARCH_EXECUTOR_HANDOFF_TRACE_KEY,
+            "owner": SEARCH_EXECUTOR_HANDOFF_OWNER,
+            "handoff_id": state.get("handoff_id"),
+            "handoff_digest": state.get("handoff_digest"),
+            "dedupe_key": state.get("dedupe_key"),
+            "run_id": state.get("run_id"),
+            "request_id": state.get("request_id"),
+            "authorized_action_id": state.get("authorized_action_id"),
+            "answer_contract_ref": _safe_mapping(
+                state.get("answer_contract_ref")
+            ),
+            "query_plan_ref": _safe_mapping(state.get("query_plan_ref")),
+            "selected_query_plan_item_count": len(selected_item_refs),
+            "selected_query_plan_item_refs_digest": _digest_json(
+                selected_item_refs
+            ),
+            "provider_plan_ref": _safe_mapping(
+                state.get("provider_plan_ref")
+            ),
+            "provider_plan_record_count": len(provider_record_refs),
+            "provider_plan_record_refs_digest": _digest_json(
+                provider_record_refs
+            ),
+            "provider_route_count": len(provider_route_refs),
+            "provider_route_refs_digest": _digest_json(provider_route_refs),
+            "retrieval_action_count": len(retrieval_action_refs),
+            "retrieval_action_refs_digest": _digest_json(
+                retrieval_action_refs
+            ),
+            "source_result_identity_set_ref": _safe_mapping(
+                state.get("source_result_identity_set_ref")
+            ),
+            "selected_source_result_count": len(selected_source_refs),
+            "full_selected_source_result_refs_digest": _digest_json(
+                selected_source_refs
+            ),
+            "execution_mode": state.get("execution_mode"),
+            "discovery_provider_calls_preceded_handoff": True,
+            "search_executor_handoff_created": True,
+            **_ordinary_closed_flags(),
+        }
+    )
+
+
+def ordinary_handoff_ref_from_handoff_state(
+    handoff_state: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Return the compact ordinary-origin downstream handoff reference."""
+
+    state = _safe_mapping(handoff_state)
+    if (
+        state.get("schema_version")
+        != ORDINARY_SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION
+        or state.get("origin_kind")
+        != SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER
+    ):
+        return {}
+    handoff_id = _clean_token(state.get("handoff_id"), limit=260)
+    handoff_digest = _clean_token(state.get("handoff_digest"), limit=128)
+    if not handoff_id or not handoff_digest:
+        return {}
+    return _without_empty(
+        {
+            "handoff_id": handoff_id,
+            "handoff_digest": handoff_digest,
+            "schema_version": state.get("schema_version"),
+            "origin_kind": state.get("origin_kind"),
+            "handoff_revision": state.get("handoff_revision"),
+            "dedupe_key": _clean_token(state.get("dedupe_key"), limit=128),
+            "answer_contract_ref": _safe_mapping(
+                state.get("answer_contract_ref")
+            ),
+            "query_plan_ref": _safe_mapping(state.get("query_plan_ref")),
+            "selected_query_plan_item_refs": _safe_list(
+                state.get("selected_query_plan_item_refs")
+            ),
+            "provider_plan_ref": _safe_mapping(
+                state.get("provider_plan_ref")
+            ),
+            "provider_plan_record_refs": _safe_list(
+                state.get("provider_plan_record_refs")
+            ),
+            "provider_route_refs": _safe_list(
+                state.get("provider_route_refs")
+            ),
+            "retrieval_action_refs": _safe_list(
+                state.get("retrieval_action_refs")
+            ),
+            "source_result_identity_set_ref": _safe_mapping(
+                state.get("source_result_identity_set_ref")
+            ),
+            "selected_source_result_refs": _safe_list(
+                state.get("selected_source_result_refs")
+            ),
+            "selected_source_result_count": _bounded_int(
+                state.get("selected_source_result_count"),
+                minimum=0,
+                maximum=40,
+                default=0,
+            ),
+        }
+    )
 
 
 def contract_ref_from_contract(
@@ -2176,6 +2683,513 @@ def _contract_ref_or_empty(value: Any) -> dict[str, Any]:
     }
 
 
+def _ordinary_handoff_input_payload(
+    value: OrdinarySearchExecutorHandoffInput | Mapping[str, Any],
+) -> dict[str, Any]:
+    if isinstance(value, OrdinarySearchExecutorHandoffInput):
+        return value.to_payload()
+    raw = _required_mapping(value, "ordinary SearchExecutor handoff input")
+    if raw.get("schema_version") not in (
+        None,
+        ORDINARY_SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION,
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff input schema does not match"
+        )
+    if raw.get("origin_kind") not in (
+        None,
+        SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER,
+    ):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff input origin does not match"
+        )
+    return OrdinarySearchExecutorHandoffInput(
+        run_id=str(raw.get("run_id") or ""),
+        request_id=str(raw.get("request_id") or ""),
+        answer_contract_ref=_safe_mapping(
+            raw.get("answer_contract_ref")
+            or raw.get("current_answer_contract_ref")
+        ),
+        query_plan_ref=_safe_mapping(raw.get("query_plan_ref")),
+        selected_query_plan_item_refs=_safe_list(
+            raw.get("selected_query_plan_item_refs")
+            or raw.get("query_plan_item_refs")
+        ),
+        provider_plan_ref=_safe_mapping(raw.get("provider_plan_ref")),
+        provider_plan_record_refs=_safe_list(
+            raw.get("provider_plan_record_refs")
+            or raw.get("selected_provider_plan_record_refs")
+        ),
+        provider_route_refs=_safe_list(
+            raw.get("provider_route_refs") or raw.get("route_decision_refs")
+        ),
+        retrieval_action_refs=_safe_list(raw.get("retrieval_action_refs")),
+        source_result_identity_set_ref=_safe_mapping(
+            raw.get("source_result_identity_set_ref")
+            or raw.get("identity_set_ref")
+        ),
+        selected_source_result_refs=_safe_list(
+            raw.get("selected_source_result_refs")
+        ),
+        handoff_revision=_bounded_int(
+            raw.get("handoff_revision"),
+            minimum=1,
+            maximum=1,
+            default=ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION,
+        ),
+    ).to_payload()
+
+
+def _ordinary_query_plan_ref_or_raise(value: Any) -> dict[str, Any]:
+    return _ordinary_digest_ref_or_raise(
+        value,
+        label="QueryPlan ref",
+        id_key="query_plan_id",
+        id_aliases=("query_plan_id", "plan_id"),
+        digest_key="query_plan_digest",
+        digest_aliases=("query_plan_digest", "plan_digest"),
+        revision_aliases=("query_plan_revision", "plan_revision", "revision"),
+    )
+
+
+def _ordinary_query_plan_item_ref_or_raise(value: Any) -> dict[str, Any]:
+    raw = _safe_mapping(value)
+    ref = _ordinary_digest_ref_or_raise(
+        value,
+        label="QueryPlan item ref",
+        id_key="query_plan_item_id",
+        id_aliases=("query_plan_item_id", "item_id"),
+        digest_key="query_plan_item_digest",
+        digest_aliases=("query_plan_item_digest", "item_digest"),
+        revision_aliases=("item_revision", "revision"),
+    )
+    query_digest = _clean_token(raw.get("query_digest"), limit=128)
+    if not query_digest:
+        raise SearchExecutorHandoffRuntimeError(
+            "QueryPlan item ref requires query_digest"
+        )
+    ref["query_digest"] = query_digest
+    return ref
+
+
+def _ordinary_provider_plan_ref_or_raise(value: Any) -> dict[str, Any]:
+    return _ordinary_digest_ref_or_raise(
+        value,
+        label="ProviderPlan ref",
+        id_key="provider_plan_id",
+        id_aliases=("provider_plan_id", "plan_id"),
+        digest_key="provider_plan_digest",
+        digest_aliases=("provider_plan_digest", "plan_digest"),
+        revision_aliases=("provider_plan_revision", "plan_revision", "revision"),
+    )
+
+
+def _ordinary_provider_plan_record_ref_or_raise(value: Any) -> dict[str, Any]:
+    return _ordinary_digest_ref_or_raise(
+        value,
+        label="ProviderPlan record ref",
+        id_key="provider_plan_record_id",
+        id_aliases=(
+            "provider_plan_record_id",
+            "record_id",
+            "plan_record_id",
+        ),
+        digest_key="provider_plan_record_digest",
+        digest_aliases=(
+            "provider_plan_record_digest",
+            "record_digest",
+            "plan_record_digest",
+        ),
+        revision_aliases=("record_revision", "revision"),
+    )
+
+
+def _ordinary_provider_route_ref_or_raise(value: Any) -> dict[str, Any]:
+    return _ordinary_digest_ref_or_raise(
+        value,
+        label="provider route ref",
+        id_key="route_decision_id",
+        id_aliases=("route_decision_id", "provider_route_id", "route_id"),
+        digest_key="route_decision_digest",
+        digest_aliases=(
+            "route_decision_digest",
+            "provider_route_digest",
+            "route_digest",
+        ),
+        revision_aliases=("route_revision", "revision"),
+    )
+
+
+def _ordinary_retrieval_action_ref_or_raise(value: Any) -> dict[str, Any]:
+    raw = _safe_mapping(value)
+    _reject_forbidden_surface_claims(raw, context="retrieval action ref")
+    action_id = _required_token(
+        raw.get("action_id") or raw.get("retrieval_action_id"),
+        "retrieval action ref requires action_id",
+        limit=260,
+    )
+    digest = _clean_token(
+        raw.get("action_digest") or raw.get("retrieval_action_digest"),
+        limit=128,
+    )
+    canonical_basis = _without_empty(
+        {
+            "action_id": action_id,
+            "action_type": _clean_token(raw.get("action_type"), limit=120),
+            "stage": _clean_token(raw.get("stage"), limit=120),
+            "sequence": _ordinary_optional_nonnegative_int(raw.get("sequence")),
+        }
+    )
+    if not digest:
+        raise SearchExecutorHandoffRuntimeError(
+            "retrieval action ref requires canonical digest"
+        )
+    if digest != _digest_json(canonical_basis):
+        raise SearchExecutorHandoffRuntimeError(
+            "retrieval action ref digest does not match its exact basis"
+        )
+    return {
+        **canonical_basis,
+        "retrieval_action_digest": digest,
+    }
+
+
+def _ordinary_identity_set_ref_or_raise(value: Any) -> dict[str, Any]:
+    raw = _safe_mapping(value)
+    _reject_forbidden_surface_claims(raw, context="source-result identity-set ref")
+    identity_set_id = _required_token(
+        raw.get("source_result_identity_set_id")
+        or raw.get("identity_set_id"),
+        "source-result identity-set ref requires identity-set id",
+        limit=260,
+    )
+    identity_set_digest = _required_token(
+        raw.get("source_result_identity_set_digest")
+        or raw.get("identity_set_digest"),
+        "source-result identity-set ref requires identity-set digest",
+        limit=128,
+    )
+    count_value = raw.get("source_result_identity_count")
+    if count_value is None:
+        count_value = raw.get("identity_count")
+    if count_value is None:
+        count_value = raw.get("count")
+    try:
+        identity_count = int(count_value)
+    except (TypeError, ValueError) as exc:
+        raise SearchExecutorHandoffRuntimeError(
+            "source-result identity-set ref requires identity count"
+        ) from exc
+    if identity_count < 1 or identity_count > 128:
+        raise SearchExecutorHandoffRuntimeError(
+            "source-result identity-set count must be between 1 and 128"
+        )
+    return _without_empty(
+        {
+            "source_result_identity_set_id": identity_set_id,
+            "source_result_identity_set_digest": identity_set_digest,
+            "source_result_identity_count": identity_count,
+            "schema_version": _clean_token(raw.get("schema_version")),
+        }
+    )
+
+
+def _ordinary_source_result_ref_or_raise(value: Any) -> dict[str, Any]:
+    return _ordinary_digest_ref_or_raise(
+        value,
+        label="source-result ref",
+        id_key="source_result_id",
+        id_aliases=("source_result_id", "identity_id"),
+        digest_key="source_result_digest",
+        digest_aliases=("source_result_digest", "identity_digest"),
+        revision_aliases=("source_result_revision", "identity_revision", "revision"),
+    )
+
+
+def _ordinary_digest_ref_or_raise(
+    value: Any,
+    *,
+    label: str,
+    id_key: str,
+    id_aliases: Sequence[str],
+    digest_key: str,
+    digest_aliases: Sequence[str],
+    revision_aliases: Sequence[str] = (),
+) -> dict[str, Any]:
+    raw = _safe_mapping(value)
+    _reject_forbidden_surface_claims(raw, context=label)
+    ref_id = _required_token(
+        next((raw.get(key) for key in id_aliases if raw.get(key)), None),
+        f"{label} requires id",
+        limit=260,
+    )
+    digest = _clean_token(
+        next((raw.get(key) for key in digest_aliases if raw.get(key)), None),
+        limit=128,
+    )
+    if not digest:
+        raise SearchExecutorHandoffRuntimeError(f"{label} requires digest")
+    revision = next(
+        (raw.get(key) for key in revision_aliases if raw.get(key) is not None),
+        None,
+    )
+    return _without_empty(
+        {
+            id_key: ref_id,
+            digest_key: digest,
+            "schema_version": _clean_token(raw.get("schema_version")),
+            "revision": _ordinary_optional_nonnegative_int(revision),
+        }
+    )
+
+
+def _ordinary_ref_list_or_raise(
+    value: Any,
+    *,
+    label: str,
+    normalizer: Any,
+    maximum: int,
+) -> list[dict[str, Any]]:
+    if isinstance(value, str | bytes) or not isinstance(value, Sequence):
+        raise SearchExecutorHandoffRuntimeError(f"ordinary handoff requires {label}")
+    if not value:
+        raise SearchExecutorHandoffRuntimeError(f"ordinary handoff requires {label}")
+    if len(value) > maximum:
+        raise SearchExecutorHandoffRuntimeError(
+            f"ordinary handoff {label} exceeds cap {maximum}"
+        )
+    refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in value:
+        ref = normalizer(item)
+        key = _digest_json(ref)
+        if key in seen:
+            raise SearchExecutorHandoffRuntimeError(
+                f"ordinary handoff {label} contains duplicate refs"
+            )
+        seen.add(key)
+        refs.append(ref)
+    return refs
+
+
+def _ordinary_optional_nonnegative_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary reference revision/sequence must be an integer"
+        ) from exc
+    if parsed < 0:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary reference revision/sequence cannot be negative"
+        )
+    return parsed
+
+
+def _ordinary_count_matches(
+    payload: Mapping[str, Any],
+    key: str,
+    expected: int,
+) -> None:
+    try:
+        declared = int(payload.get(key))
+    except (TypeError, ValueError) as exc:
+        raise SearchExecutorHandoffRuntimeError(
+            f"ordinary SearchExecutor handoff requires {key}"
+        ) from exc
+    if declared != expected:
+        raise SearchExecutorHandoffRuntimeError(
+            f"ordinary SearchExecutor handoff {key} does not match refs"
+        )
+
+
+def _ordinary_ref_aggregate(
+    value: Mapping[str, Any],
+    *,
+    refs_key: str,
+    count_key: str,
+    digest_key: str,
+) -> tuple[int, str]:
+    refs = _safe_list(value.get(refs_key))
+    if refs:
+        count = len(refs)
+        digest = _digest_json(refs)
+        if value.get(count_key) is not None and int(value[count_key]) != count:
+            raise SearchExecutorHandoffRuntimeError(
+                f"ordinary handoff {count_key} does not match refs"
+            )
+        if value.get(digest_key) not in (None, digest):
+            raise SearchExecutorHandoffRuntimeError(
+                f"ordinary handoff {digest_key} does not match refs"
+            )
+        return count, digest
+    try:
+        count = int(value.get(count_key))
+    except (TypeError, ValueError) as exc:
+        raise SearchExecutorHandoffRuntimeError(
+            f"ordinary handoff requires {count_key}"
+        ) from exc
+    digest = _required_token(
+        value.get(digest_key),
+        f"ordinary handoff requires {digest_key}",
+        limit=128,
+    )
+    if count < 1:
+        raise SearchExecutorHandoffRuntimeError(
+            f"ordinary handoff {count_key} must be positive"
+        )
+    return count, digest
+
+
+def _ordinary_handoff_binding_basis(
+    handoff: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(handoff)
+    selected_item_count, selected_item_digest = _ordinary_ref_aggregate(
+        safe,
+        refs_key="selected_query_plan_item_refs",
+        count_key="selected_query_plan_item_count",
+        digest_key="selected_query_plan_item_refs_digest",
+    )
+    provider_record_count, provider_record_digest = _ordinary_ref_aggregate(
+        safe,
+        refs_key="provider_plan_record_refs",
+        count_key="provider_plan_record_count",
+        digest_key="provider_plan_record_refs_digest",
+    )
+    provider_route_count, provider_route_digest = _ordinary_ref_aggregate(
+        safe,
+        refs_key="provider_route_refs",
+        count_key="provider_route_count",
+        digest_key="provider_route_refs_digest",
+    )
+    retrieval_action_count, retrieval_action_digest = _ordinary_ref_aggregate(
+        safe,
+        refs_key="retrieval_action_refs",
+        count_key="retrieval_action_count",
+        digest_key="retrieval_action_refs_digest",
+    )
+    selected_source_count, selected_source_digest = _ordinary_ref_aggregate(
+        safe,
+        refs_key="selected_source_result_refs",
+        count_key="selected_source_result_count",
+        digest_key="full_selected_source_result_refs_digest",
+    )
+    return _without_empty(
+        {
+            "schema_version": safe.get("schema_version"),
+            "origin_kind": safe.get("origin_kind"),
+            "handoff_revision": safe.get("handoff_revision"),
+            "run_id": safe.get("run_id"),
+            "request_id": safe.get("request_id"),
+            "authorized_action_id": safe.get("authorized_action_id"),
+            "answer_contract_ref": _safe_mapping(
+                safe.get("answer_contract_ref")
+            ),
+            "query_plan_ref": _safe_mapping(safe.get("query_plan_ref")),
+            "selected_query_plan_item_count": selected_item_count,
+            "selected_query_plan_item_refs_digest": selected_item_digest,
+            "provider_plan_ref": _safe_mapping(
+                safe.get("provider_plan_ref")
+            ),
+            "provider_plan_record_count": provider_record_count,
+            "provider_plan_record_refs_digest": provider_record_digest,
+            "provider_route_count": provider_route_count,
+            "provider_route_refs_digest": provider_route_digest,
+            "retrieval_action_count": retrieval_action_count,
+            "retrieval_action_refs_digest": retrieval_action_digest,
+            "source_result_identity_set_ref": _safe_mapping(
+                safe.get("source_result_identity_set_ref")
+            ),
+            "selected_source_result_count": selected_source_count,
+            "full_selected_source_result_refs_digest": selected_source_digest,
+            "execution_mode": safe.get("execution_mode"),
+            "discovery_provider_calls_preceded_handoff": safe.get(
+                "discovery_provider_calls_preceded_handoff"
+            ),
+            "search_executor_handoff_created": safe.get(
+                "search_executor_handoff_created"
+            ),
+            **{
+                key: safe.get(key)
+                for key in _ordinary_closed_flags()
+            },
+        }
+    )
+
+
+def _ordinary_handoff_binding_digest(
+    handoff: Mapping[str, Any],
+) -> str:
+    return _digest_json(_ordinary_handoff_binding_basis(handoff))
+
+
+def _ordinary_handoff_dedupe_key(handoff: Mapping[str, Any]) -> str:
+    basis = _ordinary_handoff_binding_basis(handoff)
+    basis.pop("authorized_action_id", None)
+    return _digest_json(basis)
+
+
+def validate_ordinary_search_executor_handoff_binding(
+    handoff: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify compact ordinary handoff identity from its bounded bindings."""
+
+    safe = _safe_mapping(handoff)
+    declared_digest = _required_token(
+        safe.get("handoff_digest"),
+        "ordinary SearchExecutor handoff requires handoff_digest",
+        limit=128,
+    )
+    if declared_digest != _ordinary_handoff_binding_digest(safe):
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff binding digest does not match"
+        )
+    expected_dedupe = _ordinary_handoff_dedupe_key(safe)
+    if safe.get("dedupe_key") != expected_dedupe:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff binding dedupe key does not match"
+        )
+    request_id = _required_token(
+        safe.get("request_id"),
+        "ordinary SearchExecutor handoff requires request_id",
+    )
+    expected_id = (
+        "search-executor-handoff:ordinary:"
+        f"{_clean_token(request_id, limit=120)}:{expected_dedupe[:16]}"
+    )
+    if safe.get("handoff_id") != expected_id:
+        raise SearchExecutorHandoffRuntimeError(
+            "ordinary SearchExecutor handoff binding id does not match"
+        )
+    return safe
+
+
+def _ordinary_closed_flags() -> dict[str, bool]:
+    return {
+        "provider_call_caused_by_handoff": False,
+        "retrieval_action_caused_by_handoff": False,
+        "acquisition_need_proposal_created": False,
+        "exact_url_transport_executed": False,
+        "exact_url_fetch_executed": False,
+        "fetch_read_retrieval_executed": False,
+        "read_executed": False,
+        "evidence_admitted": False,
+        "evidence_ledger_custody_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+        "sufficiency_decided": False,
+        "final_answer_packet_created": False,
+        "author_input_created": False,
+    }
+
+
+def _raise_ordinary(message: str) -> None:
+    raise SearchExecutorHandoffRuntimeError(message)
+
+
 def _retention_flags() -> dict[str, bool]:
     return {
         "raw_provider_payload_retained": False,
@@ -2405,6 +3419,10 @@ def _digest_json(value: Any) -> str:
 
 
 __all__ = [
+    "ORDINARY_SEARCH_EXECUTOR_HANDOFF_EXECUTION_MODE",
+    "ORDINARY_SEARCH_EXECUTOR_HANDOFF_REVISION",
+    "ORDINARY_SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION",
+    "SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER",
     "SEARCH_EXECUTOR_HANDOFF_OBSERVATION_SCHEMA_VERSION",
     "SEARCH_EXECUTOR_HANDOFF_OWNER",
     "SEARCH_EXECUTOR_HANDOFF_REASON",
@@ -2414,6 +3432,9 @@ __all__ = [
     "SearchExecutorHandoffExecutionResult",
     "SearchExecutorHandoffInput",
     "SearchExecutorHandoffRuntimeError",
+    "OrdinarySearchExecutorHandoffInput",
+    "build_ordinary_search_executor_handoff",
+    "build_ordinary_search_executor_handoff_projection",
     "build_search_executor_handoff_observation_payload",
     "build_search_executor_handoff_projection",
     "build_search_executor_handoff_state",
@@ -2421,6 +3442,9 @@ __all__ = [
     "execute_search_executor_handoff_action",
     "handoff_ref_from_handoff_state",
     "planner_ref_from_search_planner_state",
+    "ordinary_handoff_ref_from_handoff_state",
     "revision_ref_from_revision_state",
     "scout_ref_from_scout_report_state",
+    "validate_ordinary_search_executor_handoff",
+    "validate_ordinary_search_executor_handoff_binding",
 ]

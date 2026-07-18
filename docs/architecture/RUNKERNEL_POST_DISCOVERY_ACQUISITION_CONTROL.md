@@ -3,9 +3,9 @@
 Status: current
 Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
-Applies-to: post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
+Applies-to: ordinary post-DISCOVER result-reference handoff plus post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
 
 ## Purpose And Boundary
@@ -21,7 +21,9 @@ separate current material need has been established. Initial DISCOVER planning,
 QueryPlan, ProviderPlan, retrieval scheduling, provider selection, ranking, and
 candidate selection remain under their existing owners. Ordinary initial
 discovery now ranks normalized provider-returned candidate material and performs
-zero separate candidate-URL transport. The historical direct selective fetch
+zero separate candidate-URL transport. It produces a bounded reference-only
+ordinary SearchExecutorHandoff and the canonical SearchResultCandidatePacket;
+neither is an acquisition proposal or material need. The historical direct selective fetch
 inside `core.pipeline` and its `core.retrieval.fetch_page` / `fetch_url_text`
 helpers are retired, not migrated under RunKernel.
 
@@ -33,10 +35,15 @@ continuation can consume prior custody but cannot reacquire. The retired
 search, fetch/read, map, crawl, or retrieval call is authorized by this
 architecture.
 
+The initial-discovery selective-fetch retirement remains historically grounded
+at runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`.
+
 ## Exclusive Ownership
 
 | Owner | Installed responsibility | Explicitly does not own |
 | --- | --- | --- |
+| `retrieval.DiscoverySourceResultIdentity` / `retrieval.DiscoveryResultMaterialStore` | immutable provider-result occurrence identity before dedup/chunk/rank and bounded run-local provider material | relevance, selection, fetch/read, evidence, or downstream answer authority |
+| RunKernel ordinary discovery handoff | authorize and reduce one exact ref-only revision-1 post-DISCOVER action; retain a bounded canonical projection and canonical packet ref | provider calls, QueryPlan/ProviderPlan policy, ranking, selected-candidate acquisition need, or packet material reconstruction |
 | RunKernel | proposal admission; canonical acquisition-control state; action authorization; accepted capability, work-order, route, execution, terminal, deduplication, exhaustion, active-slot, and custody-authorization state | capability heuristics outside the bounded evaluator; provider selection; transport; evidence, citation, Sufficiency, FAP, Author, or answer authority |
 | `core.acquisition_control` | immutable post-discovery contracts; current lineage snapshot; deterministic provider-neutral capability derivation; operation identity; hard-bound derivation; typed terminal-receipt construction | provider catalog, provider availability, provider preference, transport, retries, or downstream authority |
 | `core.routing` | provider compatibility and eligibility; code-owned provider order; operation, variant, and output selection; route-time alternative; typed route blocks | acquisition need, material-shape judgment, transport failure fallback, or custody |
@@ -49,6 +56,43 @@ The low-level `dispatch_acquisition()` remains intentionally usable without a
 RunKernel in typed-runtime and validation tests. Ordinary PRODUCT code reaches
 it only through `execute_authorized_acquisition_work_order()`, which proves the
 current authorization and state immediately before mechanical dispatch.
+
+## Ordinary Result-Reference Handoff
+
+At the immutable initial post-DISCOVER selection, RunKernel authorizes one
+`ORDINARY_DISCOVERY_CANDIDATE_HANDOFF` action over exact current QueryPlan,
+ProviderPlan, retrieval-action, source-result identity-set, selected-ref, and
+selected-candidate-input digests. The resulting packet identity also binds a
+digest of the ordered candidate-record digests. The provider calls are already
+complete. The
+executor builds the ordinary-origin revision-1
+`RunKernel.SearchExecutorHandoff` and
+`RunKernel.SearchResultCandidatePacket`, then RunKernel rederives and reduces
+their compact bindings. Duplicate action replay, stale plan/contract membership,
+mutated packet or handoff refs, and raw/private or authority-bearing state fail
+closed.
+
+This snapshot precedes later source recovery and synthesis. Because no accepted
+AnswerContract or source obligation exists then, revision 1 carries an empty
+contract ref instead of inventing authority. Later recovery occurrence
+identities do not mutate it. The ordinary branch uses origin
+`ordinary_query_provider`, not `live_search_validation`.
+
+The canonical result projection is ref-only and at most 16 KiB. It retains at
+most eight selected source-result refs plus overflow facts and a digest over the
+complete selected order, together with the identity-set and packet refs. The
+run-local retrieval store, not RunKernel, owns provider material. No provider
+text, chunk, embedding, or raw payload enters canonical RunKernel state.
+Identity/material bounds are 80 occurrences per run, 4,096 canonical bytes per
+identity, 20,000 material characters per occurrence, and 8 contributor refs;
+the selected packet retains the existing Fast/Balanced/Deep 8/20/40 cap with an
+absolute maximum of 40.
+
+The reduced state explicitly records one packet and the selected count while
+keeping provider-call-caused-by-handoff false, acquisition proposal and READ/
+Focused Extract work-order creation false, exact-URL cap charge and transport
+false, and `urls_fetched` zero. These fields prove a structural selected-
+candidate nontrigger; they do not authorize acquisition.
 
 ## Installed Authority Chain
 
@@ -276,21 +320,19 @@ The explicit maintainer sequencing decision installed this foundation before
 the previously active final-custody checkpoint, because final custody must not
 converge around multiple post-discovery decision/execution authorities.
 
-The sole active next checkpoint is
-[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md).
-It must populate the existing canonical `SearchResultCandidatePacket` from
-truthful provider-result lineage while retaining zero candidate-page transport
-and the selected-candidate nontrigger. Ranked passage chunks cannot be promoted
-through the existing default-disabled structured-input seam by manufacturing
-task, provider-call, rank, material-label, or front-half contract lineage.
+[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md)
+has populated the existing canonical `SearchResultCandidatePacket` from
+truthful provider-result identity/material refs while retaining zero candidate-
+page transport and the selected-candidate nontrigger.
 
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
-follows only after that handoff is installed. It must then install the
-independent current-material-need producer for genuinely product-consumed READ
-and carry authorized exact-URL material through final custody. Focused Extract
-may activate only through a real exact producer and existing or explicitly
-bounded custody semantics. Planner disambiguation remains queued after
-exact-URL convergence; Map selection and Crawl page custody remain later.
+The sole active next checkpoint is
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It must install the independent current-material-need producer for genuinely
+product-consumed READ and carry authorized exact-URL material through final
+custody. Focused Extract may activate only through a real exact producer and
+existing or explicitly bounded custody semantics. Planner disambiguation
+remains queued after exact-URL convergence; Map selection and Crawl page custody
+remain later.
 
 Map topology selection follows separately in
 [`SITE-TOPOLOGY-SELECTION-AUTHORITY-01`](../roadmap/SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md).
@@ -301,9 +343,12 @@ follows under
 ## Nonproofs
 
 This owner proves the selected-candidate nontrigger in offline product-path
-composition and preserves the typed RunKernel READ authority chain for an
-independently supplied material need. It does not prove an ordinary proposal
-producer, default CLI READ activation, live provider behavior, provider quality,
-final-custody convergence, Focused Extract product use, Map selection, Crawl
-custody, general Deep, evidence correctness, source-obligation satisfaction,
-Sufficiency, FAP, Author, answer quality, or complete-app correctness.
+composition, the bounded ordinary result-reference reduction, and the typed
+RunKernel READ authority chain for an independently supplied material need. It
+does not prove an ordinary acquisition proposal producer, default CLI READ
+activation, live provider behavior, provider quality, final-custody
+convergence, Focused Extract product use, Serper connection, Map selection,
+Crawl custody, general Deep, evidence correctness, source-obligation
+satisfaction, Sufficiency, FAP, Author, answer quality, compatibility rename, or
+complete-app correctness. No live provider, model, search, fetch/read, or
+retrieval call was made.

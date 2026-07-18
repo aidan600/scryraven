@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 from core.official_current_source_custody import OfficialCurrentSourceCustodyState
 from core.query_plan import (
@@ -185,6 +186,133 @@ def test_ag89c_trace_projection_is_derived_from_query_plan_state() -> None:
     assert set(trace) == {QUERY_PLAN_TRACE_KEY}
     assert trace[QUERY_PLAN_TRACE_KEY]["authorized_queries_by_iteration"] == {"1": ["q1", "q2"]}
     assert trace[QUERY_PLAN_TRACE_KEY]["items"][0]["status"] == "ordered"
+
+
+def _recorded_dispatch_plan() -> tuple[QueryPlan, tuple[dict[str, object], ...]]:
+    return QueryPlan(
+        plan_id="qp-discovery-membership"
+    ).record_authorized_dispatch_queries(
+        ["Acme Widget disambiguation"],
+        origin="entity_correction",
+        role=QueryPlanRole.DISAMBIGUATION,
+        phase="disambiguation_retry",
+        iteration=1,
+        authority_source="main_retrieval_disambiguation_retry",
+        authority_ref_digest="a" * 64,
+    )
+
+
+def test_ag89c_authorized_discovery_membership_includes_ordered_and_recorded_dispatch_items() -> None:
+    plan = QueryPlan(plan_id="qp-discovery-membership").admit_execution_queries(
+        ["ordinary main query"],
+        phase="main_retrieval",
+        iteration=1,
+    )
+    plan, recorded_refs = plan.record_authorized_dispatch_queries(
+        ["authorized retry query"],
+        origin="entity_correction",
+        role=QueryPlanRole.DISAMBIGUATION,
+        phase="disambiguation_retry",
+        iteration=1,
+        authority_source="main_retrieval_disambiguation_retry",
+        authority_ref_digest="b" * 64,
+    )
+
+    first = plan.authorized_discovery_item_refs()
+    second = plan.authorized_discovery_item_refs()
+
+    assert first == second
+    assert first == [
+        plan.items[0].to_ref(plan.plan_id),
+        recorded_refs[0],
+    ]
+    assert [item["authorized_query"] for item in first] == [
+        "ordinary main query",
+        "authorized retry query",
+    ]
+    assert first[1]["query_plan_role"] == QueryPlanRole.DISAMBIGUATION.value
+    assert first[1]["iteration"] == 1
+    assert first[1]["order"] == 1
+
+
+def test_ag89c_generic_finalized_items_do_not_gain_discovery_membership() -> None:
+    plan = QueryPlan(plan_id="qp-generic-finalized")
+    for reason in (
+        "planner_proposal_finalized",
+        "search_work_component_allocation",
+        "version_bound_component_gap_authority_consumed",
+        "historical_compatibility_item",
+    ):
+        plan = plan.append(
+            origin="generic",
+            role=QueryPlanRole.FINALIZED,
+            status=QueryPlanStatus.FINALIZED,
+            authorized_query=f"query for {reason}",
+            admission_reason=reason,
+            metadata={
+                "query_text_unchanged": True,
+                "authority_source": "favorable_but_generic",
+                "authority_ref_digest": "c" * 64,
+            },
+        )
+
+    assert plan.authorized_discovery_item_refs() == []
+
+
+def test_ag89c_recorded_dispatch_membership_rejects_missing_or_malformed_markers() -> None:
+    plan, recorded_refs = _recorded_dispatch_plan()
+    original_item = plan.items[0]
+    assert plan.authorized_discovery_item_refs() == [recorded_refs[0]]
+
+    invalid_variants = []
+    for key in (
+        "query_text_unchanged",
+        "authority_source",
+        "authority_ref_digest",
+    ):
+        metadata = dict(original_item.metadata)
+        metadata.pop(key)
+        invalid_variants.append(replace(original_item, metadata=metadata))
+    for key, value in (
+        ("query_text_unchanged", False),
+        ("query_text_unchanged", 1),
+        ("authority_source", ""),
+        ("authority_source", " leading-space"),
+        ("authority_source", "x" * 121),
+        ("authority_ref_digest", "not-a-sha-256"),
+        ("authority_ref_digest", "A" * 64),
+    ):
+        metadata = dict(original_item.metadata)
+        metadata[key] = value
+        invalid_variants.append(replace(original_item, metadata=metadata))
+    invalid_variants.extend(
+        (
+            replace(original_item, admission_reason="recorded_dispatch"),
+            replace(original_item, authorized_query=None),
+            replace(original_item, authorized_query="   "),
+        )
+    )
+
+    for invalid_item in invalid_variants:
+        current = replace(plan, items=(invalid_item,))
+        assert current.authorized_discovery_item_refs() == []
+
+
+def test_ag89c_authorized_discovery_refs_only_describe_current_plan_value() -> None:
+    plan, recorded_refs = _recorded_dispatch_plan()
+    stale_ref = recorded_refs[0]
+    changed_item = replace(
+        plan.items[0],
+        metadata={
+            **dict(plan.items[0].metadata),
+            "authority_ref_digest": "d" * 64,
+        },
+    )
+    current = replace(plan, items=(changed_item,))
+
+    current_refs = current.authorized_discovery_item_refs()
+    assert current_refs == [changed_item.to_ref(current.plan_id)]
+    assert stale_ref not in current_refs
 
 
 def _adapter() -> object:

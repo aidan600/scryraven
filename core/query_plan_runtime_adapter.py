@@ -284,6 +284,30 @@ class QueryPlanRuntimeAdapter:
         )
         return self.authorized_queries_for_iteration(iteration)
 
+    def record_authorized_dispatch_queries(
+        self,
+        queries: Sequence[str],
+        *,
+        origin: str,
+        role: QueryPlanRole | str,
+        phase: str,
+        iteration: int | None,
+        authority_source: str,
+        authority_ref_digest: str,
+    ) -> list[dict[str, Any]]:
+        """Identity-record exact queries already approved by another owner."""
+
+        self.plan, item_refs = self.plan.record_authorized_dispatch_queries(
+            queries,
+            origin=origin,
+            role=role,
+            phase=phase,
+            iteration=iteration,
+            authority_source=authority_source,
+            authority_ref_digest=authority_ref_digest,
+        )
+        return [dict(item_ref) for item_ref in item_refs]
+
     def authorized_queries_for_iteration(self, iteration: int) -> list[str]:
         return list(self.plan.queries_by_iteration().get(iteration, []))
 
