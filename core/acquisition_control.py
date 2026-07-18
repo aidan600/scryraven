@@ -14,24 +14,39 @@ from hashlib import sha256
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
-from core.routing import AcquisitionCapability, acquisition_routing_policy_ref
+from core.network_target_safety import (
+    NetworkTargetFactKind,
+    NetworkTargetResolutionSnapshotV1,
+    NetworkTargetSafetyStage,
+    NetworkTargetSafetyStatus,
+    NetworkTargetTransportMode,
+    evaluate_network_target_safety,
+    network_target_safety_policy_ref,
+    resolution_snapshot_for_url,
+)
+from core.routing import (
+    OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
+    UNTRUSTED_EXACT_URL_TARGET_CLASS,
+    AcquisitionCapability,
+    acquisition_routing_policy_ref,
+)
 
 ACQUISITION_NEED_PROPOSAL_SCHEMA_VERSION = "acquisition_need_proposal_v1"
 ACQUISITION_CAPABILITY_DECISION_SCHEMA_VERSION = (
-    "acquisition_capability_decision_observation_v1"
+    "acquisition_capability_decision_observation_v2"
 )
-ACQUISITION_WORK_ORDER_SCHEMA_VERSION = "acquisition_work_order_v1"
+ACQUISITION_WORK_ORDER_SCHEMA_VERSION = "acquisition_work_order_v2"
 ACQUISITION_ROUTE_OBSERVATION_SCHEMA_VERSION = (
-    "acquisition_route_observation_v1"
+    "acquisition_route_observation_v2"
 )
 ACQUISITION_EXECUTION_OBSERVATION_SCHEMA_VERSION = (
-    "acquisition_execution_observation_v1"
+    "acquisition_execution_observation_v3"
 )
 ACQUISITION_TERMINAL_RECEIPT_SCHEMA_VERSION = "acquisition_terminal_receipt_v1"
 ACQUISITION_CUSTODY_AUTHORIZATION_SCHEMA_VERSION = (
     "acquisition_custody_authorization_v1"
 )
-ACQUISITION_CONTROL_STATE_SCHEMA_VERSION = "runkernel_acquisition_control_state_v1"
+ACQUISITION_CONTROL_STATE_SCHEMA_VERSION = "runkernel_acquisition_control_state_v2"
 
 PROPOSER_POSTURE = "nonauthoritative_need_proposal"
 WORK_ORDER_AUTHORITY_POSTURE = "acquisition_execution_only"
@@ -97,6 +112,7 @@ _DECISION_FIELDS = frozenset(
         "block_code",
         "material_shape_interpretation",
         "operation_identity_key",
+        "target_safety_admission_decision_refs",
         "authority_posture",
     }
 )
@@ -118,6 +134,7 @@ _DECISION_PREREQUISITES = frozenset(
         "active_conflicting_operation",
         "provider_availability_consulted",
         "mode_or_complexity_consulted",
+        "target_safety_allowed",
     }
 )
 _WORK_ORDER_FIELDS = frozenset(
@@ -143,9 +160,33 @@ _WORK_ORDER_FIELDS = frozenset(
         "parent_acquisition_job_refs",
         "routing_policy_ref",
         "operation_identity_key",
+        "target_safety_admission_decision_refs",
         "duplicate_check",
         "exhaustion_check",
         "authority_posture",
+    }
+)
+_TARGET_SAFETY_DECISION_REF_FIELDS = frozenset(
+    {
+        "decision_id",
+        "decision_digest",
+        "policy_version",
+        "policy_digest",
+        "stage",
+        "status",
+        "blocker_code",
+        "transport_mode",
+        "fact_kind",
+        "supplied_url_digest",
+        "normalized_target_digest",
+        "canonical_host",
+        "resolver_snapshot_id",
+        "resolver_snapshot_digest",
+        "lineage_ref",
+        "raw_dns_retained",
+        "raw_private_network_data_retained",
+        "credentials_retained",
+        "all_downstream_authority_granted",
     }
 )
 _ROUTE_FIELDS = frozenset(
@@ -161,6 +202,7 @@ _ROUTE_FIELDS = frozenset(
         "selected_output_type",
         "routing_policy_ref",
         "availability_snapshot_ref",
+        "target_safety_eligibility_ref",
         "terminal_status",
         "block_code",
     }
@@ -181,6 +223,31 @@ _EXECUTION_FIELDS = frozenset(
         "provider_failure_fallback_attempted",
         "capability_switch_attempted",
         "downstream_authority_granted",
+        "target_safety_decision_refs",
+        "target_safety_summary",
+        "execution_claim_consumed",
+        "adapter_invoked",
+        "transport_posture",
+        "execution_authority_posture",
+    }
+)
+_TARGET_SAFETY_SUMMARY_FIELDS = frozenset(
+    {
+        "decisions_observed",
+        "decisions_allowed",
+        "decisions_blocked",
+        "gate2_decisions_observed",
+        "gate3_decisions_observed",
+        "final_pretransport_target_safety_block",
+        "target_safety_decision_changed_block",
+        "resolver_indeterminate_block",
+        "posttransport_target_safety_failure",
+        "safe_redirect_targets_accepted",
+        "safe_final_targets_accepted",
+        "safe_canonical_targets_accepted",
+        "safe_target_applicability_failure",
+        "successful_artifact_count",
+        "urls_fetched_delta",
     }
 )
 _EXECUTION_RESULT_REF_FIELDS = frozenset(
@@ -198,6 +265,10 @@ _ARTIFACT_REF_FIELDS = frozenset(
         "output_type",
         "status",
         "requested_url",
+        "attempted_url",
+        "provider_reported_url",
+        "resolved_url",
+        "redirect_url",
         "final_url",
         "canonical_url",
         "root_url",
@@ -699,6 +770,7 @@ class AcquisitionCapabilityDecisionObservationV1:
     block_code: str | None
     material_shape_interpretation: str
     operation_identity_key: str | None
+    target_safety_admission_decision_refs: tuple[Mapping[str, Any], ...]
     schema_version: str = ACQUISITION_CAPABILITY_DECISION_SCHEMA_VERSION
     authority_posture: str = "capability_decision_only"
 
@@ -724,6 +796,7 @@ class AcquisitionCapabilityDecisionObservationV1:
                 "block_code",
                 "material_shape_interpretation",
                 "operation_identity_key",
+                "target_safety_admission_decision_refs",
                 "authority_posture",
             )
         }
@@ -781,6 +854,12 @@ class AcquisitionCapabilityDecisionObservationV1:
             operation_identity_key=_optional_token(
                 raw.get("operation_identity_key"), limit=180
             ),
+            target_safety_admission_decision_refs=tuple(
+                _target_safety_decision_ref(item)
+                for item in _sequence(
+                    raw.get("target_safety_admission_decision_refs")
+                )
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -801,6 +880,9 @@ class AcquisitionCapabilityDecisionObservationV1:
                     self.material_shape_interpretation
                 ),
                 "operation_identity_key": self.operation_identity_key,
+                "target_safety_admission_decision_refs": list(
+                    self.target_safety_admission_decision_refs
+                ),
                 "authority_posture": self.authority_posture,
             }
         )
@@ -834,6 +916,7 @@ class AcquisitionWorkOrderV1:
     parent_acquisition_job_refs: tuple[Mapping[str, Any], ...]
     routing_policy_ref: Mapping[str, Any]
     operation_identity_key: str
+    target_safety_admission_decision_refs: tuple[Mapping[str, Any], ...]
     duplicate_check: str = "clear"
     exhaustion_check: str = "clear"
     schema_version: str = ACQUISITION_WORK_ORDER_SCHEMA_VERSION
@@ -914,6 +997,12 @@ class AcquisitionWorkOrderV1:
                 "operation_identity_key_missing",
                 limit=180,
             ),
+            target_safety_admission_decision_refs=tuple(
+                _target_safety_decision_ref(item)
+                for item in _sequence(
+                    raw.get("target_safety_admission_decision_refs")
+                )
+            ),
             duplicate_check=_required_token(
                 raw.get("duplicate_check"), "duplicate_check_missing"
             ),
@@ -950,6 +1039,9 @@ class AcquisitionWorkOrderV1:
                 ),
                 "routing_policy_ref": self.routing_policy_ref,
                 "operation_identity_key": self.operation_identity_key,
+                "target_safety_admission_decision_refs": list(
+                    self.target_safety_admission_decision_refs
+                ),
                 "duplicate_check": self.duplicate_check,
                 "exhaustion_check": self.exhaustion_check,
                 "authority_posture": self.authority_posture,
@@ -975,6 +1067,7 @@ class AcquisitionRouteObservationV1:
     selected_output_type: str | None
     routing_policy_ref: Mapping[str, Any]
     availability_snapshot_ref: Mapping[str, Any]
+    target_safety_eligibility_ref: Mapping[str, Any]
     terminal_status: str
     block_code: str | None
     schema_version: str = ACQUISITION_ROUTE_OBSERVATION_SCHEMA_VERSION
@@ -1015,6 +1108,11 @@ class AcquisitionRouteObservationV1:
             "routing_policy_ref": policy_ref,
             "availability_snapshot_ref": _compact_ref(
                 availability_snapshot_ref
+            ),
+            "target_safety_eligibility_ref": (
+                _provider_target_safety_eligibility_ref(
+                    route_trace.get("target_safety_eligibility_ref")
+                )
             ),
             "terminal_status": "blocked" if blocked else "selected",
             "block_code": route_trace.get("block_reason") if blocked else None,
@@ -1077,6 +1175,11 @@ class AcquisitionRouteObservationV1:
             availability_snapshot_ref=_compact_ref(
                 raw.get("availability_snapshot_ref")
             ),
+            target_safety_eligibility_ref=(
+                _provider_target_safety_eligibility_ref(
+                    raw.get("target_safety_eligibility_ref")
+                )
+            ),
             terminal_status=status,
             block_code=block_code,
         )
@@ -1095,6 +1198,9 @@ class AcquisitionRouteObservationV1:
                 "selected_output_type": self.selected_output_type,
                 "routing_policy_ref": self.routing_policy_ref,
                 "availability_snapshot_ref": self.availability_snapshot_ref,
+                "target_safety_eligibility_ref": (
+                    self.target_safety_eligibility_ref
+                ),
                 "terminal_status": self.terminal_status,
                 "block_code": self.block_code,
             }
@@ -1119,6 +1225,12 @@ class AcquisitionExecutionObservationV1:
     provider_calls_completed: int
     terminal_status: str
     failure_or_block_code: str | None
+    target_safety_decision_refs: tuple[Mapping[str, Any], ...]
+    target_safety_summary: Mapping[str, Any]
+    execution_claim_consumed: bool
+    adapter_invoked: bool
+    transport_posture: str
+    execution_authority_posture: str
     schema_version: str = ACQUISITION_EXECUTION_OBSERVATION_SCHEMA_VERSION
     provider_failure_fallback_attempted: bool = False
     capability_switch_attempted: bool = False
@@ -1136,6 +1248,12 @@ class AcquisitionExecutionObservationV1:
         provider_calls_completed: int,
         terminal_status: str,
         failure_or_block_code: str | None,
+        target_safety_decision_refs: Sequence[Mapping[str, Any]],
+        target_safety_summary: Mapping[str, Any],
+        execution_claim_consumed: bool,
+        adapter_invoked: bool,
+        transport_posture: str,
+        execution_authority_posture: str,
     ) -> "AcquisitionExecutionObservationV1":
         work_ref = _compact_ref(work_order_ref)
         work_id = _required_token(
@@ -1168,6 +1286,29 @@ class AcquisitionExecutionObservationV1:
             "provider_failure_fallback_attempted": False,
             "capability_switch_attempted": False,
             "downstream_authority_granted": False,
+            "target_safety_decision_refs": [
+                _target_safety_decision_ref(item)
+                for item in target_safety_decision_refs
+            ],
+            "target_safety_summary": _target_safety_summary(
+                target_safety_summary
+            ),
+            "execution_claim_consumed": _strict_bool(
+                execution_claim_consumed,
+                "execution_claim_consumed_boolean_required",
+            ),
+            "adapter_invoked": _strict_bool(
+                adapter_invoked,
+                "adapter_invoked_boolean_required",
+            ),
+            "transport_posture": _required_token(
+                transport_posture,
+                "execution_transport_posture_missing",
+                limit=180,
+            ),
+            "execution_authority_posture": _execution_authority_posture(
+                execution_authority_posture
+            ),
         }
         digest = stable_json_digest(core)
         payload = {
@@ -1249,6 +1390,165 @@ class AcquisitionExecutionObservationV1:
             )
         if terminal_status == "blocked" and (attempted or completed):
             raise AcquisitionControlError("blocked_execution_call_count_invalid")
+        target_safety_refs = tuple(
+            _target_safety_decision_ref(item)
+            for item in _sequence(raw.get("target_safety_decision_refs"))
+        )
+        target_safety_summary = _target_safety_summary(
+            raw.get("target_safety_summary")
+        )
+        gate2_refs = tuple(
+            item
+            for item in target_safety_refs
+            if item.get("stage")
+            == NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value
+        )
+        gate3_refs = tuple(
+            item
+            for item in target_safety_refs
+            if item.get("stage")
+            == NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET.value
+        )
+        if (
+            len(target_safety_refs)
+            != target_safety_summary["decisions_observed"]
+            or len(gate2_refs)
+            != target_safety_summary["gate2_decisions_observed"]
+            or len(gate3_refs)
+            != target_safety_summary["gate3_decisions_observed"]
+            or sum(item.get("status") == "allowed" for item in target_safety_refs)
+            != target_safety_summary["decisions_allowed"]
+            or sum(item.get("status") == "blocked" for item in target_safety_refs)
+            != target_safety_summary["decisions_blocked"]
+        ):
+            raise AcquisitionControlError(
+                "execution_target_safety_ref_summary_mismatch"
+            )
+        execution_claim_consumed = _strict_bool(
+            raw.get("execution_claim_consumed"),
+            "execution_claim_consumed_boolean_required",
+        )
+        adapter_invoked = _strict_bool(
+            raw.get("adapter_invoked"),
+            "adapter_invoked_boolean_required",
+        )
+        transport_posture = _required_token(
+            raw.get("transport_posture"),
+            "execution_transport_posture_missing",
+            limit=180,
+        )
+        execution_authority_posture = _execution_authority_posture(
+            raw.get("execution_authority_posture")
+        )
+        pretransport_safety_block = (
+            terminal_status == "blocked"
+            and str(failure_code or "").startswith(
+                "final_pretransport_target_safety_blocked:"
+            )
+        )
+        if (
+            target_safety_summary[
+                "final_pretransport_target_safety_block"
+            ]
+            is not pretransport_safety_block
+        ):
+            raise AcquisitionControlError(
+                "pretransport_target_safety_block_flag_mismatch"
+            )
+        if pretransport_safety_block:
+            if (
+                execution_claim_consumed
+                or adapter_invoked
+                or artifact_refs
+                or attempted
+                or completed
+                or target_safety_summary.get(
+                    "final_pretransport_target_safety_block"
+                )
+                is not True
+                or not gate2_refs
+                or gate3_refs
+                or not any(
+                    item.get("status") == "blocked" for item in gate2_refs
+                )
+                or target_safety_summary.get("urls_fetched_delta") != 0
+            ):
+                raise AcquisitionControlError(
+                    "pretransport_target_safety_block_posture_invalid"
+                )
+        elif not execution_claim_consumed:
+            raise AcquisitionControlError(
+                "non_safety_execution_observation_requires_claim"
+            )
+        if terminal_status == "completed" and not adapter_invoked:
+            raise AcquisitionControlError("completed_execution_requires_adapter")
+        posttransport_safety_failure = str(failure_code or "").startswith(
+            "posttransport_target_safety_failure:"
+        )
+        applicability_failure = str(failure_code or "").startswith(
+            "posttransport_target_applicability_failure:"
+        )
+        if (
+            target_safety_summary["posttransport_target_safety_failure"]
+            is not posttransport_safety_failure
+            or target_safety_summary["safe_target_applicability_failure"]
+            is not applicability_failure
+        ):
+            raise AcquisitionControlError(
+                "execution_target_safety_failure_posture_mismatch"
+            )
+        if posttransport_safety_failure and (
+            terminal_status != "failed"
+            or attempted != 1
+            or completed != 1
+            or artifact_refs
+            or not gate3_refs
+            or not any(
+                item.get("status") == "blocked" for item in gate3_refs
+            )
+            or target_safety_summary["urls_fetched_delta"] != 1
+        ):
+            raise AcquisitionControlError(
+                "posttransport_target_safety_failure_posture_invalid"
+            )
+        if applicability_failure and (
+            terminal_status != "failed"
+            or attempted != 1
+            or completed != 1
+            or artifact_refs
+            or not gate3_refs
+            or any(
+                item.get("status") != "allowed"
+                for item in target_safety_refs
+            )
+            or target_safety_summary["urls_fetched_delta"] != 1
+        ):
+            raise AcquisitionControlError(
+                "posttransport_target_applicability_failure_posture_invalid"
+            )
+        if terminal_status == "completed" and (
+            target_safety_summary["successful_artifact_count"]
+            != len(artifact_refs)
+            or target_safety_summary["urls_fetched_delta"] != 1
+            or not gate2_refs
+            or not gate3_refs
+            or any(
+                item.get("status") != "allowed"
+                for item in target_safety_refs
+            )
+        ):
+            raise AcquisitionControlError(
+                "completed_execution_target_safety_posture_invalid"
+            )
+        if terminal_status != "completed" and (
+            target_safety_summary["successful_artifact_count"] != 0
+            or target_safety_summary["safe_redirect_targets_accepted"] != 0
+            or target_safety_summary["safe_final_targets_accepted"] != 0
+            or target_safety_summary["safe_canonical_targets_accepted"] != 0
+        ):
+            raise AcquisitionControlError(
+                "nonsuccess_execution_target_safety_success_count_invalid"
+            )
         core = {
             "schema_version": ACQUISITION_EXECUTION_OBSERVATION_SCHEMA_VERSION,
             "work_order_ref": work_ref,
@@ -1262,6 +1562,12 @@ class AcquisitionExecutionObservationV1:
             "provider_failure_fallback_attempted": False,
             "capability_switch_attempted": False,
             "downstream_authority_granted": False,
+            "target_safety_decision_refs": list(target_safety_refs),
+            "target_safety_summary": target_safety_summary,
+            "execution_claim_consumed": execution_claim_consumed,
+            "adapter_invoked": adapter_invoked,
+            "transport_posture": transport_posture,
+            "execution_authority_posture": execution_authority_posture,
         }
         digest = stable_json_digest(core)
         expected_id = f"acquisition-execution:{work_id}:{digest[:20]}"
@@ -1283,6 +1589,12 @@ class AcquisitionExecutionObservationV1:
             provider_calls_completed=completed,
             terminal_status=terminal_status,
             failure_or_block_code=failure_code,
+            target_safety_decision_refs=target_safety_refs,
+            target_safety_summary=target_safety_summary,
+            execution_claim_consumed=execution_claim_consumed,
+            adapter_invoked=adapter_invoked,
+            transport_posture=transport_posture,
+            execution_authority_posture=execution_authority_posture,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -1302,6 +1614,16 @@ class AcquisitionExecutionObservationV1:
                 "provider_failure_fallback_attempted": False,
                 "capability_switch_attempted": False,
                 "downstream_authority_granted": False,
+                "target_safety_decision_refs": list(
+                    self.target_safety_decision_refs
+                ),
+                "target_safety_summary": self.target_safety_summary,
+                "execution_claim_consumed": self.execution_claim_consumed,
+                "adapter_invoked": self.adapter_invoked,
+                "transport_posture": self.transport_posture,
+                "execution_authority_posture": (
+                    self.execution_authority_posture
+                ),
             }
         )
 
@@ -1579,6 +1901,7 @@ def initial_acquisition_control_state(*, run_id: str, request_id: str) -> dict[s
         "request_id": request_id,
         "proposals_by_id": {},
         "capability_decisions_by_id": {},
+        "target_resolution_snapshots_by_decision_id": {},
         "work_orders_by_id": {},
         "routes_by_id": {},
         "execution_authorizations_by_id": {},
@@ -1587,6 +1910,22 @@ def initial_acquisition_control_state(*, run_id: str, request_id: str) -> dict[s
         "terminal_receipts_by_operation_key": {},
         "exhausted_operation_keys": {},
         "custody_authorizations_by_receipt": {},
+        "target_safety_telemetry": {
+            "target_safety_decisions_observed": 0,
+            "target_safety_decisions_allowed": 0,
+            "target_safety_decisions_blocked": 0,
+            "admission_target_safety_blocks": 0,
+            "final_pretransport_target_safety_blocks": 0,
+            "target_safety_decision_changed_blocks": 0,
+            "resolver_indeterminate_blocks": 0,
+            "provider_target_safety_ineligible_routes": 0,
+            "posttransport_target_safety_failures": 0,
+            "safe_redirect_targets_accepted": 0,
+            "safe_final_targets_accepted": 0,
+            "safe_canonical_targets_accepted": 0,
+            "safe_target_applicability_failures": 0,
+            "unsafe_target_operations_exhausted": 0,
+        },
         "event_history": [],
         "provider_selection_owner": "core.routing",
         "mechanical_adapter_owner": "core.acquisition_adapters",
@@ -1609,6 +1948,16 @@ def ensure_acquisition_control_state(
         or safe.get("request_id") != request_id
     ):
         raise AcquisitionControlError("acquisition_control_state_identity_mismatch")
+    defaults = initial_acquisition_control_state(
+        run_id=run_id,
+        request_id=request_id,
+    )
+    safe.setdefault("target_resolution_snapshots_by_decision_id", {})
+    telemetry = safe.setdefault("target_safety_telemetry", {})
+    if not isinstance(telemetry, dict):
+        raise AcquisitionControlError("target_safety_telemetry_mapping_required")
+    for key, value in defaults["target_safety_telemetry"].items():
+        telemetry.setdefault(key, value)
     return safe
 
 
@@ -1739,6 +2088,9 @@ def derive_acquisition_capability_decision(
     proposal: AcquisitionNeedProposalV1,
     authority_snapshot: Mapping[str, Any],
     acquisition_control_state: Mapping[str, Any],
+    target_resolution_snapshots: Sequence[
+        NetworkTargetResolutionSnapshotV1
+    ] = (),
 ) -> AcquisitionCapabilityDecisionObservationV1:
     snapshot = _mapping(authority_snapshot, "authority_snapshot_missing")
     state = _mapping(acquisition_control_state, "acquisition_control_state_missing")
@@ -1806,6 +2158,50 @@ def derive_acquisition_capability_decision(
     duplicate_completed = prior_receipt.get("terminal_status") == "completed"
     duplicate_terminal = bool(prior_receipt) and not duplicate_completed
     operation_exhausted = bool(operation_key and exhausted.get(operation_key))
+    target_urls = list(proposal.available_urls)
+    if proposal.root_url:
+        target_urls.append(proposal.root_url)
+    safety_required = derived in {
+        AcquisitionCapability.READ.value,
+        AcquisitionCapability.FOCUSED_EXTRACT.value,
+        AcquisitionCapability.MAP_SITE.value,
+        AcquisitionCapability.CRAWL_SITE.value,
+    }
+    target_safety_decisions = tuple(
+        evaluate_network_target_safety(
+            target_url,
+            stage=NetworkTargetSafetyStage.ADMISSION_PRE_ROUTE,
+            transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
+            fact_kind=(
+                NetworkTargetFactKind.SELECTED_CANDIDATE
+                if proposal.candidate_ref
+                else NetworkTargetFactKind.EXPLICIT_USER
+            ),
+            resolver_snapshot=resolution_snapshot_for_url(
+                target_url,
+                target_resolution_snapshots,
+            ),
+            lineage_ref={
+                "run_id": proposal.run_id,
+                "request_id": proposal.request_id,
+                "proposal_id": proposal.proposal_id,
+                "source_obligation_id": obligation_id,
+            },
+        )
+        for target_url in target_urls
+    )
+    target_safety_allowed = (
+        not safety_required
+        or bool(target_safety_decisions)
+        and all(
+            decision.status == NetworkTargetSafetyStatus.ALLOWED.value
+            for decision in target_safety_decisions
+        )
+    )
+    target_safety_refs = tuple(
+        _target_safety_decision_ref(decision.ref())
+        for decision in target_safety_decisions
+    )
     prerequisites = {
         "run_id_current": proposal.run_id == snapshot.get("run_id"),
         "request_id_current": proposal.request_id == snapshot.get("request_id"),
@@ -1823,9 +2219,20 @@ def derive_acquisition_capability_decision(
         "active_conflicting_operation": active_conflict,
         "provider_availability_consulted": False,
         "mode_or_complexity_consulted": False,
+        "target_safety_allowed": target_safety_allowed,
     }
     block_code: str | None = None
-    if not prerequisites["run_id_current"] or not prerequisites["request_id_current"]:
+    if not prerequisites["target_safety_allowed"]:
+        first_blocker = next(
+            (
+                decision.blocker_code
+                for decision in target_safety_decisions
+                if decision.blocker_code
+            ),
+            "target_safety_indeterminate",
+        )
+        block_code = f"admission_target_safety_blocked:{first_blocker}"
+    elif not prerequisites["run_id_current"] or not prerequisites["request_id_current"]:
         block_code = "proposal_run_or_request_mismatch"
     elif not contract_current:
         block_code = "stale_answer_contract"
@@ -1866,6 +2273,7 @@ def derive_acquisition_capability_decision(
         "block_code": block_code,
         "material_shape_interpretation": material_interpretation,
         "operation_identity_key": operation_key,
+        "target_safety_admission_decision_refs": list(target_safety_refs),
         "authority_posture": "capability_decision_only",
     }
     digest = stable_json_digest(core)
@@ -1908,6 +2316,9 @@ def build_acquisition_work_order(
         "parent_acquisition_job_refs": list(proposal.parent_acquisition_job_refs),
         "routing_policy_ref": acquisition_routing_policy_ref(),
         "operation_identity_key": decision.operation_identity_key,
+        "target_safety_admission_decision_refs": list(
+            decision.target_safety_admission_decision_refs
+        ),
         "duplicate_check": "clear",
         "exhaustion_check": "clear",
         "authority_posture": WORK_ORDER_AUTHORITY_POSTURE,
@@ -2416,6 +2827,125 @@ def _routing_policy_ref(value: Any) -> dict[str, Any]:
     }
 
 
+def _provider_target_safety_eligibility_ref(value: Any) -> dict[str, Any]:
+    ref = _mapping(
+        value,
+        "provider_target_safety_eligibility_ref_missing",
+    )
+    expected = {
+        "schema_version",
+        "policy_version",
+        "snapshot_id",
+        "snapshot_digest",
+        "target_class",
+        "source_posture",
+        "authority_posture",
+        "product_reachable",
+        "offline_validation_authority_ref",
+        "configuration_owned",
+        "requester_preference_owned",
+    }
+    _reject_unknown_fields(
+        ref,
+        expected,
+        "provider_target_safety_eligibility_ref",
+    )
+    if set(ref) != expected:
+        raise AcquisitionControlError(
+            "provider_target_safety_eligibility_ref_fields_missing"
+        )
+    product_reachable = _strict_bool(
+        ref.get("product_reachable"),
+        "provider_target_safety_product_reachable_boolean_required",
+    )
+    authority_posture = _required_token(
+        ref.get("authority_posture"),
+        "provider_target_safety_authority_posture_missing",
+        limit=100,
+    )
+    offline_ref = _mapping(
+        ref.get("offline_validation_authority_ref"),
+        "provider_target_safety_offline_authority_ref_invalid",
+    )
+    if product_reachable:
+        if authority_posture != "PRODUCT" or offline_ref:
+            raise AcquisitionControlError(
+                "provider_target_safety_product_authority_invalid"
+            )
+    else:
+        if (
+            authority_posture
+            != OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
+            or not offline_ref
+        ):
+            raise AcquisitionControlError(
+                "provider_target_safety_offline_authority_invalid"
+            )
+        offline_expected = {
+            "schema_version",
+            "fixture_id",
+            "fixture_digest",
+            "authority_posture",
+            "product_reachable",
+        }
+        _reject_unknown_fields(
+            offline_ref,
+            offline_expected,
+            "offline_provider_target_safety_authority_ref",
+        )
+        if (
+            set(offline_ref) != offline_expected
+            or offline_ref.get("authority_posture")
+            != OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
+            or offline_ref.get("product_reachable") is not False
+        ):
+            raise AcquisitionControlError(
+                "provider_target_safety_offline_authority_invalid"
+            )
+        _required_sha256_digest(
+            offline_ref.get("fixture_digest"),
+            "offline_provider_target_safety_fixture_digest_invalid",
+        )
+    if (
+        ref.get("configuration_owned") is not False
+        or ref.get("requester_preference_owned") is not False
+        or ref.get("target_class") != UNTRUSTED_EXACT_URL_TARGET_CLASS
+    ):
+        raise AcquisitionControlError(
+            "provider_target_safety_eligibility_scope_invalid"
+        )
+    return {
+        "schema_version": _required_token(
+            ref.get("schema_version"),
+            "provider_target_safety_eligibility_schema_missing",
+        ),
+        "policy_version": _required_token(
+            ref.get("policy_version"),
+            "provider_target_safety_eligibility_policy_missing",
+        ),
+        "snapshot_id": _required_token(
+            ref.get("snapshot_id"),
+            "provider_target_safety_eligibility_snapshot_id_missing",
+            limit=300,
+        ),
+        "snapshot_digest": _required_sha256_digest(
+            ref.get("snapshot_digest"),
+            "provider_target_safety_eligibility_snapshot_digest_invalid",
+        ),
+        "target_class": UNTRUSTED_EXACT_URL_TARGET_CLASS,
+        "source_posture": _required_token(
+            ref.get("source_posture"),
+            "provider_target_safety_source_posture_missing",
+            limit=120,
+        ),
+        "authority_posture": authority_posture,
+        "product_reachable": product_reachable,
+        "offline_validation_authority_ref": _json_clone(offline_ref),
+        "configuration_owned": False,
+        "requester_preference_owned": False,
+    }
+
+
 def _execution_result_ref(value: Any) -> dict[str, Any]:
     ref = _mapping(value, "execution_result_ref_missing")
     _reject_unknown_fields(
@@ -2509,6 +3039,10 @@ def _artifact_observation_ref(value: Any) -> dict[str, Any]:
         "provider_variant": 180,
         "output_type": 180,
         "requested_url": 2_000,
+        "attempted_url": 2_000,
+        "provider_reported_url": 2_000,
+        "resolved_url": 2_000,
+        "redirect_url": 2_000,
         "final_url": 2_000,
         "canonical_url": 2_000,
         "root_url": 2_000,
@@ -2547,6 +3081,157 @@ def _artifact_observation_ref(value: Any) -> dict[str, Any]:
     ):
         raise AcquisitionControlError("artifact_ref_identity_invalid")
     return result
+
+
+def _target_safety_decision_ref(value: Any) -> dict[str, Any]:
+    ref = _mapping(value, "target_safety_decision_ref_missing")
+    _reject_unknown_fields(
+        ref,
+        _TARGET_SAFETY_DECISION_REF_FIELDS,
+        "target_safety_decision_ref",
+    )
+    if set(ref) != set(_TARGET_SAFETY_DECISION_REF_FIELDS):
+        raise AcquisitionControlError("target_safety_decision_ref_fields_missing")
+    policy = network_target_safety_policy_ref()
+    if (
+        ref.get("policy_version") != policy["policy_version"]
+        or ref.get("policy_digest") != policy["policy_digest"]
+    ):
+        raise AcquisitionControlError("target_safety_policy_ref_invalid")
+    for key in (
+        "raw_dns_retained",
+        "raw_private_network_data_retained",
+        "credentials_retained",
+        "all_downstream_authority_granted",
+    ):
+        if ref.get(key) is not False:
+            raise AcquisitionControlError("target_safety_decision_authority_invalid")
+    stage = _required_token(
+        ref.get("stage"), "target_safety_decision_stage_missing", limit=80
+    )
+    if stage not in {item.value for item in NetworkTargetSafetyStage}:
+        raise AcquisitionControlError("target_safety_decision_stage_invalid")
+    status = _required_token(
+        ref.get("status"), "target_safety_decision_status_missing", limit=80
+    )
+    if status not in {item.value for item in NetworkTargetSafetyStatus}:
+        raise AcquisitionControlError("target_safety_decision_status_invalid")
+    blocker = _optional_token(ref.get("blocker_code"), limit=220)
+    if (status == NetworkTargetSafetyStatus.BLOCKED.value) != bool(blocker):
+        raise AcquisitionControlError("target_safety_decision_blocker_mismatch")
+    transport_mode = _required_token(
+        ref.get("transport_mode"),
+        "target_safety_transport_mode_missing",
+        limit=100,
+    )
+    if transport_mode not in {item.value for item in NetworkTargetTransportMode}:
+        raise AcquisitionControlError("target_safety_transport_mode_invalid")
+    fact_kind = _required_token(
+        ref.get("fact_kind"), "target_safety_fact_kind_missing", limit=100
+    )
+    if fact_kind not in {item.value for item in NetworkTargetFactKind}:
+        raise AcquisitionControlError("target_safety_fact_kind_invalid")
+    lineage_raw = _mapping(ref.get("lineage_ref"), "target_safety_lineage_missing")
+    lineage = {
+        _required_token(key, "target_safety_lineage_key_missing", limit=100): (
+            _required_token(item, "target_safety_lineage_value_missing", limit=300)
+        )
+        for key, item in lineage_raw.items()
+    }
+    return {
+        "decision_id": _required_token(
+            ref.get("decision_id"), "target_safety_decision_id_missing", limit=300
+        ),
+        "decision_digest": _required_sha256_digest(
+            ref.get("decision_digest"), "target_safety_decision_digest_invalid"
+        ),
+        "policy_version": policy["policy_version"],
+        "policy_digest": policy["policy_digest"],
+        "stage": stage,
+        "status": status,
+        "blocker_code": blocker,
+        "transport_mode": transport_mode,
+        "fact_kind": fact_kind,
+        "supplied_url_digest": _required_sha256_digest(
+            ref.get("supplied_url_digest"),
+            "target_safety_supplied_url_digest_invalid",
+        ),
+        "normalized_target_digest": (
+            _required_sha256_digest(
+                ref.get("normalized_target_digest"),
+                "target_safety_normalized_target_digest_invalid",
+            )
+            if ref.get("normalized_target_digest")
+            else None
+        ),
+        "canonical_host": _optional_token(ref.get("canonical_host"), limit=260),
+        "resolver_snapshot_id": _optional_token(
+            ref.get("resolver_snapshot_id"), limit=300
+        ),
+        "resolver_snapshot_digest": (
+            _required_sha256_digest(
+                ref.get("resolver_snapshot_digest"),
+                "target_safety_resolver_snapshot_digest_invalid",
+            )
+            if ref.get("resolver_snapshot_digest")
+            else None
+        ),
+        "lineage_ref": lineage,
+        "raw_dns_retained": False,
+        "raw_private_network_data_retained": False,
+        "credentials_retained": False,
+        "all_downstream_authority_granted": False,
+    }
+
+
+def _target_safety_summary(value: Any) -> dict[str, Any]:
+    raw = _mapping(value, "target_safety_summary_mapping_required")
+    _reject_unknown_fields(raw, _TARGET_SAFETY_SUMMARY_FIELDS, "target_safety_summary")
+    if set(raw) != set(_TARGET_SAFETY_SUMMARY_FIELDS):
+        raise AcquisitionControlError("target_safety_summary_fields_missing")
+    result: dict[str, Any] = {}
+    boolean_fields = {
+        "final_pretransport_target_safety_block",
+        "target_safety_decision_changed_block",
+        "resolver_indeterminate_block",
+        "posttransport_target_safety_failure",
+        "safe_target_applicability_failure",
+    }
+    for field_name in sorted(_TARGET_SAFETY_SUMMARY_FIELDS):
+        if field_name in boolean_fields:
+            result[field_name] = _strict_bool(
+                raw.get(field_name),
+                f"{field_name}_boolean_required",
+            )
+        else:
+            result[field_name] = _nonnegative_int(raw.get(field_name))
+    if result["decisions_allowed"] + result["decisions_blocked"] != result[
+        "decisions_observed"
+    ]:
+        raise AcquisitionControlError("target_safety_summary_count_mismatch")
+    if (
+        result["gate2_decisions_observed"]
+        + result["gate3_decisions_observed"]
+        != result["decisions_observed"]
+    ):
+        raise AcquisitionControlError("target_safety_summary_gate_count_mismatch")
+    return result
+
+
+def _execution_authority_posture(value: Any) -> str:
+    posture = _required_token(
+        value,
+        "execution_authority_posture_missing",
+        limit=100,
+    )
+    if posture not in {
+        "PRODUCT",
+        OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
+    }:
+        raise AcquisitionControlError(
+            "execution_authority_posture_invalid"
+        )
+    return posture
 
 
 def _compact_ref(value: Any) -> dict[str, Any]:

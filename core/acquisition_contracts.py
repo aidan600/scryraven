@@ -9,13 +9,18 @@ authority.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from hashlib import sha256
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
-from core.routing import AcquisitionCapability, ProviderRouteDecision
+from core.network_target_safety import static_network_target_block_code
+from core.routing import (
+    UNTRUSTED_EXACT_URL_TARGET_CLASS,
+    AcquisitionCapability,
+    ProviderRouteDecision,
+)
 
 FOCUS_TEXT_MAX_CHARACTERS = 2_000
 SELECTED_URL_MAX_COUNT = 20
@@ -136,6 +141,7 @@ class AcquisitionPageArtifact:
     attempted_url: str | None = None
     provider_reported_url: str | None = None
     resolved_url: str | None = None
+    redirect_url: str | None = None
     final_url: str | None = None
     canonical_url: str | None = None
     parent_url: str | None = None
@@ -175,6 +181,7 @@ class AcquisitionArtifact:
     attempted_url: str | None = None
     provider_reported_url: str | None = None
     resolved_url: str | None = None
+    redirect_url: str | None = None
     final_url: str | None = None
     canonical_url: str | None = None
     root_url: str | None = None
@@ -235,6 +242,10 @@ class AcquisitionExecutionResult:
     failure_code: str | None = None
     detail: str | None = None
     transport_posture: str = "zero_transport"
+    target_safety_decision_refs: tuple[Mapping[str, Any], ...] = ()
+    target_safety_summary: Mapping[str, Any] = field(default_factory=dict)
+    execution_claim_consumed: bool = False
+    adapter_invoked: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -260,6 +271,12 @@ class AcquisitionExecutionResult:
                 "failure_code": self.failure_code,
                 "detail": self.detail,
                 "transport_posture": self.transport_posture,
+                "target_safety_decision_refs": [
+                    dict(item) for item in self.target_safety_decision_refs
+                ],
+                "target_safety_summary": dict(self.target_safety_summary),
+                "execution_claim_consumed": self.execution_claim_consumed,
+                "adapter_invoked": self.adapter_invoked,
                 "provider_failure_fallback_attempted": False,
                 "provider_synthesis_disabled": True,
             }
@@ -279,6 +296,16 @@ def validate_acquisition_request(request: AcquisitionRequest) -> None:
             "render_javascript_invalid",
             "render_javascript must be an explicit boolean posture",
         )
+    target_urls = list(request.selected_urls)
+    if request.root_url:
+        target_urls.append(request.root_url)
+    for target_url in target_urls:
+        static_blocker = static_network_target_block_code(target_url)
+        if static_blocker:
+            raise AcquisitionContractError(
+                f"network_target_{static_blocker}",
+                "dynamic content target failed canonical static safety policy",
+            )
     decision = request.route_decision
     if decision.blocked or decision.selected_provider is None:
         raise AcquisitionContractError(
@@ -290,6 +317,24 @@ def validate_acquisition_request(request: AcquisitionRequest) -> None:
             "provider_synthesis_disabled",
             "provider synthesis cannot be dispatched",
         )
+    if decision.capability in {
+        AcquisitionCapability.READ,
+        AcquisitionCapability.FOCUSED_EXTRACT,
+        AcquisitionCapability.MAP_SITE,
+        AcquisitionCapability.CRAWL_SITE,
+    }:
+        eligibility_ref = dict(decision.target_safety_eligibility_ref)
+        if (
+            decision.request.target_class != UNTRUSTED_EXACT_URL_TARGET_CLASS
+            or eligibility_ref.get("target_class")
+            != UNTRUSTED_EXACT_URL_TARGET_CLASS
+            or decision.selected_provider_target_safety_eligible is not True
+        ):
+            raise AcquisitionContractError(
+                "dynamic_content_target_route_safety_eligibility_invalid",
+                "dynamic content-target dispatch requires a safety-eligible "
+                "route bound to the code-owned untrusted exact-URL target class",
+            )
 
     selected_urls = tuple(_required_url(url, "selected_url_invalid") for url in request.selected_urls)
     if len(selected_urls) > SELECTED_URL_MAX_COUNT:

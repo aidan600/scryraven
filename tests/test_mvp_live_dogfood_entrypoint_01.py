@@ -42,6 +42,7 @@ from proplex.mvp_live_dogfood_run import (
     BLOCKED_MVP_LIVE_CONFIRMATION_REQUIRED,
     BLOCKED_MVP_LIVE_DOGFOOD_QUERY_NOT_SUPPORTED,
     BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING,
+    BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
     BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
     BLOCKED_MVP_LIVE_TEST_OR_CI_GUARD,
     CONFIRM_LIVE_DOGFOOD_FLAG,
@@ -50,6 +51,7 @@ from proplex.mvp_live_dogfood_run import (
     ProviderProxyRunRequest,
     ProviderProxyRunResult,
     build_mvp_live_dogfood_run_output,
+    fetch_public_url_once,
     validate_mvp_live_dogfood_packet,
 )
 
@@ -93,6 +95,22 @@ def test_unsupported_query_blocks_before_provider(tmp_path: Path) -> None:
     assert result.packet["unsupported_query_retained"] is False
     assert unsupported not in result.output
     assert unsupported not in json.dumps(result.packet, sort_keys=True)
+
+
+def test_local_public_web_fetch_opener_is_retired_and_has_no_network_machinery() -> None:
+    with pytest.raises(MvpLiveDogfoodRunError) as exc_info:
+        fetch_public_url_once("https://travel.state.gov/content/travel/en/passports.html")
+
+    assert exc_info.value.blocker == BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING
+    assert "local webpage fetch/read opener is retired" in str(exc_info.value)
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "proplex"
+        / "mvp_live_dogfood_run.py"
+    ).read_text(encoding="utf-8")
+    assert "urllib.request" not in source
+    assert "build_opener" not in source
+    assert "HTTPRedirectHandler" not in source
 
 
 def test_default_live_runner_blocked_under_pytest_or_ci(tmp_path: Path) -> None:
