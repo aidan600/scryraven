@@ -309,8 +309,10 @@ def test_main_retrieval_schedule_dispatch_consumes_kernel_action_and_scheduled_a
         "iteration": 1,
         "a5_provider_override": None,
         "force_component_providers": [],
+        "include_domains": [],
+        "exclude_domains": [],
         "merge_provider_overrides": lambda primary, scout, _available, **_kwargs: primary or scout,
-        "select_provider_list": lambda *_args, **kwargs: list(kwargs.get("override") or ["scheduled-provider"]),
+        "select_provider_list": lambda *_args, **kwargs: list(kwargs.get("override") or ["tavily"]),
     }
     scheduled_action = schedule_main_retrieval_from_kernel_action(
         action,
@@ -381,7 +383,7 @@ def test_main_retrieval_schedule_dispatch_consumes_kernel_action_and_scheduled_a
     )
 
     assert calls[0][0][:4] == (["scheduled query"], "research", "medium", "basic")
-    assert calls[0][1]["search_providers"] == ["scheduled-provider"]
+    assert calls[0][1]["search_providers"] == ["tavily"]
     assert outcome.observation.action_id == action.action_id
     assert outcome.observation.observation_type is ObservationType.RETRIEVAL_PASS_RESULT
     assert records[0]["queries"] == ["scheduled query"]

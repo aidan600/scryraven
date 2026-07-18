@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
+Verified-against-runtime: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -24,6 +24,9 @@ The durable rule is:
 Workers propose.
 RunKernel authorizes and reduces.
 ```
+
+The zero-candidate-URL-transport predecessor remains historically grounded at
+runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`.
 
 Semantic understanding is not deterministic contract authority, and the
 contract is not a substitute for semantic understanding. SearchPlanner,
@@ -46,21 +49,30 @@ The current loop is one authority flow, not a phase chronology:
 6. SearchPlannerRevision consumes Scout context and proposes amendments.
 7. RunKernel admits and applies valid amendments into
    `current_answer_contract`.
-8. SearchExecutorHandoff derives contract-bound search intent; it is not search
-   execution or evidence.
+8. The contract-bound SearchExecutorHandoff remains search intent, not search
+   execution or evidence. Its historical pre-search origin is distinct from the
+   ordinary post-discovery reference handoff below.
 9. Provider-neutral DISCOVER returns sanitized candidate URLs, titles,
-   snippets/excerpts, and bounded scalar lineage metadata. Existing ranking,
-   filtering, and selection consume only that provider-returned material; no
-   initial-planning, planner-disambiguation, discovery, recovery, ranking, or
-   candidate-selection step opens a candidate source URL.
-10. `SearchResultCandidatePacket` is URL provenance and a non-evidence handoff,
-    not a material need. Canonical ordinary DISCOVER does not yet populate that
-    packet; `DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01` is the sole active
-    next checkpoint and may not synthesize packet fields from ranked passages.
-    Fetch/read may produce bounded sanitized content only
-    after a separate current need, exact lineage validation, RunKernel READ or
-    Focused Extract authorization, `core.routing` selection, and the guarded
-    PRODUCT executor. No ordinary material-need producer is currently installed.
+   snippets/excerpts, and bounded scalar lineage metadata. Each admitted
+   provider-result occurrence receives a text-free
+   `retrieval.DiscoverySourceResultIdentity` before URL deduplication, passage
+   chunking, or ranking; bounded provider material remains in
+   `retrieval.DiscoveryResultMaterialStore`. Existing ranking, filtering, and
+   selection remain authoritative and no initial-planning,
+   planner-disambiguation, discovery, recovery, ranking, or candidate-selection
+   step opens a candidate source URL.
+10. RunKernel authorizes a reference-only revision-1 ordinary
+    SearchExecutorHandoff after the initial DISCOVER selection, then the
+    existing `RunKernel.SearchResultCandidatePacket` owner consumes its exact
+    identity/material refs under origin `ordinary_query_provider`. The packet is
+    URL/material provenance and a non-evidence handoff, not a material need.
+    It is reachable in unflagged Fast/Balanced/Deep composition, does not use
+    `live_search_validation`, and causes no provider call, READ, Focused Extract,
+    exact-URL cap charge, or transport. Fetch/read may produce bounded sanitized
+    content only after a separate current need, exact lineage validation,
+    RunKernel READ or Focused Extract authorization, `core.routing` selection,
+    and the guarded PRODUCT executor. No ordinary material-need producer is
+    currently installed.
 11. EvidenceLedger records candidate/content custody and provenance-labeled
     partial lineage for observed fields; it does not invent unobserved source
     metadata. Custody is not admitted meaning or component satisfaction.
@@ -118,6 +130,52 @@ not nominate the next role. Transport-only workers may overlap only within the
 installed hosted initial-component width; canonical observations, admission,
 graph mutation, recovery, selective recomputation, readiness, packaging, and
 rendering reduce deterministically on the main thread.
+
+## Ordinary Discovery Result Handoff
+
+The ordinary provider-result boundary is deliberately split by owner:
+
+- `retrieval.DiscoverySourceResultIdentity` creates one immutable text-free
+  identity per returned occurrence before URL deduplication, chunking, or
+  ranking and binds QueryPlan, ProviderPlan, route, call, original result rank,
+  retrieval action, URL, and material refs;
+- `retrieval.DiscoveryResultMaterialStore` retains the bounded normalized
+  provider-returned material and duplicate-contributor lineage;
+- existing relevance/chunk/RRF and URL-selection code chooses the representative
+  and selected rank without rewriting provider-result rank; and
+- RunKernel authorizes and reduces the compact handoff and existing canonical
+  packet refs, without copying material or creating acquisition authority.
+
+Concurrent provider completion order is not authority: provider-call ordinals
+are reserved before submission and results reduce in submission order. Duplicate
+URLs retain distinct identities/material and up to eight contributor refs plus
+overflow facts and a full digest.
+
+Exact bounds are 5/6/8 provider results per call and 8/20/40 selected candidates
+for Fast/Balanced/Deep, 80 identities per run, 4,096 canonical bytes per
+identity, 20,000 material characters per occurrence, 8 contributor refs, and a
+16 KiB reference-only canonical RunKernel projection. That state contains no
+provider text, chunks, embeddings, or raw payload.
+
+Revision 1 is the immutable initial post-DISCOVER selection before the ordinary
+composition's later SearchPlanner/AnswerContract admission and subsequent
+source recovery/synthesis. The main RunKernel has no accepted AnswerContract or
+source obligation at this exact snapshot point, so the ordinary origin keeps
+the contract ref empty rather than manufacturing one. This timing does not
+negate the accepted `initial_answer_contract` used by later loop stages or the
+contract-bound historical SearchExecutor branch. Later recovery identities do
+not mutate revision 1. The
+unflagged CLI/backend path reaches this origin in Fast, Balanced, and Deep, but
+candidate presence remains a nontrigger: provider-call-caused-by-handoff,
+acquisition proposal, READ/Focused Extract work order, exact-URL cap charge,
+transport, and fetched-URL count all remain closed/zero. Serper lightweight
+disambiguation is excluded.
+
+The historical AG-LIVE-XAXIS-VALIDATION-01A seam still accepts sanitized
+SearchResultCandidate records only. Its provider_preference_hint is only a hint;
+it creates no fetch/read, EvidenceLedger, citations, source-obligation
+satisfaction, Sufficiency, FinalAnswerPacket, Author, partial-answer readiness,
+or product correctness authority.
 
 ## Meaning And Authority Distinctions
 
@@ -206,6 +264,11 @@ single-relation D-prime, hardened FinalAnswerPacket, and AuthorProse surfaces
 remain reusable or historical support where their exact contracts apply. They
 do not override the ordinary integrated loop or create parallel authority.
 
+Historical merge-stable SearchExecutor record: PR #330 / AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract when present; Scout/revision material is search direction only; handoff creates search task records and a search work packet; no live search/provider/fetch/read/retrieval calls were run; no EvidenceLedger/citations/source-obligation satisfaction; next implementation gate after AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01 is AG-LIVE-XAXIS-VALIDATION-01A.
+That verbatim record describes the historical pre-search handoff only. Its old
+gate clause is not current roadmap authority, and it does not turn the new
+ordinary post-discovery reference handoff into search execution.
+
 Passive packets, projections, fixtures, and traces are not product readiness.
 A new packet or bridge requires a real trust/custody boundary, durable reducer
 input, stable identity consumed downstream, raw/private hygiene boundary, or a
@@ -218,5 +281,8 @@ messy-source semantic correctness, citation rendering, source-obligation
 satisfaction, broad answer quality, or product correctness. It does not license
 new providers, prompts, retrieval behavior, source ranking, Author behavior,
 additional Specialist capabilities, or calculator scope expansion. Installed
-offline activation does not prove live calculator correctness or broad
-quantitative reasoning quality.
+offline activation does not prove live calculator correctness, exact-URL READ,
+Focused Extract, final custody, Serper connection, Map, Crawl, compatibility
+rename, or broad quantitative reasoning quality. No live provider, model,
+search, fetch/read, or retrieval call was made. The sole active next is
+`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`.

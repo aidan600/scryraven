@@ -597,7 +597,9 @@ def test_delayed_completion_preserves_submission_ordinals_and_contributors(
         release_by_query[query].set()
         return result_for("linkup", query)
 
-    monkeypatch.setenv("LINKUP_API_KEY", "offline-placeholder")
+    monkeypatch.setenv(
+        "LINKUP_API_KEY", "offline-placeholder"  # pragma: allowlist secret
+    )
     monkeypatch.setattr(pipeline, "search_web_results", delayed_tavily)
     monkeypatch.setattr(pipeline, "search_linkup_results", early_linkup)
     store = DiscoveryResultMaterialStore()
@@ -1098,7 +1100,9 @@ def test_pipeline_search_wrapper_rejects_injected_callable_without_lineage_kwarg
                     "serper": False,
                 },
             },
-            environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+            environment_overrides={
+                "TAVILY_API_KEY": "offline-placeholder"  # pragma: allowlist secret
+            },
         )
     assert calls == []
 
@@ -1157,7 +1161,9 @@ def test_unflagged_offline_modes_create_packet_without_transport_and_persist_tra
                 "serper": False,
             },
         },
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={
+            "TAVILY_API_KEY": "offline-placeholder"  # pragma: allowlist secret
+        },
     )
 
     assert provider_calls

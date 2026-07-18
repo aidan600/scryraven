@@ -144,6 +144,7 @@ class _Harness:
             kb_triggers_path=self.tmp_path / "kb.jsonl",
             policy_state_path=self.tmp_path / "policy.json",
             policy_journal_path=self.tmp_path / "policy_journal.jsonl",
+            provider_availability={"tavily": True},
         )
 
 

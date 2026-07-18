@@ -1,21 +1,22 @@
 # EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
-Status: queued after DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
+Status: sole active next checkpoint
 Mode: BUILD
 Proof class: offline_product_path_proof
 Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01, INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01, and DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
-Starting-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
-Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
+Predecessor-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
+Starting-runtime/test: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, Focused Extract activation, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
 
 ## Outcome
 
 Converge every genuinely ordinary-product-consumed exact-URL acquisition path
-for separately justified post-selection READ and FOCUSED_EXTRACT material under
-one RunKernel post-discovery authority chain and one bounded final-custody
-continuation. Initial DISCOVER material remains provider-returned candidate
-material with zero separate candidate-URL transport. Remove or subordinate
-post-selection bypasses so the ordinary consumer cannot acquire the same exact
-URL through competing policy or execution authority.
+for separately justified post-selection READ material under one RunKernel post-
+discovery authority chain and one bounded final-custody continuation. Initial
+DISCOVER material remains provider-returned candidate material with zero
+separate candidate-URL transport. Remove or subordinate post-selection bypasses
+so the ordinary consumer cannot acquire the same exact URL through competing
+policy or execution authority.
 
 The completed product path must reach the existing main-RunKernel
 candidate/source/semantic/ComponentCoverage consumer in offline composition.
@@ -39,16 +40,16 @@ and proves that product decision.
   DISCOVER paths rank only normalized provider-returned material. Historical
   `core.pipeline` selective page fetching and `core.retrieval.fetch_page` /
   `fetch_url_text` are retired.
+- Canonical ordinary DISCOVER now populates revision 1 of the existing
+  `RunKernel.SearchResultCandidatePacket` from truthful provider-result identity
+  and material refs. The selected-candidate packet remains a nontrigger.
 - FOCUSED_EXTRACT is mechanically installed and deterministically recognized,
   but the controller returns `focused_extract_requester_not_installed` because
   no current producer supplies exact pre-acquisition focus with complete
   contract/component/obligation lineage.
-- No ordinary current-material-need producer reaches READ or Focused Extract.
-- Final custody across authorized READ and Focused Extract is not proved.
-- Canonical ordinary DISCOVER does not yet populate
-  `SearchResultCandidatePacket`; this Build remains blocked until the preceding
-  candidate-handoff convergence checkpoint supplies truthful selected-candidate
-  lineage without synthetic packet fields.
+- No ordinary current-material-need producer reaches READ. Focused Extract is
+  outside this checkpoint and remains blocked.
+- Final custody across authorized READ is not proved.
 
 ## Required Build
 
@@ -61,34 +62,23 @@ and proves that product decision.
    controller-derived normalized-URL identity. Do not populate `candidate_ref`
    with synthetic candidate IDs or weaken selected-candidate packet membership
    checks.
-3. Establish one exact FOCUSED_EXTRACT proposal producer if the same canonical
-   material-need owner can truthfully supply its facts. It must bind one to
-   twenty exact URLs, exact material shape, bounded focus, current
-   AnswerContract, current source obligation, and current component revision.
-   The producer may propose only; RunKernel must derive the capability.
-4. If current admitted product facts cannot supply that focus, add the smallest
-   explicit producer contract to the actual ordinary consumer. Do not derive
-   focus from generic mode, complexity, provider features, post-READ display
-   anchors, or free-form tool instructions. A model/prompt contract change
-   requires its own exact schema and the semantic validation lane.
-5. Route each accepted exact-URL operation through the installed RunKernel
+3. Route each accepted exact-URL READ operation through the installed RunKernel
    capability, work-order, route, execution, terminal, and custody actions.
    Preserve `core.routing` as sole provider selector and
    `execute_authorized_acquisition_work_order()` as the only PRODUCT dispatcher.
-6. Extend custody only as needed to consume exact URL-bound READ or Focused artifacts.
+4. Extend custody only as needed to consume exact URL-bound READ artifacts.
    Preserve one source identity per selected URL. Do not aggregate unrelated
    URLs into one source, manufacture search candidates, or let provider output
    create authority.
-7. Converge the admitted exact-URL material through existing
+5. Converge the admitted exact-URL material through existing
    `FetchReadContentPacket` / `SanitizedContentReference`, EvidenceLedger,
    EvidenceRelativeAnalysisPacket, SemanticObservation, and main-RunKernel
-   ComponentCoverage owners. Any new Focused handoff must have one named
-   ordinary consumer and no shadow final-custody path.
-8. Delete, bypass, or explicitly subordinate any superseded post-selection
+   ComponentCoverage owners. Add no shadow final-custody path.
+6. Delete, bypass, or explicitly subordinate any superseded post-selection
    exact-URL path. Preserve initial QueryPlan/ProviderPlan ownership, provider-
    returned-material ranking, candidate selection, and the structural zero-
    candidate-URL-transport boundary.
-9. Decide and document the default-disabled product flag posture. Offline
+7. Decide and document the default-disabled product flag posture. Offline
    composition may remain injected/default-off, but the result must state
    plainly whether the default CLI consumes it.
 
@@ -111,11 +101,10 @@ and proves that product decision.
 
 - Static census proves no ordinary post-selection exact-URL acquisition bypass
   remains and that initial discovery still cannot transport candidate URLs.
-- Product tests traverse every RunKernel action exactly once for READ and
-  activated Focused Extract, with current contract/component/obligation lineage.
-- Focused tests prove exact URL/focus identity, one source per URL, stale and
-  duplicate rejection, no provider authority in the proposal, and no new model
-  call unless an explicitly licensed producer contract requires one.
+- Product tests traverse every RunKernel action exactly once for READ, with
+  current contract/component/obligation lineage.
+- Focused tests prove exact URL identity, one source per URL, stale and duplicate
+  rejection, no provider authority in the proposal, and no new model call.
 - Directly affected discovery-boundary, routing, acquisition adapter, candidate packet,
   FetchReadContentPacket, EvidenceLedger, semantic admission, ComponentCoverage,
   and main ordinary composition owners pass offline.
@@ -127,11 +116,13 @@ and proves that product decision.
 
 ## Stop And Split Conditions
 
-Stop for a product decision instead of fabricating authority if exact focus
-requires an unresolved semantic producer, prompt redesign, ranking policy, or
-source-obligation change. Split a focused-producer phase if that decision has a
-different rollback boundary from exact-URL custody convergence. Do not weaken
-the controller to preserve an artificial one-PR plan.
+Stop for a product decision instead of fabricating authority if the independent
+READ material-need producer requires an unresolved semantic contract, prompt
+redesign, ranking policy, or source-obligation change. Do not weaken the
+controller to preserve an artificial one-PR plan.
+
+Focused Extract remains a separate future checkpoint unless this phase is
+explicitly amended; it is not part of the current rollback boundary.
 
 ## Mandatory Following Checkpoint
 

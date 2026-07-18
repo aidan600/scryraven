@@ -322,6 +322,7 @@ class OfflineOrdinaryPipelineHarness:
             policy_state_path=self.tmp_path / "policy.json",
             policy_journal_path=self.tmp_path / "policy_journal.jsonl",
             strict_one_shot_smart_model_transport=self.strict_one_shot_smart_model_transport,
+            provider_availability={"tavily": True},
         )
 
 
