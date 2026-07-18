@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
+Verified-against-runtime: a06b63d68a12e69fa9060531b38e0b6745aecc9a
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -66,7 +66,7 @@ configuration.
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
-| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and route policy. Ordinary DISCOVER work consumes completed ProviderPlan decisions; selected-candidate source custody consumes typed READ through Linkup Fetch or route-time Tavily Extract; and the generic single-relation product root consumes a completed route before mechanical provider dispatch. Focused Extract, Map, Crawl, and general Linkup Deep are typed-runtime installed but have no ordinary requester. |
+| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER work consumes completed ProviderPlan decisions. Selected-candidate READ now traverses RunKernel-owned capability, provider-neutral work-order, route, execution, terminal, and custody authorization before one guarded mechanical Linkup Fetch or route-time Tavily Extract dispatch. The ordinary source-custody composition remains default-disabled with no default CLI activation. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -229,54 +229,70 @@ exact selected source literals inside the named bounded multi-component class.
 It does not provide broad economic analysis, arbitrary formulas, estimates,
 acquisition, or general quantitative reasoning.
 
-## Installed Acquisition Routing And Adapter Runtime
+## Installed Acquisition Routing, Control, And Adapter Runtime
 
 Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea`
-preserves `core.routing` as the sole provider-capability policy owner and adds
-shared immutable acquisition requests, jobs, artifacts, lineage, and execution
-results. Mechanical adapters now implement Linkup Fetch; Tavily Extract, Map,
-and bounded Crawl; and explicitly authorized Linkup `deep/searchResults`.
+installed shared immutable acquisition requests, artifacts, and mechanical
+adapters. `RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01` adds the canonical
+post-discovery acquisition-control state and migrates selected-candidate READ
+under it. `core.routing` remains the sole provider-capability policy owner.
 
-| Capability | Adapter installed | Typed runtime | Ordinary consumed |
+| Capability | Adapter installed | Deterministically recognized by post-discovery control | Current ordinary disposition |
 | --- | --- | --- | --- |
-| DISCOVER | yes | yes | yes |
-| READ | yes | yes | yes, through selected-candidate custody |
-| FOCUSED_EXTRACT | yes | yes | no |
-| MAP_SITE | yes | yes | no |
-| CRAWL_SITE | yes | yes | no |
-| General Linkup Deep | mechanical support yes | authorized runtime only | no |
-| Scrutineer Deep | yes | yes | preserve existing bounded consumer |
-| PROVIDER_SYNTHESIS | disabled | blocked | no |
+| DISCOVER | yes | outside this post-discovery controller | existing ProviderPlan/scheduler/dispatch consumers; `core.pipeline` selective page fetches are not claimed migrated |
+| READ | yes | yes | complete RunKernel chain through selected-candidate custody when the default-disabled ordinary composition is explicitly enabled |
+| FOCUSED_EXTRACT | yes | yes | `focused_extract_requester_not_installed`; no current exact pre-acquisition focus producer |
+| MAP_SITE | yes | yes | `map_candidate_reentry_not_installed`; no PRODUCT route or transport |
+| CRAWL_SITE | yes | yes | `crawl_page_custody_not_installed`; no PRODUCT route or transport |
+| General Linkup Deep | mechanical support yes | premium sequential need recognized | `premium_sequential_acquisition_not_licensed` |
+| Scrutineer Deep | yes | separate existing authority | preserve existing bounded consumer |
+| PROVIDER_SYNTHESIS | disabled | no | blocked |
 
-Ordinary DISCOVER continues through ProviderPlan, retrieval scheduling, and
-dispatch. Product composition creates one boolean provider-availability
-snapshot from configured credential presence, or explicit offline-test facts,
-and supplies the same snapshot to ProviderPlan and selected-candidate READ.
-Injected callables/transports and provider preferences cannot create
-availability.
+Provider synthesis remains disabled; post-discovery acquisition does not
+create or consume provider-written answer authority.
 
-The selected-candidate source-custody path requests READ, selects Linkup Fetch
-or route-time Tavily Extract, marks the existing fetch/read cap exactly once
-immediately before transport, and feeds the bounded result to the existing
-FetchReadContentPacket and EvidenceLedger custody reducer. The Linkup rendering
-posture is explicit. Requested/attempted URL identity is retained, while
-provider-reported URL, redirect, canonical, HTTP-status, and crawl-parent facts
-remain separately labeled and absent when unreported. Tavily READ rejects a
-provider-reported result URL that does not bind to the selected candidate before
-FetchReadContentPacket or EvidenceLedger custody. The generic single-relation
-acquisition root supplies a provider-neutral `general`, `domain_targeted`, or
-other explicitly licensed qualifier and completed capability decision from
-explicit availability; the acquisition plan's provider name is not an ordinary
-override. `process_search_queries(None)` performs zero transport.
+RunKernel owns proposal admission, accepted capability decisions,
+provider-neutral work orders, route/execution/terminal authorization and
+reduction, one active operation per source obligation, deduplication,
+exhaustion, terminal receipts, and separate custody permission. Proposals are
+nonauthoritative and reject provider/transport identity and downstream
+authority. The deterministic capability evaluator imports neither provider
+names nor provider availability and does not consult Fast/Balanced/Deep mode or
+complexity.
 
-Provider failure never activates a fallback. Focused extraction, mapping,
-crawling, and general Deep remain ordinary blocked because no deterministic
-PRODUCT requester exists. General Deep requires explicit parent, acquisition,
-obligation, sequential, premium, budget, escalation, query, and result bounds;
-mode and complexity never authorize it. Scrutineer-authorized Deep remains
-unchanged. Provider synthesis remains disabled, and provider material grants no
+The work order, route, and execution bind the stable code-owned routing-policy
+revision `runkernel_post_discovery_acquisition_control_01` and its digest.
+`core.routing` chooses Linkup Fetch first for READ and Tavily Extract only as a
+route-time alternative when Linkup is unavailable before dispatch. Provider
+failure never activates a fallback. Provider preferences remain code-owned, not
+configuration-, environment-, prompt-, or user-owned.
+
+The guarded `core.authorized_acquisition_runtime` is the only PRODUCT caller of
+the low-level dispatcher. `core.acquisition_adapters` remains RunKernel-
+independent and directly usable by typed-runtime tests. Immediately before
+dispatch, the guard rechecks the exact work order, selected route, execution
+authorization, routing policy, active/unexhausted operation, and current
+AnswerContract/component/source-obligation lineage.
+
+When explicitly composed, selected-candidate READ traverses the complete
+proposal, capability, work-order, route, execution, terminal, and custody
+action chain before the existing FetchReadContentPacket and EvidenceLedger
+reducers. It marks the fetch/read cap exactly once immediately before transport
+and preserves rendering posture, selected/provider-reported URL binding, and
+unknown content-type/status facts. `RunConfig` leaves ordinary source custody
+and main-RunKernel coverage disabled by default; the default CLI exposes no
+activation. No live validation was performed.
+
+Focused Extract was not accelerated. Existing post-READ anchor hints are not an
+exact pre-acquisition producer, and no producer, new model call, ranking rule,
+or prompt redesign was invented. Map and Crawl are recognized only far enough
+to issue their durable blockers; no topology selection, candidate manufacture,
+Map-to-Read/Crawl, page-level Crawl custody, or EvidenceLedger meaning change is
+installed. Scrutineer Deep remains unchanged. Provider material grants no
 evidence, citation, obligation, Sufficiency, FAP, Author, social, or final
-authority. The full contract is owned by [Provider Capability And Acquisition
+authority. The full contracts are owned by [RunKernel Post-Discovery
+Acquisition Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) and
+[Provider Capability And Acquisition
 Routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md).
 
 ## Retired Legacy Semantic Scout And Ordinary Provider Synthesis
@@ -331,6 +347,12 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - An ordinary saved-thread conversation or follow-up product workflow.
 - Ordinary-product requesters for Focused Extract, Map, Crawl, or general
   Linkup Deep.
+- Default live CLI activation of the ordinary selected-candidate READ custody
+  or main-RunKernel coverage composition.
+- RunKernel post-discovery control of direct selective page fetches inside
+  `core.pipeline` DISCOVER execution.
+- Map topology selection, Map-to-READ/Focused re-entry, or Crawl page-level
+  custody.
 - Provider-failure cross-provider retry.
 
 ## Not Proved
@@ -339,6 +361,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Arbitrary-query decomposition and broad route qualification remain unproved.
 - No acquisition-completeness repair was performed.
 - Final-custody convergence remains unproved.
+- Focused Extract ordinary product activation remains unproved.
+- Map and Crawl PRODUCT dispatch remain unproved and uninstalled.
 - No model adapter changed and no live provider transport was exercised.
 - No S1 capability, route eligibility, budget, scheduling order, recursion, or
   parallelism expanded.
@@ -373,6 +397,8 @@ and this document does not license changes to that surface.
 - [D-prime architecture](DPRIME_ARCHITECTURE.md) owns component and synthesis D-prime role boundaries.
 - [Run-contract semantic loop](RUN_CONTRACT_SEMANTIC_LOOP.md) owns the integrated query-to-answer proposal and reduction flow.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.
+- [RunKernel post-discovery acquisition control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) owns post-discovery capability, work-order, route, execution, terminal, and custody authorization.
+- [Provider capability and acquisition routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) owns provider catalog, routing policy, mechanical operation matrix, and provider-material boundaries.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
 - [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns claim-scoped numeric projection and accepted-prose validation across active finalizers.

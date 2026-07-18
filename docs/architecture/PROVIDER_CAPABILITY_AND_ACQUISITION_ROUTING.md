@@ -3,9 +3,9 @@
 Status: current
 Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
-Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, scheduling, mechanical dispatch, and selected-candidate READ custody
+Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, RunKernel post-discovery routing, mechanical dispatch, and selected-candidate READ custody
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
+Verified-against-runtime: a06b63d68a12e69fa9060531b38e0b6745aecc9a
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -22,11 +22,21 @@ mechanical: it constructs one selected provider request, normalizes bounded
 material, or returns a typed failure/block. It does not select, substitute,
 reorder, or retry providers.
 
+For post-discovery source-obligation work, RunKernel now owns proposal
+admission, capability/work-order/route/execution/terminal state, active slots,
+deduplication, exhaustion, and separate custody authorization.
+`core.acquisition_control` derives capability from admitted provider-neutral
+facts. `core.authorized_acquisition_runtime` validates the exact current
+RunKernel authorization and is the only PRODUCT caller of the still-independent
+low-level `dispatch_acquisition()` dispatcher. The complete ownership contract
+is [RunKernel Post-Discovery Acquisition
+Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md).
+
 ProviderPlan records completed DISCOVER decisions. Retrieval scheduling and
 dispatch carry those decisions without policy. The orchestrator composes one
 boolean provider-availability snapshot from configured credential presence, or
 from explicitly injected offline-test facts, and passes that same snapshot to
-ProviderPlan and selected-candidate READ. Callables, transport objects, and
+ProviderPlan and selected-candidate READ routing. Callables, transport objects, and
 ordered provider preferences do not establish availability. Existing
 SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners retain source custody.
@@ -42,10 +52,10 @@ and consumers, not credential presence or live availability.
 | Capability | Cataloged | Adapter installed | Typed-runtime reachable | Ordinary-product enabled | Ordinary-product reachable | Ordinary-product consumed |
 | --- | --- | --- | --- | --- | --- | --- |
 | `DISCOVER` | yes | yes | yes | yes | yes | yes, through current ProviderPlan, scheduler, dispatch, continuation, supplemental, and recovery consumers |
-| `READ` | yes | yes | yes | yes | yes | yes, through selected-candidate source custody |
-| `FOCUSED_EXTRACT` | yes | yes | yes | no | no requester | no |
-| `MAP_SITE` | yes | yes | yes | no | no requester | no |
-| `CRAWL_SITE` | yes | yes | yes | no | no requester | no |
+| `READ` | yes | yes | yes | yes | yes | yes, through the explicitly composed selected-candidate RunKernel custody path; default CLI composition remains disabled |
+| `FOCUSED_EXTRACT` | yes | yes | yes | no | controller recognizes then returns `focused_extract_requester_not_installed` | no |
+| `MAP_SITE` | yes | yes | yes | no | controller recognizes then returns `map_candidate_reentry_not_installed` | no |
+| `CRAWL_SITE` | yes | yes | yes | no | controller recognizes then returns `crawl_page_custody_not_installed` | no |
 | General Linkup Deep | yes | mechanical support yes | authorized runtime only | no | no qualifying current requester | no |
 | Scrutineer Deep | yes | yes | yes | yes, behind existing remediation gates | yes | preserve existing bounded consumer |
 | `PROVIDER_SYNTHESIS` | yes, as disabled surfaces | disabled | blocked | no | no | no |
@@ -107,17 +117,28 @@ grants no social interpretation or authority.
 
 ## READ Product Consumption And Fallback
 
-The selected-candidate ordinary source-custody path is:
+The explicitly enabled selected-candidate ordinary source-custody path is:
 
 ```text
 SearchResultCandidatePacket
 -> selected candidate URL
--> completed READ route decision
+-> nonauthoritative READ need proposal
+-> RunKernel capability decision and provider-neutral work order admission
+-> RunKernel route authorization
+-> core.routing completed READ route decision
+-> RunKernel route reduction and execution authorization
+-> guarded PRODUCT acquisition executor
 -> exactly one Linkup Fetch or Tavily Extract adapter
 -> normalized bounded read artifact
+-> RunKernel execution and terminal reduction
+-> RunKernel READ custody authorization
 -> existing FetchReadContentPacket
 -> existing EvidenceLedger custody reduction
 ```
+
+The source-custody and main-RunKernel coverage flags default to false, and the
+default CLI exposes no activation for them. This is offline ordinary-path
+composition proof, not default live CLI consumption or live validation.
 
 Linkup Fetch is preferred. Tavily Extract is selected only when the explicit
 composition snapshot says Linkup is unavailable before dispatch. Injecting a
@@ -131,10 +152,12 @@ a matching provider-reported URL remains explicit through packet and
 EvidenceLedger custody. Redirect, final, and canonical fields remain separate
 observed facts and may differ when explicitly supplied.
 
-After route/request validation and transport resolution, selected-candidate
-READ marks the current `RunCapPolicy` fetch/read budget exactly once immediately
-before the provider call. `RunCapExceeded` remains the product terminal and is
-not converted into a source-custody failure. Absence of a cap policy preserves
+After the guarded executor validates current AnswerContract, component,
+source-obligation, work-order, route, active-slot, execution-authorization,
+routing-policy, and exhaustion state, selected-candidate READ marks the current
+`RunCapPolicy` fetch/read budget exactly once immediately before the provider
+call. `RunCapExceeded` is reduced through the acquisition terminal path and its
+deferred product error is then re-raised. Absence of a cap policy preserves
 uncapped ordinary behavior.
 
 Linkup Fetch carries the product's explicit `render_javascript=false` posture
@@ -150,10 +173,14 @@ obligation, Sufficiency, FinalAnswerPacket, or Author authority.
 
 ## Dormant Typed Capabilities
 
-`FOCUSED_EXTRACT`, `MAP_SITE`, and `CRAWL_SITE` require
-`typed_runtime_only=true` and exact bounded requests. Ordinary routing returns
-`capability_not_ordinary_product_enabled` because no deterministic current
-PRODUCT requester exists.
+`FOCUSED_EXTRACT`, `MAP_SITE`, and `CRAWL_SITE` remain available to low-level
+typed-runtime validation with exact bounded requests. The post-discovery
+controller now recognizes their exact material needs but blocks before PRODUCT
+routing or transport. Focused Extract returns
+`focused_extract_requester_not_installed`; no current ordinary producer binds
+exact pre-acquisition focus to current URL/contract/component/obligation facts.
+Map returns `map_candidate_reentry_not_installed`; Crawl returns
+`crawl_page_custody_not_installed`.
 
 Map output is topology only. Crawl rejects out-of-domain or out-of-path pages
 and lineage. Provider-returned page/content excess is deterministically
@@ -177,7 +204,9 @@ general Deep. A validation-only authorization must prove:
 The mechanical adapter accepts one authorized query per job. A valid record is
 typed-runtime reachable only; ordinary routing still blocks with
 `general_deep_no_ordinary_product_requester`. Scrutineer Deep remains separate
-and unchanged.
+and unchanged. The new post-discovery controller returns the earlier durable
+PRODUCT blocker `premium_sequential_acquisition_not_licensed` for a proposed
+general premium-sequential need.
 
 ## Product Roots And Residual Compatibility
 
@@ -185,7 +214,8 @@ Current PRODUCT consumers:
 
 - ordinary main, continuation, supplemental, and recovery DISCOVER work through
   ProviderPlan, scheduling, and dispatch;
-- selected-candidate READ/source custody through the ordinary pipeline; and
+- selected-candidate READ/source custody through the default-disabled ordinary
+  pipeline composition and its RunKernel acquisition-control chain; and
 - the generic single-relation acquisition root, which now supplies a completed
   `core.routing` decision from an explicit provider-neutral DISCOVER qualifier
   and availability before provider-specific callables are invoked. Ordinary
@@ -221,15 +251,26 @@ Provider synthesis remains disabled and unreachable. Fallback candidates remain 
 and never dispatch after provider failure. Every migrated PRODUCT acquisition
 operation has exactly one selected provider or blocks with zero transport.
 
+The code-owned post-discovery routing-policy ref has revision
+`runkernel_post_discovery_acquisition_control_01`, algorithm revision
+`first_reachable_code_owned_preference_v1`, and a digest over the catalog and
+preference table. Work order, route, and execution bind it. No configuration,
+environment, prompt, or user preference owns provider order.
+
 ## Next Checkpoint And Nonproofs
 
-The combined adapter/runtime repair is complete. The sole active next is
-`BOUNDED-FINAL-CUSTODY-CONVERGENCE-01`, applied only to currently product-
-consumed DISCOVER and READ artifacts. It does not manufacture consumers for
-dormant capabilities.
+The explicit maintainer sequencing override placed RunKernel post-discovery
+acquisition control before final-custody convergence. That foundation and the
+selected-candidate READ migration are complete. The sole active next is
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md),
+covering genuinely product-consumed DISCOVER/READ exact-URL paths and a real
+Focused Extract producer when proved. Map selection and Crawl page custody stay
+in their separate later checkpoints.
 
-This offline repair proves no live provider quality, availability, coverage,
+This offline Build proves no live provider quality, availability, coverage,
 currentness, latency, price, reliability, or answer improvement. It does not
 prove evidence correctness, final-custody convergence, social authority,
 Sufficiency, FinalAnswerPacket, Author behavior, or complete-app correctness.
-No live provider, model, search, fetch, map, crawl, or retrieval call was made.
+It also does not claim the direct selective page-fetch lane inside
+`core.pipeline` is governed by the post-discovery controller. No live provider,
+model, search, fetch, map, crawl, or retrieval call was made.

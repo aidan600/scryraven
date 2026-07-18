@@ -1,10 +1,9 @@
 """Default-off ordinary run_pipeline source-custody integration.
 
 This helper consumes the in-memory ``SearchResultCandidatePacket`` produced by
-the ordinary candidate handoff repair, requests typed ``READ`` routing,
-dispatches one selected adapter, builds the existing fetch/read content packet,
-and reduces candidate/content custody through the existing EvidenceLedger
-reducer.
+the ordinary candidate handoff repair, traverses RunKernel's post-discovery
+acquisition-control chain, builds the existing fetch/read content packet, and
+reduces candidate/content custody through the existing EvidenceLedger reducer.
 """
 
 from __future__ import annotations
@@ -12,8 +11,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
-from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
-from core.acquisition_contracts import AcquisitionArtifact, AcquisitionRequest
+from core.acquisition_adapters import AcquisitionTransports
+from core.acquisition_contracts import AcquisitionArtifact
+from core.acquisition_control import (
+    AcquisitionCapabilityDecisionObservationV1,
+    AcquisitionNeedProposalV1,
+    AcquisitionRouteObservationV1,
+    AcquisitionTerminalReceiptV1,
+    AcquisitionWorkOrderV1,
+    build_selected_candidate_read_proposal,
+    current_receipt_refs,
+)
+from core.authorized_acquisition_runtime import (
+    execute_acquisition_capability_decision_action,
+    execute_acquisition_custody_authorization_action,
+    execute_acquisition_route_action,
+    execute_acquisition_terminal_reduction_action,
+    execute_acquisition_work_order_admission_action,
+    execute_authorized_acquisition_work_order,
+)
 from core.cap_enforcement import RunCapExceeded, RunCapPolicy
 from core.evidence_ledger_lifecycle import (
     reduce_fetch_read_content_packet_into_evidence_ledger,
@@ -25,11 +41,6 @@ from core.fetch_read_content_reference import (
     fetch_read_content_packet_ref_from_packet,
     select_bounded_answer_bearing_text,
     validate_fetch_read_content_packet,
-)
-from core.routing import (
-    AcquisitionCapability,
-    ProviderCapabilityRequest,
-    route_provider_capability,
 )
 from core.run_kernel import RunKernel, RunKernelTransitionError
 from core.search_result_candidate_packet import (
@@ -318,23 +329,93 @@ def execute_ordinary_live_source_custody(
         availability = _read_availability(
             available_providers=available_providers,
         )
-        route_decision = route_provider_capability(
-            ProviderCapabilityRequest(capability=AcquisitionCapability.READ),
-            availability,
-        )
-        request = AcquisitionRequest(
-            acquisition_job_id=(
-                f"{packet['run_id']}:read:{selected_candidate['candidate_id']}"
+        authority_snapshot = run_kernel.acquisition_authority_snapshot()
+        proposal = build_selected_candidate_read_proposal(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            candidate_packet=packet,
+            selected_candidate=selected_candidate,
+            authority_snapshot=authority_snapshot,
+            prior_receipt_refs=current_receipt_refs(
+                run_kernel.state.acquisition_control_state
             ),
-            parent_acquisition_job_id=str(packet.get("packet_id") or ""),
-            route_decision=route_decision,
-            selected_urls=(str(selected_candidate["url"]),),
-            max_retained_characters=20_000,
-            candidate_reference=str(selected_candidate["candidate_id"]),
-            render_javascript=False,
         )
-        execution = dispatch_acquisition(
-            request,
+        capability_action = run_kernel.authorize_acquisition_capability_decision(
+            proposal=proposal
+        )
+        capability_result = execute_acquisition_capability_decision_action(
+            capability_action,
+            proposal=proposal,
+            authority_snapshot=authority_snapshot,
+            acquisition_control_state=(
+                run_kernel.state.acquisition_control_state
+            ),
+        )
+        run_kernel.reduce(capability_result.observation)
+        decision = capability_result.decision
+        if decision.decision_status != "accepted":
+            _reduce_blocked_acquisition_decision(
+                run_kernel=run_kernel,
+                proposal=proposal,
+                decision=decision,
+            )
+            raise OrdinaryLiveSourceCustodyError(
+                decision.block_code or "acquisition_capability_blocked",
+                "RunKernel blocked the post-discovery acquisition capability",
+            )
+
+        work_order_action = (
+            run_kernel.authorize_acquisition_work_order_admission(
+                capability_decision_ref=decision.ref()
+            )
+        )
+        work_order_result = execute_acquisition_work_order_admission_action(
+            work_order_action,
+            proposal=proposal,
+            decision=decision,
+            acquisition_control_state=(
+                run_kernel.state.acquisition_control_state
+            ),
+        )
+        run_kernel.reduce(work_order_result.observation)
+        work_order = work_order_result.work_order
+
+        route_action = run_kernel.authorize_acquisition_route(
+            work_order_ref=work_order.ref(),
+            provider_availability=availability,
+        )
+        route_result = execute_acquisition_route_action(
+            route_action,
+            work_order=work_order,
+            available_providers=availability,
+            acquisition_control_state=(
+                run_kernel.state.acquisition_control_state
+            ),
+        )
+        run_kernel.reduce(route_result.observation)
+        route_decision = route_result.route_decision
+        route_observation = route_result.route_observation
+        if route_observation.terminal_status != "selected":
+            _reduce_blocked_acquisition_route(
+                run_kernel=run_kernel,
+                work_order=work_order,
+                route_observation=route_observation,
+            )
+            raise OrdinaryLiveSourceCustodyError(
+                route_observation.block_code or "acquisition_route_blocked",
+                "core.routing returned a blocked acquisition route",
+            )
+
+        execution_action = run_kernel.authorize_acquisition_execution(
+            work_order_ref=work_order.ref(),
+            route_observation_ref=route_observation.ref(),
+        )
+        execution_result = execute_authorized_acquisition_work_order(
+            execution_action,
+            run_kernel=run_kernel,
+            work_order=work_order,
+            route_observation=route_observation,
+            route_decision=route_decision,
             transports=transports,
             before_transport=(
                 cap_policy.mark_fetch_read_operation
@@ -342,13 +423,47 @@ def execute_ordinary_live_source_custody(
                 else None
             ),
         )
+        run_kernel.reduce(execution_result.observation)
+        execution_observation = execution_result.execution_observation
+        execution = execution_result.execution_result
         fetch_read_attempted = execution.provider_calls_attempted
         fetch_read_completed = execution.provider_calls_completed
+
+        terminal_action = run_kernel.authorize_acquisition_terminal_reduction(
+            execution_observation_ref=execution_observation.ref()
+        )
+        terminal_result = execute_acquisition_terminal_reduction_action(
+            terminal_action,
+            acquisition_control_state=(
+                run_kernel.state.acquisition_control_state
+            ),
+            work_order=work_order,
+            route_observation=route_observation,
+            execution_observation=execution_observation,
+        )
+        run_kernel.reduce(terminal_result.observation)
+        terminal_receipt = terminal_result.terminal_receipt
+        execution_result.raise_deferred_error()
         if not execution.succeeded or len(execution.artifacts) != 1:
             raise OrdinaryLiveSourceCustodyError(
                 _read_failure_seam(execution.failure_code or execution.block_code),
                 execution.detail or "typed READ acquisition failed closed",
             )
+        custody_action = run_kernel.authorize_acquisition_custody_consumption(
+            terminal_receipt_ref=terminal_receipt.ref()
+        )
+        custody_result = execute_acquisition_custody_authorization_action(
+            custody_action,
+            work_order=work_order,
+            route_observation=route_observation,
+            terminal_receipt=terminal_receipt,
+            custody_consumer="core.ordinary_live_source_custody_runtime",
+            acquisition_control_state=(
+                run_kernel.state.acquisition_control_state
+            ),
+        )
+        run_kernel.reduce(custody_result.observation)
+        custody_authorization = custody_result.custody_authorization
         artifact = execution.artifacts[0]
         raw_fetch_read = _read_artifact_for_existing_custody(artifact)
         material, bounded_selection = _sanitized_material_from_fetch_read(
@@ -357,6 +472,9 @@ def execute_ordinary_live_source_custody(
             required_or_preferred_anchors=required_or_preferred_anchors,
             component_text=component_text,
             claim_under_test=claim_under_test,
+        )
+        run_kernel.require_current_acquisition_custody_authorization(
+            custody_authorization.ref()
         )
         fetch_read_packet = validate_fetch_read_content_packet(
             build_fetch_read_content_packet_from_candidate_packet(
@@ -387,6 +505,22 @@ def execute_ordinary_live_source_custody(
                 "source_authority_source": "SearchResultCandidatePacket",
                 "read_route_decision": route_decision.to_trace(),
                 "read_acquisition_job": execution.to_trace(),
+                "acquisition_need_proposal_ref": proposal.ref(),
+                "acquisition_capability_decision_ref": decision.ref(),
+                "acquisition_work_order_ref": work_order.ref(),
+                "acquisition_route_observation_ref": route_observation.ref(),
+                "acquisition_execution_observation_ref": (
+                    execution_observation.ref()
+                ),
+                "acquisition_terminal_receipt_ref": terminal_receipt.ref(),
+                "acquisition_custody_authorization_ref": (
+                    custody_authorization.ref()
+                ),
+                "acquisition_control_owner": "RunKernel",
+                "acquisition_provider_selection_owner": "core.routing",
+                "acquisition_mechanical_adapter_owner": (
+                    "core.acquisition_adapters"
+                ),
                 "read_selected_provider": route_decision.selected_provider,
                 "read_selected_operation": route_decision.operation,
                 "read_selected_variant": route_decision.variant,
@@ -478,6 +612,51 @@ def execute_ordinary_live_source_custody(
                 run_kernel=run_kernel,
             )
         )
+
+
+def _reduce_blocked_acquisition_decision(
+    *,
+    run_kernel: RunKernel,
+    proposal: AcquisitionNeedProposalV1,
+    decision: AcquisitionCapabilityDecisionObservationV1,
+) -> AcquisitionTerminalReceiptV1 | None:
+    if decision.block_code not in {
+        "focused_extract_requester_not_installed",
+        "map_candidate_reentry_not_installed",
+        "crawl_page_custody_not_installed",
+        "premium_sequential_acquisition_not_licensed",
+    }:
+        return None
+    action = run_kernel.authorize_acquisition_terminal_reduction(
+        capability_decision_ref=decision.ref()
+    )
+    result = execute_acquisition_terminal_reduction_action(
+        action,
+        acquisition_control_state=run_kernel.state.acquisition_control_state,
+        proposal=proposal,
+        decision=decision,
+    )
+    run_kernel.reduce(result.observation)
+    return result.terminal_receipt
+
+
+def _reduce_blocked_acquisition_route(
+    *,
+    run_kernel: RunKernel,
+    work_order: AcquisitionWorkOrderV1,
+    route_observation: AcquisitionRouteObservationV1,
+) -> AcquisitionTerminalReceiptV1:
+    action = run_kernel.authorize_acquisition_terminal_reduction(
+        route_observation_ref=route_observation.ref()
+    )
+    result = execute_acquisition_terminal_reduction_action(
+        action,
+        acquisition_control_state=run_kernel.state.acquisition_control_state,
+        work_order=work_order,
+        route_observation=route_observation,
+    )
+    run_kernel.reduce(result.observation)
+    return result.terminal_receipt
 
 
 def _source_custody_transports(

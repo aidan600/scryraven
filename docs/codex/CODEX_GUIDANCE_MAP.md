@@ -61,6 +61,7 @@ completed-phase chronology into phase briefs.
 | D-prime role and authority (`canonical:dprime-role-contract`) | [D-prime Architecture](../architecture/DPRIME_ARCHITECTURE.md) |
 | Integrated query-to-answer semantic loop (`canonical:run-contract-semantic-loop`) | [Run-Contract Semantic Loop](../architecture/RUN_CONTRACT_SEMANTIC_LOOP.md) |
 | Component DAG, scheduling, leases, and concurrency (`canonical:component-dag-scheduling-concurrency`) | [RunKernel Component DAG, Scheduling, And Concurrency](../architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) |
+| Post-discovery source-obligation acquisition control (`canonical:runkernel-post-discovery-acquisition-control`) | [RunKernel Post-Discovery Acquisition Control](../architecture/RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) |
 | FAP packaging, Author rendering, and blocked terminal (`canonical:fap-author-boundary`) | [FinalAnswerPacket / Author Boundary](../architecture/FAP_AUTHOR_BOUNDARY.md) |
 | Claim-scoped numeric projection and accepted-prose containment (`canonical:quantitative-finalization-containment`) | [Quantitative Finalization Containment](../architecture/AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) |
 | Installed bounded ordinary multi-component runtime (`canonical:bounded-multicomponent-runtime`) | [Multi-Component Synthesis Runtime Architecture](../architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) |

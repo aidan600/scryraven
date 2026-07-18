@@ -24,6 +24,7 @@ CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
 CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
+ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
 ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
@@ -78,7 +79,10 @@ SCOUT_RETIREMENT_RUNTIME_SHA = (
 PROVIDER_ROUTING_RUNTIME_SHA = (
     "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
 )
-CURRENT_STATE_RUNTIME_SHA = PROVIDER_ROUTING_RUNTIME_SHA
+ACQUISITION_CONTROL_RUNTIME_SHA = (
+    "a06b63d68a12e69fa9060531b38e0b6745aecc9a"  # pragma: allowlist secret
+)
+CURRENT_STATE_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 SPECIALIST_ADMISSION_RUNTIME_SHA = (
     "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
@@ -335,7 +339,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
+            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
 
@@ -407,7 +411,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
+            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "No live recovery" in roadmap
@@ -423,7 +427,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
     for phrase in (
         "Status: current",
         "Default-read: yes",
-        f"Verified-against-runtime: {PROVIDER_ROUTING_RUNTIME_SHA}",
+        f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_SHA}",
         "`core.routing` is the sole provider-capability policy owner",
         "exactly one selected provider or blocks with zero transport",
         "Fallback candidates remain descriptive",
@@ -439,7 +443,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
         "Tavily Extract",
         "Tavily Map",
         "Tavily Crawl",
-        "`BOUNDED-FINAL-CUSTODY-CONVERGENCE-01`",
+        "`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`",
         "social interpretation",
         "No live provider, model, search, fetch, map, crawl, or retrieval call",
     ):
@@ -464,8 +468,16 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
 
-    for text in (routing, census, current, roadmap):
-        assert PROVIDER_ROUTING_RUNTIME_SHA in text
+    assert PROVIDER_ROUTING_RUNTIME_SHA in census
+    for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING, CURRENT_STATE, ROADMAP):
+        assert (
+            f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_SHA}"
+            in _read(owner)
+        )
+    assert (
+        f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`"
+        in _read(ROADMAP)
+    )
 
     for text in (routing, census, current):
         for phrase in (
@@ -485,10 +497,10 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
         assert "provider synthesis remains disabled" in text.casefold()
 
     for phrase in (
-        "FOCUSED_EXTRACT | yes | yes | no",
-        "MAP_SITE | yes | yes | no",
-        "CRAWL_SITE | yes | yes | no",
-        "General Linkup Deep | mechanical support yes | authorized runtime only",
+        "FOCUSED_EXTRACT | yes | yes | `focused_extract_requester_not_installed`",
+        "MAP_SITE | yes | yes | `map_candidate_reentry_not_installed`",
+        "CRAWL_SITE | yes | yes | `crawl_page_custody_not_installed`",
+        "General Linkup Deep | mechanical support yes | premium sequential need recognized",
     ):
         assert phrase in current
 
@@ -510,7 +522,10 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert "RunCapExceeded" in routing
 
     assert roadmap.count("## Active Next:") == 1
-    assert "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01" in roadmap
+    assert (
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+        in roadmap
+    )
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -603,7 +618,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 1
     assert (
-        "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
+            "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
@@ -655,7 +670,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01"
     )
     convergence = roadmap.index(
-        "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
     )
     live = roadmap.index("### Separately Licensed Comparative Live Validation")
 
@@ -750,7 +765,8 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
         in roadmap
     )
     assert (
-        "## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01" in roadmap
+            "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+            in roadmap
     )
     assert (
         "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
@@ -758,7 +774,9 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     )
     assert roadmap.index(
         "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
-    ) < roadmap.index("## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01")
+    ) < roadmap.index(
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+    )
     for noninstalled in (
         "provider-failure retry",
         "general Linkup Deep",
@@ -796,7 +814,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-        "Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01"
+            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert "answer-producing paths" in roadmap

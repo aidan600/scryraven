@@ -16,6 +16,25 @@ from hashlib import sha256
 from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
+from core.acquisition_control import (
+    AcquisitionCapabilityDecisionObservationV1,
+    AcquisitionControlError,
+    AcquisitionCustodyAuthorizationV1,
+    AcquisitionExecutionObservationV1,
+    AcquisitionNeedProposalV1,
+    AcquisitionRouteObservationV1,
+    AcquisitionTerminalReceiptV1,
+    AcquisitionWorkOrderV1,
+    build_acquisition_authority_snapshot,
+    build_acquisition_work_order,
+    build_terminal_receipt_from_decision,
+    build_terminal_receipt_from_execution,
+    build_terminal_receipt_from_route,
+    build_terminal_receipt_from_work_order_invalidation,
+    derive_acquisition_capability_decision,
+    ensure_acquisition_control_state,
+    stable_json_digest,
+)
 from core.author_prose_finalization_runtime import (
     AUTHOR_PROSE_FINALIZATION_REASON,
     AuthorProseFinalizationRuntimeError,
@@ -439,6 +458,14 @@ from core.live_search_validation_runtime import (
 from core.live_search_validation_runtime import (
     handoff_ref_from_handoff_state as _live_validation_handoff_ref_from_handoff_state,
 )
+from core.routing import (
+    PROVIDER_NAMES,
+    AcquisitionCapability,
+    ProviderAvailability,
+    ProviderCapabilityRequest,
+    acquisition_routing_policy_ref,
+    route_provider_capability,
+)
 from core.scout_disambiguation_runtime import (
     SCOUT_DISAMBIGUATION_REASON,
     SCOUT_DISAMBIGUATION_SCHEMA_VERSION,
@@ -547,6 +574,12 @@ from core.sufficiency_readiness_runtime import (
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
 ROUTE_REQUEST_STAGE = "route_request"
+ACQUISITION_CAPABILITY_DECISION_STAGE = "acquisition_capability_decision"
+ACQUISITION_WORK_ORDER_ADMISSION_STAGE = "acquisition_work_order_admission"
+ACQUISITION_ROUTE_STAGE = "acquisition_route"
+ACQUISITION_EXECUTION_STAGE = "acquisition_execution"
+ACQUISITION_TERMINAL_REDUCTION_STAGE = "acquisition_terminal_reduction"
+ACQUISITION_CUSTODY_CONSUMPTION_STAGE = "acquisition_custody_consumption"
 QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 RUN_CONTRACT_STAGE = "run_contract"
@@ -722,6 +755,12 @@ class ActionType(str, Enum):
     """Bounded action vocabulary authorized by RunKernel."""
 
     ROUTE_REQUEST = "route_request"
+    ACQUISITION_CAPABILITY_DECIDE = "acquisition_capability_decide"
+    ACQUISITION_WORK_ORDER_ADMIT = "acquisition_work_order_admit"
+    ACQUISITION_ROUTE = "acquisition_route"
+    ACQUISITION_EXECUTE = "acquisition_execute"
+    ACQUISITION_TERMINAL_REDUCE = "acquisition_terminal_reduce"
+    ACQUISITION_CUSTODY_CONSUME = "acquisition_custody_consume"
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
     SEARCH_PLANNER_PRODUCE = "search_planner_produce"
     SCOUT_DISAMBIGUATE = "scout_disambiguate"
@@ -851,6 +890,12 @@ class ObservationType(str, Enum):
     """Observation vocabulary returned by bounded executors/adapters."""
 
     ROUTE_RESULT = "route_result"
+    ACQUISITION_CAPABILITY_DECIDED = "acquisition_capability_decided"
+    ACQUISITION_WORK_ORDER_ADMITTED = "acquisition_work_order_admitted"
+    ACQUISITION_ROUTE_COMPLETED = "acquisition_route_completed"
+    ACQUISITION_EXECUTION_OBSERVED = "acquisition_execution_observed"
+    ACQUISITION_TERMINAL_REDUCED = "acquisition_terminal_reduced"
+    ACQUISITION_CUSTODY_AUTHORIZED = "acquisition_custody_authorized"
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
     SEARCH_PLANNER_PRODUCED = "search_planner_produced"
     SCOUT_DISAMBIGUATION_REPORTED = "scout_disambiguation_reported"
@@ -1028,7 +1073,9 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
     return text[:limit]
 
 
-def _json_safe(value: Any, *, depth: int = 0) -> Any:
+def _json_safe(
+    value: Any, *, depth: int = 0, string_limit: int = 800
+) -> Any:
     if depth > 8:
         return "[redacted]"
     if value is None or isinstance(value, (bool, int, float)):
@@ -1036,7 +1083,7 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, str):
-        return _clean_text(value, limit=800)
+        return _clean_text(value, limit=string_limit)
     if isinstance(value, Mapping):
         out: dict[str, Any] = {}
         for key, item in value.items():
@@ -1046,18 +1093,36 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
             if key_text.casefold() in _SENSITIVE_KEYS:
                 out[key_text] = "[redacted]"
             else:
-                out[key_text] = _json_safe(item, depth=depth + 1)
+                out[key_text] = _json_safe(
+                    item,
+                    depth=depth + 1,
+                    string_limit=string_limit,
+                )
         return out
     if isinstance(value, (list, tuple, set, frozenset)):
         ordered = list(value)
         if isinstance(value, (set, frozenset)):
             ordered = sorted(ordered, key=str)
-        return [_json_safe(item, depth=depth + 1) for item in ordered[:80]]
+        return [
+            _json_safe(
+                item,
+                depth=depth + 1,
+                string_limit=string_limit,
+            )
+            for item in ordered[:80]
+        ]
     return _clean_text(value, limit=300)
 
 
 def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}))
+    return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _acquisition_safe_mapping(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    safe = _json_safe(dict(value or {}), string_limit=2_000)
     return dict(safe) if isinstance(safe, Mapping) else {}
 
 
@@ -1134,7 +1199,15 @@ class AuthorizedAction:
             "expected_observation_type",
             ObservationType(self.expected_observation_type),
         )
-        object.__setattr__(self, "inputs", _safe_mapping(self.inputs))
+        object.__setattr__(
+            self,
+            "inputs",
+            (
+                _acquisition_safe_mapping(self.inputs)
+                if self.action_type.value.startswith("acquisition_")
+                else _safe_mapping(self.inputs)
+            ),
+        )
 
     def validate(
         self,
@@ -1169,7 +1242,11 @@ class AuthorizedAction:
             "stage": self.stage,
             "action_type": self.action_type.value,
             "reason": self.reason,
-            "inputs": _safe_mapping(self.inputs),
+            "inputs": (
+                _acquisition_safe_mapping(self.inputs)
+                if self.action_type.value.startswith("acquisition_")
+                else _safe_mapping(self.inputs)
+            ),
             "expected_observation_type": self.expected_observation_type.value,
             "sequence": self.sequence,
         }
@@ -1201,7 +1278,11 @@ class Observation:
             raise ValueError("observation sequence must be positive")
         object.__setattr__(self, "observation_type", ObservationType(self.observation_type))
         object.__setattr__(self, "status", RunStageStatus(self.status))
-        payload = _safe_mapping(self.payload)
+        payload = (
+            _acquisition_safe_mapping(self.payload)
+            if self.observation_type.value.startswith("acquisition_")
+            else _safe_mapping(self.payload)
+        )
         if (
             self.observation_type is ObservationType.SEARCH_PLANNER_REVISED
             and isinstance(self.payload, Mapping)
@@ -1259,7 +1340,11 @@ class Observation:
             "stage": self.stage,
             "observation_type": self.observation_type.value,
             "status": self.status.value,
-            "payload": _safe_mapping(self.payload),
+            "payload": (
+                _acquisition_safe_mapping(self.payload)
+                if self.observation_type.value.startswith("acquisition_")
+                else _safe_mapping(self.payload)
+            ),
             "sequence": self.sequence,
         }
 
@@ -1306,6 +1391,7 @@ class RunState:
     search_executor_handoff_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    acquisition_control_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1690,6 +1776,7 @@ class RunState:
             search_executor_handoff_history=deepcopy(
                 self.search_executor_handoff_history
             ),
+            acquisition_control_state=deepcopy(self.acquisition_control_state),
             live_search_validation_state=deepcopy(
                 self.live_search_validation_state
             ),
@@ -2067,6 +2154,7 @@ class KernelTraceProjection:
     search_executor_handoff_state: Mapping[str, Any]
     search_executor_handoff_projection: Mapping[str, Any]
     search_executor_handoff_history: Sequence[Mapping[str, Any]]
+    acquisition_control_state: Mapping[str, Any]
     live_search_validation_state: Mapping[str, Any]
     live_search_validation_projection: Mapping[str, Any]
     live_search_validation_history: Sequence[Mapping[str, Any]]
@@ -2258,6 +2346,9 @@ class KernelTraceProjection:
                 _safe_mapping(item)
                 for item in self.search_executor_handoff_history
             ],
+            "acquisition_control_state": _safe_mapping(
+                self.acquisition_control_state
+            ),
             "live_search_validation_state": _safe_mapping(
                 self.live_search_validation_state
             ),
@@ -2730,6 +2821,664 @@ class RunKernel:
             inputs=inputs,
             expected_observation_type=ObservationType.ROUTE_RESULT,
         )
+
+    def acquisition_authority_snapshot(self) -> dict[str, Any]:
+        """Return the exact current pre-acquisition lineage snapshot."""
+
+        try:
+            return build_acquisition_authority_snapshot(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                current_answer_contract=self.state.current_answer_contract,
+                search_executor_handoff_state=(
+                    self.state.search_executor_handoff_state
+                ),
+            )
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+
+    def _acquisition_control(self) -> dict[str, Any]:
+        try:
+            control = ensure_acquisition_control_state(
+                self.state.acquisition_control_state,
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+            )
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.acquisition_control_state = control
+        return control
+
+    def authorize_acquisition_capability_decision(
+        self,
+        *,
+        proposal: AcquisitionNeedProposalV1 | Mapping[str, Any],
+        reason: str = "runkernel_post_discovery_capability_decision",
+    ) -> AuthorizedAction:
+        try:
+            admitted = (
+                proposal
+                if isinstance(proposal, AcquisitionNeedProposalV1)
+                else AcquisitionNeedProposalV1.from_dict(proposal)
+            )
+            if admitted.run_id != self.state.run_id:
+                raise AcquisitionControlError("proposal_run_id_mismatch")
+            if admitted.request_id != self.state.request_id:
+                raise AcquisitionControlError("proposal_request_id_mismatch")
+            snapshot = self.acquisition_authority_snapshot()
+            control = self._acquisition_control()
+            proposals = control["proposals_by_id"]
+            existing = proposals.get(admitted.proposal_id)
+            if existing and existing != admitted.to_dict():
+                raise AcquisitionControlError("proposal_identity_collision")
+            proposals[admitted.proposal_id] = admitted.to_dict()
+            control["event_history"].append(
+                {
+                    "event": "proposal_admitted",
+                    "proposal_ref": admitted.ref(),
+                    "source_obligation_id": admitted.source_obligation_ref.get(
+                        "source_obligation_id"
+                    ),
+                }
+            )
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=ACQUISITION_CAPABILITY_DECISION_STAGE,
+            action_type=ActionType.ACQUISITION_CAPABILITY_DECIDE,
+            reason=reason,
+            inputs={
+                "proposal": admitted.to_dict(),
+                "authority_snapshot": snapshot,
+                "acquisition_control_state_digest": stable_json_digest(control),
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_CAPABILITY_DECIDED
+            ),
+        )
+
+    def authorize_acquisition_work_order_admission(
+        self,
+        *,
+        capability_decision_ref: Mapping[str, Any],
+        reason: str = "runkernel_provider_neutral_work_order_admission",
+    ) -> AuthorizedAction:
+        control = self._acquisition_control()
+        decision_id = _clean_text(
+            capability_decision_ref.get("decision_id"), limit=400
+        )
+        decision_payload = _safe_mapping(
+            control["capability_decisions_by_id"].get(decision_id)
+        )
+        if not decision_payload:
+            raise RunKernelTransitionError("capability decision is not canonical")
+        try:
+            decision = AcquisitionCapabilityDecisionObservationV1.from_dict(
+                decision_payload
+            )
+            if decision.ref() != dict(capability_decision_ref):
+                raise AcquisitionControlError("capability_decision_ref_mismatch")
+            proposal_id = decision.proposal_ref.get("proposal_id")
+            proposal = AcquisitionNeedProposalV1.from_dict(
+                control["proposals_by_id"].get(proposal_id, {})
+            )
+            current_decision = derive_acquisition_capability_decision(
+                proposal=proposal,
+                authority_snapshot=self.acquisition_authority_snapshot(),
+                acquisition_control_state=control,
+            )
+            if current_decision.to_dict() != decision.to_dict():
+                raise AcquisitionControlError("capability_decision_is_stale")
+            if decision.decision_status != "accepted":
+                raise AcquisitionControlError(
+                    "blocked_decision_cannot_create_work_order"
+                )
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=ACQUISITION_WORK_ORDER_ADMISSION_STAGE,
+            action_type=ActionType.ACQUISITION_WORK_ORDER_ADMIT,
+            reason=reason,
+            inputs={
+                "proposal_ref": proposal.ref(),
+                "capability_decision_ref": decision.ref(),
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_WORK_ORDER_ADMITTED
+            ),
+        )
+
+    def authorize_acquisition_route(
+        self,
+        *,
+        work_order_ref: Mapping[str, Any],
+        provider_availability: Mapping[str, Any],
+        reason: str = "runkernel_acquisition_route_authorization",
+    ) -> AuthorizedAction:
+        control = self._acquisition_control()
+        work_order_id = _clean_text(
+            work_order_ref.get("work_order_id"), limit=400
+        )
+        try:
+            work_order = AcquisitionWorkOrderV1.from_dict(
+                control["work_orders_by_id"].get(work_order_id, {})
+            )
+            if work_order.ref() != dict(work_order_ref):
+                raise AcquisitionControlError("work_order_ref_mismatch")
+            self._validate_current_acquisition_work_order(
+                work_order=work_order,
+                control=control,
+            )
+            availability = ProviderAvailability.from_boolean_mapping(
+                provider_availability
+            ).to_mapping()
+            availability_core = {
+                "schema_version": "provider_availability_snapshot_v1",
+                "provider_availability": availability,
+                "provider_names": list(PROVIDER_NAMES),
+                "boolean_only": True,
+            }
+            availability_digest = stable_json_digest(availability_core)
+            availability_ref = {
+                "availability_snapshot_id": (
+                    f"provider-availability:{work_order.work_order_id}:"
+                    f"{availability_digest[:20]}"
+                ),
+                "availability_snapshot_digest": availability_digest,
+            }
+        except (AcquisitionControlError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=ACQUISITION_ROUTE_STAGE,
+            action_type=ActionType.ACQUISITION_ROUTE,
+            reason=reason,
+            inputs={
+                "work_order_ref": work_order.ref(),
+                "routing_policy_ref": acquisition_routing_policy_ref(),
+                "availability_snapshot": availability,
+                "availability_snapshot_ref": availability_ref,
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_ROUTE_COMPLETED
+            ),
+        )
+
+    def authorize_acquisition_execution(
+        self,
+        *,
+        work_order_ref: Mapping[str, Any],
+        route_observation_ref: Mapping[str, Any],
+        reason: str = "runkernel_guarded_acquisition_execution",
+    ) -> AuthorizedAction:
+        control = self._acquisition_control()
+        work_order_id = _clean_text(
+            work_order_ref.get("work_order_id"), limit=400
+        )
+        route_id = _clean_text(
+            route_observation_ref.get("route_observation_id"), limit=400
+        )
+        try:
+            work_order = AcquisitionWorkOrderV1.from_dict(
+                control["work_orders_by_id"].get(work_order_id, {})
+            )
+            route = AcquisitionRouteObservationV1.from_dict(
+                control["routes_by_id"].get(route_id, {})
+            )
+            if work_order.ref() != dict(work_order_ref):
+                raise AcquisitionControlError("work_order_ref_mismatch")
+            if route.ref() != dict(route_observation_ref):
+                raise AcquisitionControlError("route_observation_ref_mismatch")
+            if route.work_order_ref != work_order.ref():
+                raise AcquisitionControlError("route_work_order_ref_mismatch")
+            if route.terminal_status != "selected":
+                raise AcquisitionControlError("blocked_route_cannot_execute")
+            if route.routing_policy_ref != acquisition_routing_policy_ref():
+                raise AcquisitionControlError("routing_policy_is_stale")
+            self._validate_current_acquisition_work_order(
+                work_order=work_order,
+                control=control,
+            )
+            for existing_authorization in control[
+                "execution_authorizations_by_id"
+            ].values():
+                if (
+                    isinstance(existing_authorization, Mapping)
+                    and _safe_mapping(
+                        existing_authorization.get("work_order_ref")
+                    )
+                    == work_order.ref()
+                    and existing_authorization.get("claim_status")
+                    in {
+                        "authorized",
+                        "claimed_before_transport",
+                        "observation_reduced",
+                    }
+                ):
+                    raise AcquisitionControlError(
+                        "execution_authorization_already_active"
+                    )
+            authority_snapshot = self.acquisition_authority_snapshot()
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        predicted_authorization_ref = {
+            "action_id": (
+                f"{self.state.run_id}:action:{self.state.next_action_sequence}:"
+                f"{ActionType.ACQUISITION_EXECUTE.value}"
+            ),
+            "action_type": ActionType.ACQUISITION_EXECUTE.value,
+            "stage": ACQUISITION_EXECUTION_STAGE,
+            "sequence": self.state.next_action_sequence,
+        }
+        action = self.authorize(
+            stage=ACQUISITION_EXECUTION_STAGE,
+            action_type=ActionType.ACQUISITION_EXECUTE,
+            reason=reason,
+            inputs={
+                "work_order_ref": work_order.ref(),
+                "route_observation_ref": route.ref(),
+                "routing_policy_ref": acquisition_routing_policy_ref(),
+                "execution_authorization_ref": predicted_authorization_ref,
+                "authority_snapshot_digest": authority_snapshot.get(
+                    "snapshot_digest"
+                ),
+                "answer_contract_ref": work_order.answer_contract_ref,
+                "component_ref": work_order.component_ref,
+                "source_obligation_ref": work_order.source_obligation_ref,
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_EXECUTION_OBSERVED
+            ),
+        )
+        authorization_ref = _acquisition_action_ref(action)
+        control["execution_authorizations_by_id"][action.action_id] = {
+            **authorization_ref,
+            "work_order_ref": work_order.ref(),
+            "route_observation_ref": route.ref(),
+            "routing_policy_ref": acquisition_routing_policy_ref(),
+            "claim_status": "authorized",
+            "transport_claimed": False,
+        }
+        return action
+
+    def claim_acquisition_execution(
+        self,
+        *,
+        action: AuthorizedAction,
+        work_order_ref: Mapping[str, Any],
+        route_observation_ref: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically consume one RunKernel-owned transport authorization."""
+
+        control = self._acquisition_control()
+        canonical_action = self.state.issued_actions.get(action.action_id)
+        if canonical_action != action:
+            raise RunKernelTransitionError(
+                "execution action is not canonical"
+            )
+        if (
+            action.action_id in self.state.reduced_action_ids
+            or self.state.action_statuses.get(action.action_id)
+            is not RunStageStatus.AUTHORIZED
+        ):
+            raise RunKernelTransitionError(
+                "execution action is not currently authorized"
+            )
+        authorization = control["execution_authorizations_by_id"].get(
+            action.action_id
+        )
+        if not isinstance(authorization, dict):
+            raise RunKernelTransitionError(
+                "execution authorization is not canonical"
+            )
+        try:
+            work_order = AcquisitionWorkOrderV1.from_dict(
+                control["work_orders_by_id"].get(
+                    work_order_ref.get("work_order_id"), {}
+                )
+            )
+            route = AcquisitionRouteObservationV1.from_dict(
+                control["routes_by_id"].get(
+                    route_observation_ref.get("route_observation_id"), {}
+                )
+            )
+            if work_order.ref() != dict(work_order_ref):
+                raise AcquisitionControlError("work_order_ref_mismatch")
+            if route.ref() != dict(route_observation_ref):
+                raise AcquisitionControlError(
+                    "route_observation_ref_mismatch"
+                )
+            if (
+                authorization.get("work_order_ref") != work_order.ref()
+                or authorization.get("route_observation_ref")
+                != route.ref()
+            ):
+                raise AcquisitionControlError(
+                    "execution_authorization_binding_mismatch"
+                )
+            if (
+                authorization.get("claim_status") != "authorized"
+                or authorization.get("transport_claimed") is not False
+            ):
+                raise AcquisitionControlError(
+                    "execution_authorization_already_claimed"
+                )
+            self._validate_current_acquisition_work_order(
+                work_order=work_order,
+                control=control,
+            )
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        authorization["claim_status"] = "claimed_before_transport"
+        authorization["transport_claimed"] = True
+        control["event_history"].append(
+            {
+                "event": "execution_authorization_claimed",
+                "execution_authorization_ref": _acquisition_action_ref(
+                    action
+                ),
+                "work_order_ref": work_order.ref(),
+                "route_observation_ref": route.ref(),
+            }
+        )
+        return deepcopy(authorization)
+
+    def _validate_current_acquisition_work_order(
+        self,
+        *,
+        work_order: AcquisitionWorkOrderV1,
+        control: Mapping[str, Any],
+    ) -> None:
+        snapshot = self.acquisition_authority_snapshot()
+        component_id = work_order.component_ref.get("component_id")
+        obligation_id = work_order.source_obligation_ref.get(
+            "source_obligation_id"
+        )
+        components = _safe_mapping(snapshot.get("components_by_id"))
+        obligations = _safe_mapping(snapshot.get("source_obligations_by_id"))
+        if work_order.answer_contract_ref != _safe_mapping(
+            snapshot.get("answer_contract_ref")
+        ):
+            raise AcquisitionControlError("stale_answer_contract")
+        if work_order.component_ref != _safe_mapping(components.get(component_id)):
+            raise AcquisitionControlError("stale_component_revision")
+        if work_order.source_obligation_ref != _safe_mapping(
+            obligations.get(obligation_id)
+        ):
+            raise AcquisitionControlError("mismatched_source_obligation")
+        if work_order.routing_policy_ref != acquisition_routing_policy_ref():
+            raise AcquisitionControlError("routing_policy_is_stale")
+        active = _safe_mapping(
+            _safe_mapping(control).get("active_by_source_obligation")
+        ).get(obligation_id)
+        if not isinstance(active, Mapping) or _safe_mapping(
+            active.get("work_order_ref")
+        ) != work_order.ref():
+            raise AcquisitionControlError("active_operation_slot_mismatch")
+        receipts = _safe_mapping(
+            _safe_mapping(control).get("terminal_receipts_by_operation_key")
+        )
+        if receipts.get(work_order.operation_identity_key):
+            raise AcquisitionControlError("operation_already_terminal")
+
+    def _current_acquisition_work_order_invalidation_code(
+        self,
+        *,
+        work_order: AcquisitionWorkOrderV1,
+        control: Mapping[str, Any],
+    ) -> str:
+        try:
+            self._validate_current_acquisition_work_order(
+                work_order=work_order,
+                control=control,
+            )
+        except AcquisitionControlError as exc:
+            if exc.code in {
+                "stale_answer_contract",
+                "stale_component_revision",
+                "mismatched_source_obligation",
+                "routing_policy_is_stale",
+            }:
+                return exc.code
+            raise
+        raise AcquisitionControlError(
+            "current_work_order_cannot_be_invalidated"
+        )
+
+    def authorize_acquisition_terminal_reduction(
+        self,
+        *,
+        execution_observation_ref: Mapping[str, Any] | None = None,
+        route_observation_ref: Mapping[str, Any] | None = None,
+        capability_decision_ref: Mapping[str, Any] | None = None,
+        invalidated_work_order_ref: Mapping[str, Any] | None = None,
+        reason: str = "runkernel_acquisition_terminal_reduction",
+    ) -> AuthorizedAction:
+        supplied = [
+            bool(execution_observation_ref),
+            bool(route_observation_ref),
+            bool(capability_decision_ref),
+            bool(invalidated_work_order_ref),
+        ]
+        if sum(supplied) != 1:
+            raise RunKernelTransitionError(
+                "terminal reduction requires exactly one terminal source ref"
+            )
+        control = self._acquisition_control()
+        source_kind: str
+        source_ref: dict[str, Any]
+        invalidation_code: str | None = None
+        if execution_observation_ref:
+            source_kind = "execution"
+            source_ref = dict(execution_observation_ref)
+            source_id = _clean_text(
+                source_ref.get("execution_observation_id"), limit=400
+            )
+            try:
+                source = AcquisitionExecutionObservationV1.from_dict(
+                    control["execution_observations_by_id"].get(source_id, {})
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            if source.ref() != source_ref:
+                raise RunKernelTransitionError(
+                    "execution observation ref is not canonical"
+                )
+        elif route_observation_ref:
+            source_kind = "route"
+            source_ref = dict(route_observation_ref)
+            source_id = _clean_text(
+                source_ref.get("route_observation_id"), limit=400
+            )
+            try:
+                source = AcquisitionRouteObservationV1.from_dict(
+                    control["routes_by_id"].get(source_id, {})
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            if source.ref() != source_ref or source.terminal_status != "blocked":
+                raise RunKernelTransitionError(
+                    "route terminal source is not a canonical blocked route"
+                )
+        elif capability_decision_ref:
+            source_kind = "decision"
+            source_ref = dict(capability_decision_ref or {})
+            source_id = _clean_text(source_ref.get("decision_id"), limit=400)
+            try:
+                source = AcquisitionCapabilityDecisionObservationV1.from_dict(
+                    control["capability_decisions_by_id"].get(source_id, {})
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            if source.ref() != source_ref or source.decision_status != "blocked":
+                raise RunKernelTransitionError(
+                    "decision terminal source is not a canonical blocked decision"
+                )
+            if source.block_code not in {
+                "focused_extract_requester_not_installed",
+                "map_candidate_reentry_not_installed",
+                "crawl_page_custody_not_installed",
+                "premium_sequential_acquisition_not_licensed",
+            }:
+                raise RunKernelTransitionError(
+                    "decision blocker is not a durable terminal capability blocker"
+                )
+        else:
+            source_kind = "work_order_invalidation"
+            source_ref = dict(invalidated_work_order_ref or {})
+            work_order_id = _clean_text(
+                source_ref.get("work_order_id"), limit=400
+            )
+            try:
+                work_order = AcquisitionWorkOrderV1.from_dict(
+                    control["work_orders_by_id"].get(work_order_id, {})
+                )
+                if work_order.ref() != source_ref:
+                    raise AcquisitionControlError(
+                        "work_order_ref_mismatch"
+                    )
+                invalidation_code = (
+                    self._current_acquisition_work_order_invalidation_code(
+                        work_order=work_order,
+                        control=control,
+                    )
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=ACQUISITION_TERMINAL_REDUCTION_STAGE,
+            action_type=ActionType.ACQUISITION_TERMINAL_REDUCE,
+            reason=reason,
+            inputs={
+                "terminal_source_kind": source_kind,
+                "terminal_source_ref": source_ref,
+                "work_order_invalidation_code": invalidation_code,
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_TERMINAL_REDUCED
+            ),
+        )
+
+    def authorize_acquisition_custody_consumption(
+        self,
+        *,
+        terminal_receipt_ref: Mapping[str, Any],
+        custody_consumer: str = "core.ordinary_live_source_custody_runtime",
+        reason: str = "runkernel_read_artifact_custody_authorization",
+    ) -> AuthorizedAction:
+        control = self._acquisition_control()
+        receipt_id = _clean_text(
+            terminal_receipt_ref.get("receipt_id"), limit=400
+        )
+        receipts = control["terminal_receipts_by_operation_key"]
+        receipt_payload = next(
+            (
+                item
+                for item in receipts.values()
+                if isinstance(item, Mapping) and item.get("receipt_id") == receipt_id
+            ),
+            {},
+        )
+        try:
+            receipt = AcquisitionTerminalReceiptV1.from_dict(receipt_payload)
+            if receipt.ref() != dict(terminal_receipt_ref):
+                raise AcquisitionControlError("terminal_receipt_ref_mismatch")
+            if receipt.terminal_status != "completed":
+                raise AcquisitionControlError(
+                    "noncompleted_receipt_cannot_authorize_custody"
+                )
+            if receipt.capability != "READ":
+                raise AcquisitionControlError(
+                    "only_read_receipt_can_authorize_current_custody"
+                )
+            if receipt.receipt_id in control[
+                "custody_authorizations_by_receipt"
+            ]:
+                raise AcquisitionControlError("custody_already_authorized")
+            work_order = AcquisitionWorkOrderV1.from_dict(
+                control["work_orders_by_id"].get(
+                    receipt.work_order_ref.get("work_order_id"), {}
+                )
+            )
+            route = AcquisitionRouteObservationV1.from_dict(
+                control["routes_by_id"].get(
+                    receipt.route_observation_ref.get("route_observation_id"),
+                    {},
+                )
+            )
+            self._validate_acquisition_lineage_for_custody(work_order)
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=ACQUISITION_CUSTODY_CONSUMPTION_STAGE,
+            action_type=ActionType.ACQUISITION_CUSTODY_CONSUME,
+            reason=reason,
+            inputs={
+                "terminal_receipt_ref": receipt.ref(),
+                "work_order_ref": work_order.ref(),
+                "route_observation_ref": route.ref(),
+                "custody_consumer": custody_consumer,
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_CUSTODY_AUTHORIZED
+            ),
+        )
+
+    def _validate_acquisition_lineage_for_custody(
+        self, work_order: AcquisitionWorkOrderV1
+    ) -> None:
+        snapshot = self.acquisition_authority_snapshot()
+        components = _safe_mapping(snapshot.get("components_by_id"))
+        obligations = _safe_mapping(snapshot.get("source_obligations_by_id"))
+        if work_order.answer_contract_ref != _safe_mapping(
+            snapshot.get("answer_contract_ref")
+        ):
+            raise AcquisitionControlError("stale_answer_contract")
+        if work_order.component_ref != _safe_mapping(
+            components.get(work_order.component_ref.get("component_id"))
+        ):
+            raise AcquisitionControlError("stale_component_revision")
+        if work_order.source_obligation_ref != _safe_mapping(
+            obligations.get(
+                work_order.source_obligation_ref.get("source_obligation_id")
+            )
+        ):
+            raise AcquisitionControlError("mismatched_source_obligation")
+
+    def require_current_acquisition_custody_authorization(
+        self, authorization_ref: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        control = self._acquisition_control()
+        authorization_id = _clean_text(
+            authorization_ref.get("authorization_id"), limit=400
+        )
+        authorization_payload = next(
+            (
+                item
+                for item in control[
+                    "custody_authorizations_by_receipt"
+                ].values()
+                if isinstance(item, Mapping)
+                and item.get("authorization_id") == authorization_id
+            ),
+            {},
+        )
+        try:
+            authorization = AcquisitionCustodyAuthorizationV1.from_dict(
+                authorization_payload
+            )
+            if authorization.ref() != dict(authorization_ref):
+                raise AcquisitionControlError(
+                    "custody_authorization_ref_mismatch"
+                )
+            work_order = AcquisitionWorkOrderV1.from_dict(
+                control["work_orders_by_id"].get(
+                    authorization.work_order_ref.get("work_order_id"), {}
+                )
+            )
+            self._validate_acquisition_lineage_for_custody(work_order)
+        except AcquisitionControlError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return authorization.to_dict()
 
     def authorize_run_contract_synthesis(
         self,
@@ -14286,11 +15035,655 @@ class RunKernel:
                 observation_payload=observation.payload,
             )
 
-        if not authority_supersession:
+        acquisition_transition = action.action_type in {
+            ActionType.ACQUISITION_CAPABILITY_DECIDE,
+            ActionType.ACQUISITION_WORK_ORDER_ADMIT,
+            ActionType.ACQUISITION_ROUTE,
+            ActionType.ACQUISITION_EXECUTE,
+            ActionType.ACQUISITION_TERMINAL_REDUCE,
+            ActionType.ACQUISITION_CUSTODY_CONSUME,
+        }
+        if not authority_supersession and not acquisition_transition:
             self.state.reduced_action_ids.add(action.action_id)
             self.state.action_statuses[action.action_id] = observation.status
             self.state.stage_statuses[action.stage] = observation.status
-        if action.action_type is ActionType.RUN_CONTRACT_SYNTHESIZE:
+        if action.action_type is ActionType.ACQUISITION_CAPABILITY_DECIDE:
+            try:
+                observed_decision = (
+                    AcquisitionCapabilityDecisionObservationV1.from_dict(
+                        _acquisition_safe_mapping(
+                            observation.payload.get("capability_decision")
+                        )
+                    )
+                )
+                proposal = AcquisitionNeedProposalV1.from_dict(
+                    _acquisition_safe_mapping(action.inputs.get("proposal"))
+                )
+                control = self._acquisition_control()
+                canonical_proposal = AcquisitionNeedProposalV1.from_dict(
+                    control["proposals_by_id"].get(proposal.proposal_id, {})
+                )
+                if canonical_proposal.to_dict() != proposal.to_dict():
+                    raise AcquisitionControlError(
+                        "capability_action_proposal_mismatch"
+                    )
+                expected_decision = derive_acquisition_capability_decision(
+                    proposal=canonical_proposal,
+                    authority_snapshot=self.acquisition_authority_snapshot(),
+                    acquisition_control_state=control,
+                )
+                if observed_decision.to_dict() != expected_decision.to_dict():
+                    raise AcquisitionControlError(
+                        "capability_decision_observation_mismatch"
+                    )
+                control["capability_decisions_by_id"][
+                    observed_decision.decision_id
+                ] = observed_decision.to_dict()
+                control["event_history"].append(
+                    {
+                        "event": "capability_decision_reduced",
+                        "decision_ref": observed_decision.ref(),
+                        "decision_status": observed_decision.decision_status,
+                        "block_code": observed_decision.block_code,
+                    }
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel",
+                "canonical_state": True,
+                "capability_decision": observed_decision.to_dict(),
+                "provider_selected": False,
+                "downstream_authority_granted": False,
+            }
+        elif action.action_type is ActionType.ACQUISITION_WORK_ORDER_ADMIT:
+            try:
+                observed_work_order = AcquisitionWorkOrderV1.from_dict(
+                    _acquisition_safe_mapping(
+                        observation.payload.get("work_order")
+                    )
+                )
+                control = self._acquisition_control()
+                decision_ref = _safe_mapping(
+                    action.inputs.get("capability_decision_ref")
+                )
+                decision = AcquisitionCapabilityDecisionObservationV1.from_dict(
+                    control["capability_decisions_by_id"].get(
+                        decision_ref.get("decision_id"), {}
+                    )
+                )
+                proposal = AcquisitionNeedProposalV1.from_dict(
+                    control["proposals_by_id"].get(
+                        decision.proposal_ref.get("proposal_id"), {}
+                    )
+                )
+                expected_decision = derive_acquisition_capability_decision(
+                    proposal=proposal,
+                    authority_snapshot=self.acquisition_authority_snapshot(),
+                    acquisition_control_state=control,
+                )
+                if expected_decision.to_dict() != decision.to_dict():
+                    raise AcquisitionControlError(
+                        "capability_decision_is_stale"
+                    )
+                expected_work_order = build_acquisition_work_order(
+                    proposal=proposal,
+                    decision=decision,
+                    runkernel_authorization_ref=_acquisition_action_ref(action),
+                )
+                if observed_work_order.to_dict() != expected_work_order.to_dict():
+                    raise AcquisitionControlError(
+                        "work_order_observation_mismatch"
+                    )
+                obligation_id = observed_work_order.source_obligation_ref.get(
+                    "source_obligation_id"
+                )
+                active = control["active_by_source_obligation"]
+                if active.get(obligation_id):
+                    raise AcquisitionControlError(
+                        "active_conflicting_operation"
+                    )
+                if control["terminal_receipts_by_operation_key"].get(
+                    observed_work_order.operation_identity_key
+                ):
+                    raise AcquisitionControlError("operation_already_terminal")
+                control["work_orders_by_id"][
+                    observed_work_order.work_order_id
+                ] = observed_work_order.to_dict()
+                active[obligation_id] = {
+                    "work_order_ref": observed_work_order.ref(),
+                    "operation_identity_key": (
+                        observed_work_order.operation_identity_key
+                    ),
+                    "authorized_capability": (
+                        observed_work_order.authorized_capability
+                    ),
+                    "reservation_action_ref": _acquisition_action_ref(action),
+                }
+                control["event_history"].append(
+                    {
+                        "event": "work_order_admitted_and_slot_reserved",
+                        "work_order_ref": observed_work_order.ref(),
+                        "source_obligation_id": obligation_id,
+                    }
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel",
+                "canonical_state": True,
+                "work_order": observed_work_order.to_dict(),
+                "active_operation_reserved": True,
+                "provider_selected": False,
+            }
+        elif action.action_type is ActionType.ACQUISITION_ROUTE:
+            try:
+                observed_route = AcquisitionRouteObservationV1.from_dict(
+                    _acquisition_safe_mapping(
+                        observation.payload.get("route_observation")
+                    )
+                )
+                control = self._acquisition_control()
+                work_ref = _safe_mapping(action.inputs.get("work_order_ref"))
+                work_order = AcquisitionWorkOrderV1.from_dict(
+                    control["work_orders_by_id"].get(
+                        work_ref.get("work_order_id"), {}
+                    )
+                )
+                if work_order.ref() != work_ref:
+                    raise AcquisitionControlError("work_order_ref_mismatch")
+                self._validate_current_acquisition_work_order(
+                    work_order=work_order,
+                    control=control,
+                )
+                if action.inputs.get(
+                    "routing_policy_ref"
+                ) != acquisition_routing_policy_ref():
+                    raise AcquisitionControlError("routing_policy_is_stale")
+                route_request = ProviderCapabilityRequest(
+                    capability=AcquisitionCapability(
+                        work_order.authorized_capability
+                    ),
+                    domain_constraints=work_order.include_domains,
+                    include_domains=work_order.include_domains,
+                    exclude_domains=work_order.exclude_domains,
+                    derivation_reason=(
+                        "runkernel_authorized_post_discovery_work_order"
+                    ),
+                )
+                route_decision = route_provider_capability(
+                    route_request,
+                    dict(
+                        _safe_mapping(
+                            action.inputs.get("availability_snapshot")
+                        )
+                    ),
+                )
+                expected_route = AcquisitionRouteObservationV1.create(
+                    work_order_ref=work_order.ref(),
+                    route_decision_trace=route_decision.to_trace(),
+                    routing_policy_ref=acquisition_routing_policy_ref(),
+                    availability_snapshot_ref=_safe_mapping(
+                        action.inputs.get("availability_snapshot_ref")
+                    ),
+                )
+                if observed_route.to_dict() != expected_route.to_dict():
+                    raise AcquisitionControlError(
+                        "route_observation_mismatch"
+                    )
+                control["routes_by_id"][
+                    observed_route.route_observation_id
+                ] = observed_route.to_dict()
+                control["event_history"].append(
+                    {
+                        "event": "route_reduced",
+                        "route_observation_ref": observed_route.ref(),
+                        "terminal_status": observed_route.terminal_status,
+                        "block_code": observed_route.block_code,
+                    }
+                )
+            except (AcquisitionControlError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel",
+                "canonical_state": True,
+                "route_observation": observed_route.to_dict(),
+                "provider_selection_owner": "core.routing",
+                "dispatch_authorized": (
+                    observed_route.terminal_status == "selected"
+                ),
+            }
+        elif action.action_type is ActionType.ACQUISITION_EXECUTE:
+            try:
+                observed_execution = AcquisitionExecutionObservationV1.from_dict(
+                    _acquisition_safe_mapping(
+                        observation.payload.get("execution_observation")
+                    )
+                )
+                control = self._acquisition_control()
+                work_ref = _safe_mapping(action.inputs.get("work_order_ref"))
+                route_ref = _safe_mapping(
+                    action.inputs.get("route_observation_ref")
+                )
+                work_order = AcquisitionWorkOrderV1.from_dict(
+                    control["work_orders_by_id"].get(
+                        work_ref.get("work_order_id"), {}
+                    )
+                )
+                route = AcquisitionRouteObservationV1.from_dict(
+                    control["routes_by_id"].get(
+                        route_ref.get("route_observation_id"), {}
+                    )
+                )
+                if route.terminal_status != "selected":
+                    raise AcquisitionControlError(
+                        "blocked_route_cannot_execute"
+                    )
+                if (
+                    observed_execution.work_order_ref != work_order.ref()
+                    or observed_execution.completed_route_ref != route.ref()
+                ):
+                    raise AcquisitionControlError(
+                        "execution_observation_binding_mismatch"
+                    )
+                authorization = control[
+                    "execution_authorizations_by_id"
+                ].get(
+                    action.action_id
+                )
+                if not isinstance(authorization, dict):
+                    raise AcquisitionControlError(
+                        "execution_authorization_mismatch"
+                    )
+                if (
+                    authorization.get("action_id") != action.action_id
+                    or _safe_mapping(authorization.get("work_order_ref"))
+                    != work_order.ref()
+                    or _safe_mapping(
+                        authorization.get("route_observation_ref")
+                    )
+                    != route.ref()
+                ):
+                    raise AcquisitionControlError(
+                        "execution_authorization_mismatch"
+                    )
+                if (
+                    authorization.get("claim_status")
+                    != "claimed_before_transport"
+                    or authorization.get("transport_claimed") is not True
+                ):
+                    raise AcquisitionControlError(
+                        "execution_authorization_not_claimed"
+                    )
+                self._validate_current_acquisition_work_order(
+                    work_order=work_order,
+                    control=control,
+                )
+                if observed_execution.terminal_status not in {
+                    "completed",
+                    "failed",
+                    "blocked",
+                }:
+                    raise AcquisitionControlError(
+                        "execution_terminal_status_invalid"
+                    )
+                for artifact_ref in observed_execution.artifact_refs:
+                    for artifact_key, route_value in (
+                        ("provider", route.selected_provider),
+                        ("operation", route.selected_operation),
+                        ("provider_variant", route.selected_variant),
+                        ("output_type", route.selected_output_type),
+                    ):
+                        if artifact_ref.get(artifact_key) != route_value:
+                            raise AcquisitionControlError(
+                                "execution_artifact_route_mismatch"
+                            )
+                if observed_execution.terminal_status == "completed":
+                    if (
+                        observed_execution.provider_calls_attempted != 1
+                        or observed_execution.provider_calls_completed != 1
+                        or len(observed_execution.artifact_refs) != 1
+                    ):
+                        raise AcquisitionControlError(
+                            "completed_execution_material_invalid"
+                        )
+                    completed_artifact = observed_execution.artifact_refs[0]
+                    if (
+                        work_order.authorized_capability
+                        != AcquisitionCapability.READ.value
+                        or completed_artifact.get("kind")
+                        != "selected_url_read_material"
+                        or completed_artifact.get("status") != "readable"
+                        or completed_artifact.get("requested_url")
+                        not in work_order.selected_urls
+                        or len(
+                            str(
+                                completed_artifact.get("retained_digest")
+                                or ""
+                            )
+                        )
+                        != 64
+                        or any(
+                            character not in "0123456789abcdef"
+                            for character in str(
+                                completed_artifact.get("retained_digest")
+                                or ""
+                            )
+                        )
+                        or completed_artifact.get(
+                            "retained_character_count"
+                        )
+                        <= 0
+                        or completed_artifact.get(
+                            "retained_character_count"
+                        )
+                        > work_order.hard_operation_bounds.get(
+                            "max_retained_characters", 0
+                        )
+                    ):
+                        raise AcquisitionControlError(
+                            "completed_read_artifact_invalid"
+                        )
+                control["execution_observations_by_id"][
+                    observed_execution.execution_observation_id
+                ] = observed_execution.to_dict()
+                authorization["claim_status"] = "observation_reduced"
+                authorization["execution_observation_ref"] = (
+                    observed_execution.ref()
+                )
+                control["event_history"].append(
+                    {
+                        "event": "execution_observation_reduced",
+                        "execution_observation_ref": observed_execution.ref(),
+                        "terminal_status": observed_execution.terminal_status,
+                        "provider_calls_attempted": (
+                            observed_execution.provider_calls_attempted
+                        ),
+                        "provider_calls_completed": (
+                            observed_execution.provider_calls_completed
+                        ),
+                    }
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel",
+                "canonical_state": True,
+                "execution_observation": observed_execution.to_dict(),
+                "mechanical_adapter_owner": "core.acquisition_adapters",
+                "provider_failure_fallback_attempted": False,
+                "capability_switch_attempted": False,
+            }
+        elif action.action_type is ActionType.ACQUISITION_TERMINAL_REDUCE:
+            try:
+                observed_receipt = AcquisitionTerminalReceiptV1.from_dict(
+                    _acquisition_safe_mapping(
+                        observation.payload.get("terminal_receipt")
+                    )
+                )
+                control = self._acquisition_control()
+                source_kind = action.inputs.get("terminal_source_kind")
+                source_ref = _safe_mapping(
+                    action.inputs.get("terminal_source_ref")
+                )
+                active_obligation_id: str | None = None
+                active_work_order_ref: dict[str, Any] = {}
+                if source_kind == "execution":
+                    execution = AcquisitionExecutionObservationV1.from_dict(
+                        control["execution_observations_by_id"].get(
+                            source_ref.get("execution_observation_id"), {}
+                        )
+                    )
+                    work_order = AcquisitionWorkOrderV1.from_dict(
+                        control["work_orders_by_id"].get(
+                            execution.work_order_ref.get("work_order_id"), {}
+                        )
+                    )
+                    route = AcquisitionRouteObservationV1.from_dict(
+                        control["routes_by_id"].get(
+                            execution.completed_route_ref.get(
+                                "route_observation_id"
+                            ),
+                            {},
+                        )
+                    )
+                    expected_receipt = build_terminal_receipt_from_execution(
+                        work_order=work_order,
+                        route=route,
+                        execution=execution,
+                    )
+                    active_obligation_id = work_order.source_obligation_ref.get(
+                        "source_obligation_id"
+                    )
+                    active_work_order_ref = work_order.ref()
+                elif source_kind == "route":
+                    route = AcquisitionRouteObservationV1.from_dict(
+                        control["routes_by_id"].get(
+                            source_ref.get("route_observation_id"), {}
+                        )
+                    )
+                    work_order = AcquisitionWorkOrderV1.from_dict(
+                        control["work_orders_by_id"].get(
+                            route.work_order_ref.get("work_order_id"), {}
+                        )
+                    )
+                    expected_receipt = build_terminal_receipt_from_route(
+                        work_order=work_order,
+                        route=route,
+                    )
+                    active_obligation_id = work_order.source_obligation_ref.get(
+                        "source_obligation_id"
+                    )
+                    active_work_order_ref = work_order.ref()
+                elif source_kind == "work_order_invalidation":
+                    work_order = AcquisitionWorkOrderV1.from_dict(
+                        control["work_orders_by_id"].get(
+                            source_ref.get("work_order_id"), {}
+                        )
+                    )
+                    invalidation_code = (
+                        self._current_acquisition_work_order_invalidation_code(
+                            work_order=work_order,
+                            control=control,
+                        )
+                    )
+                    if invalidation_code != action.inputs.get(
+                        "work_order_invalidation_code"
+                    ):
+                        raise AcquisitionControlError(
+                            "work_order_invalidation_code_mismatch"
+                        )
+                    expected_receipt = (
+                        build_terminal_receipt_from_work_order_invalidation(
+                            work_order=work_order,
+                            block_code=invalidation_code,
+                        )
+                    )
+                    active_obligation_id = work_order.source_obligation_ref.get(
+                        "source_obligation_id"
+                    )
+                    active_work_order_ref = work_order.ref()
+                elif source_kind == "decision":
+                    decision = (
+                        AcquisitionCapabilityDecisionObservationV1.from_dict(
+                            control["capability_decisions_by_id"].get(
+                                source_ref.get("decision_id"), {}
+                            )
+                        )
+                    )
+                    proposal = AcquisitionNeedProposalV1.from_dict(
+                        control["proposals_by_id"].get(
+                            decision.proposal_ref.get("proposal_id"), {}
+                        )
+                    )
+                    expected_receipt = build_terminal_receipt_from_decision(
+                        proposal=proposal,
+                        decision=decision,
+                    )
+                    if expected_receipt is None:
+                        raise AcquisitionControlError(
+                            "decision_has_no_durable_terminal_receipt"
+                        )
+                else:
+                    raise AcquisitionControlError(
+                        "terminal_source_kind_invalid"
+                    )
+                if observed_receipt.to_dict() != expected_receipt.to_dict():
+                    raise AcquisitionControlError(
+                        "terminal_receipt_observation_mismatch"
+                    )
+                receipt_map = control[
+                    "terminal_receipts_by_operation_key"
+                ]
+                if receipt_map.get(observed_receipt.operation_identity_key):
+                    raise AcquisitionControlError(
+                        "terminal_receipt_already_exists"
+                    )
+                invalidated_authorizations: list[dict[str, Any]] = []
+                if source_kind == "work_order_invalidation":
+                    for authorization in control[
+                        "execution_authorizations_by_id"
+                    ].values():
+                        if (
+                            isinstance(authorization, dict)
+                            and _safe_mapping(
+                                authorization.get("work_order_ref")
+                            )
+                            == active_work_order_ref
+                        ):
+                            if authorization.get("transport_claimed") is True:
+                                raise AcquisitionControlError(
+                                    "claimed_execution_cannot_be_invalidated"
+                                )
+                            invalidated_authorizations.append(authorization)
+                if active_obligation_id:
+                    active = control["active_by_source_obligation"].get(
+                        active_obligation_id
+                    )
+                    if not isinstance(active, Mapping) or _safe_mapping(
+                        active.get("work_order_ref")
+                    ) != active_work_order_ref:
+                        raise AcquisitionControlError(
+                            "terminal_active_slot_mismatch"
+                        )
+                    del control["active_by_source_obligation"][
+                        active_obligation_id
+                    ]
+                for authorization in invalidated_authorizations:
+                    authorization["claim_status"] = (
+                        "cancelled_by_work_order_invalidation"
+                    )
+                receipt_map[
+                    observed_receipt.operation_identity_key
+                ] = observed_receipt.to_dict()
+                control["exhausted_operation_keys"][
+                    observed_receipt.operation_identity_key
+                ] = {
+                    "terminal_receipt_ref": observed_receipt.ref(),
+                    "terminal_status": observed_receipt.terminal_status,
+                    "retry_licensed": False,
+                }
+                control["event_history"].append(
+                    {
+                        "event": "terminal_receipt_reduced",
+                        "terminal_receipt_ref": observed_receipt.ref(),
+                        "terminal_status": observed_receipt.terminal_status,
+                        "active_slot_released": bool(active_obligation_id),
+                    }
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel",
+                "canonical_state": True,
+                "terminal_receipt": observed_receipt.to_dict(),
+                "active_slot_released": True,
+                "retry_licensed": False,
+            }
+        elif action.action_type is ActionType.ACQUISITION_CUSTODY_CONSUME:
+            try:
+                observed_authorization = AcquisitionCustodyAuthorizationV1.from_dict(
+                    _acquisition_safe_mapping(
+                        observation.payload.get("custody_authorization")
+                    )
+                )
+                control = self._acquisition_control()
+                receipt_ref = _safe_mapping(
+                    action.inputs.get("terminal_receipt_ref")
+                )
+                receipt_payload = next(
+                    (
+                        item
+                        for item in control[
+                            "terminal_receipts_by_operation_key"
+                        ].values()
+                        if isinstance(item, Mapping)
+                        and item.get("receipt_id")
+                        == receipt_ref.get("receipt_id")
+                    ),
+                    {},
+                )
+                receipt = AcquisitionTerminalReceiptV1.from_dict(
+                    receipt_payload
+                )
+                work_order = AcquisitionWorkOrderV1.from_dict(
+                    control["work_orders_by_id"].get(
+                        receipt.work_order_ref.get("work_order_id"), {}
+                    )
+                )
+                route = AcquisitionRouteObservationV1.from_dict(
+                    control["routes_by_id"].get(
+                        receipt.route_observation_ref.get(
+                            "route_observation_id"
+                        ),
+                        {},
+                    )
+                )
+                self._validate_acquisition_lineage_for_custody(work_order)
+                expected_authorization = AcquisitionCustodyAuthorizationV1.create(
+                    work_order_ref=work_order.ref(),
+                    route_observation_ref=route.ref(),
+                    terminal_receipt_ref=receipt.ref(),
+                    answer_contract_ref=work_order.answer_contract_ref,
+                    source_obligation_ref=work_order.source_obligation_ref,
+                    capability=work_order.authorized_capability,
+                    custody_consumer=str(
+                        action.inputs.get("custody_consumer") or ""
+                    ),
+                )
+                if (
+                    observed_authorization.to_dict()
+                    != expected_authorization.to_dict()
+                ):
+                    raise AcquisitionControlError(
+                        "custody_authorization_observation_mismatch"
+                    )
+                custody = control["custody_authorizations_by_receipt"]
+                if custody.get(receipt.receipt_id):
+                    raise AcquisitionControlError(
+                        "custody_already_authorized"
+                    )
+                custody[receipt.receipt_id] = observed_authorization.to_dict()
+                control["event_history"].append(
+                    {
+                        "event": "custody_authorization_reduced",
+                        "custody_authorization_ref": (
+                            observed_authorization.ref()
+                        ),
+                        "terminal_receipt_ref": receipt.ref(),
+                    }
+                )
+            except AcquisitionControlError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel",
+                "canonical_state": True,
+                "custody_authorization": observed_authorization.to_dict(),
+                "downstream_authority_granted": False,
+                "evidence_authority_granted": False,
+                "source_obligation_satisfied": False,
+            }
+        elif action.action_type is ActionType.RUN_CONTRACT_SYNTHESIZE:
             contract_projection = _safe_mapping(
                 observation.payload.get("contract_projection")
             )
@@ -20777,6 +22170,10 @@ class RunKernel:
                 }
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
+        if acquisition_transition:
+            self.state.reduced_action_ids.add(action.action_id)
+            self.state.action_statuses[action.action_id] = observation.status
+            self.state.stage_statuses[action.stage] = observation.status
         self.state.observations.append(observation)
         self.state.next_observation_sequence += 1
         return self.state
@@ -20803,6 +22200,15 @@ def validate_authorized_action(
         expected_observation_type=expected_observation_type,
     )
     return action
+
+
+def _acquisition_action_ref(action: AuthorizedAction) -> dict[str, Any]:
+    return {
+        "action_id": action.action_id,
+        "action_type": action.action_type.value,
+        "stage": action.stage,
+        "sequence": action.sequence,
+    }
 
 
 def _followup_checked(callable_: Any, /, *args: Any, **kwargs: Any) -> Any:
