@@ -5,7 +5,7 @@ Mode: BUILD
 Proof class: offline_product_path_proof
 Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01, INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01, and DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
 Predecessor-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
-Starting-runtime/test: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Starting-runtime/test: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, Focused Extract activation, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
 
 ## Outcome

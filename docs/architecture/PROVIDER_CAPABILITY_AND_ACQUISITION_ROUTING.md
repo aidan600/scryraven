@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary DISCOVER routing, shared acquisition contracts, ProviderPlan projection, retained RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -51,7 +51,7 @@ SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners remain unchanged.
 
 Current runtime/test provenance:
-`cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35`.
+`6fbca602afac5a00bb6bafa2a6888b6ec31d5065`.
 The initial-discovery transport retirement remains historically installed at
 `48a309124764d813cf27081bf5871d5a9612db79`.
 The mechanical adapter foundation remains historically installed at
@@ -86,6 +86,10 @@ SearchExecutor flows. It is reachable through the
 unflagged Fast/Balanced/Deep CLI/backend composition and does not use the
 separate `live_search_validation` origin. Serper
 `lightweight_disambiguation` remains excluded.
+
+The ordinary packet digest binds the ordered candidate-record digests. Its
+compact RunKernel ref retains that aggregate digest and lineage/count fields,
+not candidate URLs, snippets, or provider text.
 
 ## Capability Status Matrix
 

@@ -5,7 +5,7 @@ Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
 Applies-to: ordinary post-DISCOVER result-reference handoff plus post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
 
 ## Purpose And Boundary
@@ -62,7 +62,9 @@ current authorization and state immediately before mechanical dispatch.
 At the immutable initial post-DISCOVER selection, RunKernel authorizes one
 `ORDINARY_DISCOVERY_CANDIDATE_HANDOFF` action over exact current QueryPlan,
 ProviderPlan, retrieval-action, source-result identity-set, selected-ref, and
-selected-candidate-input digests. The provider calls are already complete. The
+selected-candidate-input digests. The resulting packet identity also binds a
+digest of the ordered candidate-record digests. The provider calls are already
+complete. The
 executor builds the ordinary-origin revision-1
 `RunKernel.SearchExecutorHandoff` and
 `RunKernel.SearchResultCandidatePacket`, then RunKernel rederives and reduces

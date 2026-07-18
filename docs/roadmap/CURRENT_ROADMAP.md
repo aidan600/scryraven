@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -292,7 +292,7 @@ No live call was made.
 
 ## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
 
-Runtime/test commit `cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35`
+Runtime/test commit `6fbca602afac5a00bb6bafa2a6888b6ec31d5065`
 
 [DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01](DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md)
 installs one immutable, text-free identity per ordered provider-result

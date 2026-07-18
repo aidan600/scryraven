@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -231,7 +231,7 @@ acquisition, or general quantitative reasoning.
 
 ## Installed Acquisition Routing, Control, And Adapter Runtime
 
-Runtime/test commit `cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35`
+Runtime/test commit `6fbca602afac5a00bb6bafa2a6888b6ec31d5065`
 installs the canonical ordinary provider-result handoff while preserving the
 initial-discovery transport retirement at
 `48a309124764d813cf27081bf5871d5a9612db79`. The current chain is:
@@ -291,8 +291,9 @@ and selected result refs after provider work has completed. It does not create
 a provider call or recreate SearchPlanner tasks. The existing
 `RunKernel.SearchResultCandidatePacket` owner consumes that exact handoff and
 material/identity refs under the same ordinary origin. Packet and handoff
-digests, selected-input digest, identity set, full selected-ref digest, and
-current plan/contract membership are rederived at authorization and reduction.
+digests, the digest of ordered candidate-record digests, selected-input digest,
+identity set, full selected-ref digest, and current plan/contract membership are
+rederived at authorization and reduction.
 Stale, mutated, duplicate-replay, unknown-field, raw/private, or authority-
 bearing input fails closed.
 

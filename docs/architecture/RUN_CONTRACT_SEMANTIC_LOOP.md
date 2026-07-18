@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -155,7 +155,9 @@ Exact bounds are 5/6/8 provider results per call and 8/20/40 selected candidates
 for Fast/Balanced/Deep, 80 identities per run, 4,096 canonical bytes per
 identity, 20,000 material characters per occurrence, 8 contributor refs, and a
 16 KiB reference-only canonical RunKernel projection. That state contains no
-provider text, chunks, embeddings, or raw payload.
+provider text, chunks, embeddings, or raw payload. The ordinary packet identity
+binds an ordered aggregate of its candidate-record digests; RunKernel retains
+only that aggregate in the compact packet ref.
 
 Revision 1 is the immutable initial post-DISCOVER selection before the ordinary
 composition's later SearchPlanner/AnswerContract admission and subsequent

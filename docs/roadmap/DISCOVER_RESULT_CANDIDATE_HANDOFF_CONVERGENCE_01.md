@@ -5,7 +5,7 @@ Mode: BUILD
 Proof class: offline_product_path_proof
 Depends-on: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
 Starting-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
-Runtime/test commit: cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35
+Runtime/test commit: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Does-not-authorize: live calls, candidate-page fetching, exact-URL READ or
 Focused Extract, provider-routing redesign, Serper planner disambiguation, Map,
 Crawl, evidence admission, citation authority, or final-answer authority
@@ -21,7 +21,7 @@ non-evidence URL/material-provenance handoff and performs zero candidate-page or
 exact-URL transport.
 
 The runtime/test implementation is exactly
-`cfd8daed12ed4a0cccaf1bc9e6de1b5019e1ea35`.
+`6fbca602afac5a00bb6bafa2a6888b6ec31d5065`.
 
 ## Authority And Reuse Census
 
@@ -115,9 +115,10 @@ no provider call and does not recreate SearchPlanner tasks.
 
 RunKernel authorizes the exact ref-only action, and the ordinary runtime then
 builds the packet through the sole `RunKernel.SearchResultCandidatePacket`
-owner. Packet id/digest, compact handoff id/digest, full selected-ref digest,
-identity-set ref, and selected-candidate-input digest are rederived and checked
-at execution and reduction. Stale QueryPlan/ProviderPlan/AnswerContract refs,
+owner. Packet id/digest, digest of ordered candidate-record digests, compact
+handoff id/digest, full selected-ref digest, identity-set ref, and selected-
+candidate-input digest are rederived and checked at execution and reduction.
+Stale QueryPlan/ProviderPlan/AnswerContract refs,
 mutated packets or handoffs, duplicate action replay, and unknown or authority-
 bearing fields fail closed.
 
