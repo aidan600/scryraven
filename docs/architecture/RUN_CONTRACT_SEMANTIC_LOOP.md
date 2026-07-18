@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
+Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility

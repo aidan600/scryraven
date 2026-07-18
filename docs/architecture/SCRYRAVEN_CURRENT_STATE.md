@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
+Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -231,7 +231,7 @@ acquisition, or general quantitative reasoning.
 
 ## Installed Acquisition Routing, Control, And Adapter Runtime
 
-Runtime/test commit `2d936d958f7a4802961d4f1dc554c204394ce618`
+Runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`
 retired historical ordinary pre-selection page transport while preserving the
 existing QueryPlan, ProviderPlan, provider routing, normalization, ranking,
 filtering, and candidate-selection owners. The installed initial-discovery
@@ -243,8 +243,18 @@ QueryPlan
 -> provider-neutral DISCOVER
 -> normalized provider-returned candidate material
 -> existing ranking/filtering/candidate selection
--> SearchResultCandidatePacket
 ```
+
+The requested final handoff from ordinary discovered candidates into
+`SearchResultCandidatePacket` is not installed. The existing packet seam is a
+default-disabled, pre-retrieval child-RunKernel path that accepts externally
+supplied structured candidates and synthesizes separate SearchPlanner,
+AnswerContract, SearchExecutorHandoff, task, call, and rank lineage. Ordinary
+multi-query/provider DISCOVER returns ranked passage chunks and cannot supply
+that canonical lineage without a new candidate-admission/front-half authority.
+Connecting those passages here would therefore fabricate lineage and violate
+the preserved QueryPlan/ProviderPlan authority boundary. Publication is blocked
+pending an owner decision for a canonical DISCOVER-result-to-handoff contract.
 
 Fast, Balanced, Deep/high-complexity, planner-assisted, continuation,
 supplemental, weak-corpus, conflict, and source-class recovery discovery all
@@ -279,10 +289,12 @@ admitted DISCOVER candidate URLs; it is not an exact-URL transport counter.
 Provider synthesis remains disabled; post-discovery acquisition does not
 create or consume provider-written answer authority.
 
+When its existing default-disabled structured-input seam is explicitly used,
 `SearchResultCandidatePacket` remains a durable non-evidence candidate handoff
-before fetch/read. It is not evidence, not citation-eligible, and does not
-satisfy source obligations. Candidate selection and URL presence are provenance
-facts only. Without a separately supplied, current, contract/component/
+before fetch/read. It is not populated by canonical ordinary DISCOVER, is not
+evidence, is not citation-eligible, and does not satisfy source obligations.
+Candidate selection and URL presence are provenance facts only. Without a
+separately supplied, current, contract/component/
 obligation-bound material need, ordinary source custody creates no
 `AcquisitionNeedProposalV1`, work order, route, exact-URL cap charge, transport,
 FetchReadContentPacket, EvidenceLedger custody, semantic continuation, or main

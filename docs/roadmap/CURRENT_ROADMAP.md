@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
+Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -264,9 +264,9 @@ returns `premium_sequential_acquisition_not_licensed`. No live calls, initial
 DISCOVER redesign, direct `core.pipeline` fetch migration, Map/Crawl PRODUCT
 transport, general Deep, or downstream authority change was made.
 
-## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
+## Publication-Blocked Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
 
-Runtime/test commit `2d936d958f7a4802961d4f1dc554c204394ce618`
+Runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`
 
 Ordinary Fast, Balanced, and Deep/high-complexity discovery now ranks and
 selects candidates only from normalized provider-returned title, snippet/
@@ -290,10 +290,22 @@ filtering mechanics, candidate selection, SearchResultCandidatePacket,
 EvidenceLedger meaning, and downstream answer authority were not redesigned.
 No live call was made.
 
-## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
+Publication stopped because canonical ordinary DISCOVER does not currently
+populate `SearchResultCandidatePacket`. Its existing default-disabled seam is a
+separate pre-retrieval child-RunKernel path over injected structured candidates;
+ordinary multi-query/provider ranking output lacks the canonical task,
+provider-call, rank, AnswerContract, and SearchExecutorHandoff mapping that seam
+requires. Promoting ranked passages into it would create parallel front-half
+authority and fabricate lineage. An owner decision must define that canonical
+mapping, or explicitly remove packet population from this phase's required
+ordinary chain, before this Build can publish.
 
-The sole active next checkpoint is the grounded Build brief at
+## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
+
+The intended next checkpoint remains the grounded Build brief at
 [EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It is not active until the candidate-handoff owner decision above resolves the
+incomplete dependency.
 It must install a real independent current-material-need producer, route
 post-selection READ through the installed RunKernel chain, and carry the
 resulting exact-URL material through one bounded final-custody continuation.

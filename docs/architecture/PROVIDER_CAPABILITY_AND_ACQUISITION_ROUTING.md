@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary DISCOVER routing, shared acquisition contracts, ProviderPlan projection, retained RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
+Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -45,7 +45,7 @@ SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners are unchanged.
 
 Current runtime/test provenance:
-`2d936d958f7a4802961d4f1dc554c204394ce618`.
+`48a309124764d813cf27081bf5871d5a9612db79`.
 The mechanical adapter foundation remains historically installed at
 `193c5caabe1f97da534f0e601d410acb98d3cdea`.
 

@@ -80,7 +80,7 @@ criteria, allowed invocation modes, and live/no-live status for:
 | Profile | Purpose | Current live status |
 | --- | --- | --- |
 | `AG-LIVE-SMOKE` | Can one bounded live product run complete? | Succeeded once by direct human private shell after local env was loaded into process env. |
-| `AG-LIVE-SOURCE-CUSTODY` | Historical pre-selection fetch/read expectation metadata only. | Retired and non-executable at runtime/test `2d936d958f7a4802961d4f1dc554c204394ce618`; absent from direct-runner and broker choices. |
+| `AG-LIVE-SOURCE-CUSTODY` | Historical pre-selection fetch/read expectation metadata only. | Retired and non-executable at runtime/test `48a309124764d813cf27081bf5871d5a9612db79`; absent from direct-runner and broker choices. |
 | `AG-LIVE-MULTI-COMPONENT` | Can two answer components map to obligations, evidence bindings, and packet-owned Author material? | Not run. |
 | `AG-LIVE-DISAMBIG` | Can ambiguous entities/components produce explicit disambiguation/search work without hidden provider or routing changes? | Not run. |
 

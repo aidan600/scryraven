@@ -1,10 +1,10 @@
 # EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
-Status: sole active next checkpoint
+Status: blocked pending initial-discovery candidate-handoff owner decision
 Mode: BUILD
 Proof class: offline_product_path_proof
 Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 and INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
-Starting-runtime/test: 2d936d958f7a4802961d4f1dc554c204394ce618
+Starting-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
 Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
 
 ## Outcome

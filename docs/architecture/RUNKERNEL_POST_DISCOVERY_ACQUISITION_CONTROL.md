@@ -5,7 +5,7 @@ Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
 Applies-to: post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: 2d936d958f7a4802961d4f1dc554c204394ce618
+Verified-against-runtime: 48a309124764d813cf27081bf5871d5a9612db79
 Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
 
 ## Purpose And Boundary
@@ -276,8 +276,14 @@ The explicit maintainer sequencing decision installed this foundation before
 the previously active final-custody checkpoint, because final custody must not
 converge around multiple post-discovery decision/execution authorities.
 
-The sole active next checkpoint is
+The intended next checkpoint is
 [`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It remains blocked until an owner defines the canonical ordinary
+multi-query/provider DISCOVER-result mapping into SearchExecutorHandoff and
+`SearchResultCandidatePacket`, or explicitly removes packet population from the
+initial-discovery phase requirement. Ranked passage chunks cannot be promoted
+through the existing default-disabled structured-input seam without
+manufacturing task, provider-call, rank, and front-half contract lineage.
 It must install the independent current-material-need producer for genuinely
 product-consumed READ and carry authorized exact-URL material through final
 custody. It may activate Focused Extract only through a real exact producer and
