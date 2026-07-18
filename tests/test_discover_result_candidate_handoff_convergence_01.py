@@ -64,6 +64,7 @@ from core.search_result_candidate_packet import (
     ORDINARY_SEARCH_RESULT_CANDIDATE_SNIPPET_MAX_CHARS,
     SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER,
     SEARCH_RESULT_CANDIDATE_PACKET_OWNER,
+    SearchResultCandidatePacketError,
     validate_ordinary_search_result_candidate_packet,
 )
 from tests.helpers.offline_ordinary_pipeline import (
@@ -119,6 +120,16 @@ def _canonical_bytes(value: Mapping[str, Any]) -> int:
             allow_nan=False,
         ).encode("utf-8")
     )
+
+
+def _canonical_digest(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            _plain(value),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _recompute_projection_bytes(projection: dict[str, Any]) -> None:
@@ -723,6 +734,39 @@ def test_valid_packet_and_runkernel_reduce_use_ordinary_origin_only() -> None:
     assert projection["exact_url_cap_charged"] is False
     assert projection["urls_fetched"] == 0
     assert not authority.kernel.state.acquisition_control_state
+
+
+def test_packet_identity_binds_ordered_candidate_records() -> None:
+    authority = _authority(
+        run_id="run-packet-record-binding",
+        request_id="request-packet-record-binding",
+    )
+    store = DiscoveryResultMaterialStore()
+    identity = _admit(store, authority)
+    assert identity is not None
+    _inputs, _action, execution = _execute_selection(
+        authority,
+        store,
+        [identity],
+    )
+
+    packet = _plain(execution.packet)
+    original_packet_digest = packet["packet_digest"]
+    original_record_digest = packet["candidate_records"][0]["record_digest"]
+    record = packet["candidate_records"][0]
+    record["normalized_url"] = "https://forged.example/redirected"
+    record["domain"] = "forged.example"
+    record_payload = dict(record)
+    record_payload.pop("record_digest")
+    record["record_digest"] = _canonical_digest(record_payload)
+    assert record["record_digest"] != original_record_digest
+    assert packet["packet_digest"] == original_packet_digest
+
+    with pytest.raises(
+        SearchResultCandidatePacketError,
+        match="ordered candidate-record digest mismatch",
+    ):
+        validate_ordinary_search_result_candidate_packet(packet)
 
 
 def test_40_candidate_projection_is_bounded_and_reports_overflow() -> None:

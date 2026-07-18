@@ -862,6 +862,7 @@ def _validate_packet_ref(
         "packet_revision",
         "full_selected_source_result_refs_digest",
         "selected_candidate_inputs_digest",
+        "ordered_candidate_record_digests_digest",
         "source_result_identity_set_ref",
         "search_executor_handoff_ref",
     }
@@ -894,6 +895,10 @@ def _validate_packet_ref(
                 f"ordinary candidate packet ref binding mismatch: {key}"
             )
     _require_sha256(packet_ref.get("packet_digest"), "packet_digest")
+    _require_sha256(
+        packet_ref.get("ordered_candidate_record_digests_digest"),
+        "ordered_candidate_record_digests_digest",
+    )
     if not str(packet_ref.get("packet_id") or "").startswith(
         "search-result-candidate-packet:"
     ):
@@ -950,6 +955,7 @@ def _validate_discovery_result_state(
             "request_id",
             "full_selected_source_result_refs_digest",
             "selected_candidate_inputs_digest",
+            "ordered_candidate_record_digests_digest",
         )
         if key in packet_ref
     }

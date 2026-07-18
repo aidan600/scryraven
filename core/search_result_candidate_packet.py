@@ -626,6 +626,9 @@ def build_search_result_candidate_packet_from_ordinary_discovery(
         )
         for candidate in candidates
     ]
+    ordered_candidate_record_digests_digest = (
+        _ordinary_ordered_candidate_record_digests_digest(records)
+    )
     selected_source_refs = [
         _safe_mapping(record.get("source_result_ref")) for record in records
     ]
@@ -672,6 +675,9 @@ def build_search_result_candidate_packet_from_ordinary_discovery(
                 expected_candidate_inputs_digest
             ),
             "candidate_count": len(records),
+            "ordered_candidate_record_digests_digest": (
+                ordered_candidate_record_digests_digest
+            ),
             "candidate_records": records,
             **_POSTURE_TRUE_FLAGS,
             **_CLOSED_FALSE_FLAGS,
@@ -972,6 +978,15 @@ def validate_ordinary_search_result_candidate_packet(
             )
         seen_source_ids.add(str(source_id))
         seen_selected_ranks.add(selected_rank)
+    ordered_candidate_record_digests_digest = (
+        _ordinary_ordered_candidate_record_digests_digest(records)
+    )
+    if safe.get("ordered_candidate_record_digests_digest") != (
+        ordered_candidate_record_digests_digest
+    ):
+        raise SearchResultCandidatePacketError(
+            "ordinary packet ordered candidate-record digest mismatch"
+        )
     declared_digest = _required_token(
         safe.get("packet_digest"),
         "ordinary candidate packet requires packet_digest",
@@ -1101,6 +1116,10 @@ def search_result_candidate_packet_ref_from_packet(
         ),
         "selected_candidate_inputs_digest": _clean_token(
             safe.get("selected_candidate_inputs_digest"),
+            limit=128,
+        ),
+        "ordered_candidate_record_digests_digest": _clean_token(
+            safe.get("ordered_candidate_record_digests_digest"),
             limit=128,
         ),
         "source_result_identity_set_ref": _safe_mapping(
@@ -1849,6 +1868,23 @@ def _ordinary_packet_binding_basis(value: Mapping[str, Any]) -> dict[str, Any]:
         safe.get("selected_candidate_inputs_digest"),
         "ordinary packet requires selected candidate-input digest",
     )
+    records = _safe_list(safe.get("candidate_records"))
+    if records:
+        ordered_record_digests_digest = (
+            _ordinary_ordered_candidate_record_digests_digest(records)
+        )
+        if safe.get("ordered_candidate_record_digests_digest") not in (
+            None,
+            ordered_record_digests_digest,
+        ):
+            raise SearchResultCandidatePacketError(
+                "ordinary packet ordered candidate-record binding digest mismatch"
+            )
+    else:
+        ordered_record_digests_digest = _required_sha256(
+            safe.get("ordered_candidate_record_digests_digest"),
+            "ordinary packet requires ordered candidate-record binding digest",
+        )
     candidate_count = _positive_int(
         safe.get("candidate_count"),
         "ordinary packet requires candidate_count",
@@ -1870,7 +1906,29 @@ def _ordinary_packet_binding_basis(value: Mapping[str, Any]) -> dict[str, Any]:
         "candidate_count": candidate_count,
         "full_selected_source_result_refs_digest": selected_refs_digest,
         "selected_candidate_inputs_digest": candidate_inputs_digest,
+        "ordered_candidate_record_digests_digest": (
+            ordered_record_digests_digest
+        ),
     }
+
+
+def _ordinary_ordered_candidate_record_digests_digest(
+    records: Sequence[Mapping[str, Any]],
+) -> str:
+    """Bind ordered bounded records without retaining their text in RunKernel."""
+
+    record_digests = [
+        _required_sha256(
+            _safe_mapping(record).get("record_digest"),
+            "ordinary packet candidate record requires record_digest",
+        )
+        for record in records
+    ]
+    if not record_digests:
+        raise SearchResultCandidatePacketError(
+            "ordinary packet requires ordered candidate record digests"
+        )
+    return _digest_json(record_digests)
 
 
 def ordinary_search_result_candidate_packet_binding_digest(
