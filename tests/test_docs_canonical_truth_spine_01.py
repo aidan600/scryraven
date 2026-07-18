@@ -587,6 +587,13 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
     assert "selected-candidate nontrigger" in routing.casefold()
     assert "no exact-URL cap charge" in acquisition
     assert "opens a candidate source URL" in loop
+    assert "`discover_candidate_urls_admitted` counts newly admitted" in _read(
+        CURRENT_STATE
+    )
+    assert "`urls_fetched` counts actual separate source/exact-URL" in _read(
+        CURRENT_STATE
+    )
+    assert "`total_urls_fetched` / `urls_fetched`" not in _read(CURRENT_STATE)
     assert (
         "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
         in _read(ROADMAP)

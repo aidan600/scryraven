@@ -460,6 +460,7 @@ def run_post_retirement_ordinary_pipeline(
     ),
     install_economist_sentinel: bool = True,
     current_date: str = "2026-05-06",
+    cap_policy: Any | None = None,
     deps_overrides: Mapping[str, Any] | None = None,
     environment_overrides: Mapping[str, str] | None = None,
 ) -> tuple[Any, PostRetirementOrdinaryPipelineHarness]:
@@ -489,6 +490,7 @@ def run_post_retirement_ordinary_pipeline(
             current_date=current_date,
             session_id=f"session-{mode.casefold()}",
             run_id=f"run-{mode.casefold()}",
+            cap_policy=cap_policy,
         ),
         mode=mode,
         forced_corpus_state=(

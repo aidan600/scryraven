@@ -149,7 +149,10 @@ def build_execution_log_entry(**facts: Any) -> dict[str, Any]:
         "scout_skip_reason": facts["scout_skip_reason"],
         "iterations_run": facts["iterations_run"],
         "total_chunks_embedded": facts["total_chunks_embedded"],
-        "urls_fetched": facts["total_urls_fetched"],
+        "discover_candidate_urls_admitted": facts[
+            "discover_candidate_urls_admitted"
+        ],
+        "urls_fetched": facts["urls_fetched"],
         "providers_by_iteration": facts["providers_by_iteration"],
         **facts["provider_diagnostics_payload"],
         "queries_per_iteration": facts["queries_per_iter"],

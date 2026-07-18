@@ -716,9 +716,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # ------------------------------------------------------------------
     linkup_block = ""
     total_chunks_embedded = 0
-    # Historical compatibility telemetry: this counts newly admitted DISCOVER
-    # candidate URLs. It is not an exact-URL fetch/read transport counter.
-    total_urls_fetched = 0
+    discover_candidate_urls_admitted = 0
+    # Separate source/exact-URL fetch/read transports. Ordinary discovery does
+    # not charge this counter when it admits provider-returned candidate URLs.
+    urls_fetched = 0
     providers_by_iteration: list[list[str]] = []
     provider_diagnostics: list[dict[str, Any]] = []
     retrieval_pass_records: list[dict[str, Any]] = []
@@ -2046,7 +2047,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         run_kernel.reduce(main_retrieval_outcome.observation)
         new_passages = main_retrieval_outcome.passages
-        total_urls_fetched += main_retrieval_outcome.seen_url_delta
+        discover_candidate_urls_admitted += main_retrieval_outcome.seen_url_delta
         total_chunks_embedded += main_retrieval_outcome.chunk_delta
         retrieval_loop_contract_state = (
             main_retrieval_outcome.retrieval_loop_contract_state
@@ -2085,7 +2086,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             retrieval_pass_records=retrieval_pass_records,
                         )
                         retry_passages = retry_outcome.passages
-                        total_urls_fetched += retry_outcome.seen_url_delta
+                        discover_candidate_urls_admitted += retry_outcome.seen_url_delta
                         total_chunks_embedded += retry_outcome.chunk_delta
                         past_searches.extend(rqs)
                         to_merge = to_merge + retry_passages
@@ -2937,7 +2938,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     source_class_recovery_execution = (
         source_class_recovery_result.source_class_recovery_execution
     )
-    total_urls_fetched += source_class_recovery_result.total_urls_delta
+    discover_candidate_urls_admitted += source_class_recovery_result.total_urls_delta
     total_chunks_embedded += source_class_recovery_result.total_chunks_delta
 
     conflict_resolution_execution: dict[str, int | bool]
@@ -2956,7 +2957,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "new_url_count": 0,
         }
     if conflict_resolution_execution["attempted"]:
-        total_urls_fetched += int(conflict_resolution_execution["new_url_count"])
+        discover_candidate_urls_admitted += int(
+            conflict_resolution_execution["new_url_count"]
+        )
         total_chunks_embedded += int(conflict_resolution_execution["result_count"])
 
     final_evidence_handoff = build_final_evidence_runtime_handoff_from_scope(

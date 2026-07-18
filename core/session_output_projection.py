@@ -178,7 +178,10 @@ def build_execution_trace_projection(runtime_values: Mapping[str, Any]) -> dict[
         **v["economist_handoff_trace_fragment"],
         **v["synthesis_evaluator_supplemental_search_handoff_trace_fragment"],
         **v["scrutineer_remediation_handoff_trace_fragment"],
-        "urls_fetched": v["total_urls_fetched"],
+        "discover_candidate_urls_admitted": v[
+            "discover_candidate_urls_admitted"
+        ],
+        "urls_fetched": v["urls_fetched"],
         "total_chunks": v["total_chunks_embedded"],
         "source_tier_counts": source_tier_exec["source_tier_counts"],
         "source_domain_counts": source_domain_exec["source_domain_counts"],
@@ -302,7 +305,10 @@ def build_execution_log_entry_projection(
         scout_skip_reason=v["scout_skip_reason"],
         iterations_run=v["iterations_run"],
         total_chunks_embedded=v["total_chunks_embedded"],
-        total_urls_fetched=v["total_urls_fetched"],
+        discover_candidate_urls_admitted=v[
+            "discover_candidate_urls_admitted"
+        ],
+        urls_fetched=v["urls_fetched"],
         providers_by_iteration=v["providers_by_iteration"],
         provider_diagnostics_payload=v["_provider_diagnostics_payload"],
         queries_per_iter=v["queries_per_iter"],

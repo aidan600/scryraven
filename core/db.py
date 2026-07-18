@@ -23,6 +23,7 @@ RUN_COLUMNS: tuple[str, ...] = (
     "scout_key",
     "corpus_state",
     "retrieval_yield_chunks",
+    "discover_candidate_urls_admitted",
     "urls_fetched",
     "iterations_run",
     "economist_seconds",
@@ -84,6 +85,9 @@ def execution_jsonl_to_run_row(obj: dict[str, Any]) -> dict[str, Any] | None:
         "scout_key": obj.get("scout_key"),
         "corpus_state": obj.get("corpus_state"),
         "retrieval_yield_chunks": int(retrieval or 0),
+        "discover_candidate_urls_admitted": int(
+            obj.get("discover_candidate_urls_admitted") or 0
+        ),
         "urls_fetched": int(obj.get("urls_fetched") or 0),
         "iterations_run": int(obj.get("iterations_run") or 0),
         "economist_seconds": timing.get("economist_seconds"),
@@ -116,6 +120,7 @@ CREATE TABLE IF NOT EXISTS runs (
     scout_key       TEXT,
     corpus_state    TEXT,
     retrieval_yield_chunks INTEGER,
+    discover_candidate_urls_admitted INTEGER,
     urls_fetched    INTEGER,
     iterations_run  INTEGER,
     economist_seconds   REAL,
@@ -157,6 +162,14 @@ def init_db(db_path: str | Path | None = None) -> None:
     conn = sqlite3.connect(path)
     try:
         conn.executescript(SCHEMA_SQL)
+        run_columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+        if "discover_candidate_urls_admitted" not in run_columns:
+            conn.execute(
+                "ALTER TABLE runs ADD COLUMN "
+                "discover_candidate_urls_admitted INTEGER"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -227,6 +240,9 @@ def insert_run(
         "scout_key": run_data.get("scout_key"),
         "corpus_state": run_data.get("corpus_state"),
         "retrieval_yield_chunks": run_data.get("retrieval_yield_chunks"),
+        "discover_candidate_urls_admitted": run_data.get(
+            "discover_candidate_urls_admitted"
+        ),
         "urls_fetched": run_data.get("urls_fetched"),
         "iterations_run": run_data.get("iterations_run"),
         "economist_seconds": run_data.get("economist_seconds"),
@@ -254,7 +270,15 @@ def insert_run(
         elif row[k] is not None:
             row[k] = _optional_int(row[k])
 
-    for k in ("retrieval_yield_chunks", "urls_fetched", "iterations_run", "total_input_tokens", "total_output_tokens", "output_word_count"):
+    for k in (
+        "retrieval_yield_chunks",
+        "discover_candidate_urls_admitted",
+        "urls_fetched",
+        "iterations_run",
+        "total_input_tokens",
+        "total_output_tokens",
+        "output_word_count",
+    ):
         if row[k] is not None:
             row[k] = _optional_int(row[k])
 

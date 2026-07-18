@@ -102,7 +102,8 @@ def _trace(
             }
         ],
         "provider_attempts_by_role": {"main_retrieval": 1},
-        "urls_fetched": 4,
+        "discover_candidate_urls_admitted": 4,
+        "urls_fetched": 0,
         "total_chunks": 4,
         "corpus_weak": False,
         "analyst_model_called": analyst_model_called,
@@ -933,6 +934,8 @@ def test_diagnostics_and_ledger_are_mutation_safe() -> None:
     assert main_stage["metadata"]["provider_attempts_by_role"] == {
         "main_retrieval": 1
     }
+    assert main_stage["metadata"]["discover_candidate_urls_admitted"] == 4
+    assert main_stage["metadata"]["urls_fetched"] == 0
     researcher_records = [
         record.to_dict() for record in ledger.records_for("researcher_queries")
     ]

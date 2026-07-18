@@ -14,6 +14,12 @@ import pytest
 
 import core.pipeline as pipeline
 import core.search_providers as provider_adapters
+from core.cap_enforcement import RunCapPolicy
+from tests.helpers.offline_ordinary_pipeline import (
+    OFFLINE_SEARCH_PROVIDER_ENV_KEYS,
+    execution_event_from_log,
+    run_post_retirement_ordinary_pipeline,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "core"
@@ -814,3 +820,60 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
     cli_source = (ROOT / "proplex" / "__main__.py").read_text(encoding="utf-8")
     assert "process_search_queries=process_search_queries" in cli_source
     assert "ordinary_live_source_fetch_read" not in cli_source
+
+
+def test_discovery_admission_and_exact_url_transport_telemetry_are_separate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cap_policy = RunCapPolicy(
+        max_search_dispatches=8,
+        max_fetch_read_operations=0,
+        max_author_model_calls=4,
+        max_smart_search_judgment_model_calls=0,
+        max_retries=2,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        cap_policy=cap_policy,
+        environment_overrides={
+            OFFLINE_SEARCH_PROVIDER_ENV_KEYS["tavily"]: "offline-placeholder"
+        },
+    )
+
+    trace = outcome.execution_trace
+    execution_record = execution_event_from_log(tmp_path / "execution.jsonl")
+    admitted_count = trace["discover_candidate_urls_admitted"]
+
+    assert harness.search_calls
+    assert outcome.seen_urls
+    assert admitted_count == len(outcome.seen_urls)
+    assert admitted_count > 0
+    assert trace["urls_fetched"] == 0
+    assert execution_record["discover_candidate_urls_admitted"] == admitted_count
+    assert execution_record["urls_fetched"] == 0
+    assert execution_record["execution_trace"][
+        "discover_candidate_urls_admitted"
+    ] == admitted_count
+    assert execution_record["execution_trace"]["urls_fetched"] == 0
+    assert cap_policy.fetch_read_operations == 0
+    assert harness.forbidden_live_calls == []
+
+
+def test_all_discovery_admission_totals_use_only_the_admission_accumulator() -> None:
+    orchestrator_source = (CORE / "pipeline_orchestrator.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "total_urls_fetched" not in orchestrator_source
+    assert orchestrator_source.count("discover_candidate_urls_admitted +=") == 4
+    for delta_expression in (
+        "main_retrieval_outcome.seen_url_delta",
+        "retry_outcome.seen_url_delta",
+        "source_class_recovery_result.total_urls_delta",
+        'conflict_resolution_execution["new_url_count"]',
+    ):
+        assert delta_expression in orchestrator_source
+    assert "urls_fetched +=" not in orchestrator_source
+    assert "urls_fetched = 0" in orchestrator_source

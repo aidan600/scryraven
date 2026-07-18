@@ -327,6 +327,9 @@ def _main_retrieval_fact(trace: Mapping[str, Any]) -> ObservedStageFact | None:
             "provider_attempts_by_role": deepcopy(
                 _as_mapping(trace.get("provider_attempts_by_role"))
             ),
+            "discover_candidate_urls_admitted": deepcopy(
+                trace.get("discover_candidate_urls_admitted")
+            ),
             "urls_fetched": deepcopy(trace.get("urls_fetched")),
             "total_chunks": deepcopy(trace.get("total_chunks")),
         },

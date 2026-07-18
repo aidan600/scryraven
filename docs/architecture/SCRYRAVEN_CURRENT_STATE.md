@@ -275,9 +275,16 @@ and scalar source/date metadata remain DISCOVER output. They are labeled
 `provider_returned_snippet` or `provider_returned_excerpt`, with the coarse
 custody posture still `snippet_only`. They are not full-page content, a read
 artifact, verified source text, EvidenceLedger custody, or proof that the
-provider itself did or did not acquire a page internally. The compatibility
-telemetry field `total_urls_fetched` / `urls_fetched` continues to count newly
-admitted DISCOVER candidate URLs; it is not an exact-URL transport counter.
+provider itself did or did not acquire a page internally. Discovery and source
+transport telemetry now have separate meanings:
+
+- `discover_candidate_urls_admitted` counts newly admitted provider-returned
+  DISCOVER result URLs across main retrieval, disambiguation retry,
+  source-class recovery, and conflict-resolution discovery.
+- `urls_fetched` counts actual separate source/exact-URL fetch/read transports.
+  It remains zero for the canonical ordinary discovery paths installed here,
+  and admitting a provider result URL or producing a discovery passage does not
+  increment it.
 
 | Capability | Adapter installed | Deterministically recognized by post-discovery control | Current ordinary disposition |
 | --- | --- | --- | --- |
