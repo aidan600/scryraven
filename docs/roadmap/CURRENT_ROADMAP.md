@@ -264,7 +264,7 @@ returns `premium_sequential_acquisition_not_licensed`. No live calls, initial
 DISCOVER redesign, direct `core.pipeline` fetch migration, Map/Crawl PRODUCT
 transport, general Deep, or downstream authority change was made.
 
-## Publication-Blocked Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
+## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
 
 Runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`
 
@@ -290,29 +290,30 @@ filtering mechanics, candidate selection, SearchResultCandidatePacket,
 EvidenceLedger meaning, and downstream answer authority were not redesigned.
 No live call was made.
 
-Publication stopped because canonical ordinary DISCOVER does not currently
-populate `SearchResultCandidatePacket`. Its existing default-disabled seam is a
-separate pre-retrieval child-RunKernel path over injected structured candidates;
+Canonical ordinary DISCOVER still does not populate
+`SearchResultCandidatePacket`. Its existing default-disabled seam is a separate
+pre-retrieval child-RunKernel path over injected structured candidates;
 ordinary multi-query/provider ranking output lacks the canonical task,
 provider-call, rank, AnswerContract, and SearchExecutorHandoff mapping that seam
-requires. Promoting ranked passages into it would create parallel front-half
-authority and fabricate lineage. An owner decision must define that canonical
-mapping, or explicitly remove packet population from this phase's required
-ordinary chain, before this Build can publish.
+requires. No page fetch was restored and no packet field was synthesized from
+ranked passages. This missing handoff is the separate next Build below.
 
-## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
+## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
 
-The intended next checkpoint remains the grounded Build brief at
-[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-It is not active until the candidate-handoff owner decision above resolves the
-incomplete dependency.
-It must install a real independent current-material-need producer, route
-post-selection READ through the installed RunKernel chain, and carry the
-resulting exact-URL material through one bounded final-custody continuation.
-Focused Extract may activate only through a real exact URL/focus/current-
-lineage producer. Initial discovery must retain zero candidate-URL transport.
-The phase must not absorb planner disambiguation, Map selection, or Crawl page
-custody and grants no live-call authority.
+The sole active next checkpoint is
+[DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01](DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md).
+It must populate the existing canonical selected-candidate packet from truthful
+provider-result lineage while retaining zero candidate-page transport and the
+selected-candidate nontrigger. It must not manufacture SearchExecutorHandoff
+task, provider-call, rank, or material-label facts from ranked passage chunks.
+
+## Queued: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
+
+[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
+follows only after canonical ordinary DISCOVER populates the selected-candidate
+packet. Ordinary exact-URL READ and Focused Extract remain future work. Initial
+discovery must retain zero candidate-URL transport, and this checkpoint must not
+absorb planner disambiguation, Map selection, or Crawl page custody.
 
 ## Queued: PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01
 

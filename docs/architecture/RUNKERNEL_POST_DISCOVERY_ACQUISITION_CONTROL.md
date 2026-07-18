@@ -276,20 +276,21 @@ The explicit maintainer sequencing decision installed this foundation before
 the previously active final-custody checkpoint, because final custody must not
 converge around multiple post-discovery decision/execution authorities.
 
-The intended next checkpoint is
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-It remains blocked until an owner defines the canonical ordinary
-multi-query/provider DISCOVER-result mapping into SearchExecutorHandoff and
-`SearchResultCandidatePacket`, or explicitly removes packet population from the
-initial-discovery phase requirement. Ranked passage chunks cannot be promoted
-through the existing default-disabled structured-input seam without
-manufacturing task, provider-call, rank, and front-half contract lineage.
-It must install the independent current-material-need producer for genuinely
-product-consumed READ and carry authorized exact-URL material through final
-custody. It may activate Focused Extract only through a real exact producer and
-existing or explicitly bounded custody semantics. It must preserve the now-
-retired initial-discovery fetch boundary and must not absorb planner
-disambiguation, Map selection, or Crawl page custody.
+The sole active next checkpoint is
+[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md).
+It must populate the existing canonical `SearchResultCandidatePacket` from
+truthful provider-result lineage while retaining zero candidate-page transport
+and the selected-candidate nontrigger. Ranked passage chunks cannot be promoted
+through the existing default-disabled structured-input seam by manufacturing
+task, provider-call, rank, material-label, or front-half contract lineage.
+
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
+follows only after that handoff is installed. It must then install the
+independent current-material-need producer for genuinely product-consumed READ
+and carry authorized exact-URL material through final custody. Focused Extract
+may activate only through a real exact producer and existing or explicitly
+bounded custody semantics. Planner disambiguation remains queued after
+exact-URL convergence; Map selection and Crawl page custody remain later.
 
 Map topology selection follows separately in
 [`SITE-TOPOLOGY-SELECTION-AUTHORITY-01`](../roadmap/SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md).

@@ -54,7 +54,10 @@ The current loop is one authority flow, not a phase chronology:
    initial-planning, planner-disambiguation, discovery, recovery, ranking, or
    candidate-selection step opens a candidate source URL.
 10. `SearchResultCandidatePacket` is URL provenance and a non-evidence handoff,
-    not a material need. Fetch/read may produce bounded sanitized content only
+    not a material need. Canonical ordinary DISCOVER does not yet populate that
+    packet; `DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01` is the sole active
+    next checkpoint and may not synthesize packet fields from ranked passages.
+    Fetch/read may produce bounded sanitized content only
     after a separate current need, exact lineage validation, RunKernel READ or
     Focused Extract authorization, `core.routing` selection, and the guarded
     PRODUCT executor. No ordinary material-need producer is currently installed.

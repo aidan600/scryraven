@@ -285,11 +285,17 @@ acquisition control before final-custody convergence. The controller and
 mechanical adapters remain installed, while historical pre-selection source
 fetching and the false selected-candidate trigger are retired. The sole active
 next is
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md),
-covering a real independent material-need producer, genuinely product-consumed
-READ exact-URL work, and final custody. Focused Extract may follow only when a
-real producer is proved. Planner disambiguation, Map selection, and Crawl page
-custody stay in their separate later checkpoints.
+[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md),
+covering truthful provider-result lineage into the existing canonical
+`SearchResultCandidatePacket`. It must retain zero candidate-page transport and
+must not synthesize packet fields from ranked passage chunks.
+
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
+remains queued until that packet is populated. It will cover a real independent
+material-need producer, genuinely product-consumed READ exact-URL work, and
+final custody. Focused Extract may follow only when a real producer is proved.
+Planner disambiguation remains queued after exact-URL convergence; Map selection
+and Crawl page custody remain later.
 
 This offline Build proves no live provider quality, availability, coverage,
 currentness, latency, price, reliability, or answer improvement. It does not

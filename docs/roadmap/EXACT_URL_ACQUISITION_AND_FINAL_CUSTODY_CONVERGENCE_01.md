@@ -1,9 +1,9 @@
 # EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
-Status: blocked pending initial-discovery candidate-handoff owner decision
+Status: queued after DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
 Mode: BUILD
 Proof class: offline_product_path_proof
-Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 and INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01
+Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01, INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01, and DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
 Starting-runtime/test: 48a309124764d813cf27081bf5871d5a9612db79
 Does-not-authorize: live calls, initial DISCOVER transport or planning redesign, planner disambiguation, Map selection, Crawl custody, general Deep, provider-failure fallback, or citation/final-answer authority by assertion
 
@@ -45,6 +45,10 @@ and proves that product decision.
   contract/component/obligation lineage.
 - No ordinary current-material-need producer reaches READ or Focused Extract.
 - Final custody across authorized READ and Focused Extract is not proved.
+- Canonical ordinary DISCOVER does not yet populate
+  `SearchResultCandidatePacket`; this Build remains blocked until the preceding
+  candidate-handoff convergence checkpoint supplies truthful selected-candidate
+  lineage without synthetic packet fields.
 
 ## Required Build
 

@@ -253,8 +253,12 @@ AnswerContract, SearchExecutorHandoff, task, call, and rank lineage. Ordinary
 multi-query/provider DISCOVER returns ranked passage chunks and cannot supply
 that canonical lineage without a new candidate-admission/front-half authority.
 Connecting those passages here would therefore fabricate lineage and violate
-the preserved QueryPlan/ProviderPlan authority boundary. Publication is blocked
-pending an owner decision for a canonical DISCOVER-result-to-handoff contract.
+the preserved QueryPlan/ProviderPlan authority boundary. No packet fields are
+synthesized from ranked passages. The missing ordinary handoff is owned by the
+sole active next checkpoint,
+[`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md).
+Exact-URL convergence remains queued until that checkpoint populates a
+canonical selected-candidate packet from truthful provider-result lineage.
 
 Fast, Balanced, Deep/high-complexity, planner-assisted, continuation,
 supplemental, weak-corpus, conflict, and source-class recovery discovery all

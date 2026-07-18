@@ -22,6 +22,11 @@ ARCH = DOCS / "architecture"
 GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
+DISCOVER_HANDOFF_BRIEF = (
+    DOCS
+    / "roadmap"
+    / "DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md"
+)
 EXACT_URL_BRIEF = (
     DOCS
     / "roadmap"
@@ -347,7 +352,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-            "Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+            "Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
         in roadmap
     )
 
@@ -419,7 +424,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-            "Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+            "Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
         in roadmap
     )
     assert "No live recovery" in roadmap
@@ -529,10 +534,10 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert "provider-neutral DISCOVER qualifier" in routing
     assert "RunCapExceeded" in routing
 
-    assert roadmap.count("## Active Next:") == 0
-    assert roadmap.count("## Blocked Next:") == 1
+    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Blocked Next:") == 0
     assert (
-        "## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+        "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
         in roadmap
     )
     for stale in (
@@ -551,6 +556,7 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
     acquisition = _collapsed(ACQUISITION_CONTROL)
     loop = _collapsed(CONCERN_OWNERS["canonical:run-contract-semantic-loop"])
     roadmap = _collapsed(ROADMAP)
+    handoff = _collapsed(DISCOVER_HANDOFF_BRIEF)
     exact_url = _collapsed(EXACT_URL_BRIEF)
 
     for owner in (
@@ -559,6 +565,7 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
         ACQUISITION_CONTROL,
         CONCERN_OWNERS["canonical:run-contract-semantic-loop"],
         ROADMAP,
+        DISCOVER_HANDOFF_BRIEF,
         EXACT_URL_BRIEF,
     ):
         assert INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA in _read(owner)
@@ -574,23 +581,28 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
         "fetch_url_text",
         "The requested final handoff from ordinary discovered candidates",
         "not populated by canonical ordinary DISCOVER",
-        "Publication is blocked",
+        "sole active next checkpoint",
     ):
         assert phrase in current
     assert "selected-candidate nontrigger" in routing.casefold()
     assert "no exact-URL cap charge" in acquisition
     assert "opens a candidate source URL" in loop
     assert (
-        "## Publication-Blocked Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
+        "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
         in _read(ROADMAP)
     )
+    assert "Status: sole active next checkpoint" in _read(DISCOVER_HANDOFF_BRIEF)
+    assert "must not synthesize packet fields" in handoff
     assert "PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01" in roadmap
     assert "Initial DISCOVER material remains provider-returned" in exact_url
     assert "must not fetch candidate pages" in exact_url
 
     roadmap_folded = roadmap.casefold()
+    handoff_index = roadmap_folded.index(
+        "## active next: discover-result-candidate-handoff-convergence-01"
+    )
     exact_index = roadmap_folded.index(
-        "## blocked next: exact-url-acquisition-and-final-custody-convergence-01"
+        "## queued: exact-url-acquisition-and-final-custody-convergence-01"
     )
     planner_index = roadmap_folded.index(
         "## queued: planner-disambiguation-acquisition-convergence-01"
@@ -601,7 +613,7 @@ def test_initial_discovery_fetch_retirement_truth_is_consistent_across_spine() -
     crawl_index = roadmap_folded.index(
         "## queued split: crawl-page-custody-convergence-01"
     )
-    assert exact_index < planner_index < map_index < crawl_index
+    assert handoff_index < exact_index < planner_index < map_index < crawl_index
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
@@ -684,10 +696,10 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     assert "General and domain-targeted discovery are Linkup `standard/searchResults` first" in normalized
 
     roadmap = _read(ROADMAP)
-    assert roadmap.count("## Active Next:") == 0
-    assert roadmap.count("## Blocked Next:") == 1
+    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Blocked Next:") == 0
     assert (
-            "## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+            "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
         in roadmap
     )
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
@@ -742,10 +754,13 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         "## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01"
     )
     discovery_retirement = roadmap.index(
-        "## Publication-Blocked Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
+        "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
+    )
+    candidate_handoff = roadmap.index(
+        "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
     )
     convergence = roadmap.index(
-        "## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+        "## Queued: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
     )
     live = roadmap.index("### Separately Licensed Comparative Live Validation")
 
@@ -765,6 +780,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         < acquisition_runtime
         < acquisition_control
         < discovery_retirement
+        < candidate_handoff
         < convergence
         < live
     )
@@ -772,8 +788,8 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "fixed ordinary CLI product composition" in normalized
     assert "## Active Next: Separately Licensed Comparative Live Validation" not in roadmap
     assert "## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" not in roadmap
-    assert roadmap.count("## Active Next:") == 0
-    assert roadmap.count("## Blocked Next:") == 1
+    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Blocked Next:") == 0
     assert "no product Specialist activation" in roadmap
     assert "Quantitative Specialist ordinary product activation is installed" in roadmap
     assert "fail-closed" in roadmap
@@ -837,14 +853,14 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     ):
         assert phrase in census
 
-    assert roadmap.count("## Active Next:") == 0
-    assert roadmap.count("## Blocked Next:") == 1
+    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Blocked Next:") == 0
     assert (
         "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
         in roadmap
     )
     assert (
-            "## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+            "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
             in roadmap
     )
     assert (
@@ -854,7 +870,7 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.index(
         "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
     ) < roadmap.index(
-        "## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+        "## Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -893,7 +909,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
     assert (
-            "Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+            "Active Next: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
         in roadmap
     )
     assert "answer-producing paths" in roadmap
