@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 phase implementation
+Verified-against-runtime: a06b63d68a12e69fa9060531b38e0b6745aecc9a
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -235,6 +235,8 @@ provider-failure retry and provider synthesis remain disabled, and the repair
 made no live calls or downstream authority change.
 
 ## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01
+
+Runtime/test commit `a06b63d68a12e69fa9060531b38e0b6745aecc9a`
 
 The maintainer sequencing decision intentionally superseded the former
 `BOUNDED-FINAL-CUSTODY-CONVERGENCE-01` active-next ordering. Final custody must

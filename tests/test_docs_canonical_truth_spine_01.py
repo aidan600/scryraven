@@ -24,6 +24,7 @@ CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
 CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
+ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
 ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
@@ -78,10 +79,10 @@ SCOUT_RETIREMENT_RUNTIME_SHA = (
 PROVIDER_ROUTING_RUNTIME_SHA = (
     "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
 )
-ACQUISITION_CONTROL_RUNTIME_MARKER = (
-    "RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 phase implementation"
+ACQUISITION_CONTROL_RUNTIME_SHA = (
+    "a06b63d68a12e69fa9060531b38e0b6745aecc9a"  # pragma: allowlist secret
 )
-CURRENT_STATE_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_MARKER
+CURRENT_STATE_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 SPECIALIST_ADMISSION_RUNTIME_SHA = (
     "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
@@ -426,7 +427,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
     for phrase in (
         "Status: current",
         "Default-read: yes",
-        f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_MARKER}",
+        f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_SHA}",
         "`core.routing` is the sole provider-capability policy owner",
         "exactly one selected provider or blocks with zero transport",
         "Fallback candidates remain descriptive",
@@ -468,8 +469,15 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     roadmap = _collapsed(ROADMAP)
 
     assert PROVIDER_ROUTING_RUNTIME_SHA in census
-    for text in (routing, current, roadmap):
-        assert ACQUISITION_CONTROL_RUNTIME_MARKER in text
+    for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING, CURRENT_STATE, ROADMAP):
+        assert (
+            f"Verified-against-runtime: {ACQUISITION_CONTROL_RUNTIME_SHA}"
+            in _read(owner)
+        )
+    assert (
+        f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`"
+        in _read(ROADMAP)
+    )
 
     for text in (routing, census, current):
         for phrase in (

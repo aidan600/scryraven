@@ -5,7 +5,7 @@ Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
 Applies-to: post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 phase implementation
+Verified-against-runtime: a06b63d68a12e69fa9060531b38e0b6745aecc9a
 Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
 
 ## Purpose And Boundary

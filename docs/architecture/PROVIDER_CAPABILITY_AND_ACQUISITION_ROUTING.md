@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary acquisition routing, shared acquisition contracts, ProviderPlan projection, RunKernel post-discovery routing, mechanical dispatch, and selected-candidate READ custody
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 phase implementation
+Verified-against-runtime: a06b63d68a12e69fa9060531b38e0b6745aecc9a
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
