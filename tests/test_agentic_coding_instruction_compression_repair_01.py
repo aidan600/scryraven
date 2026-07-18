@@ -337,7 +337,7 @@ def test_revised_roadmap_has_one_active_next_checkpoint() -> None:
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Validation and Execution-Surface Ergonomics Closure" in roadmap
     assert (
-        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
+        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
         in roadmap
     )
     assert roadmap.count("## Active Next:") == 1

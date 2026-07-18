@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 193c5caabe1f97da534f0e601d410acb98d3cdea
+Verified-against-runtime: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01 phase implementation
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -234,22 +234,69 @@ They remain ordinary-product blocked. Scrutineer Deep remains unchanged,
 provider-failure retry and provider synthesis remain disabled, and the repair
 made no live calls or downstream authority change.
 
-## Active Next: BOUNDED-FINAL-CUSTODY-CONVERGENCE-01
+## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01
 
-Converge currently product-consumed DISCOVER and selected-candidate READ
-artifacts through the bounded final-custody checkpoint. This checkpoint must
-consume existing normalized acquisition/custody outputs; it must not create
-ordinary requesters for `FOCUSED_EXTRACT`, `MAP_SITE`, `CRAWL_SITE`, or general
-Linkup Deep, and it grants no live-call authority.
+The maintainer sequencing decision intentionally superseded the former
+`BOUNDED-FINAL-CUSTODY-CONVERGENCE-01` active-next ordering. Final custody must
+converge only after post-discovery acquisition has one canonical capability,
+route, execution, terminal, and custody-authorization owner.
+
+RunKernel now owns canonical post-discovery acquisition-control state,
+proposal admission, provider-neutral work orders, route and execution
+authorization, active slots, deduplication, exhaustion, terminal receipts, and
+separate custody permission. Proposals remain advisory; the deterministic
+controller derives capability independently; `core.routing` remains the sole
+provider selector; and low-level adapters remain mechanical and RunKernel-
+independent.
+
+Selected-candidate READ now traverses the complete RunKernel chain before the
+existing FetchReadContentPacket and EvidenceLedger custody reducers. The
+ordinary composition remains default-disabled and has no default live CLI
+activation. Focused Extract is recognized but returns
+`focused_extract_requester_not_installed`; Map and Crawl return
+`map_candidate_reentry_not_installed` and
+`crawl_page_custody_not_installed`; general premium sequential acquisition
+returns `premium_sequential_acquisition_not_licensed`. No live calls, initial
+DISCOVER redesign, direct `core.pipeline` fetch migration, Map/Crawl PRODUCT
+transport, general Deep, or downstream authority change was made.
+
+## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
+
+The sole active next checkpoint is the grounded Build brief at
+[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It must inventory and converge genuinely ordinary-product-consumed exact-URL
+DISCOVER and READ paths beneath the installed RunKernel chain, activate Focused
+Extract only through a real exact URL/focus/current-lineage producer, and carry
+the resulting material through one bounded final-custody continuation. It must
+not absorb Map selection or Crawl page custody and grants no live-call
+authority.
+
+## Queued: SITE-TOPOLOGY-SELECTION-AUTHORITY-01
+
+[SITE-TOPOLOGY-SELECTION-AUTHORITY-01](SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md)
+follows only after exact-URL/final-custody convergence. It may activate Map,
+admit canonical topology, and add explicit RunKernel URL-selection authority.
+Provider result order cannot become relevance, topology cannot become evidence,
+and no automatic Map-to-Crawl is allowed.
+
+## Queued Split: CRAWL-PAGE-CUSTODY-CONVERGENCE-01
+
+[CRAWL-PAGE-CUSTODY-CONVERGENCE-01](CRAWL_PAGE_CUSTODY_CONVERGENCE_01.md) is a
+separate checkpoint because page-level source identity and custody contracts
+have a different owner and rollback boundary from Map topology selection. It
+must preserve one source identity per page and may not manufacture search
+candidates or aggregate a page collection into a false source.
 
 ### Separately Licensed Comparative Live Validation
 
-Only after mode-policy recovery authority containment, Specialist
-proposal-instance admission hardening, structured-list route qualification,
-semantic Scout retirement, provider-capability routing, acquisition-runtime
-convergence, and bounded final-custody convergence may separately licensed
-comparative live validation be considered. Offline proof does not authorize
-live work, and this roadmap grants no live license.
+A separately licensed comparative live-validation phase may be considered only
+after mode-policy recovery authority containment, Specialist proposal-instance
+admission hardening, structured-list route qualification, semantic Scout
+retirement, provider-capability routing, acquisition-runtime convergence,
+RunKernel acquisition-control foundation, and exact-URL bounded final-custody
+convergence. Offline proof does not authorize live work, and this roadmap
+grants no live license. The queued Map and Crawl briefs are not installed
+behavior and authorize no work in the active exact-URL phase.
 Arbitrary-query coverage, broad quantitative reasoning quality, provider
 quality, and product correctness remain unproved.
 
