@@ -6,8 +6,10 @@ are represented here before retrieval consumes query text.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 from enum import Enum
+from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
 from core.retrieval_quality import (
@@ -122,6 +124,22 @@ def _safe_json(value: Any, *, depth: int = 0) -> Any:
     return _clean_text(value, limit=200)
 
 
+def _canonical_sha256(value: Any) -> str:
+    """Return a full SHA-256 digest over a deterministic JSON encoding."""
+
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _text_sha256(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class QueryPlanItem:
     item_id: str
@@ -165,6 +183,30 @@ class QueryPlanItem:
             "metadata": _safe_json(self.metadata),
         }
         return {key: value for key, value in payload.items() if value not in (None, {}, [])}
+
+    def to_ref(self, plan_id: str) -> dict[str, str]:
+        """Return the canonical execution lineage ref for this exact plan item."""
+
+        canonical_plan_id = _clean_text(plan_id, limit=120)
+        if canonical_plan_id is None:
+            raise ValueError("query plan item ref requires plan_id")
+        authorized_query = self.authorized_query
+        if authorized_query is None:
+            raise ValueError("query plan item ref requires an authorized query")
+        return {
+            "query_plan_item_id": self.item_id,
+            "query_plan_item_digest": _canonical_sha256(
+                {
+                    "query_plan_id": canonical_plan_id,
+                    "item": self.to_dict(),
+                }
+            ),
+            "query_digest": _text_sha256(authorized_query),
+            "authorized_query": authorized_query,
+            "query_plan_role": self.role.value,
+            "iteration": self.iteration,
+            "order": self.order,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +271,53 @@ class QueryPlan:
                 admission_reason="ordered_for_consumption",
             )
         return plan
+
+    def record_authorized_dispatch_queries(
+        self,
+        queries: Sequence[str],
+        *,
+        origin: str,
+        role: QueryPlanRole | str,
+        phase: str,
+        iteration: int | None,
+        authority_source: str,
+        authority_ref_digest: str,
+    ) -> tuple["QueryPlan", tuple[dict[str, Any], ...]]:
+        """Record exact already-authorized dispatch text without rewriting it.
+
+        Recovery and review owners decide whether these queries may run.  This
+        method only gives their exact text and order canonical QueryPlan
+        identity immediately before the mechanical DISCOVER dispatch.
+        """
+
+        plan = self
+        appended: list[QueryPlanItem] = []
+        for order, value in enumerate(queries, start=1):
+            query = str(value)
+            if not query.strip():
+                raise ValueError(
+                    "authorized discovery dispatch cannot record an empty query"
+                )
+            plan = plan.append(
+                origin=origin,
+                role=role,
+                # Preserve the ordinary iteration view: this is an exact
+                # record of already-authorized side work, not newly ordered
+                # work for the main search pass.
+                status=QueryPlanStatus.FINALIZED,
+                authorized_query=query,
+                phase=phase,
+                iteration=iteration,
+                order=order,
+                admission_reason="recorded_from_existing_dispatch_authority",
+                metadata={
+                    "authority_source": authority_source,
+                    "authority_ref_digest": authority_ref_digest,
+                    "query_text_unchanged": True,
+                },
+            )
+            appended.append(plan.items[-1])
+        return plan, tuple(item.to_ref(plan.plan_id) for item in appended)
 
     def consume_search_work_for_existing_queries(
         self,
@@ -350,6 +439,35 @@ class QueryPlan:
         for item in sorted(ordered, key=lambda x: (int(x.iteration or 0), int(x.order or 0), x.item_id)):
             out.setdefault(int(item.iteration or 0), []).append(str(item.authorized_query))
         return out
+
+    def execution_item_refs(self, iteration: int) -> list[dict[str, str]]:
+        """Return ordered refs for the exact queries authorized for one pass."""
+
+        ordered = [
+            item
+            for item in self.items
+            if item.status == QueryPlanStatus.ORDERED
+            and item.iteration == iteration
+            and item.authorized_query is not None
+        ]
+        return [
+            item.to_ref(self.plan_id)
+            for item in sorted(
+                ordered,
+                key=lambda item: (
+                    int(item.order or 0),
+                    item.item_id,
+                ),
+            )
+        ]
+
+    def to_ref(self) -> dict[str, str]:
+        """Return a compact canonical ref to the current immutable plan value."""
+
+        return {
+            "query_plan_id": self.plan_id,
+            "query_plan_digest": _canonical_sha256(self.to_dict()),
+        }
 
     def to_dict(self) -> dict[str, Any]:
         payload = {

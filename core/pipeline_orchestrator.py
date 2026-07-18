@@ -71,6 +71,7 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
+from core.discovery_source_result import DiscoveryResultMaterialStore
 from core.evidence_integration_checkpoint import (
     build_evidence_integration_checkpoint_trace,
     decide_evidence_integration_checkpoint,
@@ -140,6 +141,13 @@ from core.ordinary_continuation_spine_gate import (
     evaluator_continuation_spine_gate_exception_trace,
     expander_continuation_spine_gate_defaults,
     expander_continuation_spine_gate_exception_trace,
+)
+from core.ordinary_discovery_candidate_handoff_runtime import (
+    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY,
+    build_ordinary_discovery_authority_snapshot,
+    build_ordinary_discovery_candidate_action_inputs,
+    execute_ordinary_discovery_candidate_handoff_action,
+    prepare_ordinary_discovery_selection,
 )
 from core.ordinary_live_authority_consolidation_runtime import (
     ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY,
@@ -268,6 +276,9 @@ from core.runtime_prompt_assembly import (
     build_expander_prompt,
     build_image_context,
     evidence_slice_for_analyst,
+)
+from core.search_result_candidate_packet import (
+    SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
 )
 from core.search_work_shadow_lane_runtime import (
     SEARCH_WORK_SHADOW_LANE_TRACE_KEY,
@@ -613,12 +624,31 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     def _search(*, phase: str = "retrieval"):
         base = deps.process_search_queries
         def wrapped(*args: Any, **kw: Any) -> Any:
-            diagnostic_kw = {
+            optional_kw = {
                 key: kw.pop(key)
-                for key in ("provider_diagnostics", "provider_role", "iteration")
+                for key in (
+                    "provider_diagnostics",
+                    "provider_role",
+                    "iteration",
+                    "discovery_result_context",
+                    "discovery_result_store",
+                )
                 if key in kw
             }
-            kw.update(supported_diagnostic_kwargs(base, diagnostic_kw))
+            # The same signature filter keeps injected offline compatibility
+            # callables working while the ordinary product callable consumes
+            # the canonical discovery-result lineage/store arguments.
+            supported_optional_kw = supported_diagnostic_kwargs(base, optional_kw)
+            lineage_keys = {
+                "discovery_result_context",
+                "discovery_result_store",
+            }.intersection(optional_kw)
+            if lineage_keys.difference(supported_optional_kw):
+                raise PipelineError(
+                    "ordinary discovery callable cannot consume canonical "
+                    "result lineage/store"
+                )
+            kw.update(supported_optional_kw)
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
             if cap_policy is not None:
@@ -658,6 +688,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "query_length": len(query),
         },
     )
+    discovery_result_store = DiscoveryResultMaterialStore(
+        run_id=run_id,
+        request_id=session_id,
+    )
+    ordinary_discovery_candidate_packet: dict[str, Any] = {}
+    ordinary_discovery_candidate_handoff_projection: dict[str, Any] = {}
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
@@ -1216,11 +1252,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     query_embedding = execute_embedding_action(embedding_action, embed_texts)
     analyst_effort = {"low": "low", "medium": "medium", "high": "high"}.get(complexity, "low")
     entity_hint_for_retrieval = (primary_entity or core_topic or "").strip() or None
-    provider_plan = ProviderPlan(
-        availability=provider_availability_snapshot,
-        selector_available_keys=(
-            provider_availability_snapshot.to_capability_available_keys()
-        ),
+    provider_plan = ProviderPlan.from_available_keys(
+        provider_availability_snapshot.to_capability_available_keys(),
+        plan_id=f"provider-plan-{run_id}",
     )
     available_keys, (select_provider_list, merge_provider_overrides) = provider_plan.available_keys(), (select_providers, merge_search_provider_overrides)
     current_search_depth_for_recovery = search_depth
@@ -2593,6 +2627,58 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if not all_passages:
         raise PipelineError("No readable passages were extracted.")
 
+    # Revision 1 is the immutable ordinary post-DISCOVER selection snapshot.
+    # It is created before source-class/conflict recovery and before synthesis,
+    # when no accepted current AnswerContract or source obligation exists.
+    initial_discovery_top_evidence = deps.filter_top_evidence(
+        all_passages,
+        top_chunks,
+        max_domain_chunks,
+    )
+    ordinary_discovery_authority_snapshot = (
+        build_ordinary_discovery_authority_snapshot(
+            query_plan=query_authority.plan,
+            provider_plan=provider_plan,
+        )
+    )
+    ordinary_discovery_selection = prepare_ordinary_discovery_selection(
+        final_top_evidence=initial_discovery_top_evidence,
+        discovery_result_store=discovery_result_store,
+        selected_candidate_cap=top_chunks,
+        authority_snapshot=ordinary_discovery_authority_snapshot,
+    )
+    if ordinary_discovery_selection.candidate_count:
+        ordinary_candidate_action_inputs = (
+            build_ordinary_discovery_candidate_action_inputs(
+                run_id=run_id,
+                request_id=session_id,
+                source_result_identity_set_ref=(
+                    discovery_result_store.identity_set_ref()
+                ),
+                selection=ordinary_discovery_selection,
+            )
+        )
+        ordinary_candidate_action = (
+            run_kernel.authorize_ordinary_discovery_candidate_handoff(
+                inputs=ordinary_candidate_action_inputs
+            )
+        )
+        ordinary_candidate_execution = (
+            execute_ordinary_discovery_candidate_handoff_action(
+                action=ordinary_candidate_action,
+                selection=ordinary_discovery_selection,
+                discovery_result_store=discovery_result_store,
+                authority_snapshot=ordinary_discovery_authority_snapshot,
+            )
+        )
+        run_kernel.reduce(ordinary_candidate_execution.observation)
+        ordinary_discovery_candidate_packet = dict(
+            ordinary_candidate_execution.packet
+        )
+        ordinary_discovery_candidate_handoff_projection = dict(
+            ordinary_candidate_execution.projection
+        )
+
     _source_tier_recovery_lifecycle = source_tier_telemetry(all_passages)
     _source_domain_recovery_lifecycle = source_domain_telemetry(
         all_passages,
@@ -3768,6 +3854,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     execution_trace = post_author_output_packaging.execution_trace
     execution_trace["provider_plan"] = provider_plan.to_trace()
+    discovery_result_telemetry = discovery_result_store.telemetry()
+    discovery_result_telemetry.update(
+        {
+            "candidate_packets_created": int(
+                bool(ordinary_discovery_candidate_packet)
+            ),
+            "selected_candidates_handed_off": int(
+                ordinary_discovery_candidate_handoff_projection.get(
+                    "selected_candidate_count", 0
+                )
+            ),
+        }
+    )
+    execution_trace["discovery_result_telemetry"] = (
+        discovery_result_telemetry
+    )
+    if ordinary_discovery_candidate_handoff_projection:
+        execution_trace[
+            ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY
+        ] = ordinary_discovery_candidate_handoff_projection
+    if ordinary_discovery_candidate_packet:
+        execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = (
+            ordinary_discovery_candidate_packet
+        )
     if final_answer_packet_handoff.author_input_blocked:
         execution_trace.update(
             build_blocked_fap_terminal_trace_fragment(blocked_fap_summary)
@@ -3816,6 +3926,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
     output_word_count = post_author_output_packaging.output_word_count
     execution_log_entry = post_author_output_packaging.execution_log_entry
+    # Post-author packaging takes a top-level trace snapshot before the
+    # ordinary discovery packet/telemetry projections above are attached.
+    # Rebind the JSONL/SQLite source entry to the completed trace so every
+    # persistence consumer observes the same field meanings as RunOutcome and
+    # the session projection.
+    execution_log_entry["execution_trace"] = dict(execution_trace)
     persistence_side_effect_result = execute_persistence_side_effects(
         execution_log_path=execution_log_path,
         execution_log_entry=execution_log_entry,

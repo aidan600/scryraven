@@ -588,6 +588,9 @@ SCOUT_DISAMBIGUATION_STAGE = SCOUT_DISAMBIGUATION_STAGE_NAME
 SEARCH_PLANNER_REVISION_STAGE = SEARCH_PLANNER_REVISION_STAGE_NAME
 SEARCH_EXECUTOR_HANDOFF_STAGE = SEARCH_EXECUTOR_HANDOFF_STAGE_NAME
 LIVE_SEARCH_VALIDATION_STAGE = LIVE_SEARCH_VALIDATION_STAGE_NAME
+ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE = (
+    "ordinary_discovery_candidate_handoff"
+)
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -767,6 +770,9 @@ class ActionType(str, Enum):
     SEARCH_PLANNER_REVISE = "search_planner_revise"
     SEARCH_EXECUTOR_HANDOFF = "search_executor_handoff"
     LIVE_SEARCH_VALIDATE = "live_search_validate"
+    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF = (
+        "ordinary_discovery_candidate_handoff"
+    )
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -902,6 +908,9 @@ class ObservationType(str, Enum):
     SEARCH_PLANNER_REVISED = "search_planner_revised"
     SEARCH_EXECUTOR_HANDOFF_CREATED = "search_executor_handoff_created"
     LIVE_SEARCH_VALIDATED = "live_search_validated"
+    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED = (
+        "ordinary_discovery_candidate_handoff_created"
+    )
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -8166,6 +8175,44 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+        )
+
+    def authorize_ordinary_discovery_candidate_handoff(
+        self,
+        *,
+        reason: str = "ordinary_discovery_selection_to_candidate_packet",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        """Authorize a ref-only candidate handoff after ordinary DISCOVER.
+
+        Provider execution has already completed before this action.  The
+        action grants no search, fetch/read, evidence, or acquisition authority.
+        """
+
+        merged_inputs = dict(inputs or {})
+        supplied_contract_ref = _safe_mapping(
+            merged_inputs.get("answer_contract_ref")
+        )
+        if supplied_contract_ref:
+            current_contract_ref = _handoff_contract_ref_from_contract(
+                self.state.current_answer_contract,
+                source="current_answer_contract",
+            )
+            if not current_contract_ref or supplied_contract_ref != (
+                current_contract_ref
+            ):
+                raise RunKernelTransitionError(
+                    "ordinary discovery handoff AnswerContract ref is stale"
+                )
+
+        return self.authorize(
+            stage=ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE,
+            action_type=ActionType.ORDINARY_DISCOVERY_CANDIDATE_HANDOFF,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED
+            ),
         )
 
     def authorize_retrieval_stop_checkpoint(
@@ -15836,6 +15883,52 @@ class RunKernel:
                 deepcopy(revision_projection)
             )
             self.state.projections[action.stage] = deepcopy(revision_projection)
+        elif (
+            action.action_type
+            is ActionType.ORDINARY_DISCOVERY_CANDIDATE_HANDOFF
+        ):
+            from core.ordinary_discovery_candidate_handoff_runtime import (
+                OrdinaryDiscoveryCandidateHandoffError,
+                validate_ordinary_discovery_candidate_reduction,
+            )
+
+            supplied_contract_ref = _safe_mapping(
+                action.inputs.get("answer_contract_ref")
+            )
+            if supplied_contract_ref:
+                current_contract_ref = _handoff_contract_ref_from_contract(
+                    self.state.current_answer_contract,
+                    source="current_answer_contract",
+                )
+                if not current_contract_ref or supplied_contract_ref != (
+                    current_contract_ref
+                ):
+                    raise RunKernelTransitionError(
+                        "ordinary discovery handoff AnswerContract ref became stale"
+                    )
+
+            try:
+                (
+                    handoff_state,
+                    handoff_projection,
+                    candidate_handoff_projection,
+                ) = validate_ordinary_discovery_candidate_reduction(
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    action_id=action.action_id,
+                )
+            except OrdinaryDiscoveryCandidateHandoffError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.search_executor_handoff_state = handoff_state
+            self.state.search_executor_handoff_projection = handoff_projection
+            self.state.search_executor_handoff_history.append(
+                deepcopy(handoff_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                candidate_handoff_projection
+            )
         elif action.action_type is ActionType.SEARCH_EXECUTOR_HANDOFF:
             try:
                 handoff_state = build_search_executor_handoff_state(
@@ -22828,6 +22921,7 @@ __all__ = [
     "SEARCH_PLANNER_PRODUCTION_STAGE",
     "SEARCH_PLANNER_REVISION_STAGE",
     "SEARCH_EXECUTOR_HANDOFF_STAGE",
+    "ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE",
     "LIVE_SEARCH_VALIDATION_STAGE",
     "SCOUT_DISAMBIGUATION_STAGE",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON",

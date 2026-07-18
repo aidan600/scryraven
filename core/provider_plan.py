@@ -7,8 +7,10 @@ scheduler and dispatch consumers.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Sequence
+from hashlib import sha256
+from typing import Any, Callable, Mapping, Sequence
 
 from core.routing import (
     PROVIDER_NAMES,
@@ -22,6 +24,16 @@ from core.routing import (
     merge_search_provider_overrides as routing_merge_search_provider_overrides,
 )
 from core.routing import select_providers as routing_select_providers
+
+
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(encoded.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -64,6 +76,10 @@ class ProviderPlanRecord:
     provider_override: tuple[str, ...] | None = None
     availability: ProviderAvailabilitySnapshot = field(default_factory=ProviderAvailabilitySnapshot)
     selection_inputs: Mapping[str, object] = field(default_factory=dict)
+    provider_plan_record_id: str | None = None
+    provider_plan_record_digest: str | None = None
+    route_decision_id: str | None = None
+    route_decision_digest: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.providers) > 1:
@@ -78,6 +94,22 @@ class ProviderPlanRecord:
     def provider_variant(self) -> str | None:
         return self.route_decision.variant
 
+    def to_ref(self) -> dict[str, str]:
+        if not self.provider_plan_record_id or not self.provider_plan_record_digest:
+            raise ValueError("provider plan record ref requires an appended record")
+        return {
+            "provider_plan_record_id": self.provider_plan_record_id,
+            "provider_plan_record_digest": self.provider_plan_record_digest,
+        }
+
+    def route_ref(self) -> dict[str, str]:
+        if not self.route_decision_id or not self.route_decision_digest:
+            raise ValueError("provider route ref requires an appended record")
+        return {
+            "route_decision_id": self.route_decision_id,
+            "route_decision_digest": self.route_decision_digest,
+        }
+
     def to_trace(self) -> dict[str, object]:
         trace: dict[str, object] = {
             "role": self.role,
@@ -91,6 +123,10 @@ class ProviderPlanRecord:
             trace["search_depth"] = self.search_depth
         if self.provider_override is not None:
             trace["provider_override"] = list(self.provider_override)
+        if self.provider_plan_record_id is not None:
+            trace["provider_plan_record_ref"] = self.to_ref()
+        if self.route_decision_id is not None:
+            trace["route_decision_ref"] = self.route_ref()
         return trace
 
 
@@ -101,15 +137,22 @@ class ProviderPlan:
     availability: ProviderAvailabilitySnapshot
     selector_available_keys: Mapping[str, bool] | None = None
     records: list[ProviderPlanRecord] = field(default_factory=list)
+    plan_id: str = "provider-plan-1"
 
     @classmethod
-    def from_available_keys(cls, available_keys: Mapping[str, object]) -> "ProviderPlan":
+    def from_available_keys(
+        cls,
+        available_keys: Mapping[str, object],
+        *,
+        plan_id: str = "provider-plan-1",
+    ) -> "ProviderPlan":
         normalized = {
             provider: bool(available_keys.get(provider)) for provider in PROVIDER_NAMES if provider in available_keys
         }
         return cls(
             availability=ProviderAvailabilitySnapshot.from_mapping(available_keys),
             selector_available_keys=normalized,
+            plan_id=plan_id,
         )
 
     def available_keys(self) -> dict[str, bool]:
@@ -179,6 +222,25 @@ class ProviderPlan:
         provider_override: Sequence[str] | None,
         selection_inputs: Mapping[str, object],
     ) -> ProviderPlanRecord:
+        record_id = f"{self.plan_id}:record:{len(self.records) + 1}"
+        route_decision_id = f"{record_id}:route"
+        route_decision_digest = _canonical_sha256(decision.to_trace())
+        record_core = {
+            "provider_plan_id": self.plan_id,
+            "provider_plan_record_id": record_id,
+            "role": role,
+            "providers": list(decision.providers()),
+            "route_decision_ref": {
+                "route_decision_id": route_decision_id,
+                "route_decision_digest": route_decision_digest,
+            },
+            "search_depth": search_depth,
+            "provider_override": (
+                list(provider_override) if provider_override is not None else None
+            ),
+            "availability": self.availability.to_capability_available_keys(),
+            "selection_inputs": dict(selection_inputs),
+        }
         record = ProviderPlanRecord(
             role=role,
             providers=decision.providers(),
@@ -187,6 +249,10 @@ class ProviderPlan:
             provider_override=(tuple(provider_override) if provider_override is not None else None),
             availability=self.availability,
             selection_inputs=selection_inputs,
+            provider_plan_record_id=record_id,
+            provider_plan_record_digest=_canonical_sha256(record_core),
+            route_decision_id=route_decision_id,
+            route_decision_digest=route_decision_digest,
         )
         self.records.append(record)
         return record
@@ -404,7 +470,14 @@ class ProviderPlan:
 
     def to_trace(self) -> dict[str, object]:
         return {
+            "provider_plan_id": self.plan_id,
             "available_keys": self.availability.to_trace(),
             "provider_availability": self.capability_available_keys(),
             "records": [record.to_trace() for record in self.records],
+        }
+
+    def to_ref(self) -> dict[str, str]:
+        return {
+            "provider_plan_id": self.plan_id,
+            "provider_plan_digest": _canonical_sha256(self.to_trace()),
         }

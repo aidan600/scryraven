@@ -81,6 +81,7 @@ class ProviderSearchAllocationExecutionContext:
     status_container: Any
     exa_domain_filter: list[str] | None
     entity_hint: str | None
+    bind_process_search_queries: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -260,13 +261,31 @@ def execute_provider_search_allocation_if_authority_authorized(
         if execution_context.search_depth is not None
         else None
     )
-    if not callable(execution_context.process_search_queries):
+    process_search_queries = execution_context.process_search_queries
+    if not callable(process_search_queries):
         return _unexecutable_execution_trace(
             request=request,
             reason="missing_process_search_queries",
             provider_role=provider_role,
             search_depth=search_depth,
             query_count=len(queries),
+        )
+    if callable(execution_context.bind_process_search_queries):
+        process_search_queries = execution_context.bind_process_search_queries(
+            stage="provider_search_allocation",
+            query_origin="provider_search_allocation",
+            query_role="recovery",
+            authority_source="provider_search_allocation_request",
+            authority_anchor={
+                "request": {
+                    "decision": request.decision,
+                    "decision_reason": request.decision_reason,
+                    "candidate_state_summary": request.candidate_state_summary,
+                    "allowed_executor_action": request.allowed_executor_action,
+                    "allocation_owner": request.allocation_owner,
+                    "authority_source": request.authority_source,
+                }
+            },
         )
     if provider_role != _SOURCE_CLASS_RECOVERY_PROVIDER_ROLE:
         return _unexecutable_execution_trace(
@@ -305,7 +324,7 @@ def execute_provider_search_allocation_if_authority_authorized(
     allocation_collected_images = set(execution_context.collected_images)
     provider_diagnostics: list[dict[str, Any]] = []
     seen_before = len(allocation_seen_urls)
-    results = execution_context.process_search_queries(
+    results = process_search_queries(
         queries,
         execution_context.intent,
         execution_context.complexity,
