@@ -114,21 +114,16 @@ def build_ordinary_discovery_authority_snapshot(
         raise OrdinaryDiscoveryCandidateHandoffError(
             "ordinary discovery requires the current QueryPlan owner"
         )
-    plan_id = str(getattr(query_plan, "plan_id", "") or "")
-    query_item_refs = tuple(
-        item.to_ref(plan_id)
-        for item in tuple(getattr(query_plan, "items", ()))
-        if getattr(item, "authorized_query", None)
-        and str(
-            getattr(
-                getattr(item, "status", None),
-                "value",
-                getattr(item, "status", ""),
-            )
-        )
-        == "ordered"
-        and callable(getattr(item, "to_ref", None))
+    discovery_membership = getattr(
+        query_plan,
+        "authorized_discovery_item_refs",
+        None,
     )
+    if not callable(discovery_membership):
+        raise OrdinaryDiscoveryCandidateHandoffError(
+            "ordinary discovery requires QueryPlan-owned discovery membership"
+        )
+    query_item_refs = tuple(discovery_membership())
     if not query_item_refs:
         raise OrdinaryDiscoveryCandidateHandoffError(
             "ordinary discovery QueryPlan has no authorized item refs"

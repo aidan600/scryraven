@@ -27,6 +27,13 @@ from core.search_work_query_plan_consumption import (
 )
 
 QUERY_PLAN_TRACE_KEY = "query_plan"
+_RECORDED_DISPATCH_ADMISSION_REASON = (
+    "recorded_from_existing_dispatch_authority"
+)
+_AUTHORITY_SOURCE_TOKEN_MAX_LENGTH = 120
+_AUTHORITY_SOURCE_TOKEN_CHARACTERS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-"
+)
 
 
 class QueryPlanStatus(str, Enum):
@@ -138,6 +145,25 @@ def _canonical_sha256(value: Any) -> str:
 
 def _text_sha256(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
+
+
+def _is_bounded_authority_source_token(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= _AUTHORITY_SOURCE_TOKEN_MAX_LENGTH
+        and all(
+            character in _AUTHORITY_SOURCE_TOKEN_CHARACTERS
+            for character in value
+        )
+    )
+
+
+def _is_full_sha256_digest(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,7 +335,7 @@ class QueryPlan:
                 phase=phase,
                 iteration=iteration,
                 order=order,
-                admission_reason="recorded_from_existing_dispatch_authority",
+                admission_reason=_RECORDED_DISPATCH_ADMISSION_REASON,
                 metadata={
                     "authority_source": authority_source,
                     "authority_ref_digest": authority_ref_digest,
@@ -460,6 +486,44 @@ class QueryPlan:
                 ),
             )
         ]
+
+    def authorized_discovery_item_refs(self) -> list[dict[str, Any]]:
+        """Return current QueryPlan members authorized to own DISCOVER results.
+
+        Ordinary ordered execution items carry that authority directly. A
+        finalized side-dispatch item carries it only when the existing dispatch
+        owner recorded the complete, exact authority markers. Iterating the
+        immutable plan value preserves canonical QueryPlan order without
+        broadening the narrower per-iteration execution view.
+        """
+
+        refs: list[dict[str, Any]] = []
+        for item in self.items:
+            if (
+                not isinstance(item.authorized_query, str)
+                or not item.authorized_query.strip()
+            ):
+                continue
+            if item.status == QueryPlanStatus.ORDERED:
+                refs.append(item.to_ref(self.plan_id))
+                continue
+            if item.status != QueryPlanStatus.FINALIZED:
+                continue
+            metadata = item.metadata
+            if (
+                item.admission_reason != _RECORDED_DISPATCH_ADMISSION_REASON
+                or not isinstance(metadata, Mapping)
+                or metadata.get("query_text_unchanged") is not True
+                or not _is_bounded_authority_source_token(
+                    metadata.get("authority_source")
+                )
+                or not _is_full_sha256_digest(
+                    metadata.get("authority_ref_digest")
+                )
+            ):
+                continue
+            refs.append(item.to_ref(self.plan_id))
+        return refs
 
     def to_ref(self) -> dict[str, str]:
         """Return a compact canonical ref to the current immutable plan value."""

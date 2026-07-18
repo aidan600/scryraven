@@ -625,7 +625,23 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     assert "Status: sole active next checkpoint" in _read(EXACT_URL_BRIEF)
     assert DISCOVER_HANDOFF_RUNTIME_SHA in _read(EXACT_URL_BRIEF)
     assert "Canonical ordinary DISCOVER now populates revision 1" in exact_url
-    assert "Focused Extract is outside this checkpoint" in exact_url
+    assert "post-selection READ and FOCUSED_EXTRACT material" in exact_url
+    assert "one to twenty exact URLs" in exact_url
+    assert (
+        "The producer may propose only; RunKernel must derive the capability"
+        in exact_url
+    )
+    assert "URL presence, or free-form tool instructions" in exact_url
+    assert "READ and activated Focused Extract" in exact_url
+    assert "Focused Extract remains a separate future checkpoint" not in exact_url
+    assert (
+        "If exact focus requires a distinct semantic producer, model-visible proposal"
+        in exact_url
+    )
+    assert (
+        "rather than weakening the controller or fabricating focus"
+        in exact_url
+    )
     assert "Initial DISCOVER material remains provider-returned" in exact_url
     assert "must not fetch candidate pages" in exact_url
     assert "does not yet populate" not in exact_url
@@ -649,6 +665,15 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
         "## queued split: crawl-page-custody-convergence-01"
     )
     assert handoff_index < exact_index < planner_index < map_index < crawl_index
+    assert (
+        "exact-URL READ and Focused Extract with final custody, then planner-"
+        in roadmap
+    )
+    assert (
+        "site-topology selection authority, and Crawl page custody"
+        in roadmap
+    )
+    assert "exact-URL READ and Focused Extract with final custody" in current
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:

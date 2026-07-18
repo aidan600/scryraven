@@ -386,6 +386,9 @@ uninstalled. Compatibility names such as `proplex`, `python -m proplex`,
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
 model, search, fetch/read, or retrieval call was made. The sole active next is
 [`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+Its approved scope is separately justified exact-URL READ and Focused Extract
+with final custody before planner-disambiguation acquisition convergence, site-
+topology selection authority, and Crawl page custody.
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
 Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md), [Provider Capability
 And Acquisition Routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md), and

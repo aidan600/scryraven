@@ -326,10 +326,15 @@ The sole active next checkpoint is
 [EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
 It may proceed now that canonical ordinary DISCOVER supplies the selected-
 candidate packet. It must install a real independent current-material-need
-producer, genuinely product-consumed exact-URL READ, and final custody while
-preserving the selected-candidate nontrigger. Focused Extract remains future
-work, and this checkpoint must not absorb planner disambiguation, Map selection,
-or Crawl page custody.
+producer, genuinely product-consumed exact-URL READ and conditional Focused
+Extract, and final custody while preserving the selected-candidate nontrigger.
+The same checkpoint covers separately justified Focused Extract when the
+current material-need owner can truthfully supply exact bounded focus and the
+required lineage. The sequence is
+exact-URL READ and Focused Extract with final custody, then planner-
+disambiguation acquisition convergence, site-topology selection authority, and
+Crawl page custody. This checkpoint must not absorb planner disambiguation, Map
+selection, or Crawl page custody.
 
 ## Queued: PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01
 

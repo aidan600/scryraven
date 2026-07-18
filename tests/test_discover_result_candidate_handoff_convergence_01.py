@@ -1084,6 +1084,244 @@ def test_every_ordinary_dispatch_family_binds_canonical_result_context() -> None
     assert review_fields["execute_scrutineer_remediation"].default is (execute_scrutineer_remediation_from_scope)
 
 
+def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_packet(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store = DiscoveryResultMaterialStore()
+    completion_order: list[str] = []
+    later_retry_completed = threading.Event()
+    monkeypatch.setattr(
+        orchestrator,
+        "DiscoveryResultMaterialStore",
+        lambda **_kwargs: store,
+    )
+
+    def fake_tavily(
+        query: str,
+        **_kwargs: Any,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        if "explained overview" in query:
+            completion_order.append("retry-provider-call-ordinal-3")
+            later_retry_completed.set()
+            return [
+                _provider_result(
+                    "https://alpha.example/retry-completed-first",
+                    title="Alpha supporting overview",
+                    credibility=4,
+                    material=(
+                        "Alpha supporting overview material from the authorized "
+                        "disambiguation retry. "
+                    )
+                    * 14,
+                )
+            ], []
+        if "2026 news" in query:
+            assert later_retry_completed.wait(timeout=2)
+            completion_order.append("retry-provider-call-ordinal-2")
+            return [
+                _provider_result(
+                    "https://alpha.example/retry-ranked-first",
+                    title="Alpha official current operating policy",
+                    credibility=10,
+                    material=(
+                        "Alpha current official operating policy remains active "
+                        "under the published rule. "
+                    )
+                    * 14,
+                )
+            ], []
+        completion_order.append("main-provider-call-ordinal-1")
+        return [
+            _provider_result(
+                "https://alpha.example/main-lower-relevance",
+                title="Unrelated Gadget operating summary",
+                credibility=0,
+                material=(
+                    "Unrelated Gadget operating summary with no requested subject "
+                    "match. "
+                )
+                * 14,
+            )
+        ], []
+
+    monkeypatch.setattr(pipeline, "search_web_results", fake_tavily)
+    monkeypatch.setattr(
+        pipeline,
+        "search_linkup_results",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Linkup must not run in the offline Tavily proof")
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "search_exa_results",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Exa must not run in the offline Tavily proof")
+        ),
+    )
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Fast",
+        query="What is Alpha's current official operating policy?",
+        core_topic="Alpha current official operating policy",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha official current operating policy"],
+        raw_author_response=(
+            "Alpha's current official operating policy remains active. "
+            "[[1]](https://alpha.example/retry-ranked-first)"
+        ),
+        deps_overrides={
+            "process_search_queries": pipeline.process_search_queries,
+            "provider_availability": {
+                "tavily": True,
+                "linkup": False,
+                "exa": False,
+                "serper": False,
+            },
+        },
+        environment_overrides={
+            "TAVILY_API_KEY": "offline-placeholder"  # pragma: allowlist secret
+        },
+    )
+
+    assert not harness.forbidden_live_calls
+    identities = {item.normalized_url: item for item in store.identities()}
+    main_identity = identities["https://alpha.example/main-lower-relevance"]
+    retry_identity = identities["https://alpha.example/retry-ranked-first"]
+    later_retry_identity = identities[
+        "https://alpha.example/retry-completed-first"
+    ]
+    assert store.material_for_ref(main_identity.ref()) is not None
+    assert [
+        main_identity.provider_call_ordinal,
+        retry_identity.provider_call_ordinal,
+        later_retry_identity.provider_call_ordinal,
+    ] == [1, 2, 3]
+    assert completion_order.index("retry-provider-call-ordinal-3") < (
+        completion_order.index("retry-provider-call-ordinal-2")
+    )
+
+    trace = outcome.execution_trace
+    packet = validate_ordinary_search_result_candidate_packet(
+        trace["search_result_candidate_packet"]
+    )
+    record = packet["candidate_records"][0]
+    handoff_ref = packet["search_executor_handoff_ref"]
+    assert packet["owner"] == SEARCH_RESULT_CANDIDATE_PACKET_OWNER
+    assert packet["packet_revision"] == 1
+    assert packet["origin_kind"] == (
+        SEARCH_RESULT_CANDIDATE_ORIGIN_ORDINARY_QUERY_PROVIDER
+    )
+    assert handoff_ref["origin_kind"] == (
+        SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER
+    )
+    assert handoff_ref["query_plan_ref"] == dict(retry_identity.query_plan_ref)
+    assert handoff_ref["selected_query_plan_item_refs"][0] == dict(
+        retry_identity.query_plan_item_ref
+    )
+    assert retry_identity.query_role == "disambiguation"
+    assert handoff_ref["provider_plan_ref"] == dict(
+        retry_identity.provider_plan_ref
+    )
+    assert handoff_ref["provider_plan_record_refs"][0] == dict(
+        retry_identity.provider_plan_record_ref
+    )
+    assert handoff_ref["provider_route_refs"][0] == dict(
+        retry_identity.provider_route_ref
+    )
+    assert handoff_ref["retrieval_action_refs"][0] == dict(
+        retry_identity.retrieval_action_ref
+    )
+    assert record["provider_used"] == retry_identity.provider == "tavily"
+    assert record["provider_call_ordinal"] == (
+        retry_identity.provider_call_ordinal
+    )
+    assert record["provider_result_rank"] == retry_identity.result_rank == 1
+    assert record["source_result_ref"] == retry_identity.ref()
+    assert record["source_material_ref"] == {
+        "source_material_id": retry_identity.material_ref["material_id"],
+        "source_material_digest": retry_identity.material_ref[
+            "material_digest"
+        ],
+        "material_class": retry_identity.material_class,
+    }
+    assert record["selected_candidate_rank"] == 1
+    assert record["normalized_url"] == retry_identity.normalized_url
+    assert record["scoring_provenance"] == {
+        "ranking_method": "existing_discovery_passage_ranking",
+        "relevance_score": record["relevance_score"],
+        "rrf_score": 0.0,
+        "credibility": 10.0,
+        "chunk_digest": record["scoring_provenance"]["chunk_digest"],
+    }
+    assert len(record["scoring_provenance"]["chunk_digest"]) == 64
+    assert record["relevance_score"] > next(
+        item["relevance_score"]
+        for item in packet["candidate_records"]
+        if item["source_result_ref"] == later_retry_identity.ref()
+    )
+
+    qualifying_retry_item = next(
+        item
+        for item in trace["query_plan"]["items"]
+        if item.get("item_id")
+        == retry_identity.query_plan_item_ref["query_plan_item_id"]
+    )
+    assert qualifying_retry_item["status"] == "finalized"
+    assert retry_identity.query_plan_item_ref["query_plan_item_digest"] == (
+        _canonical_digest(
+            {
+                "query_plan_id": trace["query_plan"]["plan_id"],
+                "item": qualifying_retry_item,
+            }
+        )
+    )
+    assert retry_identity.query_digest == hashlib.sha256(
+        qualifying_retry_item["authorized_query"].encode("utf-8")
+    ).hexdigest()
+    assert qualifying_retry_item["admission_reason"] == (
+        "recorded_from_existing_dispatch_authority"
+    )
+    assert qualifying_retry_item["metadata"] == {
+        "authority_source": "main_retrieval_disambiguation_retry",
+        "authority_ref_digest": qualifying_retry_item["metadata"][
+            "authority_ref_digest"
+        ],
+        "query_text_unchanged": True,
+    }
+    assert len(qualifying_retry_item["metadata"]["authority_ref_digest"]) == 64
+    selected_provider_record = next(
+        item
+        for item in trace["provider_plan"]["records"]
+        if item.get("provider_plan_record_ref")
+        == dict(retry_identity.provider_plan_record_ref)
+    )
+    assert selected_provider_record["route_decision_ref"] == dict(
+        retry_identity.provider_route_ref
+    )
+
+    serialized_packet = json.dumps(packet, sort_keys=True).casefold()
+    handoff = trace[ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY]
+    assert "searchplanner" not in serialized_packet
+    assert "search_planner" not in serialized_packet
+    assert "live_search_validation" not in serialized_packet
+    assert "source_obligation_ref" not in serialized_packet
+    assert all(
+        item["not_source_obligation_satisfaction"] is True
+        for item in packet["candidate_records"]
+    )
+    assert packet.get("answer_contract_ref", {}) == {}
+    assert handoff["acquisition_need_proposal_created"] is False
+    assert handoff["read_work_order_created"] is False
+    assert handoff["focused_extract_work_order_created"] is False
+    assert handoff["exact_url_cap_charged"] is False
+    assert handoff["exact_url_transport_executed"] is False
+    assert handoff["urls_fetched"] == trace["urls_fetched"] == 0
+
+
 def test_pipeline_search_wrapper_rejects_injected_callable_without_lineage_kwargs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
