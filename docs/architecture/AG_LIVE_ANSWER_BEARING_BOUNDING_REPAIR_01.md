@@ -1,10 +1,15 @@
 # AG-LIVE-ANSWER-BEARING-BOUNDING-REPAIR-01
 
-Status: active product-path repair phase.
+Status: historical predecessor repair record; direct public transport retired,
+offline injected-fixture regression only.
 
 Mode: REPAIR.
 
 Repair verdict target: YES.
+
+Current execution class: VALIDATION. This record preserves what the predecessor
+phase established; it does not license another public fetch/read or establish
+current product reachability.
 
 ## Named Defect
 
@@ -40,7 +45,8 @@ This is not final answer text and is not a product correctness claim.
 ## Opened Surfaces
 
 - bounded readable-content selection / excerpting for fetched source content;
-- #358 source-survival harness where needed to use the repaired selector;
+- #358 source-survival fixture shape where needed to exercise the repaired
+  selector offline;
 - #359 semantic-support harness only to verify that the repaired bounded content
   no longer fails at source-content-insufficient;
 - focused docs/tests for this repair.
@@ -63,10 +69,12 @@ This is not final answer text and is not a product correctness claim.
 - answer text;
 - product correctness claims.
 
-## Live Budget
+## Retired Live Budget
 
-The repair may use one public fetch/read only after offline tests pass and only
-with `--confirm-fetch-read-repair`.
+The predecessor phase used the following bounded live posture. It is historical
+evidence only and is no longer licensed. The direct opener is now a typed fail-
+closed tombstone; current URL fetch/read calls are `0`, and an explicitly
+injected sanitized fixture may be consumed at most once.
 
 - URL: `https://travel.state.gov/en/passports/apply/help/fees.html`
 - allowed final host: `travel.state.gov`
@@ -74,7 +82,7 @@ with `--confirm-fetch-read-repair`.
 - retries: 0
 - raw HTML retained: false
 - raw headers/cookies retained: false
-- output path: `output/ag_live_answer_bearing_bounding_repair_01/`
+- historical output path: `output/ag_live_answer_bearing_bounding_repair_01/`
 
 ## Repair Posture
 
@@ -96,10 +104,11 @@ satisfy anchors. If the anchors only appear in disconnected regions without a
 coherent local context, the selector records missing anchors and downstream
 semantic support remains fail-closed.
 
-## Expected Outcomes
+## Historical Outcomes
 
-Success means the repaired bounded content includes the target-component anchors
-in a coherent local source-derived context, and #359 advances past
+Success at that predecessor checkpoint meant the repaired bounded content
+included the target-component anchors in a coherent local source-derived
+context, and #359 advanced past
 `semantic_support_fail_source_content_insufficient`.
 
 Acceptable first remaining blocker:
@@ -115,6 +124,10 @@ FAP, Author, or answer text by implication.
 
 ## Explicit Non-Proofs
 
+- no current public fetch/read, DNS, redirect, final-target, or connected-peer
+  proof;
+- no production provider-operation target-safety eligibility;
+- no current READ, Focused Extract, final custody, or semantic admission;
 - no final answer text;
 - no answer correctness or product correctness;
 - no source-obligation satisfaction;
@@ -124,17 +137,18 @@ FAP, Author, or answer text by implication.
 - no Author or AuthorProse behavior;
 - no provider/search/broker/model behavior.
 
-## Mandatory Next Checkpoint
+## Current Supersession
 
-If the repair succeeds and #359 advances past source-content-insufficient, the
-mandatory next checkpoint is:
+The historical mandatory next checkpoint was:
 
 ```text
 AG-LIVE-SEMANTIC-SUPPORT-COVERAGE-REPLAY-01
 ```
 
-Mode depends on the first remaining blocker: REPAIR for a RunKernel
-consumer/state seam fix, PROOF for a bounded replay through existing
-SemanticObservation and ComponentCoverage machinery, or BUILD only if the phase
-moves all the way to SufficiencyReadiness -> hardened FAP -> AuthorProse
-reviewable answer packet.
+That sequencing is superseded. The canonical target-safety repair retired the
+local opener, and production untrusted exact-URL routing remains blocked because
+no Linkup/Tavily operation has sufficient committed public-target guarantees or
+observable final-target lineage to be truthfully eligible. This is not an
+inherent-unsafety claim. Offline fixtures may preserve selector regression
+coverage only; they do not reactivate READ, Focused Extract, custody, semantic
+admission, Sufficiency, FAP, or Author.

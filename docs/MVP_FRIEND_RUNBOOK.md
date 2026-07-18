@@ -1,7 +1,8 @@
 # ScryRaven MVP Friend Runbook
 
-Status: short friend-shareable MVP/demo runbook for the fixed MVP demo and
-live dogfood slices.
+Status: short friend-shareable MVP/demo runbook for the fixed offline MVP demo;
+former live dogfood commands are compatibility surfaces with blocked exact-URL
+acquisition.
 
 ## What It Does Today
 
@@ -36,8 +37,9 @@ If another query is supplied, the command returns
 `BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED`. That blocker means the offline MVP demo
 is a fixed deterministic fixture. Arbitrary query answering is not supported
 yet; use the no-live query plan dry run below for conservative supported-class
-entry planning. The fixed live dogfood slice is not friend-level or general MVP,
-and product correctness remains unclaimed.
+entry planning. The former fixed live dogfood slice is retained only as a
+blocked compatibility surface; it is not friend-level or general MVP, and
+product correctness remains unclaimed.
 
 The command requires no secrets. It writes a sanitized review packet under
 `output/mvp_demo_01/` and prints a compact human view with:
@@ -69,76 +71,36 @@ friend-level/general MVP readiness, or product correctness.
 
 ## Generic Single-Relation Live Dogfood
 
-The generic live dogfood path is default-off and requires a supported query plus
-explicit live confirmation:
+The generic live dogfood command remains a default-off compatibility and
+operator surface:
 
 ```powershell
 py -m proplex --mvp-single-relation-live-dogfood-run --query "What is the current USCIS Form N-400 paper filing fee?" --confirm-live-dogfood
 ```
 
-The command first consumes the generic relation plan. If the planner rejects the
-query, it blocks before live calls and does not retain unsupported query text.
-For a planned query, the live search seed, component refs, source-obligation
-refs, source-authority posture requirement ref, and D-prime relation-intake
-posture come from the relation plan rather than from the fixed passport dogfood
-path.
+It still consumes the generic relation plan and fails closed on unsupported
+queries. Explicit confirmation does not create provider-operation eligibility
+or license an untrusted exact-URL transport.
 
-Current repair status: the ordinary generic path no longer uses the
-broker/doorman as its default provider route. It now has a product-owned
-provider acquisition adapter for Tavily extraction and optional Serper scout
-directionality. Offline tests monkeypatch the adapter-level provider callables;
-they do not prove live provider availability, source correctness, source
-authority, citation eligibility, source-obligation satisfaction, D-prime
-support, FAP, or Author output.
+Current production posture is fail-closed for exact targets. ScryRaven lacks
+sufficient committed public-target guarantees or observable final-target
+lineage to assert that Linkup Fetch or Tavily READ/Focused Extract is eligible
+for untrusted exact URLs. This is an evidence gap, not a claim that either
+provider is inherently unsafe. Provider availability, configuration, a
+preferred provider name, or an offline fixture cannot change that posture.
 
-Source acquisition now uses a minimal local acquisition planner over the
-relation plan. For clear single-relation queries, including the licensed N-400
-dogfood query, Serper scout calls are expected to be `0`. Serper is used only as
-a cheap ambiguity scout when the planner records a concrete ambiguity, and its
-output remains non-evidence directionality.
+The two CLI-reachable local webpage openers are retired typed tombstones. There
+is no direct `urllib`, `requests`, `httpx`, browser, or replacement local
+webpage downloader. Fixed provider API endpoints and explicitly authorized
+local broker/model endpoints remain outside the dynamic content-target policy,
+but that exclusion does not make a dynamic exact-URL payload eligible.
 
-The intended durable happy path asks the configured extraction-capable provider
-for source-bound extracted content first. Provider-extracted source text may be
-admitted only through the bounded fetch/read custody packet with original
-URL/title/domain/provider metadata preserved. Provider answer products,
-`sourcedAnswer`, snippets, summaries, and provider-written prose remain bridge
-or context only; they must not become ScryRaven evidence or answer text.
-Direct public URL fetch/read remains fallback or diagnostic only, not the
-primary acquisition path. Candidate ordering and provider-extracted custody are
-acquisition only: they do not decide source authority, satisfy source
-obligations, make candidates citation-eligible, claim correctness, or open PDF
-support.
-
-If all selected official/source-of-record-looking public-web candidates return
-HTTP 4xx during the direct fetch/read fallback, the run reports
-`BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX`. That
-is an HTTP source-survival blocker, not source authority, evidence support,
-citation eligibility, source-obligation satisfaction, PDF support, FAP/Author,
+Accordingly, this command must not be presented as a working live extraction,
+READ, fetch/read fallback, custody, D-prime, semantic, FAP, or Author path. It
+may still demonstrate planning, DISCOVER candidate mechanics, typed blocking,
+and bounded offline fixtures. Those fixtures prove mechanics only and do not
+activate production READ, Focused Extract, final custody, semantic admission,
 or product correctness.
-
-A later separately licensed live validation can run one ordinary generic live
-dogfood command to determine whether the product-owned adapter reaches
-provider-extracted source content with real provider credentials or exposes the
-next precise blocker.
-
-Without D-prime confirmation, the command may acquire bounded live
-search/fetch/read/custody status and then stops with:
-
-```text
-BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
-```
-
-To license one product-route D-prime review for the same run, pass:
-
-```powershell
-py -m proplex --mvp-single-relation-live-dogfood-run --query "What is the current USCIS Form N-400 paper filing fee?" --confirm-live-dogfood --confirm-live-dprime-review
-```
-
-This generic dogfood path is still single-relation only. It is not arbitrary
-answering, not general supported-query live answering, not multi-component
-planning, not RunKernel DAG scheduling, not FAP/Author, not friend-level/general
-MVP readiness, and not product correctness. Fake-provider test PASS is not live
-validation PASS.
 
 ## How To Read It
 
@@ -155,39 +117,24 @@ is a single-source lane.
 
 ## Live Dogfood
 
-Live dogfood is not the default demo. It requires an explicitly licensed run,
-explicit confirmation flags, and the private local broker/operator boundary for
-provider credentials.
-
-Run the narrow live dogfood entrypoint only for the fixed MVP question:
+The former fixed live-dogfood command remains visible for compatibility and
+historical packet review:
 
 ```powershell
 py -m proplex --mvp-live-dogfood-run --confirm-live-dogfood
 ```
 
-That command is capped to the current live dogfood slice. It uses at most one
-licensed provider/search call, up to five provider results, and up to three
-fetch/read attempts for the fixed query. It writes sanitized retained artifacts
-under `output/mvp_live_dogfood_01/<run-id>/` and then consumes those artifacts
-through the existing MVP live status path. Without the separate D-prime review
-confirmation below, it is expected to stop at
-`BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING`.
+It no longer describes a licensed public fetch/read path. Its local webpage
+opener is a typed fail-closed tombstone, and the current production provider-
+mediated route has no target-safety-eligible Linkup/Tavily operation for an
+untrusted exact URL. Explicit confirmation flags and provider credentials do
+not change either fact. Do not invoke this command expecting provider READ,
+local webpage transport, custody, semantic admission, D-prime review, or answer
+completion.
 
-To license the one-shot product-route D-prime review in the same fixed-query
-dogfood run, pass the separate review confirmation:
-
-```powershell
-py -m proplex --mvp-live-dogfood-run --confirm-live-dogfood --confirm-live-dprime-review
-```
-
-That route allows at most one D-prime/model-review call, no follow-up loops, and
-no Author/model calls. It does not support arbitrary queries, does not claim
-friend-level MVP readiness, does not claim general supported-query MVP
-readiness, does not claim product correctness, and does not open
-Economist/Specialist routing, Scrutineer remediation, AuthorProse, or broad
-model-provider routing. Its packet identifies the fixed query as a canonical
-dogfood example of the first supported-query-class concept, not as arbitrary
-query support.
+Prior sanitized live packets remain predecessor evidence only. They do not
+establish current provider eligibility or authorize a replay against the public
+network.
 
 Do not paste or commit `.env` contents, API keys, broker tokens, raw provider
 payloads, raw prompts, raw model responses, private logs, DB/cache rows, or full

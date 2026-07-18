@@ -6,11 +6,12 @@ class metadata.
 ## Current Product Status
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP. The
-current product-visible path is an offline fixed-fixture demo, a default-off
-fixed-query live dogfood slice, a default-off no-live single-relation planning
-dry run for conservative supported-class queries, and a default-off generic
-single-relation live dogfood slice that must consume the relation plan before
-live acquisition. Product correctness remains unclaimed.
+current product-visible path is an offline fixed-fixture demo and a default-off
+no-live single-relation planning dry run for conservative supported-class
+queries. The former fixed-query and generic live dogfood commands remain
+compatibility surfaces, but production untrusted exact-URL acquisition is
+blocked and their local webpage openers are retired. Product correctness
+remains unclaimed.
 
 The fixed passport-fee query is a canonical dogfood vector for the first class
 concept. It is not the architecture, not arbitrary query answering, and not a
@@ -39,11 +40,12 @@ Supported query shape:
 - does not require broad synthesis, social sentiment, advice, personal data, or
   multi-hop interpretation.
 
-The fixed demo/live packet consumers record this boundary as metadata only. The
-no-live planning dry run consumes the boundary to reduce a conservative
-supported-class query into one relation-plan packet. The generic single-relation
-live dogfood path may consume that relation plan under explicit live
-confirmation and caps, but only for one planned relation. Arbitrary query
+The fixed demo and predecessor live packet consumers record this boundary as
+metadata only. The no-live planning dry run consumes the boundary to reduce a
+conservative supported-class query into one relation-plan packet. The generic single-
+relation dogfood compatibility path may consume that plan for planning and
+typed blocking, but explicit confirmation does not create a target-safety-
+eligible provider operation or license public fetch/read. Arbitrary query
 answering, natural-language query classification, generic live supported-query
 answering beyond the single-relation dogfood slice, friend-level/general MVP
 readiness, source-authority posture over evidence, broad product-comparison
@@ -93,37 +95,40 @@ blocks before relation planning and does not retain the unsupported query text.
 It makes no live calls, model calls, source-authority adjudication, FAP/Author
 changes, generic live answering, or product correctness claim.
 
-## Generic Single-Relation Live Dogfood
+## Generic Single-Relation Dogfood Compatibility
 
-The default-off generic live dogfood entrypoint is:
+The former default-off generic live dogfood entrypoint remains visible for
+compatibility:
 
 ```text
 python -m proplex --mvp-single-relation-live-dogfood-run --query "<supported query>" --confirm-live-dogfood [--confirm-live-dprime-review]
 ```
 
-It must consume the relation plan from
-`core/generic_query_to_relation_planning.py` before live acquisition. The live
-search query seed, component id/text, source-obligation id/text, search
-requirement id/text, source-authority posture requirement ref, and D-prime
-relation-intake posture come from that plan, not from the fixed passport
-dogfood constants.
+It consumes the relation plan from
+`core/generic_query_to_relation_planning.py` before any later acquisition
+decision. It may demonstrate planning, DISCOVER candidate mechanics, and typed
+blocking, but explicit confirmation does not authorize an untrusted exact-URL
+operation.
 
-This path is generic single-relation dogfood only. It does not open arbitrary
-answering, multi-component planning, RunKernel DAG scheduling or budget leases,
+Current repository evidence establishes no production-eligible Linkup Fetch or
+Tavily READ/Focused Extract operation for untrusted exact URLs because
+sufficient committed public-target guarantees or observable final-target
+lineage are not established. That evidence gap does not mean either provider is
+inherently unsafe. Availability, configuration, preference, or an injected
+offline fixture cannot create eligibility.
+
+Both CLI-reachable local webpage openers are retired typed tombstones, and no
+replacement local downloader exists. Fixed provider API endpoints and
+explicitly authorized local broker/model endpoints remain outside the dynamic
+content-target policy; a dynamic exact-URL payload does not inherit that
+exclusion.
+
+This path therefore does not open production READ, Focused Extract, fetch/read
+fallback, final custody, semantic admission, arbitrary answering,
+multi-component planning, RunKernel DAG scheduling or budget leases,
 source-class adapters, social/review aggregation, FAP/Author, friend-level or
-general MVP readiness, source-obligation satisfaction by the packet alone, or
-product correctness.
-
-Within this path only, a minimal local acquisition planner may route the single
-planned relation to an extraction-capable provider first. For clear queries,
-including the N-400 paper-filing-fee dogfood query, Serper scout calls are
-expected to be `0`; Serper may run only when the planner records concrete
-ambiguity, and its output is non-evidence directionality. Provider-extracted
-source text may enter only through the bounded fetch/read custody packet with
-original URL/title/domain/provider metadata preserved. Direct public URL
-fetch/read is fallback or diagnostic only. Provider answer products,
-`sourcedAnswer`, snippets, summaries, and provider-written prose must not become
-evidence or answer text.
+general MVP readiness, source-obligation satisfaction, or product correctness.
+Offline fixtures prove mechanics only.
 
 This is not a global ranking system, source-authority policy, approved-domain
 list, retrieval/filtering layer, evidence support decision, citation-eligibility

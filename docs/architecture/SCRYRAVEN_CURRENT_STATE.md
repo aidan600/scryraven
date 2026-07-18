@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: c1f7e9f0e5b54277f696b2a8703bf00a1322fee8
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -66,7 +66,8 @@ configuration.
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
-| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
+| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. Provider target-safety eligibility is separate from capability, availability, and preference. No current Linkup/Tavily operation is production-eligible for untrusted exact URLs; this is an evidence/lineage gap, not an inherent-provider-unsafety claim. |
+| `EXACT-URL-NETWORK-TARGET-SAFETY` | Pure `core.network_target_safety` owns conservative dynamic content-target parsing, bounded typed resolver snapshots, and stage-bound admission, final-pretransport, and posttransport decisions. RunKernel consumes those decisions through its existing acquisition chain. Gate 1 creates no admitted operation or terminal receipt; Gate 2 alone may block an admitted execution before cap/claim/adapter/transport and then release/exhaust through the existing terminal chain; Gate 3 preserves an attempted transport while preventing unsafe observed-target success or custody. Requested A and observed B remain separate, with network safety evaluated before source-lineage/applicability. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -325,13 +326,55 @@ satisfaction. Telemetry has these meanings:
   while `urls_fetched` counts actual separate exact-URL transports and remains
   zero for this path.
 
+## Installed Network-Target Safety Repair
+
+`core.network_target_safety` is the canonical pure policy for untrusted dynamic
+content targets. It performs no DNS or transport. Callers provide immutable,
+bounded resolver snapshots, and the policy returns a decision bound to the
+exact target, policy version, snapshot, transport mode, lineage, and one of the
+three stages `admission_pre_route`, `final_pretransport`, or
+`posttransport_observed_target`.
+
+RunKernel adapts its existing acquisition chain:
+
+- Gate 1 runs before work-order admission, route selection, and active-slot
+  reservation. A block is a typed admission/capability block with zero route,
+  cap charge, claim, adapter, or transport. Because no operation exists, it
+  creates no terminal receipt and exhausts no operation identity.
+- Gate 2 is the sole blocked-before-claim execution posture. A fresh decision
+  may block an admitted work order before RunCap charge, one-use claim, adapter,
+  or transport. The typed blocked execution then follows the existing terminal
+  reducer, which releases the active slot and exhausts the operation identity.
+- Gate 3 runs after provider transport but before a successful artifact,
+  execution reduction, terminal success, or custody authorization. A prohibited
+  observed target preserves the one attempted transport, cap charge, and claim,
+  but admits no successful artifact or custody.
+
+Requested URL A and observed URL B remain distinct. B is evaluated first for
+network-target safety and then for source-lineage/applicability. A safe,
+applicable B may succeed; a safe but inapplicable B is a lineage/applicability
+failure; a prohibited B is a posttransport safety failure. Missing redirect,
+resolved, final, or canonical facts remain missing.
+
+The current production eligibility matrix is false for Linkup Fetch READ and
+Tavily READ, Focused Extract, Map, and Crawl on the `untrusted_exact_url`
+target class. ScryRaven lacks sufficient committed public-target guarantees or
+observable final-target lineage to assert eligibility. Linkup and Tavily are
+not thereby classified as inherently unsafe. Offline fixtures may prove
+filtering and guarded route mechanics only.
+
+Fixed Linkup/Tavily API endpoints, ordinary fixed DISCOVER endpoints, and
+explicitly authorized local broker/model endpoints remain infrastructure
+outside this untrusted dynamic content-target policy. Their existing
+configuration and secret-handling gates are unchanged.
+
 | Capability | Adapter installed | Deterministically recognized by post-discovery control | Current ordinary disposition |
 | --- | --- | --- | --- |
 | DISCOVER | yes | outside this post-discovery controller | existing ProviderPlan/scheduler/dispatch consumers plus canonical ordinary candidate packet; zero separate candidate-URL transport |
-| READ | yes | yes | no ordinary independent current-material-need producer yet; selected candidate alone returns `not_needed` |
-| FOCUSED_EXTRACT | yes | yes | `focused_extract_requester_not_installed`; no current exact pre-acquisition focus producer |
-| MAP_SITE | yes | yes | `map_candidate_reentry_not_installed`; no PRODUCT route or transport |
-| CRAWL_SITE | yes | yes | `crawl_page_custody_not_installed`; no PRODUCT route or transport |
+| READ | yes | yes | selected candidate alone returns `not_needed`; even an independently supplied need has no currently safety-eligible Linkup/Tavily production route for an untrusted exact URL |
+| FOCUSED_EXTRACT | yes | yes | `focused_extract_requester_not_installed`, and Tavily query-focused Extract is not currently target-safety eligible for untrusted exact URLs |
+| MAP_SITE | yes | yes | `map_candidate_reentry_not_installed`; Tavily Map is not currently target-safety eligible for an untrusted root |
+| CRAWL_SITE | yes | yes | `crawl_page_custody_not_installed`; Tavily Crawl is not currently target-safety eligible for an untrusted root |
 | General Linkup Deep | mechanical support yes | premium sequential need recognized | `premium_sequential_acquisition_not_licensed` |
 | Scrutineer Deep | yes | separate existing authority | preserve existing bounded consumer |
 | PROVIDER_SYNTHESIS | disabled | no | blocked |
@@ -359,10 +402,11 @@ or product correctness authority.
 RunKernel still owns post-selection proposal admission, capability, work order,
 route, execution, terminal, exhaustion, and custody authorization. The guarded
 executor and Linkup Fetch/Tavily Extract mechanical adapters remain installed
-for the sole active next phase, which must supply a separate current material
-need. Provider failure never activates a fallback. `RunConfig` keeps source
-custody and main coverage default-disabled, late main coverage cannot reacquire,
-and the retired `AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
+but production untrusted exact-URL routing is blocked because no current
+provider operation is truthfully target-safety eligible. Provider failure never
+activates a fallback. `RunConfig` keeps source custody and main coverage
+default-disabled, late main coverage cannot reacquire, and the retired
+`AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
 
 Historical fetch-callsite dispositions remain exact:
 
@@ -371,6 +415,9 @@ Historical fetch-callsite dispositions remain exact:
 | `core.pipeline.process_search_queries` selective fetch | `RETIRE`: ordinary ranking consumes provider-returned candidate material only |
 | `core.pipeline._apply_source_custody_fetch_read_policy` | `RETIRE`: absent from discovery and ordinary pre-selection composition |
 | `core.retrieval.fetch_page` / `fetch_url_text` and direct `requests.get` | `RETIRE`: removed with HTML parser/retry support and dependency |
+| `proplex.mvp_live_dogfood_run.fetch_public_url_once` | `RETIRE`: CLI-reachable local webpage opener is a typed fail-closed tombstone with no network machinery |
+| `proplex.mvp_single_relation_live_dogfood_run.fetch_public_url_once` | `RETIRE`: CLI-reachable local webpage opener is a typed fail-closed tombstone with no network machinery |
+| `scripts.ag_live_source_survival_fetch_read_custody_01._fetch_public_url_once` | `RETIRE`: validation opener is a fail-closed tombstone; explicit injected fixtures are VALIDATION-only and PRODUCT-unreachable |
 | `ordinary_live_source_custody_runtime` | `ADAPT`: default-disabled/nonordinary, selected-candidate nontrigger, and explicit independent-proposal validator |
 | `core.authorized_acquisition_runtime` and `core.acquisition_adapters` | `RETAIN`: canonical guarded post-selection control/mechanical transport boundary |
 | provider DISCOVER adapters in `core.search_providers` | `RETAIN`: bounded provider search endpoints, never candidate URL transport targets |
@@ -384,11 +431,12 @@ Focused Extract, exact-URL READ consumption, final custody, Serper connection,
 Map, Crawl, compatibility rename, and evidence/final authority remain
 uninstalled. Compatibility names such as `proplex`, `python -m proplex`,
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
-model, search, fetch/read, or retrieval call was made. The sole active next is
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-Its approved scope is separately justified exact-URL READ and Focused Extract
-with final custody before planner-disambiguation acquisition convergence, site-
-topology selection authority, and Crawl page custody.
+model, search, DNS, fetch/read, or retrieval call was made. The installed
+network-target safety owner does not reactivate
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md),
+which remains blocked pending at least one truthfully eligible provider
+operation. Planner-disambiguation acquisition convergence, site-topology
+selection authority, and Crawl page custody remain queued behind it.
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
 Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md), [Provider Capability
 And Acquisition Routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md), and
@@ -459,6 +507,12 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Arbitrary-query decomposition and broad route qualification remain unproved.
 - No acquisition-completeness repair was performed.
 - Exact-URL acquisition and final-custody convergence remain unproved.
+- No Linkup/Tavily untrusted exact-URL operation is currently production
+  eligible; offline fixture eligibility does not change that posture.
+- No live DNS, resolver-to-connected-peer, provider redirect/final-target, or
+  provider safety guarantee was proved.
+- Safe observed-target applicability was proved only with injected offline
+  facts, not live provider behavior.
 - Cross-provider duplicate-URL material choice and completion-order parity were
   not redesigned or claimed; deterministic offline proof covers fixed provider
   result sets and the preserved ranking mechanics.
@@ -501,6 +555,7 @@ and this document does not license changes to that surface.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.
 - [RunKernel post-discovery acquisition control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) owns post-discovery capability, work-order, route, execution, terminal, and custody authorization.
 - [Provider capability and acquisition routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) owns provider catalog, routing policy, mechanical operation matrix, and provider-material boundaries.
+- [Exact-URL network-target safety owner](../roadmap/EXACT_URL_NETWORK_TARGET_SAFETY_OWNER_01.md) records the installed pure target policy, stage decisions, provider eligibility posture, and direct-opener retirement.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
 - [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns claim-scoped numeric projection and accepted-prose validation across active finalizers.
