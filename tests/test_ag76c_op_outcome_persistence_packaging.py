@@ -72,7 +72,8 @@ def _sample_execution_facts() -> dict[str, Any]:
         "scout_skip_reason": "not_needed",
         "iterations_run": 2,
         "total_chunks_embedded": 3,
-        "total_urls_fetched": 4,
+        "discover_candidate_urls_admitted": 4,
+        "urls_fetched": 0,
         "providers_by_iteration": ["provider-a"],
         "provider_diagnostics_payload": {"provider_diagnostics": []},
         "queries_per_iter": {"1": ["q1"]},
@@ -188,6 +189,8 @@ def test_ag76c_op_execution_jsonl_and_sqlite_row_shapes(monkeypatch: pytest.Monk
     assert entry["analyst_skipped"] is True
     assert entry["analyst_skip_reason"] == "trace reason"
     assert entry["pre_analyst_gate_signals"] == ["trace-signal"]
+    assert entry["discover_candidate_urls_admitted"] == 4
+    assert entry["urls_fetched"] == 0
     assert entry["code_version"] == "test-version"
     assert entry["git_commit"] == "abc123"
 
@@ -198,6 +201,8 @@ def test_ag76c_op_execution_jsonl_and_sqlite_row_shapes(monkeypatch: pytest.Monk
     assert row["session_id"] == "session-1"
     assert row["output_word_count"] == 5
     assert row["final_output_preview"] == "Final answer body with citations."
+    assert row["discover_candidate_urls_admitted"] == 4
+    assert row["urls_fetched"] == 0
 
 
 def test_ag76c_op_run_outcome_fields_and_final_metadata() -> None:

@@ -35,7 +35,8 @@ from tests.test_ag_live_xaxis_validation_01a import (
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_MODULE = ROOT / "core" / "search_result_candidate_packet.py"
-PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+CANDIDATE_HANDOFF_RUNTIME = ROOT / "core" / "live_ordinary_candidate_handoff_runtime.py"
+DISCOVERY_PIPELINE = ROOT / "core" / "pipeline.py"
 DOCS = (
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
     ROOT / "docs" / "codex" / "AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md",
@@ -325,14 +326,19 @@ def test_search_result_candidate_packet_static_closed_surface_guard() -> None:
     ):
         assert token not in source, token
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
+    for owner in (RUNTIME_MODULE, CANDIDATE_HANDOFF_RUNTIME):
+        diff = subprocess.run(
+            ["git", "diff", "--numstat", "--", str(owner.relative_to(ROOT))],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        assert diff.stdout.strip() == "", owner
+    assert all(
+        not module.startswith("core.search_result_candidate_packet")
+        for module in _imports(DISCOVERY_PIPELINE)
     )
-    assert diff.stdout.strip() == ""
 
 
 def test_search_result_candidate_packet_contains_no_forbidden_material() -> None:

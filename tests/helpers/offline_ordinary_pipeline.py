@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import core.pipeline_orchestrator as orchestrator
+from core.acquisition_adapters import AcquisitionTransports
 from core.cost_accounting import CostAccumulator
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
@@ -459,6 +460,7 @@ def run_post_retirement_ordinary_pipeline(
     ),
     install_economist_sentinel: bool = True,
     current_date: str = "2026-05-06",
+    cap_policy: Any | None = None,
     deps_overrides: Mapping[str, Any] | None = None,
     environment_overrides: Mapping[str, str] | None = None,
 ) -> tuple[Any, PostRetirementOrdinaryPipelineHarness]:
@@ -488,6 +490,7 @@ def run_post_retirement_ordinary_pipeline(
             current_date=current_date,
             session_id=f"session-{mode.casefold()}",
             run_id=f"run-{mode.casefold()}",
+            cap_policy=cap_policy,
         ),
         mode=mode,
         forced_corpus_state=(
@@ -646,9 +649,35 @@ def run_offline_ordinary_pipeline(
     captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
     deps = harness.deps()
     if ordinary_live_source_fetch_read is not None:
+        if ordinary_live_source_acquisition_transports is not None:
+            raise ValueError(
+                "test helper accepts either a typed transport or legacy fixture, not both"
+            )
+
+        def offline_linkup_fetch(payload: dict[str, Any]) -> dict[str, Any]:
+            source_url = str(payload.get("url") or "")
+            candidate = {
+                "title": "Offline selected candidate",
+                "url": source_url,
+                "domain": source_url.split("/", 3)[2] if "://" in source_url else "",
+            }
+            raw = ordinary_live_source_fetch_read(
+                candidate=candidate,
+                source_url=source_url,
+                source_candidate_ref={"url": source_url},
+            )
+            material = dict(raw) if isinstance(raw, Mapping) else {}
+            material.setdefault(
+                "markdown",
+                material.get("sanitized_text") or material.get("readable_text"),
+            )
+            return material
+
         deps = replace(
             deps,
-            ordinary_live_source_fetch_read=ordinary_live_source_fetch_read,
+            ordinary_live_source_acquisition_transports=AcquisitionTransports(
+                linkup_fetch=offline_linkup_fetch
+            ),
         )
     if ordinary_live_source_acquisition_transports is not None:
         deps = replace(
@@ -657,6 +686,11 @@ def run_offline_ordinary_pipeline(
                 ordinary_live_source_acquisition_transports
             ),
         )
+    if provider_availability is None and (
+        ordinary_live_source_fetch_read is not None
+        or ordinary_live_source_acquisition_transports is not None
+    ):
+        provider_availability = {"linkup": True, "tavily": True}
     if provider_availability is not None:
         deps = replace(deps, provider_availability=dict(provider_availability))
     outcome = orchestrator.run_pipeline(

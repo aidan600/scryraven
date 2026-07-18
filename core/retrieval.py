@@ -1,15 +1,11 @@
 import logging
 import os
 import re
-import time
 from datetime import datetime, timedelta
-from functools import wraps
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 import numpy as np
-import requests
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -48,21 +44,6 @@ CONSUMER_FORUMS = (
     "coursehero.com",
 )
 
-PAYWALL_FETCH_DOMAINS = frozenset(
-    {
-        "reuters.com",
-        "wsj.com",
-        "ft.com",
-        "nytimes.com",
-        "bloomberg.com",
-        "thetimes.co.uk",
-        "economist.com",
-        "washingtonpost.com",
-        "theathletic.com",
-        "theinformation.com",
-    }
-)
-
 NEWS_PREFERRED_DOMAINS = [
     "apnews.com",
     "bbc.com",
@@ -89,24 +70,6 @@ ACADEMIC_DOMAINS = [
     "jstor.org",
     "semanticscholar.org",
 ]
-
-
-def retry_with_backoff(max_retries: int = 3, base_delay: float = 1.0):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        logger.error(f"Function {func.__name__} failed after {max_retries} attempts. Error: {e}")
-                        raise
-                    time.sleep(base_delay * (2**attempt))
-
-        return wrapper
-
-    return decorator
 
 
 def normalize_domain(url: str) -> str:
@@ -163,91 +126,6 @@ def compute_similarities(q_emb: List[float], doc_embs: List[List[float]]) -> np.
     dot_products = np.dot(embs_matrix, q_vec)
     norms = np.linalg.norm(embs_matrix, axis=1) * np.linalg.norm(q_vec)
     return np.divide(dot_products, norms, out=np.zeros_like(dot_products), where=norms != 0)
-
-
-def strip_html(html: str) -> str:
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        for script in soup(["script", "style"]):
-            script.extract()
-        text = soup.get_text(separator=" ")
-        return re.sub(r"\s+", " ", text).strip()
-    except Exception:
-        return ""
-
-
-@retry_with_backoff(max_retries=2, base_delay=1.0)
-def fetch_url_text(url: str) -> str:
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Cache-Control": "max-age=0",
-    }
-    r = requests.get(url, headers=headers, timeout=15)
-    try:
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code in (401, 403, 404):
-            return ""
-        raise
-
-    content_type = r.headers.get("content-type", "")
-    if "text/html" in content_type or "application/xhtml+xml" in content_type or not content_type:
-        return strip_html(r.text)[:20000]
-    return r.text[:20000]
-
-
-def fetch_page(item_tuple: Tuple[int, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    i, item = item_tuple
-    _ = i
-    domain = normalize_domain(item["url"])
-
-    if any(domain.endswith(d) for d in PAYWALL_FETCH_DOMAINS):
-        text = item.get("raw_content") or ""
-        logger.info(f"Paywall skip for {domain}: using Tavily snippet ({len(text)} chars)")
-    else:
-        text = ""
-        try:
-            text = fetch_url_text(item["url"])
-        except Exception as e:
-            logger.warning(f"Failed to fetch {item['url']}: {e}. Falling back to Tavily raw content.")
-            text = item.get("raw_content") or ""
-
-    if text and len(text) > 200:
-        doc = {
-            "title": item["title"],
-            "url": item["url"],
-            "domain": item.get("domain", ""),
-            "credibility": item.get("credibility", 0),
-            "text": text,
-            "rrf_score": item.get("rrf_score", 0.0),
-            "_provider": item.get("_provider", ""),
-        }
-        for key in (
-            "source_tier",
-            "source_class",
-            "currentness_signal",
-            "source_custody_requirement_id",
-            "required_source_class",
-            "required_source_tier",
-            "required_currentness",
-            "required_evidence_material_type",
-            "eligible_for_stronger_obligation",
-            "source_custody_admission_reason",
-            "_source_custody_policy_forced_fetch_read",
-        ):
-            if key in item and item.get(key) not in (None, "", [], {}):
-                doc[key] = item[key]
-        return doc
-    return None
 
 
 def chunk_text(text: str, chunk_size: int = 1200) -> List[str]:

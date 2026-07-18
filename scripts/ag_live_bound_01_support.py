@@ -733,10 +733,13 @@ def source_custody_policy_product_path(profile_name: str) -> dict[str, Any]:
     profile = get_validation_profile(profile_name)
     return {
         "policy_surface": PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE,
-        "runtime_consumer": PRODUCT_RUNTIME_CONSUMER,
-        "policy_enabled": profile.source_custody_policy is not None,
+        "runtime_consumer": None,
+        "expectation_recorded": profile.source_custody_policy is not None,
+        "policy_enabled": False,
         "script_owns_source_custody_authority": False,
-        "product_policy_constructible": True,
+        "product_policy_constructible": False,
+        "initial_discovery_transport_authority": False,
+        "retirement_status": "historical_pre_selection_trigger_retired",
     }
 
 

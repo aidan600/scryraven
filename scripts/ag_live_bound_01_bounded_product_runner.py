@@ -15,7 +15,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.validation_profiles import (  # noqa: E402
-    get_validation_profile,
     validation_profile_names,
 )
 from scripts.ag_live_bound_01_support import (  # noqa: E402
@@ -496,14 +495,6 @@ def _build_live_run_config(context: Any, *, cap_policy: Any) -> Any:
     from core.run_config import RunConfig
 
     model_config = _live_model_config()
-    profile = get_validation_profile(context.profile_name)
-    source_custody_policy = (
-        profile.source_custody_policy.to_run_policy(
-            include_domains=context.include_domains
-        )
-        if profile.source_custody_policy is not None
-        else None
-    )
     return RunConfig(
         query=context.query,
         mode=context.mode,
@@ -521,7 +512,6 @@ def _build_live_run_config(context: Any, *, cap_policy: Any) -> Any:
         use_reasoning=True,
         run_authority_search_judgment_smart_model=False,
         cap_policy=cap_policy,
-        source_custody_policy=source_custody_policy,
     )
 
 

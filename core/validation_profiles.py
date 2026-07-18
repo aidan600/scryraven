@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
-from core.run_config import SourceCustodyPolicy
 
 AG_LIVE_SMOKE = "AG-LIVE-SMOKE"
 AG_LIVE_SOURCE_CUSTODY = "AG-LIVE-SOURCE-CUSTODY"
@@ -21,6 +20,7 @@ BROKER_PRIVATE_ADAPTER = "broker_private_adapter"
 
 LIVE_STATUS_SUCCEEDED_ONCE_DIRECT_HUMAN = "succeeded_once_direct_human_private_shell"
 LIVE_STATUS_NOT_RUN = "not_run"
+LIVE_STATUS_RETIRED_NON_EXECUTABLE = "retired_non_executable"
 
 AG_LIVE_S1_QUERY_A_NO_QUANT = (
     "Using only NASA's official Earth and Mars facts pages, answer two separate "
@@ -93,7 +93,9 @@ PACKET_SCHEMA = "ag_live_bound_01_bounded_product_runner_v1"
 APPROVED_PRODUCT_ENTRYPOINT = "scripts/ag_live_bound_01_bounded_product_runner.py"
 PRODUCT_RUNTIME_CONSUMER = "run_pipeline"
 PRODUCT_CAP_POLICY_SURFACE = "RunConfig.cap_policy"
-PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE = "RunConfig.source_custody_policy"
+PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE = (
+    "ValidationProfile.source_custody_policy_non_executable_expectation"
+)
 RETENTION_POSTURE = "sanitized_packet_only_with_ordinary_retention_suppressed"
 MAX_INITIAL_SELECTED_SUBJECTS = 5
 SUBJECT_BUDGET_SCOPE_INITIAL_INDEPENDENT = "initial_independent_subjects_only"
@@ -184,7 +186,7 @@ class CampaignOperationalBudgetSpec:
 
 @dataclass(frozen=True, slots=True)
 class ValidationSourceCustodyPolicySpec:
-    """Serializable source-custody policy spec for validation profiles."""
+    """Non-executable historical source-custody expectation metadata."""
 
     require_official_full_fetch_read: bool
     max_forced_fetch_reads: int
@@ -210,24 +212,6 @@ class ValidationSourceCustodyPolicySpec:
             "required_evidence_material_type": self.required_evidence_material_type,
             "admission_reason": self.admission_reason,
         }
-
-    def to_run_policy(
-        self,
-        *,
-        include_domains: Sequence[str] = (),
-    ) -> SourceCustodyPolicy:
-        preferred_domains = tuple(self.preferred_domains or tuple(include_domains))
-        return SourceCustodyPolicy(
-            require_official_full_fetch_read=self.require_official_full_fetch_read,
-            max_forced_fetch_reads=self.max_forced_fetch_reads,
-            preferred_domains=preferred_domains,
-            required_source_class=self.required_source_class,
-            required_source_tier=self.required_source_tier,
-            required_currentness=self.required_currentness,
-            requirement_id=self.requirement_id,
-            required_evidence_material_type=self.required_evidence_material_type,
-            admission_reason=self.admission_reason,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,7 +341,10 @@ class ValidationProfile:
             "cap_policy_surface": self.cap_policy_surface,
             "approved_product_entrypoint": self.approved_product_entrypoint,
             "source_custody_policy_surface": self.source_custody_policy_surface,
-            "source_custody_policy_enabled": self.source_custody_policy is not None,
+            "source_custody_policy_enabled": False,
+            "source_custody_policy_expectation_recorded": (
+                self.source_custody_policy is not None
+            ),
             "subject_budget_policy": (
                 self.subject_budget.as_requested_dict()
                 if self.subject_budget is not None
@@ -540,11 +527,12 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
     AG_LIVE_SOURCE_CUSTODY: ValidationProfile(
         name=AG_LIVE_SOURCE_CUSTODY,
         purpose=(
-            "Can an official-doc fact be fetched, read, and admitted into custody?"
+            "Historical pre-selection official-doc fetch/read validation metadata; "
+            "retired from executable composition."
         ),
-        proof_target="official source custody reaches final answer citation",
-        allowed_invocation_modes=(DIRECT_HUMAN_PRIVATE_SHELL, BROKER_PRIVATE_ADAPTER),
-        live_status=LIVE_STATUS_NOT_RUN,
+        proof_target="none; retained only as a non-executable historical expectation",
+        allowed_invocation_modes=(),
+        live_status=LIVE_STATUS_RETIRED_NON_EXECUTABLE,
         query_intent="official documentation fact requiring fetch/read custody",
         primary_query=AG_LIVE_BOUND_PRIMARY_QUERY,
         backup_query=AG_LIVE_BOUND_BACKUP_QUERY,
@@ -552,11 +540,9 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
         required_include_domains=(PYTHON_DOCS_DOMAIN,),
         cap_policy=BOUND_CAP_POLICY,
         expected_packet_criteria=(
-            "run_pipeline_call_count == 1",
-            "fetch_read_operations > 0",
-            "official source custody satisfied",
-            "final answer cites admitted official source",
-            "no awkward official-doc custody partial posture after admission",
+            "historical expectation only",
+            "not selectable by the direct runner or broker",
+            "no initial-discovery exact-URL transport authority",
         ),
         source_custody_policy=AG_LIVE_SOURCE_CUSTODY_POLICY,
     ),
@@ -626,7 +612,11 @@ def get_validation_profile(name: str) -> ValidationProfile:
 
 
 def validation_profile_names() -> tuple[str, ...]:
-    return tuple(VALIDATION_PROFILES)
+    return tuple(
+        name
+        for name, profile in VALIDATION_PROFILES.items()
+        if profile.allowed_invocation_modes
+    )
 
 
 def get_search_candidate_validation_profile() -> SearchCandidateValidationProfile:

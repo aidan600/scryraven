@@ -568,7 +568,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     current_date = config.current_date
     cap_policy = config.cap_policy
-    source_custody_policy = config.source_custody_policy
     provider_availability_snapshot = ProviderAvailabilitySnapshot.from_mapping(
         deps.provider_availability
         if deps.provider_availability is not None
@@ -622,17 +621,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kw.update(supported_diagnostic_kwargs(base, diagnostic_kw))
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
-            if cap_policy is not None:
-                kw.update(
-                    supported_diagnostic_kwargs(base, {"cap_policy": cap_policy})
-                )
-            if source_custody_policy is not None:
-                kw.update(
-                    supported_diagnostic_kwargs(
-                        base,
-                        {"source_custody_policy": source_custody_policy},
-                    )
-                )
             if cap_policy is not None:
                 cap_policy.mark_search_dispatch()
             return base(*args, **kw)
@@ -728,7 +716,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # ------------------------------------------------------------------
     linkup_block = ""
     total_chunks_embedded = 0
-    total_urls_fetched = 0
+    discover_candidate_urls_admitted = 0
+    # Separate source/exact-URL fetch/read transports. Ordinary discovery does
+    # not charge this counter when it admits provider-returned candidate URLs.
+    urls_fetched = 0
     providers_by_iteration: list[list[str]] = []
     provider_diagnostics: list[dict[str, Any]] = []
     retrieval_pass_records: list[dict[str, Any]] = []
@@ -1102,7 +1093,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 if ordinary_live_candidate_handoff is not None
                 else None
             ),
-            fetch_read=deps.ordinary_live_source_fetch_read,
             available_providers=(
                 provider_availability_snapshot.to_capability_available_keys()
             ),
@@ -1119,7 +1109,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ordinary_live_source_custody_projection = (
             ordinary_live_source_custody.projection
         )
-    if config.enable_ordinary_live_semantic_coverage:
+    if (
+        config.enable_ordinary_live_semantic_coverage
+        and ordinary_live_source_custody is not None
+        and ordinary_live_source_custody.fetch_read_content_packet is not None
+    ):
         ordinary_live_semantic_coverage = execute_ordinary_live_semantic_coverage(
             run_kernel=candidate_handoff_kernel,
             parent_run_id=run_kernel.state.run_id,
@@ -1129,7 +1123,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ordinary_live_semantic_coverage_projection = (
             ordinary_live_semantic_coverage.projection
         )
-    if config.enable_ordinary_live_authority_consolidation:
+    if (
+        config.enable_ordinary_live_authority_consolidation
+        and ordinary_live_semantic_coverage is not None
+    ):
         ordinary_live_authority_consolidation = (
             execute_ordinary_live_authority_consolidation(
                 main_run_kernel=run_kernel,
@@ -2050,8 +2047,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         run_kernel.reduce(main_retrieval_outcome.observation)
         new_passages = main_retrieval_outcome.passages
-        seen_url_delta = main_retrieval_outcome.seen_url_delta
-        total_urls_fetched += seen_url_delta
+        discover_candidate_urls_admitted += main_retrieval_outcome.seen_url_delta
         total_chunks_embedded += main_retrieval_outcome.chunk_delta
         retrieval_loop_contract_state = (
             main_retrieval_outcome.retrieval_loop_contract_state
@@ -2090,7 +2086,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             retrieval_pass_records=retrieval_pass_records,
                         )
                         retry_passages = retry_outcome.passages
-                        total_urls_fetched += retry_outcome.seen_url_delta
+                        discover_candidate_urls_admitted += retry_outcome.seen_url_delta
                         total_chunks_embedded += retry_outcome.chunk_delta
                         past_searches.extend(rqs)
                         to_merge = to_merge + retry_passages
@@ -2942,7 +2938,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     source_class_recovery_execution = (
         source_class_recovery_result.source_class_recovery_execution
     )
-    total_urls_fetched += source_class_recovery_result.total_urls_delta
+    discover_candidate_urls_admitted += source_class_recovery_result.total_urls_delta
     total_chunks_embedded += source_class_recovery_result.total_chunks_delta
 
     conflict_resolution_execution: dict[str, int | bool]
@@ -2961,7 +2957,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "new_url_count": 0,
         }
     if conflict_resolution_execution["attempted"]:
-        total_urls_fetched += int(conflict_resolution_execution["new_url_count"])
+        discover_candidate_urls_admitted += int(
+            conflict_resolution_execution["new_url_count"]
+        )
         total_chunks_embedded += int(conflict_resolution_execution["result_count"])
 
     final_evidence_handoff = build_final_evidence_runtime_handoff_from_scope(
@@ -3774,7 +3772,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         execution_trace.update(
             build_blocked_fap_terminal_trace_fragment(blocked_fap_summary)
         )
-    if config.enable_ordinary_live_main_runkernel_coverage:
+    if (
+        config.enable_ordinary_live_main_runkernel_coverage
+        and ordinary_live_source_custody is not None
+        and ordinary_live_source_custody.fetch_read_content_packet is not None
+    ):
         ordinary_live_main_runkernel_coverage = (
             execute_ordinary_live_main_runkernel_coverage(
                 main_run_kernel=run_kernel,
@@ -3785,17 +3787,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 core_topic=core_topic,
                 candidate_results=config.ordinary_live_candidate_handoff_results,
                 provider_authorized=config.ordinary_live_candidate_handoff_provider,
-                fetch_read=deps.ordinary_live_source_fetch_read,
-                available_providers=(
-                    provider_availability_snapshot.to_capability_available_keys()
-                ),
-                acquisition_transports=(
-                    deps.ordinary_live_source_acquisition_transports
-                ),
-                cap_policy=cap_policy,
-                required_or_preferred_anchors=(
-                    config.ordinary_live_source_custody_anchor_groups
-                ),
+                candidate_handoff_result=ordinary_live_candidate_handoff,
+                source_custody_result=ordinary_live_source_custody,
             )
         )
         ordinary_live_main_runkernel_coverage_projection = (

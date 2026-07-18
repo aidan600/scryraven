@@ -101,7 +101,8 @@ def _runtime_values():
         "economist_handoff_trace_fragment": {"economist_handoff_contract": {"available": True}},
         "synthesis_evaluator_supplemental_search_handoff_trace_fragment": {"ses_handoff": {"available": True}},
         "scrutineer_remediation_handoff_trace_fragment": {"scrutineer_remediation_handoff": {"available": True}},
-        "total_urls_fetched": 2,
+        "discover_candidate_urls_admitted": 2,
+        "urls_fetched": 0,
         "total_chunks_embedded": 3,
         "_source_tier_exec": {
             "source_tier_counts": {"official_current_rules": 2},
@@ -173,6 +174,8 @@ def test_ag90a_execution_trace_projection_preserves_compatibility_keys() -> None
     assert trace["final_answer_packet"] == {"packet_id": "p1"}
     assert trace["source_survival_final_evidence_official_or_canonical_count"] == 2
     assert trace["source_survival_final_citation_official_or_canonical_count"] == 4
+    assert trace["discover_candidate_urls_admitted"] == 2
+    assert trace["urls_fetched"] == 0
     assert trace["context_measurement"] == {"token_budget": 123}
 
 
@@ -188,6 +191,8 @@ def test_ag90a_execution_log_projection_keeps_legacy_jsonl_shape() -> None:
 
     assert entry["event"] == "execution"
     assert entry["queries_per_iteration"] == {"1": ["What changed?"]}
+    assert entry["discover_candidate_urls_admitted"] == 2
+    assert entry["urls_fetched"] == 0
     assert entry["execution_trace"] == trace
     assert entry["source_class_recovery_validation_l1"] == {"validated": True}
     assert entry["code_version"] == "test"

@@ -18,8 +18,9 @@ and READ custody authority.
 High-custody or closed-this-phase surface, if any: live provider transports and
 new Focused/Map/Crawl/premium execution remain closed; retained READ material is
 kept outside RunKernel state.
-Runtime/product path guarded: the ordinary selected-candidate READ composition
-plus its RunKernel-owned acquisition transitions and mechanical adapter seam.
+Runtime/product path guarded: selected-candidate nontrigger behavior plus the
+RunKernel-owned post-discovery acquisition transitions and mechanical adapter
+seam for an independently established material need.
 Expected cost: 55 synthetic offline cases in under one second locally.
 Promotion posture: remain phase_focus until a later convergence phase selects a
 smaller durable sentinel.
@@ -48,6 +49,7 @@ from core.acquisition_control import (
     derive_acquisition_capability_decision,
     initial_acquisition_control_state,
     stable_json_digest,
+    validate_selected_candidate_material_need_proposal,
 )
 from core.authorized_acquisition_runtime import (
     AcquisitionCapabilityDecisionRuntimeResult,
@@ -74,7 +76,6 @@ from core.run_kernel import (
 )
 from tests.helpers.offline_ordinary_pipeline import scrub_offline_runtime
 from tests.test_ag_ordinary_live_source_custody_integration_01 import (
-    CANDIDATE_URL,
     FakeSourceFetchRead,
     _candidate_results,
     _run_pipeline,
@@ -185,6 +186,57 @@ def _proposal(
         previous_read_posture=previous_read_posture,
         advisory_proposed_capability=advisory,
     )
+
+
+def test_independent_material_need_can_bind_to_selected_url_provenance() -> None:
+    kernel = _kernel()
+    snapshot = kernel.acquisition_authority_snapshot()
+    candidate = {
+        "candidate_id": "candidate-1",
+        "candidate_digest": "1" * 64,
+        "record_digest": "2" * 64,
+        "url": READ_URL,
+        "component_id": COMPONENT_ID,
+        "source_obligation_candidate_ids": [OBLIGATION_ID],
+    }
+    packet = {
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "packet_id": "candidate-packet-1",
+        "packet_digest": "3" * 64,
+        "current_answer_contract_digest": CONTRACT_DIGEST,
+        "candidate_records": [candidate],
+    }
+    proposal = AcquisitionNeedProposalV1.create(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        producer_surface="tests.independent_current_material_need",
+        answer_contract_ref=snapshot["answer_contract_ref"],
+        source_obligation_ref=snapshot["source_obligations_by_id"][OBLIGATION_ID],
+        component_ref=snapshot["components_by_id"][COMPONENT_ID],
+        requested_material_shape="ordinary_single_page",
+        candidate_ref={
+            "packet_id": packet["packet_id"],
+            "packet_digest": packet["packet_digest"],
+            "candidate_id": candidate["candidate_id"],
+            "candidate_digest": candidate["candidate_digest"],
+            "record_digest": candidate["record_digest"],
+            "url": READ_URL,
+        },
+        available_urls=(READ_URL,),
+        advisory_proposed_capability="READ",
+    )
+
+    validated = validate_selected_candidate_material_need_proposal(
+        proposal=proposal,
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        candidate_packet=packet,
+        selected_candidate=candidate,
+        authority_snapshot=snapshot,
+    )
+
+    assert validated is proposal
 
 
 @dataclass(frozen=True)
@@ -1031,7 +1083,7 @@ def test_low_level_dispatch_remains_usable_without_runkernel() -> None:
     assert len(calls) == 1
 
 
-def test_actual_ordinary_selected_candidate_read_completes_every_control_action(
+def test_actual_ordinary_selected_candidate_does_not_start_acquisition_control(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1070,37 +1122,20 @@ def test_actual_ordinary_selected_candidate_read_completes_every_control_action(
 
     projection = outcome.execution_trace["ordinary_live_source_custody"]
     assert projection["failed_closed"] is False, projection
-    assert projection["source_candidate"]["url"] == CANDIDATE_URL
-    assert projection["read_selected_provider"] == "linkup"
-    assert projection["fetch_read_content_packet_ref"]["packet_id"]
-    assert projection["evidence_ledger_custody_count"] == 1
-    assert projection["evidence_ledger_custody_ref"]["custody_record_id"]
-    for key in (
-        "acquisition_need_proposal_ref",
-        "acquisition_capability_decision_ref",
-        "acquisition_work_order_ref",
-        "acquisition_route_observation_ref",
-        "acquisition_execution_observation_ref",
-        "acquisition_terminal_receipt_ref",
-        "acquisition_custody_authorization_ref",
-    ):
-        assert projection[key]
-    assert len(fetcher.calls) == 1
-    assert cap_policy.fetch_read_operations == 1
+    assert projection["status"] == "not_needed"
+    assert projection["candidate_selection_creates_material_need"] is False
+    assert projection["acquisition_need_proposal_created"] is False
+    assert projection["acquisition_work_order_created"] is False
+    assert projection["acquisition_route_created"] is False
+    assert projection["exact_url_cap_charged"] is False
+    assert projection["exact_url_transport_attempted"] is False
+    assert fetcher.calls == []
+    assert cap_policy.fetch_read_operations == 0
     assert harness.forbidden_live_calls == []
     assert len(child_kernels) == 1
 
     child = child_kernels[0]
-    control = child.state.acquisition_control_state
-    assert len(control["proposals_by_id"]) == 1
-    assert len(control["capability_decisions_by_id"]) == 1
-    assert len(control["work_orders_by_id"]) == 1
-    assert len(control["routes_by_id"]) == 1
-    assert len(control["execution_authorizations_by_id"]) == 1
-    assert len(control["execution_observations_by_id"]) == 1
-    assert control["active_by_source_obligation"] == {}
-    assert len(control["terminal_receipts_by_operation_key"]) == 1
-    assert len(control["custody_authorizations_by_receipt"]) == 1
+    assert child.state.acquisition_control_state == {}
     acquisition_action_types = [
         action.action_type
         for action in child.state.issued_actions.values()
@@ -1114,14 +1149,7 @@ def test_actual_ordinary_selected_candidate_read_completes_every_control_action(
             ActionType.ACQUISITION_CUSTODY_CONSUME,
         }
     ]
-    assert acquisition_action_types == [
-        ActionType.ACQUISITION_CAPABILITY_DECIDE,
-        ActionType.ACQUISITION_WORK_ORDER_ADMIT,
-        ActionType.ACQUISITION_ROUTE,
-        ActionType.ACQUISITION_EXECUTE,
-        ActionType.ACQUISITION_TERMINAL_REDUCE,
-        ActionType.ACQUISITION_CUSTODY_CONSUME,
-    ]
+    assert acquisition_action_types == []
 
 
 def test_exact_narrow_need_derives_focused_extract_then_blocks_requester() -> None:

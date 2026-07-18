@@ -70,7 +70,8 @@ class KbReviewPersistenceContext:
     supplemental_ran: bool
     delta_urls_supplemental: int
     total_chunks_embedded: int
-    seen_urls: list[str]
+    discover_candidate_urls_admitted: int
+    urls_fetched: int
     scrutineer_high_count: int
     scrutineer_flag_count: int
     synth_deficiency: str | None
@@ -141,7 +142,8 @@ _KB_CONTEXT_RUNTIME_FIELDS: tuple[str, ...] = (
     "supplemental_ran",
     "delta_urls_supplemental",
     "total_chunks_embedded",
-    "seen_urls",
+    "discover_candidate_urls_admitted",
+    "urls_fetched",
     "scrutineer_high_count",
     "scrutineer_flag_count",
     "synth_deficiency",
@@ -174,7 +176,6 @@ def build_kb_review_persistence_context(
         else runtime_values[name]
         for name in _KB_CONTEXT_RUNTIME_FIELDS
     }
-    values["seen_urls"] = list(values["seen_urls"])
     values["clean_json_response"] = clean_json_response
     values["kb_review_agent"] = kb_review_agent
     return KbReviewPersistenceContext(**values)
@@ -255,7 +256,10 @@ def build_kb_execution_record(context: KbReviewPersistenceContext) -> dict[str, 
         "supplemental_ran": context.supplemental_ran,
         "delta_urls_supplemental": context.delta_urls_supplemental,
         "total_chunks_embedded": context.total_chunks_embedded,
-        "urls_fetched": len(context.seen_urls),
+        "discover_candidate_urls_admitted": (
+            context.discover_candidate_urls_admitted
+        ),
+        "urls_fetched": context.urls_fetched,
         "scrutineer_high_flags": context.scrutineer_high_count,
         "scrutineer_flag_count": context.scrutineer_flag_count,
         "synth_deficiency": context.synth_deficiency,

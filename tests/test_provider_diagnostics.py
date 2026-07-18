@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from core.cost_accounting import CostAccumulator
@@ -130,6 +131,10 @@ def test_followup_search_records_provider_depth_and_max_results() -> None:
         followup_queries=["synthetic follow-up query"],
     )
 
+    def routed_search(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        kwargs["search_providers"] = ["tavily"]
+        return process_search_queries(*args, **kwargs)
+
     with patch.dict("os.environ", {}, clear=True):
         with patch("core.pipeline.search_web_results", return_value=([_result()], [])):
             web = run_web_retrieval(
@@ -145,7 +150,7 @@ def test_followup_search_records_provider_depth_and_max_results() -> None:
                 local_url="",
                 embed_texts=lambda *_args, **_kwargs: [],
                 compute_similarities=lambda *_args, **_kwargs: [],
-                search_fn=process_search_queries,
+                search_fn=routed_search,
             )
 
     assert web.search_ran is True

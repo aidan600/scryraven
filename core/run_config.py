@@ -11,26 +11,7 @@ import logging
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
 
-
-@dataclass(frozen=True, slots=True)
-class SourceCustodyPolicy:
-    """Optional policy for custody-required official source full reads."""
-
-    require_official_full_fetch_read: bool = False
-    max_forced_fetch_reads: int = 1
-    preferred_domains: tuple[str, ...] = ()
-    required_source_class: str = "primary_source_documents"
-    required_source_tier: str = "official"
-    required_currentness: str = "current"
-    requirement_id: str = "source-custody:official-full-fetch-read"
-    required_evidence_material_type: str = "full_page_fetched"
-    admission_reason: str = "source_custody_policy_full_fetch_read"
-
-    def enabled(self) -> bool:
-        return bool(
-            self.require_official_full_fetch_read
-            and int(self.max_forced_fetch_reads or 0) > 0
-        )
+from core.acquisition_adapters import AcquisitionTransports
 
 
 @dataclass
@@ -82,9 +63,6 @@ class RunConfig:
 
     # Optional bounded-validation policy. None preserves ordinary CLI/UI behavior.
     cap_policy: Any | None = None
-
-    # Optional source-custody policy. None preserves ordinary CLI/UI behavior.
-    source_custody_policy: SourceCustodyPolicy | None = None
 
     # Optional ordinary-path candidate handoff repair. Defaults preserve CLI/UI behavior.
     enable_ordinary_live_candidate_handoff: bool = False
@@ -156,13 +134,9 @@ class RunDeps:
     # Optional offline-only adapter for authorized component-gap recovery.
     component_gap_recovery_adapter: Callable[..., Any] | None = None
 
-    # Retained compatibility adapter for ordinary selected-candidate READ.
-    ordinary_live_source_fetch_read: Callable[..., Any] | None = None
-
-    # Typed Linkup/Tavily acquisition transports. When absent, an explicitly
-    # enabled ordinary source-custody run may use the installed one-shot
-    # transports selected by core.routing.
-    ordinary_live_source_acquisition_transports: Any | None = None
+    # Typed Linkup/Tavily exact-URL transports retained for a future licensed
+    # post-selection proposal path selected by core.routing.
+    ordinary_live_source_acquisition_transports: AcquisitionTransports | None = None
 
     # Optional explicit provider-availability facts for offline composition.
     # Normal product composition derives the same boolean snapshot from

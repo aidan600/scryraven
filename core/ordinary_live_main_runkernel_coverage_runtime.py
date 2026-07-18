@@ -1,18 +1,16 @@
 """Default-off ordinary main RunKernel coverage integration.
 
 This repair keeps ordinary live source coverage on the main ``RunKernel``.  It
-reuses the existing candidate handoff and source-custody helpers for bounded
-offline inputs, then admits one SemanticObservation and reduces one
-ComponentCoverage record through RunKernel authority.
+consumes an existing candidate handoff and an already-authorized source-custody
+result, then admits one SemanticObservation and reduces one ComponentCoverage
+record through RunKernel authority. It never reacquires candidate content.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
-from core.acquisition_adapters import AcquisitionTransports
-from core.cap_enforcement import RunCapPolicy
 from core.component_coverage_record import (
     ComponentCoverageRecord,
     ConflictPosture,
@@ -49,7 +47,6 @@ from core.live_ordinary_candidate_handoff_runtime import (
 )
 from core.ordinary_live_source_custody_runtime import (
     OrdinaryLiveSourceCustodyResult,
-    execute_ordinary_live_source_custody,
 )
 from core.run_kernel import (
     Observation,
@@ -226,13 +223,10 @@ def execute_ordinary_live_main_runkernel_coverage(
     core_topic: str | None = None,
     candidate_results: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
     provider_authorized: str = "offline-fake-search",
-    fetch_read: Callable[..., Mapping[str, Any]] | None = None,
-    available_providers: Mapping[str, object] | None = None,
-    acquisition_transports: AcquisitionTransports | None = None,
-    cap_policy: RunCapPolicy | None = None,
-    required_or_preferred_anchors: Sequence[Any] = (),
+    candidate_handoff_result: OrdinaryLiveCandidateHandoffResult | None = None,
+    source_custody_result: OrdinaryLiveSourceCustodyResult | None = None,
 ) -> OrdinaryLiveMainRunKernelCoverageResult:
-    """Reduce one ordinary source into main-owned semantic coverage."""
+    """Reduce one already-custodied source into main-owned semantic coverage."""
 
     base = _base_projection()
     candidate_result: OrdinaryLiveCandidateHandoffResult | None = None
@@ -263,21 +257,23 @@ def execute_ordinary_live_main_runkernel_coverage(
             )
 
         component_id = _main_component_id(main_run_kernel)
-        counts["candidate_handoff_attempted_count"] = 1
-        candidate_result = execute_ordinary_live_candidate_handoff(
-            run_kernel=main_run_kernel,
-            query=query,
-            requested_mode=requested_mode,
-            run_contract_projection=run_contract_projection,
-            route_projection=route_projection,
-            core_topic=core_topic,
-            candidate_results=candidate_results,
-            provider_authorized=provider_authorized,
-            component_id=component_id,
-            source_obligation_id=_MAIN_SOURCE_OBLIGATION_ID,
-            search_requirement_id=_MAIN_SEARCH_REQUIREMENT_ID,
-            planner_purpose="main_answer_coverage",
-        )
+        candidate_result = candidate_handoff_result
+        if candidate_result is None:
+            counts["candidate_handoff_attempted_count"] = 1
+            candidate_result = execute_ordinary_live_candidate_handoff(
+                run_kernel=main_run_kernel,
+                query=query,
+                requested_mode=requested_mode,
+                run_contract_projection=run_contract_projection,
+                route_projection=route_projection,
+                core_topic=core_topic,
+                candidate_results=candidate_results,
+                provider_authorized=provider_authorized,
+                component_id=component_id,
+                source_obligation_id=_MAIN_SOURCE_OBLIGATION_ID,
+                search_requirement_id=_MAIN_SEARCH_REQUIREMENT_ID,
+                planner_purpose="main_answer_coverage",
+            )
         if _safe_mapping(candidate_result.projection).get("failed_closed") is True:
             raise OrdinaryLiveMainRunKernelCoverageError(
                 str(
@@ -296,20 +292,12 @@ def execute_ordinary_live_main_runkernel_coverage(
         counts["candidate_handoff_completed_count"] = 1
         component_ref = _component_ref(main_run_kernel, component_id)
 
-        counts["source_custody_attempted_count"] = 1
-        source_result = execute_ordinary_live_source_custody(
-            run_kernel=main_run_kernel,
-            parent_run_id=main_run_kernel.state.run_id,
-            parent_request_id=main_run_kernel.state.request_id,
-            candidate_packet=candidate_result.candidate_packet,
-            fetch_read=fetch_read,
-            available_providers=available_providers,
-            acquisition_transports=acquisition_transports,
-            cap_policy=cap_policy,
-            required_or_preferred_anchors=required_or_preferred_anchors,
-            component_text=core_topic,
-            claim_under_test=None,
-        )
+        source_result = source_custody_result
+        if source_result is None:
+            raise OrdinaryLiveMainRunKernelCoverageError(
+                "source_custody_result_missing",
+                "ordinary main RunKernel coverage requires prior source custody",
+            )
         if _safe_mapping(source_result.projection).get("failed_closed") is True:
             raise OrdinaryLiveMainRunKernelCoverageError(
                 str(

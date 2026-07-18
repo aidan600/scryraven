@@ -93,7 +93,7 @@ def test_mvp_live_dogfood_run_startup_skips_dotenv(tmp_path: Path) -> None:
     assert result["brave_search_timeout_sec"] == 8.0
 
 
-def test_actual_proplex_entrypoint_reaches_main_runkernel_coverage_dry_run() -> None:
+def test_actual_proplex_entrypoint_reports_nontrigger_dry_run_blocker() -> None:
     env = os.environ.copy()
     for key in OFFLINE_PROVIDER_ENV_KEYS:
         env.pop(key, None)
@@ -108,13 +108,10 @@ def test_actual_proplex_entrypoint_reaches_main_runkernel_coverage_dry_run() -> 
     )
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "ordinary-live dry-run reached main RunKernel coverage" in proc.stdout
-    assert "ordinary entrypoint: python -m proplex" in proc.stdout
-    assert "runtime consumer: core.pipeline_orchestrator.run_pipeline" in proc.stdout
-    assert "main SemanticObservation admitted: true" in proc.stdout
-    assert "main ComponentCoverage reduced: true" in proc.stdout
-    assert "live calls: 0" in proc.stdout
-    assert "output type: dry-run status, not live product behavior" in proc.stdout
+    assert "ordinary-live dry-run blocked" in proc.stdout
+    assert "blocker: ordinary_entrypoint_visibility_not_supported" in proc.stdout
+    assert "output type: dry-run blocker, not live product behavior" in proc.stdout
+    assert "ordinary-live dry-run reached main RunKernel coverage" not in proc.stdout
     assert "official current Example Program permit threshold is 500" not in proc.stdout
 
 
@@ -147,7 +144,7 @@ def test_default_cli_runconfig_keeps_ordinary_live_dry_run_disabled(
     assert cli.main([QUERY]) == 0
 
     assert captured["config"].enable_ordinary_live_main_runkernel_coverage is False
-    assert captured["deps"].ordinary_live_source_fetch_read is None
+    assert captured["deps"].ordinary_live_source_acquisition_transports is None
     out = capsys.readouterr()
     assert "default report" in out.out
     assert "ordinary-live dry-run reached main RunKernel coverage" not in out.out
@@ -182,7 +179,8 @@ def test_dry_run_cli_builds_enabled_runconfig_and_skips_live_key_validation(
     assert config.query == QUERY
     assert config.enable_ordinary_live_main_runkernel_coverage is True
     assert config.ordinary_live_candidate_handoff_results
-    assert callable(deps.ordinary_live_source_fetch_read)
+    assert deps.ordinary_live_source_acquisition_transports is not None
+    assert callable(deps.ordinary_live_source_acquisition_transports.linkup_fetch)
     out = capsys.readouterr()
     assert "ordinary-live dry-run reached main RunKernel coverage" in out.out
     assert "SHOULD_NOT_PRINT_REPORT" not in out.out

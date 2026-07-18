@@ -29,6 +29,7 @@ def test_insert_run_persists_kb_from_merged_execution_mapping(tmp_path: Path) ->
         "complexity": "medium",
         "timing": {},
         "cost": {},
+        "discover_candidate_urls_admitted": 3,
         "urls_fetched": 0,
         "iterations_run": 0,
         "kb_instrumentation": {
@@ -43,12 +44,15 @@ def test_insert_run_persists_kb_from_merged_execution_mapping(tmp_path: Path) ->
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute(
-            "SELECT kb_score, kb_fired FROM runs WHERE run_id = ?",
+            "SELECT kb_score, kb_fired, discover_candidate_urls_admitted, "
+            "urls_fetched FROM runs WHERE run_id = ?",
             ("run-test-kb-1",),
         )
-        score, fired = cur.fetchone()
+        score, fired, admitted, fetched = cur.fetchone()
         assert abs(float(score) - 0.1234) < 1e-6
         assert fired == 1
+        assert admitted == 3
+        assert fetched == 0
     finally:
         conn.close()
 
@@ -81,6 +85,7 @@ def test_orchestrator_style_db_write_initializes_schema(
         "complexity": "low",
         "timing": {},
         "cost": {},
+        "discover_candidate_urls_admitted": 2,
         "urls_fetched": 0,
         "iterations_run": 0,
     }
@@ -103,3 +108,31 @@ def test_orchestrator_style_db_write_initializes_schema(
         assert cur.fetchone() == (1,)
     finally:
         conn.close()
+
+
+def test_init_db_adds_discovery_admission_column_to_existing_runs_table(
+    tmp_path: Path,
+) -> None:
+    from core.db import init_db
+
+    db_path = tmp_path / "legacy_telemetry.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE runs (run_id TEXT PRIMARY KEY, urls_fetched INTEGER)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    init_db(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+    finally:
+        conn.close()
+    assert "discover_candidate_urls_admitted" in columns
+    assert "urls_fetched" in columns
