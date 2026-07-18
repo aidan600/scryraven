@@ -2832,7 +2832,10 @@ def process_search_queries(
                     cost_phase=cost_phase,
                 )] = ("exa", q)
 
-        for future in concurrent.futures.as_completed(futures):
+        # Futures execute concurrently, but provider material is reduced in stable
+        # submission order (query order, then the existing provider order).  Thread
+        # completion timing must not become candidate rank or duplicate-URL authority.
+        for future in futures:
             provider, q = futures[future]
             success = True
             failure_type = None

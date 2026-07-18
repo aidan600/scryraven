@@ -176,6 +176,103 @@ def test_single_provider_material_ranking_is_deterministic_offline(
     assert first == second
 
 
+def test_multi_query_provider_ranking_ignores_future_completion_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queries = ["alpha rule", "beta rule"]
+
+    def provider_result(provider: str, query: str) -> dict[str, Any]:
+        query_slug = query.replace(" ", "-")
+        return {
+            "title": f"{provider.title()} {query}",
+            "url": f"https://{provider}.example.test/{query_slug}",
+            "domain": f"{provider}.example.test",
+            "credibility": 1,
+            "snippet": f"Provider-returned {provider} material for {query}. " * 8,
+        }
+
+    monkeypatch.setenv("LINKUP_API_KEY", "offline-placeholder")
+    monkeypatch.setattr(
+        pipeline,
+        "search_web_results",
+        lambda query, **_kwargs: ([provider_result("tavily", query)], []),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "search_linkup_results",
+        lambda query, **_kwargs: ([provider_result("linkup", query)], []),
+    )
+
+    def run(*, reverse_completion: bool) -> list[tuple[str, str, str, float]]:
+        monkeypatch.setattr(
+            pipeline.concurrent.futures,
+            "as_completed",
+            lambda futures: (
+                list(reversed(list(futures)))
+                if reverse_completion
+                else list(futures)
+            ),
+        )
+        passages = pipeline.process_search_queries(
+            queries,
+            "general",
+            "low",
+            "basic",
+            8,
+            [],
+            [],
+            None,
+            set(),
+            set(),
+            "offline-embed-provider",
+            "offline-embed-model",
+            None,
+            lambda *_args, **_kwargs: [],
+            lambda *_args, **_kwargs: [],
+            search_providers=["tavily", "linkup"],
+        )
+        return [
+            (
+                str(passage["provider_name"]),
+                str(passage["query_preview"]),
+                str(passage["url"]),
+                float(passage["rrf_score"]),
+            )
+            for passage in passages
+        ]
+
+    forward = run(reverse_completion=False)
+    reverse = run(reverse_completion=True)
+
+    assert reverse == forward
+    assert forward == [
+        (
+            "tavily",
+            "alpha rule",
+            "https://tavily.example.test/alpha-rule",
+            pytest.approx(1.0 / 61.0),
+        ),
+        (
+            "linkup",
+            "alpha rule",
+            "https://linkup.example.test/alpha-rule",
+            pytest.approx(1.0 / 61.0),
+        ),
+        (
+            "tavily",
+            "beta rule",
+            "https://tavily.example.test/beta-rule",
+            pytest.approx(1.0 / 62.0),
+        ),
+        (
+            "linkup",
+            "beta rule",
+            "https://linkup.example.test/beta-rule",
+            pytest.approx(1.0 / 62.0),
+        ),
+    ]
+
+
 class _OfflineResponse:
     def __init__(self, payload: dict[str, Any]) -> None:
         self._payload = payload
