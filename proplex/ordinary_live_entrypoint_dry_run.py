@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.acquisition_adapters import AcquisitionTransports
 from core.ordinary_live_main_runkernel_coverage_runtime import (
     ORDINARY_LIVE_MAIN_RUNKERNEL_COVERAGE_TRACE_KEY,
 )
@@ -133,14 +134,11 @@ class OrdinaryLiveEntrypointDryRunDeps:
                 seen_urls.add(passage["url"])
         return passages
 
-    def fake_source_fetch_read(
+    def fake_source_read_transport(
         self,
-        *,
-        candidate: Mapping[str, Any],
-        source_url: str,
-        source_candidate_ref: Mapping[str, Any],
+        payload: dict[str, Any],
     ) -> dict[str, Any]:
-        del source_candidate_ref
+        source_url = str(payload.get("url") or "")
         text = (
             "The official current Example Program permit threshold is 500 "
             "units for the active program year."
@@ -151,13 +149,13 @@ class OrdinaryLiveEntrypointDryRunDeps:
             "resolved_url": source_url,
             "final_url": source_url,
             "canonical_url": source_url,
-            "resolved_domain": candidate["domain"],
             "http_status": 200,
             "content_type": "text/html; charset=utf-8",
             "retrieved_or_observed_at": "2026-06-30T12:00:00Z",
-            "content_title": candidate["title"],
+            "content_title": "Example Program Permit Threshold",
             "content_length": len(text),
             "sanitized_text": text,
+            "markdown": text,
         }
 
     def to_run_deps(self) -> RunDeps:
@@ -197,7 +195,10 @@ class OrdinaryLiveEntrypointDryRunDeps:
                 self.output_dir
                 / "ordinary_live_main_runkernel_coverage_dry_run_policy_journal.jsonl"
             ),
-            ordinary_live_source_fetch_read=self.fake_source_fetch_read,
+            ordinary_live_source_acquisition_transports=AcquisitionTransports(
+                linkup_fetch=self.fake_source_read_transport
+            ),
+            provider_availability={"linkup": True, "tavily": True},
         )
 
 

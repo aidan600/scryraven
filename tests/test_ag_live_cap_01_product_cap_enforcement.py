@@ -44,7 +44,6 @@ def test_default_run_config_has_no_cap_policy() -> None:
     from core.run_config import RunConfig
 
     assert RunConfig(query="hello").cap_policy is None
-    assert RunConfig(query="hello").source_custody_policy is None
 
 
 def test_utilization_retry_disabled_by_cap_policy_records_trace(
@@ -148,11 +147,9 @@ def test_author_model_cap_overflow_fails_before_author_call(
     assert cap_policy.author_model_calls == 0
 
 
-def test_fetch_read_cap_overflow_fails_before_fetch_page(
+def test_deep_discovery_uses_provider_material_without_fetch_read_cap_charge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fetch_page_called = False
-
     def fake_search_web_results(*_args: Any, **_kwargs: Any) -> tuple[list[dict[str, Any]], list[str]]:
         return (
             [
@@ -161,19 +158,14 @@ def test_fetch_read_cap_overflow_fails_before_fetch_page(
                     "url": "https://www.irs.gov/example",
                     "domain": "irs.gov",
                     "credibility": 5,
-                    "snippet": "Official source result.",
+                    "snippet": "Official provider-returned result. " * 10,
+                    "raw_content": "Bounded provider-returned excerpt. " * 20,
                 }
             ],
             [],
         )
 
-    def fake_fetch_page(_item: Any) -> dict[str, Any]:
-        nonlocal fetch_page_called
-        fetch_page_called = True
-        return {}
-
     monkeypatch.setattr(pipeline, "search_web_results", fake_search_web_results)
-    monkeypatch.setattr(pipeline, "fetch_page", fake_fetch_page)
     cap_policy = RunCapPolicy(
         max_search_dispatches=1,
         max_fetch_read_operations=0,
@@ -182,26 +174,28 @@ def test_fetch_read_cap_overflow_fails_before_fetch_page(
         max_retries=0,
     )
 
-    with pytest.raises(RunCapExceeded, match="fetch_read_operations cap exceeded"):
-        pipeline.process_search_queries(
-            ["official result"],
-            "general",
-            "high",
-            "advanced",
-            1,
-            [],
-            [],
-            None,
-            set(),
-            set(),
-            "offline-embed-provider",
-            "offline-embed-model",
-            None,
-            lambda *_args, **_kwargs: [],
-            lambda *_args, **_kwargs: [],
-            search_providers=["tavily"],
-            cap_policy=cap_policy,
-        )
+    passages = pipeline.process_search_queries(
+        ["official result"],
+        "general",
+        "high",
+        "advanced",
+        1,
+        [],
+        [],
+        None,
+        set(),
+        set(),
+        "offline-embed-provider",
+        "offline-embed-model",
+        None,
+        lambda *_args, **_kwargs: [],
+        lambda *_args, **_kwargs: [],
+        search_providers=["tavily"],
+    )
 
-    assert fetch_page_called is False
+    assert passages
+    assert passages[0]["evidence_material_type"] == "snippet_only"
+    assert passages[0]["discovery_material_type"] == "provider_returned_excerpt"
+    assert passages[0]["separate_exact_url_transport_performed"] is False
+    assert passages[0]["full_page_fetched"] is False
     assert cap_policy.fetch_read_operations == 0

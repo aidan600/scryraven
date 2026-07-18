@@ -1,26 +1,26 @@
 """Default-off ordinary run_pipeline source-custody integration.
 
-This helper consumes the in-memory ``SearchResultCandidatePacket`` produced by
-the ordinary candidate handoff repair, traverses RunKernel's post-discovery
-acquisition-control chain, builds the existing fetch/read content packet, and
-reduces candidate/content custody through the existing EvidenceLedger reducer.
+This helper consumes an independently produced ``AcquisitionNeedProposalV1``
+only when one is explicitly supplied. A selected candidate or candidate URL is
+provenance, not a material need. Without a proposal the helper returns a normal
+``not_needed`` result before any RunKernel acquisition action or transport.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_contracts import AcquisitionArtifact
 from core.acquisition_control import (
     AcquisitionCapabilityDecisionObservationV1,
+    AcquisitionControlError,
     AcquisitionNeedProposalV1,
     AcquisitionRouteObservationV1,
     AcquisitionTerminalReceiptV1,
     AcquisitionWorkOrderV1,
-    build_selected_candidate_read_proposal,
-    current_receipt_refs,
+    validate_selected_candidate_material_need_proposal,
 )
 from core.authorized_acquisition_runtime import (
     execute_acquisition_capability_decision_action,
@@ -288,7 +288,7 @@ def execute_ordinary_live_source_custody(
     parent_run_id: str,
     parent_request_id: str,
     candidate_packet: Mapping[str, Any] | None,
-    fetch_read: Callable[..., Mapping[str, Any]] | None,
+    acquisition_need_proposal: AcquisitionNeedProposalV1 | None = None,
     available_providers: Mapping[str, object] | None = None,
     acquisition_transports: AcquisitionTransports | None = None,
     cap_policy: RunCapPolicy | None = None,
@@ -296,7 +296,7 @@ def execute_ordinary_live_source_custody(
     component_text: str | None = None,
     claim_under_test: str | None = None,
 ) -> OrdinaryLiveSourceCustodyResult:
-    """Route and reduce one selected candidate into existing fetch/read custody."""
+    """Consume an explicit need or leave selected-candidate provenance inert."""
 
     base = _base_projection(
         parent_run_id=parent_run_id,
@@ -305,6 +305,14 @@ def execute_ordinary_live_source_custody(
     fetch_read_attempted = 0
     fetch_read_completed = 0
     try:
+        if acquisition_need_proposal is None:
+            return OrdinaryLiveSourceCustodyResult(
+                projection=_not_needed_projection(
+                    base,
+                    candidate_packet_present=candidate_packet is not None,
+                    run_kernel=run_kernel,
+                )
+            )
         if candidate_packet is None:
             raise OrdinaryLiveSourceCustodyError(
                 "search_result_candidate_packet_missing",
@@ -321,24 +329,17 @@ def execute_ordinary_live_source_custody(
                 "ordinary source custody requires the in-memory candidate RunKernel",
             )
         selected_candidate = _selected_candidate_from_packet(packet)
-        transports = _source_custody_transports(
-            selected_candidate=selected_candidate,
-            fetch_read=fetch_read,
-            acquisition_transports=acquisition_transports,
-        )
         availability = _read_availability(
             available_providers=available_providers,
         )
         authority_snapshot = run_kernel.acquisition_authority_snapshot()
-        proposal = build_selected_candidate_read_proposal(
+        proposal = validate_selected_candidate_material_need_proposal(
+            proposal=acquisition_need_proposal,
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             candidate_packet=packet,
             selected_candidate=selected_candidate,
             authority_snapshot=authority_snapshot,
-            prior_receipt_refs=current_receipt_refs(
-                run_kernel.state.acquisition_control_state
-            ),
         )
         capability_action = run_kernel.authorize_acquisition_capability_decision(
             proposal=proposal
@@ -416,7 +417,7 @@ def execute_ordinary_live_source_custody(
             work_order=work_order,
             route_observation=route_observation,
             route_decision=route_decision,
-            transports=transports,
+            transports=acquisition_transports,
             before_transport=(
                 cap_policy.mark_fetch_read_operation
                 if cap_policy is not None
@@ -577,6 +578,17 @@ def execute_ordinary_live_source_custody(
                 run_kernel=run_kernel,
             )
         )
+    except AcquisitionControlError as exc:
+        return OrdinaryLiveSourceCustodyResult(
+            projection=_fail_projection(
+                base,
+                exc.code,
+                str(exc),
+                fetch_read_attempted=fetch_read_attempted,
+                fetch_read_completed=fetch_read_completed,
+                run_kernel=run_kernel,
+            )
+        )
     except (FetchReadContentReferenceError, SearchResultCandidatePacketError) as exc:
         return OrdinaryLiveSourceCustodyResult(
             projection=_fail_projection(
@@ -657,42 +669,6 @@ def _reduce_blocked_acquisition_route(
     )
     run_kernel.reduce(result.observation)
     return result.terminal_receipt
-
-
-def _source_custody_transports(
-    *,
-    selected_candidate: Mapping[str, Any],
-    fetch_read: Callable[..., Mapping[str, Any]] | None,
-    acquisition_transports: AcquisitionTransports | None,
-) -> AcquisitionTransports | None:
-    if acquisition_transports is None and fetch_read is None:
-        return None
-    configured = acquisition_transports or AcquisitionTransports()
-    linkup_fetch = configured.linkup_fetch
-    if linkup_fetch is None and fetch_read is not None:
-
-        def legacy_linkup_fetch(payload: dict[str, Any]) -> Mapping[str, Any]:
-            source_url = str(payload.get("url") or selected_candidate["url"])
-            raw = fetch_read(
-                candidate=dict(selected_candidate),
-                source_url=source_url,
-                source_candidate_ref=_source_candidate_ref(selected_candidate),
-            )
-            material = dict(raw) if isinstance(raw, Mapping) else {}
-            material.setdefault(
-                "markdown",
-                material.get("sanitized_text") or material.get("readable_text"),
-            )
-            return material
-
-        linkup_fetch = legacy_linkup_fetch
-    return AcquisitionTransports(
-        linkup_fetch=linkup_fetch,
-        tavily_extract=configured.tavily_extract,
-        tavily_map=configured.tavily_map,
-        tavily_crawl=configured.tavily_crawl,
-        linkup_deep_search=configured.linkup_deep_search,
-    )
 
 
 def _read_availability(
@@ -1014,6 +990,38 @@ def _base_projection(*, parent_run_id: str, parent_request_id: str) -> dict[str,
         "projection_to_runkernel_rehydration": False,
         "product_code_imports_scripts_ag": False,
         **_zero_call_counts(),
+    }
+
+
+def _not_needed_projection(
+    base: Mapping[str, Any],
+    *,
+    candidate_packet_present: bool,
+    run_kernel: RunKernel | None,
+) -> dict[str, Any]:
+    return {
+        **dict(base),
+        "evaluated": True,
+        "ran": False,
+        "failed_closed": False,
+        "status": "not_needed",
+        "operation_started": False,
+        "candidate_packet_present": candidate_packet_present,
+        "candidate_selection_creates_material_need": False,
+        "acquisition_need_proposal_created": False,
+        "acquisition_work_order_created": False,
+        "acquisition_route_created": False,
+        "exact_url_cap_charged": False,
+        "exact_url_transport_attempted": False,
+        "fetch_read_attempted_count": 0,
+        "fetch_read_completed_count": 0,
+        "evidence_ledger_custody_count": 0,
+        **_closed_surface_counts(),
+        **_zero_call_counts(),
+        **_child_kernel_projection(run_kernel=run_kernel),
+        "closed_surface_flags": dict(_CLOSED_FALSE_FLAGS),
+        **_CLOSED_FALSE_FLAGS,
+        "explicit_non_proofs": list(_NON_PROOFS),
     }
 
 

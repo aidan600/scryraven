@@ -27,7 +27,6 @@ from core.prompts import (
 from core.provider_diagnostics import build_provider_attempt_diagnostic
 from core.retrieval import (
     chunk_text,
-    fetch_page,
     get_news_date_window,
     is_plausible_domain,
     normalize_domain,
@@ -2562,23 +2561,23 @@ def fetch_linkup_precision_block(
 
 
 def _is_retrieval_timeout_error(exc: Exception) -> bool:
-    """True when the failure is a client wait/read/connect timeout (distinct from HTTP errors or auth)."""
-    try:
-        from requests.exceptions import ConnectTimeout, ReadTimeout
-        from requests.exceptions import Timeout as RequestsTimeout
+    """Classify provider-client timeouts without importing a transport client."""
 
-        if isinstance(exc, (RequestsTimeout, ReadTimeout, ConnectTimeout)):
-            return True
-    except ImportError:
-        pass
-    try:
-        import httpx
-
-        if isinstance(exc, (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout)):
-            return True
-    except ImportError:
-        pass
-    return False
+    timeout_types = {
+        "ConnectTimeout",
+        "ConnectTimeoutError",
+        "ReadTimeout",
+        "ReadTimeoutError",
+        "Timeout",
+        "TimeoutError",
+        "TimeoutException",
+    }
+    timeout_modules = ("httpcore", "httpx", "requests", "urllib3")
+    return any(
+        cls.__name__ in timeout_types
+        and str(getattr(cls, "__module__", "")).startswith(timeout_modules)
+        for cls in type(exc).__mro__
+    )
 
 
 def get_followup_search_params(complexity: str, pipeline_search_depth: Optional[str] = None) -> Dict[str, object]:
@@ -2672,181 +2671,73 @@ def _provider_result_summary(
     }
 
 
-_SNIPPET_ONLY_MATERIAL = "snippet_only"
-_FULL_PAGE_FETCHED_MATERIAL = "full_page_fetched"
+_PROVIDER_RETURNED_SNIPPET_MATERIAL = "provider_returned_snippet"
+_PROVIDER_RETURNED_EXCERPT_MATERIAL = "provider_returned_excerpt"
 
 
-def _source_custody_policy_enabled(policy: Any | None) -> bool:
-    if policy is None:
-        return False
-    enabled = getattr(policy, "enabled", None)
-    if callable(enabled):
-        return bool(enabled())
-    return bool(getattr(policy, "require_official_full_fetch_read", False))
+def _bounded_provider_text(value: Any, *, limit: int) -> str:
+    return value[:limit] if isinstance(value, str) else ""
 
 
-def _source_custody_policy_domains(
-    policy: Any | None,
-    include_domains: list[str] | tuple[str, ...] | None,
-) -> tuple[str, ...]:
-    raw_domains = getattr(policy, "preferred_domains", ()) if policy else ()
-    if not raw_domains:
-        raw_domains = include_domains or ()
-    domains: list[str] = []
-    for value in raw_domains:
-        domain = str(value or "").strip().lower()
-        domain = domain.removeprefix("https://").removeprefix("http://")
-        domain = domain.split("/", 1)[0].lstrip(".").rstrip(".")
-        if domain and domain not in domains:
-            domains.append(domain)
-    return tuple(domains)
-
-
-def _host_matches_source_custody_domain(host: str, domain: str) -> bool:
-    host = (host or "").lower().rstrip(".")
-    domain = (domain or "").lower().lstrip(".").rstrip(".")
-    return bool(host and domain and (host == domain or host.endswith("." + domain)))
-
-
-def _source_custody_domain_allowed(url: Any, domains: tuple[str, ...]) -> bool:
-    host = normalize_source_domain(str(url or ""))
-    return any(_host_matches_source_custody_domain(host, domain) for domain in domains)
-
-
-def _source_custody_candidate_tier(
+def _provider_returned_candidate_material(
     result: dict[str, Any],
-    *,
-    entity_hint: str | None,
-) -> str:
-    explicit = str(result.get("source_tier") or "").strip()
-    if explicit:
-        return explicit
-    snippet = (result.get("snippet") or result.get("raw_content") or "")[:2000]
-    return classify_source(
-        result.get("url", "") or "",
-        result.get("title", "") or "",
-        snippet,
-        source_context=entity_hint or "",
-    )
-
-
-def _select_source_custody_fetch_candidate(
-    candidates: list[dict[str, Any]],
-    *,
-    policy: Any,
-    include_domains: list[str],
-    entity_hint: str | None,
-) -> tuple[dict[str, Any] | None, str | None]:
-    domains = _source_custody_policy_domains(policy, include_domains)
-    if not domains:
-        return None, None
-    for result in candidates:
-        if not isinstance(result, dict) or not str(result.get("url") or "").strip():
-            continue
-        if result.get("_linkup_sourced_answer") is True:
-            continue
-        if not _source_custody_domain_allowed(result.get("url"), domains):
-            continue
-        tier = _source_custody_candidate_tier(result, entity_hint=entity_hint)
-        return result, tier
-    return None, None
-
-
-def _annotate_source_custody_fetch_candidate(
-    result: dict[str, Any],
-    *,
-    policy: Any,
-    source_tier: str | None,
-) -> None:
-    result["_source_custody_policy_forced_fetch_read"] = True
-    result["source_custody_requirement_id"] = getattr(
-        policy,
-        "requirement_id",
-        "source-custody:official-full-fetch-read",
-    )
-    result["required_source_class"] = getattr(
-        policy,
-        "required_source_class",
-        "primary_source_documents",
-    )
-    result["required_source_tier"] = getattr(policy, "required_source_tier", "official")
-    result["required_currentness"] = getattr(policy, "required_currentness", "current")
-    result["required_evidence_material_type"] = getattr(
-        policy,
-        "required_evidence_material_type",
-        _FULL_PAGE_FETCHED_MATERIAL,
-    )
-    result["source_custody_admission_reason"] = getattr(
-        policy,
-        "admission_reason",
-        "source_custody_policy_full_fetch_read",
-    )
-    result["source_class"] = result.get("source_class") or result["required_source_class"]
-    result["source_tier"] = result.get("source_tier") or source_tier or result[
-        "required_source_tier"
-    ]
-    result["currentness_signal"] = (
-        result.get("currentness_signal") or result["required_currentness"]
-    )
-    result["eligible_for_stronger_obligation"] = True
-
-
-def _apply_source_custody_fetch_read_policy(
-    *,
-    to_fetch: list[dict[str, Any]],
-    to_snippet: list[dict[str, Any]],
-    source_custody_policy: Any | None,
-    include_domains: list[str],
-    entity_hint: str | None,
-) -> None:
-    if not _source_custody_policy_enabled(source_custody_policy):
-        return
-    if int(getattr(source_custody_policy, "max_forced_fetch_reads", 1) or 0) < 1:
-        return
-    candidates = [*to_fetch, *to_snippet]
-    selected, source_tier = _select_source_custody_fetch_candidate(
-        candidates,
-        policy=source_custody_policy,
-        include_domains=include_domains,
-        entity_hint=entity_hint,
-    )
-    if selected is None:
-        return
-    _annotate_source_custody_fetch_candidate(
-        selected,
-        policy=source_custody_policy,
-        source_tier=source_tier,
-    )
-    if selected in to_fetch:
-        return
-    to_snippet[:] = [result for result in to_snippet if result is not selected]
-    to_fetch.append(selected)
+) -> tuple[str, str]:
+    excerpt_value = result.get("raw_content")
+    excerpt = excerpt_value if isinstance(excerpt_value, str) else ""
+    if excerpt.strip():
+        return excerpt[:20000], _PROVIDER_RETURNED_EXCERPT_MATERIAL
+    snippet_value = result.get("snippet")
+    snippet = snippet_value if isinstance(snippet_value, str) else ""
+    return snippet[:20000], _PROVIDER_RETURNED_SNIPPET_MATERIAL
 
 
 def _material_fields(material_type: str) -> dict[str, Any]:
     return {
-        "evidence_material_type": material_type,
-        "source_material_type": material_type,
-        "full_page_fetched": material_type == _FULL_PAGE_FETCHED_MATERIAL,
-        "snippet_only": material_type == _SNIPPET_ONLY_MATERIAL,
+        "evidence_material_type": "snippet_only",
+        "source_material_type": "snippet_only",
+        "discovery_material_type": material_type,
+        "provider_returned": True,
+        "provider_material_kind": material_type,
+        "full_page_fetched": False,
+        "snippet_only": True,
+        "product_fetch_read_executed": False,
+        "separate_exact_url_transport_performed": False,
+        "provider_internal_acquisition_unobserved": True,
     }
 
 
-def _source_custody_passage_fields(source: dict[str, Any]) -> dict[str, Any]:
-    fields: dict[str, Any] = {}
+def _provider_candidate_passage_fields(source: dict[str, Any]) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "provider_returned_title": _bounded_provider_text(
+            source.get("title"), limit=180
+        ),
+        "provider_returned_snippet": _bounded_provider_text(
+            source.get("snippet"), limit=2000
+        ),
+        "provider_name": _bounded_provider_text(
+            source.get("provider_name") or source.get("_provider"), limit=80
+        ),
+        "provider_role": _bounded_provider_text(
+            source.get("provider_role"), limit=80
+        ),
+        "query_preview": _bounded_provider_text(
+            source.get("query_preview"), limit=140
+        ),
+        "retrieval_pass_id": _bounded_provider_text(
+            source.get("retrieval_pass_id"), limit=80
+        ),
+    }
     for key in (
+        "provider_rank_or_position",
         "source_class",
         "currentness_signal",
-        "source_custody_requirement_id",
-        "required_source_class",
-        "required_source_tier",
-        "required_currentness",
-        "required_evidence_material_type",
-        "eligible_for_stronger_obligation",
-        "source_custody_admission_reason",
+        "published_date",
+        "published_or_observed_date",
+        "date",
+        "_exa_score",
     ):
         value = source.get(key)
-        if value not in (None, "", [], {}):
+        if isinstance(value, (str, int, float, bool)) and value not in (None, ""):
             fields[key] = value
     return fields
 
@@ -2879,8 +2770,6 @@ def process_search_queries(
     iteration: int | None = None,
     prior_queries_for_similarity: list[str] | None = None,
     query_similarity_basis: str | None = None,
-    cap_policy: Any | None = None,
-    source_custody_policy: Any | None = None,
 ):
     if search_providers is None:
         # Provider selection is complete before mechanical dispatch.  The
@@ -3015,6 +2904,14 @@ def process_search_queries(
                 if accepted:
                     item["_provider"] = provider
                     item["_query"] = q
+                    item["provider_name"] = provider
+                    item["provider_role"] = provider_role
+                    item["query_preview"] = str(q or "")[:140]
+                    item["retrieval_pass_id"] = (
+                        f"{provider_role}:"
+                        f"{iteration if iteration is not None else 'unknown'}"
+                    )
+                    item["provider_rank_or_position"] = rank
                     provider_buckets[provider].append(item)
                     provider_seen_urls.add(url)
                     new_urls_this_pass.add(url)
@@ -3070,102 +2967,71 @@ def process_search_queries(
     seen_urls_set.update(new_urls_this_pass)
     all_raw_results = rrf_merge(provider_buckets, k=60) if len(provider_buckets) > 1 else (list(provider_buckets.values())[0] if provider_buckets else [])
     search_results = all_raw_results
-    status_container.write(f"Fetched {len(search_results)} new unique URLs.")
+    status_container.write(
+        f"Received {len(search_results)} new unique candidate URLs from DISCOVER providers."
+    )
 
     new_passages = []
-    to_fetch, to_snippet = [], []
+    to_long_provider_material, to_short_provider_material = [], []
     if complexity == "low":
-        to_snippet = search_results[:10]
+        to_short_provider_material = search_results[:10]
     elif complexity == "medium":
-        to_snippet = search_results[:25]
+        to_short_provider_material = search_results[:25]
     else:
         for r in search_results[:40]:
             if r.get("credibility", 0) >= 3 and not r.get("_linkup_sourced_answer", False):
-                to_fetch.append(r)
+                to_long_provider_material.append(r)
             else:
-                to_snippet.append(r)
+                to_short_provider_material.append(r)
 
-    _apply_source_custody_fetch_read_policy(
-        to_fetch=to_fetch,
-        to_snippet=to_snippet,
-        source_custody_policy=source_custody_policy,
-        include_domains=include_domains,
-        entity_hint=entity_hint,
+    material_buckets = (
+        (to_short_provider_material, 1200, 150),
+        (to_long_provider_material, 2000, 200),
     )
-
-    if to_snippet:
-        status_container.write(f"Extracting snippets from {len(to_snippet)} sources (bypassing full fetch)...")
-        for r in to_snippet:
+    provider_material_count = sum(
+        len(results) for results, _, _ in material_buckets
+    )
+    if provider_material_count:
+        status_container.write(
+            "Normalizing provider-returned candidate material from "
+            f"{provider_material_count} sources without opening candidate URLs."
+        )
+    for provider_results, chunk_size, minimum_length in material_buckets:
+        for r in provider_results:
             if r.get("credibility", 0) < -1:
                 continue
-            text_content = (r.get("raw_content") or r.get("snippet") or "")[:20000]
-            if len(text_content) > 150:
-                _tier_snip = (r.get("snippet") or r.get("raw_content") or "")[:2000]
+            text_content, material_type = _provider_returned_candidate_material(r)
+            if len(text_content) > minimum_length:
+                _tier_snip = text_content[:2000]
                 _source_tier = classify_source(
-                    r.get("url", "") or "",
-                    r.get("title", "") or "",
+                    _bounded_provider_text(r.get("url"), limit=2000),
+                    _bounded_provider_text(r.get("title"), limit=500),
                     _tier_snip,
                     source_context=entity_hint or "",
                 )
-                for chunk in chunk_text(text_content, chunk_size=1200):
+                for chunk in chunk_text(text_content, chunk_size=chunk_size):
                     if len(chunk) < 150:
                         continue
                     prefix = "[SNIPPET] " if complexity == "high" else ""
                     new_passages.append(
                         {
-                            "title": r.get("title", ""),
-                            "url": r.get("url", ""),
-                            "domain": r.get("domain", ""),
+                            "title": _bounded_provider_text(
+                                r.get("title"), limit=500
+                            ),
+                            "url": _bounded_provider_text(r.get("url"), limit=2000),
+                            "domain": _bounded_provider_text(
+                                r.get("domain"), limit=500
+                            ),
                             "credibility": r.get("credibility", 0),
                             "text": prefix + chunk,
                             "score": 0,
                             "rrf_score": r.get("rrf_score", 0.0),
                             "_provider": r.get("_provider", ""),
                             "source_tier": _source_tier,
-                            **_material_fields(_SNIPPET_ONLY_MATERIAL),
-                            **_source_custody_passage_fields(r),
+                            **_material_fields(material_type),
+                            **_provider_candidate_passage_fields(r),
                         }
                     )
-
-    if to_fetch:
-        status_container.write(f"Selectively fetching {len(to_fetch)} high-credibility pages...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures = []
-            for item in enumerate(to_fetch, 1):
-                if cap_policy is not None:
-                    cap_policy.mark_fetch_read_operation()
-                futures.append(executor.submit(fetch_page, item))
-            fetched_results = [future.result() for future in futures]
-        docs = [d for d in fetched_results if d is not None]
-        for doc in docs:
-            _tier_snip = (doc.get("text") or "")[:2000]
-            _source_tier = classify_source(
-                doc.get("url", "") or "",
-                doc.get("title", "") or "",
-                _tier_snip,
-                source_context=entity_hint or "",
-            )
-            if doc.get("_source_custody_policy_forced_fetch_read") is True:
-                _source_tier = doc.get("source_tier") or _source_tier
-            for chunk in chunk_text(doc["text"], chunk_size=2000):
-                if len(chunk) < 150:
-                    continue
-                prefix = "[FULL_PAGE] " if complexity == "high" else ""
-                new_passages.append(
-                    {
-                        "title": doc["title"],
-                        "url": doc["url"],
-                        "domain": doc["domain"],
-                        "credibility": doc["credibility"],
-                        "text": prefix + chunk,
-                        "score": 0,
-                        "rrf_score": doc.get("rrf_score", 0.0),
-                        "_provider": doc.get("_provider", ""),
-                        "source_tier": _source_tier,
-                        **_material_fields(_FULL_PAGE_FETCHED_MATERIAL),
-                        **_source_custody_passage_fields(doc),
-                    }
-                )
 
     if new_passages and query_embedding is not None:
         status_container.write(f"Embedding {len(new_passages)} text chunks using {embed_provider}...")

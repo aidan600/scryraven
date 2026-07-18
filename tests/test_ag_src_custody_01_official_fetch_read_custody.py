@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -7,7 +8,8 @@ from typing import Any
 import pytest
 
 import core.pipeline as pipeline
-from core.cap_enforcement import RunCapExceeded, RunCapPolicy
+import core.retrieval as retrieval
+from core.cap_enforcement import RunCapPolicy
 from core.evidence_ledger import EvidenceLedger
 from core.final_answer_packet import SourceObligationStatus
 from core.final_answer_runtime_adapter import build_final_answer_packet
@@ -15,8 +17,8 @@ from core.run_authority_contract_templates import (
     CANONICAL_TECHNICAL_DOCS,
     build_deterministic_contract,
 )
-from core.run_config import RunConfig, SourceCustodyPolicy
-from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY, get_validation_profile
+from core.run_config import RunConfig
+from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY
 from scripts import ag_live_bound_01_support as support
 
 _DOC_URL = "https://docs.python.org/3/library/math.html#math.isclose"
@@ -44,18 +46,6 @@ def _cap_policy(*, max_fetch_read_operations: int = 1) -> RunCapPolicy:
     )
 
 
-def _custody_policy() -> SourceCustodyPolicy:
-    return SourceCustodyPolicy(
-        require_official_full_fetch_read=True,
-        max_forced_fetch_reads=1,
-        preferred_domains=("docs.python.org",),
-        required_source_class="primary_source_documents",
-        required_source_tier="official",
-        required_currentness="current",
-        requirement_id="ag-src-custody-01:official-doc-full-read",
-    )
-
-
 def _official_search_result() -> dict[str, Any]:
     return {
         "title": "math.isclose docs",
@@ -63,7 +53,6 @@ def _official_search_result() -> dict[str, Any]:
         "domain": "docs.python.org",
         "credibility": 1,
         "snippet": _SNIPPET,
-        "raw_content": _SNIPPET,
     }
 
 
@@ -82,9 +71,7 @@ def _off_policy_official_search_result() -> dict[str, Any]:
 def _run_search(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    source_custody_policy: SourceCustodyPolicy | None = None,
-    cap_policy: RunCapPolicy | None = None,
-    fetch_page: Any | None = None,
+    complexity: str = "medium",
     search_results: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     search_calls: list[str] = []
@@ -95,13 +82,11 @@ def _run_search(
         return selected_results, []
 
     monkeypatch.setattr(pipeline, "search_web_results", fake_search_web_results)
-    if fetch_page is not None:
-        monkeypatch.setattr(pipeline, "fetch_page", fetch_page)
 
     passages = pipeline.process_search_queries(
         ["python math isclose docs"],
         "general",
-        "medium",
+        complexity,
         "basic",
         1,
         ["docs.python.org"],
@@ -115,103 +100,56 @@ def _run_search(
         lambda *_args, **_kwargs: [],
         lambda *_args, **_kwargs: [],
         search_providers=["tavily"],
-        cap_policy=cap_policy,
-        source_custody_policy=source_custody_policy,
     )
     assert search_calls == ["python math isclose docs"]
     return passages
 
 
-def test_policy_disabled_preserves_official_snippet_without_forced_fetch(
+def test_discovery_preserves_provider_snippet_without_source_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fetch_called = False
+    passages = _run_search(monkeypatch)
 
-    def fail_fetch(_item: Any) -> None:
-        nonlocal fetch_called
-        fetch_called = True
-        raise AssertionError("policy-disabled run should not fetch")
-
-    passages = _run_search(monkeypatch, fetch_page=fail_fetch)
-
-    assert fetch_called is False
     assert passages
     assert passages[0]["url"] == _DOC_URL
     assert passages[0]["source_tier"] == "official"
     assert passages[0]["evidence_material_type"] == "snippet_only"
+    assert passages[0]["discovery_material_type"] == "provider_returned_snippet"
     assert passages[0]["snippet_only"] is True
+    assert passages[0]["full_page_fetched"] is False
+    assert passages[0]["product_fetch_read_executed"] is False
+    assert passages[0]["separate_exact_url_transport_performed"] is False
+    assert passages[0]["provider_internal_acquisition_unobserved"] is True
     assert "source_custody_requirement_id" not in passages[0]
 
 
-def test_policy_enabled_forces_one_allowlisted_official_fetch_read(
+def test_deep_discovery_uses_provider_excerpt_without_full_page_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cap_policy = _cap_policy(max_fetch_read_operations=1)
-    fetch_urls: list[str] = []
-
-    def fake_fetch_page(item_tuple: Any) -> dict[str, Any]:
-        _index, item = item_tuple
-        fetch_urls.append(item["url"])
-        assert item["_source_custody_policy_forced_fetch_read"] is True
-        assert item["source_class"] == "primary_source_documents"
-        return {
-            "title": item["title"],
-            "url": item["url"],
-            "domain": item["domain"],
-            "credibility": item["credibility"],
-            "text": _FULL_TEXT,
-            "rrf_score": 0.0,
-            "_provider": item.get("_provider", ""),
-            "source_tier": item["source_tier"],
-            "source_class": item["source_class"],
-            "currentness_signal": item["currentness_signal"],
-            "source_custody_requirement_id": item["source_custody_requirement_id"],
-            "required_source_class": item["required_source_class"],
-            "required_source_tier": item["required_source_tier"],
-            "required_currentness": item["required_currentness"],
-            "required_evidence_material_type": item[
-                "required_evidence_material_type"
-            ],
-            "eligible_for_stronger_obligation": item[
-                "eligible_for_stronger_obligation"
-            ],
-            "source_custody_admission_reason": item[
-                "source_custody_admission_reason"
-            ],
-        }
-
+    result = _official_search_result()
+    result.update({"credibility": 5, "raw_content": _FULL_TEXT})
     passages = _run_search(
         monkeypatch,
-        source_custody_policy=_custody_policy(),
-        cap_policy=cap_policy,
-        fetch_page=fake_fetch_page,
+        complexity="high",
+        search_results=[result],
     )
 
-    assert fetch_urls == [_DOC_URL]
-    assert cap_policy.fetch_read_operations == 1
     assert passages
     passage = passages[0]
-    assert passage["evidence_material_type"] == "full_page_fetched"
-    assert passage["full_page_fetched"] is True
-    assert passage["snippet_only"] is False
-    assert passage["source_class"] == "primary_source_documents"
-    assert passage["source_custody_requirement_id"] == (
-        "ag-src-custody-01:official-doc-full-read"
-    )
-    assert passage["required_evidence_material_type"] == "full_page_fetched"
+    assert passage["evidence_material_type"] == "snippet_only"
+    assert passage["discovery_material_type"] == "provider_returned_excerpt"
+    assert passage["provider_returned"] is True
+    assert passage["full_page_fetched"] is False
+    assert passage["snippet_only"] is True
+    assert passage["separate_exact_url_transport_performed"] is False
+    assert "[FULL_PAGE]" not in passage["text"]
 
 
-def test_policy_enabled_does_not_force_off_policy_official_candidate(
+def test_domain_targeting_does_not_create_preselection_fetch_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cap_policy = _cap_policy(max_fetch_read_operations=1)
-    fetch_called = False
     original_classify_source = pipeline.classify_source
-
-    def fail_fetch(_item: Any) -> None:
-        nonlocal fetch_called
-        fetch_called = True
-        raise AssertionError("off-policy official source should not be fetched")
 
     def fake_classify_source(url: str, *args: Any, **kwargs: Any) -> str:
         if url == _OFF_POLICY_OFFICIAL_URL:
@@ -222,47 +160,36 @@ def test_policy_enabled_does_not_force_off_policy_official_candidate(
 
     passages = _run_search(
         monkeypatch,
-        source_custody_policy=_custody_policy(),
-        cap_policy=cap_policy,
-        fetch_page=fail_fetch,
+        complexity="high",
         search_results=[_off_policy_official_search_result()],
     )
 
-    assert fetch_called is False
     assert cap_policy.fetch_read_operations == 0
     assert passages
     passage = passages[0]
     assert passage["url"] == _OFF_POLICY_OFFICIAL_URL
     assert passage["source_tier"] == "official"
     assert passage["evidence_material_type"] == "snippet_only"
+    assert passage["discovery_material_type"] == "provider_returned_excerpt"
     assert passage["snippet_only"] is True
     assert passage["full_page_fetched"] is False
+    assert passage["separate_exact_url_transport_performed"] is False
     assert "_source_custody_policy_forced_fetch_read" not in passage
     assert "source_custody_requirement_id" not in passage
     assert "eligible_for_stronger_obligation" not in passage
     assert passage.get("required_evidence_material_type") != "full_page_fetched"
 
 
-def test_policy_enabled_cap_exhaustion_blocks_before_fetch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_historical_discovery_fetch_policy_and_helpers_are_retired() -> None:
     cap_policy = _cap_policy(max_fetch_read_operations=0)
-    fetch_called = False
 
-    def fail_fetch(_item: Any) -> None:
-        nonlocal fetch_called
-        fetch_called = True
-        raise AssertionError("cap exhaustion should block before fetch_page")
-
-    with pytest.raises(RunCapExceeded, match="fetch_read_operations cap exceeded"):
-        _run_search(
-            monkeypatch,
-            source_custody_policy=_custody_policy(),
-            cap_policy=cap_policy,
-            fetch_page=fail_fetch,
-        )
-
-    assert fetch_called is False
+    parameters = inspect.signature(pipeline.process_search_queries).parameters
+    assert "source_custody_policy" not in parameters
+    assert "cap_policy" not in parameters
+    assert not hasattr(pipeline, "fetch_page")
+    assert not hasattr(retrieval, "fetch_page")
+    assert not hasattr(retrieval, "fetch_url_text")
+    assert not hasattr(RunConfig(query="offline"), "source_custody_policy")
     assert cap_policy.fetch_read_operations == 0
 
 
@@ -542,8 +469,7 @@ def test_canonical_docs_contract_without_ledger_admission_keeps_caveat() -> None
     assert "missing_canonical_docs_must_be_caveated" in packet.mandatory_caveats
 
 
-def test_validation_packet_reports_full_material_and_satisfied_custody() -> None:
-    profile = get_validation_profile(AG_LIVE_SOURCE_CUSTODY)
+def test_retained_historical_packet_reports_full_material_and_satisfied_custody() -> None:
     policy = _cap_policy(max_fetch_read_operations=3)
     policy.fetch_read_operations = 1
     packet_model = build_final_answer_packet(
@@ -566,10 +492,11 @@ def test_validation_packet_reports_full_material_and_satisfied_custody() -> None
             "final_answer_packet": packet_model.to_dict(),
         },
     )
-    context = support.build_preflight_context(
+    context = support.PreflightContext(
         root=support.Path(__file__).resolve().parents[1],
         profile_name=AG_LIVE_SOURCE_CUSTODY,
         query=support.PRIMARY_QUERY,
+        query_lock="historical_non_executable_fixture",
         mode=support.REQUIRED_MODE,
         include_domains=[support.REQUIRED_DOMAIN],
         output_path=support.Path(__file__).resolve().parents[1]
@@ -578,7 +505,6 @@ def test_validation_packet_reports_full_material_and_satisfied_custody() -> None
         caps=support.AgLiveBoundCaps(),
         run_id="ag-src-custody-validation",
         confirm_live_product_run=True,
-        approved_backup_query=False,
     )
     run_config = RunConfig(
         query=support.PRIMARY_QUERY,
@@ -589,9 +515,6 @@ def test_validation_packet_reports_full_material_and_satisfied_custody() -> None
         smart_model="fixture-smart-model",
         embed_provider="FixtureEmbedProvider",
         embed_model="fixture-embed-model",
-        source_custody_policy=profile.source_custody_policy.to_run_policy(
-            include_domains=[support.REQUIRED_DOMAIN]
-        ),
     )
 
     packet = support.build_live_success_packet(
@@ -607,8 +530,12 @@ def test_validation_packet_reports_full_material_and_satisfied_custody() -> None
     assert custody["source_custody_satisfied"] is True
     assert custody["source_custody_diagnosis"] is None
     assert packet["source_custody_policy_requested"]["surface"] == (
-        "RunConfig.source_custody_policy"
+        "ValidationProfile.source_custody_policy_non_executable_expectation"
     )
+    assert not hasattr(run_config, "source_custody_policy")
+    product_path = packet["source_custody_policy_product_path"]
+    assert product_path["policy_enabled"] is False
+    assert product_path["product_policy_constructible"] is False
     assert packet["validation_observability"]["source_material_summary"][
         "evidence_material_type_by_cited_url"
     ] == {_DOC_URL: "full_page_fetched"}

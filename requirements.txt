@@ -3,7 +3,6 @@ requests
 httpx
 numpy
 openai
-beautifulsoup4
 python-dotenv
 exa-py==2.12.1
 pypdf>=5.0,<7

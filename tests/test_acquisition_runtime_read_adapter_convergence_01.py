@@ -31,7 +31,6 @@ from core.routing import (
 )
 from tests.helpers.offline_ordinary_pipeline import scrub_offline_runtime
 from tests.test_ag_ordinary_live_source_custody_integration_01 import (
-    CANDIDATE_URL,
     FakeSourceFetchRead,
     _candidate_results,
     _run_pipeline,
@@ -81,7 +80,7 @@ def _tavily_typed_request(
     )
 
 
-def test_selected_candidate_read_reaches_existing_packet_and_evidence_ledger(
+def test_selected_candidate_alone_does_not_reach_existing_read_adapter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -98,14 +97,13 @@ def test_selected_candidate_read_reaches_existing_packet_and_evidence_ledger(
     )
 
     projection = outcome.execution_trace["ordinary_live_source_custody"]
-    assert projection["source_candidate"]["url"] == CANDIDATE_URL
-    assert projection["read_route_decision"]["selected_provider"] == "linkup"
-    assert projection["read_route_decision"]["operation"] == "fetch"
-    assert projection["read_acquisition_job"]["status"] == "succeeded"
-    assert projection["fetch_read_content_packet_ref"]["packet_id"]
-    assert projection["evidence_ledger_custody_count"] == 1
-    assert projection["evidence_ledger_custody_ref"]["custody_record_id"]
-    assert len(fetcher.calls) == 1
+    assert projection["status"] == "not_needed"
+    assert projection["candidate_packet_present"] is True
+    assert projection["acquisition_need_proposal_created"] is False
+    assert projection["acquisition_work_order_created"] is False
+    assert projection["acquisition_route_created"] is False
+    assert projection["exact_url_transport_attempted"] is False
+    assert fetcher.calls == []
     assert harness.forbidden_live_calls == []
 
 

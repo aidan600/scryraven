@@ -575,6 +575,118 @@ class AcquisitionNeedProposalV1:
         }
 
 
+def validate_selected_candidate_material_need_proposal(
+    *,
+    proposal: AcquisitionNeedProposalV1,
+    run_id: str,
+    request_id: str,
+    candidate_packet: Mapping[str, Any],
+    selected_candidate: Mapping[str, Any],
+    authority_snapshot: Mapping[str, Any],
+) -> AcquisitionNeedProposalV1:
+    """Bind an independently produced need to admitted URL provenance.
+
+    This helper never creates acquisition need. It only proves that a proposal
+    supplied by another current authority matches the selected candidate, the
+    current AnswerContract component, and the current source obligation.
+    """
+
+    if not isinstance(proposal, AcquisitionNeedProposalV1):
+        raise AcquisitionControlError("acquisition_need_proposal_required")
+    packet = _mapping(candidate_packet, "candidate_packet_missing")
+    candidate = _mapping(selected_candidate, "selected_candidate_missing")
+    snapshot = _mapping(authority_snapshot, "authority_snapshot_missing")
+    if proposal.run_id != run_id or proposal.request_id != request_id:
+        raise AcquisitionControlError("proposal_identity_mismatch")
+    if packet.get("run_id") != run_id or packet.get("request_id") != request_id:
+        raise AcquisitionControlError("candidate_packet_identity_mismatch")
+
+    contract_ref = _contract_ref(snapshot.get("answer_contract_ref"))
+    if packet.get("current_answer_contract_digest") != contract_ref.get(
+        "contract_digest"
+    ):
+        raise AcquisitionControlError("stale_answer_contract")
+    if dict(proposal.answer_contract_ref) != contract_ref:
+        raise AcquisitionControlError("proposal_answer_contract_binding_mismatch")
+
+    candidate_identity = {
+        key: candidate.get(key)
+        for key in (
+            "candidate_id",
+            "candidate_digest",
+            "record_digest",
+            "url",
+            "component_id",
+            "source_obligation_candidate_ids",
+        )
+    }
+    matching_records = [
+        _mapping(record, "candidate_record_invalid")
+        for record in _sequence(packet.get("candidate_records"))
+        if all(
+            _mapping(record, "candidate_record_invalid").get(key) == value
+            for key, value in candidate_identity.items()
+        )
+    ]
+    if len(matching_records) != 1:
+        raise AcquisitionControlError("selected_candidate_not_bound_to_packet")
+
+    component_id = _required_token(
+        candidate.get("component_id"), "selected_candidate_component_missing"
+    )
+    component = _component_ref(
+        _mapping(
+            _mapping(
+                snapshot.get("components_by_id"), "snapshot_components_missing"
+            ).get(component_id),
+            "selected_candidate_component_binding_missing",
+        )
+    )
+    if dict(proposal.component_ref) != component:
+        raise AcquisitionControlError("proposal_component_binding_mismatch")
+
+    obligation_ids = _tokens(
+        candidate.get("source_obligation_candidate_ids"), limit=200
+    )
+    if len(obligation_ids) != 1:
+        raise AcquisitionControlError("source_obligation_identity_missing")
+    obligation = _source_obligation_ref(
+        _mapping(
+            snapshot.get("source_obligations_by_id"),
+            "snapshot_source_obligations_missing",
+        ).get(obligation_ids[0])
+    )
+    if component_id not in obligation.get("component_ids", ()):
+        raise AcquisitionControlError("mismatched_source_obligation")
+    if dict(proposal.source_obligation_ref) != obligation:
+        raise AcquisitionControlError("proposal_source_obligation_binding_mismatch")
+
+    expected_candidate_ref = {
+        "packet_id": packet.get("packet_id"),
+        "packet_digest": packet.get("packet_digest"),
+        "candidate_id": candidate.get("candidate_id"),
+        "candidate_digest": candidate.get("candidate_digest"),
+        "record_digest": candidate.get("record_digest"),
+        "url": candidate.get("url"),
+    }
+    if dict(proposal.candidate_ref) != expected_candidate_ref:
+        raise AcquisitionControlError("proposal_candidate_binding_mismatch")
+    selected_url = _required_url(
+        candidate.get("url"), "selected_candidate_url_invalid"
+    )
+    if tuple(proposal.available_urls) != (selected_url,):
+        raise AcquisitionControlError("proposal_selected_url_binding_mismatch")
+    if proposal.explicit_multi_page_need or proposal.root_url:
+        raise AcquisitionControlError("selected_candidate_single_url_need_required")
+    if proposal.requested_material_shape == "explicit_known_url":
+        raise AcquisitionControlError("url_provenance_is_not_material_need")
+    if proposal.producer_surface == "core.ordinary_live_source_custody_runtime":
+        raise AcquisitionControlError("material_need_producer_not_independent")
+    if proposal.proposal_reason_code == "selected_candidate_read_required":
+        raise AcquisitionControlError("legacy_selected_candidate_trigger_forbidden")
+    return proposal
+
+
 @dataclass(frozen=True, slots=True)
 class AcquisitionCapabilityDecisionObservationV1:
     decision_id: str
@@ -1622,99 +1734,6 @@ def build_acquisition_authority_snapshot(
     }
 
 
-def build_selected_candidate_read_proposal(
-    *,
-    run_id: str,
-    request_id: str,
-    candidate_packet: Mapping[str, Any],
-    selected_candidate: Mapping[str, Any],
-    authority_snapshot: Mapping[str, Any],
-    prior_receipt_refs: Sequence[Mapping[str, Any]] = (),
-) -> AcquisitionNeedProposalV1:
-    packet = _mapping(candidate_packet, "candidate_packet_missing")
-    candidate = _mapping(selected_candidate, "selected_candidate_missing")
-    snapshot = _mapping(authority_snapshot, "authority_snapshot_missing")
-    if packet.get("run_id") != run_id or packet.get("request_id") != request_id:
-        raise AcquisitionControlError("candidate_packet_identity_mismatch")
-    if packet.get("current_answer_contract_digest") != _mapping(
-        snapshot.get("answer_contract_ref"), "snapshot_contract_ref_missing"
-    ).get("contract_digest"):
-        raise AcquisitionControlError("stale_answer_contract")
-    candidate_identity = {
-        key: candidate.get(key)
-        for key in (
-            "candidate_id",
-            "candidate_digest",
-            "record_digest",
-            "url",
-            "component_id",
-            "source_obligation_candidate_ids",
-        )
-    }
-    matching_records = [
-        _mapping(record, "candidate_record_invalid")
-        for record in _sequence(packet.get("candidate_records"))
-        if all(
-            _mapping(record, "candidate_record_invalid").get(key) == value
-            for key, value in candidate_identity.items()
-        )
-    ]
-    if len(matching_records) != 1:
-        raise AcquisitionControlError("selected_candidate_not_bound_to_packet")
-    component_id = _required_token(
-        candidate.get("component_id"), "selected_candidate_component_missing"
-    )
-    component = _mapping(
-        _mapping(snapshot.get("components_by_id"), "snapshot_components_missing").get(
-            component_id
-        ),
-        "selected_candidate_component_binding_missing",
-    )
-    obligation_ids = _tokens(
-        candidate.get("source_obligation_candidate_ids"), limit=200
-    )
-    if len(obligation_ids) != 1:
-        raise AcquisitionControlError("source_obligation_identity_missing")
-    obligation = _mapping(
-        _mapping(
-            snapshot.get("source_obligations_by_id"),
-            "snapshot_source_obligations_missing",
-        ).get(obligation_ids[0]),
-        "source_obligation_binding_missing",
-    )
-    if component_id not in _tokens(obligation.get("component_ids"), limit=200):
-        raise AcquisitionControlError("mismatched_source_obligation")
-    return AcquisitionNeedProposalV1.create(
-        run_id=run_id,
-        request_id=request_id,
-        producer_surface="core.ordinary_live_source_custody_runtime",
-        answer_contract_ref=_mapping(snapshot.get("answer_contract_ref"), ""),
-        source_obligation_ref=obligation,
-        component_ref=component,
-        requested_material_shape="ordinary_single_page",
-        candidate_ref={
-            "packet_id": packet.get("packet_id"),
-            "packet_digest": packet.get("packet_digest"),
-            "candidate_id": candidate.get("candidate_id"),
-            "candidate_digest": candidate.get("candidate_digest"),
-            "record_digest": candidate.get("record_digest"),
-            "url": candidate.get("url"),
-        },
-        available_urls=(
-            _required_url(candidate.get("url"), "selected_candidate_url_invalid"),
-        ),
-        parent_acquisition_job_refs=(
-            {
-                "packet_id": packet.get("packet_id"),
-                "packet_digest": packet.get("packet_digest"),
-            },
-        ),
-        prior_acquisition_receipt_refs=prior_receipt_refs,
-        proposal_reason_code="selected_candidate_read_required",
-        advisory_proposed_capability=AcquisitionCapability.READ.value,
-    )
-
-
 def derive_acquisition_capability_decision(
     *,
     proposal: AcquisitionNeedProposalV1,
@@ -2746,7 +2765,6 @@ __all__ = [
     "AcquisitionWorkOrderV1",
     "build_acquisition_authority_snapshot",
     "build_acquisition_work_order",
-    "build_selected_candidate_read_proposal",
     "build_terminal_receipt_from_decision",
     "build_terminal_receipt_from_execution",
     "build_terminal_receipt_from_route",
@@ -2756,4 +2774,5 @@ __all__ = [
     "initial_acquisition_control_state",
     "normalize_acquisition_url",
     "stable_json_digest",
+    "validate_selected_candidate_material_need_proposal",
 ]

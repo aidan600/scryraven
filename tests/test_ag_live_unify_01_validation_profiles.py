@@ -18,6 +18,7 @@ from core.validation_profiles import (
     MULTI_COMPONENT_DOCS_DOMAINS,
     VALIDATION_PROFILES,
     get_validation_profile,
+    validation_profile_names,
 )
 from scripts import ag_live_bound_01_support as support
 from scripts import request_live_validation_broker as broker_client
@@ -36,17 +37,21 @@ def test_profile_registry_contains_required_ag_live_profiles() -> None:
     for profile in VALIDATION_PROFILES.values():
         assert profile.purpose
         assert profile.proof_target
-        assert profile.allowed_invocation_modes
+        if profile.name == AG_LIVE_SOURCE_CUSTODY:
+            assert profile.allowed_invocation_modes == ()
+        else:
+            assert profile.allowed_invocation_modes
         assert profile.cap_policy.as_requested_dict()
         assert profile.expected_packet_criteria
         assert profile.live_status in {
             "succeeded_once_direct_human_private_shell",
             "not_run",
+            "retired_non_executable",
         }
         assert profile.packet_schema == "ag_live_bound_01_bounded_product_runner_v1"
         assert profile.cap_policy_surface == "RunConfig.cap_policy"
         assert profile.source_custody_policy_surface == (
-            "RunConfig.source_custody_policy"
+            "ValidationProfile.source_custody_policy_non_executable_expectation"
         )
 
 
@@ -63,13 +68,15 @@ def test_ag_live_smoke_maps_to_direct_human_runner_behavior() -> None:
     assert profile.current_evidence.startswith("Succeeded once")
 
 
-def test_future_profiles_are_not_marked_as_live_proof() -> None:
+def test_future_profiles_and_retired_source_custody_are_not_live_proof() -> None:
     assert get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE).live_status == "not_run"
-    assert get_validation_profile(AG_LIVE_SOURCE_CUSTODY).live_status == "not_run"
     assert get_validation_profile(AG_LIVE_MULTI_COMPONENT).live_status == "not_run"
     assert get_validation_profile(AG_LIVE_DISAMBIG).live_status == "not_run"
     source_custody = get_validation_profile(AG_LIVE_SOURCE_CUSTODY)
-    assert "fetch_read_operations > 0" in source_custody.expected_packet_criteria
+    assert source_custody.live_status == "retired_non_executable"
+    assert source_custody.supports_direct_runner() is False
+    assert AG_LIVE_SOURCE_CUSTODY not in validation_profile_names()
+    assert "historical expectation only" in source_custody.expected_packet_criteria
     assert source_custody.source_custody_policy is not None
     assert source_custody.source_custody_policy.as_requested_dict() == {
         "require_official_full_fetch_read": True,
@@ -183,11 +190,17 @@ def test_source_custody_broker_profile_request_includes_policy_surface() -> None
     profile_request = payload["profile_request"]
     assert profile_request["validation_profile"] == AG_LIVE_SOURCE_CUSTODY
     assert profile_request["source_custody_policy"]["surface"] == (
-        "RunConfig.source_custody_policy"
+        "ValidationProfile.source_custody_policy_non_executable_expectation"
     )
     assert profile_request["source_custody_policy"]["values"][
         "required_evidence_material_type"
     ] == "full_page_fetched"
+    product_path = support.source_custody_policy_product_path(
+        AG_LIVE_SOURCE_CUSTODY
+    )
+    assert product_path["policy_enabled"] is False
+    assert product_path["product_policy_constructible"] is False
+    assert product_path["initial_discovery_transport_authority"] is False
 
 
 def test_broker_client_static_boundary_has_no_dotenv_or_provider_imports() -> None:
