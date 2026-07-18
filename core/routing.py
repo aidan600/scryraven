@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
+from hashlib import sha256
 from typing import Mapping, Optional, Sequence
 
 
@@ -31,6 +33,16 @@ class RouteFidelity(str, Enum):
 
 
 PROVIDER_NAMES = ("tavily", "linkup", "exa", "serper", "brave")
+
+ACQUISITION_ROUTING_POLICY_SCHEMA_VERSION = (
+    "acquisition_routing_policy_descriptor_v1"
+)
+ACQUISITION_ROUTING_POLICY_REVISION = (
+    "runkernel_post_discovery_acquisition_control_01"
+)
+ACQUISITION_ROUTING_SELECTION_ALGORITHM_REVISION = (
+    "first_reachable_code_owned_preference_v1"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +111,31 @@ class ProviderAvailability:
     @classmethod
     def from_mapping(cls, values: Mapping[str, object] | None) -> "ProviderAvailability":
         source = values or {}
-        return cls(**{provider: bool(source.get(provider)) for provider in PROVIDER_NAMES})
+        return cls(
+            **{
+                provider: bool(source.get(provider))
+                for provider in PROVIDER_NAMES
+            }
+        )
+
+    @classmethod
+    def from_boolean_mapping(
+        cls, values: Mapping[str, object] | None
+    ) -> "ProviderAvailability":
+        """Validate an exact boolean-only acquisition availability snapshot."""
+
+        source = dict(values or {})
+        unknown = set(source).difference(PROVIDER_NAMES)
+        if unknown:
+            raise ValueError(
+                f"provider availability has unknown fields: {sorted(unknown)}"
+            )
+        for provider, value in source.items():
+            if not isinstance(value, bool):
+                raise ValueError(
+                    f"provider availability {provider!r} must be boolean"
+                )
+        return cls(**{provider: source.get(provider, False) for provider in PROVIDER_NAMES})
 
     def to_mapping(self) -> dict[str, bool]:
         return {provider: bool(getattr(self, provider)) for provider in PROVIDER_NAMES}
@@ -469,6 +505,88 @@ PROVIDER_CAPABILITY_CATALOG: tuple[ProviderCapabilityCatalogEntry, ...] = (
 )
 
 
+POST_DISCOVERY_OPERATION_PREFERENCES: Mapping[
+    AcquisitionCapability,
+    tuple[tuple[str, str, RouteFidelity], ...],
+] = {
+    AcquisitionCapability.READ: (
+        ("linkup", "known_url", RouteFidelity.EXACT),
+        ("tavily", "basic", RouteFidelity.EXACT),
+    ),
+    AcquisitionCapability.FOCUSED_EXTRACT: (
+        ("tavily", "query_focused", RouteFidelity.EXACT),
+    ),
+    AcquisitionCapability.MAP_SITE: (
+        ("tavily", "bounded", RouteFidelity.EXACT),
+    ),
+    AcquisitionCapability.CRAWL_SITE: (
+        ("tavily", "bounded", RouteFidelity.EXACT),
+    ),
+}
+
+
+def acquisition_routing_policy_descriptor() -> dict[str, object]:
+    """Return the stable code-owned routing policy consumed by post-discovery work."""
+
+    catalog = [
+        {
+            "provider": entry.provider,
+            "capability": entry.capability.value,
+            "qualifier": (
+                entry.qualifier.value if entry.qualifier is not None else None
+            ),
+            "operation": entry.operation,
+            "variant": entry.variant,
+            "output_type": entry.output_type,
+            "vendor_operation_known": entry.vendor_operation_known,
+            "adapter_installed": entry.adapter_installed,
+            "ordinary_product_enabled": entry.ordinary_product_enabled,
+            "returned_material_class": entry.returned_material_class,
+            "authority_posture": entry.authority_posture,
+        }
+        for entry in PROVIDER_CAPABILITY_CATALOG
+    ]
+    preferences = {
+        capability.value: [
+            {
+                "provider": provider,
+                "variant": variant,
+                "fidelity": fidelity.value,
+            }
+            for provider, variant, fidelity in entries
+        ]
+        for capability, entries in POST_DISCOVERY_OPERATION_PREFERENCES.items()
+    }
+    core: dict[str, object] = {
+        "schema_version": ACQUISITION_ROUTING_POLICY_SCHEMA_VERSION,
+        "owner": "core.routing",
+        "revision": ACQUISITION_ROUTING_POLICY_REVISION,
+        "selection_algorithm_revision": (
+            ACQUISITION_ROUTING_SELECTION_ALGORITHM_REVISION
+        ),
+        "capability_catalog": catalog,
+        "post_discovery_operation_preferences": preferences,
+        "configuration_owned": False,
+    }
+    digest = sha256(
+        json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return {**core, "policy_digest": digest}
+
+
+def acquisition_routing_policy_ref() -> dict[str, object]:
+    descriptor = acquisition_routing_policy_descriptor()
+    return {
+        "schema_version": descriptor["schema_version"],
+        "owner": descriptor["owner"],
+        "revision": descriptor["revision"],
+        "selection_algorithm_revision": descriptor[
+            "selection_algorithm_revision"
+        ],
+        "policy_digest": descriptor["policy_digest"],
+    }
+
+
 def materialize_provider_capability_catalog(
     availability: ProviderAvailability | Mapping[str, object],
 ) -> tuple[ProviderCapabilityCatalogStatus, ...]:
@@ -657,18 +775,7 @@ def _status_reachable(
 def _operation_preferences(
     capability: AcquisitionCapability,
 ) -> tuple[tuple[str, str, RouteFidelity], ...]:
-    if capability is AcquisitionCapability.READ:
-        return (
-            ("linkup", "known_url", RouteFidelity.EXACT),
-            ("tavily", "basic", RouteFidelity.EXACT),
-        )
-    if capability is AcquisitionCapability.FOCUSED_EXTRACT:
-        return (("tavily", "query_focused", RouteFidelity.EXACT),)
-    if capability is AcquisitionCapability.MAP_SITE:
-        return (("tavily", "bounded", RouteFidelity.EXACT),)
-    if capability is AcquisitionCapability.CRAWL_SITE:
-        return (("tavily", "bounded", RouteFidelity.EXACT),)
-    return ()
+    return POST_DISCOVERY_OPERATION_PREFERENCES.get(capability, ())
 
 
 def _blocked_decision(
