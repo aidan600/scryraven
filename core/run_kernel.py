@@ -458,29 +458,13 @@ from core.live_search_validation_runtime import (
 from core.live_search_validation_runtime import (
     handoff_ref_from_handoff_state as _live_validation_handoff_ref_from_handoff_state,
 )
-from core.network_target_safety import (
-    NetworkTargetFactKind,
-    NetworkTargetResolutionSnapshotV1,
-    NetworkTargetSafetyDecisionV1,
-    NetworkTargetSafetyStage,
-    NetworkTargetSafetyStatus,
-    NetworkTargetTransportMode,
-    canonical_resolution_snapshot_bundle,
-    evaluate_network_target_safety,
-    resolution_snapshots_from_bundle,
-)
 from core.routing import (
-    OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
     PROVIDER_NAMES,
-    UNTRUSTED_EXACT_URL_TARGET_CLASS,
     AcquisitionCapability,
-    OfflineProviderTargetSafetyValidationAuthorityV1,
     ProviderAvailability,
     ProviderCapabilityRequest,
-    ProviderTargetSafetyEligibilitySnapshot,
     acquisition_routing_policy_ref,
     route_provider_capability,
-    route_provider_capability_for_offline_target_safety_validation,
 )
 from core.scout_disambiguation_runtime import (
     SCOUT_DISAMBIGUATION_REASON,
@@ -1149,162 +1133,6 @@ def _acquisition_safe_mapping(
 ) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}), string_limit=2_000)
     return dict(safe) if isinstance(safe, Mapping) else {}
-
-
-def _acquisition_safe_list(value: Any) -> list[Any]:
-    safe = _json_safe(value, string_limit=2_000)
-    return list(safe) if isinstance(safe, list) else []
-
-
-_COMPLETED_ARTIFACT_TARGET_FIELDS = (
-    ("requested_url", NetworkTargetFactKind.REQUESTED),
-    ("attempted_url", NetworkTargetFactKind.ATTEMPTED),
-    ("provider_reported_url", NetworkTargetFactKind.PROVIDER_REPORTED),
-    ("resolved_url", NetworkTargetFactKind.RESOLVED),
-    ("redirect_url", NetworkTargetFactKind.REDIRECT),
-    ("final_url", NetworkTargetFactKind.FINAL),
-    ("canonical_url", NetworkTargetFactKind.CANONICAL),
-)
-
-
-def _validate_completed_artifact_target_safety_binding(
-    *,
-    artifact_refs: Sequence[Mapping[str, Any]],
-    gate3_decisions: Sequence[NetworkTargetSafetyDecisionV1],
-) -> None:
-    """Bind canonical Gate 3 decisions to exact persisted A/B artifact facts."""
-
-    expected: list[
-        tuple[
-            str,
-            NetworkTargetFactKind,
-            NetworkTargetSafetyDecisionV1,
-        ]
-    ] = []
-    for artifact_ref in artifact_refs:
-        artifact_id = _clean_text(
-            artifact_ref.get("artifact_id"),
-            limit=500,
-        )
-        if not artifact_id:
-            raise AcquisitionControlError(
-                "execution_artifact_target_safety_identity_missing"
-            )
-        for field_name, fact_kind in _COMPLETED_ARTIFACT_TARGET_FIELDS:
-            target = artifact_ref.get(field_name)
-            if target in (None, ""):
-                continue
-            static_decision = evaluate_network_target_safety(
-                str(target),
-                stage=(
-                    NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET
-                ),
-                transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
-                fact_kind=fact_kind,
-                lineage_ref={
-                    "artifact_id": artifact_id,
-                    "observation_kind": fact_kind.value,
-                },
-                require_hostname_resolution=False,
-            )
-            expected.append((artifact_id, fact_kind, static_decision))
-    if len(expected) != len(gate3_decisions) or not expected:
-        raise AcquisitionControlError(
-            "execution_artifact_target_safety_decision_count_mismatch"
-        )
-
-    baselines: dict[str, NetworkTargetSafetyDecisionV1] = {}
-    for (artifact_id, fact_kind, static_decision), decision in zip(
-        expected,
-        gate3_decisions,
-    ):
-        if (
-            decision.stage
-            != NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET.value
-            or decision.status != NetworkTargetSafetyStatus.ALLOWED.value
-            or decision.fact_kind != fact_kind.value
-            or decision.supplied_url_digest
-            != static_decision.supplied_url_digest
-            or decision.normalized_target_digest
-            != static_decision.normalized_target_digest
-            or decision.scheme != static_decision.scheme
-            or decision.canonical_host != static_decision.canonical_host
-            or decision.normalized_port != static_decision.normalized_port
-            or decision.lineage_ref.get("artifact_id") != artifact_id
-            or decision.lineage_ref.get("observation_kind")
-            != fact_kind.value
-        ):
-            raise AcquisitionControlError(
-                "execution_artifact_target_safety_binding_mismatch"
-            )
-        if fact_kind is NetworkTargetFactKind.REQUESTED:
-            baselines[artifact_id] = decision
-            continue
-        baseline = baselines.get(artifact_id)
-        if baseline is None:
-            raise AcquisitionControlError(
-                "execution_artifact_requested_target_baseline_missing"
-            )
-        exact_identity_required = fact_kind in {
-            NetworkTargetFactKind.ATTEMPTED,
-            NetworkTargetFactKind.PROVIDER_REPORTED,
-        }
-        applicable = (
-            decision.normalized_target_digest
-            == baseline.normalized_target_digest
-            if exact_identity_required
-            else bool(
-                baseline.canonical_host
-                and decision.canonical_host
-                and baseline.canonical_host == decision.canonical_host
-            )
-        )
-        if not applicable:
-            raise AcquisitionControlError(
-                "execution_artifact_target_applicability_mismatch"
-            )
-
-
-def _canonical_gate3_applicability_failure_kind(
-    decisions: Sequence[NetworkTargetSafetyDecisionV1],
-) -> str | None:
-    """Re-derive safety-independent A/B applicability from canonical refs."""
-
-    baselines: dict[str, NetworkTargetSafetyDecisionV1] = {}
-    for decision in decisions:
-        artifact_id = _clean_text(
-            decision.lineage_ref.get("artifact_id"),
-            limit=500,
-        )
-        if not artifact_id:
-            raise AcquisitionControlError(
-                "posttransport_target_safety_artifact_lineage_missing"
-            )
-        if decision.fact_kind == NetworkTargetFactKind.REQUESTED.value:
-            baselines.setdefault(artifact_id, decision)
-            continue
-        baseline = baselines.get(artifact_id)
-        if baseline is None:
-            raise AcquisitionControlError(
-                "posttransport_target_safety_requested_baseline_missing"
-            )
-        if decision.fact_kind in {
-            NetworkTargetFactKind.ATTEMPTED.value,
-            NetworkTargetFactKind.PROVIDER_REPORTED.value,
-        }:
-            applicable = (
-                decision.normalized_target_digest
-                == baseline.normalized_target_digest
-            )
-        else:
-            applicable = bool(
-                baseline.canonical_host
-                and decision.canonical_host
-                and baseline.canonical_host == decision.canonical_host
-            )
-        if not applicable:
-            return decision.fact_kind
-    return None
 
 
 def _stable_packet_safe_json_digest(value: Any) -> str:
@@ -3015,7 +2843,7 @@ class RunKernel:
                     self.state.search_executor_handoff_state
                 ),
             )
-        except (AcquisitionControlError, ValueError) as exc:
+        except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
 
     def _acquisition_control(self) -> dict[str, Any]:
@@ -3034,9 +2862,6 @@ class RunKernel:
         self,
         *,
         proposal: AcquisitionNeedProposalV1 | Mapping[str, Any],
-        target_resolution_snapshots: Sequence[
-            NetworkTargetResolutionSnapshotV1
-        ] = (),
         reason: str = "runkernel_post_discovery_capability_decision",
     ) -> AuthorizedAction:
         try:
@@ -3050,81 +2875,32 @@ class RunKernel:
             if admitted.request_id != self.state.request_id:
                 raise AcquisitionControlError("proposal_request_id_mismatch")
             snapshot = self.acquisition_authority_snapshot()
-            target_urls = list(admitted.available_urls)
-            if admitted.root_url:
-                target_urls.append(admitted.root_url)
-            resolution_snapshot_bundle = (
-                canonical_resolution_snapshot_bundle(
-                    target_resolution_snapshots,
-                    expected_target_urls=target_urls,
-                )
-            )
             control = self._acquisition_control()
-            expected_decision = derive_acquisition_capability_decision(
-                proposal=admitted,
-                authority_snapshot=snapshot,
-                acquisition_control_state=control,
-                target_resolution_snapshots=resolution_snapshots_from_bundle(
-                    resolution_snapshot_bundle
-                ),
-            )
-            admission_safety_blocked = str(
-                expected_decision.block_code or ""
-            ).startswith("admission_target_safety_blocked:")
-            if admission_safety_blocked:
-                action_inputs = {
+            proposals = control["proposals_by_id"]
+            existing = proposals.get(admitted.proposal_id)
+            if existing and existing != admitted.to_dict():
+                raise AcquisitionControlError("proposal_identity_collision")
+            proposals[admitted.proposal_id] = admitted.to_dict()
+            control["event_history"].append(
+                {
+                    "event": "proposal_admitted",
                     "proposal_ref": admitted.ref(),
-                    "precomputed_blocked_capability_decision": (
-                        expected_decision.to_dict()
-                    ),
-                    "authority_snapshot": snapshot,
-                    "target_resolution_snapshots": list(
-                        resolution_snapshot_bundle
-                    ),
-                    "acquisition_control_state_digest": stable_json_digest(
-                        control
-                    ),
-                    "admission_posture": (
-                        "blocked_before_proposal_retention_work_order_route_or_slot"
+                    "source_obligation_id": admitted.source_obligation_ref.get(
+                        "source_obligation_id"
                     ),
                 }
-            else:
-                proposals = control["proposals_by_id"]
-                existing = proposals.get(admitted.proposal_id)
-                if existing and existing != admitted.to_dict():
-                    raise AcquisitionControlError(
-                        "proposal_identity_collision"
-                    )
-                proposals[admitted.proposal_id] = admitted.to_dict()
-                control["event_history"].append(
-                    {
-                        "event": "proposal_admitted",
-                        "proposal_ref": admitted.ref(),
-                        "source_obligation_id": (
-                            admitted.source_obligation_ref.get(
-                                "source_obligation_id"
-                            )
-                        ),
-                    }
-                )
-                action_inputs = {
-                    "proposal": admitted.to_dict(),
-                    "authority_snapshot": snapshot,
-                    "target_resolution_snapshots": list(
-                        resolution_snapshot_bundle
-                    ),
-                    "acquisition_control_state_digest": stable_json_digest(
-                        control
-                    ),
-                    "admission_posture": "proposal_retained_after_gate1_allowed",
-                }
-        except (AcquisitionControlError, ValueError) as exc:
+            )
+        except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         return self.authorize(
             stage=ACQUISITION_CAPABILITY_DECISION_STAGE,
             action_type=ActionType.ACQUISITION_CAPABILITY_DECIDE,
             reason=reason,
-            inputs=action_inputs,
+            inputs={
+                "proposal": admitted.to_dict(),
+                "authority_snapshot": snapshot,
+                "acquisition_control_state_digest": stable_json_digest(control),
+            },
             expected_observation_type=(
                 ObservationType.ACQUISITION_CAPABILITY_DECIDED
             ),
@@ -3159,12 +2935,6 @@ class RunKernel:
                 proposal=proposal,
                 authority_snapshot=self.acquisition_authority_snapshot(),
                 acquisition_control_state=control,
-                target_resolution_snapshots=resolution_snapshots_from_bundle(
-                    control["target_resolution_snapshots_by_decision_id"].get(
-                        decision.decision_id,
-                        (),
-                    )
-                ),
             )
             if current_decision.to_dict() != decision.to_dict():
                 raise AcquisitionControlError("capability_decision_is_stale")
@@ -3193,49 +2963,6 @@ class RunKernel:
         work_order_ref: Mapping[str, Any],
         provider_availability: Mapping[str, Any],
         reason: str = "runkernel_acquisition_route_authorization",
-    ) -> AuthorizedAction:
-        return self._authorize_acquisition_route(
-            work_order_ref=work_order_ref,
-            provider_availability=provider_availability,
-            offline_validation_authority=None,
-            reason=reason,
-        )
-
-    def authorize_acquisition_route_for_offline_target_safety_validation(
-        self,
-        *,
-        work_order_ref: Mapping[str, Any],
-        provider_availability: Mapping[str, Any],
-        validation_authority: (
-            OfflineProviderTargetSafetyValidationAuthorityV1
-        ),
-        reason: str = (
-            "offline_validation_runkernel_acquisition_route_authorization"
-        ),
-    ) -> AuthorizedAction:
-        if not isinstance(
-            validation_authority,
-            OfflineProviderTargetSafetyValidationAuthorityV1,
-        ):
-            raise RunKernelTransitionError(
-                "typed_offline_provider_target_safety_authority_required"
-            )
-        return self._authorize_acquisition_route(
-            work_order_ref=work_order_ref,
-            provider_availability=provider_availability,
-            offline_validation_authority=validation_authority,
-            reason=reason,
-        )
-
-    def _authorize_acquisition_route(
-        self,
-        *,
-        work_order_ref: Mapping[str, Any],
-        provider_availability: Mapping[str, Any],
-        offline_validation_authority: (
-            OfflineProviderTargetSafetyValidationAuthorityV1 | None
-        ),
-        reason: str,
     ) -> AuthorizedAction:
         control = self._acquisition_control()
         work_order_id = _clean_text(
@@ -3268,38 +2995,6 @@ class RunKernel:
                 ),
                 "availability_snapshot_digest": availability_digest,
             }
-            if offline_validation_authority is None:
-                target_safety_eligibility = (
-                    ProviderTargetSafetyEligibilitySnapshot.create(
-                        target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-                    )
-                )
-                route_authority_inputs = {
-                    "provider_target_safety_route_authority_posture": (
-                        "PRODUCT"
-                    ),
-                }
-            else:
-                target_safety_fixture = (
-                    offline_validation_authority.validated_mapping()
-                )
-                target_safety_eligibility = (
-                    ProviderTargetSafetyEligibilitySnapshot.for_offline_validation(
-                        target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-                        authority=offline_validation_authority,
-                    )
-                )
-                route_authority_inputs = {
-                    "provider_target_safety_route_authority_posture": (
-                        OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-                    ),
-                    "offline_provider_target_safety_fixture": (
-                        target_safety_fixture
-                    ),
-                    "offline_provider_target_safety_validation_authority_ref": (
-                        offline_validation_authority.ref()
-                    ),
-                }
         except (AcquisitionControlError, ValueError) as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         return self.authorize(
@@ -3311,10 +3006,6 @@ class RunKernel:
                 "routing_policy_ref": acquisition_routing_policy_ref(),
                 "availability_snapshot": availability,
                 "availability_snapshot_ref": availability_ref,
-                "provider_target_safety_eligibility_ref": (
-                    target_safety_eligibility.ref()
-                ),
-                **route_authority_inputs,
             },
             expected_observation_type=(
                 ObservationType.ACQUISITION_ROUTE_COMPLETED
@@ -3327,49 +3018,6 @@ class RunKernel:
         work_order_ref: Mapping[str, Any],
         route_observation_ref: Mapping[str, Any],
         reason: str = "runkernel_guarded_acquisition_execution",
-    ) -> AuthorizedAction:
-        return self._authorize_acquisition_execution(
-            work_order_ref=work_order_ref,
-            route_observation_ref=route_observation_ref,
-            offline_validation_authority=None,
-            reason=reason,
-        )
-
-    def authorize_acquisition_execution_for_offline_target_safety_validation(
-        self,
-        *,
-        work_order_ref: Mapping[str, Any],
-        route_observation_ref: Mapping[str, Any],
-        validation_authority: (
-            OfflineProviderTargetSafetyValidationAuthorityV1
-        ),
-        reason: str = (
-            "offline_validation_runkernel_guarded_acquisition_execution"
-        ),
-    ) -> AuthorizedAction:
-        if not isinstance(
-            validation_authority,
-            OfflineProviderTargetSafetyValidationAuthorityV1,
-        ):
-            raise RunKernelTransitionError(
-                "typed_offline_provider_target_safety_authority_required"
-            )
-        return self._authorize_acquisition_execution(
-            work_order_ref=work_order_ref,
-            route_observation_ref=route_observation_ref,
-            offline_validation_authority=validation_authority,
-            reason=reason,
-        )
-
-    def _authorize_acquisition_execution(
-        self,
-        *,
-        work_order_ref: Mapping[str, Any],
-        route_observation_ref: Mapping[str, Any],
-        offline_validation_authority: (
-            OfflineProviderTargetSafetyValidationAuthorityV1 | None
-        ),
-        reason: str,
     ) -> AuthorizedAction:
         control = self._acquisition_control()
         work_order_id = _clean_text(
@@ -3395,44 +3043,6 @@ class RunKernel:
                 raise AcquisitionControlError("blocked_route_cannot_execute")
             if route.routing_policy_ref != acquisition_routing_policy_ref():
                 raise AcquisitionControlError("routing_policy_is_stale")
-            route_eligibility = _safe_mapping(
-                route.target_safety_eligibility_ref
-            )
-            if offline_validation_authority is None:
-                if (
-                    route_eligibility.get("product_reachable") is not True
-                    or route_eligibility.get("authority_posture")
-                    != "PRODUCT"
-                ):
-                    raise AcquisitionControlError(
-                        "offline_validation_route_cannot_enter_product_execution"
-                    )
-                execution_authority_inputs = {
-                    "execution_target_safety_authority_posture": "PRODUCT",
-                }
-            else:
-                if (
-                    route_eligibility.get("product_reachable") is not False
-                    or route_eligibility.get("authority_posture")
-                    != OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-                    or _safe_mapping(
-                        route_eligibility.get(
-                            "offline_validation_authority_ref"
-                        )
-                    )
-                    != offline_validation_authority.ref()
-                ):
-                    raise AcquisitionControlError(
-                        "offline_validation_route_authority_mismatch"
-                    )
-                execution_authority_inputs = {
-                    "execution_target_safety_authority_posture": (
-                        OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-                    ),
-                    "offline_provider_target_safety_validation_authority_ref": (
-                        offline_validation_authority.ref()
-                    ),
-                }
             self._validate_current_acquisition_work_order(
                 work_order=work_order,
                 control=control,
@@ -3451,7 +3061,6 @@ class RunKernel:
                         "authorized",
                         "claimed_before_transport",
                         "observation_reduced",
-                        "observation_reduced_unclaimed_safety_block",
                     }
                 ):
                     raise AcquisitionControlError(
@@ -3484,7 +3093,6 @@ class RunKernel:
                 "answer_contract_ref": work_order.answer_contract_ref,
                 "component_ref": work_order.component_ref,
                 "source_obligation_ref": work_order.source_obligation_ref,
-                **execution_authority_inputs,
             },
             expected_observation_type=(
                 ObservationType.ACQUISITION_EXECUTION_OBSERVED
@@ -3498,7 +3106,6 @@ class RunKernel:
             "routing_policy_ref": acquisition_routing_policy_ref(),
             "claim_status": "authorized",
             "transport_claimed": False,
-            **execution_authority_inputs,
         }
         return action
 
@@ -3553,12 +3160,6 @@ class RunKernel:
                 authorization.get("work_order_ref") != work_order.ref()
                 or authorization.get("route_observation_ref")
                 != route.ref()
-                or authorization.get(
-                    "execution_target_safety_authority_posture"
-                )
-                != action.inputs.get(
-                    "execution_target_safety_authority_posture"
-                )
             ):
                 raise AcquisitionControlError(
                     "execution_authorization_binding_mismatch"
@@ -3574,73 +3175,6 @@ class RunKernel:
                 work_order=work_order,
                 control=control,
             )
-            decision_records = authorization.get(
-                "target_safety_decision_traces_by_stage"
-            )
-            if not isinstance(decision_records, Mapping):
-                raise AcquisitionControlError(
-                    "pretransport_target_safety_decision_store_missing"
-                )
-            gate2_traces = decision_records.get(
-                NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value
-            )
-            if not isinstance(gate2_traces, Sequence) or isinstance(
-                gate2_traces, str | bytes
-            ):
-                raise AcquisitionControlError(
-                    "pretransport_target_safety_decision_store_missing"
-                )
-            try:
-                gate2_decisions = tuple(
-                    NetworkTargetSafetyDecisionV1.from_trace(item)
-                    for item in gate2_traces
-                    if isinstance(item, Mapping)
-                )
-            except ValueError as exc:
-                raise AcquisitionControlError(
-                    "pretransport_target_safety_decision_store_invalid"
-                ) from exc
-            expected_target_count = len(work_order.selected_urls) + int(
-                bool(work_order.root_url)
-            )
-            if (
-                len(gate2_decisions) != len(gate2_traces)
-                or len(gate2_decisions) != expected_target_count
-            ):
-                raise AcquisitionControlError(
-                    "pretransport_target_safety_decision_store_invalid"
-                )
-            for decision, admission_ref in zip(
-                gate2_decisions,
-                work_order.target_safety_admission_decision_refs,
-            ):
-                if (
-                    decision.stage
-                    != NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value
-                    or decision.lineage_ref.get("work_order_id")
-                    != work_order.work_order_id
-                    or decision.lineage_ref.get("execution_action_id")
-                    != action.action_id
-                    or decision.previous_decision_ref != dict(admission_ref)
-                    or decision.normalized_target_digest
-                    != admission_ref.get("normalized_target_digest")
-                ):
-                    raise AcquisitionControlError(
-                        "pretransport_target_safety_decision_store_invalid"
-                    )
-            if any(
-                decision.status != NetworkTargetSafetyStatus.ALLOWED.value
-                for decision in gate2_decisions
-            ):
-                raise AcquisitionControlError(
-                    "pretransport_target_safety_block_unclaimable"
-                )
-            if authorization.get("final_pretransport_target_safety_status") != (
-                "allowed_claimable"
-            ):
-                raise AcquisitionControlError(
-                    "pretransport_target_safety_claim_posture_invalid"
-                )
         except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         authorization["claim_status"] = "claimed_before_transport"
@@ -3656,159 +3190,6 @@ class RunKernel:
             }
         )
         return deepcopy(authorization)
-
-    def record_acquisition_execution_target_safety_decisions(
-        self,
-        *,
-        action: AuthorizedAction,
-        stage: NetworkTargetSafetyStage | str,
-        decisions: Sequence[NetworkTargetSafetyDecisionV1],
-    ) -> tuple[NetworkTargetSafetyDecisionV1, ...]:
-        """Canonically bind executor safety decisions before observation reduction."""
-
-        stage_value = NetworkTargetSafetyStage(stage).value
-        if stage_value not in {
-            NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value,
-            NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET.value,
-        }:
-            raise RunKernelTransitionError(
-                "execution_target_safety_stage_not_recordable"
-            )
-        control = self._acquisition_control()
-        canonical_action = self.state.issued_actions.get(action.action_id)
-        if (
-            canonical_action != action
-            or action.action_type is not ActionType.ACQUISITION_EXECUTE
-            or action.action_id in self.state.reduced_action_ids
-            or self.state.action_statuses.get(action.action_id)
-            is not RunStageStatus.AUTHORIZED
-        ):
-            raise RunKernelTransitionError(
-                "execution action is not currently authorized"
-            )
-        authorization = control["execution_authorizations_by_id"].get(
-            action.action_id
-        )
-        if not isinstance(authorization, dict):
-            raise RunKernelTransitionError(
-                "execution authorization is not canonical"
-            )
-        work_order = AcquisitionWorkOrderV1.from_dict(
-            control["work_orders_by_id"].get(
-                _safe_mapping(
-                    authorization.get("work_order_ref")
-                ).get("work_order_id"),
-                {},
-            )
-        )
-        if stage_value == NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value:
-            if (
-                authorization.get("claim_status") != "authorized"
-                or authorization.get("transport_claimed") is not False
-            ):
-                raise RunKernelTransitionError(
-                    "pretransport_safety_must_precede_execution_claim"
-                )
-        elif (
-            authorization.get("claim_status")
-            != "claimed_before_transport"
-            or authorization.get("transport_claimed") is not True
-        ):
-            raise RunKernelTransitionError(
-                "posttransport_safety_requires_execution_claim"
-            )
-        canonical: list[NetworkTargetSafetyDecisionV1] = []
-        for decision in decisions:
-            if not isinstance(decision, NetworkTargetSafetyDecisionV1):
-                raise RunKernelTransitionError(
-                    "typed_network_target_safety_decision_required"
-                )
-            try:
-                validated = NetworkTargetSafetyDecisionV1.from_trace(
-                    decision.to_trace()
-                )
-            except ValueError as exc:
-                raise RunKernelTransitionError(str(exc)) from exc
-            lineage = _safe_mapping(validated.lineage_ref)
-            if (
-                validated.stage != stage_value
-                or lineage.get("work_order_id")
-                != work_order.work_order_id
-                or lineage.get("execution_action_id")
-                != action.action_id
-                or (
-                    stage_value
-                    == NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET.value
-                    and not lineage.get("artifact_id")
-                )
-            ):
-                raise RunKernelTransitionError(
-                    "execution_target_safety_decision_lineage_mismatch"
-                )
-            canonical.append(validated)
-        if stage_value == NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value:
-            target_count = len(work_order.selected_urls) + bool(
-                work_order.root_url
-            )
-            if len(canonical) != target_count:
-                raise RunKernelTransitionError(
-                    "pretransport_target_safety_decision_count_mismatch"
-                )
-            for decision, admission_ref in zip(
-                canonical,
-                work_order.target_safety_admission_decision_refs,
-            ):
-                if (
-                    decision.previous_decision_ref
-                    != dict(admission_ref)
-                    or decision.normalized_target_digest
-                    != admission_ref.get("normalized_target_digest")
-                ):
-                    raise RunKernelTransitionError(
-                        "pretransport_target_safety_admission_binding_mismatch"
-                    )
-        elif not canonical:
-            raise RunKernelTransitionError(
-                "posttransport_target_safety_decision_missing"
-            )
-        traces = [decision.to_trace() for decision in canonical]
-        records = authorization.setdefault(
-            "target_safety_decision_traces_by_stage",
-            {},
-        )
-        if not isinstance(records, dict):
-            raise RunKernelTransitionError(
-                "execution_target_safety_decision_store_invalid"
-            )
-        existing = records.get(stage_value)
-        if existing is not None and existing != traces:
-            raise RunKernelTransitionError(
-                "execution_target_safety_decision_record_collision"
-            )
-        records[stage_value] = traces
-        if stage_value == NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value:
-            authorization["final_pretransport_target_safety_status"] = (
-                "blocked_unclaimable"
-                if any(
-                    decision.status
-                    == NetworkTargetSafetyStatus.BLOCKED.value
-                    for decision in canonical
-                )
-                else "allowed_claimable"
-            )
-        control["event_history"].append(
-            {
-                "event": "execution_target_safety_decisions_recorded",
-                "execution_authorization_ref": _acquisition_action_ref(
-                    action
-                ),
-                "stage": stage_value,
-                "decision_refs": [
-                    decision.ref() for decision in canonical
-                ],
-            }
-        )
-        return tuple(canonical)
 
     def _validate_current_acquisition_work_order(
         self,
@@ -4033,10 +3414,6 @@ class RunKernel:
                     {},
                 )
             )
-            self._validate_acquisition_execution_for_custody(
-                control=control,
-                receipt=receipt,
-            )
             self._validate_acquisition_lineage_for_custody(work_order)
         except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
@@ -4075,59 +3452,6 @@ class RunKernel:
             )
         ):
             raise AcquisitionControlError("mismatched_source_obligation")
-
-    def _validate_acquisition_execution_for_custody(
-        self,
-        *,
-        control: Mapping[str, Any],
-        receipt: AcquisitionTerminalReceiptV1,
-    ) -> AcquisitionExecutionObservationV1:
-        observations = control.get("execution_observations_by_id")
-        if not isinstance(observations, Mapping):
-            raise AcquisitionControlError(
-                "custody_execution_observation_store_missing"
-            )
-        execution = AcquisitionExecutionObservationV1.from_dict(
-            observations.get(
-                receipt.execution_observation_ref.get(
-                    "execution_observation_id"
-                ),
-                {},
-            )
-        )
-        if execution.execution_authority_posture != "PRODUCT":
-            raise AcquisitionControlError(
-                "custody_requires_product_execution_authority"
-            )
-        if (
-            execution.ref() != receipt.execution_observation_ref
-            or execution.terminal_status != "completed"
-            or len(execution.artifact_refs) != 1
-            or execution.target_safety_summary.get(
-                "posttransport_target_safety_failure"
-            )
-            is not False
-            or execution.target_safety_summary.get(
-                "safe_target_applicability_failure"
-            )
-            is not False
-            or execution.target_safety_summary.get(
-                "successful_artifact_count"
-            )
-            != 1
-            or execution.target_safety_summary.get(
-                "gate3_decisions_observed"
-            )
-            <= 0
-            or any(
-                item.get("status") != "allowed"
-                for item in execution.target_safety_decision_refs
-            )
-        ):
-            raise AcquisitionControlError(
-                "custody_target_safety_success_not_established"
-            )
-        return execution
 
     def require_current_acquisition_custody_authorization(
         self, authorization_ref: Mapping[str, Any]
@@ -15779,67 +15103,22 @@ class RunKernel:
                         )
                     )
                 )
-                control = self._acquisition_control()
-                precomputed_safety_block = _acquisition_safe_mapping(
-                    action.inputs.get(
-                        "precomputed_blocked_capability_decision"
-                    )
+                proposal = AcquisitionNeedProposalV1.from_dict(
+                    _acquisition_safe_mapping(action.inputs.get("proposal"))
                 )
-                if precomputed_safety_block:
-                    expected_decision = (
-                        AcquisitionCapabilityDecisionObservationV1.from_dict(
-                            precomputed_safety_block
-                        )
+                control = self._acquisition_control()
+                canonical_proposal = AcquisitionNeedProposalV1.from_dict(
+                    control["proposals_by_id"].get(proposal.proposal_id, {})
+                )
+                if canonical_proposal.to_dict() != proposal.to_dict():
+                    raise AcquisitionControlError(
+                        "capability_action_proposal_mismatch"
                     )
-                    proposal_ref = _safe_mapping(
-                        action.inputs.get("proposal_ref")
-                    )
-                    if expected_decision.proposal_ref != proposal_ref:
-                        raise AcquisitionControlError(
-                            "blocked_capability_action_proposal_ref_mismatch"
-                        )
-                    proposal_id = proposal_ref.get("proposal_id")
-                    if proposal_id in control["proposals_by_id"]:
-                        raise AcquisitionControlError(
-                            "safety_blocked_proposal_was_retained"
-                        )
-                    if not str(
-                        expected_decision.block_code or ""
-                    ).startswith("admission_target_safety_blocked:"):
-                        raise AcquisitionControlError(
-                            "precomputed_capability_block_is_not_target_safety"
-                        )
-                else:
-                    proposal = AcquisitionNeedProposalV1.from_dict(
-                        _acquisition_safe_mapping(
-                            action.inputs.get("proposal")
-                        )
-                    )
-                    canonical_proposal = AcquisitionNeedProposalV1.from_dict(
-                        control["proposals_by_id"].get(
-                            proposal.proposal_id, {}
-                        )
-                    )
-                    if canonical_proposal.to_dict() != proposal.to_dict():
-                        raise AcquisitionControlError(
-                            "capability_action_proposal_mismatch"
-                        )
-                    expected_decision = derive_acquisition_capability_decision(
-                        proposal=canonical_proposal,
-                        authority_snapshot=(
-                            self.acquisition_authority_snapshot()
-                        ),
-                        acquisition_control_state=control,
-                        target_resolution_snapshots=(
-                            resolution_snapshots_from_bundle(
-                                _acquisition_safe_list(
-                                    action.inputs.get(
-                                        "target_resolution_snapshots"
-                                    )
-                                )
-                            )
-                        ),
-                    )
+                expected_decision = derive_acquisition_capability_decision(
+                    proposal=canonical_proposal,
+                    authority_snapshot=self.acquisition_authority_snapshot(),
+                    acquisition_control_state=control,
+                )
                 if observed_decision.to_dict() != expected_decision.to_dict():
                     raise AcquisitionControlError(
                         "capability_decision_observation_mismatch"
@@ -15847,35 +15126,9 @@ class RunKernel:
                 control["capability_decisions_by_id"][
                     observed_decision.decision_id
                 ] = observed_decision.to_dict()
-                control["target_resolution_snapshots_by_decision_id"][
-                    observed_decision.decision_id
-                ] = _acquisition_safe_list(
-                    action.inputs.get("target_resolution_snapshots")
-                )
-                safety_telemetry = control["target_safety_telemetry"]
-                safety_refs = (
-                    observed_decision.target_safety_admission_decision_refs
-                )
-                safety_telemetry["target_safety_decisions_observed"] += len(
-                    safety_refs
-                )
-                safety_telemetry["target_safety_decisions_allowed"] += sum(
-                    1 for item in safety_refs if item.get("status") == "allowed"
-                )
-                safety_telemetry["target_safety_decisions_blocked"] += sum(
-                    1 for item in safety_refs if item.get("status") == "blocked"
-                )
-                if str(observed_decision.block_code or "").startswith(
-                    "admission_target_safety_blocked:"
-                ):
-                    safety_telemetry["admission_target_safety_blocks"] += 1
                 control["event_history"].append(
                     {
-                        "event": (
-                            "proposal_safety_rejected"
-                            if precomputed_safety_block
-                            else "capability_decision_reduced"
-                        ),
+                        "event": "capability_decision_reduced",
                         "decision_ref": observed_decision.ref(),
                         "decision_status": observed_decision.decision_status,
                         "block_code": observed_decision.block_code,
@@ -15915,12 +15168,6 @@ class RunKernel:
                     proposal=proposal,
                     authority_snapshot=self.acquisition_authority_snapshot(),
                     acquisition_control_state=control,
-                    target_resolution_snapshots=resolution_snapshots_from_bundle(
-                        control["target_resolution_snapshots_by_decision_id"].get(
-                            decision.decision_id,
-                            (),
-                        )
-                    ),
                 )
                 if expected_decision.to_dict() != decision.to_dict():
                     raise AcquisitionControlError(
@@ -16010,90 +15257,15 @@ class RunKernel:
                     derivation_reason=(
                         "runkernel_authorized_post_discovery_work_order"
                     ),
-                    target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
                 )
-                availability_snapshot = dict(
-                    _safe_mapping(
-                        action.inputs.get("availability_snapshot")
-                    )
-                )
-                route_authority_posture = _clean_text(
-                    action.inputs.get(
-                        "provider_target_safety_route_authority_posture"
+                route_decision = route_provider_capability(
+                    route_request,
+                    dict(
+                        _safe_mapping(
+                            action.inputs.get("availability_snapshot")
+                        )
                     ),
-                    limit=100,
                 )
-                if route_authority_posture == "PRODUCT":
-                    if (
-                        "offline_provider_target_safety_fixture"
-                        in action.inputs
-                        or "offline_provider_target_safety_validation_authority_ref"
-                        in action.inputs
-                    ):
-                        raise AcquisitionControlError(
-                            "product_route_contains_offline_validation_authority"
-                        )
-                    target_safety_eligibility = (
-                        ProviderTargetSafetyEligibilitySnapshot.create(
-                            target_class=(
-                                UNTRUSTED_EXACT_URL_TARGET_CLASS
-                            ),
-                        )
-                    )
-                    route_decision = route_provider_capability(
-                        route_request,
-                        availability_snapshot,
-                    )
-                elif route_authority_posture == (
-                    OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-                ):
-                    validation_authority = (
-                        OfflineProviderTargetSafetyValidationAuthorityV1.create(
-                            _safe_mapping(
-                                action.inputs.get(
-                                    "offline_provider_target_safety_fixture"
-                                )
-                            )
-                        )
-                    )
-                    if validation_authority.ref() != _safe_mapping(
-                        action.inputs.get(
-                            "offline_provider_target_safety_validation_authority_ref"
-                        )
-                    ):
-                        raise AcquisitionControlError(
-                            "offline_provider_target_safety_authority_ref_mismatch"
-                        )
-                    target_safety_eligibility = (
-                        ProviderTargetSafetyEligibilitySnapshot.for_offline_validation(
-                            target_class=(
-                                UNTRUSTED_EXACT_URL_TARGET_CLASS
-                            ),
-                            authority=validation_authority,
-                        )
-                    )
-                    route_decision = (
-                        route_provider_capability_for_offline_target_safety_validation(
-                            route_request,
-                            availability_snapshot,
-                            validation_authority=validation_authority,
-                        )
-                    )
-                else:
-                    raise AcquisitionControlError(
-                        "provider_target_safety_route_authority_posture_invalid"
-                    )
-                expected_target_safety_ref = (
-                    target_safety_eligibility.ref()
-                )
-                if _safe_mapping(
-                    action.inputs.get(
-                        "provider_target_safety_eligibility_ref"
-                    )
-                ) != expected_target_safety_ref:
-                    raise AcquisitionControlError(
-                        "provider_target_safety_eligibility_ref_mismatch"
-                    )
                 expected_route = AcquisitionRouteObservationV1.create(
                     work_order_ref=work_order.ref(),
                     route_decision_trace=route_decision.to_trace(),
@@ -16117,12 +15289,6 @@ class RunKernel:
                         "block_code": observed_route.block_code,
                     }
                 )
-                if observed_route.block_code == (
-                    "no_safety_eligible_provider_for_untrusted_exact_url"
-                ):
-                    control["target_safety_telemetry"][
-                        "provider_target_safety_ineligible_routes"
-                    ] += 1
             except (AcquisitionControlError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = {
@@ -16188,270 +15354,10 @@ class RunKernel:
                     raise AcquisitionControlError(
                         "execution_authorization_mismatch"
                     )
-                execution_authority_posture = _clean_text(
-                    action.inputs.get(
-                        "execution_target_safety_authority_posture"
-                    ),
-                    limit=100,
-                )
-                if authorization.get(
-                    "execution_target_safety_authority_posture"
-                ) != execution_authority_posture:
-                    raise AcquisitionControlError(
-                        "execution_target_safety_authority_mismatch"
-                    )
-                route_eligibility = _safe_mapping(
-                    route.target_safety_eligibility_ref
-                )
-                if execution_authority_posture == "PRODUCT":
-                    if (
-                        route_eligibility.get("product_reachable")
-                        is not True
-                        or route_eligibility.get("authority_posture")
-                        != "PRODUCT"
-                    ):
-                        raise AcquisitionControlError(
-                            "offline_route_entered_product_execution"
-                        )
-                elif execution_authority_posture == (
-                    OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-                ):
-                    if (
-                        route_eligibility.get("product_reachable")
-                        is not False
-                        or route_eligibility.get("authority_posture")
-                        != OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-                        or _safe_mapping(
-                            route_eligibility.get(
-                                "offline_validation_authority_ref"
-                            )
-                        )
-                        != _safe_mapping(
-                            action.inputs.get(
-                                "offline_provider_target_safety_validation_authority_ref"
-                            )
-                        )
-                    ):
-                        raise AcquisitionControlError(
-                            "offline_execution_route_authority_mismatch"
-                        )
-                else:
-                    raise AcquisitionControlError(
-                        "execution_target_safety_authority_posture_invalid"
-                    )
-                decision_records = authorization.get(
-                    "target_safety_decision_traces_by_stage"
-                )
-                if not isinstance(decision_records, Mapping):
-                    raise AcquisitionControlError(
-                        "execution_target_safety_decision_store_missing"
-                    )
-                gate2_traces = decision_records.get(
-                    NetworkTargetSafetyStage.FINAL_PRETRANSPORT.value
-                )
-                if not isinstance(gate2_traces, Sequence) or isinstance(
-                    gate2_traces, str | bytes
-                ):
-                    raise AcquisitionControlError(
-                        "pretransport_target_safety_decision_store_missing"
-                    )
-                try:
-                    canonical_gate2_decisions = [
-                        NetworkTargetSafetyDecisionV1.from_trace(item)
-                        for item in gate2_traces
-                        if isinstance(item, Mapping)
-                    ]
-                except ValueError as exc:
-                    raise AcquisitionControlError(
-                        "pretransport_target_safety_decision_store_invalid"
-                    ) from exc
-                if len(canonical_gate2_decisions) != len(gate2_traces):
-                    raise AcquisitionControlError(
-                        "pretransport_target_safety_decision_store_invalid"
-                    )
-                canonical_decisions = list(canonical_gate2_decisions)
-                gate3_count = int(
-                    observed_execution.target_safety_summary.get(
-                        "gate3_decisions_observed"
-                    )
-                    or 0
-                )
-                gate3_traces = decision_records.get(
-                    NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET.value
-                )
-                canonical_gate3: list[NetworkTargetSafetyDecisionV1] = []
-                if gate3_count:
-                    if not isinstance(gate3_traces, Sequence) or isinstance(
-                        gate3_traces, str | bytes
-                    ):
-                        raise AcquisitionControlError(
-                            "posttransport_target_safety_decision_store_missing"
-                        )
-                    try:
-                        canonical_gate3 = [
-                            NetworkTargetSafetyDecisionV1.from_trace(item)
-                            for item in gate3_traces
-                            if isinstance(item, Mapping)
-                        ]
-                    except ValueError as exc:
-                        raise AcquisitionControlError(
-                            "posttransport_target_safety_decision_store_invalid"
-                        ) from exc
-                    if len(canonical_gate3) != len(gate3_traces):
-                        raise AcquisitionControlError(
-                            "posttransport_target_safety_decision_store_invalid"
-                        )
-                    canonical_decisions.extend(canonical_gate3)
-                elif gate3_traces:
-                    raise AcquisitionControlError(
-                        "unexpected_posttransport_target_safety_decision_store"
-                    )
-                if [
-                    decision.ref() for decision in canonical_decisions
-                ] != list(observed_execution.target_safety_decision_refs):
-                    raise AcquisitionControlError(
-                        "execution_target_safety_decision_refs_not_canonical"
-                    )
-                canonical_posttransport_block = next(
-                    (
-                        decision
-                        for decision in canonical_gate3
-                        if decision.status
-                        == NetworkTargetSafetyStatus.BLOCKED.value
-                    ),
-                    None,
-                )
-                canonical_applicability_failure = (
-                    None
-                    if canonical_posttransport_block is not None
-                    else _canonical_gate3_applicability_failure_kind(
-                        canonical_gate3
-                    )
-                )
-                observed_posttransport_block = bool(
-                    observed_execution.terminal_status == "failed"
-                    and str(
-                        observed_execution.failure_or_block_code or ""
-                    ).startswith("posttransport_target_safety_failure:")
-                    and observed_execution.target_safety_summary.get(
-                        "posttransport_target_safety_failure"
-                    )
-                    is True
-                )
-                observed_applicability_failure = bool(
-                    observed_execution.terminal_status == "failed"
-                    and str(
-                        observed_execution.failure_or_block_code or ""
-                    ).startswith(
-                        "posttransport_target_applicability_failure:"
-                    )
-                    and observed_execution.target_safety_summary.get(
-                        "safe_target_applicability_failure"
-                    )
-                    is True
-                )
-                if observed_posttransport_block != bool(
-                    canonical_posttransport_block
-                ):
-                    raise AcquisitionControlError(
-                        "posttransport_safety_observation_store_mismatch"
-                    )
-                if observed_applicability_failure != bool(
-                    canonical_applicability_failure
-                ):
-                    raise AcquisitionControlError(
-                        "posttransport_applicability_observation_store_mismatch"
-                    )
-                if canonical_posttransport_block is not None and (
-                    observed_execution.failure_or_block_code
-                    != (
-                        "posttransport_target_safety_failure:"
-                        f"{canonical_posttransport_block.blocker_code}"
-                    )
-                ):
-                    raise AcquisitionControlError(
-                        "posttransport_safety_failure_code_mismatch"
-                    )
-                if canonical_applicability_failure is not None and (
-                    observed_execution.failure_or_block_code
-                    != (
-                        "posttransport_target_applicability_failure:"
-                        f"{canonical_applicability_failure}"
-                    )
-                ):
-                    raise AcquisitionControlError(
-                        "posttransport_applicability_failure_code_mismatch"
-                    )
                 if (
-                    observed_posttransport_block
-                    or observed_applicability_failure
-                ) and (
-                    observed_execution.provider_calls_attempted != 1
-                    or observed_execution.provider_calls_completed != 1
-                    or observed_execution.artifact_refs
-                    or observed_execution.target_safety_summary.get(
-                        "successful_artifact_count"
-                    )
-                    != 0
-                    or observed_execution.target_safety_summary.get(
-                        "urls_fetched_delta"
-                    )
-                    != 1
-                    or not observed_execution.execution_claim_consumed
-                    or not observed_execution.adapter_invoked
-                ):
-                    raise AcquisitionControlError(
-                        "posttransport_failure_execution_posture_invalid"
-                    )
-                pretransport_safety_block = (
-                    observed_execution.terminal_status == "blocked"
-                    and str(
-                        observed_execution.failure_or_block_code or ""
-                    ).startswith(
-                        "final_pretransport_target_safety_blocked:"
-                    )
-                    and observed_execution.target_safety_summary.get(
-                        "final_pretransport_target_safety_block"
-                    )
-                    is True
-                )
-                canonical_pretransport_safety_block = any(
-                    decision.status
-                    == NetworkTargetSafetyStatus.BLOCKED.value
-                    for decision in canonical_gate2_decisions
-                )
-                if (
-                    pretransport_safety_block
-                    != canonical_pretransport_safety_block
-                ):
-                    raise AcquisitionControlError(
-                        "pretransport_safety_observation_store_mismatch"
-                    )
-                if pretransport_safety_block:
-                    if (
-                        authorization.get(
-                            "final_pretransport_target_safety_status"
-                        )
-                        != "blocked_unclaimable"
-                        or
-                        authorization.get("claim_status") != "authorized"
-                        or authorization.get("transport_claimed") is not False
-                        or observed_execution.execution_claim_consumed
-                        or observed_execution.adapter_invoked
-                    ):
-                        raise AcquisitionControlError(
-                            "pretransport_safety_block_claim_posture_invalid"
-                        )
-                elif (
-                    authorization.get(
-                        "final_pretransport_target_safety_status"
-                    )
-                    != "allowed_claimable"
-                    or
                     authorization.get("claim_status")
                     != "claimed_before_transport"
                     or authorization.get("transport_claimed") is not True
-                    or not observed_execution.execution_claim_consumed
                 ):
                     raise AcquisitionControlError(
                         "execution_authorization_not_claimed"
@@ -16479,46 +15385,11 @@ class RunKernel:
                             raise AcquisitionControlError(
                                 "execution_artifact_route_mismatch"
                             )
-                if (
-                    observed_execution.terminal_status != "completed"
-                    and canonical_gate3
-                    and observed_execution.artifact_refs
-                ):
-                    _validate_completed_artifact_target_safety_binding(
-                        artifact_refs=observed_execution.artifact_refs,
-                        gate3_decisions=canonical_gate3,
-                    )
                 if observed_execution.terminal_status == "completed":
-                    _validate_completed_artifact_target_safety_binding(
-                        artifact_refs=observed_execution.artifact_refs,
-                        gate3_decisions=canonical_gate3,
-                    )
                     if (
                         observed_execution.provider_calls_attempted != 1
                         or observed_execution.provider_calls_completed != 1
                         or len(observed_execution.artifact_refs) != 1
-                        or observed_execution.target_safety_summary.get(
-                            "posttransport_target_safety_failure"
-                        )
-                        is not False
-                        or observed_execution.target_safety_summary.get(
-                            "safe_target_applicability_failure"
-                        )
-                        is not False
-                        or observed_execution.target_safety_summary.get(
-                            "successful_artifact_count"
-                        )
-                        != 1
-                        or observed_execution.target_safety_summary.get(
-                            "gate3_decisions_observed"
-                        )
-                        <= 0
-                        or any(
-                            item.get("status") != "allowed"
-                            for item in (
-                                observed_execution.target_safety_decision_refs
-                            )
-                        )
                     ):
                         raise AcquisitionControlError(
                             "completed_execution_material_invalid"
@@ -16530,8 +15401,6 @@ class RunKernel:
                         or completed_artifact.get("kind")
                         != "selected_url_read_material"
                         or completed_artifact.get("status") != "readable"
-                        or completed_artifact.get("page_count") != 0
-                        or completed_artifact.get("url_count") != 0
                         or completed_artifact.get("requested_url")
                         not in work_order.selected_urls
                         or len(
@@ -16565,57 +15434,9 @@ class RunKernel:
                 control["execution_observations_by_id"][
                     observed_execution.execution_observation_id
                 ] = observed_execution.to_dict()
-                authorization["claim_status"] = (
-                    "observation_reduced_unclaimed_safety_block"
-                    if pretransport_safety_block
-                    else "observation_reduced"
-                )
+                authorization["claim_status"] = "observation_reduced"
                 authorization["execution_observation_ref"] = (
                     observed_execution.ref()
-                )
-                safety_summary = observed_execution.target_safety_summary
-                safety_telemetry = control["target_safety_telemetry"]
-                safety_telemetry["target_safety_decisions_observed"] += int(
-                    safety_summary.get("decisions_observed", 0)
-                )
-                safety_telemetry["target_safety_decisions_allowed"] += int(
-                    safety_summary.get("decisions_allowed", 0)
-                )
-                safety_telemetry["target_safety_decisions_blocked"] += int(
-                    safety_summary.get("decisions_blocked", 0)
-                )
-                for summary_key, telemetry_key in (
-                    (
-                        "final_pretransport_target_safety_block",
-                        "final_pretransport_target_safety_blocks",
-                    ),
-                    (
-                        "target_safety_decision_changed_block",
-                        "target_safety_decision_changed_blocks",
-                    ),
-                    (
-                        "resolver_indeterminate_block",
-                        "resolver_indeterminate_blocks",
-                    ),
-                    (
-                        "posttransport_target_safety_failure",
-                        "posttransport_target_safety_failures",
-                    ),
-                    (
-                        "safe_target_applicability_failure",
-                        "safe_target_applicability_failures",
-                    ),
-                ):
-                    if safety_summary.get(summary_key) is True:
-                        safety_telemetry[telemetry_key] += 1
-                safety_telemetry["safe_redirect_targets_accepted"] += int(
-                    safety_summary.get("safe_redirect_targets_accepted", 0)
-                )
-                safety_telemetry["safe_final_targets_accepted"] += int(
-                    safety_summary.get("safe_final_targets_accepted", 0)
-                )
-                safety_telemetry["safe_canonical_targets_accepted"] += int(
-                    safety_summary.get("safe_canonical_targets_accepted", 0)
                 )
                 control["event_history"].append(
                     {
@@ -16809,17 +15630,6 @@ class RunKernel:
                     "terminal_status": observed_receipt.terminal_status,
                     "retry_licensed": False,
                 }
-                if str(
-                    observed_receipt.block_or_failure_code or ""
-                ).startswith(
-                    (
-                        "final_pretransport_target_safety_blocked:",
-                        "posttransport_target_safety_failure:",
-                    )
-                ):
-                    control["target_safety_telemetry"][
-                        "unsafe_target_operations_exhausted"
-                    ] += 1
                 control["event_history"].append(
                     {
                         "event": "terminal_receipt_reduced",
@@ -16875,10 +15685,6 @@ class RunKernel:
                         ),
                         {},
                     )
-                )
-                self._validate_acquisition_execution_for_custody(
-                    control=control,
-                    receipt=receipt,
                 )
                 self._validate_acquisition_lineage_for_custody(work_order)
                 expected_authorization = AcquisitionCustodyAuthorizationV1.create(

@@ -179,22 +179,13 @@ EvidenceLedger admission, citation correctness, source-obligation satisfaction,
 Sufficiency, FinalAnswerPacket, Author behavior, Serper connection, Map, Crawl,
 package rename, arbitrary-query behavior, or complete-app correctness.
 
-## Completed Safety Repair And Blocked Successor
+## Sole Active Next
 
-[`EXACT-URL-NETWORK-TARGET-SAFETY-OWNER-01`](EXACT_URL_NETWORK_TARGET_SAFETY_OWNER_01.md)
-completed the next required Repair by installing the canonical pure target-
-safety policy, typed resolver snapshots, and the three stage-bound RunKernel
-gates. It made no live provider, model, search, DNS, fetch/read, Map, Crawl, or
-retrieval call and activated no exact-URL product acquisition.
-
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
-is now the blocked successor. It must not reactivate until at least one
-provider operation is truthfully eligible for the `untrusted_exact_url` target
-class. Current repository evidence establishes no eligible Linkup or Tavily
-operation because sufficient committed public-target guarantees or observable
-final-target lineage are not established; that is not a claim that either
-provider is inherently unsafe. An offline eligibility fixture, provider
-availability, preference, or adapter installation cannot remove the blocker.
+The sole active next checkpoint is
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It must install a real independent current-material-need producer, genuinely
+product-consumed exact-URL READ, and final custody without turning candidate
+selection into an automatic acquisition trigger.
 
 Planner disambiguation, site-topology selection, and Crawl page custody remain
 queued in that order after exact-URL/final-custody convergence.

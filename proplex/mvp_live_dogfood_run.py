@@ -20,7 +20,9 @@ from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from core.dprime_product_smart_one_shot_transport import (
     build_dprime_product_smart_model_review_adapter,
@@ -577,12 +579,84 @@ def run_provider_proxy_helper_once(
 
 
 def fetch_public_url_once(url: str) -> LiveDogfoodFetchReadResult:
-    """Fail closed: the CLI-reachable local webpage opener is retired."""
+    """Fetch one allowed public URL and return bounded sanitized readable text."""
 
-    raise MvpLiveDogfoodRunError(
-        BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
-        "the local webpage fetch/read opener is retired; provider-mediated "
-        "acquisition authority is required.",
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not _allowed_official_domain(parsed.netloc):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "fetch/read is limited to official state.gov HTTPS candidates.",
+        )
+    redirect_handler = _RedirectLimiter()
+    opener = build_opener(redirect_handler)
+    request = Request(
+        url,
+        headers={"User-Agent": "ScryRaven MVP live dogfood"},
+        method="GET",
+    )
+    try:
+        with opener.open(request, timeout=20) as response:
+            final_url = response.geturl()
+            status_code = getattr(response, "status", None) or response.getcode()
+            content_type = response.headers.get_content_type()
+            charset = response.headers.get_content_charset() or "utf-8"
+            body = response.read(MAX_FETCHED_BYTES + 1)
+    except HTTPError as exc:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            f"fetch/read HTTP status class {_status_class(exc.code)}.",
+        ) from exc
+    except (OSError, URLError) as exc:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "selected URL could not be fetched in one bounded public read.",
+        ) from exc
+    if len(body) > MAX_FETCHED_BYTES:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_CAP_EXHAUSTED,
+            "fetched response exceeded the 1 MB cap.",
+            caps_exhausted=True,
+        )
+    final_domain = urlparse(final_url).netloc.lower()
+    if not _allowed_official_domain(final_domain):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "final URL left the allowed official state.gov boundary.",
+        )
+    if content_type in {"application/pdf"} or final_url.lower().endswith(".pdf"):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "PDF fetch/read is closed for this live dogfood run.",
+        )
+    if content_type not in {"text/html", "text/plain", "application/xhtml+xml"}:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "selected URL response was not readable text/html or text/plain.",
+        )
+    sanitized_text, title = _extract_readable_text(
+        body,
+        content_type=content_type,
+        charset=charset,
+    )
+    if not sanitized_text:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "selected URL did not produce sanitized readable text.",
+        )
+    redirects = list(redirect_handler.redirects)
+    return LiveDogfoodFetchReadResult(
+        attempted_url=url,
+        final_url=final_url,
+        final_domain=final_domain,
+        status_code=status_code,
+        status_class=_status_class(status_code),
+        content_type=content_type,
+        fetched_byte_count=len(body),
+        sanitized_text=sanitized_text,
+        content_title=title,
+        redirect_count=len(redirects),
+        redirect_chain_digest=_digest_json(redirects) if redirects else None,
+        retrieved_or_observed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
     )
 
 
@@ -1379,6 +1453,36 @@ def _bounded_current_path_selection(text: str) -> BoundedTextSelection:
         component_text=TARGET_COMPONENT_TEXT,
         claim_under_test=TARGET_COMPONENT_CLAIM_UNDER_TEST,
     )
+
+
+class _RedirectLimiter(HTTPRedirectHandler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.redirects: list[dict[str, Any]] = []
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> Request | None:
+        if len(self.redirects) >= MAX_REDIRECTS:
+            raise MvpLiveDogfoodRunError(
+                BLOCKED_MVP_LIVE_CAP_EXHAUSTED,
+                "fetch/read redirect cap exhausted.",
+                caps_exhausted=True,
+            )
+        self.redirects.append(
+            {
+                "from_domain": urlparse(req.full_url).netloc.lower(),
+                "to_domain": urlparse(newurl).netloc.lower(),
+                "status_class": _status_class(code),
+            }
+        )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class _ReadableTextExtractor(HTMLParser):

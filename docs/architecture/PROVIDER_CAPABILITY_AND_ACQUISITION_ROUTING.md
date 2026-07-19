@@ -3,32 +3,17 @@
 Status: current
 Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
-Applies-to: current ordinary DISCOVER routing, shared acquisition contracts,
-ProviderPlan projection, retained RunKernel post-discovery routing, provider
-target-safety eligibility, mechanical dispatch, and selected-candidate
-nontrigger behavior
+Applies-to: current ordinary DISCOVER routing, shared acquisition contracts, ProviderPlan projection, retained RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: c1f7e9f0e5b54277f696b2a8703bf00a1322fee8
-Update-trigger: change to capability vocabulary, catalog, request/artifact
-contracts, provider selection, target-safety eligibility, adapter bounds,
-product consumption, or provider-material authority
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
 
 `core.routing` is the sole provider-capability policy owner. It owns capability
-compatibility, provider availability and preference consumption, operation and
-variant selection, route-time alternative selection, typed blocks, and general
-Linkup Deep authorization compatibility. For untrusted dynamic content targets,
-it also consumes a code-owned provider-operation target-safety eligibility
-snapshot. Capability, availability, target-safety eligibility, code-owned
-preference, and requester preference remain separate facts.
-
-`core.network_target_safety` is the pure target policy owner. It owns static
-target parsing, bounded typed resolver snapshots, and admission,
-final-pretransport, and posttransport observed-target decisions. It performs no
-provider selection and no transport. RunKernel consumes those decisions through
-its existing acquisition chain rather than through a parallel safety
-controller.
+compatibility, provider eligibility and preference, operation and variant
+selection, route-time fallback selection, typed blocks, and general Linkup Deep
+authorization compatibility.
 
 `core.acquisition_contracts` owns immutable bounded requests, job identity,
 operation limits, normalized artifacts, lineage, and execution results.
@@ -64,14 +49,6 @@ same snapshot remains available to the retained future READ controller, but
 candidate selection alone creates no proposal and never reaches it. The
 SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners remain unchanged.
-
-Target-safety eligibility is not inferred from availability, an installed
-adapter, a callable, configuration, environment, requester preference, or a
-provider name. A preferred provider may be excluded before dispatch when it is
-unavailable or target-safety ineligible, and an already cataloged available and
-eligible alternative may then be selected. Once any provider adapter is
-invoked, no provider fallback, retry, capability switch, or eligibility-driven
-redispatch is permitted.
 
 Current runtime/test provenance:
 `6fbca602afac5a00bb6bafa2a6888b6ec31d5065`.
@@ -122,18 +99,17 @@ and consumers, not credential presence or live availability.
 | Capability | Cataloged | Adapter installed | Typed-runtime reachable | Ordinary-product enabled | Ordinary-product reachable | Ordinary-product consumed |
 | --- | --- | --- | --- | --- | --- | --- |
 | `DISCOVER` | yes | yes | yes | yes | yes | yes, through current ProviderPlan, scheduler, dispatch, continuation, supplemental, and recovery consumers |
-| `READ` | yes | yes | offline fixture only for untrusted exact targets | no | no ordinary material-need producer and no currently safety-eligible Linkup/Tavily untrusted exact-target route | no; selected candidate and URL provenance alone are a nontrigger |
-| `FOCUSED_EXTRACT` | yes | yes | offline fixture only for untrusted exact targets | no | controller returns `focused_extract_requester_not_installed`; Tavily query-focused Extract is also currently target-safety ineligible | no |
-| `MAP_SITE` | yes | yes | offline fixture only for untrusted roots | no | controller returns `map_candidate_reentry_not_installed`; Tavily Map is also currently target-safety ineligible | no |
-| `CRAWL_SITE` | yes | yes | offline fixture only for untrusted roots | no | controller returns `crawl_page_custody_not_installed`; Tavily Crawl is also currently target-safety ineligible | no |
+| `READ` | yes | yes | yes | no | no ordinary material-need producer | no; selected candidate and URL provenance alone are a nontrigger |
+| `FOCUSED_EXTRACT` | yes | yes | yes | no | controller recognizes then returns `focused_extract_requester_not_installed` | no |
+| `MAP_SITE` | yes | yes | yes | no | controller recognizes then returns `map_candidate_reentry_not_installed` | no |
+| `CRAWL_SITE` | yes | yes | yes | no | controller recognizes then returns `crawl_page_custody_not_installed` | no |
 | General Linkup Deep | yes | mechanical support yes | authorized runtime only | no | no qualifying current requester | no |
 | Scrutineer Deep | yes | yes | yes | yes, behind existing remediation gates | yes | preserve existing bounded consumer |
 | `PROVIDER_SYNTHESIS` | yes, as disabled surfaces | disabled | blocked | no | no | no |
 
 Adapter installation or validation-constructed dispatch is not ordinary product
-consumption or production target-safety eligibility. No product requester was
-manufactured for focused extraction, site mapping, site crawling, or general
-Linkup Deep.
+consumption. No product requester was manufactured for focused extraction, site
+mapping, site crawling, or general Linkup Deep.
 
 ## Shared Request, Job, And Artifact Contracts
 
@@ -158,15 +134,6 @@ crawl-parent facts remain absent unless the transport/provider supplied them.
 provider/operation/variant/output, job lineage, title/timestamp, and bounded
 character/digest facts when known.
 
-Requested URL A and every observed URL B remain separate. A reported,
-redirected, resolved, final, or canonical B is not rejected merely because it
-differs from A. The canonical target policy first evaluates B for network
-safety; the existing source-lineage/applicability boundary then evaluates B for
-the requested acquisition. Safe and applicable B may remain successful. Safe
-but inapplicable B produces a lineage/applicability failure rather than a safety
-failure. A prohibited B produces a posttransport safety failure. Missing B is
-never manufactured.
-
 Ephemeral execution may carry bounded sanitized text to the existing custody
 consumer. Durable traces omit that text and retain no raw HTML, raw provider
 payload, credentials, headers, cookies, or unrelated fetched content.
@@ -180,7 +147,7 @@ payload, credentials, headers, cookies, or unrelated fetched content.
 | `DISCOVER(academic_technical_semantic)` | Exa `neural_with_text/searchResults` | degraded Linkup standard, then Tavily | exact deterministic qualifier only |
 | `DISCOVER(lightweight_disambiguation)` | Serper Web Search | none | candidate/query direction only |
 | `DISCOVER(independent_index)` | Brave Web Search | none | candidate/query direction only |
-| `READ` | Linkup Fetch | Tavily Extract before dispatch if Linkup is unavailable or target-safety ineligible and Tavily is independently available and eligible | one caller-selected URL; 20,000 retained characters maximum |
+| `READ` | Linkup Fetch | Tavily Extract if Linkup is unavailable before dispatch | one caller-selected URL; 20,000 retained characters maximum |
 | `FOCUSED_EXTRACT` | Tavily Extract | none | caller-selected URLs only; 2,000-character focus maximum; 20 URLs maximum; bounded text |
 | `MAP_SITE` | Tavily Map | none | explicit same-site root; normalize/deduplicate; 100 URLs maximum; topology only |
 | `CRAWL_SITE` | Tavily Crawl | none | one job; depth 2; 10 pages; 20,000 characters/page; 100,000 aggregate; exact domain/path scope |
@@ -191,28 +158,9 @@ payload, credentials, headers, cookies, or unrelated fetched content.
 Tavily Research, Linkup Research, `sourcedAnswer`, and `structured` outputs are
 not installed acquisition operations.
 
-Linkup-only remains valid for general/domain-targeted DISCOVER. Adapter
-installation still records Linkup Fetch as the preferred READ hypothesis and
-Tavily Extract as its route-time alternative, but neither operation is currently
-production-eligible for an untrusted exact URL. Provider subsets create no
-fan-out, and domain targeting grants no social interpretation or authority.
-
-### Current untrusted exact-target eligibility
-
-| Provider operation | Eligible in production | Reason |
-| --- | --- | --- |
-| Linkup Fetch `READ/known_url` | no | sufficient committed public-target guarantees and observable final-target lineage are not established |
-| Tavily Extract `READ/basic` | no | sufficient committed public-target guarantees and observable final-target lineage are not established |
-| Tavily Extract `FOCUSED_EXTRACT/query_focused` | no | sufficient committed public-target guarantees and observable final-target lineage are not established |
-| Tavily Map `MAP_SITE/bounded` | no | sufficient committed public-target guarantees and observable final-target lineage are not established |
-| Tavily Crawl `CRAWL_SITE/bounded` | no | sufficient committed public-target guarantees and observable final-target lineage are not established |
-
-This code-owned all-false matrix is an eligibility statement about ScryRaven's
-committed guarantees and observable lineage. It is not a claim that Linkup or
-Tavily is inherently unsafe. Tests may inject a bounded eligibility fixture to
-prove filtering, route-time alternative mechanics, and guarded execution. Such
-a fixture is not configuration, cannot enter production policy, and proves no
-live provider behavior.
+Linkup-only remains valid for general/domain-targeted DISCOVER and preferred
+READ when configured. Provider subsets create no fan-out, and domain targeting
+grants no social interpretation or authority.
 
 ## Selected-Candidate Nontrigger And Retained READ Route
 
@@ -233,25 +181,18 @@ retained route is:
 ```text
 independent material need + selected URL provenance
 -> exact packet/current-lineage validation
--> Gate 1 admission target-safety decision
--> RunKernel capability decision and provider-neutral work order admission, only if allowed
+-> RunKernel capability decision and provider-neutral work order admission
 -> RunKernel route authorization
--> core.routing capability + availability + target-safety eligibility decision
+-> core.routing completed READ route decision
 -> RunKernel route reduction and execution authorization
 -> guarded PRODUCT acquisition executor
--> Gate 2 fresh final-pretransport target-safety decision
--> exactly one eligible Linkup Fetch or Tavily Extract adapter, only if allowed
--> Gate 3 observed-target safety then applicability
--> normalized bounded read artifact, only if both pass
+-> exactly one Linkup Fetch or Tavily Extract adapter
+-> normalized bounded read artifact
 -> RunKernel execution and terminal reduction
 -> RunKernel READ custody authorization
 -> existing FetchReadContentPacket
 -> existing EvidenceLedger custody reduction
 ```
-
-The flow is installed as guarded machinery, but the production
-`untrusted_exact_url` eligibility matrix currently blocks at routing. An
-offline fixture can exercise later mechanics without activating production.
 
 The source-custody and main-RunKernel coverage flags default to false. Source
 custody returns `not_needed` before provider availability, RunKernel actions,
@@ -260,15 +201,11 @@ consumes prior custody and cannot reacquire. The historical live source-custody
 validation profile is non-executable. This is offline nontrigger proof, not
 default live CLI READ consumption or live validation.
 
-Linkup Fetch remains the first code-owned READ hypothesis. It may be selected
-only when both available and target-safety eligible. Tavily Extract may be
-selected before dispatch when Linkup is unavailable or target-safety ineligible
-and Tavily is independently available and eligible. In production both are
-currently ineligible for untrusted exact URLs. Injecting a Linkup callable or
-transport cannot make Linkup available or eligible. Once any adapter is
-invoked, transport failure, malformed output, unreadable status, empty material,
-or URL mismatch returns a typed failure and makes zero alternative-provider
-calls.
+Linkup Fetch is preferred. Tavily Extract is selected only when the explicit
+composition snapshot says Linkup is unavailable before dispatch. Injecting a
+Linkup callable or transport cannot make Linkup available. Once Linkup is
+selected, transport failure, malformed output, unreadable status, empty
+material, or URL mismatch returns a typed failure and makes zero Tavily calls.
 For Tavily READ, a generic provider-reported result URL must normalize to the
 one selected URL. A mismatch returns
 `read_provider_reported_url_mismatch` before FetchReadContentPacket creation;
@@ -279,28 +216,16 @@ observed facts and may differ when explicitly supplied.
 For an independently supplied need, the guarded executor validates current
 AnswerContract, component, source-obligation, work-order, route, active-slot,
 execution-authorization, routing-policy, and exhaustion state. It marks the
-current `RunCapPolicy` fetch/read budget and consumes the one-use RunKernel
-execution claim exactly once for an actually attempted provider transport.
-Before either occurs, Gate 2 may return the sole typed blocked-before-claim
-execution result. That result has zero cap charge, claim, adapter invocation,
-or transport and follows the existing terminal slot-release/exhaustion chain;
-it is not thrown from the cap callback. `RunCapExceeded` remains reduced
-through the acquisition terminal path and its deferred product error is then
-re-raised.
-
-After an attempted provider transport, Gate 3 evaluates observed targets before
-successful artifact admission, execution success, terminal success, or custody.
-A posttransport safety or applicability failure retains the attempted call, cap
-charge, and claim exactly once while admitting no successful artifact or
-custody.
+current `RunCapPolicy` fetch/read budget exactly once immediately before the
+provider call and consumes the one-use RunKernel execution claim in the actual
+pre-transport callback. `RunCapExceeded` is reduced through the acquisition
+terminal path and its deferred product error is then re-raised.
 
 Linkup Fetch carries the product's explicit `render_javascript=false` posture
 as `renderJs=false` and records it in the request trace. Minimal Linkup or Tavily
-fixture material can exercise the typed adapter with requested/attempted
-identity; missing page status and unreported redirect/canonical lineage remain
-unknown. Production eligibility still requires the code-owned provider
-operation posture. Explicit provider-reported redirect and canonical facts
-survive unchanged.
+material can succeed with only requested/attempted identity; missing or invalid
+page HTTP status and unreported redirect/canonical lineage remain unknown.
+Explicit provider-reported redirect and canonical facts survive unchanged.
 
 The adapter does not admit evidence. The existing FetchReadContentPacket and
 EvidenceLedger custody reducer continue to decide only their existing bounded
@@ -310,8 +235,7 @@ obligation, Sufficiency, FinalAnswerPacket, or Author authority.
 ## Dormant Typed Capabilities
 
 `FOCUSED_EXTRACT`, `MAP_SITE`, and `CRAWL_SITE` remain available to low-level
-typed-runtime validation with exact bounded requests and an explicit offline
-eligibility fixture. The post-discovery
+typed-runtime validation with exact bounded requests. The post-discovery
 controller now recognizes their exact material needs but blocks before PRODUCT
 routing or transport. Focused Extract returns
 `focused_extract_requester_not_installed`; no current ordinary producer binds
@@ -379,21 +303,6 @@ Bounded residual compatibility:
 
 These surfaces do not own current PRODUCT provider policy.
 
-## Infrastructure Endpoint Exclusions And Local Opener Retirement
-
-The untrusted dynamic content-target policy applies to payload target URLs, not
-the fixed endpoint used to reach a provider service. Fixed Linkup/Tavily API
-endpoints and ordinary fixed DISCOVER endpoints remain mechanical transport
-infrastructure. Explicitly authorized local broker and model endpoints likewise
-remain under their existing configuration, confirmation, and secret-handling
-contracts rather than being reclassified as untrusted webpage targets.
-
-The two CLI-reachable local webpage helpers are typed fail-closed tombstones,
-and the former source-survival validation opener is fixture-only and
-PRODUCT-unreachable. No replacement local webpage downloader exists. Provider
-API clients remain mechanical; a dynamic content target carried in their
-payload remains a separately validated fact.
-
 ## Authority Closure
 
 Provider response keys cannot create evidence, citation, obligation
@@ -407,11 +316,10 @@ and never dispatch after provider failure. Every migrated PRODUCT acquisition
 operation has exactly one selected provider or blocks with zero transport.
 
 The code-owned post-discovery routing-policy ref has revision
-`exact_url_network_target_safety_owner_01`, algorithm revision
-`first_reachable_and_target_safety_eligible_preference_v1`, and a digest over
-the catalog, preference table, and eligibility-policy posture. Work order,
-route, and execution bind it. No configuration, environment, prompt, or user
-preference owns provider order or production eligibility.
+`runkernel_post_discovery_acquisition_control_01`, algorithm revision
+`first_reachable_code_owned_preference_v1`, and a digest over the catalog and
+preference table. Work order, route, and execution bind it. No configuration,
+environment, prompt, or user preference owns provider order.
 
 ## Next Checkpoint And Nonproofs
 
@@ -424,20 +332,19 @@ now supplies truthful provider-result lineage to the ordinary branch of the
 existing canonical `SearchResultCandidatePacket`, with zero candidate-page
 transport and no ranked-passage reconstruction.
 
-[`EXACT-URL-NETWORK-TARGET-SAFETY-OWNER-01`](../roadmap/EXACT_URL_NETWORK_TARGET_SAFETY_OWNER_01.md)
-installs the pure safety owner, three gates, provider-operation eligibility,
-and local-opener retirement. It does not reactivate
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md),
-which remains blocked until at least one provider operation is truthfully
-eligible for untrusted exact URLs. Planner disambiguation remains queued after
-exact-URL convergence; Map selection and Crawl page custody remain later.
+The sole active next is
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It must install a real independent current-material-need producer, genuinely
+product-consumed READ exact-URL work, and final custody while retaining the
+selected-candidate nontrigger. Focused Extract may follow only when a real
+producer is proved. Planner disambiguation remains queued after exact-URL
+convergence; Map selection and Crawl page custody remain later.
 
 This offline Build proves no live provider quality, availability, coverage,
 currentness, latency, price, reliability, or answer improvement. It does not
 prove evidence correctness, final-custody convergence, social authority,
 Sufficiency, FinalAnswerPacket, Author behavior, Serper connection, Focused
-Extract, Map, Crawl, live DNS/peer binding, live provider target lineage,
-compatibility rename, or complete-app correctness.
+Extract, Map, Crawl, compatibility rename, or complete-app correctness.
 The direct selective page-fetch lane inside `core.pipeline` is retired rather
 than governed by the post-discovery controller. No live provider, model,
-search, DNS, fetch, map, crawl, or retrieval call was made.
+search, fetch, map, crawl, or retrieval call was made.

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -9,13 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import core.acquisition_adapters as acquisition_adapters
-from core.acquisition_adapters import (
-    AcquisitionTransports,
-    OfflineAcquisitionTransportFixtureV1,
-    dispatch_acquisition,
-    dispatch_acquisition_for_offline_target_safety_validation,
-)
+from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
 from core.acquisition_contracts import (
     AcquisitionArtifactKind,
     AcquisitionExecutionStatus,
@@ -29,17 +22,12 @@ from core.generic_product_provider_acquisition import (
 )
 from core.provider_plan import ProviderPlan
 from core.routing import (
-    UNTRUSTED_EXACT_URL_TARGET_CLASS,
     AcquisitionCapability,
     DiscoverQualifier,
     GeneralDeepAuthorization,
-    OfflineProviderTargetSafetyValidationAuthorityV1,
     ProviderCapabilityRequest,
-    ProviderTargetSafetyEligibilitySnapshot,
     RouteFidelity,
-    provider_operation_identity,
     route_provider_capability,
-    route_provider_capability_for_offline_target_safety_validation,
 )
 from tests.helpers.offline_ordinary_pipeline import scrub_offline_runtime
 from tests.test_ag_ordinary_live_source_custody_integration_01 import (
@@ -52,46 +40,6 @@ READ_URL = "https://official.example.test/source"
 ROOT_URL = "https://docs.example.test/guide"
 OBSERVED_AT = "2026-07-17T00:00:00Z"
 
-_OFFLINE_EXACT_URL_OPERATION_ELIGIBILITY = {
-    provider_operation_identity(
-        provider="linkup",
-        capability=AcquisitionCapability.READ,
-        operation="fetch",
-        variant="known_url",
-    ): True,
-    provider_operation_identity(
-        provider="tavily",
-        capability=AcquisitionCapability.READ,
-        operation="extract",
-        variant="basic",
-    ): True,
-    provider_operation_identity(
-        provider="tavily",
-        capability=AcquisitionCapability.FOCUSED_EXTRACT,
-        operation="extract",
-        variant="query_focused",
-    ): True,
-    provider_operation_identity(
-        provider="tavily",
-        capability=AcquisitionCapability.MAP_SITE,
-        operation="map",
-        variant="bounded",
-    ): True,
-    provider_operation_identity(
-        provider="tavily",
-        capability=AcquisitionCapability.CRAWL_SITE,
-        operation="crawl",
-        variant="bounded",
-    ): True,
-}
-
-
-def _offline_exact_url_authority(
-) -> OfflineProviderTargetSafetyValidationAuthorityV1:
-    return OfflineProviderTargetSafetyValidationAuthorityV1.create(
-        _OFFLINE_EXACT_URL_OPERATION_ELIGIBILITY
-    )
-
 
 def _route(
     capability: AcquisitionCapability,
@@ -100,21 +48,6 @@ def _route(
     tavily: bool = True,
     typed_runtime_only: bool = False,
 ) -> Any:
-    if capability in {
-        AcquisitionCapability.READ,
-        AcquisitionCapability.FOCUSED_EXTRACT,
-        AcquisitionCapability.MAP_SITE,
-        AcquisitionCapability.CRAWL_SITE,
-    }:
-        return route_provider_capability_for_offline_target_safety_validation(
-            ProviderCapabilityRequest(
-                capability=capability,
-                target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-            ),
-            {"linkup": linkup, "tavily": tavily},
-            validation_authority=_offline_exact_url_authority(),
-            typed_runtime_only=typed_runtime_only,
-        )
     return route_provider_capability(
         ProviderCapabilityRequest(capability=capability),
         {"linkup": linkup, "tavily": tavily},
@@ -147,200 +80,6 @@ def _tavily_typed_request(
     )
 
 
-def _dispatch_exact_url(
-    request: AcquisitionRequest,
-    *,
-    response: Any = None,
-    transport_fixture: OfflineAcquisitionTransportFixtureV1 | None = None,
-    raise_transport_error: bool = False,
-    before_transport: Any = None,
-):
-    fixture = transport_fixture or OfflineAcquisitionTransportFixtureV1.create(
-        response=response,
-        raise_transport_error=raise_transport_error,
-    )
-    return dispatch_acquisition_for_offline_target_safety_validation(
-        request,
-        transport_fixture=fixture,
-        before_transport=before_transport,
-    )
-
-
-def test_offline_route_cannot_escape_into_product_dispatch_defaults(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    request = _read_request()
-    callbacks = 0
-    default_transport_calls = 0
-
-    def before_transport() -> None:
-        nonlocal callbacks
-        callbacks += 1
-
-    def forbidden_default_transport(_payload: dict[str, Any]) -> dict[str, Any]:
-        nonlocal default_transport_calls
-        default_transport_calls += 1
-        return {"markdown": "must not dispatch"}
-
-    monkeypatch.setattr(
-        "core.acquisition_adapters._linkup_fetch_transport",
-        forbidden_default_transport,
-    )
-    result = dispatch_acquisition(
-        request,
-        before_transport=before_transport,
-    )
-
-    assert result.status is AcquisitionExecutionStatus.BLOCKED
-    assert result.block_code == (
-        "offline_validation_route_cannot_enter_product_dispatch"
-    )
-    assert result.provider_calls_attempted == 0
-    assert callbacks == 0
-    assert default_transport_calls == 0
-
-
-def test_forged_product_route_is_revalidated_against_code_owned_eligibility(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    request = _read_request()
-    product_snapshot = ProviderTargetSafetyEligibilitySnapshot.create(
-        target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-    )
-    forged = replace(
-        request,
-        route_decision=replace(
-            request.route_decision,
-            target_safety_eligibility_ref=product_snapshot.ref(),
-            selected_provider_target_safety_eligible=True,
-        ),
-    )
-    callbacks = 0
-    default_transport_calls = 0
-
-    def before_transport() -> None:
-        nonlocal callbacks
-        callbacks += 1
-
-    def forbidden_default_transport(_payload: dict[str, Any]) -> dict[str, Any]:
-        nonlocal default_transport_calls
-        default_transport_calls += 1
-        return {"markdown": "must not dispatch"}
-
-    monkeypatch.setattr(
-        "core.acquisition_adapters._linkup_fetch_transport",
-        forbidden_default_transport,
-    )
-    result = dispatch_acquisition(
-        forged,
-        before_transport=before_transport,
-    )
-
-    assert result.status is AcquisitionExecutionStatus.BLOCKED
-    assert result.block_code == (
-        "dynamic_content_route_not_currently_safety_eligible"
-    )
-    assert result.provider_calls_attempted == 0
-    assert callbacks == 0
-    assert default_transport_calls == 0
-
-
-def test_offline_dispatch_requires_typed_route_and_response_only_fixture() -> None:
-    request = _read_request()
-    callbacks = 0
-    arbitrary_transport_calls = 0
-
-    def before_transport() -> None:
-        nonlocal callbacks
-        callbacks += 1
-
-    missing_fixture = (
-        dispatch_acquisition_for_offline_target_safety_validation(
-            request,
-            transport_fixture=None,  # type: ignore[arg-type]
-            before_transport=before_transport,
-        )
-    )
-
-    def _record_arbitrary_transport_call() -> dict[str, Any]:
-        nonlocal arbitrary_transport_calls
-        arbitrary_transport_calls += 1
-        return {"markdown": "must not dispatch"}
-
-    arbitrary_transports = AcquisitionTransports(
-        linkup_fetch=lambda _payload: _record_arbitrary_transport_call()
-    )
-
-    wrong_fixture = dispatch_acquisition_for_offline_target_safety_validation(
-        request,
-        transport_fixture=arbitrary_transports,  # type: ignore[arg-type]
-        before_transport=before_transport,
-    )
-    forged_route = replace(
-        request,
-        route_decision=replace(
-            request.route_decision,
-            target_safety_eligibility_ref={},
-        ),
-    )
-    wrong_route = dispatch_acquisition_for_offline_target_safety_validation(
-        forged_route,
-        transport_fixture=OfflineAcquisitionTransportFixtureV1.create(
-            response={"markdown": "must not dispatch"}
-        ),
-        before_transport=before_transport,
-    )
-
-    assert missing_fixture.block_code == (
-        "offline_target_safety_validation_fixture_required"
-    )
-    assert wrong_fixture.block_code == (
-        "offline_target_safety_validation_fixture_required"
-    )
-    assert wrong_route.block_code == (
-        "offline_target_safety_validation_route_required"
-    )
-    assert missing_fixture.provider_calls_attempted == 0
-    assert wrong_fixture.provider_calls_attempted == 0
-    assert wrong_route.provider_calls_attempted == 0
-    assert callbacks == 0
-    assert arbitrary_transport_calls == 0
-
-
-def test_posttransport_target_source_scan_is_raw_record_bounded() -> None:
-    class DuplicateTargetSequence(Sequence[dict[str, str]]):
-        def __init__(self) -> None:
-            self.highest_index = -1
-
-        def __len__(self) -> int:
-            return 1_000_000
-
-        def __getitem__(self, index: int) -> dict[str, str]:
-            if not isinstance(index, int):
-                raise TypeError("integer index required")
-            if (
-                index
-                > acquisition_adapters.MAX_POSTTRANSPORT_TARGET_SOURCE_RECORDS
-            ):
-                raise AssertionError("target source scan exceeded hard bound")
-            self.highest_index = max(self.highest_index, index)
-            return {"url": READ_URL}
-
-    sources = DuplicateTargetSequence()
-    records, overflow = (
-        acquisition_adapters._bounded_posttransport_target_records(
-            _read_request(),
-            {"results": sources},
-        )
-    )
-
-    assert overflow is True
-    assert len(records) == 1
-    assert sources.highest_index == (
-        acquisition_adapters.MAX_POSTTRANSPORT_TARGET_SOURCE_RECORDS
-    )
-
-
 def test_selected_candidate_alone_does_not_reach_existing_read_adapter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -370,23 +109,25 @@ def test_selected_candidate_alone_does_not_reach_existing_read_adapter(
 
 def test_linkup_route_time_unavailable_selects_tavily_extract_once() -> None:
     request = _read_request(linkup=False, tavily=True)
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={
+    calls: list[dict[str, Any]] = []
+
+    def tavily_extract(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        return {
             "results": [{"url": READ_URL, "raw_content": "Readable material."}],
             "failed_results": [],
         }
-    )
 
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         request,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_extract=tavily_extract),
     )
 
     assert request.route_decision.selected_provider == "tavily"
     assert request.route_decision.operation == "extract"
     assert result.succeeded is True
     assert result.provider_calls_attempted == 1
-    assert fixture.calls == 1
+    assert len(calls) == 1
     artifact = result.artifacts[0]
     assert artifact.requested_url == READ_URL
     assert artifact.attempted_url == READ_URL
@@ -402,44 +143,45 @@ def test_linkup_route_time_unavailable_selects_tavily_extract_once() -> None:
     assert durable["normalized_representation_type"] == "text/markdown"
 
 
-def test_tavily_read_preserves_mismatched_provider_url_for_gate3() -> None:
+def test_tavily_read_rejects_mismatched_provider_reported_url() -> None:
     request = _read_request(linkup=False, tavily=True)
 
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         request,
-        response={
-            "results": [
-                {
-                    "url": "https://different.example.test/wrong-page",
-                    "raw_content": "Readable material from the wrong page.",
-                }
-            ],
-            "failed_results": [],
-        },
+        transports=AcquisitionTransports(
+            tavily_extract=lambda _payload: {
+                "results": [
+                    {
+                        "url": "https://different.example.test/wrong-page",
+                        "raw_content": "Readable material from the wrong page.",
+                    }
+                ],
+                "failed_results": [],
+            }
+        ),
     )
 
-    assert result.status is AcquisitionExecutionStatus.SUCCEEDED
+    assert result.status is AcquisitionExecutionStatus.FAILED
+    assert result.failure_code == "read_provider_reported_url_mismatch"
     assert len(result.artifacts) == 1
-    assert result.artifacts[0].requested_url == READ_URL
-    assert result.artifacts[0].provider_reported_url == (
-        "https://different.example.test/wrong-page"
-    )
-    assert result.provider_calls_attempted == 1
+    assert result.artifacts[0].kind is AcquisitionArtifactKind.PROVIDER_FAILURE
 
 
 def test_minimal_linkup_read_preserves_unknown_lineage_and_explicit_rendering() -> None:
+    payloads: list[dict[str, Any]] = []
     request = _read_request()
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "Readable minimal Linkup material."}
-    )
 
-    result = _dispatch_exact_url(
+    def linkup_fetch(payload: dict[str, Any]) -> dict[str, Any]:
+        payloads.append(payload)
+        return {"markdown": "Readable minimal Linkup material."}
+
+    result = dispatch_acquisition(
         request,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(linkup_fetch=linkup_fetch),
     )
 
     assert result.succeeded is True
-    assert fixture.payloads == [
+    assert payloads == [
         {
             "url": READ_URL,
             "extractImages": False,
@@ -459,46 +201,58 @@ def test_minimal_linkup_read_preserves_unknown_lineage_and_explicit_rendering() 
 
 
 def test_selected_linkup_failure_is_typed_and_never_calls_tavily() -> None:
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        raise_transport_error=True
-    )
+    linkup_calls = 0
+    tavily_calls = 0
 
-    result = _dispatch_exact_url(
+    def linkup_fetch(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal linkup_calls
+        linkup_calls += 1
+        raise RuntimeError("offline fixture failure")
+
+    def tavily_extract(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal tavily_calls
+        tavily_calls += 1
+        return {}
+
+    result = dispatch_acquisition(
         _read_request(),
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(
+            linkup_fetch=linkup_fetch,
+            tavily_extract=tavily_extract,
+        ),
     )
 
     assert result.status is AcquisitionExecutionStatus.FAILED
     assert result.failure_code == "selected_provider_transport_failed"
     assert result.transport_posture == "selected_adapter_failed_no_fallback"
     assert result.provider_calls_attempted == 1
-    assert fixture.calls == 1
+    assert linkup_calls == 1
+    assert tavily_calls == 0
 
 
 def test_read_preserves_redirect_final_and_canonical_lineage() -> None:
-    redirect_url = "https://official.example.test/redirected/source"
     final_url = "https://official.example.test/current/source"
     canonical_url = "https://official.example.test/canonical/source"
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         _read_request(),
-        response={
-            "markdown": "Redirected readable material.",
-            "requested_url": READ_URL,
-            "attempted_url": READ_URL,
-            "resolved_url": final_url,
-            "redirect_url": redirect_url,
-            "final_url": final_url,
-            "canonical_url": canonical_url,
-            "http_status": 200,
-            "observed_at": OBSERVED_AT,
-        },
+        transports=AcquisitionTransports(
+            linkup_fetch=lambda _payload: {
+                "markdown": "Redirected readable material.",
+                "requested_url": READ_URL,
+                "attempted_url": READ_URL,
+                "resolved_url": final_url,
+                "final_url": final_url,
+                "canonical_url": canonical_url,
+                "http_status": 200,
+                "observed_at": OBSERVED_AT,
+            }
+        ),
     )
 
     artifact = result.artifacts[0]
     assert artifact.requested_url == READ_URL
     assert artifact.attempted_url == READ_URL
     assert artifact.resolved_url == final_url
-    assert artifact.redirect_url == redirect_url
     assert artifact.final_url == final_url
     assert artifact.canonical_url == canonical_url
     assert artifact.candidate_reference == "candidate-1"
@@ -513,6 +267,13 @@ def test_read_preserves_redirect_final_and_canonical_lineage() -> None:
             {"markdown": "unreadable", "http_status": 503},
             "read_http_status_unreadable",
         ),
+        (
+            {
+                "markdown": "mismatched",
+                "attempted_url": "https://other.example.test/source",
+            },
+            "read_attempted_url_mismatch",
+        ),
         ([], "provider_response_missing"),
     ],
 )
@@ -520,9 +281,9 @@ def test_empty_malformed_unreadable_or_mismatched_read_fails_closed(
     response: Any,
     failure_code: str,
 ) -> None:
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         _read_request(),
-        response=response,
+        transports=AcquisitionTransports(linkup_fetch=lambda _payload: response),
     )
 
     assert result.status is AcquisitionExecutionStatus.FAILED
@@ -531,23 +292,8 @@ def test_empty_malformed_unreadable_or_mismatched_read_fails_closed(
     assert result.provider_calls_completed == 1
 
 
-def test_linkup_read_preserves_mismatched_attempted_url_for_gate3() -> None:
-    attempted_url = "https://other.example.test/source"
-    result = _dispatch_exact_url(
-        _read_request(),
-        response={
-            "markdown": "mismatched",
-            "attempted_url": attempted_url,
-        },
-    )
-
-    assert result.status is AcquisitionExecutionStatus.SUCCEEDED
-    assert result.artifacts[0].requested_url == READ_URL
-    assert result.artifacts[0].attempted_url == attempted_url
-    assert result.provider_calls_attempted == 1
-
-
 def test_focused_extract_requires_selected_urls_and_bounded_focus() -> None:
+    calls: list[dict[str, Any]] = []
     valid = _tavily_typed_request(
         AcquisitionCapability.FOCUSED_EXTRACT,
         selected_urls=(READ_URL,),
@@ -555,45 +301,35 @@ def test_focused_extract_requires_selected_urls_and_bounded_focus() -> None:
         max_retained_characters=8,
     )
 
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={
+    def extract(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        return {
             "results": [
-                {
-                    "url": READ_URL,
-                    "redirect_url": (
-                        "https://official.example.test/redirected/source"
-                    ),
-                    "raw_content": "1234567890",
-                    "title": "Source",
-                }
+                {"url": READ_URL, "raw_content": "1234567890", "title": "Source"}
             ]
         }
-    )
 
-    succeeded = _dispatch_exact_url(
+    succeeded = dispatch_acquisition(
         valid,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_extract=extract),
     )
-    missing_urls = _dispatch_exact_url(
+    missing_urls = dispatch_acquisition(
         replace(valid, selected_urls=()),
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_extract=extract),
     )
-    excessive_focus = _dispatch_exact_url(
+    excessive_focus = dispatch_acquisition(
         replace(valid, focus_text="x" * 2_001),
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_extract=extract),
     )
 
     assert succeeded.succeeded is True
     assert succeeded.artifacts[0].retained_character_count == 8
-    assert succeeded.artifacts[0].redirect_url == (
-        "https://official.example.test/redirected/source"
-    )
     assert succeeded.artifacts[0].truncation_posture != "not_truncated"
-    assert fixture.payloads[0]["urls"] == READ_URL
-    assert fixture.payloads[0]["query"] == "official filing threshold"
+    assert calls[0]["urls"] == READ_URL
+    assert calls[0]["query"] == "official filing threshold"
     assert missing_urls.block_code == "focused_extract_requires_selected_urls"
     assert excessive_focus.block_code == "focused_extract_focus_invalid"
-    assert fixture.calls == 1
+    assert len(calls) == 1
 
 
 def test_map_enforces_root_domain_url_ceiling_and_no_authority() -> None:
@@ -606,17 +342,19 @@ def test_map_enforces_root_domain_url_ceiling_and_no_authority() -> None:
     returned_urls = [
         f"https://docs.example.test/guide/page-{index}" for index in range(105)
     ]
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"results": [*returned_urls, returned_urls[0]]}
-    )
+    calls: list[dict[str, Any]] = []
 
-    result = _dispatch_exact_url(
+    def map_site(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        return {"results": [*returned_urls, returned_urls[0]]}
+
+    result = dispatch_acquisition(
         request,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_map=map_site),
     )
-    wrong_domain = _dispatch_exact_url(
+    wrong_domain = dispatch_acquisition(
         replace(request, include_domains=("other.example.test",)),
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_map=map_site),
     )
 
     artifact = result.artifacts[0]
@@ -627,12 +365,12 @@ def test_map_enforces_root_domain_url_ceiling_and_no_authority() -> None:
     assert artifact.truncation_posture == (
         "provider_excess_urls_truncated_to_authorized_limit"
     )
-    assert fixture.payloads[0]["limit"] == 100
-    assert fixture.payloads[0]["allow_external"] is False
+    assert calls[0]["limit"] == 100
+    assert calls[0]["allow_external"] is False
     assert durable["evidence_authority_granted"] is False
     assert durable["citation_authority_granted"] is False
     assert wrong_domain.block_code == "root_domain_not_allowed"
-    assert fixture.calls == 1
+    assert len(calls) == 1
 
 
 def test_crawl_enforces_global_ceilings_and_page_lineage() -> None:
@@ -648,14 +386,16 @@ def test_crawl_enforces_global_ceilings_and_page_lineage() -> None:
         crawl_job_ordinal=1,
     )
     page_url = "https://docs.example.test/guide/page-1"
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={
+    calls: list[dict[str, Any]] = []
+
+    def crawl(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        return {
             "results": [
                 {
                     "url": page_url,
                     "attempted_url": page_url,
                     "resolved_url": page_url,
-                    "redirect_url": page_url,
                     "final_url": page_url,
                     "canonical_url": page_url,
                     "raw_content": "bounded page material",
@@ -663,11 +403,10 @@ def test_crawl_enforces_global_ceilings_and_page_lineage() -> None:
                 }
             ]
         }
-    )
 
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         request,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(tavily_crawl=crawl),
     )
     for invalid, expected in (
         (replace(request, max_depth=3), "crawl_depth_ceiling_exceeded"),
@@ -685,22 +424,21 @@ def test_crawl_enforces_global_ceilings_and_page_lineage() -> None:
             "crawl_job_authorization_exhausted",
         ),
     ):
-        blocked = _dispatch_exact_url(
+        blocked = dispatch_acquisition(
             invalid,
-            transport_fixture=fixture,
+            transports=AcquisitionTransports(tavily_crawl=crawl),
         )
         assert blocked.block_code == expected
         assert blocked.provider_calls_attempted == 0
 
     artifact = result.artifacts[0]
     page = artifact.pages[0]
-    assert fixture.payloads[0]["max_depth"] == 2
-    assert fixture.payloads[0]["limit"] == 10
+    assert calls[0]["max_depth"] == 2
+    assert calls[0]["limit"] == 10
     assert page.requested_url is None
     assert page.attempted_url == page_url
     assert page.provider_reported_url == page_url
     assert page.resolved_url == page_url
-    assert page.redirect_url == page_url
     assert page.final_url == page_url
     assert page.canonical_url == page_url
     assert page.parent_url is None
@@ -721,16 +459,18 @@ def test_minimal_crawl_retains_provider_url_without_invented_lineage() -> None:
         max_aggregate_retained_characters=20_000,
     )
 
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         request,
-        response={
-            "results": [
-                {
-                    "url": page_url,
-                    "raw_content": "Minimal bounded crawl material.",
-                }
-            ]
-        },
+        transports=AcquisitionTransports(
+            tavily_crawl=lambda _payload: {
+                "results": [
+                    {
+                        "url": page_url,
+                        "raw_content": "Minimal bounded crawl material.",
+                    }
+                ]
+            }
+        ),
     )
 
     assert result.succeeded is True
@@ -765,20 +505,24 @@ def test_crawl_excess_is_explicitly_truncated_and_out_of_scope_is_rejected() -> 
             for index in range(3)
         ]
     }
-    truncated = _dispatch_exact_url(
+    truncated = dispatch_acquisition(
         request,
-        response=oversized,
+        transports=AcquisitionTransports(
+            tavily_crawl=lambda _payload: oversized
+        ),
     )
-    rejected = _dispatch_exact_url(
+    rejected = dispatch_acquisition(
         request,
-        response={
-            "results": [
-                {
-                    "url": "https://outside.example.test/guide/page",
-                    "raw_content": "outside",
-                }
-            ]
-        },
+        transports=AcquisitionTransports(
+            tavily_crawl=lambda _payload: {
+                "results": [
+                    {
+                        "url": "https://outside.example.test/guide/page",
+                        "raw_content": "outside",
+                    }
+                ]
+            }
+        ),
     )
 
     artifact = truncated.artifacts[0]
@@ -866,7 +610,6 @@ def test_valid_general_deep_authorization_dispatches_one_bounded_job() -> None:
                 {
                     "name": "Candidate",
                     "url": "https://source.example.test/item",
-                    "redirect_url": "https://source.example.test/redirected",
                     "content": "bounded candidate material",
                 }
             ]
@@ -893,9 +636,6 @@ def test_valid_general_deep_authorization_dispatches_one_bounded_job() -> None:
     assert calls[0]["outputType"] == "searchResults"
     assert calls[0]["maxResults"] == 5
     assert result.artifacts[0].parent_acquisition_job_id == "standard-job-1"
-    assert result.artifacts[0].redirect_url == (
-        "https://source.example.test/redirected"
-    )
     assert mismatched.block_code == "general_deep_lineage_mismatch"
 
 
@@ -1122,11 +862,19 @@ def test_migrated_product_operations_select_one_provider_or_zero_transport(
     tmp_path: Path,
 ) -> None:
     blocked_read = _read_request(linkup=False, tavily=False)
-    fixture = OfflineAcquisitionTransportFixtureV1.create()
+    adapter_calls = 0
 
-    read_result = _dispatch_exact_url(
+    def forbidden_adapter(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal adapter_calls
+        adapter_calls += 1
+        return {}
+
+    read_result = dispatch_acquisition(
         blocked_read,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(
+            linkup_fetch=forbidden_adapter,
+            tavily_extract=forbidden_adapter,
+        ),
     )
     generic_result = run_generic_product_provider_acquisition(
         ProductProviderAcquisitionRequest(
@@ -1140,7 +888,7 @@ def test_migrated_product_operations_select_one_provider_or_zero_transport(
 
     assert blocked_read.route_decision.providers() == ()
     assert read_result.provider_calls_attempted == 0
-    assert fixture.calls == 0
+    assert adapter_calls == 0
     assert generic_result.provider_calls_attempted == 0
     assert generic_result.route_decision is not None
     assert generic_result.route_decision.providers() == ()
@@ -1189,12 +937,14 @@ def test_migrated_product_operations_select_one_provider_or_zero_transport(
 def test_adapter_output_cannot_create_closed_authority_fields(
     closed_field: str,
 ) -> None:
-    result = _dispatch_exact_url(
+    result = dispatch_acquisition(
         _read_request(),
-        response={
-            "markdown": "readable material",
-            closed_field: True,
-        },
+        transports=AcquisitionTransports(
+            linkup_fetch=lambda _payload: {
+                "markdown": "readable material",
+                closed_field: True,
+            }
+        ),
     )
 
     assert result.status is AcquisitionExecutionStatus.FAILED

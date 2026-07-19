@@ -11,12 +11,6 @@ It does not license runtime changes, live validation, provider/model/search/
 fetch/read calls, new answer paths, Scrutineer implementation, source-challenge
 recovery, FAP/Author wording changes, or product correctness claims.
 
-Current acquisition boundary: production untrusted exact-URL READ remains
-blocked because no Linkup/Tavily operation has sufficient committed public-
-target guarantees or observable final-target lineage to be truthfully eligible.
-The Workbench contract does not override that block or reactivate READ, Focused
-Extract, final custody, or semantic admission.
-
 Future cross-component doctrine lives in
 [CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
 That doctrine adapts the same proposal-only Workbench posture for synthesis over
@@ -141,8 +135,8 @@ admit evidence or prove answer correctness.
 | Gap state | Meaning | Can block answer output? | Can trigger follow-up when licensed? | Must not infer |
 | --- | --- | --- | --- | --- |
 | `not_required` | A strict-support candidate was proposed and contextual risks are preserved for downstream review. | No, not by itself. | No. | Does not mean D-prime support, source-obligation satisfaction, citation eligibility, Sufficiency, FAP, Author, source display, or PASS already happened. |
-| `strict_support_missing` | No strict answer-support candidate was identified, or contextual material is insufficient for the answer claim. | Yes, through the current-source answer blocker when unresolved. | It may propose and plan a licensed follow-up, but current untrusted exact-URL routing blocks without a safety-eligible provider operation. | Does not mean provider/search/fetch/read occurred, and does not prove that contextual material is true, false, current, or citable. |
-| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before it can feed D-prime answer authority. | Yes, through the current-source read-support blocker when unresolved. | It may propose and plan a licensed follow-up, but current untrusted exact-URL routing blocks without a safety-eligible provider operation. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
+| `strict_support_missing` | No strict answer-support candidate was identified, or contextual material is insufficient for the answer claim. | Yes, through the current-source answer blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not mean provider/search/fetch/read occurred, and does not prove that contextual material is true, false, current, or citable. |
+| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before it can feed D-prime answer authority. | Yes, through the current-source read-support blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
 | `overclaim_risk` | Contextual or qualifier material could support a narrower claim but risks overstating the answer without stricter support. | It can contribute to a blocker when strict support is missing or downstream review refuses the claim. | Only through an explicitly licensed recovery/follow-up path. | Does not by itself prove contradiction, support, challenge resolution, or answer readiness. |
 
 ### Follow-Up License Behavior
@@ -164,31 +158,15 @@ With an explicit current-source follow-up license or flag:
   ordinary follow-up path;
 - follow-up planning refs are retained;
 - RunKernel follow-up authorization refs gate execution;
-- current target-safety admission and provider-operation eligibility gates
-  remain mandatory;
-- existing provider DISCOVER acquisition remains distinct from an exact-URL
-  operation and may return provider-extracted source material under its current
-  gates;
-- current repository evidence establishes no safety-eligible Linkup/Tavily
-  production READ/Focused Extract route for an untrusted exact URL, so any such
-  exact-URL operation blocks before adapter invocation;
-- the two former CLI-reachable local webpage openers are retired and no local
-  webpage downloader replaces them;
+- ordinary provider acquisition and ordinary fetch/read are reused;
 - Workbench and D-prime remain non-dispatch owners;
-- an explicit license does not create exact-URL READ/Focused Extract
-  eligibility, exact-URL final custody, or product PASS; the retained
-  DISCOVER-content path remains pre-existing behavior;
+- follow-up execution alone is not product PASS;
 - if follow-up is exhausted, the product reports the licensed/exhausted
   blocker, not a not-licensed blocker;
 - if material is obtained but the answer path is not reached, the product
   reports the existing answer-path-not-reached blocker;
 - if candidate identity diverges, the #452 candidate handoff blocker remains
   authoritative.
-
-The provider-eligibility block reflects insufficient committed public-target
-guarantees or observable final-target lineage. It does not classify Linkup or
-Tavily as inherently unsafe, and an offline fixture cannot change production
-policy.
 
 ### Product PASS Conditions
 
@@ -289,10 +267,8 @@ Closed-this-phase surface:
 
 ## Product-Facing Progress
 
-Product-facing progress type: predecessor product-path scaffold retained for
-provider-extracted DISCOVER material and offline injected-fixture regression.
-Current production untrusted exact-URL acquisition is blocked before the
-exact-URL fetch/read-to-Workbench seam.
+Product-facing progress type: product-path scaffold consumed by the current
+answer flow.
 
 Actual user-facing or reviewable output delta:
 
@@ -308,10 +284,7 @@ Actual user-facing or reviewable output delta:
 Actual consumer seam:
 
 - `proplex.mvp_single_relation_live_dogfood_run` builds the Workbench bundle
-  after a bounded material handoff and before semantic/D-prime coverage. The
-  handoff may come from retained provider-extracted DISCOVER material; offline
-  tests may also inject a bounded fetch/read result. Neither source is a new
-  production exact-URL READ activation or proof of current live correctness.
+  after fetch/read succeeds and before semantic/D-prime coverage.
 - `proplex.live_semantic_coverage_status` passes the Workbench D-prime dossier
   ref into `core.dprime_model_review_assessment`.
 - D-prime input refs carry the dossier ref as proposal-only context.
@@ -319,9 +292,7 @@ Actual consumer seam:
 Existing machinery reused:
 
 - Generic relation planning and acquisition planning.
-- Retained provider-extracted DISCOVER and fetch/read candidate diagnostics;
-  the direct exact-URL fallback is retired, while bounded fixtures continue to
-  exercise the seam offline.
+- Provider-extracted and fetch/read candidate diagnostics.
 - D-prime model-review assessment input/ref/status machinery.
 - Existing source-obligation and citation-source authority reducers.
 - Existing product CLI answer path and review-report writer.
@@ -340,11 +311,8 @@ New machinery introduced:
 
 Old path treatment:
 
-- The prior optional evidence-triage deferral was replaced at the predecessor
-  checkpoint by a Workbench bundle after a bounded material handoff. The
-  current production exact-URL route is blocked, while retained
-  provider-extracted DISCOVER material and offline injected fixtures may still
-  exercise that downstream bundle.
+- The prior optional evidence-triage deferral is replaced by a product-consumed
+  Workbench bundle after fetch/read.
 - Existing D-prime authority remains the only downstream authority path; the
   Workbench dossier is context, not admission.
 - The local Workbench projection is marked `run_kernel_reduced: false`,

@@ -3,15 +3,10 @@
 Status: current
 Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
-Applies-to: ordinary post-DISCOVER result-reference handoff plus post-discovery
-source-obligation acquisition proposals, target-safety decisions, capability
-decisions, provider-neutral work orders, routes, execution, terminal receipts,
-and custody authorization
+Applies-to: ordinary post-DISCOVER result-reference handoff plus post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: c1f7e9f0e5b54277f696b2a8703bf00a1322fee8
-Update-trigger: change to post-discovery acquisition ownership, contracts,
-target-safety stages, RunKernel transitions, guarded PRODUCT execution,
-capability derivation, operation identity, or custody authorization
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
 
 ## Purpose And Boundary
 
@@ -50,9 +45,8 @@ at runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`.
 | `retrieval.DiscoverySourceResultIdentity` / `retrieval.DiscoveryResultMaterialStore` | immutable provider-result occurrence identity before dedup/chunk/rank and bounded run-local provider material | relevance, selection, fetch/read, evidence, or downstream answer authority |
 | RunKernel ordinary discovery handoff | authorize and reduce one exact ref-only revision-1 post-DISCOVER action; retain a bounded canonical projection and canonical packet ref | provider calls, QueryPlan/ProviderPlan policy, ranking, selected-candidate acquisition need, or packet material reconstruction |
 | RunKernel | proposal admission; canonical acquisition-control state; action authorization; accepted capability, work-order, route, execution, terminal, deduplication, exhaustion, active-slot, and custody-authorization state | capability heuristics outside the bounded evaluator; provider selection; transport; evidence, citation, Sufficiency, FAP, Author, or answer authority |
-| `core.network_target_safety` | pure target parsing; bounded typed resolver snapshots; admission, final-pretransport, and posttransport observed-target decisions | DNS or transport I/O, provider selection, capability, operation lifecycle, applicability, custody, or downstream authority |
 | `core.acquisition_control` | immutable post-discovery contracts; current lineage snapshot; deterministic provider-neutral capability derivation; operation identity; hard-bound derivation; typed terminal-receipt construction | provider catalog, provider availability, provider preference, transport, retries, or downstream authority |
-| `core.routing` | provider compatibility; separate availability and provider target-safety eligibility; code-owned provider order; operation, variant, and output selection; pre-dispatch route-time alternative; typed route blocks | acquisition need, material-shape judgment, transport failure fallback, target parsing, or custody |
+| `core.routing` | provider compatibility and eligibility; code-owned provider order; operation, variant, and output selection; route-time alternative; typed route blocks | acquisition need, material-shape judgment, transport failure fallback, or custody |
 | `core.authorized_acquisition_runtime` | sequencing executors for authorized actions and the only guarded PRODUCT call to `dispatch_acquisition()` | canonical state, capability policy, provider policy, or downstream custody meaning |
 | `core.acquisition_adapters` | low-level `AcquisitionRequest` construction/validation, one selected-provider transport, and bounded normalization | RunKernel state, capability or provider selection, fallback, evidence admission, or final authority |
 | ordinary orchestration | request the next RunKernel action, invoke the named executor, submit the observation, and propagate terminal state | capability tables, provider selection, semantic material-shape policy, URL ranking, Map-to-Crawl rules, retry, or fallback |
@@ -105,29 +99,23 @@ candidate nontrigger; they do not authorize acquisition.
 ```text
 nonauthoritative AcquisitionNeedProposalV1
 -> RunKernel ACQUISITION_CAPABILITY_DECIDE authorization
--> Gate 1 admission_pre_route target-safety decision
 -> deterministic AcquisitionCapabilityDecisionObservationV1
 -> RunKernel reduction
-   -> blocked: no admitted operation, terminal receipt, or exhaustion
-   -> accepted: continue
 -> RunKernel ACQUISITION_WORK_ORDER_ADMIT authorization
 -> provider-neutral AcquisitionWorkOrderV1
 -> RunKernel reduction and one active obligation slot
 -> RunKernel ACQUISITION_ROUTE authorization
--> core.routing capability + availability + target-safety eligibility decision
+-> core.routing ProviderRouteDecision
 -> AcquisitionRouteObservationV1
 -> RunKernel route reduction
 -> RunKernel ACQUISITION_EXECUTE authorization
 -> guarded PRODUCT executor
--> Gate 2 final_pretransport target-safety decision
-   -> blocked before cap/claim/adapter/transport
-   -> allowed: one cap charge + one claim + one mechanical adapter
--> Gate 3 posttransport observed-target safety then applicability
+-> mechanical acquisition adapter
 -> AcquisitionExecutionObservationV1
 -> RunKernel execution reduction
 -> RunKernel ACQUISITION_TERMINAL_REDUCE authorization
 -> AcquisitionTerminalReceiptV1 and active-slot release
--> RunKernel ACQUISITION_CUSTODY_CONSUME authorization, only after successful Gate 3
+-> RunKernel ACQUISITION_CUSTODY_CONSUME authorization, when licensed
 -> AcquisitionCustodyAuthorizationV1
 -> existing custody consumer
 ```
@@ -136,15 +124,6 @@ Each action binds its expected observation type. Reduction revalidates the
 canonical predecessor and recomputes deterministic outputs where applicable.
 A work order alone is not executable, a completed route alone is not
 executable, and mismatched or stale revisions are not executable.
-
-Gate 1 is before operation admission. A safety block therefore creates no work
-order, route, active slot, execution authorization, terminal receipt, or
-exhausted identity. Gate 2 is the sole typed blocked execution result permitted
-before the one-use claim. Because a work order and slot already exist, its
-blocked observation continues through the existing execution/terminal chain to
-release the slot and exhaust the unsafe operation identity. Gate 3 follows an
-attempted provider transport and preserves its cap charge and claim while
-preventing unsafe observed material from becoming successful state or custody.
 
 ## Contract Postures
 
@@ -166,11 +145,8 @@ authority-shaped nested fields fail closed.
 
 The deterministic evaluator records the proposal ref, independently derived
 capability, advisory match status, exact prerequisite booleans, material-shape
-interpretation, operation identity, Gate 1 target-safety decision refs,
-accepted-or-blocked admission status, and typed block. A Gate 1 safety block is
-not an operation terminal status because no operation has been admitted. The
-record also establishes that provider availability, target-safety eligibility,
-and mode/complexity were not capability inputs.
+interpretation, operation identity, terminal decision status, and typed block.
+It records that provider availability and mode/complexity were not consulted.
 An advisory conflict blocks with `advisory_capability_conflict`; the proposal's
 capability is never copied into authority.
 
@@ -179,9 +155,9 @@ capability is never copied into authority.
 An accepted decision may become one provider-neutral work order with exact
 contract/component/obligation lineage, selected URL or root facts, bounded
 focus and path/domain scope, code-owned hard limits, parent job refs, operation
-identity, allowed Gate 1 target-safety refs, and the current routing-policy ref.
-Its fixed posture is `acquisition_execution_only`. It contains no selected
-provider, adapter, or downstream authority.
+identity, and the current routing-policy ref. Its fixed posture is
+`acquisition_execution_only`. It contains no selected provider, adapter, or
+downstream authority.
 
 ### Route, execution, terminal, and custody records
 
@@ -192,25 +168,17 @@ and selected-or-blocked result.
 
 `AcquisitionExecutionObservationV1` binds the exact work-order/route pair,
 execution result and artifact refs, call counts, terminal status, and typed
-failure/block. It also binds stage decision refs, bounded safety counters,
-claim/adapter/transport posture, and successful-artifact count. It fixes
-provider-failure fallback, capability switching, and downstream authority to
-false. Gate 2 is the only observation allowed to be blocked without a consumed
-execution claim; it must show zero cap, adapter, transport, and artifact. Gate 3
-failure retains the attempted transport, cap, and claim but has zero successful
-artifacts.
+failure/block. It fixes provider-failure fallback, capability switching, and
+downstream authority to false.
 
 `AcquisitionTerminalReceiptV1` records one completed, failed, or blocked
 operation and releases its source-obligation active slot. Retrying a terminally
 failed or blocked identity is unlicensed and the operation is exhausted.
-This applies only after a work order admitted an operation; a Gate 1 admission
-block creates no receipt and exhausts nothing.
 
 `AcquisitionCustodyAuthorizationV1` is a separate, one-time permission for the
 named custody consumer. This foundation authorizes it only for a completed
-READ receipt with current AnswerContract, component, source-obligation lineage,
-and successful posttransport target-safety/applicability posture. It grants no
-downstream authority.
+READ receipt with current AnswerContract, component, and source-obligation
+lineage. It grants no downstream authority.
 
 ## Canonical State And Guards
 
@@ -218,8 +186,6 @@ RunKernel's `runkernel_acquisition_control_state_v1` owns:
 
 - proposals, capability decisions, work orders, routes, execution
   authorizations, and execution observations by immutable identity;
-- bounded target-safety decision refs and resolver-snapshot refs by admitted
-  decision lineage;
 - one active operation per source obligation;
 - terminal receipts by operation identity;
 - exhausted operation identities;
@@ -234,27 +200,13 @@ blocks. Work-order routing-policy drift blocks. The guarded executor also
 requires the exact canonical work order, exact selected route, exact active
 execution authorization, current authority-snapshot digest, active source-
 obligation slot, no terminal receipt, and an unexhausted operation.
-Before the existing cap marker or one-use claim, the guarded executor performs
-the fresh Gate 2 decision. A blocked Gate 2 result is returned as a typed
-execution observation rather than thrown from the cap callback. When Gate 2
-allows transport, the existing cap marker and one-use RunKernel-owned execution
-claim are consumed exactly once before the provider callable. A second claim or
-execution authorization is rejected before transport. If contract, component,
-obligation, or routing-policy lineage
+The execution authorization is a one-use RunKernel-owned claim consumed in the
+final pre-transport callback, after the existing cap marker and before the
+provider callable. A second claim or execution authorization is rejected before
+transport. If contract, component, obligation, or routing-policy lineage
 supersedes an admitted work order before execution, a typed terminal
 work-order invalidation receipt releases and exhausts the old identity so the
 current lineage is not stranded behind its active slot.
-
-The Gate 1 decision is lineage, not reusable Gate 2 permission. A change in
-normalized target, policy digest, transport mode, or resolver-snapshot digest
-between the two stages blocks the fresh pretransport decision.
-
-After provider transport, the executor evaluates only actually observed
-provider-reported, resolved, redirected, final, and canonical targets at Gate
-3. Requested A and observed B remain distinct. B first passes network-target
-safety, then source-lineage/applicability. Safe applicable B may succeed; safe
-inapplicable B fails applicability; prohibited B fails safety. A failure admits
-no successful artifact and cannot authorize custody.
 
 Operation identities are deterministic:
 
@@ -295,30 +247,21 @@ manufacture, multi-page custody, or EvidenceLedger meaning change is installed.
 ## Routing Policy And Execution Boundary
 
 `core.routing` exposes a stable code-owned policy ref with revision
-`exact_url_network_target_safety_owner_01`, selection algorithm
-`first_reachable_and_target_safety_eligible_preference_v1`, and a digest over
-the provider catalog, post-discovery preference table, and eligibility-policy
-posture. The work order, route authorization, route observation, and execution
-authorization bind that ref.
+`runkernel_post_discovery_acquisition_control_01`, selection algorithm
+`first_reachable_code_owned_preference_v1`, and a digest over the provider
+catalog and post-discovery preference table. The work order, route
+authorization, route observation, and execution authorization bind that ref.
 
 Current post-discovery preferences are Linkup Fetch then route-time Tavily
 Extract for READ; Tavily Extract for Focused Extract; Tavily Map for Map; and
-Tavily Crawl for Crawl. Preference is consulted only after capability,
-availability, and provider target-safety eligibility. An unavailable or
-target-safety-ineligible preferred provider may yield an already cataloged
-available and eligible route-time alternative before dispatch. Once any adapter
-is invoked, transport failure never causes fallback.
+Tavily Crawl for Crawl. READ is the only capability with guarded PRODUCT
+routing/execution machinery installed, but no ordinary current-material-need
+producer reaches it. An unavailable preferred provider may yield a route-time
+alternative before dispatch. Transport failure never causes fallback.
 
-No current Linkup Fetch or Tavily READ, Focused Extract, Map, or Crawl operation
-is production-eligible for the `untrusted_exact_url` target class. ScryRaven
-lacks sufficient committed public-target guarantees or observable final-target
-lineage to assert eligibility. This is not a claim that either provider is
-inherently unsafe. Offline fixtures can prove filtering and execution mechanics
-but cannot change production policy.
-
-The policy and production eligibility are not configurable through TOML, YAML,
-JSON, a database, environment, prompt, provider preference, or user option.
-Provider ordering is not URL relevance.
+The policy is not configurable through TOML, YAML, JSON, a database,
+environment, prompt, provider preference, or user option. Provider ordering is
+not URL relevance.
 
 ## Selected-Candidate Nontrigger And Future READ
 
@@ -346,48 +289,30 @@ supplies an explicit material need:
 ```text
 independent current material need + selected URL provenance
 -> exact packet/current-lineage validation
--> Gate 1 admission target-safety decision
--> RunKernel capability decision and reduction, only if allowed
+-> RunKernel capability decision and reduction
 -> RunKernel-admitted provider-neutral READ work order
 -> RunKernel route authorization
--> core.routing availability + target-safety eligibility route decision
+-> core.routing Linkup Fetch or route-time Tavily Extract decision
 -> RunKernel route reduction
 -> RunKernel execution authorization
 -> execute_authorized_acquisition_work_order()
--> Gate 2 fresh final-pretransport decision
--> exactly one eligible mechanical adapter dispatch, only if allowed
--> Gate 3 observed-target safety then applicability
+-> exactly one mechanical adapter dispatch
 -> RunKernel execution and terminal reductions
 -> RunKernel READ custody authorization
 -> existing FetchReadContentPacket
 -> existing EvidenceLedger custody reduction
 ```
 
-No ordinary producer of the first fact was installed in this phase, and no
-current provider operation is production-eligible for untrusted exact URLs.
-The guarded executor, routing policy, Gate 2 before the one-use RunKernel claim
-and `RunCapPolicy` marker, rendering posture,
-requested/attempted/provider-reported/observed URL lineage, Tavily selected-URL
-binding, normalized bounds, and no-failure-fallback behavior remain intact and
-are exercised only by bounded offline fixtures beyond the current production
-route block.
+No ordinary producer of the first fact was installed in this phase. The
+guarded executor, routing policy, one-use RunKernel pre-transport claim,
+`RunCapPolicy` marker, rendering posture, requested/attempted/provider-reported
+URL lineage, Tavily selected-URL binding, normalized bounds, and no-failure-
+fallback behavior remain intact and are exercised by typed-runtime tests.
 
 The custody authorization is rechecked immediately before packet creation.
 Neither the controller nor its artifacts grant evidence, citation,
 source-obligation satisfaction, component coverage, Sufficiency, FAP, Author,
 social, or final-answer authority.
-
-## Endpoint And Local-Transport Boundary
-
-The target-safety owner governs untrusted dynamic content targets, not fixed
-provider service infrastructure. Fixed Linkup/Tavily API endpoints, ordinary
-fixed DISCOVER endpoints, and explicitly authorized local broker/model
-endpoints remain under their existing transport/configuration contracts.
-
-Both CLI-reachable local webpage openers are fail-closed tombstones. The former
-source-survival validation opener is likewise retired; only an explicit
-VALIDATION fixture can exercise its downstream custody mechanics, and that seam
-is PRODUCT-unreachable. No replacement local webpage downloader was added.
 
 ## Next Checkpoints
 
@@ -400,14 +325,14 @@ has populated the existing canonical `SearchResultCandidatePacket` from
 truthful provider-result identity/material refs while retaining zero candidate-
 page transport and the selected-candidate nontrigger.
 
-[`EXACT-URL-NETWORK-TARGET-SAFETY-OWNER-01`](../roadmap/EXACT_URL_NETWORK_TARGET_SAFETY_OWNER_01.md)
-has installed the pure safety owner and adapted this existing chain. The
-successor
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
-remains blocked pending at least one truthfully eligible provider operation for
-untrusted exact URLs. Focused Extract, final custody, and semantic admission
-remain unactivated. Planner disambiguation remains queued after exact-URL
-convergence; Map selection and Crawl page custody remain later.
+The sole active next checkpoint is
+[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It must install the independent current-material-need producer for genuinely
+product-consumed READ and carry authorized exact-URL material through final
+custody. Focused Extract may activate only through a real exact producer and
+existing or explicitly bounded custody semantics. Planner disambiguation
+remains queued after exact-URL convergence; Map selection and Crawl page custody
+remain later.
 
 Map topology selection follows separately in
 [`SITE-TOPOLOGY-SELECTION-AUTHORITY-01`](../roadmap/SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md).
@@ -425,7 +350,5 @@ activation, live provider behavior, provider quality, final-custody
 convergence, Focused Extract product use, Serper connection, Map selection,
 Crawl custody, general Deep, evidence correctness, source-obligation
 satisfaction, Sufficiency, FAP, Author, answer quality, compatibility rename, or
-complete-app correctness. It also does not prove live DNS, resolver-to-
-connected-peer binding, provider redirect/final-target behavior, or provider-
-operation eligibility. No live provider, model, search, DNS, fetch/read, or
+complete-app correctness. No live provider, model, search, fetch/read, or
 retrieval call was made.

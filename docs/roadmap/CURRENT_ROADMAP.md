@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: c1f7e9f0e5b54277f696b2a8703bf00a1322fee8
+Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -320,66 +320,35 @@ call, acquisition proposal, READ or Focused Extract work, exact-URL cap charge,
 or URL transport. Serper lightweight disambiguation and compatibility renaming
 remain deferred. No live call was made.
 
-## Completed Repair: EXACT-URL-NETWORK-TARGET-SAFETY-OWNER-01
+## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
-[EXACT-URL-NETWORK-TARGET-SAFETY-OWNER-01](EXACT_URL_NETWORK_TARGET_SAFETY_OWNER_01.md)
-installs the pure `core.network_target_safety` policy, bounded typed resolver
-snapshots, and stage-bound decisions for admission, final pretransport, and
-posttransport observed targets. RunKernel consumes those decisions through its
-existing acquisition chain; no parallel safety controller was added.
-
-Gate 1 blocks before work-order admission, route selection, and active-slot
-reservation and therefore creates no operation terminal receipt or exhausted
-identity. Gate 2 is the sole blocked execution posture before RunCap charge,
-one-use claim, adapter invocation, and transport; its typed result then uses the
-existing terminal reducer to release the slot and exhaust the admitted unsafe
-identity. Gate 3 runs after an attempted transport but before successful
-artifact admission, execution success, terminal success, or custody. It
-preserves the one attempted transport, cap charge, and claim while denying a
-successful artifact and custody on a prohibited observed target.
-
-Requested URL A and observed URL B remain separate. A safe B is evaluated for
-source-lineage/applicability and may succeed when applicable; a safe but
-inapplicable B is a lineage failure, while a prohibited B is a target-safety
-failure.
-
-Current repository evidence does not establish Linkup Fetch or any Tavily
-READ, Focused Extract, Map, or Crawl operation as eligible for untrusted exact
-URLs. ScryRaven lacks sufficient committed public-target guarantees or
-observable final-target lineage to assert eligibility. This is not a claim
-that either provider is inherently unsafe. Offline fixtures prove only
-eligibility filtering, route-time alternative mechanics, and guarded execution.
-
-The two CLI-reachable local webpage openers and the former validation-harness
-opener are fail-closed tombstones. No replacement downloader was added. Fixed
-provider API endpoints and explicitly authorized local broker/model endpoints
-remain outside the untrusted dynamic content-target policy.
-
-## Blocked Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
-
-[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md)
-remains blocked pending at least one truthfully eligible provider operation for
-the `untrusted_exact_url` target class. Canonical ordinary DISCOVER supplies the
-selected-candidate packet, but this repair does not install a
-current-material-need producer, production READ or Focused Extract, final
-custody, semantic admission, or planner disambiguation. Do not reactivate this
-checkpoint from
-adapter installation, provider availability, preference, or an offline fixture.
+The sole active next checkpoint is
+[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
+It may proceed now that canonical ordinary DISCOVER supplies the selected-
+candidate packet. It must install a real independent current-material-need
+producer, genuinely product-consumed exact-URL READ and conditional Focused
+Extract, and final custody while preserving the selected-candidate nontrigger.
+The same checkpoint covers separately justified Focused Extract when the
+current material-need owner can truthfully supply exact bounded focus and the
+required lineage. The sequence is
+exact-URL READ and Focused Extract with final custody, then planner-
+disambiguation acquisition convergence, site-topology selection authority, and
+Crawl page custody. This checkpoint must not absorb planner disambiguation, Map
+selection, or Crawl page custody.
 
 ## Queued: PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01
 
-This checkpoint follows only after the blocked exact-URL/final-custody
-convergence checkpoint completes. It may connect provider-neutral lightweight
-disambiguation and bounded query-direction hints, but must not fetch candidate
-pages, trigger READ or Focused Extract, rank with newly fetched page text, or
-become a second exact-URL authority.
+This checkpoint follows only after exact-URL/final-custody convergence. It may
+connect provider-neutral lightweight disambiguation and bounded query-direction
+hints, but must not fetch candidate pages, trigger READ or Focused Extract, rank
+with newly fetched page text, or become a second exact-URL authority.
 
 ## Queued: SITE-TOPOLOGY-SELECTION-AUTHORITY-01
 
 [SITE-TOPOLOGY-SELECTION-AUTHORITY-01](SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md)
-follows only after exact-URL/final-custody and planner-disambiguation
-acquisition convergence. It may activate Map, admit canonical topology, and add
-explicit RunKernel URL-selection authority. Provider result order cannot become
+follows only after exact-URL/final-custody and planner-disambiguation acquisition
+convergence. It may activate Map, admit canonical topology, and add explicit
+RunKernel URL-selection authority. Provider result order cannot become
 relevance, topology cannot become evidence, and no automatic Map-to-Crawl is
 allowed.
 
@@ -398,13 +367,10 @@ after mode-policy recovery authority containment, Specialist proposal-instance
 admission hardening, structured-list route qualification, semantic Scout
 retirement, provider-capability routing, acquisition-runtime convergence,
 RunKernel acquisition-control foundation, initial-discovery selective-fetch
-retirement, the installed network-target safety owner, and eventual exact-URL
-bounded final-custody convergence. The last checkpoint remains blocked on
-provider-operation eligibility. Offline proof does not authorize live work,
-and this roadmap grants no live license. The queued Map and Crawl briefs are
-not installed behavior and authorize no work while exact-URL convergence is
-blocked.
-
+retirement, and exact-URL bounded final-custody convergence. Offline proof does
+not authorize live work, and this roadmap
+grants no live license. The queued Map and Crawl briefs are not installed
+behavior and authorize no work in the active exact-URL phase.
 Arbitrary-query coverage, broad quantitative reasoning quality, provider
 quality, and product correctness remain unproved.
 
