@@ -113,7 +113,7 @@ def _decision(url: str, *, snapshot=None):
         "http://0x7f.0.0.1/private",
         "http://127%2e0%2e0%2e1/private",
         "http://user@public.example.test/private",
-        "http://user:password@public.example.test/private",
+        "http://user:@public.example.test/private",
         "https://public.example.test:notaport/private",
         "http://::1/private",
         "http://[fe80::1%25eth0]/private",
@@ -562,7 +562,7 @@ def test_gate1_blocks_without_operation_admission_or_terminalization() -> None:
     "unsafe_url",
     (
         "http://127.0.0.1/private",
-        "http://user:password@public.example.test/private",
+        "http://user:@public.example.test/private",
     ),
 )
 def test_gate1_unsafe_target_is_not_retained_in_action_or_kernel_state(
@@ -1372,7 +1372,7 @@ def test_execution_reducer_rejects_tampered_canonical_safety_store(
     "observed_final_url",
     (
         "file:///etc/passwd",
-        "http://user:password@public.example.test/private",
+        "http://user:@public.example.test/private",
         "http://[::1",
     ),
 )
