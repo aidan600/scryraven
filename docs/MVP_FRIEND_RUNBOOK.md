@@ -95,12 +95,19 @@ webpage downloader. Fixed provider API endpoints and explicitly authorized
 local broker/model endpoints remain outside the dynamic content-target policy,
 but that exclusion does not make a dynamic exact-URL payload eligible.
 
-Accordingly, this command must not be presented as a working live extraction,
-READ, fetch/read fallback, custody, D-prime, semantic, FAP, or Author path. It
-may still demonstrate planning, DISCOVER candidate mechanics, typed blocking,
-and bounded offline fixtures. Those fixtures prove mechanics only and do not
-activate production READ, Focused Extract, final custody, semantic admission,
-or product correctness.
+Accordingly, this command must not be presented as a working exact-URL READ or
+direct fetch/read fallback. Its retained provider DISCOVER path is separate:
+provider search results may already contain URL-bound extracted material, and
+the compatibility command may pass that material through its pre-existing
+bounded custody, Workbench, semantic, and D-prime mechanics under their existing
+gates. That is consumption of provider-extracted DISCOVER material, not a new
+exact-URL transport or evidence that live provider behavior is currently
+correct.
+
+This repair neither activates nor validates that retained DISCOVER-content
+path. Bounded offline fixtures prove mechanics only. Neither those fixtures nor
+provider-extracted DISCOVER material activates production READ, Focused
+Extract, exact-URL final custody, FAP/Author, or product correctness.
 
 ## How To Read It
 

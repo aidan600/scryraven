@@ -110,6 +110,11 @@ failure. The already-attempted provider transport, single RunCap charge, and
 single execution claim remain recorded exactly once, but no successful
 artifact or custody authorization is admitted.
 
+Observation extraction retains at most 100 unique target records and examines
+at most 200 raw response items. Crossing either bound is itself a canonical
+posttransport safety failure; an over-bound target cannot be hidden behind
+normalization failure or duplicate records.
+
 Missing observations remain missing; the repair does not manufacture a
 redirect, resolved, final, canonical, peer-address, or DNS fact.
 
@@ -161,6 +166,9 @@ only that ScryRaven cannot truthfully assert eligibility from committed
 repository guarantees and observable target lineage. Offline injected fixtures
 may prove filtering, route-alternative mechanics, and guarded execution; they
 do not alter production eligibility or prove live provider behavior.
+The installed offline execution fixture accepts tamper-evident JSON response
+data only. It has no provider-callback field, never installs default transports,
+and is internally bound to the one already-selected adapter slot.
 
 ## Endpoint Exclusions
 

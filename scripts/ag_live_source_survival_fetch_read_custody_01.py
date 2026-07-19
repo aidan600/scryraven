@@ -1249,8 +1249,11 @@ def _request_markdown(packet: Mapping[str, Any]) -> str:
         f"Usable-answer verdict target: `{packet['usable_answer_verdict_target']}`\n\n"
         f"Selected candidate: rank `{selected['rank']}` / `{selected['domain']}`\n\n"
         f"URL: `{selected['url']}`\n\n"
-        "This request packet performs no fetch/read. The live command requires "
-        "`--confirm-fetch-read` and may make exactly one public URL fetch/read.\n\n"
+        "This request packet performs no fetch/read. The compatibility command "
+        "still requires `--confirm-fetch-read`, but its retired default opener "
+        "fails closed without making a public URL fetch/read. Only an explicitly "
+        "injected in-process fixture can exercise the validation mechanics; the "
+        "CLI exposes no fixture injection.\n\n"
         "## Operator Command\n\n"
         "```powershell\n"
         f"{packet['operator_command']}\n"
@@ -1463,8 +1466,9 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Prepare and run AG-LIVE source-survival fetch/read custody packets. "
-            "Only fetch-read-custody with --confirm-fetch-read may make the one "
-            "licensed public URL fetch/read call."
+            "The fetch-read-custody compatibility command still requires "
+            "--confirm-fetch-read, but its retired default opener makes no public "
+            "URL fetch/read call."
         )
     )
     subparsers = parser.add_subparsers(dest="operation", required=True)
@@ -1477,7 +1481,14 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--candidate-packet", default=str(DEFAULT_CANDIDATE_PACKET))
     fetch.add_argument("--validation-packet", default=str(DEFAULT_VALIDATION_PACKET))
     fetch.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    fetch.add_argument("--confirm-fetch-read", action="store_true")
+    fetch.add_argument(
+        "--confirm-fetch-read",
+        action="store_true",
+        help=(
+            "confirm the fail-closed validation compatibility path; this flag "
+            "does not license public network fetch/read"
+        ),
+    )
     return parser
 
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
@@ -38,6 +41,7 @@ LINKUP_SEARCH_URL = "https://api.linkup.so/v1/search"
 TAVILY_API_ROOT = "https://api.tavily.com"
 ACQUISITION_TRANSPORT_TIMEOUT_SECONDS = 30
 MAX_POSTTRANSPORT_TARGET_OBSERVATION_RECORDS = 100
+MAX_POSTTRANSPORT_TARGET_SOURCE_RECORDS = 200
 
 Transport = Callable[[dict[str, Any]], Mapping[str, Any]]
 
@@ -88,6 +92,77 @@ class AcquisitionTransports:
     linkup_deep_search: Transport | None = None
 
 
+@dataclass(slots=True)
+class OfflineAcquisitionTransportFixtureV1:
+    """Tamper-evident response data with no caller-supplied transport surface."""
+
+    response: Any
+    fixture_id: str
+    fixture_digest: str
+    raise_transport_error: bool = False
+    product_reachable: bool = False
+    calls: int = field(default=0, init=False)
+    payloads: list[dict[str, Any]] = field(default_factory=list, init=False)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        response: Any = None,
+        raise_transport_error: bool = False,
+    ) -> "OfflineAcquisitionTransportFixtureV1":
+        if not isinstance(raise_transport_error, bool):
+            raise AcquisitionContractError(
+                "offline_transport_fixture_boolean_required",
+                "offline transport fixture controls must be booleans",
+            )
+        try:
+            response_copy = _offline_fixture_json_clone(
+                {} if response is None else response
+            )
+        except (TypeError, ValueError) as exc:
+            raise AcquisitionContractError(
+                "offline_transport_fixture_json_data_required",
+                "offline transport fixtures accept JSON data only",
+            ) from exc
+        core = {
+            "schema_version": "offline_acquisition_transport_fixture_v1",
+            "response": response_copy,
+            "raise_transport_error": raise_transport_error,
+            "product_reachable": False,
+        }
+        digest = _offline_fixture_digest(core)
+        return cls(
+            response=response_copy,
+            fixture_id=f"offline-acquisition-transport:{digest[:24]}",
+            fixture_digest=digest,
+            raise_transport_error=raise_transport_error,
+        )
+
+    def validate(self) -> None:
+        recreated = type(self).create(
+            response=self.response,
+            raise_transport_error=self.raise_transport_error,
+        )
+        if (
+            self.product_reachable
+            or recreated.fixture_id != self.fixture_id
+            or recreated.fixture_digest != self.fixture_digest
+        ):
+            raise AcquisitionContractError(
+                "offline_acquisition_transport_fixture_invalid",
+                "offline acquisition transport fixture is stale or forged",
+            )
+
+    def invoke(self, payload: dict[str, Any]) -> Any:
+        self.validate()
+        self.calls += 1
+        self.payloads.append(deepcopy(payload))
+        if self.raise_transport_error:
+            raise RuntimeError("offline_fixture_transport_error")
+        return deepcopy(self.response)
+
+
 def dispatch_acquisition(
     request: AcquisitionRequest,
     *,
@@ -125,15 +200,15 @@ def dispatch_acquisition(
 def dispatch_acquisition_for_offline_target_safety_validation(
     request: AcquisitionRequest,
     *,
-    transports: AcquisitionTransports,
+    transport_fixture: OfflineAcquisitionTransportFixtureV1,
     before_transport: Callable[[], None] | None = None,
 ) -> AcquisitionExecutionResult:
-    """Dispatch one typed offline route through explicit injected transports.
+    """Dispatch one typed offline route through response data only.
 
     This validation-only entrypoint never installs provider transports. Its
     route must carry the complete ``PRODUCT-unreachable`` eligibility posture
-    emitted by ``core.routing``, and the caller must supply an exact
-    :class:`AcquisitionTransports` bundle.
+    emitted by ``core.routing``, and the caller must supply an exact response
+    fixture that has no network-capable callback field.
     """
 
     if not _is_typed_offline_target_safety_route(request):
@@ -145,21 +220,70 @@ def dispatch_acquisition_for_offline_target_safety_validation(
                 "PRODUCT-unreachable route"
             ),
         )
-    if type(transports) is not AcquisitionTransports:
+    if type(transport_fixture) is not OfflineAcquisitionTransportFixtureV1:
         return _blocked_result(
             request,
-            code="offline_target_safety_validation_transports_required",
+            code="offline_target_safety_validation_fixture_required",
             detail=(
-                "offline target-safety validation dispatch requires explicit "
-                "AcquisitionTransports"
+                "offline target-safety validation dispatch requires an exact "
+                "response-only fixture"
             ),
         )
+    try:
+        transport_fixture.validate()
+    except AcquisitionContractError as exc:
+        return _blocked_result(request, code=exc.code, detail=str(exc))
     return _dispatch_acquisition(
         request,
-        transports=transports,
+        transports=_offline_fixture_transports(
+            request=request,
+            fixture=transport_fixture,
+        ),
         before_transport=before_transport,
         install_default_transports=False,
     )
+
+
+def _offline_fixture_transports(
+    *,
+    request: AcquisitionRequest,
+    fixture: OfflineAcquisitionTransportFixtureV1,
+) -> AcquisitionTransports:
+    """Bind response-only fixture data to the one selected adapter slot."""
+
+    transport = fixture.invoke
+    route = request.route_decision
+    selected = (route.selected_provider, route.operation)
+    if selected == ("linkup", "fetch"):
+        return AcquisitionTransports(linkup_fetch=transport)
+    if selected == ("tavily", "extract"):
+        return AcquisitionTransports(tavily_extract=transport)
+    if selected == ("tavily", "map"):
+        return AcquisitionTransports(tavily_map=transport)
+    if selected == ("tavily", "crawl"):
+        return AcquisitionTransports(tavily_crawl=transport)
+    return AcquisitionTransports()
+
+
+def _offline_fixture_json_clone(value: Any) -> Any:
+    return json.loads(
+        json.dumps(
+            value,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def _offline_fixture_digest(value: Any) -> str:
+    canonical = json.dumps(
+        value,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _dispatch_acquisition(
@@ -198,10 +322,24 @@ def _dispatch_acquisition(
             detail=compact_failure_detail(type(exc).__name__),
             attempted=1,
         )
-    observed_target_records = _bounded_posttransport_target_records(
-        request,
-        response,
+    observed_target_records, target_observation_overflow = (
+        _bounded_posttransport_target_records(
+            request,
+            response,
+        )
     )
+    if target_observation_overflow:
+        return _failure_result(
+            request,
+            code="posttransport_target_observation_overflow",
+            detail=(
+                "provider response exceeded the bounded target-observation "
+                "set and must fail posttransport safety"
+            ),
+            attempted=1,
+            completed=1,
+            observed_target_records=observed_target_records,
+        )
     try:
         artifacts = _normalize_response(request, response)
     except AcquisitionContractError as exc:
@@ -878,7 +1016,7 @@ _POSTTRANSPORT_TARGET_SOURCE_FIELDS = (
 def _bounded_posttransport_target_records(
     request: AcquisitionRequest,
     response: Any,
-) -> tuple[Mapping[str, str], ...]:
+) -> tuple[tuple[Mapping[str, str], ...], bool]:
     """Extract only bounded, operation-shaped target facts before normalization.
 
     A completed provider response can fail material normalization before the
@@ -887,6 +1025,10 @@ def _bounded_posttransport_target_records(
     policy without retaining provider text, arbitrary nested payloads, headers,
     or credentials.  Overflow remains a failed normalization posture; no
     successful material can be admitted from records outside this hard bound.
+    The first unique record beyond the bound is reported as overflow so the
+    canonical policy can create a posttransport safety failure. Raw collection
+    examination is separately capped, including duplicates and non-mappings,
+    so extraction never constructs or scans an unbounded source list.
     """
 
     if request.capability not in {
@@ -895,36 +1037,52 @@ def _bounded_posttransport_target_records(
         AcquisitionCapability.MAP_SITE,
         AcquisitionCapability.CRAWL_SITE,
     }:
-        return ()
-    top_level = dict(response) if isinstance(response, Mapping) else {}
-    sources: list[Mapping[str, Any]] = []
-    if any(key in top_level for key in _POSTTRANSPORT_TARGET_SOURCE_FIELDS):
-        sources.append(top_level)
-    for collection_key in ("results", "failed_results"):
-        collection = top_level.get(collection_key)
-        if isinstance(collection, Sequence) and not isinstance(
-            collection, str | bytes
-        ):
-            sources.extend(
-                item for item in collection if isinstance(item, Mapping)
-            )
-    if not sources:
-        sources.append(top_level)
-
+        return (), False
+    top_level = response if isinstance(response, Mapping) else {}
     records: list[dict[str, str]] = []
     seen: set[tuple[tuple[str, str], ...]] = set()
-    for source in sources:
+    raw_sources_examined = 0
+    observed_source = False
+
+    def observe(source: Mapping[str, Any]) -> bool:
         record = _posttransport_target_record(request, source)
         if not record:
-            continue
+            return False
         identity = tuple(sorted(record.items()))
         if identity in seen:
-            continue
+            return False
         seen.add(identity)
-        records.append(record)
         if len(records) >= MAX_POSTTRANSPORT_TARGET_OBSERVATION_RECORDS:
-            break
-    return tuple(records)
+            return True
+        records.append(record)
+        return False
+
+    if any(key in top_level for key in _POSTTRANSPORT_TARGET_SOURCE_FIELDS):
+        raw_sources_examined += 1
+        observed_source = True
+        if observe(top_level):
+            return tuple(records), True
+    for collection_key in ("results", "failed_results"):
+        collection = top_level.get(collection_key)
+        if not isinstance(collection, Sequence) or isinstance(
+            collection, str | bytes
+        ):
+            continue
+        for item in collection:
+            raw_sources_examined += 1
+            if (
+                raw_sources_examined
+                > MAX_POSTTRANSPORT_TARGET_SOURCE_RECORDS
+            ):
+                return tuple(records), True
+            if not isinstance(item, Mapping):
+                continue
+            observed_source = True
+            if observe(item):
+                return tuple(records), True
+    if not observed_source:
+        observe(top_level)
+    return tuple(records), False
 
 
 def _posttransport_target_record(
@@ -1157,6 +1315,7 @@ __all__ = [
     "LINKUP_FETCH_URL",
     "LINKUP_SEARCH_URL",
     "TAVILY_API_ROOT",
+    "OfflineAcquisitionTransportFixtureV1",
     "dispatch_acquisition",
     "dispatch_acquisition_for_offline_target_safety_validation",
 ]

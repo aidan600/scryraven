@@ -107,7 +107,10 @@ python -m proplex --mvp-single-relation-live-dogfood-run --query "<supported que
 It consumes the relation plan from
 `core/generic_query_to_relation_planning.py` before any later acquisition
 decision. It may demonstrate planning, DISCOVER candidate mechanics, and typed
-blocking, but explicit confirmation does not authorize an untrusted exact-URL
+blocking. Its retained provider DISCOVER path may also receive URL-bound
+provider-extracted material and pass it through the pre-existing bounded
+custody, Workbench, semantic, and D-prime mechanics. Explicit confirmation does
+not turn that DISCOVER material into an authorized untrusted exact-URL
 operation.
 
 Current repository evidence establishes no production-eligible Linkup Fetch or
@@ -123,11 +126,13 @@ explicitly authorized local broker/model endpoints remain outside the dynamic
 content-target policy; a dynamic exact-URL payload does not inherit that
 exclusion.
 
-This path therefore does not open production READ, Focused Extract, fetch/read
-fallback, final custody, semantic admission, arbitrary answering,
+This repair therefore does not open production READ, Focused Extract, direct
+fetch/read fallback, exact-URL final custody, arbitrary answering,
 multi-component planning, RunKernel DAG scheduling or budget leases,
 source-class adapters, social/review aggregation, FAP/Author, friend-level or
 general MVP readiness, source-obligation satisfaction, or product correctness.
+The retained DISCOVER-content custody and semantic/D-prime flow predates this
+repair; its continued presence is not exact-URL activation or live proof.
 Offline fixtures prove mechanics only.
 
 This is not a global ranking system, source-authority policy, approved-domain

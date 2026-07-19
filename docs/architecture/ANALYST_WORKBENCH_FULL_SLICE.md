@@ -166,14 +166,18 @@ With an explicit current-source follow-up license or flag:
 - RunKernel follow-up authorization refs gate execution;
 - current target-safety admission and provider-operation eligibility gates
   remain mandatory;
+- existing provider DISCOVER acquisition remains distinct from an exact-URL
+  operation and may return provider-extracted source material under its current
+  gates;
 - current repository evidence establishes no safety-eligible Linkup/Tavily
-  production route for an untrusted exact URL, so the operation blocks before
-  adapter invocation;
+  production READ/Focused Extract route for an untrusted exact URL, so any such
+  exact-URL operation blocks before adapter invocation;
 - the two former CLI-reachable local webpage openers are retired and no local
   webpage downloader replaces them;
 - Workbench and D-prime remain non-dispatch owners;
-- an explicit license does not activate READ, Focused Extract, custody,
-  semantic admission, or product PASS;
+- an explicit license does not create exact-URL READ/Focused Extract
+  eligibility, exact-URL final custody, or product PASS; the retained
+  DISCOVER-content path remains pre-existing behavior;
 - if follow-up is exhausted, the product reports the licensed/exhausted
   blocker, not a not-licensed blocker;
 - if material is obtained but the answer path is not reached, the product
@@ -286,8 +290,9 @@ Closed-this-phase surface:
 ## Product-Facing Progress
 
 Product-facing progress type: predecessor product-path scaffold retained for
-offline injected-fixture regression. Current production untrusted exact-URL
-acquisition is blocked before the fetch/read-to-Workbench seam.
+provider-extracted DISCOVER material and offline injected-fixture regression.
+Current production untrusted exact-URL acquisition is blocked before the
+exact-URL fetch/read-to-Workbench seam.
 
 Actual user-facing or reviewable output delta:
 
@@ -302,10 +307,11 @@ Actual user-facing or reviewable output delta:
 
 Actual consumer seam:
 
-- Offline tests may inject a bounded fetch/read result into
-  `proplex.mvp_single_relation_live_dogfood_run` and build the Workbench bundle
-  before semantic/D-prime coverage. This is fixture-only mechanics, not current
-  production READ or semantic activation.
+- `proplex.mvp_single_relation_live_dogfood_run` builds the Workbench bundle
+  after a bounded material handoff and before semantic/D-prime coverage. The
+  handoff may come from retained provider-extracted DISCOVER material; offline
+  tests may also inject a bounded fetch/read result. Neither source is a new
+  production exact-URL READ activation or proof of current live correctness.
 - `proplex.live_semantic_coverage_status` passes the Workbench D-prime dossier
   ref into `core.dprime_model_review_assessment`.
 - D-prime input refs carry the dossier ref as proposal-only context.
@@ -313,8 +319,9 @@ Actual consumer seam:
 Existing machinery reused:
 
 - Generic relation planning and acquisition planning.
-- Predecessor provider-extracted and fetch/read candidate diagnostics, now
-  exercised only through bounded injected fixtures for this seam.
+- Retained provider-extracted DISCOVER and fetch/read candidate diagnostics;
+  the direct exact-URL fallback is retired, while bounded fixtures continue to
+  exercise the seam offline.
 - D-prime model-review assessment input/ref/status machinery.
 - Existing source-obligation and citation-source authority reducers.
 - Existing product CLI answer path and review-report writer.
@@ -334,9 +341,10 @@ New machinery introduced:
 Old path treatment:
 
 - The prior optional evidence-triage deferral was replaced at the predecessor
-  checkpoint by a Workbench bundle after fetch/read. The current production
-  exact-URL route is blocked, so only offline injected fixtures exercise that
-  downstream bundle.
+  checkpoint by a Workbench bundle after a bounded material handoff. The
+  current production exact-URL route is blocked, while retained
+  provider-extracted DISCOVER material and offline injected fixtures may still
+  exercise that downstream bundle.
 - Existing D-prime authority remains the only downstream authority path; the
   Workbench dossier is context, not admission.
 - The local Workbench projection is marked `run_kernel_reduced: false`,

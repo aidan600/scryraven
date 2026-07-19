@@ -37,7 +37,6 @@ class NetworkTargetSafetyStage(str, Enum):
 
 class NetworkTargetTransportMode(str, Enum):
     PROVIDER_MEDIATED = "provider_mediated_content_target"
-    DIRECT_LOCAL_VALIDATION = "direct_local_validation_content_target"
 
 
 class NetworkTargetFactKind(str, Enum):
@@ -719,6 +718,7 @@ def evaluate_network_target_safety(
     previous_decision_ref: Mapping[str, Any] | None = None,
     lineage_ref: Mapping[str, Any] | None = None,
     require_hostname_resolution: bool = True,
+    posttransport_observation_overflow: bool = False,
 ) -> NetworkTargetSafetyDecisionV1:
     """Evaluate one exact content target without performing any I/O."""
 
@@ -727,6 +727,15 @@ def evaluate_network_target_safety(
     stage_value = NetworkTargetSafetyStage(stage).value
     transport_value = NetworkTargetTransportMode(transport_mode).value
     fact_value = NetworkTargetFactKind(fact_kind).value
+    if not isinstance(posttransport_observation_overflow, bool):
+        raise ValueError("posttransport_observation_overflow_boolean_required")
+    if posttransport_observation_overflow and (
+        stage_value
+        != NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET.value
+        or transport_value != NetworkTargetTransportMode.PROVIDER_MEDIATED.value
+        or fact_value != NetworkTargetFactKind.PROVIDER_REPORTED.value
+    ):
+        raise ValueError("posttransport_observation_overflow_posture_invalid")
     supplied = url if isinstance(url, str) else ""
     supplied_digest = stable_json_digest({"supplied_url": supplied})
     parsed_target: dict[str, Any] = {}
@@ -735,6 +744,9 @@ def evaluate_network_target_safety(
         parsed_target = _parse_target(supplied)
     except _TargetParseBlocked as exc:
         blocker = exc.code
+
+    if blocker is None and posttransport_observation_overflow:
+        blocker = "posttransport_target_observation_overflow"
 
     snapshot_ref: dict[str, Any] = {}
     counts: dict[str, int] = {}

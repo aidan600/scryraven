@@ -61,8 +61,6 @@ from core.routing import (
 )
 from core.run_kernel import RunKernel, RunKernelTransitionError
 from tests.test_runkernel_acquisition_control_foundation_01 import (
-    OBLIGATION_ID,
-    READ_PROVIDER_ELIGIBILITY,
     READ_URL,
     _admit_read,
     _kernel,
@@ -592,6 +590,43 @@ def test_gate1_unsafe_target_is_not_retained_in_action_or_kernel_state(
     )
     assert unsafe_url not in retained_state
     assert "user:password" not in retained_state
+    assert "127.0.0.1" not in retained_state
+
+
+def test_gate1_precedes_capability_recognition_for_unsafe_target() -> None:
+    kernel = _kernel()
+    unsafe_url = "http://127.0.0.1/private"
+    proposal = _proposal(
+        kernel,
+        material_shape="site_topology",
+        advisory=None,
+        url=unsafe_url,
+    )
+
+    action = kernel.authorize_acquisition_capability_decision(
+        proposal=proposal
+    )
+    result = execute_acquisition_capability_decision_action(
+        action,
+        proposal=proposal,
+        authority_snapshot=kernel.acquisition_authority_snapshot(),
+        acquisition_control_state=kernel.state.acquisition_control_state,
+    )
+    kernel.reduce(result.observation)
+
+    assert result.decision.derived_capability is None
+    assert result.decision.block_code == (
+        "admission_target_safety_blocked:target_address_loopback_blocked"
+    )
+    assert kernel.state.acquisition_control_state["proposals_by_id"] == {}
+    retained_state = repr(
+        {
+            "action": action.inputs,
+            "control": kernel.state.acquisition_control_state,
+            "projections": kernel.state.projections,
+        }
+    )
+    assert unsafe_url not in retained_state
     assert "127.0.0.1" not in retained_state
 
 
@@ -1152,6 +1187,63 @@ def test_gate3_unsafe_target_is_not_masked_by_material_normalization_failure() -
     assert cap_charges == calls == 1
 
 
+def test_gate3_observation_overflow_blocks_when_unsafe_target_is_record_101() -> None:
+    safe_records = [
+        {
+            "url": f"https://official.example.test/observed-{ordinal}",
+            "raw_content": "bounded offline material",
+        }
+        for ordinal in range(100)
+    ]
+    _, _, _, execution, cap_charges, calls = _execute_linkup_fixture(
+        response={
+            "results": [
+                *safe_records,
+                {
+                    "url": "http://127.0.0.1/private-record-101",
+                    "raw_content": "must never be admitted",
+                },
+            ]
+        }
+    )
+
+    result = execution.execution_result
+    assert result.status.value == "failed"
+    assert result.failure_code == (
+        "posttransport_target_safety_failure:"
+        "posttransport_target_observation_overflow"
+    )
+    assert result.artifacts == ()
+    assert result.provider_calls_attempted == 1
+    assert result.provider_calls_completed == 1
+    assert result.target_safety_summary[
+        "posttransport_target_safety_failure"
+    ] is True
+    assert any(
+        decision.get("blocker_code")
+        == "posttransport_target_observation_overflow"
+        for decision in result.target_safety_decision_refs
+    )
+    assert cap_charges == calls == 1
+
+
+def test_gate3_raw_source_overflow_without_target_mappings_is_safety_failure() -> None:
+    _, _, _, execution, cap_charges, calls = _execute_linkup_fixture(
+        response={"results": [READ_URL] * 201}
+    )
+
+    result = execution.execution_result
+    assert result.status.value == "failed"
+    assert result.failure_code == (
+        "posttransport_target_safety_failure:"
+        "posttransport_target_observation_overflow"
+    )
+    assert result.artifacts == ()
+    assert result.provider_calls_attempted == 1
+    assert result.provider_calls_completed == 1
+    assert cap_charges == calls == 1
+
+
 def test_gate3_safe_target_does_not_upgrade_failed_material_normalization() -> None:
     _, _, _, execution, cap_charges, calls = _execute_linkup_fixture(
         response={
@@ -1436,12 +1528,3 @@ def test_prohibited_provider_reported_identity_is_safety_failure_first() -> None
     )
     assert execution.execution_result.artifacts == ()
     assert cap_charges == calls == 1
-
-
-def test_offline_eligibility_fixture_does_not_change_production_matrix() -> None:
-    assert READ_PROVIDER_ELIGIBILITY
-    kernel = _kernel()
-    admitted = _admit_read(kernel)
-    assert admitted.work_order_result.work_order.source_obligation_ref[
-        "source_obligation_id"
-    ] == OBLIGATION_ID

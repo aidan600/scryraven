@@ -34,6 +34,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
@@ -42,10 +43,13 @@ import pytest
 import core.authorized_acquisition_runtime as acquisition_runtime
 import core.pipeline_orchestrator as orchestrator
 from core.acquisition_adapters import (
-    AcquisitionTransports,
     dispatch_acquisition_for_offline_target_safety_validation,
 )
-from core.acquisition_contracts import AcquisitionRequest
+from core.acquisition_contracts import (
+    AcquisitionExecutionResult,
+    AcquisitionExecutionStatus,
+    AcquisitionRequest,
+)
 from core.acquisition_control import (
     AcquisitionControlError,
     AcquisitionExecutionObservationV1,
@@ -395,14 +399,12 @@ def _execute_offline_fixture(
     route_observation,
     route_decision,
     response: Mapping[str, Any] | None = None,
-    transport_available: bool = True,
     raise_transport_error: bool = False,
     before_transport=None,
     target_resolution_snapshots=(),
 ):
     fixture = OfflineAcquisitionTransportFixtureV1.create(
         response=response,
-        transport_available=transport_available,
         raise_transport_error=raise_transport_error,
     )
     result = (
@@ -1060,9 +1062,94 @@ def test_selected_provider_failure_has_no_failure_time_fallback() -> None:
 
     assert result.execution_observation.terminal_status == "failed"
     assert result.execution_observation.provider_calls_attempted == 1
+    assert (
+        result.execution_observation.target_safety_summary[
+            "urls_fetched_delta"
+        ]
+        == 1
+    )
     assert result.execution_result.transport_posture == "selected_adapter_failed_no_fallback"
     assert fixture.calls == 1
     assert route.route_decision.selected_provider == "linkup"
+
+
+def test_preclaim_adapter_return_is_an_invariant_not_a_fabricated_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel = _kernel()
+    admitted = _admit_read(kernel)
+    route = _route_read(kernel, admitted)
+    work_order = admitted.work_order_result.work_order
+    action = _authorize_offline_execution(kernel, admitted, route)
+    fixture = OfflineAcquisitionTransportFixtureV1.create(
+        response={"markdown": "must not be reached"}
+    )
+    cap_charges = 0
+
+    def preclaim_block(
+        request: AcquisitionRequest,
+        **_kwargs: Any,
+    ) -> AcquisitionExecutionResult:
+        return AcquisitionExecutionResult(
+            request=request,
+            status=AcquisitionExecutionStatus.BLOCKED,
+            block_code="synthetic_preclaim_adapter_block",
+            transport_posture="blocked_before_transport",
+        )
+
+    def cap_charge() -> None:
+        nonlocal cap_charges
+        cap_charges += 1
+
+    monkeypatch.setattr(
+        acquisition_runtime,
+        "dispatch_acquisition_for_offline_target_safety_validation",
+        preclaim_block,
+    )
+    with pytest.raises(
+        AcquisitionControlError,
+        match="execution_adapter_returned_before_claim",
+    ):
+        execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+            action,
+            run_kernel=kernel,
+            work_order=work_order,
+            route_observation=route.route_observation,
+            route_decision=route.route_decision,
+            validation_authority=_offline_validation_authority(),
+            transport_fixture=fixture,
+            before_transport=cap_charge,
+            target_resolution_snapshots=_proposal_snapshots(
+                admitted.proposal
+            ),
+        )
+
+    authorization = kernel.state.acquisition_control_state[
+        "execution_authorizations_by_id"
+    ][action.action_id]
+    assert authorization["claim_status"] == "authorized"
+    assert authorization["transport_claimed"] is False
+    assert fixture.calls == cap_charges == 0
+
+
+def test_target_safety_transport_count_is_not_artifact_cardinality() -> None:
+    artifact = SimpleNamespace(
+        pages=(),
+        requested_url=None,
+        redirect_url=None,
+        final_url=None,
+        canonical_url=None,
+    )
+
+    summary = acquisition_runtime._execution_target_safety_summary(
+        gate2_decisions=(),
+        gate3_decisions=(),
+        artifacts=(artifact, artifact),
+        urls_fetched_delta=1,
+    )
+
+    assert summary["successful_artifact_count"] == 2
+    assert summary["urls_fetched_delta"] == 1
 
 
 def test_post_claim_projection_failure_is_terminalized_without_replay(
@@ -1177,18 +1264,18 @@ def test_low_level_offline_fixture_dispatch_remains_mechanical_without_runkernel
         max_retained_characters=20_000,
         candidate_reference="candidate-typed-runtime",
     )
-    calls: list[dict[str, Any]] = []
+    fixture = OfflineAcquisitionTransportFixtureV1.create(
+        response={"markdown": "offline readable fixture"}
+    )
 
     result = dispatch_acquisition_for_offline_target_safety_validation(
         request,
-        transports=AcquisitionTransports(
-            linkup_fetch=lambda payload: calls.append(payload) or {"markdown": "offline readable fixture"}
-        ),
+        transport_fixture=fixture,
     )
 
     assert result.succeeded is True
     assert result.provider_calls_attempted == 1
-    assert len(calls) == 1
+    assert fixture.calls == 1
 
 
 def test_actual_ordinary_selected_candidate_does_not_start_acquisition_control(

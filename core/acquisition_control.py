@@ -2161,12 +2161,10 @@ def derive_acquisition_capability_decision(
     target_urls = list(proposal.available_urls)
     if proposal.root_url:
         target_urls.append(proposal.root_url)
-    safety_required = derived in {
-        AcquisitionCapability.READ.value,
-        AcquisitionCapability.FOCUSED_EXTRACT.value,
-        AcquisitionCapability.MAP_SITE.value,
-        AcquisitionCapability.CRAWL_SITE.value,
-    }
+    # Exact-target safety precedes capability recognition.  An incomplete or
+    # otherwise blocked material-need proposal must not retain a prohibited
+    # target merely because no acquisition capability could be derived.
+    safety_required = bool(target_urls)
     target_safety_decisions = tuple(
         evaluate_network_target_safety(
             target_url,

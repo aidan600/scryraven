@@ -310,6 +310,13 @@ def test_default_dynamic_content_opener_is_a_typed_fail_closed_tombstone() -> No
         "urllib.request",
     ):
         assert retired_symbol not in source
+    for stale_live_license_claim in (
+        "may make exactly one public URL fetch/read",
+        "licensed public URL fetch/read call",
+    ):
+        assert stale_live_license_claim not in source
+    assert "retired default opener makes no public" in source
+    assert "does not license public network fetch/read" in source
 
 
 def test_sanitized_fixture_reduces_through_fetch_read_packet_and_ledger() -> None:

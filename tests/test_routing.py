@@ -230,12 +230,20 @@ def test_noninstalled_or_disabled_capability_requests_are_typed_blocks(
     assert decision.providers() == ()
 
 
-def test_read_is_an_installed_ordinary_product_route() -> None:
+def test_installed_read_adapters_do_not_bypass_product_target_safety() -> None:
     decision = route_provider_capability(
         ProviderCapabilityRequest(capability=AcquisitionCapability.READ),
         _all_on(),
     )
 
-    assert decision.fidelity is RouteFidelity.EXACT
-    assert decision.selected_provider == "linkup"
-    assert decision.operation == "fetch"
+    assert decision.fidelity is RouteFidelity.BLOCKED
+    assert decision.selected_provider is None
+    assert decision.providers() == ()
+    assert decision.block_reason == (
+        "no_safety_eligible_provider_for_untrusted_exact_url"
+    )
+    assert all(
+        candidate.adapter_installed
+        and candidate.target_safety_eligible is False
+        for candidate in decision.fallback_candidates
+    )

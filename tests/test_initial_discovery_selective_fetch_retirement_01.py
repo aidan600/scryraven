@@ -780,6 +780,9 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
     assert exa_call.args[0].id == "query"
 
     dispatch_calls: list[tuple[Path, ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]] = []
+    offline_validation_dispatch_calls: list[
+        tuple[Path, ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]
+    ] = []
     for path in CORE.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for function in (
@@ -788,10 +791,19 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         ):
             for node in ast.walk(function):
-                if isinstance(node, ast.Call) and _dotted_name(node.func).endswith(
-                    "dispatch_acquisition"
+                if not isinstance(node, ast.Call):
+                    continue
+                called = _dotted_name(node.func)
+                if called in {"dispatch_acquisition"} or called.endswith(
+                    ".dispatch_acquisition"
                 ):
                     dispatch_calls.append((path, node, function))
+                if called.endswith(
+                    "dispatch_acquisition_for_offline_target_safety_validation"
+                ):
+                    offline_validation_dispatch_calls.append(
+                        (path, node, function)
+                    )
     assert len(dispatch_calls) == 1
     path, call, function = dispatch_calls[0]
     assert path.name == "authorized_acquisition_runtime.py"
@@ -807,6 +819,20 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
         if isinstance(node, ast.Call)
     }
     assert "run_kernel.claim_acquisition_execution" in function_calls
+    assert len(offline_validation_dispatch_calls) == 1
+    offline_path, offline_call, offline_function = (
+        offline_validation_dispatch_calls[0]
+    )
+    assert offline_path.name == "authorized_acquisition_runtime.py"
+    assert offline_function is function
+    offline_before_transport = next(
+        keyword
+        for keyword in offline_call.keywords
+        if keyword.arg == "before_transport"
+    )
+    assert _dotted_name(offline_before_transport.value) == (
+        "claim_immediately_before_transport"
+    )
 
     run_config_tree = ast.parse((CORE / "run_config.py").read_text(encoding="utf-8"))
     annotations = {

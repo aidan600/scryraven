@@ -13,12 +13,12 @@ sufficiency, or grants FinalAnswerPacket/Author authority.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Sequence
 
 from core.acquisition_adapters import (
     AcquisitionTransports,
+    OfflineAcquisitionTransportFixtureV1,
     dispatch_acquisition,
     dispatch_acquisition_for_offline_target_safety_validation,
 )
@@ -131,72 +131,6 @@ class AcquisitionRouteRuntimeResult:
     route_observation: AcquisitionRouteObservationV1
     availability_snapshot_ref: Mapping[str, Any]
     observation: Observation
-
-
-@dataclass(slots=True)
-class OfflineAcquisitionTransportFixtureV1:
-    """Code-owned response fixture with no network-capable callback surface."""
-
-    response: Mapping[str, Any]
-    fixture_id: str
-    fixture_digest: str
-    transport_available: bool = True
-    raise_transport_error: bool = False
-    product_reachable: bool = False
-    calls: int = 0
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        response: Mapping[str, Any] | None = None,
-        transport_available: bool = True,
-        raise_transport_error: bool = False,
-    ) -> "OfflineAcquisitionTransportFixtureV1":
-        if not isinstance(transport_available, bool) or not isinstance(
-            raise_transport_error, bool
-        ):
-            raise AcquisitionControlError(
-                "offline_transport_fixture_boolean_required"
-            )
-        response_copy = deepcopy(dict(response or {}))
-        core = {
-            "schema_version": "offline_acquisition_transport_fixture_v1",
-            "response": response_copy,
-            "transport_available": transport_available,
-            "raise_transport_error": raise_transport_error,
-            "product_reachable": False,
-        }
-        digest = stable_json_digest(core)
-        return cls(
-            response=response_copy,
-            fixture_id=f"offline-acquisition-transport:{digest[:24]}",
-            fixture_digest=digest,
-            transport_available=transport_available,
-            raise_transport_error=raise_transport_error,
-        )
-
-    def validate(self) -> None:
-        recreated = type(self).create(
-            response=self.response,
-            transport_available=self.transport_available,
-            raise_transport_error=self.raise_transport_error,
-        )
-        if (
-            self.product_reachable
-            or recreated.fixture_id != self.fixture_id
-            or recreated.fixture_digest != self.fixture_digest
-        ):
-            raise AcquisitionControlError(
-                "offline_acquisition_transport_fixture_invalid"
-            )
-
-    def invoke(self, _payload: dict[str, Any]) -> Mapping[str, Any]:
-        self.validate()
-        self.calls += 1
-        if self.raise_transport_error:
-            raise RuntimeError("offline_fixture_transport_error")
-        return deepcopy(dict(self.response))
 
 
 @dataclass(frozen=True, slots=True)
@@ -586,6 +520,7 @@ def execute_authorized_acquisition_work_order(
         route_observation=route_observation,
         route_decision=route_decision,
         transports=transports,
+        offline_transport_fixture=None,
         before_transport=before_transport,
         target_resolution_snapshots=target_resolution_snapshots,
     )
@@ -635,10 +570,8 @@ def execute_authorized_acquisition_work_order_for_offline_target_safety_validati
         work_order=work_order,
         route_observation=route_observation,
         route_decision=route_decision,
-        transports=_offline_acquisition_transports(
-            route_decision=route_decision,
-            fixture=transport_fixture,
-        ),
+        transports=None,
+        offline_transport_fixture=transport_fixture,
         before_transport=before_transport,
         target_resolution_snapshots=target_resolution_snapshots,
     )
@@ -652,6 +585,7 @@ def _execute_authorized_acquisition_work_order(
     route_observation: AcquisitionRouteObservationV1,
     route_decision: ProviderRouteDecision,
     transports: AcquisitionTransports | None,
+    offline_transport_fixture: OfflineAcquisitionTransportFixtureV1 | None,
     before_transport: Callable[[], None] | None,
     target_resolution_snapshots: Sequence[
         NetworkTargetResolutionSnapshotV1
@@ -736,6 +670,7 @@ def _execute_authorized_acquisition_work_order(
             gate2_decisions=gate2_decisions,
             gate3_decisions=(),
             final_pretransport_block=True,
+            urls_fetched_delta=0,
         )
         execution_result = AcquisitionExecutionResult(
             request=request,
@@ -826,14 +761,17 @@ def _execute_authorized_acquisition_work_order(
                 execution_authority_posture
                 == OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
             ):
-                if type(transports) is not AcquisitionTransports:
+                if (
+                    type(offline_transport_fixture)
+                    is not OfflineAcquisitionTransportFixtureV1
+                ):
                     raise AcquisitionControlError(
-                        "offline_execution_transports_required"
+                        "offline_execution_fixture_required"
                     )
                 execution_result = (
                     dispatch_acquisition_for_offline_target_safety_validation(
                         request,
-                        transports=transports,
+                        transport_fixture=offline_transport_fixture,
                         before_transport=claim_immediately_before_transport,
                     )
                 )
@@ -855,21 +793,30 @@ def _execute_authorized_acquisition_work_order(
                 transport_posture="blocked_before_transport_by_run_cap",
             )
         if not transport_claimed:
-            claim_execution_authorization()
+            raise AcquisitionControlError(
+                "execution_adapter_returned_before_claim"
+            )
         execution_result = replace(
             execution_result,
             execution_claim_consumed=True,
             adapter_invoked=True,
         )
         applicability_failure: str | None = None
+        posttransport_observation_overflow = (
+            execution_result.failure_code
+            == "posttransport_target_observation_overflow"
+        )
         completed_response_has_target_facts = bool(
             execution_result.provider_calls_completed == 1
-            and any(
-                any(
-                    getattr(artifact, field_name, None)
-                    for field_name, _fact_kind in _OBSERVED_TARGET_FIELDS
+            and (
+                posttransport_observation_overflow
+                or any(
+                    any(
+                        getattr(artifact, field_name, None)
+                        for field_name, _fact_kind in _OBSERVED_TARGET_FIELDS
+                    )
+                    for artifact in execution_result.artifacts
                 )
-                for artifact in execution_result.artifacts
             )
         )
         if completed_response_has_target_facts:
@@ -879,6 +826,7 @@ def _execute_authorized_acquisition_work_order(
                     work_order=work_order,
                     artifacts=execution_result.artifacts,
                     snapshots=target_resolution_snapshots,
+                    observation_overflow=posttransport_observation_overflow,
                 )
             )
             gate3_decisions = (
@@ -905,7 +853,7 @@ def _execute_authorized_acquisition_work_order(
                     gate3_decisions=gate3_decisions,
                     posttransport_failure=True,
                     urls_fetched_delta=(
-                        execution_result.provider_calls_completed
+                        execution_result.provider_calls_attempted
                     ),
                 )
                 execution_result = replace(
@@ -933,7 +881,7 @@ def _execute_authorized_acquisition_work_order(
                     gate3_decisions=gate3_decisions,
                     applicability_failure=True,
                     urls_fetched_delta=(
-                        execution_result.provider_calls_completed
+                        execution_result.provider_calls_attempted
                     ),
                 )
                 execution_result = replace(
@@ -960,6 +908,9 @@ def _execute_authorized_acquisition_work_order(
                     gate2_decisions=gate2_decisions,
                     gate3_decisions=gate3_decisions,
                     artifacts=execution_result.artifacts,
+                    urls_fetched_delta=(
+                        execution_result.provider_calls_attempted
+                    ),
                 )
                 execution_result = replace(
                     execution_result,
@@ -980,7 +931,7 @@ def _execute_authorized_acquisition_work_order(
                         gate2_decisions=gate2_decisions,
                         gate3_decisions=gate3_decisions,
                         urls_fetched_delta=(
-                            execution_result.provider_calls_completed
+                            execution_result.provider_calls_attempted
                         ),
                     ),
                 )
@@ -993,6 +944,9 @@ def _execute_authorized_acquisition_work_order(
                 target_safety_summary=_execution_target_safety_summary(
                     gate2_decisions=gate2_decisions,
                     gate3_decisions=(),
+                    urls_fetched_delta=(
+                        execution_result.provider_calls_attempted
+                    ),
                 ),
             )
         execution_observation = _execution_observation(
@@ -1031,6 +985,7 @@ def _execute_authorized_acquisition_work_order(
             target_safety_summary=_execution_target_safety_summary(
                 gate2_decisions=gate2_decisions,
                 gate3_decisions=gate3_decisions,
+                urls_fetched_delta=attempted,
             ),
             execution_claim_consumed=True,
             adapter_invoked=True,
@@ -1502,32 +1457,6 @@ def _materialize_acquisition_request(
     )
 
 
-def _offline_acquisition_transports(
-    *,
-    route_decision: ProviderRouteDecision,
-    fixture: OfflineAcquisitionTransportFixtureV1,
-) -> AcquisitionTransports:
-    """Bind a code-owned response fixture to only the selected adapter slot."""
-
-    transport = fixture.invoke if fixture.transport_available else None
-    selected = (
-        route_decision.selected_provider,
-        route_decision.operation,
-        route_decision.variant,
-    )
-    if selected[:2] == ("linkup", "fetch"):
-        return AcquisitionTransports(linkup_fetch=transport)
-    if selected[:2] == ("tavily", "extract"):
-        return AcquisitionTransports(tavily_extract=transport)
-    if selected[:2] == ("tavily", "map"):
-        return AcquisitionTransports(tavily_map=transport)
-    if selected[:2] == ("tavily", "crawl"):
-        return AcquisitionTransports(tavily_crawl=transport)
-    if selected == ("linkup", "search", "deep"):
-        return AcquisitionTransports(linkup_deep_search=transport)
-    return AcquisitionTransports()
-
-
 def _request_target_urls(request: AcquisitionRequest) -> tuple[str, ...]:
     targets = list(request.selected_urls)
     if request.root_url:
@@ -1603,6 +1532,7 @@ def _evaluate_posttransport_target_safety(
     work_order: AcquisitionWorkOrderV1,
     artifacts: Sequence[AcquisitionArtifact],
     snapshots: Sequence[NetworkTargetResolutionSnapshotV1],
+    observation_overflow: bool = False,
 ) -> tuple[tuple[NetworkTargetSafetyDecisionV1, ...], str | None]:
     decisions: list[NetworkTargetSafetyDecisionV1] = []
     applicability_failure: str | None = None
@@ -1681,6 +1611,41 @@ def _evaluate_posttransport_target_safety(
                     )
                 ):
                     applicability_failure = fact_kind.value
+    if observation_overflow:
+        if not artifacts or not requested_targets:
+            raise AcquisitionControlError(
+                "posttransport_target_observation_overflow_lineage_missing"
+            )
+        overflow_target = requested_targets[0]
+        decisions.append(
+            evaluate_network_target_safety(
+                overflow_target,
+                stage=(
+                    NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET
+                ),
+                transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
+                fact_kind=NetworkTargetFactKind.PROVIDER_REPORTED,
+                resolver_snapshot=resolution_snapshot_for_url(
+                    overflow_target,
+                    snapshots,
+                ),
+                lineage_ref={
+                    "run_id": action.run_id,
+                    "work_order_id": work_order.work_order_id,
+                    "execution_action_id": action.action_id,
+                    "artifact_id": str(
+                        _artifact_ref(artifacts[0])["artifact_id"]
+                    ),
+                    "source_obligation_id": (
+                        work_order.source_obligation_ref.get(
+                            "source_obligation_id"
+                        )
+                    ),
+                    "observation_kind": "target_observation_set_overflow",
+                },
+                posttransport_observation_overflow=True,
+            )
+        )
     if not decisions:
         raise AcquisitionControlError(
             "successful_execution_observed_target_lineage_missing"
@@ -1717,7 +1682,7 @@ def _execution_target_safety_summary(
     final_pretransport_block: bool = False,
     posttransport_failure: bool = False,
     applicability_failure: bool = False,
-    urls_fetched_delta: int | None = None,
+    urls_fetched_delta: int,
 ) -> dict[str, Any]:
     decisions = (*gate2_decisions, *gate3_decisions)
     blockers = tuple(
@@ -1779,11 +1744,7 @@ def _execution_target_safety_summary(
         "safe_canonical_targets_accepted": safe_canonicals,
         "safe_target_applicability_failure": applicability_failure,
         "successful_artifact_count": len(artifacts),
-        "urls_fetched_delta": (
-            len(artifacts)
-            if urls_fetched_delta is None
-            else max(0, int(urls_fetched_delta))
-        ),
+        "urls_fetched_delta": max(0, int(urls_fetched_delta)),
     }
 
 
