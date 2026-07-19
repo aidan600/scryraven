@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: c1f7e9f0e5b54277f696b2a8703bf00a1322fee8
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -286,5 +286,12 @@ additional Specialist capabilities, or calculator scope expansion. Installed
 offline activation does not prove live calculator correctness, exact-URL READ,
 Focused Extract, final custody, Serper connection, Map, Crawl, compatibility
 rename, or broad quantitative reasoning quality. No live provider, model,
-search, fetch/read, or retrieval call was made. The sole active next is
-`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`.
+search, DNS, fetch/read, Map, Crawl, or retrieval call was made for the completed
+`EXACT-URL-NETWORK-TARGET-SAFETY-OWNER-01` Repair. That Repair installed the
+canonical pure safety policy and stage-bound RunKernel decisions without
+activating READ, Focused Extract, final custody, semantic admission, or planner
+disambiguation. `EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01` is now
+blocked until at least one provider operation is truthfully eligible for
+untrusted exact URLs. Current Linkup/Tavily eligibility remains unasserted due
+to insufficient committed public-target guarantees or observable final-target
+lineage, not because either provider is declared inherently unsafe.

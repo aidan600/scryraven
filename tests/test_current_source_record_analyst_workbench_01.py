@@ -1758,7 +1758,6 @@ def test_licensed_unreadable_workbench_gap_exhausts_after_dprime_first_pass(
 
 def test_licensed_workbench_read_support_gap_runs_authorized_followup_pdf_extraction(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
     calls: list[GenericProviderProxyRunRequest] = []
@@ -1770,24 +1769,11 @@ def test_licensed_workbench_read_support_gap_runs_authorized_followup_pdf_extrac
         "claims filing fee is $54."
     )
     pdf_url = "https://official.example.gov/courts/small-claims-fees.pdf"
-    monkeypatch.setattr(
-        dogfood,
-        "build_opener",
-        lambda _redirect_handler: _RecordingPdfOpener(
-            fetched_pdf_urls,
-            _PdfResponse(
-                _tiny_text_pdf_bytes(pdf_text),
-                url=pdf_url,
-                content_type="application/pdf",
-            ),
-        ),
-    )
-
     def staged_fetch(url: str) -> GenericLiveFetchReadResult:
         fetch_attempts.append(url)
         if len(fetch_attempts) == 1:
             return _http_403_pdf_fetch_runner(url)
-        return dogfood.fetch_public_url_once(url)
+        return _pdf_text_layer_fetch_runner(fetched_pdf_urls, pdf_text)(url)
 
     def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
         dprime_inputs.append(dict(input_packet))
@@ -2211,7 +2197,6 @@ def test_contextual_provider_html_does_not_skip_direct_official_pdf_read_support
 
 def test_contextual_html_plus_official_pdf_uses_generic_pdf_text_extraction(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
     calls: list[GenericProviderProxyRunRequest] = []
@@ -2222,19 +2207,6 @@ def test_contextual_html_plus_official_pdf_uses_generic_pdf_text_extraction(
         "claims filing fee is $54."
     )
     pdf_url = "https://example-county.gov/courts/small-claims-fee-schedule.pdf"
-    monkeypatch.setattr(
-        dogfood,
-        "build_opener",
-        lambda _redirect_handler: _RecordingPdfOpener(
-            fetched_urls,
-            _PdfResponse(
-                _tiny_text_pdf_bytes(pdf_text),
-                url=pdf_url,
-                content_type="application/pdf",
-            ),
-        ),
-    )
-
     def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
         captured_input.update(dict(input_packet))
         return _assessment_payload(
@@ -2268,7 +2240,7 @@ def test_contextual_html_plus_official_pdf_uses_generic_pdf_text_extraction(
                 ),
             ],
         ),
-        fetch_read_runner=dogfood.fetch_public_url_once,
+        fetch_read_runner=_pdf_text_layer_fetch_runner(fetched_urls, pdf_text),
         dprime_model_review_callable=fake_review,
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
@@ -2699,6 +2671,37 @@ def _official_pdf_read_support_fetch_runner(text: str) -> Any:
     return runner
 
 
+def _pdf_text_layer_fetch_runner(fetched_urls: list[str], text: str) -> Any:
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        fetched_urls.append(url)
+        parsed = urlparse(url)
+        return GenericLiveFetchReadResult(
+            attempted_url=url,
+            final_url=url,
+            final_domain=parsed.netloc.lower(),
+            status_code=200,
+            status_class="2xx",
+            content_type="application/pdf",
+            fetched_byte_count=len(text.encode("utf-8")),
+            sanitized_text=text,
+            content_title=None,
+            redirect_count=0,
+            retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
+            pdf_text_extraction_attempted=True,
+            pdf_text_extraction_status=dogfood.PDF_TEXT_EXTRACTION_STATUS_EXTRACTED,
+            pdf_text_extraction_char_count=len(text),
+            pdf_text_extraction_page_count=1,
+            raw_pdf_bytes_retained=False,
+            raw_pdf_text_retained=False,
+            bounded_text_retained=True,
+            ocr_opened=False,
+            browser_automation_opened=False,
+            external_service_used=False,
+        )
+
+    return runner
+
+
 def _fake_fetch_runner(text: str) -> Any:
     def runner(url: str) -> GenericLiveFetchReadResult:
         parsed = urlparse(url)
@@ -2734,74 +2737,6 @@ def _empty_fetch_runner(url: str) -> GenericLiveFetchReadResult:
         redirect_count=0,
         retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
     )
-
-
-class _PdfHeaders(dict[str, str]):
-    def get(self, key: str, default: str | None = None) -> str:
-        return super().get(key.lower(), default or "")
-
-
-class _PdfResponse:
-    def __init__(self, body: bytes, *, url: str, content_type: str) -> None:
-        self._body = body
-        self._url = url
-        self.status = 200
-        self.headers = _PdfHeaders({"content-type": content_type})
-
-    def __enter__(self) -> "_PdfResponse":
-        return self
-
-    def __exit__(self, *_args: Any) -> None:
-        return None
-
-    def read(self, _limit: int) -> bytes:
-        return self._body
-
-    def geturl(self) -> str:
-        return self._url
-
-
-class _RecordingPdfOpener:
-    def __init__(self, fetched_urls: list[str], response: _PdfResponse) -> None:
-        self._fetched_urls = fetched_urls
-        self._response = response
-
-    def open(self, request: Any, *, timeout: int) -> _PdfResponse:
-        assert timeout == 20
-        self._fetched_urls.append(request.full_url)
-        return self._response
-
-
-def _tiny_text_pdf_bytes(text: str) -> bytes:
-    from io import BytesIO
-
-    from pypdf import PdfWriter
-    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
-
-    safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    writer = PdfWriter()
-    page = writer.add_blank_page(width=612, height=792)
-    font = DictionaryObject(
-        {
-            NameObject("/Type"): NameObject("/Font"),
-            NameObject("/Subtype"): NameObject("/Type1"),
-            NameObject("/BaseFont"): NameObject("/Helvetica"),
-        }
-    )
-    resources = DictionaryObject(
-        {
-            NameObject("/Font"): DictionaryObject(
-                {NameObject("/F1"): writer._add_object(font)}
-            )
-        }
-    )
-    stream = DecodedStreamObject()
-    stream.set_data(f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("ascii"))
-    page[NameObject("/Resources")] = resources
-    page[NameObject("/Contents")] = writer._add_object(stream)
-    out = BytesIO()
-    writer.write(out)
-    return out.getvalue()
 
 
 def _assessment_payload(

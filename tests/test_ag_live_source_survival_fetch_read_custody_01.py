@@ -250,6 +250,22 @@ def test_fetch_read_uses_exactly_one_selected_url_and_no_provider_imports() -> N
     ]
     assert packet["fetch_read_calls_attempted"] == 1
     assert packet["fetch_read_calls_completed"] == 1
+    assert packet["execution_class"] == "VALIDATION"
+    assert packet["proof_class"] == "component_harness_proof"
+    assert packet["fetcher_authority"] == "injected-fixture-only"
+    assert packet["product_reachability"] == "PRODUCT-unreachable"
+    assert packet["default_fetcher_disposition"] == (
+        "retired-fail-closed-tombstone"
+    )
+    assert packet["fetcher_fixture_injected"] is True
+    assert packet["live_budget"]["url_fetch_read_calls"] == 0
+    assert packet["live_budget"]["injected_fixture_fetch_read_calls"] == 1
+    assert packet["mandatory_next_build_product_checkpoint"].startswith(
+        "PROVIDER-UNTRUSTED-EXACT-URL-ELIGIBILITY-DECISION-01:"
+    )
+    assert "at least one provider operation" in packet[
+        "mandatory_next_build_product_checkpoint"
+    ]
     assert packet["live_budget"]["provider_search_calls"] == 0
     assert packet["live_budget"]["broker_calls"] == 0
     assert packet["live_budget"]["model_calls"] == 0
@@ -262,8 +278,45 @@ def test_fetch_read_uses_exactly_one_selected_url_and_no_provider_imports() -> N
         "requests",
         "httpx",
         "subprocess",
+        "urllib.error",
+        "urllib.request",
     }
     assert _imports(SCRIPT).isdisjoint(forbidden_imports)
+
+
+def test_default_dynamic_content_opener_is_a_typed_fail_closed_tombstone() -> None:
+    candidate_path, validation_path = _prior_outputs("default-fetcher-retired")
+
+    packet = harness.fetch_read_custody(
+        candidate_packet_path=candidate_path,
+        validation_packet_path=validation_path,
+        output_dir=_output_dir("default-fetcher-retired"),
+        confirm_fetch_read=True,
+    )
+
+    assert packet["selected_source_survived"] == "source_survival_fail"
+    assert packet["fetch_read_failure_reason"] == (
+        "validation_dynamic_content_opener_retired"
+    )
+    assert packet["likely_failure_layer_if_not_pass"] == "network_target_safety"
+    assert packet["fetch_read_calls_attempted"] == 0
+    assert packet["fetch_read_calls_completed"] == 0
+    assert packet["fetcher_fixture_injected"] is False
+    source = SCRIPT.read_text(encoding="utf-8")
+    for retired_symbol in (
+        "HTTPRedirectHandler",
+        "build_opener",
+        "opener.open",
+        "urllib.request",
+    ):
+        assert retired_symbol not in source
+    for stale_live_license_claim in (
+        "may make exactly one public URL fetch/read",
+        "licensed public URL fetch/read call",
+    ):
+        assert stale_live_license_claim not in source
+    assert "retired default opener makes no public" in source
+    assert "does not license public network fetch/read" in source
 
 
 def test_sanitized_fixture_reduces_through_fetch_read_packet_and_ledger() -> None:
@@ -428,11 +481,16 @@ def test_doc_records_proof_mode_caps_and_non_proofs() -> None:
         "Mode: PROOF",
         "NO-BUT-JUSTIFIED",
         "rank-1 `travel.state.gov`",
-        "one public URL fetch/read",
+        "URL fetch/read calls: 0",
+        "Execution class: VALIDATION",
+        "Fetcher authority: injected-fixture-only",
+        "Product reachability: PRODUCT-unreachable",
+        "validation_dynamic_content_opener_retired",
         "FetchReadContentPacket",
         "EvidenceLedger custody is lineage/custody only",
         "not semantic support",
-        "mandatory next Build/product checkpoint",
+        "no provider-operation target-safety eligibility proof",
+        "Production exact-URL acquisition remains blocked",
     )
     for needle in required:
         assert needle in text

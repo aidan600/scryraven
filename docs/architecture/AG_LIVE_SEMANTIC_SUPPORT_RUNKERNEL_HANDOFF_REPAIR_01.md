@@ -1,10 +1,15 @@
 # AG-LIVE-SEMANTIC-SUPPORT-RUNKERNEL-HANDOFF-REPAIR-01
 
-Status: active product-path repair phase.
+Status: historical predecessor repair record; direct public transport retired,
+offline injected-fixture regression only.
 
 Mode: REPAIR.
 
 Repair verdict target: YES.
+
+Current execution class: VALIDATION. This record preserves the predecessor
+in-process handoff proof; it does not license another public fetch/read or make
+that proof current production exact-URL or semantic activation.
 
 ## Named Defect
 
@@ -52,13 +57,14 @@ fail-closed at gate 6 when `run_kernel=None`.
 
 ## Opened Surfaces
 
-- RunKernel in-process replay/handoff for the live candidate/source-survival to
-  semantic-support boundary.
+- RunKernel in-process replay/handoff for an injected predecessor
+  candidate/source-survival fixture to the semantic-support boundary.
 - #357 current-path candidate acquisition replay from existing sanitized
   provider results only.
-- #360 repaired bounded fetch/read content selection.
-- SemanticObservation admission through the existing bridge.
-- ComponentCoverage reduction through existing RunKernel authorization/reducer.
+- #360 repaired bounded fetch/read fixture selection.
+- Offline SemanticObservation admission through the existing bridge.
+- Offline ComponentCoverage reduction through existing RunKernel
+  authorization/reducer.
 - Small harness/script/tests/docs needed to validate this seam.
 
 ## Closed Surfaces
@@ -79,11 +85,18 @@ fail-closed at gate 6 when `run_kernel=None`.
 - answer text
 - product correctness claims
 
-## Live Budget
+## Retired Live Budget
+
+The following was the predecessor live posture. It is no longer licensed. The
+direct opener is now a typed fail-closed tombstone; current public URL
+fetch/read calls are `0`, while one explicitly injected sanitized fixture may
+exercise the downstream handoff.
 
 - provider/search/broker calls: 0
 - model calls: 0
-- URL fetch/read calls: max 1
+- historical URL fetch/read calls: max 1
+- public URL fetch/read calls: 0
+- injected fixture executions: max 1
 - selected URL: `https://travel.state.gov/en/passports/apply/help/fees.html`
 - allowed final host: `travel.state.gov`
 - max fetched bytes: 1 MB
@@ -94,7 +107,7 @@ fail-closed at gate 6 when `run_kernel=None`.
 - ComponentCoverage reductions: max 1
 - citation/source-obligation/Sufficiency/FAP/Author counts: 0
 
-## Outcomes
+## Historical Outcomes
 
 Pass:
 
@@ -102,10 +115,12 @@ Pass:
 runkernel_handoff_repair_pass
 ```
 
-The replay preserved a real RunKernel from #357 sanitized-provider-result
-reduction through EvidenceLedger custody, admitted exactly one
-SemanticObservation through the existing bridge, and reduced exactly one
-ComponentCoverage record through RunKernel.
+At the predecessor checkpoint, the replay preserved a real RunKernel from #357
+sanitized-provider-result reduction through EvidenceLedger custody, admitted
+exactly one SemanticObservation through the existing bridge, and reduced exactly one
+ComponentCoverage record through RunKernel. Current offline fixtures may guard
+those mechanics only; they do not establish current production acquisition or
+semantic admission.
 
 Acceptable partial:
 
@@ -130,6 +145,10 @@ validation_inconclusive
 
 ## Explicit Non-Proofs
 
+- no current public fetch/read, DNS, redirect, final-target, or connected-peer
+  proof
+- no production provider-operation target-safety eligibility
+- no current READ, Focused Extract, final custody, or semantic activation
 - no final answer text
 - no answer correctness or product correctness
 - no source-obligation satisfaction
@@ -140,13 +159,19 @@ validation_inconclusive
 - no provider/search/broker/model behavior
 - no product-quality prose
 
-## Mandatory Next Checkpoint
+## Current Supersession
 
-If this repair passes, the next checkpoint is:
+The historical next checkpoint was:
 
 ```text
 AG-LIVE-SUFFICIENCY-FAP-AUTHORPROSE-01
 ```
 
-Likely mode: BUILD. Citation eligibility and source-obligation satisfaction
-must remain explicitly licensed; this repair does not silently open them.
+That sequencing is superseded. The canonical target-safety repair retired the
+local opener, and production untrusted exact-URL routing remains blocked because
+no Linkup/Tavily operation has sufficient committed public-target guarantees or
+observable final-target lineage to be truthfully eligible. This is not an
+inherent-unsafety claim. Offline fixtures may retain in-process handoff
+regression coverage only; they do not reactivate READ, Focused Extract, custody,
+semantic admission, citation eligibility, source-obligation satisfaction,
+Sufficiency, FAP, or Author.
