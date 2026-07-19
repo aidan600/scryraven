@@ -355,14 +355,11 @@ def execute_ordinary_live_source_custody(
         run_kernel.reduce(capability_result.observation)
         decision = capability_result.decision
         if decision.decision_status != "accepted":
-            if not str(decision.block_code or "").startswith(
-                "admission_target_safety_blocked:"
-            ):
-                _reduce_blocked_acquisition_decision(
-                    run_kernel=run_kernel,
-                    proposal=proposal,
-                    decision=decision,
-                )
+            _reduce_blocked_acquisition_decision(
+                run_kernel=run_kernel,
+                proposal=proposal,
+                decision=decision,
+            )
             raise OrdinaryLiveSourceCustodyError(
                 decision.block_code or "acquisition_capability_blocked",
                 "RunKernel blocked the post-discovery acquisition capability",
@@ -708,7 +705,6 @@ def _read_artifact_for_existing_custody(
             "attempted_url": artifact.attempted_url,
             "provider_reported_url": artifact.provider_reported_url,
             "resolved_url": artifact.resolved_url,
-            "redirect_url": artifact.redirect_url,
             "final_url": artifact.final_url,
             "canonical_url": artifact.canonical_url,
             "resolved_domain": (
@@ -790,7 +786,6 @@ def _sanitized_material_from_fetch_read(
             "attempted_url": _clean_url(raw.get("attempted_url")) or candidate_url,
             "provider_reported_url": _clean_url(raw.get("provider_reported_url")),
             "resolved_url": _clean_url(raw.get("resolved_url")),
-            "redirect_url": _clean_url(raw.get("redirect_url")),
             "final_url": _clean_url(raw.get("final_url")),
             "canonical_url": _clean_url(raw.get("canonical_url")),
             "resolved_domain": _clean_text(

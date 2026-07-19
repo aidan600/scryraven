@@ -5,10 +5,15 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from hashlib import sha256
 from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -36,18 +41,13 @@ from scripts.ag_limited_live_search_candidate_01 import (  # noqa: E402
 PHASE = "AG-LIVE-SOURCE-SURVIVAL-FETCH-READ-CUSTODY-01"
 MODE = "PROOF"
 USABLE_ANSWER_VERDICT_TARGET = "NO-BUT-JUSTIFIED"
-PROOF_CLASS = "component_harness_proof"
+PROOF_CLASS = "live_component_proof"
 PRODUCT_FACING_PROGRESS_TYPE = (
-    "offline source-survival validation through an explicit injected fixture"
+    "live component source-survival validation with explicit live license"
 )
 PRODUCT_PATH_AFFECTED = (
     "standalone local validation harness only; installed product behavior is unchanged"
 )
-EXECUTION_CLASS = "VALIDATION"
-FETCHER_AUTHORITY = "injected-fixture-only"
-PRODUCT_REACHABILITY = "PRODUCT-unreachable"
-DEFAULT_FETCHER_DISPOSITION = "retired-fail-closed-tombstone"
-DEFAULT_FETCHER_BLOCK_CODE = "validation_dynamic_content_opener_retired"
 ACTUAL_CONSUMER_SEAM = (
     "SearchResultCandidatePacket -> FetchReadContentPacket / "
     "SanitizedContentReference -> EvidenceLedger candidate/content custody"
@@ -101,13 +101,14 @@ SOURCE_SURVIVAL_RESULTS = frozenset(
 )
 
 MANDATORY_NEXT_BUILD_CHECKPOINT = (
-    "PROVIDER-UNTRUSTED-EXACT-URL-ELIGIBILITY-DECISION-01: establish sufficient "
-    "committed target guarantees and observable target lineage for at least one "
-    "provider operation before production untrusted exact-URL routing is eligible"
+    "live evidence-relative semantic support over the fetched content if source "
+    "survival / fetch-read / EvidenceLedger candidate-content custody passes; "
+    "otherwise targeted REPAIR of the first broken fetch/read/custody seam"
 )
 
 OPENED_SURFACES = [
-    "explicit injected FetchReadResult fixture seam for offline validation",
+    "one public HTTPS fetch/read for the selected rank-1 travel.state.gov URL",
+    "bounded sanitized readable-content extraction",
     "FetchReadContentPacket / SanitizedContentReference for the selected candidate",
     "EvidenceLedger candidate/content custody for bounded sanitized content",
     "review packets under output/ag_live_source_survival_fetch_read_custody_01/",
@@ -117,7 +118,6 @@ CLOSED_SURFACES = [
     "provider search / broker / Serper",
     "model calls",
     "broad retrieval",
-    "local dynamic webpage opening or network transport",
     "PDF handling",
     "multi-source fetch",
     "JavaScript rendering",
@@ -346,6 +346,93 @@ class InProcessSourceSurvivalHandoff:
     evidence_ledger_projection: dict[str, Any]
 
 
+class _RedirectLimiter(HTTPRedirectHandler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.redirects: list[dict[str, Any]] = []
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> Request | None:
+        if len(self.redirects) >= MAX_REDIRECTS:
+            raise SourceSurvivalError(
+                "max_redirects_exceeded",
+                "selected URL exceeded the redirect cap",
+                failure_layer="url_fetch_read",
+            )
+        self.redirects.append(
+            {
+                "from_domain": _domain_from_url(req.full_url),
+                "to_domain": _domain_from_url(newurl),
+                "status_class": _status_class(code),
+            }
+        )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class _ReadableTextExtractor(HTMLParser):
+    _blocked_tags = {
+        "canvas",
+        "iframe",
+        "noscript",
+        "script",
+        "style",
+        "svg",
+        "template",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._blocked_stack: list[str] = []
+        self._title_stack = 0
+        self.parts: list[str] = []
+        self.title_parts: list[str] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        del attrs
+        normalized = tag.casefold()
+        if normalized in self._blocked_tags:
+            self._blocked_stack.append(normalized)
+        if normalized == "title":
+            self._title_stack += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.casefold()
+        if self._blocked_stack and self._blocked_stack[-1] == normalized:
+            self._blocked_stack.pop()
+        elif normalized in self._blocked_tags and self._blocked_stack:
+            self._blocked_stack.pop()
+        if normalized == "title" and self._title_stack:
+            self._title_stack -= 1
+
+    def handle_data(self, data: str) -> None:
+        text = _collapse_text(data)
+        if not text:
+            return
+        if self._title_stack:
+            self.title_parts.append(text)
+        if not self._blocked_stack:
+            self.parts.append(text)
+
+    @property
+    def readable_text(self) -> str:
+        return _collapse_text(" ".join(self.parts))
+
+    @property
+    def title(self) -> str | None:
+        return _clean_token(" ".join(self.title_parts), limit=300)
+
+
 def prepare_request(
     *,
     candidate_packet_path: str | Path = DEFAULT_CANDIDATE_PACKET,
@@ -415,7 +502,7 @@ def fetch_read_custody(
     confirm_fetch_read: bool = False,
     fetcher: Callable[[str], FetchReadResult] | None = None,
 ) -> dict[str, Any]:
-    """Run offline custody validation through an explicitly injected fetcher."""
+    """Perform the one licensed public URL fetch/read and custody reduction."""
 
     if not confirm_fetch_read:
         raise SourceSurvivalError(
@@ -461,7 +548,7 @@ def fetch_read_custody_in_process(
     confirm_fetch_read: bool = False,
     fetcher: Callable[[str], FetchReadResult] | None = None,
 ) -> InProcessSourceSurvivalHandoff:
-    """Run injected-fixture custody validation on the candidate kernel."""
+    """Perform fetch/read and EvidenceLedger custody on the live candidate kernel."""
 
     if not confirm_fetch_read:
         raise SourceSurvivalError(
@@ -512,9 +599,8 @@ def _execute_fetch_read_custody(
     dict[str, Any] | None,
 ]:
     selected = selection.selected_candidate
-    fixture_fetcher_injected = fetcher is not None
-    fetch = fetcher if fetcher is not None else _fetch_public_url_once
-    fetch_read_calls_attempted = 1 if fixture_fetcher_injected else 0
+    fetch = fetcher or _fetch_public_url_once
+    fetch_read_calls_attempted = 1
     fetch_read_calls_completed = 0
     fetch_result: FetchReadResult | None = None
     fetch_read_packet: dict[str, Any] | None = None
@@ -600,7 +686,6 @@ def _execute_fetch_read_custody(
             ),
             "runkernel_preserved_for_handoff": in_process_handoff,
             "projection_to_runkernel_rehydration": False,
-            "fetcher_fixture_injected": fixture_fetcher_injected,
         }
     )
     validate_source_survival_packet(packet)
@@ -741,14 +826,6 @@ def validate_source_survival_packet(packet: Mapping[str, Any]) -> dict[str, Any]
         raise SourceSurvivalError("source_survival_packet_phase_mismatch")
     if safe.get("mode") != MODE:
         raise SourceSurvivalError("source_survival_packet_mode_mismatch")
-    if safe.get("execution_class") != EXECUTION_CLASS:
-        raise SourceSurvivalError("validation_execution_class_mismatch")
-    if safe.get("fetcher_authority") != FETCHER_AUTHORITY:
-        raise SourceSurvivalError("validation_fetcher_authority_mismatch")
-    if safe.get("product_reachability") != PRODUCT_REACHABILITY:
-        raise SourceSurvivalError("validation_product_reachability_mismatch")
-    if safe.get("default_fetcher_disposition") != DEFAULT_FETCHER_DISPOSITION:
-        raise SourceSurvivalError("validation_default_fetcher_disposition_mismatch")
     result = safe.get("selected_source_survived")
     if result not in SOURCE_SURVIVAL_RESULTS:
         raise SourceSurvivalError("source_survival_packet_result_mismatch")
@@ -783,13 +860,95 @@ def validate_source_survival_packet(packet: Mapping[str, Any]) -> dict[str, Any]
 
 
 def _fetch_public_url_once(url: str) -> FetchReadResult:
-    """Retired network opener retained only as a typed fail-closed tombstone."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc.lower() != REQUIRED_DOMAIN:
+        raise SourceSurvivalError(
+            "selected_url_outside_allowed_domain",
+            "selected URL must be the rank-1 travel.state.gov HTTPS URL",
+            failure_layer="selected_candidate",
+        )
+    redirect_handler = _RedirectLimiter()
+    opener = build_opener(redirect_handler)
+    request = Request(
+        url,
+        headers={
+            "User-Agent": (
+                "ScryRaven AG-LIVE-SOURCE-SURVIVAL-FETCH-READ-CUSTODY-01"
+            )
+        },
+        method="GET",
+    )
+    try:
+        with opener.open(request, timeout=20) as response:
+            final_url = response.geturl()
+            status_code = getattr(response, "status", None) or response.getcode()
+            content_type = response.headers.get_content_type()
+            charset = response.headers.get_content_charset() or "utf-8"
+            body = response.read(MAX_FETCHED_BYTES + 1)
+    except HTTPError as exc:
+        raise SourceSurvivalError(
+            "selected_url_fetch_failed",
+            f"HTTP status class {_status_class(exc.code)}",
+            failure_layer="url_fetch_read",
+        ) from exc
+    except (OSError, URLError) as exc:
+        raise SourceSurvivalError(
+            "selected_url_fetch_failed",
+            "selected URL could not be fetched in one public fetch/read call",
+            failure_layer="url_fetch_read",
+        ) from exc
 
-    del url
-    raise SourceSurvivalError(
-        DEFAULT_FETCHER_BLOCK_CODE,
-        DEFAULT_FETCHER_BLOCK_CODE,
-        failure_layer="network_target_safety",
+    if len(body) > MAX_FETCHED_BYTES:
+        raise SourceSurvivalError(
+            "fetched_byte_cap_exceeded",
+            "fetched response exceeds the 1 MB cap",
+            failure_layer="url_fetch_read",
+        )
+    final_domain = _domain_from_url(final_url)
+    if not _allowed_final_domain(final_domain):
+        raise SourceSurvivalError(
+            "final_url_outside_allowed_domain",
+            "final URL left the allowed official state.gov boundary",
+            failure_layer="url_fetch_read",
+        )
+    if content_type in {"application/pdf"} or final_url.lower().endswith(".pdf"):
+        raise SourceSurvivalError(
+            "pdf_handling_closed",
+            "selected URL requires PDF handling, which is closed",
+            failure_layer="content_type",
+        )
+    if content_type not in {"text/html", "text/plain", "application/xhtml+xml"}:
+        raise SourceSurvivalError(
+            "unsupported_content_type",
+            "selected URL response is not readable text/html or text/plain",
+            failure_layer="content_type",
+        )
+    sanitized_text, content_title = _extract_readable_text(
+        body,
+        content_type=content_type,
+        charset=charset,
+    )
+    if not sanitized_text:
+        raise SourceSurvivalError(
+            "no_readable_text",
+            "selected URL did not produce bounded readable text",
+            failure_layer="sanitized_readable_content",
+        )
+    redirects = list(redirect_handler.redirects)
+    return FetchReadResult(
+        attempted_url=url,
+        final_url=final_url,
+        final_domain=final_domain,
+        status_code=status_code,
+        status_class=_status_class(status_code),
+        content_type=content_type,
+        fetched_byte_count=len(body),
+        sanitized_text=sanitized_text,
+        content_title=content_title,
+        redirect_count=len(redirects),
+        redirect_chain_digest=_digest_json(redirects) if redirects else None,
+        redirects_sanitized=redirects,
+        retrieved_or_observed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
     )
 
 
@@ -907,16 +1066,12 @@ def _base_packet(
             "mode": MODE,
             "usable_answer_verdict_target": USABLE_ANSWER_VERDICT_TARGET,
             "proof_class": PROOF_CLASS,
-            "execution_class": EXECUTION_CLASS,
-            "fetcher_authority": FETCHER_AUTHORITY,
-            "product_reachability": PRODUCT_REACHABILITY,
-            "default_fetcher_disposition": DEFAULT_FETCHER_DISPOSITION,
             "product_facing_progress_type": PRODUCT_FACING_PROGRESS_TYPE,
             "product_path_affected": PRODUCT_PATH_AFFECTED,
             "actual_app_delta": (
                 "No installed product behavior changes; the local harness can "
-                "test injected sanitized FetchReadResult fixtures through "
-                "existing bounded content and custody reducers."
+                "test whether the rank-1 live candidate survives public "
+                "fetch/read into existing bounded content and custody reducers."
             ),
             "runtime_consumer": (
                 "existing FetchReadContentPacket builder/validator and "
@@ -950,8 +1105,7 @@ def _base_packet(
                 "provider_search_calls": PROVIDER_CALLS,
                 "broker_calls": BROKER_CALLS,
                 "model_calls": MODEL_CALLS,
-                "url_fetch_read_calls": 0,
-                "injected_fixture_fetch_read_calls": MAX_FETCH_READ_CALLS,
+                "url_fetch_read_calls": MAX_FETCH_READ_CALLS,
                 "max_redirects": MAX_REDIRECTS,
                 "allowed_final_host": REQUIRED_DOMAIN,
                 "max_fetched_bytes": MAX_FETCHED_BYTES,
@@ -1046,10 +1200,9 @@ def _base_packet(
                 "docs/architecture/AG_LIVE_SOURCE_SURVIVAL_FETCH_READ_CUSTODY_01.md",
             ],
             "why_not_reinventing_existing_surface": (
-                "An explicit fixture can supply only the bounded sanitized "
-                "material needed by existing current-path reducers; the "
-                "harness creates no downloader, parallel content packet, or "
-                "custody authority."
+                "The harness supplies only the bounded public fetch/read "
+                "material needed by existing current-path reducers; it does "
+                "not create a parallel content packet or custody authority."
             ),
             "old_path_treatment": (
                 "Old Author/FAP/sufficiency/follow-up/pipeline/offline bridge "
@@ -1059,9 +1212,9 @@ def _base_packet(
                 "structural proof packet only; no answer text or product prose"
             ),
             "live_validation_status": (
-                "offline injected fixture validation executed"
+                "one public URL fetch/read licensed for fetch-read-custody only"
                 if fetch_read_calls_attempted
-                else "no injected fixture execution"
+                else "not run; operator confirmation pending"
             ),
             "mandatory_next_build_product_checkpoint": (
                 MANDATORY_NEXT_BUILD_CHECKPOINT
@@ -1174,6 +1327,21 @@ def _content_reference_ref(reference: Mapping[str, Any] | None) -> dict[str, Any
     )
 
 
+def _extract_readable_text(
+    body: bytes,
+    *,
+    content_type: str,
+    charset: str,
+) -> tuple[str, str | None]:
+    text = body.decode(charset or "utf-8", errors="replace")
+    if content_type == "text/plain":
+        return _collapse_text(text), None
+    parser = _ReadableTextExtractor()
+    parser.feed(text)
+    parser.close()
+    return parser.readable_text, parser.title
+
+
 def _bounded_current_path_text(text: str) -> str:
     return _bounded_current_path_selection(text).bounded_text
 
@@ -1249,11 +1417,8 @@ def _request_markdown(packet: Mapping[str, Any]) -> str:
         f"Usable-answer verdict target: `{packet['usable_answer_verdict_target']}`\n\n"
         f"Selected candidate: rank `{selected['rank']}` / `{selected['domain']}`\n\n"
         f"URL: `{selected['url']}`\n\n"
-        "This request packet performs no fetch/read. The compatibility command "
-        "still requires `--confirm-fetch-read`, but its retired default opener "
-        "fails closed without making a public URL fetch/read. Only an explicitly "
-        "injected in-process fixture can exercise the validation mechanics; the "
-        "CLI exposes no fixture injection.\n\n"
+        "This request packet performs no fetch/read. The live command requires "
+        "`--confirm-fetch-read` and may make exactly one public URL fetch/read.\n\n"
         "## Operator Command\n\n"
         "```powershell\n"
         f"{packet['operator_command']}\n"
@@ -1390,6 +1555,18 @@ def _collect_keys(value: Any) -> set[str]:
     return set()
 
 
+def _status_class(status_code: int | None) -> str | None:
+    if status_code is None:
+        return None
+    try:
+        status = int(status_code)
+    except (TypeError, ValueError):
+        return None
+    if not 100 <= status <= 599:
+        return None
+    return f"{status // 100}xx"
+
+
 def _allowed_final_domain(domain: str | None) -> bool:
     if not domain:
         return False
@@ -1401,10 +1578,21 @@ def _allowed_final_domain(domain: str | None) -> bool:
     )
 
 
+def _domain_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    return urlparse(url).netloc.casefold() or None
+
+
 def _collapse_text(text: Any) -> str:
     decoded = unescape(str(text or ""))
     decoded = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", " ", decoded)
     return " ".join(decoded.split())
+
+
+def _clean_token(value: Any, *, limit: int = 160) -> str | None:
+    text = _collapse_text(value)
+    return text[:limit] if text else None
 
 
 def _file_digest(path: Path) -> str:
@@ -1466,9 +1654,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Prepare and run AG-LIVE source-survival fetch/read custody packets. "
-            "The fetch-read-custody compatibility command still requires "
-            "--confirm-fetch-read, but its retired default opener makes no public "
-            "URL fetch/read call."
+            "Only fetch-read-custody with --confirm-fetch-read may make the one "
+            "licensed public URL fetch/read call."
         )
     )
     subparsers = parser.add_subparsers(dest="operation", required=True)
@@ -1481,14 +1668,7 @@ def _parser() -> argparse.ArgumentParser:
     fetch.add_argument("--candidate-packet", default=str(DEFAULT_CANDIDATE_PACKET))
     fetch.add_argument("--validation-packet", default=str(DEFAULT_VALIDATION_PACKET))
     fetch.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    fetch.add_argument(
-        "--confirm-fetch-read",
-        action="store_true",
-        help=(
-            "confirm the fail-closed validation compatibility path; this flag "
-            "does not license public network fetch/read"
-        ),
-    )
+    fetch.add_argument("--confirm-fetch-read", action="store_true")
     return parser
 
 

@@ -34,22 +34,14 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Mapping
-from urllib.parse import urlsplit
 
 import pytest
 
 import core.authorized_acquisition_runtime as acquisition_runtime
 import core.pipeline_orchestrator as orchestrator
-from core.acquisition_adapters import (
-    dispatch_acquisition_for_offline_target_safety_validation,
-)
-from core.acquisition_contracts import (
-    AcquisitionExecutionResult,
-    AcquisitionExecutionStatus,
-    AcquisitionRequest,
-)
+from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
+from core.acquisition_contracts import AcquisitionRequest
 from core.acquisition_control import (
     AcquisitionControlError,
     AcquisitionExecutionObservationV1,
@@ -63,22 +55,18 @@ from core.authorized_acquisition_runtime import (
     AcquisitionCapabilityDecisionRuntimeResult,
     AcquisitionRouteRuntimeResult,
     AcquisitionWorkOrderAdmissionRuntimeResult,
-    OfflineAcquisitionTransportFixtureV1,
     execute_acquisition_capability_decision_action,
-    execute_acquisition_route_action_for_offline_target_safety_validation,
+    execute_acquisition_route_action,
     execute_acquisition_terminal_reduction_action,
     execute_acquisition_work_order_admission_action,
-    execute_authorized_acquisition_work_order_for_offline_target_safety_validation,
+    execute_authorized_acquisition_work_order,
 )
 from core.cap_enforcement import RunCapPolicy
-from core.network_target_safety import NetworkTargetResolutionSnapshotV1
 from core.routing import (
     AcquisitionCapability,
-    OfflineProviderTargetSafetyValidationAuthorityV1,
     ProviderCapabilityRequest,
     acquisition_routing_policy_ref,
-    provider_operation_identity,
-    route_provider_capability_for_offline_target_safety_validation,
+    route_provider_capability,
 )
 from core.run_kernel import (
     ActionType,
@@ -105,53 +93,6 @@ COMPONENT_REVISION = "component-r1"
 COMPONENT_DIGEST = "b" * 64
 OBLIGATION_ID = "source-obligation-1"
 READ_URL = "https://official.example.test/rule"
-
-READ_PROVIDER_ELIGIBILITY = {
-    provider_operation_identity(
-        provider="linkup",
-        capability=AcquisitionCapability.READ,
-        operation="fetch",
-        variant="known_url",
-    ): True,
-    provider_operation_identity(
-        provider="tavily",
-        capability=AcquisitionCapability.READ,
-        operation="extract",
-        variant="basic",
-    ): True,
-}
-
-
-def _snapshots_for_urls(
-    urls: tuple[str, ...],
-    *,
-    address: str = "93.184.216.34",
-) -> tuple[NetworkTargetResolutionSnapshotV1, ...]:
-    hosts = sorted(
-        {
-            str(urlsplit(url).hostname or "")
-            for url in urls
-            if urlsplit(url).hostname
-        }
-    )
-    return tuple(
-        NetworkTargetResolutionSnapshotV1.create(
-            canonical_host=host,
-            addresses=(address,),
-        )
-        for host in hosts
-    )
-
-
-def _proposal_snapshots(
-    proposal: AcquisitionNeedProposalV1,
-    *,
-    address: str = "93.184.216.34",
-) -> tuple[NetworkTargetResolutionSnapshotV1, ...]:
-    urls = tuple(proposal.available_urls) + (
-        ((proposal.root_url,) if proposal.root_url else ())
-    )
-    return _snapshots_for_urls(urls, address=address)
 
 
 def _kernel() -> RunKernel:
@@ -311,10 +252,7 @@ def _admit_read(
     proposal: AcquisitionNeedProposalV1 | None = None,
 ) -> _AdmittedRead:
     admitted_proposal = proposal or _proposal(kernel)
-    decision_action = kernel.authorize_acquisition_capability_decision(
-        proposal=admitted_proposal,
-        target_resolution_snapshots=_proposal_snapshots(admitted_proposal),
-    )
+    decision_action = kernel.authorize_acquisition_capability_decision(proposal=admitted_proposal)
     decision_result = execute_acquisition_capability_decision_action(
         decision_action,
         proposal=admitted_proposal,
@@ -347,80 +285,18 @@ def _route_read(
 ) -> AcquisitionRouteRuntimeResult:
     providers = dict(availability or {"linkup": True, "tavily": True})
     work_order = admitted.work_order_result.work_order
-    validation_authority = _offline_validation_authority()
-    route_action = (
-        kernel.authorize_acquisition_route_for_offline_target_safety_validation(
-            work_order_ref=work_order.ref(),
-            provider_availability=providers,
-            validation_authority=validation_authority,
-        )
+    route_action = kernel.authorize_acquisition_route(
+        work_order_ref=work_order.ref(),
+        provider_availability=providers,
     )
-    result = (
-        execute_acquisition_route_action_for_offline_target_safety_validation(
-            route_action,
-            work_order=work_order,
-            available_providers=providers,
-            validation_authority=validation_authority,
-            acquisition_control_state=(
-                kernel.state.acquisition_control_state
-            ),
-        )
+    result = execute_acquisition_route_action(
+        route_action,
+        work_order=work_order,
+        available_providers=providers,
+        acquisition_control_state=kernel.state.acquisition_control_state,
     )
     kernel.reduce(result.observation)
     return result
-
-
-def _offline_validation_authority(
-) -> OfflineProviderTargetSafetyValidationAuthorityV1:
-    return OfflineProviderTargetSafetyValidationAuthorityV1.create(
-        READ_PROVIDER_ELIGIBILITY
-    )
-
-
-def _authorize_offline_execution(
-    kernel: RunKernel,
-    admitted: _AdmittedRead,
-    route: AcquisitionRouteRuntimeResult,
-):
-    return (
-        kernel.authorize_acquisition_execution_for_offline_target_safety_validation(
-            work_order_ref=admitted.work_order_result.work_order.ref(),
-            route_observation_ref=route.route_observation.ref(),
-            validation_authority=_offline_validation_authority(),
-        )
-    )
-
-
-def _execute_offline_fixture(
-    action,
-    *,
-    kernel: RunKernel,
-    work_order,
-    route_observation,
-    route_decision,
-    response: Mapping[str, Any] | None = None,
-    raise_transport_error: bool = False,
-    before_transport=None,
-    target_resolution_snapshots=(),
-):
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response=response,
-        raise_transport_error=raise_transport_error,
-    )
-    result = (
-        execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
-            action,
-            run_kernel=kernel,
-            work_order=work_order,
-            route_observation=route_observation,
-            route_decision=route_decision,
-            validation_authority=_offline_validation_authority(),
-            transport_fixture=fixture,
-            before_transport=before_transport,
-            target_resolution_snapshots=target_resolution_snapshots,
-        )
-    )
-    return result, fixture
 
 
 def _derive(
@@ -440,7 +316,6 @@ def _derive(
                 request_id=REQUEST_ID,
             )
         ),
-        target_resolution_snapshots=_proposal_snapshots(proposal),
     )
 
 
@@ -844,9 +719,12 @@ def test_work_order_or_route_without_exact_execution_authorization_cannot_dispat
     kernel = _kernel()
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "must not be reached"}
-    )
+    calls = 0
+
+    def forbidden_transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not be reached"}
 
     work_order_action = next(
         action
@@ -858,19 +736,15 @@ def test_work_order_or_route_without_exact_execution_authorization_cannot_dispat
     )
     for unauthorized_action in (work_order_action, route_action):
         with pytest.raises((ValueError, RunKernelTransitionError)):
-            execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+            execute_authorized_acquisition_work_order(
                 unauthorized_action,
                 run_kernel=kernel,
                 work_order=admitted.work_order_result.work_order,
                 route_observation=route.route_observation,
                 route_decision=route.route_decision,
-                validation_authority=_offline_validation_authority(),
-                transport_fixture=fixture,
-                target_resolution_snapshots=_proposal_snapshots(
-                    admitted.proposal
-                ),
+                transports=AcquisitionTransports(linkup_fetch=forbidden_transport),
             )
-    assert fixture.calls == 0
+    assert calls == 0
 
 
 def test_stale_work_order_route_pair_cannot_dispatch() -> None:
@@ -888,27 +762,27 @@ def test_stale_work_order_route_pair_cannot_dispatch() -> None:
         ),
     )
     second_route = _route_read(second_kernel, second)
-    execution_action = _authorize_offline_execution(
-        first_kernel,
-        first,
-        first_route,
+    execution_action = first_kernel.authorize_acquisition_execution(
+        work_order_ref=first.work_order_result.work_order.ref(),
+        route_observation_ref=first_route.route_observation.ref(),
     )
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "must not be reached"}
-    )
+    calls = 0
+
+    def forbidden_transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not be reached"}
 
     with pytest.raises(AcquisitionControlError):
-        execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+        execute_authorized_acquisition_work_order(
             execution_action,
             run_kernel=first_kernel,
             work_order=first.work_order_result.work_order,
             route_observation=second_route.route_observation,
             route_decision=second_route.route_decision,
-            validation_authority=_offline_validation_authority(),
-            transport_fixture=fixture,
-            target_resolution_snapshots=_proposal_snapshots(first.proposal),
+            transports=AcquisitionTransports(linkup_fetch=forbidden_transport),
         )
-    assert fixture.calls == 0
+    assert calls == 0
 
 
 def test_execution_authorization_is_single_claim_and_single_transport_call() -> None:
@@ -916,49 +790,48 @@ def test_execution_authorization_is_single_claim_and_single_transport_call() -> 
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
     work_order = admitted.work_order_result.work_order
-    action = _authorize_offline_execution(kernel, admitted, route)
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "offline readable fixture"}
+    action = kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
     )
+    calls = 0
 
-    first_result = execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "offline readable fixture"}
+
+    first_result = execute_authorized_acquisition_work_order(
         action,
         run_kernel=kernel,
         work_order=work_order,
         route_observation=route.route_observation,
         route_decision=route.route_decision,
-        validation_authority=_offline_validation_authority(),
-        transport_fixture=fixture,
-        target_resolution_snapshots=_proposal_snapshots(admitted.proposal),
+        transports=AcquisitionTransports(linkup_fetch=transport),
     )
 
     with pytest.raises(
         AcquisitionControlError,
         match="execution_authorization_already_claimed",
     ):
-        execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+        execute_authorized_acquisition_work_order(
             action,
             run_kernel=kernel,
             work_order=work_order,
             route_observation=route.route_observation,
             route_decision=route.route_decision,
-            validation_authority=_offline_validation_authority(),
-            transport_fixture=fixture,
-            target_resolution_snapshots=_proposal_snapshots(
-                admitted.proposal
-            ),
+            transports=AcquisitionTransports(linkup_fetch=transport),
         )
     kernel.reduce(first_result.observation)
     with pytest.raises(
         RunKernelTransitionError,
         match="execution_authorization_already_active",
     ):
-        kernel.authorize_acquisition_execution_for_offline_target_safety_validation(
+        kernel.authorize_acquisition_execution(
             work_order_ref=work_order.ref(),
             route_observation_ref=route.route_observation.ref(),
-            validation_authority=_offline_validation_authority(),
         )
-    assert fixture.calls == 1
+    assert calls == 1
 
 
 def test_current_lineage_is_rechecked_inside_guard_before_transport() -> None:
@@ -966,7 +839,10 @@ def test_current_lineage_is_rechecked_inside_guard_before_transport() -> None:
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
     work_order = admitted.work_order_result.work_order
-    action = _authorize_offline_execution(kernel, admitted, route)
+    action = kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
+    )
     replacement_digest = "f" * 64
     kernel.state.current_answer_contract["accepted_contract_digest"] = (
         replacement_digest
@@ -974,27 +850,26 @@ def test_current_lineage_is_rechecked_inside_guard_before_transport() -> None:
     kernel.state.search_executor_handoff_state[
         "parent_current_contract_ref"
     ]["contract_digest"] = replacement_digest
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "must not be reached"}
-    )
+    calls = 0
+
+    def forbidden_transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not be reached"}
 
     with pytest.raises(
         AcquisitionControlError,
         match="authorized_action_authority_snapshot_digest_mismatch",
     ):
-        execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+        execute_authorized_acquisition_work_order(
             action,
             run_kernel=kernel,
             work_order=work_order,
             route_observation=route.route_observation,
             route_decision=route.route_decision,
-            validation_authority=_offline_validation_authority(),
-            transport_fixture=fixture,
-            target_resolution_snapshots=_proposal_snapshots(
-                admitted.proposal
-            ),
+            transports=AcquisitionTransports(linkup_fetch=forbidden_transport),
         )
-    assert fixture.calls == 0
+    assert calls == 0
 
 
 def test_lineage_change_in_pretransport_hook_blocks_provider_call() -> None:
@@ -1002,7 +877,11 @@ def test_lineage_change_in_pretransport_hook_blocks_provider_call() -> None:
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
     work_order = admitted.work_order_result.work_order
-    action = _authorize_offline_execution(kernel, admitted, route)
+    action = kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
+    )
+    calls = 0
 
     def stale_lineage() -> None:
         replacement_digest = "f" * 64
@@ -1013,143 +892,64 @@ def test_lineage_change_in_pretransport_hook_blocks_provider_call() -> None:
             "parent_current_contract_ref"
         ]["contract_digest"] = replacement_digest
 
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "must not be reached"}
-    )
+    def forbidden_transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not be reached"}
 
-    result = execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
-        action,
-        run_kernel=kernel,
-        work_order=work_order,
-        route_observation=route.route_observation,
-        route_decision=route.route_decision,
-        validation_authority=_offline_validation_authority(),
-        transport_fixture=fixture,
-        target_resolution_snapshots=_proposal_snapshots(admitted.proposal),
-        before_transport=stale_lineage,
-    )
-
-    assert result.execution_observation.terminal_status == "failed"
-    assert result.execution_result.failure_code == "guarded_execution_failed_closed"
-    assert result.execution_result.execution_claim_consumed is True
-    assert result.execution_result.provider_calls_attempted == 0
-    assert fixture.calls == 0
+    with pytest.raises(AcquisitionControlError, match="stale_answer_contract"):
+        execute_authorized_acquisition_work_order(
+            action,
+            run_kernel=kernel,
+            work_order=work_order,
+            route_observation=route.route_observation,
+            route_decision=route.route_decision,
+            transports=AcquisitionTransports(
+                linkup_fetch=forbidden_transport
+            ),
+            before_transport=stale_lineage,
+        )
+    assert calls == 0
 
 
 def test_selected_provider_failure_has_no_failure_time_fallback() -> None:
     kernel = _kernel()
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
-    execution_action = _authorize_offline_execution(
-        kernel,
-        admitted,
-        route,
+    execution_action = kernel.authorize_acquisition_execution(
+        work_order_ref=admitted.work_order_result.work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
     )
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        raise_transport_error=True
-    )
+    linkup_calls = 0
+    tavily_calls = 0
 
-    result = execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+    def linkup_failure(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal linkup_calls
+        linkup_calls += 1
+        raise RuntimeError("offline selected-provider failure")
+
+    def tavily_forbidden(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal tavily_calls
+        tavily_calls += 1
+        return {"results": []}
+
+    result = execute_authorized_acquisition_work_order(
         execution_action,
         run_kernel=kernel,
         work_order=admitted.work_order_result.work_order,
         route_observation=route.route_observation,
         route_decision=route.route_decision,
-        validation_authority=_offline_validation_authority(),
-        transport_fixture=fixture,
-        target_resolution_snapshots=_proposal_snapshots(admitted.proposal),
+        transports=AcquisitionTransports(
+            linkup_fetch=linkup_failure,
+            tavily_extract=tavily_forbidden,
+        ),
     )
 
     assert result.execution_observation.terminal_status == "failed"
     assert result.execution_observation.provider_calls_attempted == 1
-    assert (
-        result.execution_observation.target_safety_summary[
-            "urls_fetched_delta"
-        ]
-        == 1
-    )
     assert result.execution_result.transport_posture == "selected_adapter_failed_no_fallback"
-    assert fixture.calls == 1
-    assert route.route_decision.selected_provider == "linkup"
-
-
-def test_preclaim_adapter_return_is_an_invariant_not_a_fabricated_claim(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    kernel = _kernel()
-    admitted = _admit_read(kernel)
-    route = _route_read(kernel, admitted)
-    work_order = admitted.work_order_result.work_order
-    action = _authorize_offline_execution(kernel, admitted, route)
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "must not be reached"}
-    )
-    cap_charges = 0
-
-    def preclaim_block(
-        request: AcquisitionRequest,
-        **_kwargs: Any,
-    ) -> AcquisitionExecutionResult:
-        return AcquisitionExecutionResult(
-            request=request,
-            status=AcquisitionExecutionStatus.BLOCKED,
-            block_code="synthetic_preclaim_adapter_block",
-            transport_posture="blocked_before_transport",
-        )
-
-    def cap_charge() -> None:
-        nonlocal cap_charges
-        cap_charges += 1
-
-    monkeypatch.setattr(
-        acquisition_runtime,
-        "dispatch_acquisition_for_offline_target_safety_validation",
-        preclaim_block,
-    )
-    with pytest.raises(
-        AcquisitionControlError,
-        match="execution_adapter_returned_before_claim",
-    ):
-        execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
-            action,
-            run_kernel=kernel,
-            work_order=work_order,
-            route_observation=route.route_observation,
-            route_decision=route.route_decision,
-            validation_authority=_offline_validation_authority(),
-            transport_fixture=fixture,
-            before_transport=cap_charge,
-            target_resolution_snapshots=_proposal_snapshots(
-                admitted.proposal
-            ),
-        )
-
-    authorization = kernel.state.acquisition_control_state[
-        "execution_authorizations_by_id"
-    ][action.action_id]
-    assert authorization["claim_status"] == "authorized"
-    assert authorization["transport_claimed"] is False
-    assert fixture.calls == cap_charges == 0
-
-
-def test_target_safety_transport_count_is_not_artifact_cardinality() -> None:
-    artifact = SimpleNamespace(
-        pages=(),
-        requested_url=None,
-        redirect_url=None,
-        final_url=None,
-        canonical_url=None,
-    )
-
-    summary = acquisition_runtime._execution_target_safety_summary(
-        gate2_decisions=(),
-        gate3_decisions=(),
-        artifacts=(artifact, artifact),
-        urls_fetched_delta=1,
-    )
-
-    assert summary["successful_artifact_count"] == 2
-    assert summary["urls_fetched_delta"] == 1
+    assert linkup_calls == 1
+    assert tavily_calls == 0
 
 
 def test_post_claim_projection_failure_is_terminalized_without_replay(
@@ -1159,10 +959,16 @@ def test_post_claim_projection_failure_is_terminalized_without_replay(
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
     work_order = admitted.work_order_result.work_order
-    action = _authorize_offline_execution(kernel, admitted, route)
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "offline readable fixture"}
+    action = kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
     )
+    calls = 0
+
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "offline readable fixture"}
 
     def projection_failure(_artifact: Any) -> dict[str, Any]:
         raise AcquisitionControlError("synthetic_projection_failure")
@@ -1172,15 +978,13 @@ def test_post_claim_projection_failure_is_terminalized_without_replay(
         "_artifact_ref",
         projection_failure,
     )
-    result = execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+    result = execute_authorized_acquisition_work_order(
         action,
         run_kernel=kernel,
         work_order=work_order,
         route_observation=route.route_observation,
         route_decision=route.route_decision,
-        validation_authority=_offline_validation_authority(),
-        transport_fixture=fixture,
-        target_resolution_snapshots=_proposal_snapshots(admitted.proposal),
+        transports=AcquisitionTransports(linkup_fetch=transport),
     )
     kernel.reduce(result.observation)
     terminal_action = kernel.authorize_acquisition_terminal_reduction(
@@ -1195,7 +999,7 @@ def test_post_claim_projection_failure_is_terminalized_without_replay(
     )
     kernel.reduce(terminal.observation)
 
-    assert fixture.calls == 1
+    assert calls == 1
     assert result.execution_observation.terminal_status == "failed"
     assert result.execution_observation.failure_or_block_code == (
         "guarded_execution_failed_closed"
@@ -1210,19 +1014,21 @@ def test_completed_execution_rejects_fabricated_artifact_digests() -> None:
     admitted = _admit_read(kernel)
     route = _route_read(kernel, admitted)
     work_order = admitted.work_order_result.work_order
-    action = _authorize_offline_execution(kernel, admitted, route)
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "offline readable fixture"}
+    action = kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
     )
-    result = execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
+    result = execute_authorized_acquisition_work_order(
         action,
         run_kernel=kernel,
         work_order=work_order,
         route_observation=route.route_observation,
         route_decision=route.route_decision,
-        validation_authority=_offline_validation_authority(),
-        transport_fixture=fixture,
-        target_resolution_snapshots=_proposal_snapshots(admitted.proposal),
+        transports=AcquisitionTransports(
+            linkup_fetch=lambda _payload: {
+                "markdown": "offline readable fixture"
+            }
+        ),
     )
     forged = result.execution_observation.to_dict()
     forged_artifact = forged["artifact_refs"][0]
@@ -1251,11 +1057,10 @@ def test_completed_execution_rejects_fabricated_artifact_digests() -> None:
         AcquisitionExecutionObservationV1.from_dict(empty_completion)
 
 
-def test_low_level_offline_fixture_dispatch_remains_mechanical_without_runkernel() -> None:
-    route = route_provider_capability_for_offline_target_safety_validation(
+def test_low_level_dispatch_remains_usable_without_runkernel() -> None:
+    route = route_provider_capability(
         ProviderCapabilityRequest(capability=AcquisitionCapability.READ),
         {"linkup": True, "tavily": False},
-        validation_authority=_offline_validation_authority(),
     )
     request = AcquisitionRequest(
         acquisition_job_id="typed-runtime-read",
@@ -1264,18 +1069,18 @@ def test_low_level_offline_fixture_dispatch_remains_mechanical_without_runkernel
         max_retained_characters=20_000,
         candidate_reference="candidate-typed-runtime",
     )
-    fixture = OfflineAcquisitionTransportFixtureV1.create(
-        response={"markdown": "offline readable fixture"}
-    )
+    calls: list[dict[str, Any]] = []
 
-    result = dispatch_acquisition_for_offline_target_safety_validation(
+    result = dispatch_acquisition(
         request,
-        transport_fixture=fixture,
+        transports=AcquisitionTransports(
+            linkup_fetch=lambda payload: calls.append(payload) or {"markdown": "offline readable fixture"}
+        ),
     )
 
     assert result.succeeded is True
     assert result.provider_calls_attempted == 1
-    assert fixture.calls == 1
+    assert len(calls) == 1
 
 
 def test_actual_ordinary_selected_candidate_does_not_start_acquisition_control(

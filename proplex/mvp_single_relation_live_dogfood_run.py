@@ -20,7 +20,9 @@ from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from core.analyst_workbench_runtime import (
     ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION,
@@ -91,7 +93,10 @@ from core.model_assisted_single_relation_planning import (
 )
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.pdf_text_layer_extraction import (
+    PDF_TEXT_EXTRACTION_STATUS_CAP_EXHAUSTED,
     PDF_TEXT_EXTRACTION_STATUS_EXTRACTED,
+    PDF_TEXT_EXTRACTION_STATUS_NO_TEXT_LAYER,
+    extract_pdf_text_layer,
 )
 from core.product_model_route_config import (
     CONFIRM_CURRENT_SOURCE_FOLLOWUP_REENTRY_FLAG,
@@ -355,10 +360,14 @@ MAX_INDEPENDENT_SOURCE_CHECKS = 0
 MAX_FETCHED_BYTES = 1_048_576
 MAX_REDIRECTS = 2
 FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID = (
-    "local_webpage_fetch_read_opener_retired_v1"
+    "generic_public_web_fetch_read_request_hygiene_v1"
 )
 FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE = (
-    "provider_mediated_acquisition_authority_required"
+    "stable_product_user_agent_accept_accept_language"
+)
+FETCH_READ_PUBLIC_WEB_USER_AGENT = (
+    "ScryRaven/1.0 "
+    "(+https://github.com/aidan600/scryraven; generic-public-web-readability-check)"
 )
 
 FETCH_READ_FAILURE_MISSING_URL = "MISSING_URL"
@@ -1790,18 +1799,246 @@ def build_generic_single_relation_live_dogfood_run_output(
 
 
 def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
-    """Fail closed: the CLI-reachable local webpage opener is retired."""
+    """Fetch one public URL and retain only bounded sanitized readable text."""
 
-    raise GenericSingleRelationLiveDogfoodRunError(
-        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
-        "the local webpage fetch/read opener is retired; provider-mediated "
-        "acquisition authority is required.",
-        fetch_status_class=FETCH_READ_UNKNOWN,
-        fetch_content_type=FETCH_READ_UNKNOWN,
-        fetch_readable_content_type=FETCH_READ_UNKNOWN,
-        fetch_readable_text_obtained=False,
-        fetch_failure_category=FETCH_READ_FAILURE_EXCEPTION,
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "fetch/read requires an http(s) URL.",
+            fetch_status_class=FETCH_READ_UNKNOWN,
+            fetch_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_INVALID_URL,
+        )
+    redirect_handler = _RedirectLimiter()
+    opener = build_opener(redirect_handler)
+    request = _public_web_fetch_read_request(url)
+    try:
+        with opener.open(request, timeout=20) as response:
+            body = response.read(MAX_FETCHED_BYTES + 1)
+            final_url = response.geturl()
+            status_code = getattr(response, "status", None)
+            content_type_header = response.headers.get("content-type", "")
+    except HTTPError as exc:
+        status_class = _status_class(exc.code)
+        content_type_header = exc.headers.get("content-type", "") if exc.headers else ""
+        content_type = (
+            _content_type_or_unknown(content_type_header)
+            if content_type_header
+            else FETCH_READ_UNKNOWN
+        )
+        final_url = _http_error_final_url(exc) or url
+        redirect_chain_digest = (
+            _digest_json(redirect_handler.redirects)
+            if redirect_handler.redirects
+            else None
+        )
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            f"fetch/read HTTP error status class {status_class}.",
+            fetch_status_class=status_class,
+            fetch_content_type=content_type,
+            fetch_readable_content_type=_readable_content_type_value(content_type),
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=_failure_category_for_status_class(status_class),
+            fetch_final_url=final_url,
+            fetch_status_code=exc.code,
+            fetch_redirect_count=len(redirect_handler.redirects),
+            fetch_redirect_chain_digest=redirect_chain_digest,
+        ) from None
+    except URLError as exc:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            f"fetch/read URL error: {_clean_text(exc.reason, limit=120) or 'unavailable'}.",
+            fetch_status_class=FETCH_READ_UNKNOWN,
+            fetch_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_EXCEPTION,
+        ) from None
+    content_type, charset = _content_type_and_charset(content_type_header)
+    if len(body) > MAX_FETCHED_BYTES:
+        if _pdf_fetch_target(
+            content_type=content_type,
+            attempted_url=url,
+            final_url=final_url,
+        ):
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED,
+                "PDF fetch/read byte cap exhausted before text extraction.",
+                caps_exhausted=True,
+                fetch_status_class=_status_class(status_code),
+                fetch_content_type=content_type,
+                fetch_readable_content_type=False,
+                fetch_readable_text_obtained=False,
+                fetch_failure_category=FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED,
+                fetch_final_url=final_url,
+                fetch_status_code=status_code,
+                fetch_redirect_count=len(redirect_handler.redirects),
+                fetch_redirect_chain_digest=(
+                    _digest_json(redirect_handler.redirects)
+                    if redirect_handler.redirects
+                    else None
+                ),
+                pdf_text_extraction_attempted=True,
+                pdf_text_extraction_status=PDF_TEXT_EXTRACTION_STATUS_CAP_EXHAUSTED,
+            )
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED,
+            "fetch/read byte cap exhausted.",
+            caps_exhausted=True,
+        )
+    if _pdf_fetch_target(
+        content_type=content_type,
+        attempted_url=url,
+        final_url=final_url,
+    ):
+        extraction = extract_pdf_text_layer(body)
+        pdf_diagnostics = extraction.to_diagnostics()
+        if extraction.extracted:
+            final_domain = urlparse(final_url).netloc.lower()
+            return GenericLiveFetchReadResult(
+                attempted_url=url,
+                final_url=final_url,
+                final_domain=final_domain,
+                status_code=status_code,
+                status_class=_status_class(status_code),
+                content_type=content_type,
+                fetched_byte_count=len(body),
+                sanitized_text=extraction.sanitized_text,
+                content_title=None,
+                redirect_count=len(redirect_handler.redirects),
+                redirect_chain_digest=(
+                    _digest_json(redirect_handler.redirects)
+                    if redirect_handler.redirects
+                    else None
+                ),
+                retrieved_or_observed_at=datetime.now(UTC)
+                .replace(microsecond=0)
+                .isoformat(),
+                pdf_text_extraction_attempted=True,
+                pdf_text_extraction_status=extraction.status,
+                pdf_text_extraction_char_count=extraction.char_count,
+                pdf_text_extraction_page_count=extraction.page_count,
+                raw_pdf_bytes_retained=False,
+                raw_pdf_text_retained=False,
+                bounded_text_retained=True,
+                ocr_opened=False,
+                browser_automation_opened=False,
+                external_service_used=False,
+            )
+        if extraction.status == PDF_TEXT_EXTRACTION_STATUS_NO_TEXT_LAYER:
+            blocker = BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_UNAVAILABLE
+            failure_category = FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_UNAVAILABLE
+            detail = "PDF had no extractable text layer; OCR is not opened."
+        else:
+            blocker = BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_FAILED
+            failure_category = FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_FAILED
+            detail = "PDF text-layer extraction failed; OCR/browser fallback is not opened."
+        raise GenericSingleRelationLiveDogfoodRunError(
+            blocker,
+            detail,
+            fetch_status_class=_status_class(status_code),
+            fetch_content_type=content_type,
+            fetch_readable_content_type=False,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=failure_category,
+            fetch_final_url=final_url,
+            fetch_status_code=status_code,
+            fetch_redirect_count=len(redirect_handler.redirects),
+            fetch_redirect_chain_digest=(
+                _digest_json(redirect_handler.redirects)
+                if redirect_handler.redirects
+                else None
+            ),
+            pdf_text_extraction_attempted=True,
+            pdf_text_extraction_status=pdf_diagnostics["pdf_text_extraction_status"],
+            pdf_text_extraction_char_count=pdf_diagnostics[
+                "pdf_text_extraction_char_count"
+            ],
+            pdf_text_extraction_page_count=pdf_diagnostics[
+                "pdf_text_extraction_page_count"
+            ],
+            raw_pdf_bytes_retained=False,
+            raw_pdf_text_retained=False,
+            bounded_text_retained=False,
+            ocr_opened=False,
+            browser_automation_opened=False,
+            external_service_used=False,
+        )
+    if content_type not in FETCH_READ_READABLE_CONTENT_TYPES:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "fetch/read did not receive a readable text/html or text/plain response.",
+            fetch_status_class=_status_class(status_code),
+            fetch_content_type=content_type,
+            fetch_readable_content_type=False,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
+        )
+    readable_text, content_title = _extract_readable_text(
+        body,
+        content_type=content_type,
+        charset=charset,
     )
+    if not readable_text:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "fetch/read produced no sanitized readable text.",
+            fetch_status_class=_status_class(status_code),
+            fetch_content_type=content_type,
+            fetch_readable_content_type=True,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_NO_READABLE_TEXT,
+        )
+    final_domain = urlparse(final_url).netloc.lower()
+    return GenericLiveFetchReadResult(
+        attempted_url=url,
+        final_url=final_url,
+        final_domain=final_domain,
+        status_code=status_code,
+        status_class=_status_class(status_code),
+        content_type=content_type,
+        fetched_byte_count=len(body),
+        sanitized_text=readable_text,
+        content_title=content_title,
+        redirect_count=len(redirect_handler.redirects),
+        redirect_chain_digest=(
+            _digest_json(redirect_handler.redirects)
+            if redirect_handler.redirects
+            else None
+        ),
+        retrieved_or_observed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
+    )
+
+
+def _public_web_fetch_read_request(url: str) -> Request:
+    return Request(
+        url,
+        headers=_public_web_fetch_read_request_headers(),
+        method="GET",
+    )
+
+
+def _public_web_fetch_read_request_headers() -> dict[str, str]:
+    return {
+        "User-Agent": FETCH_READ_PUBLIC_WEB_USER_AGENT,
+        "Accept": (
+            "text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.1"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
+    }
+
+
+def _http_error_final_url(exc: HTTPError) -> str | None:
+    try:
+        value = exc.geturl()
+    except (AttributeError, ValueError):
+        value = getattr(exc, "url", None)
+    return _clean_text(value, limit=700)
 
 
 def validate_generic_single_relation_live_dogfood_packet(
@@ -14920,6 +15157,36 @@ def _redact_private_values(value: Any) -> Any:
     if isinstance(value, str):
         return PRIVATE_LOOKING_VALUE_REDACTION if _private_value_markers(value) else value
     return value
+
+
+class _RedirectLimiter(HTTPRedirectHandler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.redirects: list[dict[str, Any]] = []
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> Request | None:
+        if len(self.redirects) >= MAX_REDIRECTS:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED,
+                "fetch/read redirect cap exhausted.",
+                caps_exhausted=True,
+            )
+        self.redirects.append(
+            {
+                "from_domain": urlparse(req.full_url).netloc.lower(),
+                "to_domain": urlparse(newurl).netloc.lower(),
+                "status_class": _status_class(code),
+            }
+        )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class _ReadableTextExtractor(HTMLParser):

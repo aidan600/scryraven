@@ -13,15 +13,10 @@ sufficiency, or grants FinalAnswerPacket/Author authority.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping
 
-from core.acquisition_adapters import (
-    AcquisitionTransports,
-    OfflineAcquisitionTransportFixtureV1,
-    dispatch_acquisition,
-    dispatch_acquisition_for_offline_target_safety_validation,
-)
+from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
 from core.acquisition_contracts import (
     CRAWL_AGGREGATE_RETAINED_CHARACTER_CEILING,
     READ_RETAINED_CHARACTER_CEILING,
@@ -49,30 +44,14 @@ from core.acquisition_control import (
     stable_json_digest,
 )
 from core.cap_enforcement import RunCapExceeded
-from core.network_target_safety import (
-    NetworkTargetFactKind,
-    NetworkTargetResolutionSnapshotV1,
-    NetworkTargetSafetyDecisionV1,
-    NetworkTargetSafetyStage,
-    NetworkTargetSafetyStatus,
-    NetworkTargetTransportMode,
-    evaluate_network_target_safety,
-    resolution_snapshot_for_url,
-    resolution_snapshots_from_bundle,
-)
 from core.routing import (
-    OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
     PROVIDER_NAMES,
-    UNTRUSTED_EXACT_URL_TARGET_CLASS,
     AcquisitionCapability,
-    OfflineProviderTargetSafetyValidationAuthorityV1,
     ProviderAvailability,
     ProviderCapabilityRequest,
     ProviderRouteDecision,
-    ProviderTargetSafetyEligibilitySnapshot,
     acquisition_routing_policy_ref,
     route_provider_capability,
-    route_provider_capability_for_offline_target_safety_validation,
 )
 from core.run_kernel import (
     AuthorizedAction,
@@ -206,6 +185,7 @@ def execute_acquisition_capability_decision_action(
         expected_observation_type=ACQUISITION_CAPABILITY_DECIDED_OBSERVATION,
     )
     state = _validated_control_state(acquisition_control_state, action=authorized)
+    _require_action_binding(authorized, "proposal", proposal.to_dict())
     _validate_authority_snapshot(
         authority_snapshot,
         run_id=authorized.run_id,
@@ -217,45 +197,6 @@ def execute_acquisition_capability_decision_action(
         "acquisition_control_state_digest",
         stable_json_digest(state),
     )
-    precomputed_block = action.inputs.get(
-        "precomputed_blocked_capability_decision"
-    )
-    if isinstance(precomputed_block, Mapping):
-        _require_action_binding(authorized, "proposal_ref", proposal.ref())
-        if proposal.proposal_id in _mapping_bucket(state, "proposals_by_id"):
-            raise AcquisitionControlError(
-                "safety_blocked_proposal_must_not_be_retained"
-            )
-        decision = AcquisitionCapabilityDecisionObservationV1.from_dict(
-            precomputed_block
-        )
-        expected_decision = derive_acquisition_capability_decision(
-            proposal=proposal,
-            authority_snapshot=authority_snapshot,
-            acquisition_control_state=state,
-            target_resolution_snapshots=resolution_snapshots_from_bundle(
-                action.inputs.get("target_resolution_snapshots")
-            ),
-        )
-        if decision.to_dict() != expected_decision.to_dict():
-            raise AcquisitionControlError(
-                "precomputed_safety_block_decision_mismatch"
-            )
-        if not str(decision.block_code or "").startswith(
-            "admission_target_safety_blocked:"
-        ):
-            raise AcquisitionControlError(
-                "precomputed_capability_block_is_not_target_safety"
-            )
-        return AcquisitionCapabilityDecisionRuntimeResult(
-            decision=decision,
-            observation=_observation(
-                authorized,
-                {"capability_decision": decision.to_dict()},
-            ),
-        )
-
-    _require_action_binding(authorized, "proposal", proposal.to_dict())
     canonical_proposal = AcquisitionNeedProposalV1.from_dict(
         _mapping_bucket(state, "proposals_by_id").get(
             proposal.proposal_id, {}
@@ -274,9 +215,6 @@ def execute_acquisition_capability_decision_action(
         proposal=proposal,
         authority_snapshot=authority_snapshot,
         acquisition_control_state=state,
-        target_resolution_snapshots=resolution_snapshots_from_bundle(
-            action.inputs.get("target_resolution_snapshots")
-        ),
     )
     return AcquisitionCapabilityDecisionRuntimeResult(
         decision=decision,
@@ -334,54 +272,7 @@ def execute_acquisition_route_action(
     available_providers: Mapping[str, object] | None,
     acquisition_control_state: Mapping[str, Any],
 ) -> AcquisitionRouteRuntimeResult:
-    """Complete ordinary PRODUCT routing through code-owned eligibility."""
-
-    return _execute_acquisition_route_action(
-        action,
-        work_order=work_order,
-        available_providers=available_providers,
-        validation_authority=None,
-        acquisition_control_state=acquisition_control_state,
-    )
-
-
-def execute_acquisition_route_action_for_offline_target_safety_validation(
-    action: AuthorizedAction,
-    *,
-    work_order: AcquisitionWorkOrderV1,
-    available_providers: Mapping[str, object] | None,
-    validation_authority: OfflineProviderTargetSafetyValidationAuthorityV1,
-    acquisition_control_state: Mapping[str, Any],
-) -> AcquisitionRouteRuntimeResult:
-    """Exercise route mechanics under explicit PRODUCT-unreachable authority."""
-
-    if not isinstance(
-        validation_authority,
-        OfflineProviderTargetSafetyValidationAuthorityV1,
-    ):
-        raise AcquisitionControlError(
-            "typed_offline_provider_target_safety_authority_required"
-        )
-    return _execute_acquisition_route_action(
-        action,
-        work_order=work_order,
-        available_providers=available_providers,
-        validation_authority=validation_authority,
-        acquisition_control_state=acquisition_control_state,
-    )
-
-
-def _execute_acquisition_route_action(
-    action: AuthorizedAction,
-    *,
-    work_order: AcquisitionWorkOrderV1,
-    available_providers: Mapping[str, object] | None,
-    validation_authority: (
-        OfflineProviderTargetSafetyValidationAuthorityV1 | None
-    ),
-    acquisition_control_state: Mapping[str, Any],
-) -> AcquisitionRouteRuntimeResult:
-    """Shared reducer-bound route executor for PRODUCT and offline validation."""
+    """Complete provider selection solely through ``core.routing``."""
 
     authorized = validate_authorized_action(
         action,
@@ -404,53 +295,6 @@ def _execute_acquisition_route_action(
         work_order_ref=work_order.ref(),
     )
     _require_action_binding(authorized, "availability_snapshot_ref", availability_ref)
-    if validation_authority is None:
-        _require_action_binding(
-            authorized,
-            "provider_target_safety_route_authority_posture",
-            "PRODUCT",
-        )
-        if (
-            "offline_provider_target_safety_fixture" in authorized.inputs
-            or "offline_provider_target_safety_validation_authority_ref"
-            in authorized.inputs
-        ):
-            raise AcquisitionControlError(
-                "product_route_contains_offline_validation_authority"
-            )
-        target_safety_eligibility = (
-            ProviderTargetSafetyEligibilitySnapshot.create(
-                target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-            )
-        )
-    else:
-        _require_action_binding(
-            authorized,
-            "provider_target_safety_route_authority_posture",
-            OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
-        )
-        target_safety_fixture = validation_authority.validated_mapping()
-        _require_action_binding(
-            authorized,
-            "offline_provider_target_safety_fixture",
-            target_safety_fixture,
-        )
-        _require_action_binding(
-            authorized,
-            "offline_provider_target_safety_validation_authority_ref",
-            validation_authority.ref(),
-        )
-        target_safety_eligibility = (
-            ProviderTargetSafetyEligibilitySnapshot.for_offline_validation(
-                target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-                authority=validation_authority,
-            )
-        )
-    _require_action_binding(
-        authorized,
-        "provider_target_safety_eligibility_ref",
-        target_safety_eligibility.ref(),
-    )
     _require_canonical_record(
         state,
         bucket="work_orders_by_id",
@@ -465,21 +309,11 @@ def _execute_acquisition_route_action(
         include_domains=tuple(work_order.include_domains),
         exclude_domains=tuple(work_order.exclude_domains),
         derivation_reason="runkernel_authorized_post_discovery_work_order",
-        target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
     )
-    if validation_authority is None:
-        route_decision = route_provider_capability(
-            request,
-            availability_snapshot,
-        )
-    else:
-        route_decision = (
-            route_provider_capability_for_offline_target_safety_validation(
-                request,
-                availability_snapshot,
-                validation_authority=validation_authority,
-            )
-        )
+    route_decision = route_provider_capability(
+        request,
+        availability_snapshot,
+    )
     route_observation = AcquisitionRouteObservationV1.create(
         work_order_ref=work_order.ref(),
         route_decision_trace=route_decision.to_trace(),
@@ -503,107 +337,14 @@ def execute_authorized_acquisition_work_order(
     route_decision: ProviderRouteDecision,
     transports: AcquisitionTransports | None = None,
     before_transport: Callable[[], None] | None = None,
-    target_resolution_snapshots: Sequence[
-        NetworkTargetResolutionSnapshotV1
-    ] = (),
 ) -> AuthorizedAcquisitionExecutionRuntimeResult:
-    """Guard one ordinary PRODUCT acquisition execution."""
-
-    if action.inputs.get("execution_target_safety_authority_posture") != "PRODUCT":
-        raise RunKernelTransitionError(
-            "offline_validation_execution_cannot_enter_product_runtime"
-        )
-    return _execute_authorized_acquisition_work_order(
-        action,
-        run_kernel=run_kernel,
-        work_order=work_order,
-        route_observation=route_observation,
-        route_decision=route_decision,
-        transports=transports,
-        offline_transport_fixture=None,
-        before_transport=before_transport,
-        target_resolution_snapshots=target_resolution_snapshots,
-    )
-
-
-def execute_authorized_acquisition_work_order_for_offline_target_safety_validation(
-    action: AuthorizedAction,
-    *,
-    run_kernel: RunKernel,
-    work_order: AcquisitionWorkOrderV1,
-    route_observation: AcquisitionRouteObservationV1,
-    route_decision: ProviderRouteDecision,
-    validation_authority: OfflineProviderTargetSafetyValidationAuthorityV1,
-    transport_fixture: OfflineAcquisitionTransportFixtureV1,
-    before_transport: Callable[[], None] | None = None,
-    target_resolution_snapshots: Sequence[
-        NetworkTargetResolutionSnapshotV1
-    ] = (),
-) -> AuthorizedAcquisitionExecutionRuntimeResult:
-    """Run one deterministic offline response through the guarded executor."""
-
-    if not isinstance(
-        validation_authority,
-        OfflineProviderTargetSafetyValidationAuthorityV1,
-    ):
-        raise AcquisitionControlError(
-            "typed_offline_provider_target_safety_authority_required"
-        )
-    if type(transport_fixture) is not OfflineAcquisitionTransportFixtureV1:
-        raise AcquisitionControlError(
-            "typed_offline_acquisition_transport_fixture_required"
-        )
-    _require_action_binding(
-        action,
-        "execution_target_safety_authority_posture",
-        OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
-    )
-    _require_action_binding(
-        action,
-        "offline_provider_target_safety_validation_authority_ref",
-        validation_authority.ref(),
-    )
-    transport_fixture.validate()
-    return _execute_authorized_acquisition_work_order(
-        action,
-        run_kernel=run_kernel,
-        work_order=work_order,
-        route_observation=route_observation,
-        route_decision=route_decision,
-        transports=None,
-        offline_transport_fixture=transport_fixture,
-        before_transport=before_transport,
-        target_resolution_snapshots=target_resolution_snapshots,
-    )
-
-
-def _execute_authorized_acquisition_work_order(
-    action: AuthorizedAction,
-    *,
-    run_kernel: RunKernel,
-    work_order: AcquisitionWorkOrderV1,
-    route_observation: AcquisitionRouteObservationV1,
-    route_decision: ProviderRouteDecision,
-    transports: AcquisitionTransports | None,
-    offline_transport_fixture: OfflineAcquisitionTransportFixtureV1 | None,
-    before_transport: Callable[[], None] | None,
-    target_resolution_snapshots: Sequence[
-        NetworkTargetResolutionSnapshotV1
-    ],
-) -> AuthorizedAcquisitionExecutionRuntimeResult:
-    """Shared guarded executor after PRODUCT/offline authority separation."""
+    """Guard and dispatch exactly one current, selected acquisition order."""
 
     authorized = validate_authorized_action(
         action,
         action_type=ACQUISITION_EXECUTE_ACTION,
         stage=ACQUISITION_EXECUTION_STAGE,
         expected_observation_type=ACQUISITION_EXECUTION_OBSERVED_OBSERVATION,
-    )
-    execution_authority_posture = str(
-        authorized.inputs.get(
-            "execution_target_safety_authority_posture"
-        )
-        or ""
     )
     state = _validated_execution_kernel_state(
         run_kernel=run_kernel,
@@ -644,66 +385,6 @@ def _execute_authorized_acquisition_work_order(
         route_decision=route_decision,
     )
     request = _materialize_acquisition_request(work_order, route_decision)
-    gate2_decisions = _evaluate_final_pretransport_target_safety(
-        action=authorized,
-        work_order=work_order,
-        request=request,
-        snapshots=target_resolution_snapshots,
-    )
-    gate2_decisions = (
-        run_kernel.record_acquisition_execution_target_safety_decisions(
-            action=authorized,
-            stage=NetworkTargetSafetyStage.FINAL_PRETRANSPORT,
-            decisions=gate2_decisions,
-        )
-    )
-    if any(
-        decision.status == NetworkTargetSafetyStatus.BLOCKED.value
-        for decision in gate2_decisions
-    ):
-        blocker = next(
-            decision.blocker_code
-            for decision in gate2_decisions
-            if decision.blocker_code
-        )
-        summary = _execution_target_safety_summary(
-            gate2_decisions=gate2_decisions,
-            gate3_decisions=(),
-            final_pretransport_block=True,
-            urls_fetched_delta=0,
-        )
-        execution_result = AcquisitionExecutionResult(
-            request=request,
-            status=AcquisitionExecutionStatus.BLOCKED,
-            provider_calls_attempted=0,
-            provider_calls_completed=0,
-            block_code=(
-                f"final_pretransport_target_safety_blocked:{blocker}"
-            ),
-            detail=None,
-            transport_posture="blocked_before_claim_by_target_safety",
-            target_safety_decision_refs=tuple(
-                decision.ref() for decision in gate2_decisions
-            ),
-            target_safety_summary=summary,
-            execution_claim_consumed=False,
-            adapter_invoked=False,
-        )
-        execution_observation = _execution_observation(
-            work_order=work_order,
-            route_observation=route_observation,
-            execution_result=execution_result,
-            execution_authority_posture=execution_authority_posture,
-        )
-        return AuthorizedAcquisitionExecutionRuntimeResult(
-            execution_result=execution_result,
-            execution_observation=execution_observation,
-            observation=_observation(
-                authorized,
-                {"execution_observation": execution_observation.to_dict()},
-            ),
-        )
-
     deferred_error: RunCapExceeded | None = None
     execution_result: AcquisitionExecutionResult | None = None
     transport_claimed = False
@@ -721,66 +402,21 @@ def _execute_authorized_acquisition_work_order(
         transport_claimed = True
 
     def claim_immediately_before_transport() -> None:
-        claim_execution_authorization()
         if before_transport is not None:
-            before_transport()
-        current_state = _validated_execution_kernel_state(
-            run_kernel=run_kernel,
-            action=authorized,
-        )
-        current_authority_snapshot = (
-            run_kernel.acquisition_authority_snapshot()
-        )
-        current_snapshot_digest = _validate_authority_snapshot(
-            current_authority_snapshot,
-            run_id=authorized.run_id,
-            request_id=str(current_state.get("request_id") or ""),
-        )
-        _require_action_binding(
-            authorized,
-            "authority_snapshot_digest",
-            current_snapshot_digest,
-        )
-        _require_current_work_order_lineage(
-            work_order=work_order,
-            authority_snapshot=current_authority_snapshot,
-        )
-        _guard_execution_state(
-            state=current_state,
-            action=authorized,
-            work_order=work_order,
-            route_observation=route_observation,
-            route_decision=route_decision,
-            expect_claimed=True,
-        )
+            try:
+                before_transport()
+            except Exception:
+                claim_execution_authorization()
+                raise
+        claim_execution_authorization()
 
-    gate3_decisions: tuple[NetworkTargetSafetyDecisionV1, ...] = ()
     try:
         try:
-            if (
-                execution_authority_posture
-                == OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-            ):
-                if (
-                    type(offline_transport_fixture)
-                    is not OfflineAcquisitionTransportFixtureV1
-                ):
-                    raise AcquisitionControlError(
-                        "offline_execution_fixture_required"
-                    )
-                execution_result = (
-                    dispatch_acquisition_for_offline_target_safety_validation(
-                        request,
-                        transport_fixture=offline_transport_fixture,
-                        before_transport=claim_immediately_before_transport,
-                    )
-                )
-            else:
-                execution_result = dispatch_acquisition(
-                    request,
-                    transports=transports,
-                    before_transport=claim_immediately_before_transport,
-                )
+            execution_result = dispatch_acquisition(
+                request,
+                transports=transports,
+                before_transport=claim_immediately_before_transport,
+            )
         except RunCapExceeded as exc:
             deferred_error = exc
             execution_result = AcquisitionExecutionResult(
@@ -793,167 +429,30 @@ def _execute_authorized_acquisition_work_order(
                 transport_posture="blocked_before_transport_by_run_cap",
             )
         if not transport_claimed:
-            raise AcquisitionControlError(
-                "execution_adapter_returned_before_claim"
-            )
-        execution_result = replace(
-            execution_result,
-            execution_claim_consumed=True,
-            adapter_invoked=True,
+            claim_execution_authorization()
+        artifact_refs = tuple(
+            _artifact_ref(artifact)
+            for artifact in execution_result.artifacts
         )
-        applicability_failure: str | None = None
-        posttransport_observation_overflow = (
-            execution_result.failure_code
-            == "posttransport_target_observation_overflow"
-        )
-        completed_response_has_target_facts = bool(
-            execution_result.provider_calls_completed == 1
-            and (
-                posttransport_observation_overflow
-                or any(
-                    any(
-                        getattr(artifact, field_name, None)
-                        for field_name, _fact_kind in _OBSERVED_TARGET_FIELDS
-                    )
-                    for artifact in execution_result.artifacts
-                )
-            )
-        )
-        if completed_response_has_target_facts:
-            gate3_decisions, applicability_failure = (
-                _evaluate_posttransport_target_safety(
-                    action=authorized,
-                    work_order=work_order,
-                    artifacts=execution_result.artifacts,
-                    snapshots=target_resolution_snapshots,
-                    observation_overflow=posttransport_observation_overflow,
-                )
-            )
-            gate3_decisions = (
-                run_kernel.record_acquisition_execution_target_safety_decisions(
-                    action=authorized,
-                    stage=(
-                        NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET
-                    ),
-                    decisions=gate3_decisions,
-                )
-            )
-            blocked_decision = next(
-                (
-                    decision
-                    for decision in gate3_decisions
-                    if decision.status
-                    == NetworkTargetSafetyStatus.BLOCKED.value
-                ),
-                None,
-            )
-            if blocked_decision is not None:
-                summary = _execution_target_safety_summary(
-                    gate2_decisions=gate2_decisions,
-                    gate3_decisions=gate3_decisions,
-                    posttransport_failure=True,
-                    urls_fetched_delta=(
-                        execution_result.provider_calls_attempted
-                    ),
-                )
-                execution_result = replace(
-                    execution_result,
-                    status=AcquisitionExecutionStatus.FAILED,
-                    artifacts=(),
-                    failure_code=(
-                        "posttransport_target_safety_failure:"
-                        f"{blocked_decision.blocker_code}"
-                    ),
-                    block_code=None,
-                    detail=None,
-                    transport_posture=(
-                        "one_transport_failed_posttransport_target_safety"
-                    ),
-                    target_safety_decision_refs=tuple(
-                        decision.ref()
-                        for decision in (*gate2_decisions, *gate3_decisions)
-                    ),
-                    target_safety_summary=summary,
-                )
-            elif applicability_failure is not None:
-                summary = _execution_target_safety_summary(
-                    gate2_decisions=gate2_decisions,
-                    gate3_decisions=gate3_decisions,
-                    applicability_failure=True,
-                    urls_fetched_delta=(
-                        execution_result.provider_calls_attempted
-                    ),
-                )
-                execution_result = replace(
-                    execution_result,
-                    status=AcquisitionExecutionStatus.FAILED,
-                    artifacts=(),
-                    failure_code=(
-                        "posttransport_target_applicability_failure:"
-                        f"{applicability_failure}"
-                    ),
-                    block_code=None,
-                    detail=None,
-                    transport_posture=(
-                        "one_transport_failed_target_applicability"
-                    ),
-                    target_safety_decision_refs=tuple(
-                        decision.ref()
-                        for decision in (*gate2_decisions, *gate3_decisions)
-                    ),
-                    target_safety_summary=summary,
-                )
-            elif execution_result.succeeded:
-                summary = _execution_target_safety_summary(
-                    gate2_decisions=gate2_decisions,
-                    gate3_decisions=gate3_decisions,
-                    artifacts=execution_result.artifacts,
-                    urls_fetched_delta=(
-                        execution_result.provider_calls_attempted
-                    ),
-                )
-                execution_result = replace(
-                    execution_result,
-                    target_safety_decision_refs=tuple(
-                        decision.ref()
-                        for decision in (*gate2_decisions, *gate3_decisions)
-                    ),
-                    target_safety_summary=summary,
-                )
-            else:
-                execution_result = replace(
-                    execution_result,
-                    target_safety_decision_refs=tuple(
-                        decision.ref()
-                        for decision in (*gate2_decisions, *gate3_decisions)
-                    ),
-                    target_safety_summary=_execution_target_safety_summary(
-                        gate2_decisions=gate2_decisions,
-                        gate3_decisions=gate3_decisions,
-                        urls_fetched_delta=(
-                            execution_result.provider_calls_attempted
-                        ),
-                    ),
-                )
-        else:
-            execution_result = replace(
+        execution_observation = AcquisitionExecutionObservationV1.create(
+            work_order_ref=work_order.ref(),
+            completed_route_ref=route_observation.ref(),
+            execution_result_trace=_execution_result_projection(
                 execution_result,
-                target_safety_decision_refs=tuple(
-                    decision.ref() for decision in gate2_decisions
-                ),
-                target_safety_summary=_execution_target_safety_summary(
-                    gate2_decisions=gate2_decisions,
-                    gate3_decisions=(),
-                    urls_fetched_delta=(
-                        execution_result.provider_calls_attempted
-                    ),
-                ),
-            )
-        execution_observation = _execution_observation(
-            work_order=work_order,
-            route_observation=route_observation,
-            execution_result=execution_result,
-            execution_authority_posture=execution_authority_posture,
+                artifact_refs=artifact_refs,
+            ),
+            artifact_refs=artifact_refs,
+            provider_calls_attempted=(
+                execution_result.provider_calls_attempted
+            ),
+            provider_calls_completed=(
+                execution_result.provider_calls_completed
+            ),
+            terminal_status=_terminal_status(execution_result),
+            failure_or_block_code=(
+                execution_result.failure_code
+                or execution_result.block_code
+            ),
         )
     except Exception:
         if not transport_claimed:
@@ -978,23 +477,19 @@ def _execute_authorized_acquisition_work_order(
             transport_posture=(
                 "claimed_execution_failed_closed_no_replay"
             ),
-            target_safety_decision_refs=tuple(
-                decision.ref()
-                for decision in (*gate2_decisions, *gate3_decisions)
-            ),
-            target_safety_summary=_execution_target_safety_summary(
-                gate2_decisions=gate2_decisions,
-                gate3_decisions=gate3_decisions,
-                urls_fetched_delta=attempted,
-            ),
-            execution_claim_consumed=True,
-            adapter_invoked=True,
         )
-        execution_observation = _execution_observation(
-            work_order=work_order,
-            route_observation=route_observation,
-            execution_result=execution_result,
-            execution_authority_posture=execution_authority_posture,
+        execution_observation = AcquisitionExecutionObservationV1.create(
+            work_order_ref=work_order.ref(),
+            completed_route_ref=route_observation.ref(),
+            execution_result_trace=_execution_result_projection(
+                execution_result,
+                artifact_refs=(),
+            ),
+            artifact_refs=(),
+            provider_calls_attempted=attempted,
+            provider_calls_completed=completed,
+            terminal_status="failed",
+            failure_or_block_code="guarded_execution_failed_closed",
         )
     return AuthorizedAcquisitionExecutionRuntimeResult(
         execution_result=execution_result,
@@ -1167,21 +662,6 @@ def execute_acquisition_custody_authorization_action(
         raise AcquisitionControlError("custody_receipt_route_mismatch")
     if terminal_receipt.terminal_status != "completed":
         raise AcquisitionControlError("custody_requires_successful_execution")
-    execution = AcquisitionExecutionObservationV1.from_dict(
-        _mapping_bucket(state, "execution_observations_by_id").get(
-            terminal_receipt.execution_observation_ref.get(
-                "execution_observation_id"
-            ),
-            {},
-        )
-    )
-    if (
-        execution.ref() != terminal_receipt.execution_observation_ref
-        or execution.execution_authority_posture != "PRODUCT"
-    ):
-        raise AcquisitionControlError(
-            "custody_requires_product_execution_authority"
-        )
     if work_order.authorized_capability != AcquisitionCapability.READ.value:
         raise AcquisitionControlError("custody_capability_not_installed")
     prior = _mapping_bucket(state, "custody_authorizations_by_receipt")
@@ -1212,7 +692,6 @@ def _guard_execution_state(
     work_order: AcquisitionWorkOrderV1,
     route_observation: AcquisitionRouteObservationV1,
     route_decision: ProviderRouteDecision,
-    expect_claimed: bool = False,
 ) -> None:
     _require_canonical_record(
         state,
@@ -1230,56 +709,6 @@ def _guard_execution_state(
     )
     if route_observation.terminal_status != "selected" or route_decision.blocked:
         raise AcquisitionControlError("execution_route_not_selected")
-    if (
-        route_decision.request.target_class
-        != UNTRUSTED_EXACT_URL_TARGET_CLASS
-        or route_decision.selected_provider_target_safety_eligible is not True
-        or not route_decision.target_safety_eligibility_ref
-        or dict(route_decision.target_safety_eligibility_ref)
-        != dict(route_observation.target_safety_eligibility_ref)
-    ):
-        raise AcquisitionControlError(
-            "execution_route_target_safety_eligibility_invalid"
-        )
-    eligibility_ref = dict(route_observation.target_safety_eligibility_ref)
-    execution_posture = action.inputs.get(
-        "execution_target_safety_authority_posture"
-    )
-    if execution_posture == "PRODUCT":
-        if (
-            eligibility_ref.get("product_reachable") is not True
-            or eligibility_ref.get("authority_posture") != "PRODUCT"
-            or "offline_provider_target_safety_validation_authority_ref"
-            in action.inputs
-        ):
-            raise AcquisitionControlError(
-                "product_execution_target_safety_authority_invalid"
-            )
-    elif execution_posture == (
-        OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-    ):
-        if (
-            eligibility_ref.get("product_reachable") is not False
-            or eligibility_ref.get("authority_posture")
-            != OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-            or dict(
-                eligibility_ref.get("offline_validation_authority_ref")
-                or {}
-            )
-            != dict(
-                action.inputs.get(
-                    "offline_provider_target_safety_validation_authority_ref"
-                )
-                or {}
-            )
-        ):
-            raise AcquisitionControlError(
-                "offline_execution_target_safety_authority_invalid"
-            )
-    else:
-        raise AcquisitionControlError(
-            "execution_target_safety_authority_posture_invalid"
-        )
     current_policy_ref = acquisition_routing_policy_ref()
     if (
         dict(work_order.routing_policy_ref) != current_policy_ref
@@ -1317,24 +746,11 @@ def _guard_execution_state(
         raise AcquisitionControlError("execution_authorization_work_order_mismatch")
     if authorization.get("route_observation_ref") != route_observation.ref():
         raise AcquisitionControlError("execution_authorization_route_mismatch")
-    if authorization.get(
-        "execution_target_safety_authority_posture"
-    ) != execution_posture:
-        raise AcquisitionControlError(
-            "execution_authorization_target_safety_posture_mismatch"
-        )
-    expected_claim_status = (
-        "claimed_before_transport" if expect_claimed else "authorized"
-    )
     if (
-        authorization.get("claim_status") != expected_claim_status
-        or authorization.get("transport_claimed") is not expect_claimed
+        authorization.get("claim_status") != "authorized"
+        or authorization.get("transport_claimed") is not False
     ):
-        raise AcquisitionControlError(
-            "execution_authorization_claim_posture_mismatch"
-            if expect_claimed
-            else "execution_authorization_already_claimed"
-        )
+        raise AcquisitionControlError("execution_authorization_already_claimed")
 
 
 def _require_current_work_order_lineage(
@@ -1457,332 +873,6 @@ def _materialize_acquisition_request(
     )
 
 
-def _request_target_urls(request: AcquisitionRequest) -> tuple[str, ...]:
-    targets = list(request.selected_urls)
-    if request.root_url:
-        targets.append(request.root_url)
-    return tuple(targets)
-
-
-def _evaluate_final_pretransport_target_safety(
-    *,
-    action: AuthorizedAction,
-    work_order: AcquisitionWorkOrderV1,
-    request: AcquisitionRequest,
-    snapshots: Sequence[NetworkTargetResolutionSnapshotV1],
-) -> tuple[NetworkTargetSafetyDecisionV1, ...]:
-    targets = _request_target_urls(request)
-    admission_refs = tuple(work_order.target_safety_admission_decision_refs)
-    if len(targets) != len(admission_refs):
-        raise AcquisitionControlError(
-            "pretransport_target_safety_lineage_count_mismatch"
-        )
-    decisions: list[NetworkTargetSafetyDecisionV1] = []
-    for target, admission_ref in zip(targets, admission_refs):
-        try:
-            resolver_snapshot = resolution_snapshot_for_url(
-                target,
-                snapshots,
-            )
-        except ValueError:
-            resolver_snapshot = None
-        decisions.append(
-            evaluate_network_target_safety(
-                target,
-                stage=NetworkTargetSafetyStage.FINAL_PRETRANSPORT,
-                transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
-                fact_kind=NetworkTargetFactKind.REQUESTED,
-                resolver_snapshot=resolver_snapshot,
-                previous_decision_ref=admission_ref,
-                lineage_ref={
-                    "run_id": action.run_id,
-                    "request_id": work_order.source_obligation_ref.get(
-                        "request_id"
-                    ),
-                    "work_order_id": work_order.work_order_id,
-                    "route_observation_id": action.inputs.get(
-                        "route_observation_ref", {}
-                    ).get("route_observation_id"),
-                    "execution_action_id": action.action_id,
-                    "source_obligation_id": (
-                        work_order.source_obligation_ref.get(
-                            "source_obligation_id"
-                        )
-                    ),
-                },
-            )
-        )
-    return tuple(decisions)
-
-
-_OBSERVED_TARGET_FIELDS = (
-    ("requested_url", NetworkTargetFactKind.REQUESTED),
-    ("attempted_url", NetworkTargetFactKind.ATTEMPTED),
-    ("provider_reported_url", NetworkTargetFactKind.PROVIDER_REPORTED),
-    ("resolved_url", NetworkTargetFactKind.RESOLVED),
-    ("redirect_url", NetworkTargetFactKind.REDIRECT),
-    ("final_url", NetworkTargetFactKind.FINAL),
-    ("canonical_url", NetworkTargetFactKind.CANONICAL),
-)
-
-
-def _evaluate_posttransport_target_safety(
-    *,
-    action: AuthorizedAction,
-    work_order: AcquisitionWorkOrderV1,
-    artifacts: Sequence[AcquisitionArtifact],
-    snapshots: Sequence[NetworkTargetResolutionSnapshotV1],
-    observation_overflow: bool = False,
-) -> tuple[tuple[NetworkTargetSafetyDecisionV1, ...], str | None]:
-    decisions: list[NetworkTargetSafetyDecisionV1] = []
-    applicability_failure: str | None = None
-    requested_targets = tuple(work_order.selected_urls) + (
-        ((work_order.root_url,) if work_order.root_url else ())
-    )
-    for artifact in artifacts:
-        artifact_id = str(_artifact_ref(artifact)["artifact_id"])
-        requested = artifact.requested_url or (
-            requested_targets[0] if len(requested_targets) == 1 else None
-        )
-        observed_records: list[Any] = [artifact, *artifact.pages]
-        for record in observed_records:
-            record_requested = getattr(record, "requested_url", None) or requested
-            baseline_decision = (
-                evaluate_network_target_safety(
-                    record_requested,
-                    stage=NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET,
-                    transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
-                    fact_kind=NetworkTargetFactKind.REQUESTED,
-                    resolver_snapshot=resolution_snapshot_for_url(
-                        record_requested, snapshots
-                    ),
-                    lineage_ref={
-                        "run_id": action.run_id,
-                        "work_order_id": work_order.work_order_id,
-                        "execution_action_id": action.action_id,
-                        "artifact_id": artifact_id,
-                        "source_obligation_id": (
-                            work_order.source_obligation_ref.get(
-                                "source_obligation_id"
-                            )
-                        ),
-                        "observation_kind": "requested_baseline",
-                    },
-                )
-                if record_requested
-                else None
-            )
-            for field_name, fact_kind in _OBSERVED_TARGET_FIELDS:
-                target = getattr(record, field_name, None)
-                if not target:
-                    continue
-                decision = evaluate_network_target_safety(
-                    target,
-                    stage=NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET,
-                    transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
-                    fact_kind=fact_kind,
-                    resolver_snapshot=resolution_snapshot_for_url(
-                        target, snapshots
-                    ),
-                    lineage_ref={
-                        "run_id": action.run_id,
-                        "work_order_id": work_order.work_order_id,
-                        "execution_action_id": action.action_id,
-                        "artifact_id": artifact_id,
-                        "source_obligation_id": (
-                            work_order.source_obligation_ref.get(
-                                "source_obligation_id"
-                            )
-                        ),
-                        "observation_kind": fact_kind.value,
-                    },
-                )
-                decisions.append(decision)
-                if (
-                    applicability_failure is None
-                    and decision.status
-                    == NetworkTargetSafetyStatus.ALLOWED.value
-                    and baseline_decision is not None
-                    and baseline_decision.status
-                    == NetworkTargetSafetyStatus.ALLOWED.value
-                    and not _observed_target_is_applicable(
-                        baseline=baseline_decision,
-                        observed=decision,
-                    )
-                ):
-                    applicability_failure = fact_kind.value
-    if observation_overflow:
-        if not artifacts or not requested_targets:
-            raise AcquisitionControlError(
-                "posttransport_target_observation_overflow_lineage_missing"
-            )
-        overflow_target = requested_targets[0]
-        decisions.append(
-            evaluate_network_target_safety(
-                overflow_target,
-                stage=(
-                    NetworkTargetSafetyStage.POSTTRANSPORT_OBSERVED_TARGET
-                ),
-                transport_mode=NetworkTargetTransportMode.PROVIDER_MEDIATED,
-                fact_kind=NetworkTargetFactKind.PROVIDER_REPORTED,
-                resolver_snapshot=resolution_snapshot_for_url(
-                    overflow_target,
-                    snapshots,
-                ),
-                lineage_ref={
-                    "run_id": action.run_id,
-                    "work_order_id": work_order.work_order_id,
-                    "execution_action_id": action.action_id,
-                    "artifact_id": str(
-                        _artifact_ref(artifacts[0])["artifact_id"]
-                    ),
-                    "source_obligation_id": (
-                        work_order.source_obligation_ref.get(
-                            "source_obligation_id"
-                        )
-                    ),
-                    "observation_kind": "target_observation_set_overflow",
-                },
-                posttransport_observation_overflow=True,
-            )
-        )
-    if not decisions:
-        raise AcquisitionControlError(
-            "successful_execution_observed_target_lineage_missing"
-        )
-    return tuple(decisions), applicability_failure
-
-
-def _observed_target_is_applicable(
-    *,
-    baseline: NetworkTargetSafetyDecisionV1,
-    observed: NetworkTargetSafetyDecisionV1,
-) -> bool:
-    if observed.fact_kind in {
-        NetworkTargetFactKind.REQUESTED.value,
-        NetworkTargetFactKind.ATTEMPTED.value,
-        NetworkTargetFactKind.PROVIDER_REPORTED.value,
-    }:
-        return (
-            observed.normalized_target_digest
-            == baseline.normalized_target_digest
-        )
-    return bool(
-        baseline.canonical_host
-        and observed.canonical_host
-        and baseline.canonical_host == observed.canonical_host
-    )
-
-
-def _execution_target_safety_summary(
-    *,
-    gate2_decisions: Sequence[NetworkTargetSafetyDecisionV1],
-    gate3_decisions: Sequence[NetworkTargetSafetyDecisionV1],
-    artifacts: Sequence[AcquisitionArtifact] = (),
-    final_pretransport_block: bool = False,
-    posttransport_failure: bool = False,
-    applicability_failure: bool = False,
-    urls_fetched_delta: int,
-) -> dict[str, Any]:
-    decisions = (*gate2_decisions, *gate3_decisions)
-    blockers = tuple(
-        str(decision.blocker_code or "")
-        for decision in decisions
-        if decision.blocker_code
-    )
-    safe_redirects = 0
-    safe_finals = 0
-    safe_canonicals = 0
-    for artifact in artifacts:
-        records: tuple[Any, ...] = (artifact, *artifact.pages)
-        for record in records:
-            requested = getattr(record, "requested_url", None) or artifact.requested_url
-            redirect = getattr(record, "redirect_url", None)
-            final = getattr(record, "final_url", None)
-            canonical = getattr(record, "canonical_url", None)
-            if requested and redirect and requested != redirect:
-                safe_redirects += 1
-            if requested and final and requested != final:
-                safe_finals += 1
-            if requested and canonical and requested != canonical:
-                safe_canonicals += 1
-    return {
-        "decisions_observed": len(decisions),
-        "decisions_allowed": sum(
-            decision.status == NetworkTargetSafetyStatus.ALLOWED.value
-            for decision in decisions
-        ),
-        "decisions_blocked": sum(
-            decision.status == NetworkTargetSafetyStatus.BLOCKED.value
-            for decision in decisions
-        ),
-        "gate2_decisions_observed": len(gate2_decisions),
-        "gate3_decisions_observed": len(gate3_decisions),
-        "final_pretransport_target_safety_block": final_pretransport_block,
-        "target_safety_decision_changed_block": any(
-            "changed_between" in blocker or "policy_changed" in blocker
-            for blocker in blockers
-        ),
-        "resolver_indeterminate_block": any(
-            "resolution_" in blocker
-            and any(
-                marker in blocker
-                for marker in (
-                    "missing",
-                    "empty",
-                    "malformed",
-                    "exception",
-                    "indeterminate",
-                    "overflow",
-                )
-            )
-            for blocker in blockers
-        ),
-        "posttransport_target_safety_failure": posttransport_failure,
-        "safe_redirect_targets_accepted": safe_redirects,
-        "safe_final_targets_accepted": safe_finals,
-        "safe_canonical_targets_accepted": safe_canonicals,
-        "safe_target_applicability_failure": applicability_failure,
-        "successful_artifact_count": len(artifacts),
-        "urls_fetched_delta": max(0, int(urls_fetched_delta)),
-    }
-
-
-def _execution_observation(
-    *,
-    work_order: AcquisitionWorkOrderV1,
-    route_observation: AcquisitionRouteObservationV1,
-    execution_result: AcquisitionExecutionResult,
-    execution_authority_posture: str,
-) -> AcquisitionExecutionObservationV1:
-    artifact_refs = tuple(
-        _artifact_ref(artifact) for artifact in execution_result.artifacts
-    )
-    return AcquisitionExecutionObservationV1.create(
-        work_order_ref=work_order.ref(),
-        completed_route_ref=route_observation.ref(),
-        execution_result_trace=_execution_result_projection(
-            execution_result,
-            artifact_refs=artifact_refs,
-        ),
-        artifact_refs=artifact_refs,
-        provider_calls_attempted=execution_result.provider_calls_attempted,
-        provider_calls_completed=execution_result.provider_calls_completed,
-        terminal_status=_terminal_status(execution_result),
-        failure_or_block_code=(
-            execution_result.failure_code or execution_result.block_code
-        ),
-        target_safety_decision_refs=(
-            execution_result.target_safety_decision_refs
-        ),
-        target_safety_summary=execution_result.target_safety_summary,
-        execution_claim_consumed=execution_result.execution_claim_consumed,
-        adapter_invoked=execution_result.adapter_invoked,
-        transport_posture=execution_result.transport_posture,
-        execution_authority_posture=execution_authority_posture,
-    )
-
-
 def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:
     core = {
         "kind": artifact.kind.value,
@@ -1793,10 +883,6 @@ def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:
         "output_type": artifact.output_type,
         "status": artifact.status,
         "requested_url": artifact.requested_url,
-        "attempted_url": artifact.attempted_url,
-        "provider_reported_url": artifact.provider_reported_url,
-        "resolved_url": artifact.resolved_url,
-        "redirect_url": artifact.redirect_url,
         "final_url": artifact.final_url,
         "canonical_url": artifact.canonical_url,
         "root_url": artifact.root_url,
@@ -1835,16 +921,6 @@ def _execution_result_projection(
         "block_code": execution_result.block_code,
         "failure_code": execution_result.failure_code,
         "transport_posture": execution_result.transport_posture,
-        "target_safety_decision_refs": [
-            dict(item) for item in execution_result.target_safety_decision_refs
-        ],
-        "target_safety_summary": dict(
-            execution_result.target_safety_summary
-        ),
-        "execution_claim_consumed": (
-            execution_result.execution_claim_consumed
-        ),
-        "adapter_invoked": execution_result.adapter_invoked,
         "retained_text_included": False,
         "raw_provider_payload_included": False,
         "provider_failure_fallback_attempted": False,
@@ -2013,7 +1089,6 @@ __all__ = [
     "execute_acquisition_capability_decision_action",
     "execute_acquisition_custody_authorization_action",
     "execute_acquisition_route_action",
-    "execute_acquisition_route_action_for_offline_target_safety_validation",
     "execute_acquisition_terminal_reduction_action",
     "execute_acquisition_work_order_admission_action",
     "execute_authorized_acquisition_work_order",

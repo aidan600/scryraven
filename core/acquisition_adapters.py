@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
-from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
@@ -28,20 +25,12 @@ from core.acquisition_contracts import (
     url_is_within_request_scope,
     validate_acquisition_request,
 )
-from core.routing import (
-    OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE,
-    UNTRUSTED_EXACT_URL_TARGET_CLASS,
-    AcquisitionCapability,
-    ProviderTargetSafetyEligibilitySnapshot,
-    provider_operation_identity,
-)
+from core.routing import AcquisitionCapability
 
 LINKUP_FETCH_URL = "https://api.linkup.so/v1/fetch"
 LINKUP_SEARCH_URL = "https://api.linkup.so/v1/search"
 TAVILY_API_ROOT = "https://api.tavily.com"
 ACQUISITION_TRANSPORT_TIMEOUT_SECONDS = 30
-MAX_POSTTRANSPORT_TARGET_OBSERVATION_RECORDS = 100
-MAX_POSTTRANSPORT_TARGET_SOURCE_RECORDS = 200
 
 Transport = Callable[[dict[str, Any]], Mapping[str, Any]]
 
@@ -92,219 +81,20 @@ class AcquisitionTransports:
     linkup_deep_search: Transport | None = None
 
 
-@dataclass(slots=True)
-class OfflineAcquisitionTransportFixtureV1:
-    """Tamper-evident response data with no caller-supplied transport surface."""
-
-    response: Any
-    fixture_id: str
-    fixture_digest: str
-    raise_transport_error: bool = False
-    product_reachable: bool = False
-    calls: int = field(default=0, init=False)
-    payloads: list[dict[str, Any]] = field(default_factory=list, init=False)
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        response: Any = None,
-        raise_transport_error: bool = False,
-    ) -> "OfflineAcquisitionTransportFixtureV1":
-        if not isinstance(raise_transport_error, bool):
-            raise AcquisitionContractError(
-                "offline_transport_fixture_boolean_required",
-                "offline transport fixture controls must be booleans",
-            )
-        try:
-            response_copy = _offline_fixture_json_clone(
-                {} if response is None else response
-            )
-        except (TypeError, ValueError) as exc:
-            raise AcquisitionContractError(
-                "offline_transport_fixture_json_data_required",
-                "offline transport fixtures accept JSON data only",
-            ) from exc
-        core = {
-            "schema_version": "offline_acquisition_transport_fixture_v1",
-            "response": response_copy,
-            "raise_transport_error": raise_transport_error,
-            "product_reachable": False,
-        }
-        digest = _offline_fixture_digest(core)
-        return cls(
-            response=response_copy,
-            fixture_id=f"offline-acquisition-transport:{digest[:24]}",
-            fixture_digest=digest,
-            raise_transport_error=raise_transport_error,
-        )
-
-    def validate(self) -> None:
-        recreated = type(self).create(
-            response=self.response,
-            raise_transport_error=self.raise_transport_error,
-        )
-        if (
-            self.product_reachable
-            or recreated.fixture_id != self.fixture_id
-            or recreated.fixture_digest != self.fixture_digest
-        ):
-            raise AcquisitionContractError(
-                "offline_acquisition_transport_fixture_invalid",
-                "offline acquisition transport fixture is stale or forged",
-            )
-
-    def invoke(self, payload: dict[str, Any]) -> Any:
-        self.validate()
-        self.calls += 1
-        self.payloads.append(deepcopy(payload))
-        if self.raise_transport_error:
-            raise RuntimeError("offline_fixture_transport_error")
-        return deepcopy(self.response)
-
-
 def dispatch_acquisition(
     request: AcquisitionRequest,
     *,
     transports: AcquisitionTransports | None = None,
     before_transport: Callable[[], None] | None = None,
 ) -> AcquisitionExecutionResult:
-    """Dispatch one ordinary route without accepting offline-only authority."""
-
-    if _contains_offline_target_safety_authority(request):
-        return _blocked_result(
-            request,
-            code="offline_validation_route_cannot_enter_product_dispatch",
-            detail=(
-                "PRODUCT-unreachable target-safety eligibility cannot enter "
-                "ordinary adapter dispatch"
-            ),
-        )
-    if not _ordinary_dynamic_content_route_is_currently_eligible(request):
-        return _blocked_result(
-            request,
-            code="dynamic_content_route_not_currently_safety_eligible",
-            detail=(
-                "selected dynamic-content operation is not eligible under "
-                "the current code-owned provider target-safety snapshot"
-            ),
-        )
-    return _dispatch_acquisition(
-        request,
-        transports=transports,
-        before_transport=before_transport,
-        install_default_transports=True,
-    )
-
-
-def dispatch_acquisition_for_offline_target_safety_validation(
-    request: AcquisitionRequest,
-    *,
-    transport_fixture: OfflineAcquisitionTransportFixtureV1,
-    before_transport: Callable[[], None] | None = None,
-) -> AcquisitionExecutionResult:
-    """Dispatch one typed offline route through response data only.
-
-    This validation-only entrypoint never installs provider transports. Its
-    route must carry the complete ``PRODUCT-unreachable`` eligibility posture
-    emitted by ``core.routing``, and the caller must supply an exact response
-    fixture that has no network-capable callback field.
-    """
-
-    if not _is_typed_offline_target_safety_route(request):
-        return _blocked_result(
-            request,
-            code="offline_target_safety_validation_route_required",
-            detail=(
-                "offline target-safety validation dispatch requires a typed "
-                "PRODUCT-unreachable route"
-            ),
-        )
-    if type(transport_fixture) is not OfflineAcquisitionTransportFixtureV1:
-        return _blocked_result(
-            request,
-            code="offline_target_safety_validation_fixture_required",
-            detail=(
-                "offline target-safety validation dispatch requires an exact "
-                "response-only fixture"
-            ),
-        )
-    try:
-        transport_fixture.validate()
-    except AcquisitionContractError as exc:
-        return _blocked_result(request, code=exc.code, detail=str(exc))
-    return _dispatch_acquisition(
-        request,
-        transports=_offline_fixture_transports(
-            request=request,
-            fixture=transport_fixture,
-        ),
-        before_transport=before_transport,
-        install_default_transports=False,
-    )
-
-
-def _offline_fixture_transports(
-    *,
-    request: AcquisitionRequest,
-    fixture: OfflineAcquisitionTransportFixtureV1,
-) -> AcquisitionTransports:
-    """Bind response-only fixture data to the one selected adapter slot."""
-
-    transport = fixture.invoke
-    route = request.route_decision
-    selected = (route.selected_provider, route.operation)
-    if selected == ("linkup", "fetch"):
-        return AcquisitionTransports(linkup_fetch=transport)
-    if selected == ("tavily", "extract"):
-        return AcquisitionTransports(tavily_extract=transport)
-    if selected == ("tavily", "map"):
-        return AcquisitionTransports(tavily_map=transport)
-    if selected == ("tavily", "crawl"):
-        return AcquisitionTransports(tavily_crawl=transport)
-    return AcquisitionTransports()
-
-
-def _offline_fixture_json_clone(value: Any) -> Any:
-    return json.loads(
-        json.dumps(
-            value,
-            allow_nan=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-    )
-
-
-def _offline_fixture_digest(value: Any) -> str:
-    canonical = json.dumps(
-        value,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _dispatch_acquisition(
-    request: AcquisitionRequest,
-    *,
-    transports: AcquisitionTransports | None,
-    before_transport: Callable[[], None] | None,
-    install_default_transports: bool,
-) -> AcquisitionExecutionResult:
-    """Shared mechanical dispatch after product/offline authority separation."""
+    """Dispatch exactly one completed route decision or return a typed block."""
 
     try:
         validate_acquisition_request(request)
     except AcquisitionContractError as exc:
         return _blocked_result(request, code=exc.code, detail=str(exc))
 
-    transport = _transport_for_request(
-        request,
-        transports=transports,
-        install_default_transports=install_default_transports,
-    )
+    transport = _transport_for_request(request, transports=transports)
     if transport is None:
         return _blocked_result(
             request,
@@ -322,24 +112,6 @@ def _dispatch_acquisition(
             detail=compact_failure_detail(type(exc).__name__),
             attempted=1,
         )
-    observed_target_records, target_observation_overflow = (
-        _bounded_posttransport_target_records(
-            request,
-            response,
-        )
-    )
-    if target_observation_overflow:
-        return _failure_result(
-            request,
-            code="posttransport_target_observation_overflow",
-            detail=(
-                "provider response exceeded the bounded target-observation "
-                "set and must fail posttransport safety"
-            ),
-            attempted=1,
-            completed=1,
-            observed_target_records=observed_target_records,
-        )
     try:
         artifacts = _normalize_response(request, response)
     except AcquisitionContractError as exc:
@@ -349,7 +121,6 @@ def _dispatch_acquisition(
             detail=str(exc),
             attempted=1,
             completed=1,
-            observed_target_records=observed_target_records,
         )
     return AcquisitionExecutionResult(
         request=request,
@@ -361,98 +132,20 @@ def _dispatch_acquisition(
     )
 
 
-def _contains_offline_target_safety_authority(
-    request: AcquisitionRequest,
-) -> bool:
-    eligibility = dict(request.route_decision.target_safety_eligibility_ref)
-    return bool(
-        eligibility.get("product_reachable") is False
-        or eligibility.get("authority_posture")
-        == OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-        or eligibility.get("offline_validation_authority_ref")
-        or eligibility.get("source_posture")
-        == "injected_offline_validation_fixture"
-    )
-
-
-def _ordinary_dynamic_content_route_is_currently_eligible(
-    request: AcquisitionRequest,
-) -> bool:
-    decision = request.route_decision
-    if decision.blocked or decision.capability not in {
-        AcquisitionCapability.READ,
-        AcquisitionCapability.FOCUSED_EXTRACT,
-        AcquisitionCapability.MAP_SITE,
-        AcquisitionCapability.CRAWL_SITE,
-    }:
-        return True
-    snapshot = ProviderTargetSafetyEligibilitySnapshot.create(
-        target_class=UNTRUSTED_EXACT_URL_TARGET_CLASS,
-    )
-    if (
-        decision.request.target_class != UNTRUSTED_EXACT_URL_TARGET_CLASS
-        or dict(decision.target_safety_eligibility_ref) != snapshot.ref()
-        or decision.selected_provider_target_safety_eligible is not True
-        or not decision.selected_provider
-        or not decision.operation
-        or not decision.variant
-    ):
-        return False
-    identity = provider_operation_identity(
-        provider=decision.selected_provider,
-        capability=decision.capability,
-        operation=decision.operation,
-        variant=decision.variant,
-    )
-    return snapshot.operation_eligibility.get(identity) is True
-
-
-def _is_typed_offline_target_safety_route(
-    request: AcquisitionRequest,
-) -> bool:
-    decision = request.route_decision
-    eligibility = dict(decision.target_safety_eligibility_ref)
-    authority = eligibility.get("offline_validation_authority_ref")
-    if not isinstance(authority, Mapping):
-        return False
-    return bool(
-        decision.request.target_class == UNTRUSTED_EXACT_URL_TARGET_CLASS
-        and eligibility.get("target_class")
-        == UNTRUSTED_EXACT_URL_TARGET_CLASS
-        and eligibility.get("authority_posture")
-        == OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-        and eligibility.get("source_posture")
-        == "injected_offline_validation_fixture"
-        and eligibility.get("product_reachable") is False
-        and eligibility.get("configuration_owned") is False
-        and eligibility.get("requester_preference_owned") is False
-        and authority
-        and authority.get("authority_posture")
-        == OFFLINE_PROVIDER_TARGET_SAFETY_VALIDATION_POSTURE
-        and authority.get("product_reachable") is False
-    )
-
-
 def _transport_for_request(
     request: AcquisitionRequest,
     *,
     transports: AcquisitionTransports | None,
-    install_default_transports: bool,
 ) -> Transport | None:
     provider = request.provider
     operation = request.operation
-    if transports is None:
-        if not install_default_transports:
-            return None
-        configured = AcquisitionTransports(
-            linkup_fetch=_linkup_fetch_transport,
-            tavily_extract=_tavily_extract_transport,
-            tavily_map=_tavily_map_transport,
-            tavily_crawl=_tavily_crawl_transport,
-            linkup_deep_search=_linkup_deep_transport,
-        )
-    else:
-        configured = transports
+    configured = transports or AcquisitionTransports(
+        linkup_fetch=_linkup_fetch_transport,
+        tavily_extract=_tavily_extract_transport,
+        tavily_map=_tavily_map_transport,
+        tavily_crawl=_tavily_crawl_transport,
+        linkup_deep_search=_linkup_deep_transport,
+    )
     if (provider, operation) == ("linkup", "fetch"):
         return configured.linkup_fetch
     if (provider, operation) == ("tavily", "extract"):
@@ -612,8 +305,18 @@ def _normalize_read(
     else:
         source = dict(response)
         text = _scalar_text(source.get("markdown"))
-    echoed_requested = _observed_target_url(source.get("requested_url"))
-    attempted = _observed_target_url(source.get("attempted_url")) or selected_url
+    echoed_requested = _url(source.get("requested_url"))
+    attempted = _url(source.get("attempted_url")) or selected_url
+    if echoed_requested and _normalized_url(echoed_requested) != _normalized_url(selected_url):
+        raise AcquisitionContractError(
+            "read_requested_url_mismatch",
+            "provider read material is not bound to the selected URL",
+        )
+    if _normalized_url(attempted) != _normalized_url(selected_url):
+        raise AcquisitionContractError(
+            "read_attempted_url_mismatch",
+            "provider attempted URL is not the selected URL",
+        )
     if not text:
         raise AcquisitionContractError(
             "read_material_empty_or_unreadable",
@@ -626,13 +329,17 @@ def _normalize_read(
             "selected URL read returned an unreadable HTTP status",
         )
     retained, posture = _bounded_text(text, request.max_retained_characters)
-    provider_reported_url = (
-        _observed_target_url(source.get("url")) or echoed_requested
-    )
-    final_url = _observed_target_url(source.get("final_url"))
-    resolved_url = _observed_target_url(source.get("resolved_url"))
-    redirect_url = _observed_target_url(source.get("redirect_url"))
-    canonical_url = _observed_target_url(source.get("canonical_url"))
+    provider_reported_url = _url(source.get("url"))
+    if provider_reported_url and _normalized_url(
+        provider_reported_url
+    ) != _normalized_url(selected_url):
+        raise AcquisitionContractError(
+            "read_provider_reported_url_mismatch",
+            "provider-reported read URL is not the selected URL",
+        )
+    final_url = _url(source.get("final_url"))
+    resolved_url = _url(source.get("resolved_url"))
+    canonical_url = _url(source.get("canonical_url"))
     return _artifact(
         request,
         kind=AcquisitionArtifactKind.SELECTED_URL_READ,
@@ -642,7 +349,6 @@ def _normalize_read(
         attempted_url=attempted,
         provider_reported_url=provider_reported_url,
         resolved_url=resolved_url,
-        redirect_url=redirect_url,
         final_url=final_url,
         canonical_url=canonical_url,
         content_type=_scalar_text(source.get("content_type")),
@@ -669,13 +375,9 @@ def _normalize_focused_extract(
     selected = {_normalized_url(url): url for url in request.selected_urls}
     artifacts: list[AcquisitionArtifact] = []
     for source in results:
-        provider_reported_url = _observed_target_url(source.get("url"))
-        reported_attempted = _observed_target_url(
-            source.get("attempted_url")
-        )
-        binding_url = _url(reported_attempted) or _url(
-            provider_reported_url
-        )
+        provider_reported_url = _url(source.get("url"))
+        reported_attempted = _url(source.get("attempted_url"))
+        binding_url = reported_attempted or provider_reported_url
         if not binding_url or _normalized_url(binding_url) not in selected:
             raise AcquisitionContractError(
                 "focused_extract_url_mismatch",
@@ -696,12 +398,11 @@ def _normalize_focused_extract(
                 status="readable",
                 observed_at=_observed_at(source),
                 requested_url=selected_url,
-                attempted_url=reported_attempted or selected_url,
+                attempted_url=selected_url,
                 provider_reported_url=provider_reported_url,
-                resolved_url=_observed_target_url(source.get("resolved_url")),
-                redirect_url=_observed_target_url(source.get("redirect_url")),
-                final_url=_observed_target_url(source.get("final_url")),
-                canonical_url=_observed_target_url(source.get("canonical_url")),
+                resolved_url=_url(source.get("resolved_url")),
+                final_url=_url(source.get("final_url")),
+                canonical_url=_url(source.get("canonical_url")),
                 content_type=_scalar_text(source.get("content_type")),
                 normalized_representation_type="text/markdown",
                 title=_scalar_text(source.get("title")),
@@ -784,7 +485,6 @@ def _normalize_crawl(
         for lineage_key in (
             "attempted_url",
             "resolved_url",
-            "redirect_url",
             "final_url",
             "canonical_url",
             "parent_url",
@@ -828,10 +528,9 @@ def _normalize_crawl(
                 requested_url=None,
                 attempted_url=_url(source.get("attempted_url")),
                 provider_reported_url=url,
-                resolved_url=_observed_target_url(source.get("resolved_url")),
-                redirect_url=_observed_target_url(source.get("redirect_url")),
-                final_url=_observed_target_url(source.get("final_url")),
-                canonical_url=_observed_target_url(source.get("canonical_url")),
+                resolved_url=_url(source.get("resolved_url")),
+                final_url=_url(source.get("final_url")),
+                canonical_url=_url(source.get("canonical_url")),
                 parent_url=_url(source.get("parent_url")),
                 content_type=_scalar_text(source.get("content_type")),
                 normalized_representation_type="text/markdown",
@@ -903,9 +602,8 @@ def _normalize_deep_discovery(
                 observed_at=_observed_at(source),
                 requested_url=None,
                 provider_reported_url=url,
-                redirect_url=_observed_target_url(source.get("redirect_url")),
-                final_url=_observed_target_url(source.get("final_url")),
-                canonical_url=_observed_target_url(source.get("canonical_url")),
+                final_url=_url(source.get("final_url")),
+                canonical_url=_url(source.get("canonical_url")),
                 title=_scalar_text(source.get("name") or source.get("title")),
                 normalized_representation_type=(
                     "text/markdown" if retained else None
@@ -968,180 +666,25 @@ def _failure_result(
     detail: str,
     attempted: int,
     completed: int = 0,
-    observed_target_records: Sequence[Mapping[str, str]] = (),
 ) -> AcquisitionExecutionResult:
-    bounded_records = tuple(
-        dict(record)
-        for record in observed_target_records[
-            :MAX_POSTTRANSPORT_TARGET_OBSERVATION_RECORDS
-        ]
-    )
-    if not bounded_records:
-        bounded_records = ({},)
-    artifacts = tuple(
-        _artifact(
-            request,
-            kind=AcquisitionArtifactKind.PROVIDER_FAILURE,
-            status="failed",
-            observed_at=_now(),
-            failure_code=code,
-            failure_reason=compact_failure_detail(detail),
-            **record,
-        )
-        for record in bounded_records
+    artifact = _artifact(
+        request,
+        kind=AcquisitionArtifactKind.PROVIDER_FAILURE,
+        status="failed",
+        observed_at=_now(),
+        failure_code=code,
+        failure_reason=compact_failure_detail(detail),
     )
     return AcquisitionExecutionResult(
         request=request,
         status=AcquisitionExecutionStatus.FAILED,
-        artifacts=artifacts,
+        artifacts=(artifact,),
         provider_calls_attempted=attempted,
         provider_calls_completed=completed,
         failure_code=code,
         detail=compact_failure_detail(detail),
         transport_posture="selected_adapter_failed_no_fallback",
     )
-
-
-_POSTTRANSPORT_TARGET_SOURCE_FIELDS = (
-    "requested_url",
-    "attempted_url",
-    "url",
-    "resolved_url",
-    "redirect_url",
-    "final_url",
-    "canonical_url",
-)
-
-
-def _bounded_posttransport_target_records(
-    request: AcquisitionRequest,
-    response: Any,
-) -> tuple[tuple[Mapping[str, str], ...], bool]:
-    """Extract only bounded, operation-shaped target facts before normalization.
-
-    A completed provider response can fail material normalization before the
-    normalizer reaches a later redirect/final/canonical field.  This whitelist
-    keeps those scalar target facts available to RunKernel's canonical Gate 3
-    policy without retaining provider text, arbitrary nested payloads, headers,
-    or credentials.  Overflow remains a failed normalization posture; no
-    successful material can be admitted from records outside this hard bound.
-    The first unique record beyond the bound is reported as overflow so the
-    canonical policy can create a posttransport safety failure. Raw collection
-    examination is separately capped, including duplicates and non-mappings,
-    so extraction never constructs or scans an unbounded source list.
-    """
-
-    if request.capability not in {
-        AcquisitionCapability.READ,
-        AcquisitionCapability.FOCUSED_EXTRACT,
-        AcquisitionCapability.MAP_SITE,
-        AcquisitionCapability.CRAWL_SITE,
-    }:
-        return (), False
-    top_level = response if isinstance(response, Mapping) else {}
-    records: list[dict[str, str]] = []
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    raw_sources_examined = 0
-    observed_source = False
-
-    def observe(source: Mapping[str, Any]) -> bool:
-        record = _posttransport_target_record(request, source)
-        if not record:
-            return False
-        identity = tuple(sorted(record.items()))
-        if identity in seen:
-            return False
-        seen.add(identity)
-        if len(records) >= MAX_POSTTRANSPORT_TARGET_OBSERVATION_RECORDS:
-            return True
-        records.append(record)
-        return False
-
-    if any(key in top_level for key in _POSTTRANSPORT_TARGET_SOURCE_FIELDS):
-        raw_sources_examined += 1
-        observed_source = True
-        if observe(top_level):
-            return tuple(records), True
-    for collection_key in ("results", "failed_results"):
-        collection = top_level.get(collection_key)
-        if not isinstance(collection, Sequence) or isinstance(
-            collection, str | bytes
-        ):
-            continue
-        for item in collection:
-            raw_sources_examined += 1
-            if (
-                raw_sources_examined
-                > MAX_POSTTRANSPORT_TARGET_SOURCE_RECORDS
-            ):
-                return tuple(records), True
-            if not isinstance(item, Mapping):
-                continue
-            observed_source = True
-            if observe(item):
-                return tuple(records), True
-    if not observed_source:
-        observe(top_level)
-    return tuple(records), False
-
-
-def _posttransport_target_record(
-    request: AcquisitionRequest,
-    source: Mapping[str, Any],
-) -> dict[str, str]:
-    requested = _requested_target_for_observed_source(request, source)
-    echoed_requested = _nothrow_observed_target(source.get("requested_url"))
-    attempted = (
-        _nothrow_observed_target(source.get("attempted_url")) or requested
-    )
-    provider_reported = (
-        _nothrow_observed_target(source.get("url")) or echoed_requested
-    )
-    record = {
-        "requested_url": requested,
-        "attempted_url": attempted,
-        "provider_reported_url": provider_reported,
-        "resolved_url": _nothrow_observed_target(source.get("resolved_url")),
-        "redirect_url": _nothrow_observed_target(source.get("redirect_url")),
-        "final_url": _nothrow_observed_target(source.get("final_url")),
-        "canonical_url": _nothrow_observed_target(source.get("canonical_url")),
-    }
-    return {
-        key: value
-        for key, value in record.items()
-        if value not in (None, "")
-    }
-
-
-def _requested_target_for_observed_source(
-    request: AcquisitionRequest,
-    source: Mapping[str, Any],
-) -> str | None:
-    if request.capability is AcquisitionCapability.READ:
-        return request.selected_urls[0] if request.selected_urls else None
-    if request.capability is AcquisitionCapability.FOCUSED_EXTRACT:
-        selected = {_normalized_url(url): url for url in request.selected_urls}
-        for key in ("attempted_url", "url", "requested_url"):
-            candidate = _nothrow_observed_target(source.get(key))
-            if not candidate:
-                continue
-            try:
-                matched = selected.get(_normalized_url(candidate))
-            except ValueError:
-                matched = None
-            if matched:
-                return matched
-        if len(request.selected_urls) == 1:
-            return request.selected_urls[0]
-        return None
-    return request.root_url
-
-
-def _nothrow_observed_target(value: Any) -> str | None:
-    try:
-        return _observed_target_url(value)
-    except AcquisitionContractError:
-        return None
 
 
 def _reject_closed_fields(value: Any) -> None:
@@ -1212,27 +755,6 @@ def _url(value: Any) -> str | None:
     if not text or parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return text
-
-
-def _observed_target_url(value: Any) -> str | None:
-    """Preserve a supplied transport target for the canonical Gate 3 policy.
-
-    This intentionally does not normalize, trim, or scheme-filter the scalar.
-    Malformed, credential-bearing, local, and otherwise prohibited values must
-    remain observable until ``core.network_target_safety`` rejects them.
-    """
-
-    if value is None or isinstance(
-        value, Mapping | list | tuple | set | frozenset
-    ):
-        if value is None:
-            return None
-        raise AcquisitionContractError(
-            "observed_target_scalar_required",
-            "provider observed-target fields must be scalar URL facts",
-        )
-    text = str(value)
-    return text if text else None
 
 
 def _normalized_url(value: str) -> str:
@@ -1315,7 +837,5 @@ __all__ = [
     "LINKUP_FETCH_URL",
     "LINKUP_SEARCH_URL",
     "TAVILY_API_ROOT",
-    "OfflineAcquisitionTransportFixtureV1",
     "dispatch_acquisition",
-    "dispatch_acquisition_for_offline_target_safety_validation",
 ]

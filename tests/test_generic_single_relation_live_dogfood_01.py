@@ -1459,15 +1459,21 @@ def test_provider_link_field_feeds_generic_fetch_read_adapter_and_custody(
     assert result.packet["provider_snippets_used_as_evidence"] is False
 
 
-def test_local_public_web_fetch_opener_is_retired_and_has_no_network_machinery() -> None:
-    source = MODULE_PATH.read_text(encoding="utf-8")
-    assert "def fetch_public_url_once" in source
-    assert "local webpage fetch/read opener is retired" in source
-    assert "provider-mediated " in source
-    assert "acquisition authority is required" in source
-    assert "urllib.request" not in source
-    assert "build_opener" not in source
-    assert "HTTPRedirectHandler" not in source
+def test_public_web_fetch_request_uses_generic_non_secret_headers() -> None:
+    request_headers = dogfood._public_web_fetch_read_request_headers()
+
+    assert request_headers == {
+        "User-Agent": dogfood.FETCH_READ_PUBLIC_WEB_USER_AGENT,
+        "Accept": (
+            "text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.1"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
+    }
+    assert "ScryRaven/1.0" in request_headers["User-Agent"]
+    assert "Cookie" not in request_headers
+    assert "Referer" not in request_headers
+    assert "Authorization" not in request_headers
 
 
 def test_all_failed_fetch_read_returns_named_blocker_with_counts(
@@ -1892,10 +1898,23 @@ def test_pdf_content_type_is_diagnostic_only_unsupported_content_type(
 
 def test_non_official_pdf_text_extraction_reaches_existing_fetch_packet(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pdf_text = "Independent public fee schedule states small claims filing fee is $54."
     pdf_url = "https://independent-fees.org/current-fee.pdf"
     fetched_urls: list[str] = []
+    monkeypatch.setattr(
+        dogfood,
+        "build_opener",
+        lambda _redirect_handler: _RecordingPdfOpener(
+            fetched_urls,
+            _PdfResponse(
+                _tiny_text_pdf_bytes(pdf_text),
+                url=pdf_url,
+                content_type="application/pdf",
+            ),
+        ),
+    )
 
     result = build_generic_single_relation_live_dogfood_run_output(
         query=SMALL_CLAIMS_QUERY,
@@ -1912,7 +1931,7 @@ def test_non_official_pdf_text_extraction_reaches_existing_fetch_packet(
                 )
             ],
         ),
-        fetch_read_runner=_recording_pdf_text_fetch_runner(fetched_urls, pdf_text),
+        fetch_read_runner=dogfood.fetch_public_url_once,
         environ={},
     )
 
@@ -4571,37 +4590,6 @@ def _recording_fake_fetch_runner(fetch_urls: list[str], text: str) -> Any:
     return runner
 
 
-def _recording_pdf_text_fetch_runner(fetch_urls: list[str], text: str) -> Any:
-    def runner(url: str) -> GenericLiveFetchReadResult:
-        fetch_urls.append(url)
-        parsed = urlparse(url)
-        return GenericLiveFetchReadResult(
-            attempted_url=url,
-            final_url=url,
-            final_domain=parsed.netloc.lower(),
-            status_code=200,
-            status_class="2xx",
-            content_type="application/pdf",
-            fetched_byte_count=len(text.encode("utf-8")),
-            sanitized_text=text,
-            content_title=None,
-            redirect_count=0,
-            retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
-            pdf_text_extraction_attempted=True,
-            pdf_text_extraction_status=dogfood.PDF_TEXT_EXTRACTION_STATUS_EXTRACTED,
-            pdf_text_extraction_char_count=len(text),
-            pdf_text_extraction_page_count=1,
-            raw_pdf_bytes_retained=False,
-            raw_pdf_text_retained=False,
-            bounded_text_retained=True,
-            ocr_opened=False,
-            browser_automation_opened=False,
-            external_service_used=False,
-        )
-
-    return runner
-
-
 def _failing_fetch_runner(fetch_urls: list[str]) -> Any:
     def runner(url: str) -> GenericLiveFetchReadResult:
         fetch_urls.append(url)
@@ -4746,6 +4734,77 @@ def _provider_invalid_url_result(title: str, *, rank: int = 1) -> dict[str, Any]
     result = _provider_result(title, "https://example-county.invalid/fees", rank=rank)
     result["url"] = "not-a-valid-url"
     return result
+
+
+class _PdfHeaders(dict[str, str]):
+    def get(self, key: str, default: str | None = None) -> str:
+        return super().get(key.lower(), default or "")
+
+
+class _PdfResponse:
+    def __init__(self, body: bytes, *, url: str, content_type: str) -> None:
+        self._body = body
+        self._url = url
+        self.status = 200
+        self.headers = _PdfHeaders({"content-type": content_type})
+
+    def __enter__(self) -> "_PdfResponse":
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        return None
+
+    def read(self, _limit: int) -> bytes:
+        return self._body
+
+    def geturl(self) -> str:
+        return self._url
+
+
+class _RecordingPdfOpener:
+    def __init__(self, fetched_urls: list[str], response: _PdfResponse) -> None:
+        self._fetched_urls = fetched_urls
+        self._response = response
+
+    def open(self, request: Any, *, timeout: int) -> _PdfResponse:
+        assert timeout == 20
+        self._fetched_urls.append(request.full_url)
+        return self._response
+
+
+def _tiny_text_pdf_bytes(text: str) -> bytes:
+    safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream = f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("ascii")
+    objects = [
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+        (
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
+        ),
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+        b"5 0 obj << /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >> stream\n"
+        + stream
+        + b"\nendstream endobj\n",
+    ]
+    output = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(output))
+        output.extend(obj)
+    xref = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        (
+            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(output)
 
 
 def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str, Any]:
