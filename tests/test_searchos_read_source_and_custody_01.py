@@ -130,7 +130,7 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
         researcher_queries=("Alpha current official operating rule",),
         read_assessment_decision="NO_READ",
         deps_overrides={"process_search_queries": pipeline.process_search_queries},
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
     trace = outcome.execution_trace
@@ -174,6 +174,7 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
     [
         (None, "model_transport_failed:AssertionError"),
         ("MALFORMED", "model_output_malformed"),
+        ("WRAPPED_JSON", "model_output_malformed"),
         ("INVALID_NOMINATION", "invalid_binding_nomination"),
     ],
 )
@@ -194,7 +195,7 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
         researcher_queries=("Alpha current official operating rule",),
         read_assessment_decision=decision,
         deps_overrides={"process_search_queries": pipeline.process_search_queries},
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
     trace = outcome.execution_trace
@@ -234,7 +235,7 @@ def test_duplicate_url_contributors_create_distinct_bindings_one_candidate(
         researcher_queries=("Alpha current official operating rule",),
         read_assessment_decision="NO_READ",
         deps_overrides={"process_search_queries": pipeline.process_search_queries},
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
     packet = outcome.execution_trace["search_result_candidate_packet"]
@@ -270,7 +271,7 @@ def test_no_eligible_bindings_make_zero_assessment_and_acquisition_calls(
         researcher_queries=("Alpha current official operating rule",),
         read_assessment_decision="NO_READ",
         deps_overrides={"process_search_queries": pipeline.process_search_queries},
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
     assert harness.run_kernel is not None
     assert harness.read_candidate_packet is not None
@@ -309,7 +310,6 @@ def test_no_eligible_bindings_make_zero_assessment_and_acquisition_calls(
         query_plan=CurrentDisambiguationOnlyPlan(),
         discovery_result_store=harness.read_discovery_result_store,
         ask_model=lambda *_args, **_kwargs: model_calls.append("called"),
-        clean_json_response=lambda value: value,
         provider="offline-fake-provider",
         model="offline-fake-smart-model",
         base_url="http://offline.invalid/v1",
@@ -405,7 +405,7 @@ def test_response_only_read_reaches_main_kernel_canonical_custody(
                 "LINKUP_API_KEY"
                 if selected_provider == "linkup"
                 else "TAVILY_API_KEY"
-            ): "offline-placeholder"
+            ): "offline-placeholder"  # pragma: allowlist secret
         },
     )
 
@@ -591,7 +591,7 @@ def test_successful_read_preserves_baseline_full_search_judgment_inputs(
         researcher_queries=("Alpha current official operating rule",),
         read_assessment_decision="NO_READ",
         deps_overrides={"process_search_queries": pipeline.process_search_queries},
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
     calls: list[dict[str, Any]] = []
     read_outcome, read_harness = run_post_retirement_ordinary_pipeline(
@@ -618,7 +618,7 @@ def test_successful_read_preserves_baseline_full_search_judgment_inputs(
                 }
             ),
         },
-        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
     assert len(calls) == 1
@@ -686,7 +686,7 @@ def test_provider_failure_ends_after_one_attempt_without_fallback(
                 linkup_fetch=fail_linkup
             ),
         },
-        environment_overrides={"LINKUP_API_KEY": "offline-placeholder"},
+        environment_overrides={"LINKUP_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
     projection = outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY]

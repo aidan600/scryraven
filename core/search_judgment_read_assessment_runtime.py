@@ -19,6 +19,7 @@ from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_contracts import AcquisitionArtifact
 from core.acquisition_control import (
     AcquisitionNeedProposalV1,
+    build_pre_acquisition_source_obligation_ref,
     stable_json_digest,
 )
 from core.authorized_acquisition_runtime import (
@@ -103,24 +104,6 @@ citations, sufficiency, answer content, or provider selection."""
 
 _MODEL_DECISION_SCHEMA_VERSION = "search_judgment_read_assessment_decision_v1"
 _DECISIONS = frozenset({"NO_READ", "REQUEST_READ_PAGE"})
-_RAW_OR_PRIVATE_KEYS = frozenset(
-    {
-        "api_key",
-        "base_url",
-        "endpoint",
-        "prompt",
-        "raw_prompt",
-        "raw_response",
-        "raw_model_response",
-        "provider_payload",
-        "raw_provider_payload",
-        "credentials",
-        "secret",
-        "token",
-    }
-)
-
-
 class SearchJudgmentReadAssessmentError(ValueError):
     """Fail-closed binding, assessment, proposal, or custody error."""
 
@@ -659,10 +642,11 @@ def derive_selected_candidate_material_need_bindings(
                 if key in seen_binding_cores:
                     continue
                 seen_binding_cores.add(key)
-                obligation_ref = _source_obligation_binding_ref(
+                obligation_ref = build_pre_acquisition_source_obligation_ref(
                     answer_contract_ref=active_contract_ref,
-                    component_ref=expected_component_ref,
-                    obligation=obligation,
+                    source_obligation_id=obligation_id,
+                    source_obligation_descriptor=obligation,
+                    component_refs=[expected_component_ref],
                 )
                 binding = SelectedCandidateMaterialNeedBindingV1.create(
                     run_id=run_kernel.state.run_id,
@@ -831,7 +815,6 @@ def execute_search_judgment_read_assessment_action(
     search_work_plan: Mapping[str, Any],
     discovery_result_store: DiscoveryResultMaterialStore,
     ask_model: Callable[..., Any] | None,
-    clean_json_response: Callable[[str], str] | None,
     provider: str | None,
     model: str | None,
     base_url: str | None,
@@ -909,7 +892,11 @@ def execute_search_judgment_read_assessment_action(
         "source_obligation_satisfied": False,
     }
     try:
-        if ask_model is None:
+        if (
+            ask_model is None
+            or not _optional_text(provider)
+            or not _optional_text(model)
+        ):
             raise SearchJudgmentReadAssessmentError(
                 "model_transport_unavailable"
             )
@@ -924,10 +911,7 @@ def execute_search_judgment_read_assessment_action(
             require_json=True,
             use_reasoning=use_reasoning,
         )
-        parsed = _parse_strict_assessment_output(
-            raw,
-            clean_json_response=clean_json_response,
-        )
+        parsed = _parse_strict_assessment_output(raw)
         decision = str(parsed["decision"])
         nominated_id = _optional_text(parsed.get("nominated_binding_id"))
         if decision == "REQUEST_READ_PAGE" and nominated_id not in shown_ids:
@@ -1137,7 +1121,6 @@ def execute_search_judgment_read_source_and_custody(
     query_plan: QueryPlan,
     discovery_result_store: DiscoveryResultMaterialStore,
     ask_model: Callable[..., Any] | None,
-    clean_json_response: Callable[[str], str] | None,
     provider: str | None,
     model: str | None,
     base_url: str | None,
@@ -1193,7 +1176,6 @@ def execute_search_judgment_read_source_and_custody(
             search_work_plan=run_kernel.state.search_work_plan,
             discovery_result_store=discovery_result_store,
             ask_model=ask_model,
-            clean_json_response=clean_json_response,
             provider=provider,
             model=model,
             base_url=base_url,
@@ -1786,14 +1768,10 @@ def _assessment_prompt(
     return json.dumps(payload, sort_keys=True, ensure_ascii=False)
 
 
-def _parse_strict_assessment_output(
-    raw: Any,
-    *,
-    clean_json_response: Callable[[str], str] | None,
-) -> dict[str, Any]:
+def _parse_strict_assessment_output(raw: Any) -> dict[str, Any]:
     text = raw if isinstance(raw, str) else json.dumps(raw)
-    if clean_json_response is not None:
-        text = clean_json_response(text)
+    # Do not use the legacy JSON-extraction helper here: it would repair prose
+    # or fenced output into a decision despite this branch's exact-object contract.
     parsed = json.loads(text)
     if not isinstance(parsed, Mapping):
         raise SearchJudgmentReadAssessmentError("model_output_not_object")
@@ -1862,34 +1840,6 @@ def _component_ref(component: Mapping[str, Any]) -> dict[str, Any]:
         "component_digest": _required_text(
             component.get("component_digest"), "component_digest_missing"
         ),
-    }
-
-
-def _source_obligation_binding_ref(
-    *,
-    answer_contract_ref: Mapping[str, Any],
-    component_ref: Mapping[str, Any],
-    obligation: Mapping[str, Any],
-) -> dict[str, Any]:
-    obligation_id = _required_text(
-        obligation.get("obligation_id"), "source_obligation_id_missing"
-    )
-    core = {
-        "binding_kind": "pre_acquisition_source_obligation_lineage",
-        "answer_contract_ref": _json_clone(answer_contract_ref),
-        "source_obligation_id": obligation_id,
-        "source_obligation_descriptor": _json_clone(obligation),
-        "component_refs": [_json_clone(component_ref)],
-        "source_authority_granted": False,
-        "source_obligation_satisfied": False,
-    }
-    return {
-        "source_obligation_id": obligation_id,
-        "source_obligation_digest": stable_json_digest(core),
-        "binding_kind": core["binding_kind"],
-        "answer_contract_digest": answer_contract_ref.get("contract_digest"),
-        "component_ids": [component_ref.get("component_id")],
-        "active": True,
     }
 
 

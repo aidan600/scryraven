@@ -2697,7 +2697,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 query_plan=query_authority.plan,
                 discovery_result_store=discovery_result_store,
                 ask_model=_ask(phase="search_judgment_read_assessment"),
-                clean_json_response=deps.clean_json_response,
                 provider=smart_provider,
                 model=smart_model,
                 base_url=local_url,

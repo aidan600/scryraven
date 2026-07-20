@@ -254,6 +254,19 @@ class OfflineOrdinaryPipelineHarness:
                 )
             if self.read_assessment_decision == "MALFORMED":
                 return "not-json"
+            if self.read_assessment_decision == "WRAPPED_JSON":
+                return (
+                    "Decision follows: "
+                    + json.dumps(
+                        {
+                            "schema_version": (
+                                "search_judgment_read_assessment_decision_v1"
+                            ),
+                            "decision": "NO_READ",
+                            "reason_code": "must_not_be_repaired",
+                        }
+                    )
+                )
             raise AssertionError("offline READ assessment response unavailable")
         if system_prompt == DEFAULT_SYSTEM["router"]:
             return json.dumps(

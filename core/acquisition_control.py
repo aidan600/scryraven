@@ -1612,6 +1612,50 @@ def ensure_acquisition_control_state(
     return safe
 
 
+def build_pre_acquisition_source_obligation_ref(
+    *,
+    answer_contract_ref: Mapping[str, Any],
+    source_obligation_id: str,
+    source_obligation_descriptor: Mapping[str, Any],
+    component_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Build the acquisition owner's compact active-obligation lineage ref."""
+
+    contract_ref = _contract_ref(answer_contract_ref)
+    obligation_id = _required_token(
+        source_obligation_id,
+        "source_obligation_id_missing",
+        limit=200,
+    )
+    descriptor = _mapping(
+        source_obligation_descriptor,
+        "source_obligation_descriptor_invalid",
+    )
+    components = [
+        _component_ref(_mapping(value, "component_mapping_required"))
+        for value in component_refs
+    ]
+    if not components:
+        raise AcquisitionControlError("source_obligation_component_missing")
+    binding_core = {
+        "binding_kind": "pre_acquisition_source_obligation_lineage",
+        "answer_contract_ref": contract_ref,
+        "source_obligation_id": obligation_id,
+        "source_obligation_descriptor": descriptor,
+        "component_refs": components,
+        "source_authority_granted": False,
+        "source_obligation_satisfied": False,
+    }
+    return {
+        "source_obligation_id": obligation_id,
+        "source_obligation_digest": stable_json_digest(binding_core),
+        "binding_kind": binding_core["binding_kind"],
+        "answer_contract_digest": contract_ref["contract_digest"],
+        "component_ids": [value.get("component_id") for value in components],
+        "active": True,
+    }
+
+
 def build_acquisition_authority_snapshot(
     *,
     run_id: str,
@@ -1760,23 +1804,14 @@ def build_acquisition_authority_snapshot(
                     raise AcquisitionControlError(
                         "duplicate_source_obligation_id"
                     )
-                binding_core = {
-                    "binding_kind": "pre_acquisition_source_obligation_lineage",
-                    "answer_contract_ref": contract_ref,
-                    "source_obligation_id": obligation_id,
-                    "source_obligation_descriptor": descriptor,
-                    "component_refs": [canonical_component],
-                    "source_authority_granted": False,
-                    "source_obligation_satisfied": False,
-                }
-                obligations[obligation_id] = {
-                    "source_obligation_id": obligation_id,
-                    "source_obligation_digest": stable_json_digest(binding_core),
-                    "binding_kind": binding_core["binding_kind"],
-                    "answer_contract_digest": contract_ref["contract_digest"],
-                    "component_ids": [component_id],
-                    "active": True,
-                }
+                obligations[obligation_id] = (
+                    build_pre_acquisition_source_obligation_ref(
+                        answer_contract_ref=contract_ref,
+                        source_obligation_id=obligation_id,
+                        source_obligation_descriptor=descriptor,
+                        component_refs=[canonical_component],
+                    )
+                )
                 seen_obligation_ids.add(obligation_id)
             if seen_obligation_ids != expected_obligation_ids:
                 raise AcquisitionControlError(
@@ -1838,23 +1873,12 @@ def build_acquisition_authority_snapshot(
             raise AcquisitionControlError(
                 "source_obligation_descriptor_component_mismatch"
             )
-        binding_core = {
-            "binding_kind": "pre_acquisition_source_obligation_lineage",
-            "answer_contract_ref": contract_ref,
-            "source_obligation_id": obligation_id,
-            "source_obligation_descriptor": descriptor,
-            "component_refs": component_refs,
-            "source_authority_granted": False,
-            "source_obligation_satisfied": False,
-        }
-        obligations[obligation_id] = {
-            "source_obligation_id": obligation_id,
-            "source_obligation_digest": stable_json_digest(binding_core),
-            "binding_kind": binding_core["binding_kind"],
-            "answer_contract_digest": contract_ref["contract_digest"],
-            "component_ids": [ref.get("component_id") for ref in component_refs],
-            "active": True,
-        }
+        obligations[obligation_id] = build_pre_acquisition_source_obligation_ref(
+            answer_contract_ref=contract_ref,
+            source_obligation_id=obligation_id,
+            source_obligation_descriptor=descriptor,
+            component_refs=component_refs,
+        )
     extra_descriptors = set(descriptors).difference(obligations)
     if extra_descriptors:
         raise AcquisitionControlError("unbound_source_obligation_descriptor")
@@ -2902,6 +2926,7 @@ __all__ = [
     "AcquisitionTerminalReceiptV1",
     "AcquisitionWorkOrderV1",
     "build_acquisition_authority_snapshot",
+    "build_pre_acquisition_source_obligation_ref",
     "build_acquisition_work_order",
     "build_terminal_receipt_from_decision",
     "build_terminal_receipt_from_execution",
