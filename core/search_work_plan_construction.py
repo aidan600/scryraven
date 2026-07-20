@@ -8,10 +8,13 @@ consumer.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
+from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.initial_query_allocation_policy import InitialQueryAllocationPolicy
 from core.query_shape_contract_resolution import (
     AuditJobCandidate,
     ComponentCandidate,
@@ -37,6 +40,9 @@ from core.search_work_plan import (
     AuditJob,
     AuthorityRef,
     BudgetExhaustedPosture,
+    BudgetValue,
+    BudgetValuePosture,
+    ComponentBudget,
     EffectiveContractDescriptor,
     EffectiveContractKind,
     FollowUpAuthority,
@@ -47,6 +53,7 @@ from core.search_work_plan import (
     ProviderJobKind,
     QuantWorkUnit,
     QueryShapeDescriptor,
+    QueryShapeKind,
     RemediationPermission,
     RequestedModeDescriptor,
     SearchMode,
@@ -54,6 +61,8 @@ from core.search_work_plan import (
     SearchWorkComponent,
     SearchWorkPlan,
     SourceObligation,
+    SourceObligationKind,
+    SourceObligationStrictness,
     StopCondition,
     StopConditionKind,
     StopOutcome,
@@ -139,6 +148,13 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if hasattr(value, "to_dict"):
         return _json_safe(value.to_dict(), depth=depth + 1)
     return _clean_text(value, limit=300)
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    safe = _json_safe(value)
+    return dict(safe) if isinstance(safe, Mapping) else {}
 
 
 def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -470,6 +486,536 @@ def observe_search_work_plan_construction(
     )
 
 
+def construct_contract_bound_search_work_plan(
+    *,
+    construction_id: str,
+    requested_mode: str,
+    planner_state: Mapping[str, Any],
+    initial_contract: Mapping[str, Any],
+    current_contract: Mapping[str, Any] | None,
+    run_authority_contract: Mapping[str, Any],
+    policy: InitialQueryAllocationPolicy,
+    revision_projections: Sequence[Mapping[str, Any]] = (),
+) -> SearchWorkPlanConstructionResult:
+    """Construct the ordinary contract-bound SearchWorkPlan.
+
+    The plan stores accepted component/source-obligation/requirement identity
+    and the tunable allocation posture.  Executable query text remains solely
+    in SearchPlanner proposal candidates and QueryPlan admission state.
+    """
+
+    clean_construction_id = _clean_token(construction_id)
+    planner = _safe_mapping(planner_state)
+    initial = _safe_mapping(initial_contract)
+    current = _safe_mapping(current_contract)
+    run_contract = _safe_mapping(run_authority_contract)
+    parent_contract = current or initial
+    if not clean_construction_id or not planner or not initial or not parent_contract:
+        raise ValueError(
+            "contract-bound SearchWorkPlan requires construction, planner, and "
+            "accepted contract identity"
+        )
+
+    contract_version = _clean_token(
+        parent_contract.get("accepted_contract_version")
+    )
+    contract_digest = _clean_token(
+        parent_contract.get("accepted_contract_digest"),
+        limit=128,
+    )
+    if not contract_version or not contract_digest:
+        raise ValueError(
+            "contract-bound SearchWorkPlan requires accepted contract version/digest"
+        )
+    accepted_components = [
+        _safe_mapping(item)
+        for item in parent_contract.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    if not accepted_components:
+        raise ValueError(
+            "contract-bound SearchWorkPlan requires accepted answer components"
+        )
+
+    qmr = _safe_mapping(planner.get("question_meaning_record"))
+    qmr_source_refs = {
+        _clean_token(item.get("candidate_id")): _safe_mapping(item)
+        for item in qmr.get("source_obligation_candidate_refs") or ()
+        if isinstance(item, Mapping) and _clean_token(item.get("candidate_id"))
+    }
+    planner_requirements = [
+        _safe_mapping(item)
+        for item in planner.get("component_search_requirements") or ()
+        if isinstance(item, Mapping)
+    ]
+    revision_refs = [
+        _compact_revision_ref(item)
+        for item in revision_projections
+        if isinstance(item, Mapping)
+    ]
+    revision_refs = [item for item in revision_refs if item]
+    revision_requirements = [
+        _safe_mapping(update)
+        for revision in revision_projections
+        if isinstance(revision, Mapping)
+        for update in revision.get("component_search_requirement_updates") or ()
+        if isinstance(update, Mapping)
+    ]
+    all_requirements = planner_requirements + revision_requirements
+
+    components: list[SearchWorkComponent] = []
+    provider_jobs: list[ProviderJob] = []
+    for rank, accepted in enumerate(accepted_components, start=1):
+        component_id = _clean_token(accepted.get("component_id"))
+        if not component_id:
+            raise ValueError("accepted SearchWork component requires component_id")
+        requirement_refs = [
+            _compact_search_requirement_ref(requirement)
+            for requirement in all_requirements
+            if _clean_token(requirement.get("component_id")) == component_id
+        ]
+        requirement_refs = [item for item in requirement_refs if item]
+        source_ids = _text_tuple(
+            accepted.get("source_obligation_candidate_ids")
+            or accepted.get("source_obligation_candidate_refs")
+        )
+        obligations = tuple(
+            _contract_bound_source_obligation(
+                candidate_id=candidate_id,
+                candidate_ref=qmr_source_refs.get(candidate_id, {}),
+                accepted_component_id=component_id,
+            )
+            for candidate_id in source_ids
+        )
+        job_kind = _provider_job_kind_from_obligations(obligations)
+        provider_job_id = f"provider-job:{component_id}:initial-discover"
+        accepted_component_ref = {
+            "component_id": component_id,
+            "component_revision": accepted.get("component_revision"),
+            "component_digest": accepted.get("component_digest"),
+            "requirement_posture": accepted.get("requirement_posture"),
+            "materiality": accepted.get("materiality"),
+        }
+        components.append(
+            SearchWorkComponent(
+                component_id=component_id,
+                user_facing_subquestion=(
+                    _clean_text(accepted.get("user_facing_question"), limit=500)
+                    or _clean_text(accepted.get("user_facing_label"), limit=220)
+                    or f"Accepted required component {rank}"
+                ),
+                entities=(),
+                anchors=(),
+                source_obligations=obligations,
+                required_provider_jobs=(job_kind,),
+                per_component_budget=ComponentBudget(
+                    minimum_viable=BudgetValue(
+                        value=policy.primary_query_target_per_required_component,
+                        posture=BudgetValuePosture.COMPONENT_MINIMUM,
+                        unit="initial_query_candidate",
+                    ),
+                    cap=BudgetValue(
+                        value=policy.initial_candidate_ceiling_per_required_component,
+                        posture=BudgetValuePosture.COMPONENT_CAP,
+                        unit="initial_query_candidate",
+                    ),
+                    budget_exhausted_posture=BudgetExhaustedPosture.QUALIFY,
+                ),
+                mode_depth_allowance=ModeDepthAllowance.SHALLOW,
+                stop_conditions=(),
+                depends_on=(),
+                metadata={
+                    "accepted_component_ref": accepted_component_ref,
+                    "search_requirement_refs": requirement_refs,
+                    "source_obligation_candidate_refs": [
+                        _compact_source_obligation_ref(
+                            qmr_source_refs.get(candidate_id, {}),
+                            candidate_id=candidate_id,
+                        )
+                        for candidate_id in source_ids
+                    ],
+                    "required_component_primary_query_floor": (
+                        policy.required_component_floor_enabled
+                    ),
+                    "full_executable_query_text_stored": False,
+                },
+            )
+        )
+        provider_jobs.append(
+            ProviderJob(
+                provider_job_id=provider_job_id,
+                job_kind=job_kind,
+                component_ids=(component_id,),
+                source_obligation_ids=source_ids,
+                job_posture="planned_initial_discover_handoff",
+                provider_metadata={},
+                metadata={
+                    "provider_name_neutral": True,
+                    "executes_search": False,
+                    "accepted_component_ref": accepted_component_ref,
+                    "search_requirement_ids": [
+                        item["requirement_id"]
+                        for item in requirement_refs
+                        if item.get("requirement_id")
+                    ],
+                },
+            )
+        )
+
+    required_component_count = sum(
+        1
+        for item in accepted_components
+        if _clean_token(item.get("requirement_posture")) == "required"
+    )
+    contract_ref = {
+        "contract_version": contract_version,
+        "contract_digest": contract_digest,
+        "parent_kind": (
+            "current_answer_contract" if current else "initial_answer_contract"
+        ),
+    }
+    planner_ref = {
+        "proposal_id": planner.get("proposal_id"),
+        "proposal_digest": planner.get("proposal_digest"),
+        "question_meaning_record_id": _safe_mapping(
+            planner.get("question_meaning_record_ref")
+        ).get("record_id"),
+        "question_meaning_record_digest": _safe_mapping(
+            planner.get("question_meaning_record_ref")
+        ).get("record_digest"),
+    }
+    plan = SearchWorkPlan(
+        requested_mode=RequestedModeDescriptor(
+            mode=str(requested_mode or "").casefold(),
+            source="ordinary_run_config",
+            mode_mismatch_posture=ModeMismatchPosture.NONE,
+            rationale=(
+                "Initial component coverage is mode-neutral; later "
+                "SearchJudgment calibrates follow-up persistence."
+            ),
+        ),
+        effective_contract=EffectiveContractDescriptor(
+            contract_kind=EffectiveContractKind.DIRECT_CONSTRAINED,
+            governing_authority="RunKernel accepted AnswerContract",
+            depth_allowance=ModeDepthAllowance.SHALLOW,
+            follow_up_posture=FollowUpPermission.CONDITIONAL,
+            budget_posture="per_accepted_required_component_soft_policy",
+            output_depth_target="first_wave_component_coverage",
+            mismatch_posture=ModeMismatchPosture.NONE,
+        ),
+        query_shape=QueryShapeDescriptor(
+            kinds=(
+                (QueryShapeKind.MULTIPART,)
+                if len(components) > 1
+                else (QueryShapeKind.SIMPLE_LOOKUP,)
+            ),
+            component_count_hint=len(components),
+            metadata={
+                "accepted_required_component_count": required_component_count,
+                "query_shape_owner": "accepted AnswerContract",
+            },
+        ),
+        components=tuple(components),
+        provider_jobs=tuple(provider_jobs),
+        budget=SearchWorkBudget(
+            base_mode_budget_posture="component_aware_initial_soft_policy",
+            per_component_minimum_viable_budget=BudgetValue(
+                value=policy.primary_query_target_per_required_component,
+                posture=BudgetValuePosture.COMPONENT_MINIMUM,
+                unit="initial_query_candidate",
+            ),
+            per_component_cap=BudgetValue(
+                value=policy.initial_candidate_ceiling_per_required_component,
+                posture=BudgetValuePosture.COMPONENT_CAP,
+                unit="initial_query_candidate",
+            ),
+            global_cap=BudgetValue(
+                value=None,
+                posture=BudgetValuePosture.NOT_NUMERIC,
+                unit="not_primary_allocation_rule",
+            ),
+            budget_exhausted_posture=BudgetExhaustedPosture.QUALIFY,
+            metadata={
+                "allocation_policy": policy.to_dict(),
+                "small_global_initial_query_cap_applied": False,
+                "required_component_floor_enabled": (
+                    policy.required_component_floor_enabled
+                ),
+            },
+        ),
+        follow_up_authority=FollowUpAuthority(
+            permission=FollowUpPermission.CONDITIONAL,
+            authorizers=("RunAuthority", "SearchJudgment", "SufficiencyJudgment"),
+            allow_conditions=(
+                "Later SearchJudgment finds an unmet accepted component or source-obligation need.",
+                "A prepared secondary candidate is materially nonredundant.",
+            ),
+            block_conditions=(
+                "This initial phase cannot dispatch a post-result secondary query.",
+            ),
+            notes=(
+                "Prepared secondaries remain non-executable until later "
+                "SearchJudgment authorization."
+            ),
+        ),
+        stop_conditions=(),
+        authority_refs=tuple(
+            [
+                AuthorityRef(
+                    authority_id=contract_digest,
+                    authority_name="AcceptedAnswerContract",
+                    role="governing accepted component/source-obligation identity",
+                    metadata=contract_ref,
+                ),
+                AuthorityRef(
+                    authority_id=str(planner.get("proposal_digest") or ""),
+                    authority_name="SearchPlannerProposal",
+                    role="provider-neutral query requirements",
+                    metadata=planner_ref,
+                ),
+                AuthorityRef(
+                    authority_id=policy.policy_version,
+                    authority_name="InitialQueryAllocationPolicy",
+                    role="versioned per-component allocation tuning",
+                ),
+            ]
+            + [
+                AuthorityRef(
+                    authority_id=str(item["revision_digest"]),
+                    authority_name="SearchPlannerRevision",
+                    role=str(item.get("revision_effect_class") or "query direction"),
+                    metadata=item,
+                )
+                for item in revision_refs
+                if item.get("revision_digest")
+            ]
+        ),
+        planning_posture="contract_bound_initial_query_requirements",
+        passive=False,
+        metadata={
+            "construction_id": clean_construction_id,
+            "search_work_plan_id": clean_construction_id,
+            "accepted_contract_ref": contract_ref,
+            "parent_search_planner_proposal_ref": planner_ref,
+            "parent_search_planner_revision_refs": revision_refs,
+            "run_authority_contract_ref": {
+                "contract_id": run_contract.get("contract_id"),
+                "schema_version": run_contract.get("schema_version"),
+            },
+            "allocation_policy": policy.to_dict(),
+            "required_component_count": required_component_count,
+            "runtime_consumed": True,
+            "runtime_consumer": "QueryPlan initial admission",
+            "full_executable_query_text_stored": False,
+            "post_result_followup_dispatched": False,
+        },
+    ).require_valid()
+    validation = {"ok": True, "search_work_plan": plan.validate().to_dict()}
+    return SearchWorkPlanConstructionResult(
+        construction_id=clean_construction_id,
+        search_work_plan=plan,
+        validation=validation,
+        runtime_consumed=True,
+        behavior_changed=True,
+        prompt_behavior_changed=False,
+        provider_search_behavior_changed=False,
+        query_plan_behavior_changed=True,
+        metadata={
+            "runtime_integration": True,
+            "contract_bound": True,
+            "full_executable_query_text_stored": False,
+            "allocation_policy_version": policy.policy_version,
+        },
+    )
+
+
+def observe_contract_bound_search_work_plan_construction(
+    action: AuthorizedAction,
+    *,
+    construction_id: str,
+    requested_mode: str,
+    planner_state: Mapping[str, Any],
+    initial_contract: Mapping[str, Any],
+    current_contract: Mapping[str, Any] | None,
+    run_authority_contract: Mapping[str, Any],
+    policy: InitialQueryAllocationPolicy,
+    revision_projections: Sequence[Mapping[str, Any]] = (),
+) -> Observation:
+    """Return the RunKernel observation for ordinary active construction."""
+
+    validate_authorized_action(
+        action,
+        action_type=ActionType.SEARCH_WORK_PLAN_CONSTRUCT,
+        stage=SEARCH_WORK_PLAN_CONSTRUCTION_STAGE,
+        expected_observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
+    )
+    result = construct_contract_bound_search_work_plan(
+        construction_id=construction_id,
+        requested_mode=requested_mode,
+        planner_state=planner_state,
+        initial_contract=initial_contract,
+        current_contract=current_contract,
+        run_authority_contract=run_authority_contract,
+        policy=policy,
+        revision_projections=revision_projections,
+    )
+    return Observation.from_action(
+        action,
+        observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
+        status=RunStageStatus.COMPLETED,
+        payload={
+            "construction_result": result.to_dict(),
+            "search_work_plan_projection": result.search_work_plan.to_dict(),
+            "validation": result.validation,
+        },
+    )
+
+
+def _compact_search_requirement_ref(
+    requirement: Mapping[str, Any],
+) -> dict[str, Any]:
+    requirement_id = _clean_token(requirement.get("requirement_id"))
+    component_id = _clean_token(requirement.get("component_id"))
+    if not requirement_id or not component_id:
+        return {}
+    source_ids = list(
+        _text_tuple(requirement.get("source_obligation_candidate_ids"))
+    )
+    digest_payload = {
+        "requirement_id": requirement_id,
+        "component_id": component_id,
+        "source_obligation_candidate_ids": source_ids,
+        "requirement_summary": _clean_text(
+            requirement.get("requirement_summary"),
+            limit=320,
+        ),
+        "recency_requirement": _clean_text(
+            requirement.get("recency_requirement"),
+            limit=220,
+        ),
+    }
+    return {
+        "requirement_id": requirement_id,
+        "component_id": component_id,
+        "source_obligation_candidate_ids": source_ids,
+        "requirement_digest": _digest_mapping(digest_payload),
+        "contains_executable_query_text": False,
+    }
+
+
+def _compact_source_obligation_ref(
+    value: Mapping[str, Any],
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    return {
+        "candidate_id": candidate_id,
+        "obligation_kind": _clean_token(ref.get("obligation_kind"))
+        or SourceObligationKind.NO_SPECIAL_OBLIGATION.value,
+        "strictness": _clean_token(ref.get("strictness")),
+        "candidate_digest": _digest_mapping(
+            {
+                "candidate_id": candidate_id,
+                "obligation_kind": ref.get("obligation_kind"),
+                "strictness": ref.get("strictness"),
+                "component_candidate_ids": ref.get("component_candidate_ids"),
+            }
+        ),
+    }
+
+
+def _contract_bound_source_obligation(
+    *,
+    candidate_id: str,
+    candidate_ref: Mapping[str, Any],
+    accepted_component_id: str,
+) -> SourceObligation:
+    ref = _safe_mapping(candidate_ref)
+    kind = _clean_token(ref.get("obligation_kind")) or (
+        SourceObligationKind.NO_SPECIAL_OBLIGATION.value
+    )
+    strictness = _clean_token(ref.get("strictness")) or (
+        SourceObligationStrictness.REQUIRED.value
+    )
+    metadata = _safe_mapping(ref.get("metadata"))
+    return SourceObligation(
+        obligation_id=candidate_id,
+        kind=kind,
+        strictness=strictness,
+        search_constraint=_clean_text(
+            metadata.get("required_source_class"),
+            limit=240,
+        ),
+        currentness_requirement=_clean_text(
+            metadata.get("currentness_requirement"),
+            limit=160,
+        ),
+        satisfaction_rule=None,
+        lower_tier_use=None,
+        metadata={
+            "accepted_source_obligation_candidate_ref": (
+                _compact_source_obligation_ref(ref, candidate_id=candidate_id)
+            ),
+            "accepted_component_id": accepted_component_id,
+            "satisfaction_not_decided_here": True,
+        },
+    )
+
+
+def _provider_job_kind_from_obligations(
+    obligations: Sequence[SourceObligation],
+) -> ProviderJobKind:
+    kinds = {item.kind for item in obligations}
+    if kinds & {
+        SourceObligationKind.OFFICIAL_CURRENT,
+        SourceObligationKind.LEGAL_CURRENT_PRIMARY,
+    }:
+        return ProviderJobKind.OFFICIAL_CANDIDATE_ACQUISITION
+    if SourceObligationKind.CANONICAL_DOCUMENTATION in kinds:
+        return ProviderJobKind.CANONICAL_EXTRACTION
+    if kinds & {
+        SourceObligationKind.CONFLICT_RESOLUTION,
+        SourceObligationKind.DATE_BOUND_CURRENTNESS,
+    }:
+        return ProviderJobKind.CONFLICT_CURRENTNESS_CHECK
+    return ProviderJobKind.DIRECT_CANDIDATE_SEARCH
+
+
+def _compact_revision_ref(value: Mapping[str, Any]) -> dict[str, Any]:
+    revision = _safe_mapping(value)
+    revision_id = _clean_token(revision.get("revision_id"))
+    revision_digest = _clean_token(revision.get("revision_digest"), limit=128)
+    if not revision_id or not revision_digest:
+        return {}
+    return {
+        "revision_id": revision_id,
+        "revision_digest": revision_digest,
+        "component_id": _clean_token(revision.get("component_id")),
+        "revision_effect_class": _clean_token(
+            revision.get("revision_effect_class")
+        ),
+        "contractual_effect_admitted_and_applied": bool(
+            revision.get("contractual_effect_admitted_and_applied")
+        ),
+        "consumed_ambiguity_dimension_ids": list(
+            _text_tuple(revision.get("consumed_ambiguity_dimension_ids"))
+        ),
+        "consumed_scout_hint_ids": list(
+            _text_tuple(revision.get("consumed_scout_hint_ids"))
+        ),
+    }
+
+
+def _digest_mapping(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        _json_safe(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _construct_components(
     component_candidates: Sequence[ComponentCandidate],
     obligation_candidates: Sequence[SourceObligationCandidate],
@@ -754,6 +1300,8 @@ __all__ = [
     "SEARCH_WORK_PLAN_CONSTRUCTION_TRACE_KEY",
     "SearchWorkPlanConstructionInput",
     "SearchWorkPlanConstructionResult",
+    "construct_contract_bound_search_work_plan",
     "construct_search_work_plan_from_records",
+    "observe_contract_bound_search_work_plan_construction",
     "observe_search_work_plan_construction",
 ]

@@ -7,11 +7,13 @@ are represented here before retrieval consumes query text.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
+from core.initial_query_allocation_policy import InitialQueryAllocationPolicy
 from core.retrieval_quality import (
     apply_domain_anchor_to_query,
     approved_entity_aliases,
@@ -24,6 +26,7 @@ from core.retrieval_quality import (
 from core.search_work_query_plan_consumption import (
     allocate_existing_queries_by_search_work,
     authorize_existing_query_by_version_bound_component_gap,
+    initial_strategy_search_work_bindings,
 )
 
 QUERY_PLAN_TRACE_KEY = "query_plan"
@@ -236,6 +239,43 @@ class QueryPlanItem:
 
 
 @dataclass(frozen=True, slots=True)
+class InitialQueryAdmissionResult:
+    admitted_candidate_queries: tuple[str, ...]
+    immediate_dispatch_queries: tuple[str, ...]
+    prepared_secondary_candidates: tuple[Mapping[str, Any], ...]
+    required_component_ids: tuple[str, ...]
+    primary_item_ids_by_component: Mapping[str, tuple[str, ...]]
+    duplicate_candidates_rejected: tuple[Mapping[str, Any], ...] = ()
+    over_ceiling_candidates_rejected: tuple[Mapping[str, Any], ...] = ()
+    unjustified_secondary_candidates_rejected: tuple[Mapping[str, Any], ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "admitted_candidate_queries": list(self.admitted_candidate_queries),
+            "immediate_dispatch_queries": list(self.immediate_dispatch_queries),
+            "prepared_secondary_candidates": [
+                dict(item) for item in self.prepared_secondary_candidates
+            ],
+            "required_component_ids": list(self.required_component_ids),
+            "primary_item_ids_by_component": {
+                component_id: list(item_ids)
+                for component_id, item_ids in self.primary_item_ids_by_component.items()
+            },
+            "duplicate_candidates_rejected": [
+                dict(item) for item in self.duplicate_candidates_rejected
+            ],
+            "over_ceiling_candidates_rejected": [
+                dict(item) for item in self.over_ceiling_candidates_rejected
+            ],
+            "unjustified_secondary_candidates_rejected": [
+                dict(item)
+                for item in self.unjustified_secondary_candidates_rejected
+            ],
+            "post_result_followup_dispatched": False,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class QueryPlan:
     plan_id: str = "query-plan-1"
     items: tuple[QueryPlanItem, ...] = ()
@@ -275,6 +315,365 @@ class QueryPlan:
         )
         return replace(self, items=self.items + (item,))
 
+    def admit_initial_component_strategies(
+        self,
+        strategies: Sequence[Mapping[str, Any]],
+        *,
+        search_work_projection: Mapping[str, Any],
+        policy: InitialQueryAllocationPolicy,
+        clean: Callable[[str], str],
+        origin: str = "search_planner",
+        phase: str = "initial_component_query_admission",
+    ) -> tuple["QueryPlan", InitialQueryAdmissionResult]:
+        """Admit component-bound initial candidates without a small global cap."""
+
+        bindings = initial_strategy_search_work_bindings(search_work_projection)
+        required_component_ids = tuple(
+            component_id
+            for component_id, binding in bindings.items()
+            if binding.get("required_component") is True
+        )
+        if not required_component_ids:
+            raise ValueError(
+                "initial QueryPlan admission requires accepted required components"
+            )
+        grouped: dict[str, list[Mapping[str, Any]]] = {
+            component_id: [] for component_id in bindings
+        }
+        for strategy in strategies:
+            component_id = _clean_text(strategy.get("component_id"), limit=160)
+            if not component_id or component_id not in bindings:
+                raise ValueError(
+                    "initial query strategy references an unknown SearchWork component"
+                )
+            grouped[component_id].append(strategy)
+
+        plan = self
+        admitted_candidates: list[str] = []
+        immediate_primary: dict[str, list[str]] = {
+            component_id: [] for component_id in required_component_ids
+        }
+        immediate_secondary: list[str] = []
+        prepared_secondary: list[dict[str, Any]] = []
+        primary_item_ids: dict[str, list[str]] = {
+            component_id: [] for component_id in required_component_ids
+        }
+        duplicates: list[dict[str, Any]] = []
+        over_ceiling: list[dict[str, Any]] = []
+        unjustified_secondary: list[dict[str, Any]] = []
+        canonical_candidates: list[dict[str, Any]] = []
+        query_metadata: dict[str, dict[str, Any]] = {}
+
+        for component_id in bindings:
+            component_strategies = sorted(
+                grouped.get(component_id, []),
+                key=lambda item: (
+                    0 if item.get("candidate_kind") == "primary" else 1,
+                    str(item.get("strategy_id") or ""),
+                ),
+            )
+            admitted_for_component = 0
+            primary_for_component = 0
+            immediate_for_component = 0
+            for strategy in component_strategies:
+                strategy_id = _clean_text(strategy.get("strategy_id"), limit=160)
+                candidate_kind = _clean_text(
+                    strategy.get("candidate_kind"), limit=40
+                ) or "primary"
+                raw_query = _clean_text(
+                    strategy.get("candidate_query_text"), limit=300
+                )
+                requested_role = _clean_text(
+                    strategy.get("requested_role"), limit=80
+                ) or QueryPlanRole.INITIAL.value
+                if not strategy_id or not raw_query:
+                    raise ValueError(
+                        "initial query strategy requires identity and bounded text"
+                    )
+                try:
+                    role = QueryPlanRole(requested_role)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"unsupported initial QueryPlan role: {requested_role}"
+                    ) from exc
+                authorized = clean(raw_query)[:300]
+                compact_strategy = _compact_initial_strategy_metadata(strategy)
+                binding = dict(bindings[component_id])
+                metadata = {
+                    **binding,
+                    **compact_strategy,
+                    "allocation_policy_version": policy.policy_version,
+                    "query_plan_owns_executable_text": True,
+                    "provider_selection_unchanged": True,
+                }
+                plan = plan.append(
+                    origin=origin,
+                    role=role,
+                    status=QueryPlanStatus.OBSERVED_MODEL_QUERY,
+                    original_query=authorized or raw_query,
+                    phase=phase,
+                    metadata=metadata,
+                )
+                if not authorized:
+                    plan = plan.append(
+                        origin=origin,
+                        role=role,
+                        status=QueryPlanStatus.REJECTED_EMPTY,
+                        original_query=raw_query,
+                        phase=phase,
+                        metadata=metadata,
+                    )
+                    continue
+
+                duplicate = _find_duplicate_initial_candidate(
+                    authorized,
+                    strategy,
+                    canonical_candidates,
+                    redundancy_rejection_enabled=(
+                        policy.redundancy_rejection_enabled
+                    ),
+                )
+                if duplicate is not None:
+                    contributor_ref = {
+                        "strategy_id": strategy_id,
+                        "component_id": component_id,
+                        "search_requirement_ref": strategy.get(
+                            "search_requirement_ref"
+                        ),
+                    }
+                    plan = _append_contributor_to_item(
+                        plan,
+                        item_id=str(duplicate["item_id"]),
+                        contributor_ref=contributor_ref,
+                    )
+                    rejection = {
+                        "strategy_id": strategy_id,
+                        "component_id": component_id,
+                        "duplicate_of_query_plan_item_id": duplicate["item_id"],
+                        "duplicate_kind": duplicate["duplicate_kind"],
+                    }
+                    duplicates.append(rejection)
+                    plan = plan.append(
+                        origin=origin,
+                        role=role,
+                        status=QueryPlanStatus.REJECTED_DUPLICATE,
+                        original_query=raw_query,
+                        authorized_query=authorized,
+                        mutation_reason=str(duplicate["duplicate_kind"]),
+                        admission_reason="redundancy_rejected",
+                        phase=phase,
+                        metadata={**metadata, **rejection},
+                    )
+                    continue
+
+                if (
+                    candidate_kind == "secondary"
+                    and not _secondary_candidate_has_distinct_need(strategy)
+                ):
+                    rejection = {
+                        "strategy_id": strategy_id,
+                        "component_id": component_id,
+                        "reason": "secondary_missing_distinct_need_justification",
+                    }
+                    unjustified_secondary.append(rejection)
+                    plan = plan.append(
+                        origin=origin,
+                        role=role,
+                        status=QueryPlanStatus.REJECTED_BLOCKED,
+                        original_query=raw_query,
+                        authorized_query=authorized,
+                        admission_reason="secondary_distinct_need_not_proved",
+                        phase=phase,
+                        metadata={**metadata, **rejection},
+                    )
+                    continue
+
+                if (
+                    admitted_for_component
+                    >= policy.initial_candidate_ceiling_per_required_component
+                ):
+                    rejection = {
+                        "strategy_id": strategy_id,
+                        "component_id": component_id,
+                        "per_component_candidate_ceiling": (
+                            policy.initial_candidate_ceiling_per_required_component
+                        ),
+                    }
+                    over_ceiling.append(rejection)
+                    plan = plan.append(
+                        origin=origin,
+                        role=role,
+                        status=QueryPlanStatus.REJECTED_OVER_BUDGET,
+                        original_query=raw_query,
+                        authorized_query=authorized,
+                        admission_reason="per_component_candidate_ceiling",
+                        phase=phase,
+                        metadata={**metadata, **rejection},
+                    )
+                    continue
+
+                immediate = False
+                if candidate_kind == "primary":
+                    primary_for_component += 1
+                    immediate = (
+                        immediate_for_component
+                        < policy.immediate_dispatch_target_per_required_component
+                    )
+                elif (
+                    strategy.get("immediate_dispatch_requested") is True
+                    and strategy.get("immediate_dispatch_distinct_need") is True
+                    and _secondary_need_cannot_reasonably_share_primary(
+                        strategy,
+                        component_strategies,
+                    )
+                ):
+                    immediate = True
+
+                status = (
+                    QueryPlanStatus.FINALIZED
+                    if immediate
+                    else QueryPlanStatus.ADMITTED
+                )
+                admission_reason = (
+                    "required_component_primary_first_wave"
+                    if candidate_kind == "primary" and immediate
+                    else "distinct_need_secondary_first_wave"
+                    if immediate
+                    else "prepared_for_later_search_judgment"
+                )
+                plan = plan.append(
+                    origin=origin,
+                    role=role,
+                    status=status,
+                    original_query=raw_query,
+                    authorized_query=authorized,
+                    admission_reason=admission_reason,
+                    phase=phase,
+                    order=admitted_for_component + 1,
+                    metadata={
+                        **metadata,
+                        "candidate_kind": candidate_kind,
+                        "dispatch_posture": (
+                            "immediate_first_wave"
+                            if immediate
+                            else "prepared_for_later_search_judgment"
+                        ),
+                        "post_result_followup_authorized": False,
+                        "contributor_lineage": [
+                            {
+                                "strategy_id": strategy_id,
+                                "component_id": component_id,
+                                "search_requirement_ref": strategy.get(
+                                    "search_requirement_ref"
+                                ),
+                            }
+                        ],
+                    },
+                )
+                item = plan.items[-1]
+                canonical_candidates.append(
+                    {
+                        "query": authorized,
+                        "strategy": dict(strategy),
+                        "item_id": item.item_id,
+                    }
+                )
+                admitted_for_component += 1
+                admitted_candidates.append(authorized)
+                query_metadata[authorized] = dict(item.metadata)
+                if candidate_kind == "primary":
+                    primary_item_ids.setdefault(component_id, []).append(
+                        item.item_id
+                    )
+                if immediate:
+                    immediate_for_component += 1
+                    if candidate_kind == "primary":
+                        immediate_primary.setdefault(component_id, []).append(
+                            authorized
+                        )
+                    else:
+                        immediate_secondary.append(authorized)
+                elif candidate_kind == "secondary":
+                    prepared_secondary.append(
+                        {
+                            "query_plan_item_id": item.item_id,
+                            "strategy_id": strategy_id,
+                            "component_id": component_id,
+                            "authorized_query": authorized,
+                            "requested_role": role.value,
+                            "distinct_need_justification": strategy.get(
+                                "distinct_need_justification"
+                            ),
+                            "source_obligation_candidate_ids": list(
+                                strategy.get(
+                                    "source_obligation_candidate_ids"
+                                )
+                                or []
+                            ),
+                            "later_authorizer": "SearchJudgment",
+                            "post_result_followup_authorized": False,
+                        }
+                    )
+
+            if component_id in required_component_ids and (
+                policy.required_component_floor_enabled
+                and primary_for_component
+                < policy.primary_query_target_per_required_component
+            ):
+                raise ValueError(
+                    f"required component {component_id} was not admitted a primary query"
+                )
+
+        immediate_queries = tuple(
+            query
+            for component_id in required_component_ids
+            for query in immediate_primary.get(component_id, [])
+        ) + tuple(immediate_secondary)
+        if policy.required_component_floor_enabled:
+            uncovered = [
+                component_id
+                for component_id in required_component_ids
+                if not immediate_primary.get(component_id)
+            ]
+            if uncovered:
+                raise ValueError(
+                    "initial first-wave safety floor would omit required components: "
+                    + ", ".join(uncovered)
+                )
+
+        consumption = {
+            "schema_version": "searchos_initial_query_allocation_consumption_v1",
+            "search_work_consumed_by_query_plan": True,
+            "allocation_policy": policy.to_dict(),
+            "required_component_ids": list(required_component_ids),
+            "primary_item_ids_by_component": {
+                key: list(value) for key, value in primary_item_ids.items()
+            },
+            "admitted_query_order": list(admitted_candidates),
+            "immediate_dispatch_query_order": list(immediate_queries),
+            "prepared_secondary_candidates": prepared_secondary,
+            "query_metadata": query_metadata,
+            "small_global_initial_query_cap_applied": False,
+            "required_component_globally_truncated": False,
+            "post_result_followup_dispatched": False,
+        }
+        plan = replace(plan, search_work_consumption=consumption)
+        result = InitialQueryAdmissionResult(
+            admitted_candidate_queries=tuple(admitted_candidates),
+            immediate_dispatch_queries=immediate_queries,
+            prepared_secondary_candidates=tuple(prepared_secondary),
+            required_component_ids=required_component_ids,
+            primary_item_ids_by_component={
+                key: tuple(value) for key, value in primary_item_ids.items()
+            },
+            duplicate_candidates_rejected=tuple(duplicates),
+            over_ceiling_candidates_rejected=tuple(over_ceiling),
+            unjustified_secondary_candidates_rejected=tuple(
+                unjustified_secondary
+            ),
+        )
+        return plan, result
+
     def admit_execution_queries(
         self,
         queries: Sequence[str],
@@ -286,15 +685,42 @@ class QueryPlan:
     ) -> "QueryPlan":
         plan = self
         for order, query in enumerate(queries, start=1):
+            parent_item = None
+            if iteration == 1 and role != QueryPlanRole.RECOVERY:
+                parent_item = next(
+                    (
+                        item
+                        for item in reversed(plan.items)
+                        if item.authorized_query == query
+                        and item.status
+                        in {QueryPlanStatus.FINALIZED, QueryPlanStatus.ADMITTED}
+                        and item.phase == "initial_component_query_admission"
+                    ),
+                    None,
+                )
+            execution_role = parent_item.role if parent_item is not None else role
+            execution_metadata = (
+                {
+                    **dict(parent_item.metadata),
+                    "parent_initial_query_plan_item_id": parent_item.item_id,
+                    "parent_initial_query_plan_item_digest": _canonical_sha256(
+                        parent_item.to_dict()
+                    ),
+                    "exact_query_text_preserved_from_initial_admission": True,
+                }
+                if parent_item is not None
+                else {}
+            )
             plan = plan.append(
                 origin=origin,
-                role=role,
+                role=execution_role,
                 status=QueryPlanStatus.ORDERED,
                 authorized_query=query,
                 phase=phase,
                 iteration=iteration,
                 order=order,
                 admission_reason="ordered_for_consumption",
+                metadata=execution_metadata,
             )
         return plan
 
@@ -552,6 +978,219 @@ class QueryPlan:
 
     def to_trace_fragment(self) -> dict[str, Any]:
         return {QUERY_PLAN_TRACE_KEY: self.to_dict()}
+
+
+def _compact_initial_strategy_metadata(
+    strategy: Mapping[str, Any],
+) -> dict[str, Any]:
+    recon = strategy.get("recon_requirement")
+    recon = dict(recon) if isinstance(recon, Mapping) else {}
+    return {
+        "strategy_id": _clean_text(strategy.get("strategy_id"), limit=160),
+        "candidate_kind": _clean_text(
+            strategy.get("candidate_kind"), limit=40
+        ),
+        "requested_role": _clean_text(
+            strategy.get("requested_role"), limit=80
+        ),
+        "source_obligation_candidate_ids": list(
+            strategy.get("source_obligation_candidate_ids") or []
+        ),
+        "search_requirement_ref": _safe_json(
+            strategy.get("search_requirement_ref")
+        ),
+        "accepted_component_ref": _safe_json(
+            strategy.get("accepted_component_ref")
+        ),
+        "parent_search_planner_proposal_ref": _safe_json(
+            strategy.get("parent_search_planner_proposal_ref")
+        ),
+        "parent_search_planner_revision_ref": _safe_json(
+            strategy.get("parent_search_planner_revision_ref")
+        ),
+        "distinct_need_justification": _clean_text(
+            strategy.get("distinct_need_justification"), limit=300
+        ),
+        "currentness_posture": _clean_text(
+            strategy.get("currentness_posture"), limit=180
+        ),
+        "official_canonical_intent": _clean_text(
+            strategy.get("official_canonical_intent"), limit=120
+        ),
+        "domain_constraints": _safe_json(strategy.get("domain_constraints")),
+        "document_family": _clean_text(
+            strategy.get("document_family"), limit=160
+        ),
+        "recon_requirement_ref": {
+            "posture": _clean_text(
+                recon.get("posture") or strategy.get("recon_posture"),
+                limit=40,
+            ),
+            "unresolved_dimension_ids": list(
+                recon.get("unresolved_dimension_ids")
+                or strategy.get("recon_unresolved_dimension_ids")
+                or []
+            ),
+            "required_for_truthful_targeting": bool(
+                recon.get("required_for_truthful_targeting")
+                or strategy.get("recon_required_for_truthful_targeting")
+            ),
+            "recon_query_text_retained": False,
+        },
+        "planner_provider_identity_ignored": bool(
+            strategy.get("planner_provider_identity_ignored")
+        ),
+        "provider_name_neutral": True,
+    }
+
+
+def _find_duplicate_initial_candidate(
+    query: str,
+    strategy: Mapping[str, Any],
+    canonical_candidates: Sequence[Mapping[str, Any]],
+    *,
+    redundancy_rejection_enabled: bool,
+) -> dict[str, Any] | None:
+    for candidate in canonical_candidates:
+        existing_query = str(candidate.get("query") or "")
+        if query.casefold() == existing_query.casefold():
+            return {
+                "item_id": candidate.get("item_id"),
+                "duplicate_kind": "exact_duplicate",
+            }
+        if not redundancy_rejection_enabled:
+            continue
+        existing_strategy = candidate.get("strategy")
+        existing_strategy = (
+            existing_strategy if isinstance(existing_strategy, Mapping) else {}
+        )
+        if (
+            _queries_materially_equivalent(query, existing_query)
+            and not _strategies_prove_distinct_need(strategy, existing_strategy)
+        ):
+            return {
+                "item_id": candidate.get("item_id"),
+                "duplicate_kind": "materially_equivalent",
+            }
+    return None
+
+
+def _queries_materially_equivalent(left: str, right: str) -> bool:
+    left_tokens = set(_query_equivalence_tokens(left))
+    right_tokens = set(_query_equivalence_tokens(right))
+    if not left_tokens or not right_tokens:
+        return False
+    overlap = len(left_tokens & right_tokens)
+    union = len(left_tokens | right_tokens)
+    if union and overlap / union >= 0.86:
+        return True
+    return (
+        min(len(left_tokens), len(right_tokens)) >= 4
+        and overlap == min(len(left_tokens), len(right_tokens))
+        and abs(len(left_tokens) - len(right_tokens)) <= 1
+    )
+
+
+def _query_equivalence_tokens(value: str) -> tuple[str, ...]:
+    return tuple(
+        token
+        for token in re.findall(r"[a-z0-9]+", value.casefold())
+        if token not in {"a", "an", "and", "for", "of", "the", "to"}
+    )
+
+
+def _strategies_prove_distinct_need(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+) -> bool:
+    left_sources = set(left.get("source_obligation_candidate_ids") or [])
+    right_sources = set(right.get("source_obligation_candidate_ids") or [])
+    if left_sources != right_sources and (left_sources or right_sources):
+        return True
+    left_role = _clean_text(left.get("requested_role"), limit=80)
+    right_role = _clean_text(right.get("requested_role"), limit=80)
+    if left_role != right_role and {left_role, right_role} & {
+        QueryPlanRole.OFFICIAL_BIAS.value,
+        QueryPlanRole.CANONICAL_BIAS.value,
+        QueryPlanRole.RECENCY.value,
+        QueryPlanRole.DISAMBIGUATION.value,
+        QueryPlanRole.RECON_REWRITE.value,
+    }:
+        return True
+    for key in (
+        "currentness_posture",
+        "official_canonical_intent",
+        "document_family",
+    ):
+        if left.get(key) != right.get(key) and (left.get(key) or right.get(key)):
+            return True
+    return False
+
+
+def _secondary_candidate_has_distinct_need(
+    strategy: Mapping[str, Any],
+) -> bool:
+    justification = _clean_text(
+        strategy.get("distinct_need_justification"), limit=300
+    )
+    if not justification:
+        return False
+    recon = strategy.get("recon_requirement")
+    recon = recon if isinstance(recon, Mapping) else {}
+    domain_constraints = strategy.get("domain_constraints")
+    domain_constraints = (
+        domain_constraints if isinstance(domain_constraints, Mapping) else {}
+    )
+    return bool(
+        strategy.get("source_obligation_candidate_ids")
+        or strategy.get("currentness_posture")
+        or strategy.get("official_canonical_intent")
+        or strategy.get("document_family")
+        or domain_constraints.get("include")
+        or recon.get("unresolved_dimension_ids")
+        or strategy.get("recon_unresolved_dimension_ids")
+    )
+
+
+def _secondary_need_cannot_reasonably_share_primary(
+    secondary: Mapping[str, Any],
+    component_strategies: Sequence[Mapping[str, Any]],
+) -> bool:
+    primaries = [
+        item
+        for item in component_strategies
+        if item.get("candidate_kind") == "primary"
+    ]
+    if not primaries:
+        return False
+    return all(
+        _strategies_prove_distinct_need(secondary, primary)
+        for primary in primaries
+    )
+
+
+def _append_contributor_to_item(
+    plan: QueryPlan,
+    *,
+    item_id: str,
+    contributor_ref: Mapping[str, Any],
+) -> QueryPlan:
+    items = list(plan.items)
+    for index, item in enumerate(items):
+        if item.item_id != item_id:
+            continue
+        metadata = dict(item.metadata)
+        contributors = [
+            dict(value)
+            for value in metadata.get("contributor_lineage") or []
+            if isinstance(value, Mapping)
+        ]
+        contributors.append(dict(contributor_ref))
+        metadata["contributor_lineage"] = contributors
+        metadata["duplicate_contributor_count"] = len(contributors) - 1
+        items[index] = replace(item, metadata=metadata)
+        return replace(plan, items=tuple(items))
+    raise ValueError("duplicate contributor target QueryPlan item was not found")
 
 
 def authorize_retrieval_queries(

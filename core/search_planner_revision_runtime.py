@@ -671,6 +671,16 @@ def build_search_planner_revision_state(
         consumed_dimension_ids=consumed_dimensions,
         consumed_hint_ids=consumed_hints,
     )
+    requirement_updates = _safe_list(
+        revision.get("component_search_requirement_updates")
+    )
+    revision_effect_class = (
+        "contractual_pending_admission"
+        if amendment_candidates
+        else "query_direction_only_non_contractual"
+        if requirement_updates
+        else "no_planning_effect"
+    )
 
     dedupe_key = _dedupe_key(revision)
     for item in existing_revision_history:
@@ -713,9 +723,7 @@ def build_search_planner_revision_state(
         "answer_component_updates": _safe_list(
             revision.get("answer_component_updates")
         ),
-        "component_search_requirement_updates": _safe_list(
-            revision.get("component_search_requirement_updates")
-        ),
+        "component_search_requirement_updates": requirement_updates,
         "revised_source_obligation_candidates": _safe_list(
             revision.get("revised_source_obligation_candidates")
         ),
@@ -746,6 +754,13 @@ def build_search_planner_revision_state(
         "planner_revision_reduced": True,
         "revision_proposes_only": True,
         **_REQUIRED_FALSE_FLAGS,
+        "revision_effect_class": revision_effect_class,
+        "contractual_effect_admitted_and_applied": False,
+        "contractual_revision_blocks_planning": bool(amendment_candidates),
+        "query_direction_authorized_for_planning": bool(
+            requirement_updates and not amendment_candidates
+        ),
+        "answer_contract_mutated": False,
     }
     state_shell = {
         key: value for key, value in state.items() if key != "amendment_candidates"
@@ -774,6 +789,19 @@ def build_search_planner_revision_projection(
         revision_state.get("amendment_candidates")
         if isinstance(revision_state, Mapping)
         else None
+    )
+    requirement_updates = _safe_list(
+        state.get("component_search_requirement_updates")
+    )
+    revision_effect_class = str(
+        state.get("revision_effect_class")
+        or (
+            "contractual_pending_admission"
+            if amendment_candidates
+            else "query_direction_only_non_contractual"
+            if requirement_updates
+            else "no_planning_effect"
+        )
     )
     return {
         "owner": SEARCH_PLANNER_REVISION_OWNER,
@@ -810,9 +838,7 @@ def build_search_planner_revision_projection(
         ),
         "semantic_slot_updates": _safe_list(state.get("semantic_slot_updates")),
         "answer_component_updates": _safe_list(state.get("answer_component_updates")),
-        "component_search_requirement_updates": _safe_list(
-            state.get("component_search_requirement_updates")
-        ),
+        "component_search_requirement_updates": requirement_updates,
         "revised_source_obligation_candidates": _safe_list(
             state.get("revised_source_obligation_candidates")
         ),
@@ -841,6 +867,13 @@ def build_search_planner_revision_projection(
         "planner_revision_reduced": True,
         "revision_proposes_only": True,
         **_REQUIRED_FALSE_FLAGS,
+        "revision_effect_class": revision_effect_class,
+        "contractual_effect_admitted_and_applied": False,
+        "contractual_revision_blocks_planning": bool(amendment_candidates),
+        "query_direction_authorized_for_planning": bool(
+            requirement_updates and not amendment_candidates
+        ),
+        "answer_contract_mutated": False,
     }
 
 

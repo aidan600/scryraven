@@ -10,7 +10,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
+from core.initial_query_allocation_policy import InitialQueryAllocationPolicy
 from core.query_plan import (
+    InitialQueryAdmissionResult,
     QueryPlan,
     QueryPlanRole,
     authorize_recency_merge,
@@ -40,6 +42,25 @@ class QueryPlanRuntimeAdapter:
     user_query: str
     intent: str
     clean: Callable[[str], str]
+
+    def admit_initial_component_strategies(
+        self,
+        strategies: Sequence[Mapping[str, Any]],
+        *,
+        search_work_projection: Mapping[str, Any],
+        policy: InitialQueryAllocationPolicy,
+        origin: str = "search_planner",
+    ) -> InitialQueryAdmissionResult:
+        """Admit the one ordinary component-aware initial candidate chain."""
+
+        self.plan, result = self.plan.admit_initial_component_strategies(
+            strategies,
+            search_work_projection=search_work_projection,
+            policy=policy,
+            clean=self.clean,
+            origin=origin,
+        )
+        return result
 
     def finalize(
         self,

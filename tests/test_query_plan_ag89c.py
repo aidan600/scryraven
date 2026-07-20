@@ -605,7 +605,8 @@ def test_ag91b_static_guard_queryplan_boundary_avoids_closed_surfaces() -> None:
     assert "current_queries = query_authority.admit_execution_queries" in orchestrator_source
     assert "execute_query_plan_admission_action(" in orchestrator_source
     assert "run_kernel.authorize_query_plan_admission(" in orchestrator_source
-    assert "recency_projection = query_authority.apply_initial_recency_merge" in query_runtime_source
+    assert "query_authority.admit_initial_component_strategies(" in query_runtime_source
+    assert "apply_initial_recency_merge(" not in query_runtime_source
     assert "should_merge_recency_queries(" not in orchestrator_source
     assert '_clean_query(f"{_anchor} {y} news")' not in orchestrator_source
 
@@ -654,19 +655,19 @@ def test_ag91d_researcher_admission_method_preserves_candidate_order_and_origin(
     assert trace["items"][0]["phase"] == "initial_researcher_queries"
 
 
-def test_ag91i_pipeline_demotes_pre_retrieval_candidates_before_consumption() -> None:
+def test_searchos_pipeline_consumes_converged_candidates_before_queryplan() -> None:
     from pathlib import Path
 
     source = Path("core/pipeline_orchestrator.py").read_text()
     query_runtime_source = Path("core/query_production_runtime.py").read_text()
-    assert "run_kernel.authorize_query_production(" in source
-    assert "execute_query_production_action(" in source
-    assert "run_kernel.reduce(query_production_result.observation)" in source
+    assert "execute_initial_query_strategy_convergence(" in source
+    assert "execute_query_production_action(" not in source
     assert "query_plan_admission_inputs_from_query_production_projection(" in source
     assert "candidate_queries=query_plan_inputs.candidate_queries" in source
+    assert "candidate_strategies=query_plan_inputs.candidate_strategies" in source
     assert "execute_query_plan_admission_action(" in source
-    assert "queries = query_authority.admit_recon_candidates(candidate_queries)" in query_runtime_source
-    assert 'candidate_source in {"researcher", "fallback"}' in query_runtime_source
+    assert "query_authority.admit_initial_component_strategies(" in query_runtime_source
+    assert 'candidate_source not in {"search_planner", "search_planner_revision"}' in query_runtime_source
     assert "queries = query_authority.finalize(queries, include_official_bias=True)" not in source
     assert "pre_retrieval_query_candidates" not in source
     assert "query_admission_candidates" not in source

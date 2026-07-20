@@ -7,9 +7,11 @@ creates new executable query text or calls provider/search/retrieval surfaces.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 SEARCH_WORK_QUERY_PLAN_CONSUMPTION_SCHEMA_VERSION = "search_work_query_plan_consumption_ag96e2_v1"
@@ -180,6 +182,117 @@ class SearchWorkQueryPlanAllocationResult:
             ),
         }
         return _json_safe(_without_empty(payload))
+
+
+def initial_strategy_search_work_bindings(
+    search_work_projection: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Return compact exact bindings for component-aware initial admission.
+
+    The result contains no executable query text.  It is safe to copy into
+    QueryPlan item metadata so later SearchJudgment can identify prepared
+    secondaries without acquiring provider, evidence, or dispatch authority.
+    """
+
+    plan = _extract_plan_like_projection(_mapping(search_work_projection))
+    if not plan:
+        raise ValueError(
+            "initial query strategy requires a contract-bound SearchWorkPlan"
+        )
+    if plan.get("passive") is not False or plan.get("runtime_consumed") is not True:
+        raise ValueError(
+            "initial query strategy requires an active runtime-consumed SearchWorkPlan"
+        )
+    components = _sequence_of_mappings(plan.get("components"))
+    provider_jobs = _sequence_of_mappings(plan.get("provider_jobs"))
+    if not components:
+        raise ValueError(
+            "initial query strategy SearchWorkPlan has no accepted components"
+        )
+    plan_metadata = _mapping(plan.get("metadata"))
+    plan_id = _clean_token(
+        plan_metadata.get("search_work_plan_id")
+        or plan_metadata.get("construction_id")
+    )
+    plan_digest = sha256(
+        json.dumps(
+            _json_safe(plan),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    contract_ref = _mapping(plan_metadata.get("accepted_contract_ref"))
+    bindings: dict[str, dict[str, Any]] = {}
+    for rank, component in enumerate(components, start=1):
+        component_id = _clean_token(component.get("component_id"))
+        if not component_id:
+            raise ValueError("SearchWorkPlan component is missing component_id")
+        metadata = _mapping(component.get("metadata"))
+        accepted_component_ref = _mapping(
+            metadata.get("accepted_component_ref")
+        )
+        if accepted_component_ref.get("component_id") != component_id:
+            raise ValueError(
+                "SearchWorkPlan accepted component binding is missing or stale"
+            )
+        source_ids = tuple(
+            value
+            for obligation in _sequence_of_mappings(
+                component.get("source_obligations")
+            )
+            if (
+                value := _clean_token(
+                    obligation.get("obligation_id")
+                    or obligation.get("candidate_id")
+                )
+            )
+        )
+        jobs = tuple(
+            job
+            for job in provider_jobs
+            if component_id in _text_sequence(job.get("component_ids"))
+        )
+        provider_job_ids = tuple(
+            value
+            for job in jobs
+            if (
+                value := _clean_token(
+                    job.get("provider_job_id")
+                    or job.get("work_id")
+                    or job.get("candidate_id")
+                )
+            )
+        )
+        requirement_refs = [
+            _mapping(item)
+            for item in _sequence_of_mappings(
+                metadata.get("search_requirement_refs")
+            )
+        ]
+        bindings[component_id] = {
+            "search_work_consumption_used": True,
+            "search_work_component_id": component_id,
+            "search_work_component_rank": rank,
+            "accepted_component_ref": accepted_component_ref,
+            "source_obligation_candidate_ids": list(source_ids),
+            "provider_job_candidate_ids": list(provider_job_ids),
+            "search_requirement_refs": requirement_refs,
+            "search_requirement_ids": [
+                item["requirement_id"]
+                for item in requirement_refs
+                if item.get("requirement_id")
+            ],
+            "search_work_plan_ref": {
+                "search_work_plan_id": plan_id,
+                "search_work_plan_digest": plan_digest,
+                "accepted_contract_ref": contract_ref,
+            },
+            "required_component": (
+                accepted_component_ref.get("requirement_posture") == "required"
+            ),
+            "contains_executable_query_text": False,
+        }
+    return _json_safe(bindings)
 
 
 def allocate_existing_queries_by_search_work(
@@ -774,4 +887,5 @@ __all__ = [
     "SearchWorkQueryPlanAllocationResult",
     "allocate_existing_queries_by_search_work",
     "authorize_existing_query_by_version_bound_component_gap",
+    "initial_strategy_search_work_bindings",
 ]

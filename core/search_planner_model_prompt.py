@@ -67,6 +67,30 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
         "requirement_summary",
         "source_obligation_candidate_ids",
     ],
+    "component_search_requirement_metadata": {
+        "query_strategy_candidates": {
+            "required_fields": [
+                "strategy_id",
+                "component_id",
+                "candidate_kind",
+                "candidate_query_text",
+                "requested_role",
+                "source_obligation_candidate_ids",
+                "distinct_need_justification",
+                "recon_requirement",
+            ],
+            "candidate_kind_values": ["primary", "secondary"],
+            "requested_role_values": [
+                "initial",
+                "official_bias",
+                "canonical_bias",
+                "recency",
+                "disambiguation",
+                "recon_rewrite",
+            ],
+            "recon_posture_values": ["not_needed", "optional", "required"],
+        }
+    },
 }
 
 
@@ -115,6 +139,14 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "- Represent uncertainty as semantic slots, material ambiguity, assumptions, or deferred outputs.",
         "- You may identify that disambiguation is needed later without activating Scout.",
         "- You may propose component_search_requirements, but they are non-executing requirements only.",
+        "- Put bounded provider-neutral initial query strategies under each requirement's metadata.query_strategy_candidates.",
+        "- Give every required answer component one distinct primary candidate; do not rely on one broad query to cover unnamed components.",
+        "- A secondary candidate requires a materially distinct accepted component or source-obligation need and an explicit distinct_need_justification.",
+        "- Do not create a secondary merely because capacity may be available.",
+        "- Use only initial, official_bias, canonical_bias, recency, disambiguation, or recon_rewrite as requested roles.",
+        "- A query strategy may request domain/date/document-family constraints, but it must not select a provider, provider order, depth, variant, model, or fallback.",
+        "- Recon needs must identify distinct unresolved dimensions and remain non-evidence direction material.",
+        "- Do not encode Fast/Balanced/Deep query totals; allocation cardinality is owned by a separate versioned runtime policy.",
         "- contract_amendment_candidates, if present, are deferred/proposal-only.",
         "- Use concise rationale fields only; do not include chain-of-thought.",
         "- Return strict JSON only. Do not wrap it in Markdown fences.",

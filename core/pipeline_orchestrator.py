@@ -190,8 +190,8 @@ from core.provider_diagnostics import supported_diagnostic_kwargs
 from core.provider_plan import ProviderAvailabilitySnapshot, ProviderPlan
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
+    execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
-    execute_query_production_action,
     query_plan_admission_inputs_from_query_production_projection,
 )
 from core.recovered_evidence_visibility import (
@@ -277,12 +277,11 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
+from core.search_planner_runtime import (
+    DeterministicSearchPlannerAdapter,
+)
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
-)
-from core.search_work_shadow_lane_runtime import (
-    SEARCH_WORK_SHADOW_LANE_TRACE_KEY,
-    run_search_work_shadow_lane,
 )
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
@@ -866,21 +865,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     run_kernel.reduce(run_contract_result.observation)
     run_contract_projection = dict(run_kernel.state.run_contract_projection)
-    run_search_work_shadow_lane(
-        run_kernel=run_kernel,
-        run_contract_projection=run_contract_projection,
-        route_projection=run_kernel.state.projections.get("route_request", {}),
-        requested_mode=strategy,
-        selected_depth=run_contract_projection.get("selected_depth"),
-        safe_query_preview=query,
-        current_date_ref={"id": "run_config.current_date"},
-        safe_user_domain_hints={},
-        metadata={
-            "callsite": "pipeline_orchestrator.after_run_contract_synthesis",
-            "route_action_id": route_request_action.action_id,
-            "runtime_shadow_projection_only": True,
-        },
-    )
 
     policy_state = load_policy_state(policy_state_path)
     cfg = apply_policy_to_run_config(
@@ -939,22 +923,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if not session_title:
             session_title = query[:40]
 
-    query_production_action = run_kernel.authorize_query_production(
-        inputs={
-            "route_action_id": route_request_action.action_id,
-            "query_length": len(query),
-            "strategy": strategy,
-            "focus_academic": focus_academic,
-            "force_intent_news": force_intent_news,
-            "include_domain_count": len(include_domains),
-            "run_contract_id": run_contract_projection.get("contract_id"),
-            "run_contract_source_requirement_count": len(
-                run_contract_projection.get("source_requirements", [])
-            ),
-        }
-    )
-    query_production_result = execute_query_production_action(
-        query_production_action,
+    status.step("Planning accepted components and initial search strategy...")
+    planner_adapter = getattr(deps, "search_planner_adapter", None)
+    if planner_adapter is None:
+        planner_adapter = DeterministicSearchPlannerAdapter()
+    scout_adapter = getattr(deps, "scout_disambiguation_adapter", None)
+    revision_adapter = getattr(deps, "search_planner_revision_adapter", None)
+    convergence = execute_initial_query_strategy_convergence(
+        run_kernel=run_kernel,
         router_query_preparation_contract=router_query_preparation_contract,
         query=query,
         strategy=strategy,
@@ -962,25 +938,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         focus_academic=focus_academic,
         force_intent_news=force_intent_news,
         include_domains=include_domains,
+        exclude_domains=exclude_domains,
+        route_projection=run_kernel.state.projections.get("route_request", {}),
         run_contract_projection=run_contract_projection,
         news_preferred_domains=NEWS_PREFERRED_DOMAINS,
-        ask_model=ask_model,
-        clean_json_response=deps.clean_json_response,
-        default_system=DEFAULT_SYSTEM,
-        fast_provider=fast_provider,
-        fast_model=fast_model,
-        local_url=local_url,
-        api_key=or_api_key,
-        use_reasoning=use_reasoning,
-        measure_context_stage=_measure_context_stage,
-        clean_query=_clean_query,
-        cost_accumulator=accumulator,
-        status=status,
+        planner_adapter=planner_adapter,
+        scout_adapter=scout_adapter,
+        revision_adapter=revision_adapter,
         provider_diagnostics=provider_diagnostics,
-        run_log=run_log,
         waste_flags=waste_flags,
     )
-    run_kernel.reduce(query_production_result.observation)
+    query_production_action = convergence.query_production_action
+    query_production_result = convergence.query_production_result
     query_production_projection = run_kernel.state.projections[QUERY_PRODUCTION_STAGE]
     query_plan_inputs = query_plan_admission_inputs_from_query_production_projection(
         query_production_projection
@@ -1028,7 +997,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "candidate_source": query_plan_inputs.candidate_source,
             "candidate_count": len(query_plan_inputs.candidate_queries),
             "query_plan_id": query_authority.plan.plan_id,
-            "max_queries": query_plan_inputs.max_queries,
+            "allocation_policy_version": (
+                query_plan_inputs.initial_query_allocation_policy.policy_version
+            ),
+            "legacy_downstream_max_queries": query_plan_inputs.max_queries,
+            "small_global_initial_query_cap_applied": False,
         }
     )
     query_admission_result = execute_query_plan_admission_action(
@@ -1036,13 +1009,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         query_authority=query_authority,
         router_query_preparation_contract=router_query_preparation_contract,
         candidate_queries=query_plan_inputs.candidate_queries,
+        candidate_strategies=query_plan_inputs.candidate_strategies,
         candidate_source=query_plan_inputs.candidate_source,
         query_type=query_plan_inputs.query_type,
         current_date=current_date,
         max_queries=query_plan_inputs.max_queries,
         route_runtime_posture=query_plan_inputs.effective_route_posture,
-        search_work_projection=run_kernel.state.projections.get(
-            SEARCH_WORK_SHADOW_LANE_TRACE_KEY
+        search_work_projection=convergence.search_work_plan,
+        initial_query_allocation_policy=(
+            query_plan_inputs.initial_query_allocation_policy
         ),
     )
     run_kernel.reduce(query_admission_result.observation)
@@ -2746,9 +2721,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 ),
                 current_authorized_queries=current_queries,
                 retrieval_records=all_passages,
-                search_work_projection=run_kernel.state.projections.get(
-                    SEARCH_WORK_SHADOW_LANE_TRACE_KEY
-                ),
+                search_work_projection=run_kernel.state.search_work_plan,
             )
         )
         evidence_ledger_projection = provider_job_evidence_reduction[
@@ -3452,9 +3425,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             query_plan_trace=query_authority.to_trace_fragment(),
             search_judgment_projection=search_judgment_projection,
             evidence_ledger_projection=evidence_ledger_projection,
-            search_work_projection=run_kernel.state.projections.get(
-                SEARCH_WORK_SHADOW_LANE_TRACE_KEY
-            ),
+            search_work_projection=run_kernel.state.search_work_plan,
             query=query,
             intent=intent,
             complexity=complexity,

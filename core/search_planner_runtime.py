@@ -19,6 +19,11 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from core.initial_query_allocation_policy import InitialQueryAllocationPolicy
+from core.search_work_query_shape_runtime import (
+    DeterministicSearchWorkRuntimeInput,
+    build_deterministic_search_work_runtime_records,
+)
 from core.semantic_contract_foundation import (
     AnswerComponentContract,
     Materiality,
@@ -46,6 +51,18 @@ SEARCH_PLANNER_QMR_RESOLVER_VERSION = "ag-search-planner-runtime-01"
 SEARCH_PLANNER_INPUT_PREVIEW_CHARS = 500
 SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS = 12000
 _ADAPTER_ONLY_USER_QUERY_TEXT_KEY = "user_query_text_for_planning"
+
+_ALLOWED_INITIAL_QUERY_ROLES = frozenset(
+    {
+        "initial",
+        "official_bias",
+        "canonical_bias",
+        "recency",
+        "disambiguation",
+        "recon_rewrite",
+    }
+)
+_ALLOWED_RECON_POSTURES = frozenset({"not_needed", "optional", "required"})
 
 _EXPECTED_ACTION_TYPE = "search_planner_produce"
 _EXPECTED_OBSERVATION_TYPE = "search_planner_produced"
@@ -218,6 +235,205 @@ class SearchPlannerAdapter(Protocol):
 
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
         """Return a sanitized planner proposal mapping."""
+
+
+@dataclass(frozen=True, slots=True)
+class DeterministicSearchPlannerAdapter:
+    """Provider-free ordinary SearchPlanner composition.
+
+    The adapter reuses the repository's deterministic query-shape assessment
+    and emits the same passive proposal shape as an injected model adapter.  It
+    never calls a model, provider, search, fetch/read, or environment surface.
+    """
+
+    adapter_version: str = "searchos_deterministic_search_planner_v1"
+
+    def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        safe_context = _safe_mapping(planner_input.get("safe_context"))
+        route_facts = _safe_mapping(safe_context.get("route_facts"))
+        run_contract = _safe_mapping(
+            safe_context.get("run_contract_projection")
+        )
+        contract_id = _clean_token(run_contract.get("contract_id"))
+        query_text = _clean_text(
+            planner_input.get(_ADAPTER_ONLY_USER_QUERY_TEXT_KEY),
+            limit=SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS,
+        )
+        if not contract_id or not route_facts or not query_text:
+            raise SearchPlannerRuntimeError(
+                "deterministic SearchPlanner requires explicit route, run-contract, "
+                "and query composition"
+            )
+
+        records = build_deterministic_search_work_runtime_records(
+            DeterministicSearchWorkRuntimeInput(
+                contract_id=contract_id,
+                run_contract_projection=run_contract,
+                route_facts=route_facts,
+                requested_mode=_clean_token(planner_input.get("requested_mode")),
+                selected_depth=_clean_token(run_contract.get("selected_depth")),
+                safe_query_preview=query_text,
+                current_date_ref=_clean_text(safe_context.get("current_date")),
+                metadata={
+                    "owner": self.adapter_version,
+                    "provider_free": True,
+                },
+            )
+        )
+        assessment = records.query_shape_assessment
+        source_candidates = [
+            {
+                "candidate_id": candidate.candidate_id,
+                "obligation_kind": candidate.kind.value,
+                "component_candidate_ids": list(candidate.component_ids),
+                "strictness": candidate.strictness.value,
+                "metadata": {
+                    "required_source_class": candidate.required_source_class,
+                    "currentness_requirement": candidate.currentness_requirement,
+                    "provider_name_neutral": True,
+                },
+            }
+            for candidate in assessment.source_obligation_candidates
+        ]
+        source_kind_by_id = {
+            candidate.candidate_id: candidate.kind.value
+            for candidate in assessment.source_obligation_candidates
+        }
+        current_date = _clean_text(safe_context.get("current_date"), limit=40)
+        include_domains = _text_list(
+            safe_context.get("include_domains"),
+            limit=180,
+        )
+        exclude_domains = _text_list(
+            safe_context.get("exclude_domains"),
+            limit=180,
+        )
+
+        components: list[dict[str, Any]] = []
+        requirements: list[dict[str, Any]] = []
+        for rank, candidate in enumerate(assessment.component_candidates, start=1):
+            component_id = candidate.component_id
+            obligation_ids = list(candidate.source_obligation_candidate_ids)
+            subquestion = candidate.user_facing_subquestion
+            strategy = _deterministic_primary_query_strategy(
+                component_id=component_id,
+                rank=rank,
+                subquestion=subquestion,
+                source_obligation_candidate_ids=obligation_ids,
+                source_kinds=[
+                    source_kind_by_id[item]
+                    for item in obligation_ids
+                    if item in source_kind_by_id
+                ],
+                current_date=current_date,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+            )
+            requirement_id = f"search-requirement:{component_id}:initial"
+            components.append(
+                {
+                    "component_id": component_id,
+                    "component_revision": "1",
+                    "user_facing_label": f"Required component {rank}",
+                    "user_facing_question": subquestion,
+                    "requirement_posture": "required",
+                    "acceptance_criteria": [
+                        "Direct source support for the accepted component need."
+                    ],
+                    "semantic_slot_ids": ["slot:subject"],
+                    "source_obligation_candidate_ids": obligation_ids,
+                    "allowed_support_kinds": ["direct"],
+                    "max_inference_depth": 0,
+                    "materiality": "material",
+                    "partial_answer_policy": "qualify_visible_gap",
+                    "metadata": {
+                        "deterministic_component_candidate_id": candidate.candidate_id,
+                    },
+                }
+            )
+            requirements.append(
+                {
+                    "component_id": component_id,
+                    "requirement_id": requirement_id,
+                    "requirement_summary": (
+                        "Prepare a provider-neutral primary query for this accepted "
+                        "required component."
+                    ),
+                    "source_obligation_candidate_ids": obligation_ids,
+                    "preferred_source_kinds": sorted(
+                        {
+                            source_kind_by_id[item]
+                            for item in obligation_ids
+                            if item in source_kind_by_id
+                        }
+                    ),
+                    "recency_requirement": (
+                        current_date
+                        if any(
+                            "current" in source_kind_by_id.get(item, "")
+                            or "date_bound" in source_kind_by_id.get(item, "")
+                            for item in obligation_ids
+                        )
+                        else None
+                    ),
+                    "metadata": {
+                        "query_strategy_candidates": [strategy],
+                        "allocation_posture": "one_primary_per_required_component",
+                        "provider_name_neutral": True,
+                    },
+                }
+            )
+
+        subject = _clean_text(
+            route_facts.get("primary_entity") or route_facts.get("core_topic"),
+            limit=220,
+        ) or query_text[:220]
+        return {
+            "question_meaning_summary": (
+                "Interpret the request as accepted, source-bound required "
+                "components with provider-neutral initial query strategy."
+            ),
+            "requested_output": (
+                "Answer every required component with bounded source support."
+            ),
+            "semantic_slots": [
+                {
+                    "slot_id": "slot:subject",
+                    "slot_kind": "entity",
+                    "status": "explicit",
+                    "candidate_values": [subject],
+                    "selected_value": subject,
+                    "materiality": "material",
+                    "user_confirmation_required": False,
+                    "metadata": {"provider_name_neutral": True},
+                }
+            ],
+            "answer_components": components,
+            "source_obligation_candidates": source_candidates,
+            "component_search_requirements": requirements,
+            "material_ambiguity_posture": "none_detected",
+            "mandatory_caveats": [],
+            "prohibited_upgrades": [
+                "Do not treat query strategy or reconnaissance as evidence."
+            ],
+            "normalization_obligations": [],
+            "assumptions": [],
+            "unsupported_or_deferred_outputs": [
+                "Post-result secondary-query authorization belongs to later SearchJudgment."
+            ],
+            "contract_amendment_candidates": [],
+            "planner_model_metadata": {
+                "model_adapter_enabled": False,
+                "provider": "none",
+                "model": "deterministic",
+                "effort": "deterministic",
+                "use_reasoning": False,
+                "require_json": False,
+                "raw_prompt_retained": False,
+                "raw_model_response_retained": False,
+                "provider_payload_retained": False,
+            },
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -914,13 +1130,20 @@ def _component_search_requirements(adapter_result: Mapping[str, Any]) -> list[di
         mapping = _safe_mapping(item)
         if not mapping:
             continue
+        component_id = _clean_token(mapping.get("component_id"))
+        requirement_id = _clean_token(
+            mapping.get("requirement_id") or mapping.get("search_requirement_id")
+        )
+        metadata = _provider_neutral_requirement_metadata(
+            mapping.get("metadata"),
+            component_id=component_id,
+            requirement_id=requirement_id,
+        )
         requirements.append(
             _without_empty(
                 {
-                    "component_id": _clean_token(mapping.get("component_id")),
-                    "requirement_id": _clean_token(
-                        mapping.get("requirement_id") or mapping.get("search_requirement_id")
-                    ),
+                    "component_id": component_id,
+                    "requirement_id": requirement_id,
                     "requirement_summary": _clean_text(
                         mapping.get("requirement_summary")
                         or mapping.get("summary")
@@ -938,11 +1161,507 @@ def _component_search_requirements(adapter_result: Mapping[str, Any]) -> list[di
                     "search_executed": False,
                     "fetch_read_retrieval_behavior_changed": False,
                     "source_obligation_satisfied": False,
-                    "metadata": _safe_mapping(mapping.get("metadata")),
+                    "metadata": metadata,
                 }
             )
         )
     return requirements
+
+
+def initial_query_strategies_from_planner_state(
+    *,
+    planner_state: Mapping[str, Any],
+    accepted_contract: Mapping[str, Any],
+    policy: InitialQueryAllocationPolicy,
+) -> list[dict[str, Any]]:
+    """Return validated planner candidates bound to accepted required components.
+
+    This is deterministic validation, not admission.  QueryPlan remains the
+    sole owner of executable identity, role, order, and dispatch eligibility.
+    """
+
+    state = _safe_mapping(planner_state)
+    contract = _safe_mapping(accepted_contract)
+    requirements = [
+        _safe_mapping(item)
+        for item in _safe_list(state.get("component_search_requirements"))
+        if _safe_mapping(item)
+    ]
+    accepted_components = [
+        _safe_mapping(item)
+        for item in _safe_list(contract.get("accepted_answer_component_refs"))
+        if _safe_mapping(item)
+    ]
+    if not state or not accepted_components:
+        raise SearchPlannerRuntimeError(
+            "initial query strategy requires planner state and an accepted contract"
+        )
+
+    planner_ref = {
+        "proposal_id": state.get("proposal_id"),
+        "proposal_digest": state.get("proposal_digest"),
+        "question_meaning_record_id": _safe_mapping(
+            state.get("question_meaning_record_ref")
+        ).get("record_id"),
+        "question_meaning_record_digest": _safe_mapping(
+            state.get("question_meaning_record_ref")
+        ).get("record_digest"),
+    }
+    required_components = [
+        component
+        for component in accepted_components
+        if _clean_token(component.get("requirement_posture")) == "required"
+    ]
+    if not required_components:
+        raise SearchPlannerRuntimeError(
+            "initial query strategy requires at least one accepted required component"
+        )
+
+    strategies: list[dict[str, Any]] = []
+    seen_strategy_ids: set[str] = set()
+    for component in required_components:
+        component_id = _clean_token(component.get("component_id"))
+        if not component_id:
+            raise SearchPlannerRuntimeError(
+                "accepted required component is missing component_id"
+            )
+        accepted_source_ids = set(
+            _text_list(
+                component.get("source_obligation_candidate_ids")
+                or component.get("source_obligation_candidate_refs"),
+                limit=160,
+            )
+        )
+        component_requirements = [
+            requirement
+            for requirement in requirements
+            if _clean_token(requirement.get("component_id")) == component_id
+        ]
+        component_strategies: list[dict[str, Any]] = []
+        for requirement in component_requirements:
+            requirement_id = _clean_token(requirement.get("requirement_id"))
+            requirement_source_ids = set(
+                _text_list(
+                    requirement.get("source_obligation_candidate_ids"),
+                    limit=160,
+                )
+            )
+            if not requirement_id:
+                raise SearchPlannerRuntimeError(
+                    f"component {component_id} search requirement is missing identity"
+                )
+            if not requirement_source_ids.issubset(accepted_source_ids):
+                raise SearchPlannerRuntimeError(
+                    f"component {component_id} search requirement references "
+                    "an unaccepted source obligation"
+                )
+            requirement_ref = {
+                "requirement_id": requirement_id,
+                "component_id": component_id,
+                "source_obligation_candidate_ids": sorted(requirement_source_ids),
+                "requirement_digest": _digest_json(
+                    {
+                        "requirement_id": requirement_id,
+                        "component_id": component_id,
+                        "source_obligation_candidate_ids": sorted(
+                            requirement_source_ids
+                        ),
+                        "requirement_summary": requirement.get(
+                            "requirement_summary"
+                        ),
+                        "recency_requirement": requirement.get(
+                            "recency_requirement"
+                        ),
+                    }
+                ),
+            }
+            metadata = _safe_mapping(requirement.get("metadata"))
+            for raw_strategy in _safe_list(
+                metadata.get("query_strategy_candidates")
+            ):
+                strategy = _safe_mapping(raw_strategy)
+                strategy_id = _clean_token(strategy.get("strategy_id"))
+                if not strategy_id:
+                    raise SearchPlannerRuntimeError(
+                        f"component {component_id} query strategy requires strategy_id"
+                    )
+                if strategy_id in seen_strategy_ids:
+                    raise SearchPlannerRuntimeError(
+                        f"duplicate initial query strategy id: {strategy_id}"
+                    )
+                seen_strategy_ids.add(strategy_id)
+                strategy_component_id = _clean_token(
+                    strategy.get("component_id")
+                )
+                if strategy_component_id != component_id:
+                    raise SearchPlannerRuntimeError(
+                        "initial query strategy component binding does not match "
+                        f"accepted component {component_id}"
+                    )
+                strategy_source_ids = set(
+                    _text_list(
+                        strategy.get("source_obligation_candidate_ids"),
+                        limit=160,
+                    )
+                )
+                if not strategy_source_ids.issubset(accepted_source_ids):
+                    raise SearchPlannerRuntimeError(
+                        f"strategy {strategy_id} references an unaccepted source obligation"
+                    )
+                component_strategies.append(
+                    {
+                        **strategy,
+                        "accepted_component_ref": {
+                            "component_id": component_id,
+                            "component_revision": component.get(
+                                "component_revision"
+                            ),
+                            "component_digest": component.get("component_digest"),
+                        },
+                        "search_requirement_ref": requirement_ref,
+                        "parent_search_planner_proposal_ref": planner_ref,
+                        "allocation_policy_version": policy.policy_version,
+                    }
+                )
+        primary_count = sum(
+            1
+            for strategy in component_strategies
+            if strategy.get("candidate_kind") == "primary"
+        )
+        if (
+            policy.required_component_floor_enabled
+            and primary_count
+            < policy.primary_query_target_per_required_component
+        ):
+            raise SearchPlannerRuntimeError(
+                f"accepted required component {component_id} has no primary query strategy"
+            )
+        strategies.extend(component_strategies)
+    return strategies
+
+
+def _provider_neutral_requirement_metadata(
+    value: Any,
+    *,
+    component_id: str | None,
+    requirement_id: str | None,
+) -> dict[str, Any]:
+    metadata = _safe_mapping(value)
+    raw_strategies = _safe_list(metadata.get("query_strategy_candidates"))
+    provider_identity_supplied = any(
+        _contains_provider_selection_key(item) for item in raw_strategies
+    )
+    safe_metadata = {
+        key: item
+        for key, item in metadata.items()
+        if key != "query_strategy_candidates"
+        and _normalize_key(key)
+        not in {
+            "provider",
+            "provider_hint",
+            "provider_name",
+            "provider_order",
+            "provider_depth",
+            "provider_variant",
+            "provider_fallback",
+        }
+    }
+    strategies = [
+        _normalize_query_strategy_candidate(
+            item,
+            component_id=component_id,
+            requirement_id=requirement_id,
+        )
+        for item in raw_strategies
+    ]
+    strategies = [item for item in strategies if item]
+    if strategies:
+        safe_metadata["query_strategy_candidates"] = strategies
+    safe_metadata["provider_name_neutral"] = True
+    safe_metadata["planner_provider_identity_ignored"] = provider_identity_supplied
+    return _json_safe(safe_metadata)
+
+
+def _normalize_query_strategy_candidate(
+    value: Any,
+    *,
+    component_id: str | None,
+    requirement_id: str | None,
+) -> dict[str, Any]:
+    candidate = _safe_mapping(value)
+    if not candidate:
+        return {}
+    strategy_id = _clean_token(
+        candidate.get("strategy_id") or candidate.get("candidate_id")
+    )
+    query_text = _clean_text(
+        candidate.get("candidate_query_text") or candidate.get("query_text"),
+        limit=300,
+    )
+    if not strategy_id or not query_text:
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate requires strategy_id and bounded query text"
+        )
+    bound_component_id = _clean_token(candidate.get("component_id")) or component_id
+    if not bound_component_id or (
+        component_id and bound_component_id != component_id
+    ):
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate component binding is missing or stale"
+        )
+    requested_role = _clean_token(candidate.get("requested_role")) or "initial"
+    if requested_role not in _ALLOWED_INITIAL_QUERY_ROLES:
+        raise SearchPlannerRuntimeError(
+            f"unsupported initial query role requested: {requested_role}"
+        )
+    candidate_kind = _clean_token(candidate.get("candidate_kind")) or "primary"
+    if candidate_kind not in {"primary", "secondary"}:
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate_kind must be primary or secondary"
+        )
+    recon = _normalize_recon_requirement(candidate.get("recon_requirement"))
+    recon_candidates = [
+        _safe_mapping(item)
+        for item in _safe_list(recon.get("candidate_queries"))
+        if _safe_mapping(item)
+    ]
+    return _without_empty(
+        {
+            "strategy_id": strategy_id,
+            "component_id": bound_component_id,
+            "requirement_id": _clean_token(candidate.get("requirement_id"))
+            or requirement_id,
+            "candidate_kind": candidate_kind,
+            "candidate_query_text": query_text,
+            "requested_role": requested_role,
+            "source_obligation_candidate_ids": _text_list(
+                candidate.get("source_obligation_candidate_ids"),
+                limit=160,
+            ),
+            "entity_alias_posture": _clean_token(
+                candidate.get("entity_alias_posture")
+            ),
+            "currentness_posture": _clean_text(
+                candidate.get("currentness_posture"),
+                limit=180,
+            ),
+            "official_canonical_intent": _clean_token(
+                candidate.get("official_canonical_intent")
+            ),
+            "domain_constraints": _safe_domain_constraints(
+                candidate.get("domain_constraints")
+            ),
+            "document_family": _clean_text(
+                candidate.get("document_family"),
+                limit=160,
+            ),
+            "distinct_need_justification": _clean_text(
+                candidate.get("distinct_need_justification")
+                or candidate.get("nonredundancy_reason"),
+                limit=300,
+            ),
+            "immediate_dispatch_requested": bool(
+                candidate.get("immediate_dispatch_requested")
+            ),
+            "immediate_dispatch_distinct_need": bool(
+                candidate.get("immediate_dispatch_distinct_need")
+            ),
+            # Candidate text is flattened one level so the existing bounded
+            # RunKernel Observation sanitizer preserves it without changing
+            # the SearchPlanner or QueryPlan schemas.
+            "recon_posture": recon.get("posture"),
+            "recon_unresolved_dimension_ids": recon.get(
+                "unresolved_dimension_ids"
+            ),
+            "recon_required_for_truthful_targeting": bool(
+                recon.get("required_for_truthful_targeting")
+            ),
+            "recon_candidate_queries_by_dimension": {
+                str(item["dimension_id"]): item["candidate_query_text"]
+                for item in recon_candidates
+            },
+            "recon_query_kinds_by_dimension": {
+                str(item["dimension_id"]): item["query_kind"]
+                for item in recon_candidates
+            },
+            "provider_name_neutral": True,
+            "planner_provider_identity_ignored": (
+                _contains_provider_selection_key(candidate)
+            ),
+        }
+    )
+
+
+def normalize_provider_neutral_query_strategy_candidate(
+    value: Mapping[str, Any],
+    *,
+    component_id: str,
+    requirement_id: str,
+) -> dict[str, Any]:
+    """Validate one planner/revision candidate through the shared contract."""
+
+    normalized = _normalize_query_strategy_candidate(
+        value,
+        component_id=component_id,
+        requirement_id=requirement_id,
+    )
+    if not normalized:
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate did not survive provider-neutral validation"
+        )
+    return normalized
+
+
+def _normalize_recon_requirement(value: Any) -> dict[str, Any]:
+    recon = _safe_mapping(value)
+    if not recon:
+        return {"posture": "not_needed", "required_for_truthful_targeting": False}
+    posture = _clean_token(recon.get("posture")) or "not_needed"
+    if posture not in _ALLOWED_RECON_POSTURES:
+        raise SearchPlannerRuntimeError(
+            f"unsupported recon requirement posture: {posture}"
+        )
+    dimension_ids = _text_list(
+        recon.get("unresolved_dimension_ids")
+        or recon.get("dimension_ids"),
+        limit=160,
+    )
+    candidates: list[dict[str, Any]] = []
+    seen_dimensions: set[str] = set()
+    for raw in _safe_list(recon.get("candidate_queries")):
+        item = _safe_mapping(raw)
+        dimension_id = _clean_token(item.get("dimension_id"))
+        query_text = _clean_text(
+            item.get("candidate_query_text") or item.get("query_text"),
+            limit=300,
+        )
+        if not dimension_id or not query_text:
+            raise SearchPlannerRuntimeError(
+                "recon candidate requires dimension_id and bounded query text"
+            )
+        if dimension_id in seen_dimensions:
+            raise SearchPlannerRuntimeError(
+                "recon candidates must address distinct unresolved dimensions"
+            )
+        seen_dimensions.add(dimension_id)
+        candidates.append(
+            {
+                "dimension_id": dimension_id,
+                "candidate_query_text": query_text,
+                "query_kind": _clean_token(item.get("query_kind"))
+                or "disambiguation_probe",
+            }
+        )
+    if posture != "not_needed" and not dimension_ids:
+        dimension_ids = [item["dimension_id"] for item in candidates]
+    return {
+        "posture": posture,
+        "unresolved_dimension_ids": dimension_ids,
+        "candidate_queries": candidates,
+        "required_for_truthful_targeting": bool(
+            recon.get("required_for_truthful_targeting")
+        ),
+    }
+
+
+def _safe_domain_constraints(value: Any) -> dict[str, list[str]]:
+    constraints = _safe_mapping(value)
+    return {
+        "include": _text_list(
+            constraints.get("include") or constraints.get("include_domains"),
+            limit=180,
+        ),
+        "exclude": _text_list(
+            constraints.get("exclude") or constraints.get("exclude_domains"),
+            limit=180,
+        ),
+    }
+
+
+def _contains_provider_selection_key(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    forbidden = {
+        "provider",
+        "provider_hint",
+        "provider_name",
+        "provider_order",
+        "provider_depth",
+        "provider_variant",
+        "provider_fallback",
+    }
+    return any(_normalize_key(key) in forbidden for key in value)
+
+
+def _deterministic_primary_query_strategy(
+    *,
+    component_id: str,
+    rank: int,
+    subquestion: str,
+    source_obligation_candidate_ids: Sequence[str],
+    source_kinds: Sequence[str],
+    current_date: str | None,
+    include_domains: Sequence[str],
+    exclude_domains: Sequence[str],
+) -> dict[str, Any]:
+    kinds = set(source_kinds)
+    role = "initial"
+    suffixes: list[str] = []
+    official_intent: str | None = None
+    document_family: str | None = None
+    if kinds & {"official_current", "legal_current_primary"}:
+        role = "official_bias"
+        suffixes.append("official")
+        official_intent = "official_source"
+        document_family = "official rule policy or release"
+    elif "canonical_documentation" in kinds:
+        role = "canonical_bias"
+        suffixes.append("official documentation")
+        official_intent = "canonical_source"
+        document_family = "canonical documentation or release"
+    if kinds & {"official_current", "date_bound_currentness"} and current_date:
+        year = next(
+            (
+                token
+                for token in current_date.replace("-", " ").split()
+                if len(token) == 4 and token.isdigit()
+            ),
+            None,
+        )
+        if year and year not in subquestion:
+            suffixes.append(year)
+    query_text = " ".join(
+        item for item in [subquestion.rstrip(" ?."), *suffixes] if item
+    )[:300]
+    return {
+        "strategy_id": f"strategy:{component_id}:primary:{rank}",
+        "component_id": component_id,
+        "candidate_kind": "primary",
+        "candidate_query_text": query_text,
+        "requested_role": role,
+        "source_obligation_candidate_ids": list(
+            source_obligation_candidate_ids
+        ),
+        "currentness_posture": current_date if suffixes else None,
+        "official_canonical_intent": official_intent,
+        "domain_constraints": {
+            "include": list(include_domains),
+            "exclude": list(exclude_domains),
+        },
+        "document_family": document_family,
+        "distinct_need_justification": (
+            "Primary intentional query path for the accepted required component."
+        ),
+        "immediate_dispatch_requested": True,
+        "immediate_dispatch_distinct_need": True,
+        "recon_requirement": {
+            "posture": "not_needed",
+            "unresolved_dimension_ids": [],
+            "candidate_queries": [],
+            "required_for_truthful_targeting": False,
+        },
+        "provider_name_neutral": True,
+    }
 
 
 def _planner_model_metadata(adapter_result: Mapping[str, Any]) -> dict[str, Any]:
@@ -1130,7 +1849,11 @@ def _safe_list(value: Any) -> list[Any]:
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
-    if depth > 7:
+    # Query-strategy lineage adds several bounded identity layers beneath a
+    # component requirement.  Keep the sanitizer idempotent across observation
+    # creation and RunKernel reduction rather than replacing a legitimate deep
+    # ref with a different truncation marker on the second pass.
+    if depth > 16:
         return "[truncated]"
     if value is None or isinstance(value, bool | int | float):
         return value
@@ -1253,6 +1976,7 @@ def _digest_json(value: Any) -> str:
 
 
 __all__ = [
+    "DeterministicSearchPlannerAdapter",
     "SEARCH_PLANNER_OBSERVATION_SCHEMA_VERSION",
     "SEARCH_PLANNER_PRODUCTION_REASON",
     "SEARCH_PLANNER_PRODUCTION_STAGE",
@@ -1271,4 +1995,6 @@ __all__ = [
     "build_search_planner_proposal_state",
     "contract_ref_from_contract",
     "execute_search_planner_action",
+    "initial_query_strategies_from_planner_state",
+    "normalize_provider_neutral_query_strategy_candidate",
 ]
