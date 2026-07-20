@@ -286,5 +286,10 @@ additional Specialist capabilities, or calculator scope expansion. Installed
 offline activation does not prove live calculator correctness, exact-URL READ,
 Focused Extract, final custody, Serper connection, Map, Crawl, compatibility
 rename, or broad quantitative reasoning quality. No live provider, model,
-search, fetch/read, or retrieval call was made. The sole active next is
-`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`.
+search, fetch/read, or retrieval call was made. Current prioritization and
+checkpoint selection belong exclusively to [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md); target SearchOS sequencing and operating
+boundaries are described by [SearchOS Operating
+Model](SEARCHOS_OPERATING_MODEL.md). Nothing in this semantic-loop owner
+independently activates or reprioritizes exact-URL READ, Focused Extract, final
+custody, Serper connection, Map, Crawl, or any other uninstalled capability.

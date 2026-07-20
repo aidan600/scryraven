@@ -111,6 +111,30 @@ Adapter installation or validation-constructed dispatch is not ordinary product
 consumption. No product requester was manufactured for focused extraction, site
 mapping, site crawling, or general Linkup Deep.
 
+## Approved SearchOS Target (Not Installed)
+
+[SearchOS Operating Model](SEARCHOS_OPERATING_MODEL.md) owns the target
+architecture. Its minimum shared search-result contract is a title, URL,
+bounded relevant context, provider/result identity, and optional date or scalar
+metadata. Richer provider-attached content is an optional optimization; neither
+routing nor downstream research authority may assume every search result
+contains a complete page.
+
+In the target vocabulary, Linkup Fetch and Tavily Extract are peer
+implementations of `READ_PAGE`. That equivalence does not change today's
+Linkup-first route policy or activate an ordinary READ consumer. Request-bound
+provenance is sufficient for bounded provider-returned material. A provider-
+reported URL is optional metadata, not proof of DNS, connected address,
+redirect chain, or final/canonical network target.
+
+One alternate or stronger attempt after a typed retrieval-quality failure and
+bounded one-breadcrumb navigation are planned. Provider-failure fallback and
+navigation remain uninstalled. Versioned provider profiles are planned owners
+of volatile capabilities, limits, optional outputs, costs, and availability;
+versioned routing policy is the planned owner of preferences, alternatives,
+attempt limits, mode budgets, and escalation order. Current policy remains the
+code-owned policy described below.
+
 ## Shared Request, Job, And Artifact Contracts
 
 One `AcquisitionRequest` carries only operation-relevant facts:
@@ -321,7 +345,7 @@ The code-owned post-discovery routing-policy ref has revision
 preference table. Work order, route, and execution bind it. No configuration,
 environment, prompt, or user preference owns provider order.
 
-## Next Checkpoint And Nonproofs
+## Roadmap Ownership And Nonproofs
 
 The explicit maintainer sequencing override placed RunKernel post-discovery
 acquisition control before final-custody convergence. The controller and
@@ -332,13 +356,12 @@ now supplies truthful provider-result lineage to the ordinary branch of the
 existing canonical `SearchResultCandidatePacket`, with zero candidate-page
 transport and no ranked-passage reconstruction.
 
-The sole active next is
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-It must install a real independent current-material-need producer, genuinely
-product-consumed READ exact-URL work, and final custody while retaining the
-selected-candidate nontrigger. Focused Extract may follow only when a real
-producer is proved. Planner disambiguation remains queued after exact-URL
-convergence; Map selection and Crawl page custody remain later.
+The old combined exact-URL/final-custody checkpoint was superseded before
+implementation. [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) exclusively
+owns current phase order. The approved sequence begins with SearchOS query
+strategy and reconnaissance, then read-source/custody, iterative navigation and
+retrieval judgment, and gap recovery/stopping. This routing owner does not
+independently reprioritize those phases.
 
 This offline Build proves no live provider quality, availability, coverage,
 currentness, latency, price, reliability, or answer improvement. It does not

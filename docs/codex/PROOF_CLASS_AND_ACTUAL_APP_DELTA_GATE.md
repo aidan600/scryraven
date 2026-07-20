@@ -224,6 +224,7 @@ Old path treatment:
 Human-reviewable product output:
 Non-proofs:
 Live validation status:
+Technical-debt register disposition:
 Bridge or exit condition:
 ```
 
@@ -270,8 +271,20 @@ Definitions:
 - **Non-proofs** states what the phase explicitly does not prove.
 - **Live validation status** states whether live validation was run, prohibited,
   not licensed, or separately licensed with exact scope.
+- **Technical-debt register disposition** records exactly one of these postures:
+  `No change`; `Added TD-XXXX: <title>`; `Updated TD-XXXX: <reason>`; or
+  `Removed TD-XXXX: <resolving change>`.
 - **Bridge or exit condition** states how a harness/passive proof becomes
   product-path work later, or how it will be fixtureized/retired.
+
+When a phase discovers confirmed current debt outside its scope, check the
+[active technical-debt register](../TECH_DEBT_REGISTER.md) for duplication. If
+the register is licensed, add or update the item. If it is not licensed, report
+the proposed entry in the final bundle for maintainer disposition without
+automatically widening scope. Discovery does not authorize repair. A PR that
+resolves an item removes its active entry in the same diff and names the TD
+identifier in its final bundle. Use `No change` when no item was added, updated,
+or removed.
 
 ## Build/product-facing Repair substitute-output gate
 

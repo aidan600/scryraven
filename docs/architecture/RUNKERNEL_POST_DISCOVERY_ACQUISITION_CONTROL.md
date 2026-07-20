@@ -314,31 +314,30 @@ Neither the controller nor its artifacts grant evidence, citation,
 source-obligation satisfaction, component coverage, Sufficiency, FAP, Author,
 social, or final-answer authority.
 
-## Next Checkpoints
+## Roadmap And Target-Architecture References
 
-The explicit maintainer sequencing decision installed this foundation before
-the previously active final-custody checkpoint, because final custody must not
-converge around multiple post-discovery decision/execution authorities.
+The acquisition-control foundation remains installed and retained: RunKernel
+owns post-discovery decision and execution authority, truthful discovery-result
+candidate handoff remains installed, and selected-candidate presence remains a
+nontrigger.
 
 [`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md)
 has populated the existing canonical `SearchResultCandidatePacket` from
 truthful provider-result identity/material refs while retaining zero candidate-
 page transport and the selected-candidate nontrigger.
 
-The sole active next checkpoint is
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-It must install the independent current-material-need producer for genuinely
-product-consumed READ and carry authorized exact-URL material through final
-custody. Focused Extract may activate only through a real exact producer and
-existing or explicitly bounded custody semantics. Planner disambiguation
-remains queued after exact-URL convergence; Map selection and Crawl page custody
-remain later.
+The old combined exact-URL/final-custody phase was superseded before
+implementation. [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) exclusively
+owns phase order. Its next approved SearchOS sequence begins with query strategy
+and reconnaissance, followed by read-source/custody, iterative navigation and
+retrieval judgment, and gap recovery/stopping. [SearchOS Operating
+Model](SEARCHOS_OPERATING_MODEL.md) owns the target search/acquisition operating
+boundary.
 
-Map topology selection follows separately in
-[`SITE-TOPOLOGY-SELECTION-AUTHORITY-01`](../roadmap/SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md).
-Crawl page custody has a distinct owner and rollback boundary and therefore
-follows under
-[`CRAWL-PAGE-CUSTODY-CONVERGENCE-01`](../roadmap/CRAWL_PAGE_CUSTODY_CONVERGENCE_01.md).
+Focused Extract, Map, and Crawl remain later or separately licensed
+capabilities. This documentation repair activates none of them and changes none
+of the installed acquisition-control, selected-candidate nontrigger, work-
+order, routing, execution, terminal, or custody-authority doctrine above.
 
 ## Nonproofs
 

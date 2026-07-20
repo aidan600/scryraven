@@ -35,6 +35,21 @@ must not be treated as paths in this repository.
 Do not infer current status or next work from completed phase chronology in a
 deep contract, workflow guide, PR record, or historical document.
 
+## Active Technical-Debt Routing
+
+| Concern | Exclusive owner |
+| --- | --- |
+| Active confirmed technical debt, duplicate check, or debt-resolution disposition | [ScryRaven Active Technical-Debt Register](../TECH_DEBT_REGISTER.md) |
+
+Read the register when a phase discovers a confirmed out-of-scope defect, is
+explicitly repairing a TD item, or claims in its final bundle that debt was
+added, updated, or resolved. Do not read it for every ordinary implementation
+task. It records active debt but does not choose phase order; [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md) remains the priority and sequencing
+owner. GitHub Issues may support execution but do not replace the canonical
+register. Do not convert speculative improvements or future features into debt
+merely because they are not implemented.
+
 ## Phase Operation
 
 | Task | Canonical owner |
@@ -58,6 +73,7 @@ completed-phase chronology into phase briefs.
 
 | Concern | Read first |
 | --- | --- |
+| SearchOS search, source-acquisition, navigation, and recovery architecture (`canonical:searchos-operating-model`) | [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) |
 | D-prime role and authority (`canonical:dprime-role-contract`) | [D-prime Architecture](../architecture/DPRIME_ARCHITECTURE.md) |
 | Integrated query-to-answer semantic loop (`canonical:run-contract-semantic-loop`) | [Run-Contract Semantic Loop](../architecture/RUN_CONTRACT_SEMANTIC_LOOP.md) |
 | Component DAG, scheduling, leases, and concurrency (`canonical:component-dag-scheduling-concurrency`) | [RunKernel Component DAG, Scheduling, And Concurrency](../architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) |
@@ -101,6 +117,18 @@ its narrow responsibility:
 debt. A zero line delta is a scope-control fact, not architecture success.
 
 ## Provider And Operator Routing
+
+For SearchOS architecture or product work, read [SearchOS Operating
+Model](../architecture/SEARCHOS_OPERATING_MODEL.md) after the default current-
+state owner. Additionally read [Provider Capability and Acquisition
+Routing](../architecture/PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) only
+when provider selection, adapters, profiles, or escalation policy is in scope.
+Additionally read [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) only for
+prioritization, checkpoint selection, or phase sequencing. A narrow search task
+does not require all three supporting documents.
+
+SearchOS doctrine is a concern owner, not a global workflow owner. The smallest-
+owner rule and default current-state read path remain in force.
 
 | Concern | Read first |
 | --- | --- |

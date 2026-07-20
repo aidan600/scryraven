@@ -1,6 +1,7 @@
 # EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
 
-Status: sole active next checkpoint
+Status: superseded before implementation
+Superseded-by: SEARCHOS-OPERATING-MODEL-AND-ROADMAP-REALIGNMENT-01
 Mode: BUILD
 Proof class: offline_product_path_proof
 Depends-on: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01, INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01, and DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01
@@ -9,6 +10,26 @@ Starting-runtime/test: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
 Does-not-authorize: live calls, initial DISCOVER transport or planning redesign,
 planner disambiguation, Map selection, Crawl custody, general Deep, provider-
 failure fallback, or citation/final-answer authority by assertion
+
+## Supersession Note
+
+This brief is preserved as decision history. It did not govern an implemented
+phase and is not current roadmap authority. [Current
+Roadmap](CURRENT_ROADMAP.md) now owns phase order, and [SearchOS Operating
+Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns target SearchOS
+architecture.
+
+Its goals are split across query-strategy and reconnaissance convergence,
+read-source and custody convergence, iterative navigation and retrieval
+judgment, and gap-recovery and stopping convergence. The following rules from
+this brief no longer govern future work:
+
+- combining ordinary READ and Focused Extract in the first phase;
+- prohibiting every failure-time provider escalation; and
+- deferring planner disambiguation as a disconnected concern.
+
+The retained text below records the superseded proposal and its original
+constraints. It does not activate capabilities or override the current owners.
 
 ## Outcome
 
