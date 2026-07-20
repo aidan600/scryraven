@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: 2d346a73251f28a1187fb2958028db51117bf0c0
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -320,6 +320,38 @@ call, acquisition proposal, READ or Focused Extract work, exact-URL cap charge,
 or URL transport. Serper lightweight disambiguation and compatibility renaming
 remain deferred. No live call was made.
 
+## Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01
+
+Runtime/test commit `2d346a73251f28a1187fb2958028db51117bf0c0`
+
+[SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01](SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md)
+installs one ordinary initial planning chain from validated passive SearchPlanner
+output through RunKernel initial AnswerContract acceptance, optional bounded
+non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan,
+QueryPlan admission, and first DISCOVER. SearchPlanner proposals remain passive;
+QueryPlan remains the sole exact executable-query authority; `core.routing`
+remains the sole provider selector.
+
+Ordinary composition now uses the selected fast-model SearchPlanner. The model
+owns warranted one-to-five semantic decomposition and provider-neutral strategy
+proposal; deterministic machinery validates and binds without manufacturing a
+fallback plan. Typed planner, Scout, and revision `RunDeps` seams are installed,
+while Scout/revision remain uncomposed by default.
+
+The default planner's selected OpenAI, OpenRouter, or Local connection facts
+are supplied through a transient non-retained wrapper, and its logical model
+invocation participates in run cost accounting under `search_planner`. The
+existing model-helper retry and endpoint-fallback policy is unchanged.
+
+The versioned code-owned policy gives every accepted required component one
+immediate primary by default, permits up to two initial candidates per component
+when a distinct need is recorded, and retains non-immediate secondary candidates
+for later SearchJudgment. It applies no small global initial-query truncation;
+the legacy `2 / 2 / 3` values are not SearchOS initial-allocation product policy.
+Recon is optional, response-only in offline proof, non-evidence, and bounded per
+affected component. No post-result follow-up loop, provider policy, READ,
+navigation, evidence/citation/Author change, or live call was installed.
+
 ## Active SearchOS MVP Sequence
 
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns the
@@ -329,11 +361,11 @@ before implementation because it separated planner
 disambiguation from query strategy, combined READ and Focused Extract too
 early, and prohibited every failure-time escalation.
 
-The approved sequence is:
+The query-strategy checkpoint is complete. The active next checkpoint is
+`SEARCHOS-READ-SOURCE-AND-CUSTODY-01`; the remaining approved sequence is:
 
 ```text
-SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01
--> SEARCHOS-READ-SOURCE-AND-CUSTODY-01
+SEARCHOS-READ-SOURCE-AND-CUSTODY-01
 -> SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
 -> SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
 -> offline SearchOS integration gate
@@ -343,13 +375,26 @@ SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01
 -> SearchOS MVP release
 ```
 
-Query strategy is an MVP requirement, and reconnaissance policy remains to be
-calibrated. The core loop includes page reading, custody, bounded navigation,
+Query strategy is now installed, and reconnaissance policy remains provisional
+and subject to later calibration. Later SearchJudgment must inspect the first
+result set per component and authorize an additional query only when the
+accepted component or source-obligation need remains unmet and the proposed
+query is materially nonredundant. The core loop includes page reading, custody, bounded navigation,
 and at most one planned alternate or stronger attempt after a typed retrieval-
 quality failure. That adaptive fallback is approved target behavior and remains
 uninstalled. A usable success is never retried merely to compare providers, and
 a successfully read but insufficient source sends the run to search, another
 source, or bounded navigation rather than repeated extraction.
+
+The active READ checkpoint must census ordinary and compatibility webpage
+openers; keep direct local arbitrary openers product-unreachable while
+preserving pure parsers; use response-only Linkup/Tavily fixtures; derive
+`READ_PAGE` before `core.routing` selects Linkup Fetch or Tavily Extract; preserve
+one selected provider call, claim/use and replay controls, no silent switch,
+requested-versus-reported/final/canonical URL provenance, unknown missing URL
+facts, and bounded basic URL hygiene. It must not add DNS snapshots,
+connected-IP proof, redirect-chain attestation, or provider-network-path
+ownership.
 
 These checkpoint names record sequence only; this roadmap does not create their
 detailed implementation briefs or activate their capabilities.

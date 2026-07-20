@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.query_production_runtime import execute_query_production_action
+import pytest
+
+from core.query_production_runtime import (
+    QueryStrategyConvergenceError,
+    execute_query_production_action,
+)
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_kernel import (
@@ -163,27 +168,28 @@ def test_lane_constructs_searchwork_and_queryplan_work_projection() -> None:
     assert QUERY_PLAN_ADMISSION_STAGE not in kernel.state.stage_statuses
 
 
-def test_lane_preserves_query_production_output() -> None:
+def test_passive_lane_cannot_restore_retired_legacy_query_production() -> None:
     baseline_kernel, baseline_contract = _kernel_with_contract("ag96c10-baseline")
     shadow_kernel, shadow_contract = _kernel_with_contract("ag96c10-shadow")
 
-    baseline = _query_production_result(
-        baseline_kernel,
-        run_contract_projection=baseline_contract,
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            baseline_kernel,
+            run_contract_projection=baseline_contract,
+        )
     _run_lane(shadow_kernel, shadow_contract)
-    with_lane = _query_production_result(
-        shadow_kernel,
-        run_contract_projection=shadow_contract,
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            shadow_kernel,
+            run_contract_projection=shadow_contract,
+        )
 
-    assert with_lane.candidate_queries == baseline.candidate_queries
-    assert with_lane.candidate_source == baseline.candidate_source
-    assert with_lane.effective_route_posture == baseline.effective_route_posture
-    assert (
-        with_lane.contract_source_requirement_hints
-        == baseline.contract_source_requirement_hints
-    )
     assert shadow_kernel.state.search_work_plan_projection[
         "runtime_consumed_by_query_plan"
     ] is False
@@ -271,7 +277,7 @@ def test_lane_redacts_raw_private_fields() -> None:
     assert "visible-safe-note" in encoded
 
 
-def test_pipeline_uses_one_pass_through_lane_call_after_contract_synthesis() -> None:
+def test_pipeline_uses_converged_active_plan_and_no_shadow_lane_call() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
@@ -283,14 +289,13 @@ def test_pipeline_uses_one_pass_through_lane_call_after_contract_synthesis() -> 
         and node.func.id == "run_search_work_shadow_lane"
     ]
     contract_reduce = source.index("run_kernel.reduce(run_contract_result.observation)")
-    lane_call = source.index("run_search_work_shadow_lane", contract_reduce)
-    query_authorize = source.index(
-        "query_production_action = run_kernel.authorize_query_production",
-        lane_call,
+    convergence_call = source.index(
+        "convergence = execute_initial_query_strategy_convergence(",
+        contract_reduce,
     )
 
-    assert len(calls) == 1
-    assert contract_reduce < lane_call < query_authorize
+    assert calls == []
+    assert contract_reduce < convergence_call
     for forbidden in (
         "RuntimeShadowSearchWorkPlanInput",
         "observe_runtime_shadow_search_work_plan_construction",

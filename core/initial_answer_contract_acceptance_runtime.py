@@ -187,6 +187,9 @@ def _accepted_component_ref(component: Mapping[str, Any]) -> dict[str, Any]:
         "allowed_support_kinds": _text_tuple(component.get("allowed_support_kinds")),
         "source_obligation_candidate_ids": _text_tuple(component.get("source_obligation_candidate_ids")),
         "source_obligation_candidate_refs": _text_tuple(component.get("source_obligation_candidate_refs")),
+        "dependency_component_ids": _text_tuple(
+            component.get("dependency_component_ids")
+        ),
         "mandatory_caveats": _text_tuple(component.get("mandatory_caveats"), limit=260),
         "prohibited_upgrades": _text_tuple(component.get("prohibited_upgrades"), limit=260),
     }
@@ -390,6 +393,18 @@ def build_initial_answer_contract_acceptance_state(
         seen_component_ids.add(component_id)
         accepted_components.append(_accepted_component_ref(component))
 
+    for component in accepted_components:
+        component_id = str(component["component_id"])
+        for dependency_id in component.get("dependency_component_ids") or ():
+            if dependency_id not in seen_component_ids:
+                raise InitialAnswerContractAcceptanceError(
+                    f"answer component {component_id} depends on missing accepted component {dependency_id}"
+                )
+            if dependency_id == component_id:
+                raise InitialAnswerContractAcceptanceError(
+                    f"answer component {component_id} cannot depend on itself"
+                )
+
     accepted_slots: list[dict[str, Any]] = []
     for slot in record.get("semantic_slots") or ():
         if isinstance(slot, Mapping):
@@ -478,6 +493,9 @@ def build_initial_answer_contract_acceptance_projection(
             "component_digest": ref.get("component_digest"),
             "requirement_posture": ref.get("requirement_posture"),
             "materiality": ref.get("materiality"),
+            "dependency_component_ids": list(
+                ref.get("dependency_component_ids") or ()
+            ),
         }
         for ref in acceptance_state.get("accepted_answer_component_refs", [])
         if isinstance(ref, Mapping)

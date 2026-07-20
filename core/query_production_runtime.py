@@ -1,33 +1,31 @@
-"""RunKernel-authorized query production and QueryPlan admission boundaries.
+"""Converged SearchOS initial strategy and QueryPlan admission boundaries.
 
-AG-91I moves initial router-posture overrides, recon/researcher candidate
-production, and candidate-source selection behind a RunKernel action. QueryPlan
-admission still owns final query identity/order/finalization.
+The ordinary chain is SearchPlanner -> initial AnswerContract acceptance ->
+optional Scout/revision -> contract-bound SearchWorkPlan -> QueryPlan.  This
+module has no live planner/recon/provider fallback and does not own provider
+selection, READ, evidence, citation, or post-result follow-up dispatch.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import re
-import time
-from collections.abc import Callable, Mapping, MutableSequence, Sequence
+from collections.abc import Mapping, MutableSequence, Sequence
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any
 
-from core.anchor_resolution import (
-    build_shadow_anchor_packet,
-    format_anchor_context_for_researcher,
+from core.anchor_resolution import build_shadow_anchor_packet
+from core.initial_query_allocation_policy import (
+    DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
+    InitialQueryAllocationPolicy,
 )
 from core.nutrition_lookup import detect_nutrition_lookup_telemetry
-from core.provider_diagnostics import build_provider_attempt_diagnostic
-from core.query_plan import QUERY_PLAN_TRACE_KEY, QueryPlanRole
-from core.query_plan_runtime_adapter import QueryPlanRuntimeAdapter
-from core.retrieval_quality import (
-    extract_recon_context,
-    official_bias_phrase,
-    wants_official_source_bias,
+from core.query_plan import (
+    QUERY_PLAN_TRACE_KEY,
+    InitialQueryAdmissionResult,
+    QueryPlanRole,
 )
+from core.query_plan_runtime_adapter import QueryPlanRuntimeAdapter
 from core.router_query_preparation_contract import (
     RouterQueryPreparationState,
     with_router_query_runtime_posture,
@@ -43,19 +41,39 @@ from core.run_kernel import (
     RunStageStatus,
     validate_authorized_action,
 )
+from core.scout_disambiguation_runtime import (
+    ScoutDisambiguationAdapter,
+    ScoutDisambiguationInput,
+    execute_scout_disambiguation_action,
+    planner_ref_from_search_planner_state,
+)
+from core.scout_disambiguation_runtime import (
+    contract_ref_from_contract as scout_contract_ref_from_contract,
+)
+from core.search_planner_revision_runtime import (
+    SearchPlannerRevisionAdapter,
+    SearchPlannerRevisionInput,
+    execute_search_planner_revision_action,
+    revision_ref_from_revision_state,
+    scout_ref_from_scout_report_state,
+)
+from core.search_planner_runtime import (
+    SEARCH_PLANNER_SCHEMA_VERSION,
+    SearchPlannerAdapter,
+    SearchPlannerInput,
+    execute_search_planner_action,
+    initial_query_strategies_from_planner_state,
+    normalize_provider_neutral_query_strategy_candidate,
+)
+from core.search_planner_runtime import (
+    contract_ref_from_contract as planner_contract_ref_from_contract,
+)
+from core.search_work_plan_construction import (
+    observe_contract_bound_search_work_plan_construction,
+)
 from core.search_work_provider_job_execution import (
     build_provider_job_execution_handoff,
 )
-
-
-def brave_reconnaissance(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-    """Import the live provider boundary only when recon actually uses it."""
-
-    from core.search_providers import brave_reconnaissance as _brave_reconnaissance
-
-    return _brave_reconnaissance(*args, **kwargs)
-
-_RECON_QUERY_TYPES = frozenset({"person", "news", "current_events", "event"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,9 +81,11 @@ class QueryProductionAdmissionInputs:
     """Reduced query-production projection consumed by QueryPlan admission."""
 
     candidate_queries: list[str]
+    candidate_strategies: list[dict[str, Any]]
     candidate_source: str
     effective_route_posture: dict[str, Any]
     contract_source_requirement_hints: list[dict[str, Any]]
+    initial_query_allocation_policy: InitialQueryAllocationPolicy
 
     @property
     def query_type(self) -> str:
@@ -94,6 +114,9 @@ class QueryProductionResult:
     researcher_fallback_status: str
     empty_entity_flag: bool
     contract_source_requirement_hints: list[dict[str, Any]]
+    candidate_strategies: list[dict[str, Any]]
+    initial_query_allocation_policy: InitialQueryAllocationPolicy
+    recon_summary: list[dict[str, Any]]
     observation: Observation
 
     @property
@@ -162,18 +185,676 @@ class QueryProductionResult:
         return int(self.effective_route_posture["max_iterations"])
 
 
+class QueryStrategyConvergenceError(ValueError):
+    """Raised before dispatch when the required initial chain cannot converge."""
+
+
+@dataclass(frozen=True, slots=True)
+class InitialQueryStrategyConvergenceResult:
+    query_production_action: AuthorizedAction
+    query_production_result: QueryProductionResult
+    search_work_plan: Mapping[str, Any]
+    recon_summary: tuple[Mapping[str, Any], ...]
+    revision_projections: tuple[Mapping[str, Any], ...]
+
+
+def _recon_unavailable_summary(
+    strategies: Sequence[Mapping[str, Any]],
+    *,
+    policy: InitialQueryAllocationPolicy,
+) -> list[dict[str, Any]]:
+    """Record optional recon absence and fail closed on required identity work."""
+
+    summaries: list[dict[str, Any]] = []
+    work = _recon_work_by_component(strategies, policy=policy)
+    for component_id, component_work in work.items():
+        required = bool(component_work["required_for_truthful_targeting"])
+        if required:
+            raise QueryStrategyConvergenceError(
+                f"component {component_id} requires Scout identity resolution "
+                "before truthful query targeting; no Scout adapter was composed"
+            )
+        summaries.append(
+            {
+                "component_id": component_id,
+                "posture": component_work["posture"],
+                "status": "optional_unavailable_primary_strategy_retained",
+                "unresolved_dimension_ids": list(component_work["unresolved_dimension_ids"]),
+                "candidate_count": len(component_work["candidate_queries"]),
+                "per_affected_component_ceiling": (policy.recon_candidate_ceiling_per_affected_component),
+                "required_for_truthful_targeting": False,
+                "evidence_admitted": False,
+                "source_obligation_satisfied": False,
+                "citation_eligible": False,
+            }
+        )
+    return summaries
+
+
+def _canonical_digest(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _recon_work_by_component(
+    strategies: Sequence[Mapping[str, Any]],
+    *,
+    policy: InitialQueryAllocationPolicy,
+) -> dict[str, dict[str, Any]]:
+    work: dict[str, dict[str, Any]] = {}
+    for strategy in strategies:
+        recon = strategy.get("recon_requirement")
+        recon = dict(recon) if isinstance(recon, Mapping) else {}
+        posture = str(recon.get("posture") or strategy.get("recon_posture") or "not_needed").strip()
+        if posture == "not_needed":
+            continue
+        component_id = str(strategy.get("component_id") or "").strip()
+        if not component_id:
+            raise QueryStrategyConvergenceError("recon requirement is missing its accepted component binding")
+        component_work = work.setdefault(
+            component_id,
+            {
+                "component_id": component_id,
+                "posture": posture,
+                "required_for_truthful_targeting": False,
+                "unresolved_dimension_ids": [],
+                "candidate_queries": [],
+            },
+        )
+        if posture == "required":
+            component_work["posture"] = "required"
+        component_work["required_for_truthful_targeting"] = bool(
+            component_work["required_for_truthful_targeting"]
+            or posture == "required"
+            or recon.get("required_for_truthful_targeting")
+            or strategy.get("recon_required_for_truthful_targeting")
+        )
+        for dimension_id in (
+            recon.get("unresolved_dimension_ids") or strategy.get("recon_unresolved_dimension_ids") or ()
+        ):
+            clean_id = str(dimension_id or "").strip()
+            if clean_id and clean_id not in component_work["unresolved_dimension_ids"]:
+                component_work["unresolved_dimension_ids"].append(clean_id)
+        known_candidate_dimensions = {
+            str(item.get("dimension_id") or "").strip() for item in component_work["candidate_queries"]
+        }
+        for raw_candidate in recon.get("candidate_queries") or ():
+            if not isinstance(raw_candidate, Mapping):
+                continue
+            candidate = dict(raw_candidate)
+            dimension_id = str(candidate.get("dimension_id") or "").strip()
+            if not dimension_id or dimension_id in known_candidate_dimensions:
+                raise QueryStrategyConvergenceError(
+                    f"component {component_id} recon candidates must address distinct unresolved dimensions"
+                )
+            known_candidate_dimensions.add(dimension_id)
+            if dimension_id not in component_work["unresolved_dimension_ids"]:
+                component_work["unresolved_dimension_ids"].append(dimension_id)
+            component_work["candidate_queries"].append(candidate)
+        query_text_by_dimension = (
+            dict(strategy.get("recon_candidate_queries_by_dimension") or {})
+            if isinstance(strategy.get("recon_candidate_queries_by_dimension"), Mapping)
+            else {}
+        )
+        query_kind_by_dimension = (
+            dict(strategy.get("recon_query_kinds_by_dimension") or {})
+            if isinstance(strategy.get("recon_query_kinds_by_dimension"), Mapping)
+            else {}
+        )
+        for dimension_id, query_text in query_text_by_dimension.items():
+            clean_dimension_id = str(dimension_id or "").strip()
+            clean_query_text = str(query_text or "").strip()
+            if not clean_dimension_id or not clean_query_text:
+                raise QueryStrategyConvergenceError(f"component {component_id} has malformed flattened recon strategy")
+            if clean_dimension_id in known_candidate_dimensions:
+                continue
+            known_candidate_dimensions.add(clean_dimension_id)
+            if clean_dimension_id not in component_work["unresolved_dimension_ids"]:
+                component_work["unresolved_dimension_ids"].append(clean_dimension_id)
+            component_work["candidate_queries"].append(
+                {
+                    "dimension_id": clean_dimension_id,
+                    "candidate_query_text": clean_query_text,
+                    "query_kind": str(
+                        query_kind_by_dimension.get(clean_dimension_id) or "disambiguation_probe"
+                    ).strip(),
+                }
+            )
+
+    for component_id, component_work in work.items():
+        ceiling = policy.recon_candidate_ceiling_per_affected_component
+        if (
+            len(component_work["candidate_queries"]) > ceiling
+            or len(component_work["unresolved_dimension_ids"]) > ceiling
+        ):
+            raise QueryStrategyConvergenceError(
+                f"component {component_id} exceeds the policy-owned per-affected-component recon ceiling"
+            )
+    return work
+
+
+def _dimension_kind(dimension_id: str) -> str:
+    lowered = dimension_id.casefold()
+    if "jurisdiction" in lowered:
+        return "jurisdiction"
+    if "alias" in lowered or "rename" in lowered:
+        return "rename_alias"
+    if "current" in lowered or "date" in lowered or "time" in lowered:
+        return "time_version_currentness"
+    if "official" in lowered or "domain" in lowered or "publication" in lowered:
+        return "official_target_direction"
+    if "entity" in lowered or "identity" in lowered:
+        return "entity_identity"
+    return "unknown_or_other"
+
+
+def _scout_query_kind(dimension_id: str) -> str:
+    kind = _dimension_kind(dimension_id)
+    return {
+        "jurisdiction": "jurisdiction_probe",
+        "rename_alias": "alias_probe",
+        "time_version_currentness": "recent_current",
+        "official_target_direction": "official_domain_probe",
+        "entity_identity": "all_time",
+    }.get(kind, "unknown_or_other")
+
+
+def _component_and_slot_refs(
+    *,
+    planner_state: Mapping[str, Any],
+    accepted_contract: Mapping[str, Any],
+    component_id: str,
+) -> tuple[dict[str, Any], list[str]]:
+    accepted_component = next(
+        (
+            dict(item)
+            for item in accepted_contract.get("accepted_answer_component_refs") or ()
+            if isinstance(item, Mapping) and str(item.get("component_id") or "").strip() == component_id
+        ),
+        {},
+    )
+    if not accepted_component:
+        raise QueryStrategyConvergenceError(f"recon component {component_id} is not in the accepted contract")
+    qmr = (
+        dict(planner_state.get("question_meaning_record") or {})
+        if isinstance(planner_state.get("question_meaning_record"), Mapping)
+        else {}
+    )
+    proposed_component = next(
+        (
+            dict(item)
+            for item in qmr.get("answer_components") or ()
+            if isinstance(item, Mapping) and str(item.get("component_id") or "").strip() == component_id
+        ),
+        {},
+    )
+    slot_ids = [str(item).strip() for item in proposed_component.get("semantic_slot_ids") or () if str(item).strip()]
+    if not slot_ids:
+        slot_ids = [
+            str(item.get("slot_id") or "").strip()
+            for item in qmr.get("semantic_slots") or ()
+            if isinstance(item, Mapping) and str(item.get("slot_id") or "").strip()
+        ][:1]
+    if not slot_ids:
+        raise QueryStrategyConvergenceError(f"recon component {component_id} has no semantic-slot binding")
+    return accepted_component, slot_ids
+
+
+def _scout_hint_ids(report: Mapping[str, Any]) -> list[str]:
+    ids: list[str] = []
+    for key in (
+        "scout_result_hints",
+        "likely_official_target_hints",
+        "currentness_hints",
+    ):
+        for item in report.get(key) or ():
+            if not isinstance(item, Mapping):
+                continue
+            hint_id = str(item.get("hint_id") or "").strip()
+            if hint_id and hint_id not in ids:
+                ids.append(hint_id)
+    return ids
+
+
+def _revision_lineage_inputs(revision: Mapping[str, Any]) -> dict[str, Any]:
+    planner_ref = dict(revision.get("parent_search_planner_proposal_ref") or {})
+    scout_ref = dict(revision.get("parent_scout_disambiguation_report_ref") or {})
+    return {
+        "search_planner_revision_lineage_required": True,
+        "amendment_origin": "search_planner_revision",
+        "planner_revision_id": revision.get("revision_id"),
+        "parent_search_planner_proposal_id": planner_ref.get("proposal_id"),
+        "parent_search_planner_proposal_digest": planner_ref.get("proposal_digest"),
+        "parent_question_meaning_record_id": planner_ref.get("question_meaning_record_id"),
+        "parent_question_meaning_record_digest": planner_ref.get("question_meaning_record_digest"),
+        "parent_scout_disambiguation_report_id": scout_ref.get("report_id"),
+        "parent_scout_disambiguation_report_digest": scout_ref.get("report_digest"),
+        "component_id": revision.get("component_id"),
+        "consumed_ambiguity_dimension_ids": list(revision.get("consumed_ambiguity_dimension_ids") or ()),
+        "consumed_scout_hint_ids": list(revision.get("consumed_scout_hint_ids") or ()),
+    }
+
+
+def _admit_and_apply_revision_amendment(
+    run_kernel: Any,
+    revision: Mapping[str, Any],
+) -> dict[str, Any]:
+    candidates = [dict(item) for item in revision.get("amendment_candidates") or () if isinstance(item, Mapping)]
+    if len(candidates) != 1:
+        raise QueryStrategyConvergenceError(
+            "ordinary initial convergence supports exactly one monotonic "
+            "revision amendment candidate per affected component"
+        )
+    record = dict(candidates[0].get("contract_amendment_record") or {})
+    record_id = str(record.get("amendment_record_id") or "").strip()
+    record_digest = str(record.get("record_digest") or "").strip()
+    if not record_id or not record_digest:
+        raise QueryStrategyConvergenceError("revision amendment candidate is missing record identity")
+    admission_action = run_kernel.authorize_contract_amendment_admission(
+        amendment_record_id=record_id,
+        amendment_record_digest=record_digest,
+        inputs=_revision_lineage_inputs(revision),
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            admission_action,
+            observation_type=ObservationType.CONTRACT_AMENDMENT_ADMITTED,
+            status=RunStageStatus.COMPLETED,
+            payload={"contract_amendment_record": record},
+        )
+    )
+    admission = run_kernel.state.contract_amendment_admission_projection
+    application_action = run_kernel.authorize_contract_amendment_application(
+        amendment_record_id=record_id,
+        amendment_record_digest=record_digest,
+        admission_digest=str(admission.get("admission_digest") or ""),
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            application_action,
+            observation_type=ObservationType.CONTRACT_AMENDMENT_APPLIED,
+            status=RunStageStatus.COMPLETED,
+            payload={},
+        )
+    )
+    return {
+        **dict(revision),
+        "revision_effect_class": "contractual_admitted_and_applied",
+        "contractual_effect_admitted_and_applied": True,
+        "contractual_revision_blocks_planning": False,
+        "query_direction_authorized_for_planning": True,
+        "answer_contract_mutated": True,
+        "amendment_admission_digest": admission.get("admission_digest"),
+        "applied_contract_ref": _accepted_contract_ref(
+            run_kernel.state.initial_answer_contract,
+            run_kernel.state.current_answer_contract,
+        ),
+    }
+
+
+def _execute_recon_and_revisions(
+    *,
+    run_kernel: Any,
+    candidate_strategies: Sequence[Mapping[str, Any]],
+    policy: InitialQueryAllocationPolicy,
+    scout_adapter: ScoutDisambiguationAdapter | None,
+    revision_adapter: SearchPlannerRevisionAdapter | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    work = _recon_work_by_component(candidate_strategies, policy=policy)
+    if not work:
+        return [], []
+    if scout_adapter is None:
+        return _recon_unavailable_summary(candidate_strategies, policy=policy), []
+    if revision_adapter is None:
+        raise QueryStrategyConvergenceError("Scout composition requires an explicit SearchPlannerRevision adapter")
+
+    summaries: list[dict[str, Any]] = []
+    revisions: list[dict[str, Any]] = []
+    contractual_revision_applied = False
+    for component_id, component_work in work.items():
+        required = bool(component_work["required_for_truthful_targeting"])
+        candidates = list(component_work["candidate_queries"])
+        dimensions = list(component_work["unresolved_dimension_ids"])
+        if not candidates:
+            if required:
+                raise QueryStrategyConvergenceError(
+                    f"component {component_id} requires recon but has no bounded dimension-specific candidate"
+                )
+            summaries.append(
+                {
+                    "component_id": component_id,
+                    "posture": component_work["posture"],
+                    "status": "optional_not_run_no_candidate",
+                    "unresolved_dimension_ids": dimensions,
+                    "candidate_count": 0,
+                    "executed_query_count": 0,
+                    "evidence_admitted": False,
+                    "source_obligation_satisfied": False,
+                    "citation_eligible": False,
+                }
+            )
+            continue
+
+        accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+        accepted_component, slot_ids = _component_and_slot_refs(
+            planner_state=run_kernel.state.search_planner_proposal_state,
+            accepted_contract=accepted_contract,
+            component_id=component_id,
+        )
+        dimension_records = [
+            {
+                "dimension_id": dimension_id,
+                "dimension_kind": _dimension_kind(dimension_id),
+                "summary": f"Resolve {dimension_id} for truthful query targeting.",
+                "related_semantic_slot_ids": slot_ids,
+                "priority": index,
+                "status": "open",
+                "materiality": "material" if required else "contextual",
+            }
+            for index, dimension_id in enumerate(dimensions, start=1)
+        ]
+        scout_candidates = [
+            {
+                "query_id": f"scout-query:{component_id}:{index}",
+                "safe_query_text": str(candidate.get("candidate_query_text") or "").strip(),
+                "query_kind": _scout_query_kind(str(candidate.get("dimension_id") or "")),
+                "priority": index,
+                "related_dimension_ids": [candidate.get("dimension_id")],
+                "not_live": True,
+            }
+            for index, candidate in enumerate(candidates, start=1)
+        ]
+        scout_input = ScoutDisambiguationInput(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            parent_search_planner_proposal_ref=(
+                planner_ref_from_search_planner_state(run_kernel.state.search_planner_proposal_state)
+            ),
+            parent_initial_contract_ref=scout_contract_ref_from_contract(
+                run_kernel.state.initial_answer_contract,
+                source="initial_answer_contract",
+            ),
+            parent_current_contract_ref=scout_contract_ref_from_contract(
+                run_kernel.state.current_answer_contract,
+                source="current_answer_contract",
+            ),
+            component_id=component_id,
+            answer_component_ref=accepted_component,
+            ambiguity_dimensions=dimension_records,
+            query_budget={
+                "max_queries_per_component": (policy.recon_candidate_ceiling_per_affected_component),
+                "max_dimensions_per_component": (policy.recon_candidate_ceiling_per_affected_component),
+                "authorized_query_count": len(scout_candidates),
+            },
+            candidate_queries=scout_candidates,
+            safe_context={
+                "adapter_policy": "explicit_response_only",
+                "policy_version": policy.policy_version,
+                "non_evidence": True,
+            },
+        )
+        scout_action = run_kernel.authorize_scout_disambiguation(
+            component_id=component_id,
+            ambiguity_dimension_ids=dimensions,
+            max_queries_per_component=(policy.recon_candidate_ceiling_per_affected_component),
+            max_dimensions_per_component=(policy.recon_candidate_ceiling_per_affected_component),
+            inputs={"allocation_policy_version": policy.policy_version},
+        )
+        scout_result = execute_scout_disambiguation_action(
+            action=scout_action,
+            scout_input=scout_input,
+            adapter=scout_adapter,
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                scout_action,
+                observation_type=ObservationType.SCOUT_DISAMBIGUATION_REPORTED,
+                status=RunStageStatus.COMPLETED,
+                payload=scout_result.observation_payload,
+            )
+        )
+        report = dict(run_kernel.state.scout_disambiguation_report_projection)
+        executed_count = int(report.get("executed_query_count") or 0)
+        if executed_count == 0:
+            if required:
+                raise QueryStrategyConvergenceError(
+                    f"required Scout recon for component {component_id} returned no executed offline response"
+                )
+            summaries.append(
+                {
+                    "component_id": component_id,
+                    "posture": component_work["posture"],
+                    "status": "optional_unavailable_primary_strategy_retained",
+                    "unresolved_dimension_ids": dimensions,
+                    "candidate_count": len(candidates),
+                    "executed_query_count": 0,
+                    "evidence_admitted": False,
+                    "source_obligation_satisfied": False,
+                    "citation_eligible": False,
+                }
+            )
+            continue
+
+        hint_ids = _scout_hint_ids(report)
+        revision_input = SearchPlannerRevisionInput(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            parent_search_planner_proposal_ref=(
+                planner_ref_from_search_planner_state(run_kernel.state.search_planner_proposal_state)
+            ),
+            parent_scout_disambiguation_report_ref=(
+                scout_ref_from_scout_report_state(run_kernel.state.scout_disambiguation_report_state)
+            ),
+            parent_initial_contract_ref=planner_contract_ref_from_contract(
+                run_kernel.state.initial_answer_contract,
+                source="initial_answer_contract",
+            ),
+            parent_current_contract_ref=planner_contract_ref_from_contract(
+                run_kernel.state.current_answer_contract,
+                source="current_answer_contract",
+            ),
+            component_id=component_id,
+            consumed_ambiguity_dimension_ids=dimensions,
+            consumed_scout_hint_ids=hint_ids,
+            safe_revision_context={
+                "answer_component_ref": accepted_component,
+                "parent_question_meaning_record": dict(
+                    run_kernel.state.search_planner_proposal_state.get("question_meaning_record") or {}
+                ),
+                "user_query_ref": dict(run_kernel.state.search_planner_proposal_state.get("user_query_ref") or {}),
+                "scout_report_ref": scout_ref_from_scout_report_state(
+                    run_kernel.state.scout_disambiguation_report_state
+                ),
+                "non_evidence": True,
+                "allocation_policy_version": policy.policy_version,
+            },
+        )
+        revision_action = run_kernel.authorize_search_planner_revision(
+            component_id=component_id,
+            consumed_ambiguity_dimension_ids=dimensions,
+            consumed_scout_hint_ids=hint_ids,
+            inputs={"allocation_policy_version": policy.policy_version},
+        )
+        revision_result = execute_search_planner_revision_action(
+            action=revision_action,
+            revision_input=revision_input,
+            adapter=revision_adapter,
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                revision_action,
+                observation_type=ObservationType.SEARCH_PLANNER_REVISED,
+                status=RunStageStatus.COMPLETED,
+                payload=revision_result.observation_payload,
+            )
+        )
+        revision = dict(run_kernel.state.search_planner_revision_projection)
+        if revision.get("amendment_candidates"):
+            if contractual_revision_applied:
+                raise QueryStrategyConvergenceError(
+                    "multiple contractual recon revisions require a later contract-mutation phase"
+                )
+            revision = _admit_and_apply_revision_amendment(run_kernel, revision)
+            contractual_revision_applied = True
+            status = "contractual_revision_admitted_applied"
+        else:
+            revision = {
+                **revision,
+                "revision_effect_class": "query_direction_only_non_contractual",
+                "contractual_effect_admitted_and_applied": False,
+                "contractual_revision_blocks_planning": False,
+                "query_direction_authorized_for_planning": True,
+                "answer_contract_mutated": False,
+            }
+            status = "query_direction_revised"
+        revisions.append(revision)
+        summaries.append(
+            {
+                "component_id": component_id,
+                "posture": component_work["posture"],
+                "status": status,
+                "unresolved_dimension_ids": dimensions,
+                "candidate_count": len(candidates),
+                "executed_query_count": executed_count,
+                "consumed_scout_hint_ids": hint_ids,
+                "revision_ref": revision_ref_from_revision_state(revision),
+                "revision_effect_class": revision.get("revision_effect_class"),
+                "evidence_admitted": False,
+                "source_obligation_satisfied": False,
+                "citation_eligible": False,
+            }
+        )
+    return summaries, revisions
+
+
+def _strategies_with_authorized_revisions(
+    *,
+    base_strategies: Sequence[Mapping[str, Any]],
+    revision_projections: Sequence[Mapping[str, Any]],
+    accepted_contract: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    accepted_components = {
+        str(item.get("component_id") or "").strip(): dict(item)
+        for item in accepted_contract.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping) and str(item.get("component_id") or "").strip()
+    }
+    strategies_by_component: dict[str, list[dict[str, Any]]] = {
+        component_id: [] for component_id in accepted_components
+    }
+    for raw_strategy in base_strategies:
+        strategy = dict(raw_strategy)
+        component_id = str(strategy.get("component_id") or "").strip()
+        accepted = accepted_components.get(component_id)
+        if not accepted:
+            raise QueryStrategyConvergenceError("base planner strategy became stale against the current contract")
+        strategy["accepted_component_ref"] = {
+            "component_id": component_id,
+            "component_revision": accepted.get("component_revision"),
+            "component_digest": accepted.get("component_digest"),
+        }
+        strategies_by_component[component_id].append(strategy)
+
+    for raw_revision in revision_projections:
+        revision = dict(raw_revision)
+        updates = [
+            dict(item)
+            for item in revision.get("component_search_requirement_updates") or ()
+            if isinstance(item, Mapping)
+        ]
+        if not updates:
+            continue
+        if not (
+            revision.get("query_direction_authorized_for_planning") is True
+            or revision.get("contractual_effect_admitted_and_applied") is True
+        ):
+            raise QueryStrategyConvergenceError(
+                "revision query direction cannot affect planning before its contractual effect is admitted and applied"
+            )
+        component_id = str(revision.get("component_id") or "").strip()
+        accepted = accepted_components.get(component_id)
+        if not accepted:
+            raise QueryStrategyConvergenceError("planner revision references a component absent from current contract")
+        accepted_source_ids = {
+            str(item).strip()
+            for item in accepted.get("source_obligation_candidate_ids")
+            or accepted.get("source_obligation_candidate_refs")
+            or ()
+            if str(item).strip()
+        }
+        revised_strategies: list[dict[str, Any]] = []
+        for update in updates:
+            update_component_id = str(update.get("component_id") or "").strip()
+            requirement_id = str(update.get("requirement_id") or "").strip()
+            if update_component_id != component_id or not requirement_id:
+                raise QueryStrategyConvergenceError("revision search requirement has stale component identity")
+            source_ids = {
+                str(item).strip() for item in update.get("source_obligation_candidate_ids") or () if str(item).strip()
+            }
+            if not source_ids.issubset(accepted_source_ids):
+                raise QueryStrategyConvergenceError(
+                    "revision search requirement references an unaccepted source obligation"
+                )
+            metadata = dict(update.get("metadata") or {}) if isinstance(update.get("metadata"), Mapping) else {}
+            requirement_ref = {
+                "requirement_id": requirement_id,
+                "component_id": component_id,
+                "source_obligation_candidate_ids": sorted(source_ids),
+                "requirement_digest": _canonical_digest(
+                    {
+                        "requirement_id": requirement_id,
+                        "component_id": component_id,
+                        "source_obligation_candidate_ids": sorted(source_ids),
+                        "requirement_summary": update.get("requirement_summary"),
+                        "recency_requirement": update.get("recency_requirement"),
+                    }
+                ),
+            }
+            for raw_candidate in metadata.get("query_strategy_candidates") or ():
+                if not isinstance(raw_candidate, Mapping):
+                    continue
+                strategy = normalize_provider_neutral_query_strategy_candidate(
+                    raw_candidate,
+                    component_id=component_id,
+                    requirement_id=requirement_id,
+                )
+                strategy_source_ids = {
+                    str(item).strip()
+                    for item in strategy.get("source_obligation_candidate_ids") or ()
+                    if str(item).strip()
+                }
+                if not strategy_source_ids.issubset(accepted_source_ids):
+                    raise QueryStrategyConvergenceError(
+                        "revision query strategy references an unaccepted source obligation"
+                    )
+                revised_strategies.append(
+                    {
+                        **strategy,
+                        "accepted_component_ref": {
+                            "component_id": component_id,
+                            "component_revision": accepted.get("component_revision"),
+                            "component_digest": accepted.get("component_digest"),
+                        },
+                        "search_requirement_ref": requirement_ref,
+                        "parent_search_planner_proposal_ref": dict(
+                            revision.get("parent_search_planner_proposal_ref") or {}
+                        ),
+                        "parent_search_planner_revision_ref": (revision_ref_from_revision_state(revision)),
+                        "revision_effect_class": revision.get("revision_effect_class"),
+                    }
+                )
+        if revised_strategies:
+            if any(item.get("candidate_kind") == "primary" for item in revised_strategies):
+                strategies_by_component[component_id] = revised_strategies
+            else:
+                strategies_by_component[component_id].extend(revised_strategies)
+
+    return [
+        strategy for component_id in accepted_components for strategy in strategies_by_component.get(component_id, ())
+    ]
+
+
 def _clean_query_projection(queries: Sequence[str]) -> list[str]:
     return [" ".join(str(query or "").split())[:300] for query in queries if str(query or "").strip()]
-
-
-def _status_step(status: Any, message: str) -> None:
-    if status is not None and hasattr(status, "step"):
-        status.step(message)
-
-
-def _warning(logger: Any, message: str, error: Exception) -> None:
-    if logger is not None and hasattr(logger, "warning"):
-        logger.warning(message, error)
 
 
 def _complexity_for_strategy(strategy: str) -> str:
@@ -208,55 +889,6 @@ def _budget_for_complexity(complexity: str) -> dict[str, int | str]:
         "top_chunks": 8,
         "max_iterations": 1,
     }
-
-
-def _build_recon_rewriter_prompt(
-    *,
-    current_date: str,
-    query: str,
-    recon_context: Mapping[str, Any],
-) -> str:
-    return (
-        f"Today is {current_date}.\n"
-        f"Original query: {query}\n"
-        f"Recon titles: {recon_context.get('recon_titles', '')}\n"
-        f"Recon snippets: {recon_context.get('recon_snippets', '')}\n"
-    )
-
-
-def _build_researcher_prompt(
-    *,
-    current_date: str,
-    query: str,
-    core_topic: str,
-    intent: str,
-    query_type: str,
-    entities_list: Sequence[str],
-    primary_entity: str,
-    anchor_packet_telemetry: Mapping[str, Any],
-    strategy: str,
-) -> str:
-    anchor_context_for_researcher = (
-        format_anchor_context_for_researcher(dict(anchor_packet_telemetry))
-        if strategy == "Balanced"
-        else ""
-    )
-    anchor_context_section = (
-        f"{anchor_context_for_researcher}\n" if anchor_context_for_researcher else ""
-    )
-    return (
-        f"Today is {current_date}.\n"
-        f"Original Prompt: {query}\n"
-        f"Core Topic: {core_topic}\n"
-        f"Intent: {intent}\n"
-        f"query_type: {query_type}\n"
-        f"entities: {list(entities_list)}\n"
-        f"primary_entity: {primary_entity}\n"
-        f"{anchor_context_section}"
-        "If query_type is person, each search query must include a disambiguating term "
-        "(role, employer, 'NYU', podcast, etc.) so results are not confused with other people. "
-        "Return JSON with a queries array."
-    )
 
 
 def _effective_route_posture(
@@ -303,9 +935,7 @@ def _effective_route_posture(
         "max_iterations": int(max_iterations),
         "run_contract_ref": dict(run_contract_ref or {}),
         "contract_source_requirement_hints": [
-            dict(item)
-            for item in (contract_source_requirement_hints or ())
-            if isinstance(item, Mapping)
+            dict(item) for item in (contract_source_requirement_hints or ()) if isinstance(item, Mapping)
         ],
         "contract_consumed_by_query_production": bool(run_contract_ref),
     }
@@ -317,17 +947,17 @@ def _build_query_production_payload(
     effective_route_posture: Mapping[str, Any],
     candidate_source: str,
     candidate_queries: Sequence[str],
-    recon_fired: bool,
-    recon_status: str,
-    recon_confidence: str | None,
-    canonical_subject_resolved: str | None,
+    candidate_strategies: Sequence[Mapping[str, Any]],
+    recon_summary: Sequence[Mapping[str, Any]],
     entity_update_projection: Mapping[str, Any],
-    researcher_fallback_status: str,
     anchor_packet_telemetry: Mapping[str, Any],
     nutrition_lookup_telemetry: Mapping[str, Any],
     include_domains: Sequence[str],
     provider_diagnostics: Sequence[Mapping[str, Any]],
     contract_source_requirement_hints: Sequence[Mapping[str, Any]],
+    initial_query_allocation_policy: InitialQueryAllocationPolicy,
+    accepted_contract_ref: Mapping[str, Any],
+    search_work_plan_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "action_id": action.action_id,
@@ -339,34 +969,42 @@ def _build_query_production_payload(
         "candidate_source": candidate_source,
         "candidate_query_count": len(list(candidate_queries)),
         "candidate_query_projection": _clean_query_projection(candidate_queries),
+        "candidate_strategy_projection": [dict(item) for item in candidate_strategies],
+        "initial_query_allocation_policy": (initial_query_allocation_policy.to_dict()),
+        "accepted_contract_ref": dict(accepted_contract_ref),
+        "search_work_plan_ref": dict(search_work_plan_ref),
         "recon": {
-            "fired": bool(recon_fired),
-            "status": recon_status,
-            "confidence": recon_confidence,
+            "affected_component_count": len(list(recon_summary)),
+            "component_postures": [dict(item) for item in recon_summary],
+            "evidence_admitted": False,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
         },
-        "canonical_subject_projection": canonical_subject_resolved,
         "entity_update_projection": dict(entity_update_projection),
-        "researcher_fallback_status": researcher_fallback_status,
+        "researcher_fallback_status": "retired_not_reachable",
+        "legacy_initial_producer_execution": {
+            "brave_reconnaissance_executed": False,
+            "recon_rewriter_executed": False,
+            "researcher_model_executed": False,
+            "core_topic_fallback_executed": False,
+        },
         "contract_source_requirement_hints": [
-            dict(item)
-            for item in contract_source_requirement_hints
-            if isinstance(item, Mapping)
+            dict(item) for item in contract_source_requirement_hints if isinstance(item, Mapping)
         ],
         "diagnostics": {
             "anchor_packet_present": bool(anchor_packet_telemetry.get("anchor_packet_present")),
-            "nutrition_lookup_detected": bool(
-                nutrition_lookup_telemetry.get("nutrition_lookup_detected")
-            ),
-            "news_domain_augmentation_applied": (
-                str(effective_route_posture.get("intent") or "") == "news"
-            ),
+            "nutrition_lookup_detected": bool(nutrition_lookup_telemetry.get("nutrition_lookup_detected")),
+            "news_domain_augmentation_applied": (str(effective_route_posture.get("intent") or "") == "news"),
             "include_domain_count": len(list(include_domains)),
             "provider_diagnostic_count": len(list(provider_diagnostics)),
+            "small_global_initial_query_cap_applied": False,
         },
         "provenance": {
             "query_production_owner": "RunKernel",
             "executor": "core.query_production_runtime.execute_query_production_action",
             "query_order_owner": "QueryPlan",
+            "initial_candidate_owner": "SearchPlanner",
+            "search_work_owner": "contract-bound SearchWorkPlan",
             "raw_prompts_retained": False,
             "raw_model_responses_retained": False,
             "raw_provider_payloads_retained": False,
@@ -380,25 +1018,298 @@ def query_plan_admission_inputs_from_query_production_projection(
     """Return the reduced query-production facts that QueryPlan admission consumes."""
 
     candidate_queries = list(projection.get("candidate_query_projection") or [])
+    candidate_strategies = [
+        dict(item) for item in projection.get("candidate_strategy_projection") or [] if isinstance(item, Mapping)
+    ]
     candidate_source = str(projection.get("candidate_source") or "").strip()
     effective_route_posture = dict(projection.get("effective_route_posture") or {})
     if not candidate_source:
         raise ValueError("query production projection missing candidate_source")
-    if candidate_source not in {"recon", "researcher", "fallback"}:
+    if candidate_source not in {"search_planner", "search_planner_revision"}:
         raise ValueError(f"unsupported query production candidate source: {candidate_source}")
     if not candidate_queries:
         raise ValueError("query production projection missing candidate queries")
     if not effective_route_posture:
         raise ValueError("query production projection missing effective route posture")
+    if not candidate_strategies:
+        raise ValueError("query production projection missing candidate strategies")
+    if [item.get("candidate_query_text") for item in candidate_strategies] != (candidate_queries):
+        raise ValueError("query production candidate strategy/text projection does not match")
+    policy = _policy_from_projection(projection.get("initial_query_allocation_policy"))
     return QueryProductionAdmissionInputs(
         candidate_queries=[str(query) for query in candidate_queries],
+        candidate_strategies=candidate_strategies,
         candidate_source=candidate_source,
         effective_route_posture=effective_route_posture,
         contract_source_requirement_hints=[
-            dict(item)
-            for item in projection.get("contract_source_requirement_hints", [])
-            if isinstance(item, Mapping)
+            dict(item) for item in projection.get("contract_source_requirement_hints", []) if isinstance(item, Mapping)
         ],
+        initial_query_allocation_policy=policy,
+    )
+
+
+def _policy_from_projection(value: Any) -> InitialQueryAllocationPolicy:
+    if isinstance(value, InitialQueryAllocationPolicy):
+        return value
+    if not isinstance(value, Mapping):
+        raise ValueError("query production projection missing initial-query allocation policy")
+    field_names = (
+        "policy_version",
+        "primary_query_target_per_required_component",
+        "initial_candidate_ceiling_per_required_component",
+        "immediate_dispatch_target_per_required_component",
+        "recon_candidate_ceiling_per_affected_component",
+        "redundancy_rejection_enabled",
+        "required_component_floor_enabled",
+    )
+    kwargs = {name: value[name] for name in field_names if name in value}
+    return InitialQueryAllocationPolicy(**kwargs)
+
+
+def _accepted_contract_ref(
+    initial_contract: Mapping[str, Any] | None,
+    current_contract: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    current = dict(current_contract or {})
+    initial = dict(initial_contract or {})
+    contract = current or initial
+    version = str(contract.get("accepted_contract_version") or "").strip()
+    digest = str(contract.get("accepted_contract_digest") or "").strip()
+    if not version or not digest:
+        raise QueryStrategyConvergenceError("query production requires an accepted AnswerContract version/digest")
+    return {
+        "contract_version": version,
+        "contract_digest": digest,
+        "parent_kind": ("current_answer_contract" if current else "initial_answer_contract"),
+    }
+
+
+def _search_work_plan_ref(
+    search_work_plan: Mapping[str, Any] | None,
+    *,
+    accepted_contract_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    plan = dict(search_work_plan or {})
+    metadata = dict(plan.get("metadata") or {}) if isinstance(plan.get("metadata"), Mapping) else {}
+    plan_contract_ref = (
+        dict(metadata.get("accepted_contract_ref") or {})
+        if isinstance(metadata.get("accepted_contract_ref"), Mapping)
+        else {}
+    )
+    if not plan or plan.get("passive") is not False:
+        raise QueryStrategyConvergenceError("query production requires an active contract-bound SearchWorkPlan")
+    if plan_contract_ref != dict(accepted_contract_ref):
+        raise QueryStrategyConvergenceError("SearchWorkPlan accepted-contract binding became stale")
+    plan_id = str(metadata.get("search_work_plan_id") or metadata.get("construction_id") or "").strip()
+    if not plan_id:
+        raise QueryStrategyConvergenceError("contract-bound SearchWorkPlan requires stable identity")
+    return {
+        "search_work_plan_id": plan_id,
+        "schema_version": plan.get("schema_version"),
+        "accepted_contract_ref": plan_contract_ref,
+        "runtime_consumed": True,
+    }
+
+
+def execute_initial_query_strategy_convergence(
+    *,
+    run_kernel: Any,
+    router_query_preparation_contract: RouterQueryPreparationState,
+    query: str,
+    strategy: str,
+    current_date: str,
+    focus_academic: bool,
+    force_intent_news: bool,
+    include_domains: Sequence[str],
+    exclude_domains: Sequence[str] = (),
+    news_preferred_domains: Sequence[str],
+    route_projection: Mapping[str, Any],
+    run_contract_projection: Mapping[str, Any],
+    supplied_context: Mapping[str, Any] | None = None,
+    planner_adapter: SearchPlannerAdapter,
+    scout_adapter: ScoutDisambiguationAdapter | None = None,
+    revision_adapter: SearchPlannerRevisionAdapter | None = None,
+    provider_diagnostics: MutableSequence[dict[str, Any]],
+    waste_flags: Sequence[str] | None = None,
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
+) -> InitialQueryStrategyConvergenceResult:
+    """Run the one ordinary initial semantic-planning producer chain.
+
+    Every reduction happens before query production is authorized.  Therefore
+    a malformed planner proposal, stale contract ref, missing required recon
+    adapter, or invalid SearchWorkPlan yields no retrieval-dispatchable query.
+    """
+
+    if not isinstance(initial_query_allocation_policy, InitialQueryAllocationPolicy):
+        raise QueryStrategyConvergenceError("initial strategy convergence requires the code-owned policy")
+    route_facts = {
+        "intent": router_query_preparation_contract.intent,
+        "report_type": router_query_preparation_contract.report_type,
+        "query_type": router_query_preparation_contract.query_type,
+        "core_topic": router_query_preparation_contract.core_topic,
+        "primary_entity": router_query_preparation_contract.primary_entity,
+        "entities": list(router_query_preparation_contract.entities_list),
+        "is_academic": router_query_preparation_contract.is_academic,
+    }
+    planner_input = SearchPlannerInput(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        user_query_text=query,
+        requested_mode=strategy,
+        safe_context={
+            "phase": "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+            "product_path": True,
+            "route_facts": route_facts,
+            "run_contract_projection": dict(run_contract_projection),
+            "current_date": current_date,
+            "include_domains": list(include_domains),
+            "exclude_domains": list(exclude_domains),
+            "supplied_context": dict(supplied_context or {}),
+            "supplied_context_posture": {
+                "planning_context_only": True,
+                "evidence_admitted": False,
+                "source_obligation_satisfied": False,
+                "citation_eligible": False,
+            },
+            "initial_query_allocation_policy_version": (initial_query_allocation_policy.policy_version),
+        },
+        route_context_ref={
+            "route_id": route_projection.get("route_id"),
+        },
+        run_context_ref={
+            "run_contract_id": run_contract_projection.get("contract_id"),
+        },
+        parent_initial_contract_ref=planner_contract_ref_from_contract(
+            run_kernel.state.initial_answer_contract,
+            source="initial_answer_contract",
+        ),
+        parent_current_contract_ref=planner_contract_ref_from_contract(
+            run_kernel.state.current_answer_contract,
+            source="current_answer_contract",
+        ),
+    )
+    planner_action = run_kernel.authorize_search_planner_production(
+        user_query_digest=planner_input.user_query_digest,
+        planner_schema_version=SEARCH_PLANNER_SCHEMA_VERSION,
+        inputs={
+            "route_id": route_projection.get("route_id"),
+            "run_contract_id": run_contract_projection.get("contract_id"),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+        },
+    )
+    planner_result = execute_search_planner_action(
+        action=planner_action,
+        planner_input=planner_input,
+        adapter=planner_adapter,
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            planner_action,
+            observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
+            status=RunStageStatus.COMPLETED,
+            payload=planner_result.observation_payload,
+        )
+    )
+
+    qmr = dict(run_kernel.state.search_planner_proposal_state.get("question_meaning_record") or {})
+    if not qmr:
+        raise QueryStrategyConvergenceError("SearchPlanner reduction did not produce a QuestionMeaningRecord")
+    acceptance_action = run_kernel.authorize_initial_answer_contract_acceptance(
+        parent_question_meaning_record_id=str(qmr.get("record_id") or ""),
+        parent_proposal_digest=str(qmr.get("record_digest") or ""),
+        inputs={
+            "planner_action_id": planner_action.action_id,
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+        },
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            acceptance_action,
+            observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
+            status=RunStageStatus.COMPLETED,
+            payload={"question_meaning_record": qmr},
+        )
+    )
+    accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+    base_candidate_strategies = initial_query_strategies_from_planner_state(
+        planner_state=run_kernel.state.search_planner_proposal_state,
+        accepted_contract=accepted_contract,
+        policy=initial_query_allocation_policy,
+    )
+    recon_summary, revision_projections = _execute_recon_and_revisions(
+        run_kernel=run_kernel,
+        candidate_strategies=base_candidate_strategies,
+        policy=initial_query_allocation_policy,
+        scout_adapter=scout_adapter,
+        revision_adapter=revision_adapter,
+    )
+    accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+    candidate_strategies = _strategies_with_authorized_revisions(
+        base_strategies=base_candidate_strategies,
+        revision_projections=revision_projections,
+        accepted_contract=accepted_contract,
+    )
+
+    search_work_action = run_kernel.authorize_search_work_plan_construction(
+        reason="contract_bound_search_work_plan_before_query_plan",
+        inputs={
+            "planner_proposal_digest": (run_kernel.state.search_planner_proposal_state.get("proposal_digest")),
+            "accepted_contract_digest": accepted_contract.get("accepted_contract_digest"),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+        },
+    )
+    search_work_observation = observe_contract_bound_search_work_plan_construction(
+        search_work_action,
+        construction_id=(f"search-work-plan:{run_kernel.state.request_id}:initial"),
+        requested_mode=strategy,
+        planner_state=run_kernel.state.search_planner_proposal_state,
+        initial_contract=run_kernel.state.initial_answer_contract,
+        current_contract=run_kernel.state.current_answer_contract,
+        run_authority_contract=run_contract_projection,
+        policy=initial_query_allocation_policy,
+        revision_projections=revision_projections,
+    )
+    run_kernel.reduce(search_work_observation)
+
+    query_production_action = run_kernel.authorize_query_production(
+        reason="search_planner_strategy_projection_before_queryplan_consumption",
+        inputs={
+            "planner_action_id": planner_action.action_id,
+            "initial_contract_acceptance_action_id": acceptance_action.action_id,
+            "search_work_action_id": search_work_action.action_id,
+            "candidate_count": len(candidate_strategies),
+            "required_component_count": len(accepted_contract.get("accepted_answer_component_refs") or ()),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+            "small_global_initial_query_cap_applied": False,
+        },
+    )
+    query_production_result = execute_query_production_action(
+        query_production_action,
+        router_query_preparation_contract=router_query_preparation_contract,
+        query=query,
+        strategy=strategy,
+        current_date=current_date,
+        focus_academic=focus_academic,
+        force_intent_news=force_intent_news,
+        include_domains=include_domains,
+        news_preferred_domains=news_preferred_domains,
+        candidate_strategies=candidate_strategies,
+        initial_answer_contract=run_kernel.state.initial_answer_contract,
+        current_answer_contract=run_kernel.state.current_answer_contract,
+        search_work_plan=run_kernel.state.search_work_plan,
+        recon_summary=recon_summary,
+        initial_query_allocation_policy=initial_query_allocation_policy,
+        provider_diagnostics=provider_diagnostics,
+        waste_flags=waste_flags,
+        run_contract_projection=run_contract_projection,
+    )
+    run_kernel.reduce(query_production_result.observation)
+    return InitialQueryStrategyConvergenceResult(
+        query_production_action=query_production_action,
+        query_production_result=query_production_result,
+        search_work_plan=dict(run_kernel.state.search_work_plan),
+        recon_summary=tuple(recon_summary),
+        revision_projections=tuple(revision_projections),
     )
 
 
@@ -413,26 +1324,22 @@ def execute_query_production_action(
     force_intent_news: bool,
     include_domains: Sequence[str],
     news_preferred_domains: Sequence[str],
-    ask_model: Callable[..., str],
-    clean_json_response: Callable[[str], str],
-    default_system: Mapping[str, str],
-    fast_provider: str,
-    fast_model: str,
-    local_url: str | None,
-    api_key: str | None,
-    use_reasoning: bool,
-    measure_context_stage: Callable[..., Any],
-    clean_query: Callable[[str], str],
-    cost_accumulator: Any,
-    status: Any,
+    candidate_strategies: Sequence[Mapping[str, Any]] | None = None,
+    initial_answer_contract: Mapping[str, Any] | None = None,
+    current_answer_contract: Mapping[str, Any] | None = None,
+    search_work_plan: Mapping[str, Any] | None = None,
+    recon_summary: Sequence[Mapping[str, Any]] = (),
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
     provider_diagnostics: MutableSequence[dict[str, Any]],
-    run_log: Any,
     waste_flags: Sequence[str] | None = None,
-    brave_api_key_available: bool | None = None,
-    brave_reconnaissance_func: Callable[..., list[dict[str, Any]]] = brave_reconnaissance,
     run_contract_projection: Mapping[str, Any] | None = None,
+    **_retired_legacy_initial_producer_inputs: Any,
 ) -> QueryProductionResult:
-    """Execute old initial candidate production after RunKernel authorization."""
+    """Project already-converged SearchPlanner strategies for QueryPlan.
+
+    The compatibility kwargs deliberately make old call sites fail closed
+    without reaching a model, provider, recon rewriter, or core-topic fallback.
+    """
 
     validate_authorized_action(
         action,
@@ -455,9 +1362,27 @@ def execute_query_production_action(
     routing_override_applied = False
     routing_override_reason: str | None = None
     active_waste_flags = list(waste_flags or [])
-    contract_source_requirement_hints = contract_query_hints_from_projection(
-        run_contract_projection
+    policy = initial_query_allocation_policy
+    if not isinstance(policy, InitialQueryAllocationPolicy):
+        raise QueryStrategyConvergenceError("query production requires the code-owned allocation policy")
+    strategies = [dict(item) for item in (candidate_strategies or ()) if isinstance(item, Mapping)]
+    if not strategies:
+        raise QueryStrategyConvergenceError(
+            "SearchPlanner produced no valid initial component query strategies; "
+            "legacy initial producer fallback is retired"
+        )
+    candidate_queries = [str(item.get("candidate_query_text") or "").strip() for item in strategies]
+    if any(not query or len(query) > 300 for query in candidate_queries):
+        raise QueryStrategyConvergenceError("SearchPlanner initial query strategies require bounded exact text")
+    accepted_contract_ref = _accepted_contract_ref(
+        initial_answer_contract,
+        current_answer_contract,
     )
+    search_work_plan_ref = _search_work_plan_ref(
+        search_work_plan,
+        accepted_contract_ref=accepted_contract_ref,
+    )
+    contract_source_requirement_hints = contract_query_hints_from_projection(run_contract_projection)
     run_contract_ref = {}
     if isinstance(run_contract_projection, Mapping) and run_contract_projection:
         run_contract_ref = {
@@ -514,153 +1439,22 @@ def execute_query_production_action(
     top_chunks = int(budget["top_chunks"])
     max_iterations = int(budget["max_iterations"])
 
-    recon_fired = False
-    recon_confidence: str | None = None
-    canonical_subject_resolved: str | None = None
-    recon_status = "not_eligible"
-    pre_retrieval_query_candidates: list[str] = []
-    recon_t0 = time.monotonic()
-    recon_query_type = (query_type or "").lower()
-    if recon_query_type in _RECON_QUERY_TYPES:
-        recon_status = "eligible"
-        well_scoped = bool(re.search(r"\b(19|20)\d{2}\b", query or "")) and len(
-            (primary_entity or core_topic or "").split()
-        ) >= 4
-        if well_scoped:
-            recon_confidence = "low"
-            recon_status = "skipped_well_scoped"
-            active_waste_flags.append("recon_skipped")
-        else:
-            has_brave_key = (
-                bool(os.getenv("BRAVE_API_KEY"))
-                if brave_api_key_available is None
-                else bool(brave_api_key_available)
-            )
-            if not has_brave_key:
-                recon_status = "skipped_missing_brave_api_key"
-                active_waste_flags.append("recon_skipped")
-            else:
-                brave_call_completed = False
-                try:
-                    _status_step(status, "Reconnaissance search (resolving entities and terms)\u2026")
-                    brave_query = (query or core_topic)[:500]
-                    brave_results = brave_reconnaissance_func(
-                        brave_query,
-                        num_results=5,
-                        cost_accumulator=cost_accumulator,
-                        cost_phase="recon",
-                    )
-                    brave_call_completed = True
-                    recon_url_count = len(
-                        {
-                            str(item.get("url") or "")
-                            for item in brave_results
-                            if item.get("url")
-                        }
-                    )
-                    provider_diagnostics.append(
-                        build_provider_attempt_diagnostic(
-                            provider="brave",
-                            provider_role="recon",
-                            cost_phase="recon",
-                            query=brave_query,
-                            max_results=5,
-                            output_type="searchResults",
-                            success=True,
-                            result_count=len(brave_results),
-                            new_url_count=recon_url_count,
-                            accepted_url_count=recon_url_count,
-                        )
-                    )
-                    recon_context = extract_recon_context(brave_results)
-                    if (
-                        (recon_context.get("recon_titles") or "").strip()
-                        or (recon_context.get("recon_snippets") or "").strip()
-                    ):
-                        recon_rewriter_prompt = _build_recon_rewriter_prompt(
-                            current_date=current_date,
-                            query=query,
-                            recon_context=recon_context,
-                        )
-                        measure_context_stage(
-                            "recon_rewriter",
-                            prompt=recon_rewriter_prompt,
-                            system_prompt=default_system["recon_query_rewriter"],
-                        )
-                        rewriter_text = clean_json_response(
-                            ask_model(
-                                recon_rewriter_prompt,
-                                default_system["recon_query_rewriter"],
-                                provider=fast_provider,
-                                model=fast_model,
-                                effort="low",
-                                base_url=local_url,
-                                api_key=api_key,
-                                require_json=True,
-                                use_reasoning=use_reasoning,
-                            )
-                        )
-                        rewriter_data = json.loads(rewriter_text)
-                        rewritten_queries = [
-                            clean_query(str(item))
-                            for item in (rewriter_data.get("rewritten_queries") or [])
-                            if clean_query(str(item))
-                        ]
-                        if rewritten_queries:
-                            pre_retrieval_query_candidates = rewritten_queries
-                            recon_fired = True
-                            recon_status = "fired"
-                            recon_confidence = (
-                                (rewriter_data.get("recon_confidence") or "").strip()
-                                or None
-                            )
-                            canonical_subject = (
-                                rewriter_data.get("canonical_subject") or ""
-                            ).strip()
-                            if canonical_subject:
-                                canonical_subject_resolved = canonical_subject[:200]
-                            if (
-                                canonical_subject
-                                and canonical_subject.lower()
-                                == (core_topic or "").strip().lower()
-                            ):
-                                recon_confidence = "low"
-                            if (
-                                (recon_confidence or "") in ("high", "medium")
-                                and canonical_subject
-                            ):
-                                primary_entity = canonical_subject[:200]
-                        else:
-                            recon_status = "no_rewritten_queries"
-                    else:
-                        recon_status = "no_context"
-                except Exception as exc:
-                    if not brave_call_completed:
-                        provider_diagnostics.append(
-                            build_provider_attempt_diagnostic(
-                                provider="brave",
-                                provider_role="recon",
-                                cost_phase="recon",
-                                query=(query or core_topic)[:500],
-                                max_results=5,
-                                output_type="searchResults",
-                                success=False,
-                                failure_type=type(exc).__name__,
-                            )
-                        )
-                    _warning(run_log, "Reconnaissance skipped: %s", exc)
-                    active_waste_flags.append("recon_skipped")
-                    recon_status = "failed"
-    recon_seconds = max(0.0, time.monotonic() - recon_t0)
+    normalized_recon_summary = [dict(item) for item in recon_summary if isinstance(item, Mapping)]
+    recon_fired = any(
+        str(item.get("status") or "").strip() in {"completed", "revision_applied", "query_direction_revised"}
+        for item in normalized_recon_summary
+    )
+    confidence_values = [
+        str(item.get("confidence") or "").strip()
+        for item in normalized_recon_summary
+        if str(item.get("confidence") or "").strip()
+    ]
+    recon_confidence = confidence_values[-1] if confidence_values else None
+    canonical_subject_resolved = None
+    recon_seconds = sum(max(0.0, float(item.get("duration_seconds") or 0.0)) for item in normalized_recon_summary)
 
     entity_count_before = len(entities_list)
-    canonical_entity = (canonical_subject_resolved or "").strip()[:200]
     canonical_inserted = False
-    if canonical_entity:
-        lows = {entity.casefold() for entity in entities_list}
-        if canonical_entity.casefold() not in lows:
-            entities_list = [canonical_entity] + entities_list
-            canonical_inserted = True
     if entities_list:
         primary_entity = entities_list[0][:200]
     elif primary_entity.strip():
@@ -668,67 +1462,12 @@ def execute_query_production_action(
         primary_entity = entities_list[0][:200]
     empty_entity_flag = len(entities_list) == 0
 
-    if not pre_retrieval_query_candidates:
-        _status_step(status, "Generating initial search plan...")
-        researcher_prompt = _build_researcher_prompt(
-            current_date=current_date,
-            query=query,
-            core_topic=core_topic,
-            intent=intent,
-            query_type=query_type,
-            entities_list=entities_list,
-            primary_entity=primary_entity,
-            anchor_packet_telemetry=anchor_packet_telemetry,
-            strategy=strategy,
-        )
-        measure_context_stage(
-            "researcher",
-            prompt=researcher_prompt,
-            system_prompt=default_system["researcher"],
-        )
-        researcher_text = clean_json_response(
-            ask_model(
-                researcher_prompt,
-                default_system["researcher"],
-                provider=fast_provider,
-                model=fast_model,
-                effort="low",
-                base_url=local_url,
-                api_key=api_key,
-                require_json=True,
-                use_reasoning=use_reasoning,
-            )
-        )
-        try:
-            queries_dict = json.loads(researcher_text)
-            queries_raw = (
-                queries_dict.get("queries", [])
-                if isinstance(queries_dict, dict)
-                else queries_dict
-            )
-            researcher_query_candidates = [
-                clean_query(str(item)) for item in queries_raw if clean_query(str(item))
-            ]
-            if not researcher_query_candidates:
-                researcher_query_candidates = [core_topic[:300]]
-                candidate_source = "fallback"
-                researcher_fallback_status = "empty_researcher_output"
-            else:
-                candidate_source = "researcher"
-                researcher_fallback_status = "not_used"
-        except Exception:
-            researcher_query_candidates = [core_topic[:300]]
-            candidate_source = "fallback"
-            researcher_fallback_status = "invalid_researcher_output"
-        candidate_queries = researcher_query_candidates
-    else:
-        _status_step(
-            status,
-            "Using recon-informed search queries (research planner skipped for pass 1).",
-        )
-        candidate_queries = pre_retrieval_query_candidates
-        candidate_source = "recon"
-        researcher_fallback_status = "not_needed_recon"
+    candidate_source = (
+        "search_planner_revision"
+        if any(item.get("parent_search_planner_revision_ref") for item in strategies)
+        else "search_planner"
+    )
+    researcher_fallback_status = "retired_not_reachable"
 
     route_posture = _effective_route_posture(
         intent=intent,
@@ -763,17 +1502,17 @@ def execute_query_production_action(
         effective_route_posture=route_posture,
         candidate_source=candidate_source,
         candidate_queries=candidate_queries,
-        recon_fired=recon_fired,
-        recon_status=recon_status,
-        recon_confidence=recon_confidence,
-        canonical_subject_resolved=canonical_subject_resolved,
+        candidate_strategies=strategies,
+        recon_summary=normalized_recon_summary,
         entity_update_projection=entity_update_projection,
-        researcher_fallback_status=researcher_fallback_status,
         anchor_packet_telemetry=anchor_packet_telemetry,
         nutrition_lookup_telemetry=nutrition_lookup_telemetry,
         include_domains=active_include_domains,
         provider_diagnostics=provider_diagnostics,
         contract_source_requirement_hints=contract_source_requirement_hints,
+        initial_query_allocation_policy=policy,
+        accepted_contract_ref=accepted_contract_ref,
+        search_work_plan_ref=search_work_plan_ref,
     )
     observation = Observation.from_action(
         action,
@@ -796,6 +1535,9 @@ def execute_query_production_action(
         researcher_fallback_status=researcher_fallback_status,
         empty_entity_flag=empty_entity_flag,
         contract_source_requirement_hints=list(contract_source_requirement_hints),
+        candidate_strategies=strategies,
+        initial_query_allocation_policy=policy,
+        recon_summary=normalized_recon_summary,
         observation=observation,
     )
 
@@ -808,6 +1550,7 @@ class QueryPlanAdmissionResult:
     current_queries: list[str]
     recency_merge_used: bool
     recency_merge_query: str | None
+    initial_query_admission: InitialQueryAdmissionResult
     router_query_preparation_contract: RouterQueryPreparationState
     observation: Observation
 
@@ -819,6 +1562,8 @@ def _query_plan_projection(
     recency_merge_used: bool,
     recency_merge_query: str | None,
     current_queries: Sequence[str],
+    initial_query_admission: InitialQueryAdmissionResult,
+    initial_query_allocation_policy: InitialQueryAllocationPolicy,
     contract_source_requirement_hints: Sequence[Mapping[str, Any]] | None = None,
     provider_job_execution_handoff: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -830,16 +1575,17 @@ def _query_plan_projection(
         "recency_merge_query": recency_merge_query,
         "current_query_count": len(list(current_queries)),
         "query_order_owner": "QueryPlan",
+        "initial_query_admission": initial_query_admission.to_dict(),
+        "initial_query_allocation_policy": (initial_query_allocation_policy.to_dict()),
+        "small_global_initial_query_cap_applied": False,
+        "required_component_globally_truncated": False,
+        "post_result_followup_dispatched": False,
         "contract_source_requirement_hints": [
-            dict(item)
-            for item in (contract_source_requirement_hints or ())
-            if isinstance(item, Mapping)
+            dict(item) for item in (contract_source_requirement_hints or ()) if isinstance(item, Mapping)
         ],
     }
     if provider_job_execution_handoff:
-        projection["provider_job_execution_handoff"] = dict(
-            provider_job_execution_handoff
-        )
+        projection["provider_job_execution_handoff"] = dict(provider_job_execution_handoff)
         projection["provider_job_execution_handoff_present"] = True
     return projection
 
@@ -850,15 +1596,17 @@ def execute_query_plan_admission_action(
     query_authority: QueryPlanRuntimeAdapter,
     router_query_preparation_contract: RouterQueryPreparationState,
     candidate_queries: Sequence[str],
+    candidate_strategies: Sequence[Mapping[str, Any]],
     candidate_source: str,
     query_type: str,
     current_date: str,
     max_queries: int,
     route_runtime_posture: Mapping[str, Any],
     search_work_projection: Mapping[str, Any] | None = None,
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
     search_judgment_projection: Mapping[str, Any] | None = None,
 ) -> QueryPlanAdmissionResult:
-    """Admit existing candidates into QueryPlan after RunKernel authorization."""
+    """Admit component-bound planner strategies into the first DISCOVER wave."""
 
     validate_authorized_action(
         action,
@@ -866,31 +1614,44 @@ def execute_query_plan_admission_action(
         stage=QUERY_PLAN_ADMISSION_STAGE,
         expected_observation_type=ObservationType.QUERY_PLAN_ADMITTED,
     )
-    if candidate_source == "recon":
-        queries = query_authority.admit_recon_candidates(candidate_queries)
-    elif candidate_source in {"researcher", "fallback"}:
-        queries = query_authority.admit_researcher_candidates(candidate_queries)
-    else:
+    if candidate_source not in {"search_planner", "search_planner_revision"}:
         raise ValueError(f"unsupported query admission candidate source: {candidate_source}")
-
-    queries = query_authority.consume_search_work_for_existing_queries(
-        queries,
+    if search_judgment_projection:
+        raise ValueError("initial QueryPlan admission cannot dispatch post-result SearchJudgment follow-up")
+    strategies = [dict(item) for item in candidate_strategies if isinstance(item, Mapping)]
+    strategy_queries = [str(item.get("candidate_query_text") or "").strip() for item in strategies]
+    if strategy_queries != [str(query) for query in candidate_queries]:
+        raise ValueError("QueryPlan admission requires exact SearchPlanner strategy/query order")
+    if not isinstance(initial_query_allocation_policy, InitialQueryAllocationPolicy):
+        raise ValueError("QueryPlan admission requires the code-owned policy")
+    allocation = query_authority.admit_initial_component_strategies(
+        strategies,
         search_work_projection=search_work_projection,
-        max_len=max_queries,
-        origin=f"{candidate_source}_search_work_consumption",
-        role=QueryPlanRole.INITIAL,
-        search_judgment_projection=search_judgment_projection,
+        policy=initial_query_allocation_policy,
+        origin=candidate_source,
     )
-    recency_projection = query_authority.apply_initial_recency_merge(
-        queries,
-        query_type=query_type,
-        current_date=current_date,
-        max_queries=max_queries,
-    )
-    current_queries = query_authority.finalize(
-        recency_projection.current_queries,
-        max_len=max_queries,
-        include_official_bias=False,
+    current_queries = list(allocation.immediate_dispatch_queries)
+    # Only the immediate first wave crosses the ordinary retrieval-loop seam.
+    # Prepared secondaries remain QueryPlan state for later SearchJudgment.
+    queries = list(current_queries)
+    immediate_set = set(current_queries)
+    immediate_strategies = [
+        item for item in strategies if str(item.get("candidate_query_text") or "").strip() in immediate_set
+    ]
+    recency_queries = [
+        str(item.get("candidate_query_text") or "").strip()
+        for item in immediate_strategies
+        if str(item.get("requested_role") or "").strip() == QueryPlanRole.RECENCY.value
+    ]
+    recency_merge_used = bool(recency_queries)
+    recency_merge_query = recency_queries[0] if len(recency_queries) == 1 else None
+    official_bias_requested = any(
+        str(item.get("requested_role") or "").strip()
+        in {
+            QueryPlanRole.OFFICIAL_BIAS.value,
+            QueryPlanRole.CANONICAL_BIAS.value,
+        }
+        for item in immediate_strategies
     )
     contract_source_requirement_hints = [
         dict(item)
@@ -948,18 +1709,11 @@ def execute_query_plan_admission_action(
         search_depth=str(route_runtime_posture["search_depth"]),
         top_chunks=int(route_runtime_posture["top_chunks"]),
         max_iterations=int(route_runtime_posture["max_iterations"]),
-        recency_merge_used=recency_projection.recency_merge_used,
-        recency_query=recency_projection.recency_merge_query,
-        official_bias_requested=wants_official_source_bias(
-            query_authority.user_query,
-            intent,
-        ),
-        official_bias_phrase=(
-            official_bias_phrase(query_authority.user_query)
-            if wants_official_source_bias(query_authority.user_query, intent)
-            else None
-        ),
-        finalized_queries=queries,
+        recency_merge_used=recency_merge_used,
+        recency_query=recency_merge_query,
+        official_bias_requested=official_bias_requested,
+        official_bias_phrase=None,
+        finalized_queries=current_queries,
         current_queries=current_queries,
         query_source=candidate_source,
         run_contract_ref=run_contract_ref,
@@ -968,9 +1722,11 @@ def execute_query_plan_admission_action(
     payload = _query_plan_projection(
         query_authority,
         query_source=candidate_source,
-        recency_merge_used=recency_projection.recency_merge_used,
-        recency_merge_query=recency_projection.recency_merge_query,
+        recency_merge_used=recency_merge_used,
+        recency_merge_query=recency_merge_query,
         current_queries=current_queries,
+        initial_query_admission=allocation,
+        initial_query_allocation_policy=initial_query_allocation_policy,
         contract_source_requirement_hints=contract_source_requirement_hints,
         provider_job_execution_handoff=provider_job_execution_handoff,
     )
@@ -983,17 +1739,21 @@ def execute_query_plan_admission_action(
     return QueryPlanAdmissionResult(
         queries=list(queries),
         current_queries=list(current_queries),
-        recency_merge_used=recency_projection.recency_merge_used,
-        recency_merge_query=recency_projection.recency_merge_query,
+        recency_merge_used=recency_merge_used,
+        recency_merge_query=recency_merge_query,
+        initial_query_admission=allocation,
         router_query_preparation_contract=router_query_preparation_contract,
         observation=observation,
     )
 
 
 __all__ = [
+    "InitialQueryStrategyConvergenceResult",
     "QueryProductionAdmissionInputs",
     "QueryProductionResult",
     "QueryPlanAdmissionResult",
+    "QueryStrategyConvergenceError",
+    "execute_initial_query_strategy_convergence",
     "execute_query_production_action",
     "execute_query_plan_admission_action",
     "query_plan_admission_inputs_from_query_production_projection",

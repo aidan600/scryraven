@@ -17,6 +17,10 @@ from hashlib import sha256
 from typing import Any, Callable, Mapping, Protocol, Sequence
 from urllib.parse import urlparse
 
+from core.initial_query_allocation_policy import (
+    DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
+)
+
 SCOUT_DISAMBIGUATION_SCHEMA_VERSION = (
     "scout_disambiguation_runtime_ag_scout_disambiguation_runtime_01_v1"
 )
@@ -33,8 +37,13 @@ SCOUT_DISAMBIGUATION_REASON = (
 SCOUT_DISAMBIGUATION_TRACE_KEY = "scout_disambiguation_report"
 SCOUT_DISAMBIGUATION_REPORT_OWNER = "RunKernel.ScoutDisambiguationReport"
 
-SCOUT_MAX_QUERIES_PER_COMPONENT = 5
-SCOUT_MAX_DIMENSIONS_PER_COMPONENT = 5
+# The Scout runtime's bounded shape follows the single SearchOS allocation
+# policy owner.  These remain per-component safety limits, never a global run
+# total, and can be calibrated without changing the Scout schema.
+SCOUT_MAX_QUERIES_PER_COMPONENT = (
+    DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY.recon_candidate_ceiling_per_affected_component
+)
+SCOUT_MAX_DIMENSIONS_PER_COMPONENT = SCOUT_MAX_QUERIES_PER_COMPONENT
 
 _EXPECTED_ACTION_TYPE = "scout_disambiguate"
 _EXPECTED_OBSERVATION_TYPE = "scout_disambiguation_reported"

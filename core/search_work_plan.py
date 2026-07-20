@@ -1250,14 +1250,16 @@ class SearchWorkPlan:
         return self
 
     def to_dict(self) -> dict[str, Any]:
+        runtime_consumed = not bool(self.passive)
         return {
             "schema_version": self.schema_version,
             "trace_key": SEARCH_WORK_PLAN_TRACE_KEY,
             "planning_posture": _clean_token(self.planning_posture),
             "passive": bool(self.passive),
-            "runtime_consumed": False,
+            "runtime_consumed": runtime_consumed,
             "prompt_behavior_changed": False,
             "provider_search_behavior_changed": False,
+            "query_plan_behavior_changed": runtime_consumed,
             "requested_mode": self.requested_mode.to_dict(),
             "effective_contract": self.effective_contract.to_dict(),
             "query_shape": self.query_shape.to_dict(),

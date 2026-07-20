@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.query_production_runtime import execute_query_production_action
+import pytest
+
+from core.query_production_runtime import (
+    QueryStrategyConvergenceError,
+    execute_query_production_action,
+)
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_kernel import (
@@ -229,7 +234,7 @@ def test_lane_handoff_is_mode_neutral_for_matching_obligations() -> None:
     assert all(item["mode_specific_official_executor"] is False for item in handoffs)
 
 
-def test_query_production_output_remains_unchanged_with_enhanced_lane() -> None:
+def test_official_shadow_handoff_cannot_restore_legacy_query_production() -> None:
     baseline_kernel, baseline_contract, _baseline_route = _kernel_with_contract(
         "ag96d1-baseline",
         _official_query(),
@@ -239,23 +244,23 @@ def test_query_production_output_remains_unchanged_with_enhanced_lane() -> None:
         _official_query(),
     )
 
-    baseline = _query_production_result(
-        baseline_kernel,
-        run_contract_projection=baseline_contract,
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            baseline_kernel,
+            run_contract_projection=baseline_contract,
+        )
     _run_lane(shadow_kernel, shadow_contract, shadow_route)
-    with_lane = _query_production_result(
-        shadow_kernel,
-        run_contract_projection=shadow_contract,
-    )
-
-    assert with_lane.candidate_queries == baseline.candidate_queries
-    assert with_lane.candidate_source == baseline.candidate_source
-    assert with_lane.effective_route_posture == baseline.effective_route_posture
-    assert (
-        with_lane.contract_source_requirement_hints
-        == baseline.contract_source_requirement_hints
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            shadow_kernel,
+            run_contract_projection=shadow_contract,
+        )
 
 
 def test_lane_and_handoff_generate_no_query_text_or_behavior_changes() -> None:
@@ -349,7 +354,7 @@ def test_lane_handoff_redacts_raw_private_fields() -> None:
     assert "visible-safe-note" in encoded
 
 
-def test_pipeline_still_has_one_pass_through_lane_call_and_no_handoff_logic() -> None:
+def test_pipeline_has_no_passive_lane_or_official_shadow_handoff_logic() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
@@ -360,7 +365,7 @@ def test_pipeline_still_has_one_pass_through_lane_call_and_no_handoff_logic() ->
         and isinstance(node.func, ast.Name)
         and node.func.id == "run_search_work_shadow_lane"
     ]
-    assert len(calls) == 1
+    assert calls == []
     assert "search_work_official_current_handoff" not in source
     assert "build_search_work_official_current_handoff" not in source
 

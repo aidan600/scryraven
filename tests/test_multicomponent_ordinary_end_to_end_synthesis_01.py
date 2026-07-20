@@ -47,8 +47,7 @@ Then explain how bonus eligibility changes the filing route and what an
 eligible applicant should do."""
 
 NORTHSTAR_DIRECTIVE = (
-    "Then explain how bonus eligibility changes the filing route and what an "
-    "eligible applicant should do."
+    "Then explain how bonus eligibility changes the filing route and what an eligible applicant should do."
 )
 
 NUMBERED_NORTHSTAR_DIRECTIVE = (
@@ -65,8 +64,7 @@ NUMBERED_NORTHSTAR_QUERY = f"""For the fictional Northstar Home-Energy Rebate:
 6. {NUMBERED_NORTHSTAR_DIRECTIVE}"""
 
 IMPERATIVE_NORTHSTAR_DIRECTIVE = (
-    "then explain how bonus eligibility changes the filing route and what an "
-    "eligible applicant should do."
+    "then explain how bonus eligibility changes the filing route and what an eligible applicant should do."
 )
 
 IMPERATIVE_NORTHSTAR_QUERY = f"""For the fictional Northstar Home-Energy Rebate:
@@ -111,9 +109,7 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         if system_prompt in ROLE_SYSTEM_PROMPTS.values():
             payload = json.loads(prompt)
-            self.role_input_packets.append(
-                {"system_prompt": system_prompt, "input_packet": payload}
-            )
+            self.role_input_packets.append({"system_prompt": system_prompt, "input_packet": payload})
             self.model_calls.append(
                 {
                     "system_prompt": system_prompt,
@@ -124,10 +120,7 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 }
             )
             if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
-                question = str(
-                    payload.get("component_ref", {}).get("user_facing_question")
-                    or ""
-                ).casefold()
+                question = str(payload.get("component_ref", {}).get("user_facing_question") or "").casefold()
                 claim = self._component_claim(question)
                 return json.dumps(
                     {
@@ -297,13 +290,7 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "text": text,
                 "score": 1.0 - (index * 0.01),
                 "credibility": 4,
-                "source_tier": (
-                    "primary"
-                    if source_id == 107
-                    else "academic"
-                    if source_id == 106
-                    else "official"
-                ),
+                "source_tier": ("primary" if source_id == 107 else "academic" if source_id == 106 else "official"),
                 "source_class": source_class,
                 "currentness_signal": "current",
                 "readable_status": "readable",
@@ -312,17 +299,13 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "query_ref": query_ref,
                 "_provider": "offline_fake_search",
             }
-            for index, (source_id, title, text, source_class, query_ref) in enumerate(
-                facts
-            )
+            for index, (source_id, title, text, source_class, query_ref) in enumerate(facts)
         ]
 
 
 def _forbid_direct_semantic_producer(monkeypatch: pytest.MonkeyPatch) -> None:
     def forbidden(*_args: Any, **_kwargs: Any) -> Any:
-        raise AssertionError(
-            "qualifying Northstar run must not execute the direct semantic producer"
-        )
+        raise AssertionError("qualifying Northstar run must not execute the direct semantic producer")
 
     monkeypatch.setattr(
         multicomponent_runtime,
@@ -333,9 +316,7 @@ def _forbid_direct_semantic_producer(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _role_call_count(harness: NorthstarHarness, role: str) -> int:
     system_prompt = ROLE_SYSTEM_PROMPTS[role]
-    return sum(
-        call.get("system_prompt") == system_prompt for call in harness.model_calls
-    )
+    return sum(call.get("system_prompt") == system_prompt for call in harness.model_calls)
 
 
 def _assert_northstar_product_state(
@@ -357,20 +338,14 @@ def _assert_northstar_product_state(
     assert graph["graph_status"] == "ready"
     assert graph["requested_synthesis_directive"] == expected_directive
     assert (
-        kernel.state.initial_answer_contract["question_meaning_metadata"][
-            "requested_synthesis_directive"
-        ]
+        kernel.state.initial_answer_contract["question_meaning_metadata"]["requested_synthesis_directive"]
         == expected_directive
     )
     assert [node["status"] for node in graph["synthesis_nodes"]] == [
         "admitted",
         "admitted",
     ]
-    synthesis_input_ids = {
-        ref["node_id"]
-        for node in graph["synthesis_nodes"]
-        for ref in node["input_node_refs"]
-    }
+    synthesis_input_ids = {ref["node_id"] for node in graph["synthesis_nodes"] for ref in node["input_node_refs"]}
     assert graph["component_nodes"][0]["node_id"] not in synthesis_input_ids
     assert graph["component_nodes"][1]["node_id"] not in synthesis_input_ids
 
@@ -381,9 +356,7 @@ def _assert_northstar_product_state(
         ROLE_SYNTHESIS_DPRIME: 2,
         ROLE_SCRUTINEER: 1,
     }
-    assert {
-        role: _role_call_count(harness, role) for role in expected_role_counts
-    } == expected_role_counts
+    assert {role: _role_call_count(harness, role) for role in expected_role_counts} == expected_role_counts
     assert graph["logical_accounting"] == {
         "component_analyst_evaluations": 5,
         "component_dprime_evaluations": 5,
@@ -411,30 +384,22 @@ def _assert_northstar_product_state(
         analyst_sequence = next(
             action.sequence
             for action in actions
-            if action.action_type
-            is ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE
+            if action.action_type is ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE
             and action.inputs.get("logical_evaluation_key") == component_id
         )
         dprime_sequence = next(
             action.sequence
             for action in actions
-            if action.action_type
-            is ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE
+            if action.action_type is ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE
             and action.inputs.get("logical_evaluation_key") == component_id
         )
         admission_sequence = next(
             action.sequence
             for action in actions
-            if action.action_type
-            is ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE
+            if action.action_type is ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE
             and action.inputs.get("component_id") == component_id
         )
-        assert (
-            analyst_sequence
-            < dprime_sequence
-            < admission_sequence
-            < graph_structure_sequence
-        )
+        assert analyst_sequence < dprime_sequence < admission_sequence < graph_structure_sequence
     e_admission_sequence = next(
         action.sequence
         for action in actions
@@ -451,24 +416,15 @@ def _assert_northstar_product_state(
     graph_finalize_sequence = next(
         action.sequence
         for action in actions
-        if action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
-        and action.inputs.get("operation") == "finalize"
+        if action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE and action.inputs.get("operation") == "finalize"
     )
     sufficiency_sequence = next(
-        action.sequence
-        for action in actions
-        if action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE
+        action.sequence for action in actions if action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE
     )
     packet_sequence = next(
-        action.sequence
-        for action in actions
-        if action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE
+        action.sequence for action in actions if action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE
     )
-    author_sequence = next(
-        action.sequence
-        for action in actions
-        if action.action_type is ActionType.AUTHOR_EXECUTE
-    )
+    author_sequence = next(action.sequence for action in actions if action.action_type is ActionType.AUTHOR_EXECUTE)
     assert e_admission_sequence < s_validation_sequence
     assert graph_finalize_sequence < sufficiency_sequence < packet_sequence < author_sequence
 
@@ -476,9 +432,7 @@ def _assert_northstar_product_state(
     packet = captured["packet_handoff"].packet
     payload = captured["packet_handoff"].author_payload
     assert sufficiency["final_answer_allowed"] is True
-    assert sufficiency["multicomponent_graph_consumption"][
-        "graph_digest"
-    ] == graph["graph_digest"]
+    assert sufficiency["multicomponent_graph_consumption"]["graph_digest"] == graph["graph_digest"]
     assert len(packet.direct_component_entries) == 5
     assert len(packet.admitted_synthesis_entries) == 2, json.dumps(
         {
@@ -505,10 +459,7 @@ def _assert_northstar_product_state(
         DEFAULT_SYSTEM["synth_evaluator"],
         DEFAULT_SYSTEM["scrutineer"],
     }
-    assert not any(
-        call.get("system_prompt") in legacy_role_prompts
-        for call in harness.model_calls
-    )
+    assert not any(call.get("system_prompt") in legacy_role_prompts for call in harness.model_calls)
     assert outcome.report == NORTHSTAR_REPORT
     normalized_report = " ".join(outcome.report.split())
     assert "$1,200" in normalized_report
@@ -516,6 +467,21 @@ def _assert_northstar_product_state(
     assert "at or below $60,000" in normalized_report
     assert "file the paper application" in normalized_report
     assert "not claiming the bonus" in normalized_report
+    assert harness.search_calls
+    initial_search_queries = harness.search_calls[0]["queries"]
+    query_plan_projection = kernel.state.projections["query_plan_admission"]
+    admission = query_plan_projection["initial_query_admission"]
+    assert initial_search_queries == admission["immediate_dispatch_queries"]
+    assert len(initial_search_queries) == 5
+    assert len(set(initial_search_queries)) == 5
+    admitted_items = [
+        item
+        for item in query_plan_projection["query_plan_ref"]["items"]
+        if item.get("status") == "finalized" and item.get("metadata", {}).get("accepted_component_ref")
+    ]
+    assert [item["authorized_query"] for item in admitted_items] == (initial_search_queries)
+    assert query_plan_projection["small_global_initial_query_cap_applied"] is False
+    assert query_plan_projection["post_result_followup_dispatched"] is False
     assert harness.forbidden_live_calls == []
 
 
@@ -581,23 +547,14 @@ def test_northstar_ordinary_pipeline_reaches_runoutcome_report(
                 for item in ledger.get("source_requirements") or ()
             ],
             "requirement_links": [
-                {
-                    key: item.get(key)
-                    for key in ("requirement_id", "candidate_id", "status")
-                }
+                {key: item.get(key) for key in ("requirement_id", "candidate_id", "status")}
                 for item in ledger.get("requirement_links") or ()
             ],
             "custody_gaps": [
-                {
-                    key: item.get(key)
-                    for key in ("requirement_id", "gap_type", "reason")
-                }
+                {key: item.get(key) for key in ("requirement_id", "gap_type", "reason")}
                 for item in ledger.get("custody_gaps") or ()
             ],
-            "candidate_ids": [
-                item.get("candidate_id")
-                for item in ledger.get("candidate_records") or ()
-            ],
+            "candidate_ids": [item.get("candidate_id") for item in ledger.get("candidate_records") or ()],
         }
         pytest.fail(json.dumps(diagnostic, sort_keys=True))
 
@@ -644,52 +601,15 @@ def test_numbered_and_imperative_northstar_queries_reach_same_governed_report(
             HANDOFF_AUTHOR,
         ),
     )
-    assessments: list[dict[str, Any]] = []
-    question_meaning_records: list[dict[str, Any]] = []
     scheduler_directives_before_release: list[str] = []
-    real_records_builder = (
-        multicomponent_runtime.build_deterministic_search_work_runtime_records
-    )
-    real_qmr_builder = (
-        multicomponent_runtime.build_question_meaning_record_from_search_work_plan
-    )
-    real_release_scheduler_context = (
-        RunKernel.release_multicomponent_scheduler_transient_context
-    )
-
-    def tracked_records_builder(runtime_input: Any) -> Any:
-        records = real_records_builder(runtime_input)
-        if runtime_input.safe_query_preview == query:
-            assessments.append(records.query_shape_assessment.to_dict())
-        return records
-
-    def tracked_qmr_builder(**kwargs: Any) -> Any:
-        record = real_qmr_builder(**kwargs)
-        if kwargs.get("query") == query and record is not None:
-            question_meaning_records.append(record.to_dict())
-        return record
+    real_release_scheduler_context = RunKernel.release_multicomponent_scheduler_transient_context
 
     def tracked_release_scheduler_context(run_kernel: RunKernel) -> None:
         scheduler_directives_before_release.append(
-            str(
-                run_kernel.state.multicomponent_scheduler_context.get(
-                    "requested_synthesis_directive"
-                )
-                or ""
-            )
+            str(run_kernel.state.multicomponent_scheduler_context.get("requested_synthesis_directive") or "")
         )
         real_release_scheduler_context(run_kernel)
 
-    monkeypatch.setattr(
-        multicomponent_runtime,
-        "build_deterministic_search_work_runtime_records",
-        tracked_records_builder,
-    )
-    monkeypatch.setattr(
-        multicomponent_runtime,
-        "build_question_meaning_record_from_search_work_plan",
-        tracked_qmr_builder,
-    )
     monkeypatch.setattr(
         RunKernel,
         "release_multicomponent_scheduler_transient_context",
@@ -709,7 +629,21 @@ def test_numbered_and_imperative_northstar_queries_reach_same_governed_report(
             CostAccumulator(),
         )
     except multicomponent_runtime.OrdinaryMulticomponentRuntimeError as exc:
-        pytest.fail(f"structured Northstar lane failed: {exc}")
+        kernel = captured["semantic_run_kernel"]
+        ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+        pytest.fail(
+            json.dumps(
+                {
+                    "error": str(exc),
+                    "search_calls": harness.search_calls,
+                    "answer_components": (kernel.state.initial_answer_contract or {}).get("answer_components"),
+                    "source_requirements": ledger.get("source_requirements"),
+                    "requirement_links": ledger.get("requirement_links"),
+                    "candidate_records": ledger.get("candidate_records"),
+                },
+                sort_keys=True,
+            )
+        )
 
     _assert_northstar_product_state(
         captured=captured,
@@ -717,42 +651,32 @@ def test_numbered_and_imperative_northstar_queries_reach_same_governed_report(
         outcome=outcome,
         expected_directive=expected_directive,
     )
-    assert len(assessments) == 1
-    assert len(question_meaning_records) == 1
-    assessment = assessments[0]
-    question_meaning_record = question_meaning_records[0]
     kernel = captured["run_kernel"]
+    question_meaning_record = kernel.state.search_planner_proposal_projection["question_meaning_record"]
+    assessment_metadata = question_meaning_record["metadata"]
     accepted = kernel.state.initial_answer_contract
     cross_inputs = [
         item["input_packet"]
         for item in harness.role_input_packets
-        if item["system_prompt"]
-        == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
+        if item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
     ]
     assert len(cross_inputs) == 1
     assert len(scheduler_directives_before_release) == 1
 
     directive_values = [
-        assessment["metadata"]["requested_synthesis_directive"],
         question_meaning_record["metadata"]["requested_synthesis_directive"],
         accepted["question_meaning_metadata"]["requested_synthesis_directive"],
         scheduler_directives_before_release[0],
         cross_inputs[0]["requested_synthesis_directive"],
     ]
     assert directive_values == [expected_directive] * len(directive_values)
-    assert assessment["metadata"]["structured_route_posture"] == "QUALIFIED"
-    assert (
-        assessment["metadata"]["structured_route_syntax_kind"]
-        == expected_syntax_kind
-    )
-    assert assessment["metadata"]["route_qualification_behavior_changed"] is True
-    assert assessment["metadata"]["query_plan_behavior_changed"] is False
-    assert assessment["metadata"]["provider_search_behavior_changed"] is False
+    assert assessment_metadata["structured_route_posture"] == "QUALIFIED"
+    assert assessment_metadata["structured_route_syntax_kind"] == expected_syntax_kind
+    assert assessment_metadata["route_qualification_behavior_changed"] is True
+    assert assessment_metadata["query_plan_behavior_changed"] is False
+    assert assessment_metadata["provider_search_behavior_changed"] is False
 
-    component_questions = [
-        item["user_facing_subquestion"]
-        for item in assessment["component_candidates"]
-    ]
+    component_questions = [item["user_facing_question"] for item in question_meaning_record["answer_components"]]
     assert len(component_questions) == 5
     assert all(expected_directive not in question for question in component_questions)
     for expected_fragment, question in zip(
@@ -760,15 +684,20 @@ def test_numbered_and_imperative_northstar_queries_reach_same_governed_report(
         component_questions,
     ):
         assert expected_fragment in question.casefold()
-    assert [
-        item["component_id"]
-        for item in assessment["component_candidates"]
-    ] == [f"component-{index}" for index in range(1, 6)]
+    assert [item["component_id"] for item in question_meaning_record["answer_components"]] == [
+        f"component-{index}" for index in range(1, 6)
+    ]
     assert len(accepted["accepted_answer_component_refs"]) == 5
-    assert not any(
-        action.action_type.value.startswith("specialist")
-        for action in kernel.state.issued_actions.values()
+    component_refs = {item["component_id"]: item for item in accepted["accepted_answer_component_refs"]}
+    first_source_ids = set(component_refs["component-1"].get("source_obligation_candidate_ids", []))
+    assert "obligation:source_bound_numeric" in first_source_ids
+    assert "obligation:legal_current_primary" not in first_source_ids
+    assert "obligation:conflict_resolution" not in first_source_ids
+    assert any(
+        item["candidate_id"] == "obligation:legal_current_primary"
+        for item in question_meaning_record["source_obligation_candidate_refs"]
     )
+    assert not any(action.action_type.value.startswith("specialist") for action in kernel.state.issued_actions.values())
 
 
 def test_northstar_thin_proplex_main_prints_ordinary_report(
@@ -894,9 +823,7 @@ def test_query_shaped_metadata_alone_does_not_enable_custody_gap_exception() -> 
                 "requirement_id": "provider_job_requirement:job-1",
                 "status": "satisfied",
                 "linked_candidate_ids": ["evidence:1"],
-                "source_obligation_candidate_ids": [
-                    "provider_job_requirement:job-1"
-                ],
+                "source_obligation_candidate_ids": ["provider_job_requirement:job-1"],
             }
         ],
         "custody_gaps": [
@@ -1150,19 +1077,6 @@ def test_query_shape_six_explicit_components_do_not_bypass_planning_authority() 
         )
     )
     assert len(records.query_shape_assessment.component_candidates) == 6
-    assert (
-        records.query_shape_assessment.metadata.get(
-            "explicit_factual_component_list"
-        )
-        is False
-    )
-    assert (
-        records.query_shape_assessment.metadata.get("structured_route_posture")
-        == "AMBIGUOUS"
-    )
-    assert (
-        records.query_shape_assessment.metadata.get(
-            "requested_synthesis_directive"
-        )
-        is None
-    )
+    assert records.query_shape_assessment.metadata.get("explicit_factual_component_list") is False
+    assert records.query_shape_assessment.metadata.get("structured_route_posture") == "AMBIGUOUS"
+    assert records.query_shape_assessment.metadata.get("requested_synthesis_directive") is None

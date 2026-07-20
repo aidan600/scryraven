@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
@@ -47,9 +46,8 @@ REVISION_PROMPT = ROOT / "core" / "search_planner_revision_model_prompt.py"
 RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
-    ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
+    ROOT / "docs" / "roadmap" / "SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md",
 )
 
 RUN_ID = "run:ag-search-planner-revision-01"
@@ -1051,28 +1049,20 @@ def test_static_closed_surface_guard_for_search_planner_revision() -> None:
     assert "SEARCH_PLANNER_REVISE" in kernel_text
     assert "SEARCH_PLANNER_REVISED" in kernel_text
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert diff.stdout.strip() == ""
+    pipeline_source = _text(PIPELINE)
+    assert "revision_adapter=revision_adapter" in pipeline_source
+    assert "revision_adapter = deps.search_planner_revision_adapter" in pipeline_source
+    assert 'getattr(deps, "search_planner_revision_adapter", None)' not in pipeline_source
+    assert "execute_initial_query_strategy_convergence(" in pipeline_source
 
 
-def test_docs_use_merge_stable_search_planner_revision_posture() -> None:
+def test_docs_record_revision_authority_split() -> None:
     required = (
-        "PR #329 / AG-SEARCH-PLANNER-REVISION-01",
-        "AG-SEARCH-PLANNER-REVISION-01",
-        "planner revision consumes Scout report",
-        "Scout hints remain non-evidence",
-        "non-citation",
-        "non-source-obligation satisfaction",
-        "planner revision emits passive amendment candidates",
-        "current_answer_contract changes only through existing admission/application path",
-        "SearchExecutor, fetch/read/retrieval remain closed",
-        "post-merge next gate was AG-SEARCH-EXECUTOR-HANDOFF-01",
+        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "SearchPlannerRevision query-direction-only changes cannot mutate the AnswerContract",
+        "contractual revision reaches planning only after existing amendment admission and application",
+        "Scout reports remain non-evidence",
+        "No live provider, model, search, recon, fetch/read, or retrieval call was made",
     )
     forbidden = (
         "planner revision directly mutates contracts",
@@ -1081,8 +1071,7 @@ def test_docs_use_merge_stable_search_planner_revision_posture() -> None:
         "Scout hints create citations",
         "planner revision executes SearchExecutor",
         "planner revision fetches or reads pages",
-        "live validation is now next",
-        "partial-answer readiness is now next",
+        "planner revision bypasses amendment admission",
     )
     for path in DOCS:
         text = " ".join(_text(path).split())

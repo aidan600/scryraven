@@ -25,6 +25,9 @@ CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
 TECH_DEBT = DOCS / "TECH_DEBT_REGISTER.md"
 DISCOVER_HANDOFF_BRIEF = DOCS / "roadmap" / "DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md"
+QUERY_CONVERGENCE_BRIEF = (
+    DOCS / "roadmap" / "SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md"
+)
 EXACT_URL_BRIEF = DOCS / "roadmap" / "EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md"
 CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
@@ -58,6 +61,7 @@ MARKERS = (
     "SPECIALIST-S1-QUANTITATIVE",
     "QUANT-FINALIZATION-CONTAINMENT",
     "PROVIDER-CAPABILITY-ROUTING",
+    "SEARCHOS-QUERY-CONVERGENCE",
 )
 QUANT_FINALIZATION_RUNTIME_SHA = "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
 QUANT_LINEAGE_RUNTIME_SHA = "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
@@ -67,7 +71,8 @@ PROVIDER_ROUTING_RUNTIME_SHA = "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pra
 ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = DISCOVER_HANDOFF_RUNTIME_SHA
+QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = QUERY_CONVERGENCE_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
@@ -508,8 +513,10 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     roadmap = _collapsed(ROADMAP)
 
     assert PROVIDER_ROUTING_RUNTIME_SHA in census
-    for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING, CURRENT_STATE, ROADMAP):
+    for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING):
         assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(owner)
+    for owner in (CURRENT_STATE, ROADMAP):
+        assert f"Verified-against-runtime: {QUERY_CONVERGENCE_RUNTIME_SHA}" in _read(owner)
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
@@ -639,10 +646,73 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     read_index = roadmap_folded.index("searchos-read-source-and-custody-01")
     navigation_index = roadmap_folded.index("searchos-iterative-navigation-and-retrieval-judgment-01")
     recovery_index = roadmap_folded.index("searchos-gap-recovery-and-stop-convergence-01")
-    assert handoff_index < active_index < query_index < read_index < navigation_index < recovery_index
-    assert "Query strategy is an MVP requirement" in roadmap
+    assert handoff_index < query_index < active_index < read_index < navigation_index < recovery_index
+    assert "Query strategy is now installed" in roadmap
     assert "Map may be inserted later as an optional navigation plugin" in roadmap
-    assert "The complete SearchOS query, search, read" in current
+    assert "SearchOS post-result SearchJudgment, READ, navigation" in current
+
+
+def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> None:
+    current = _collapsed(CURRENT_STATE)
+    roadmap = _collapsed(ROADMAP)
+    brief = _collapsed(QUERY_CONVERGENCE_BRIEF)
+
+    assert QUERY_CONVERGENCE_BRIEF.is_file()
+    assert "Status: completed Build" in brief
+    assert f"Runtime/test commit: {QUERY_CONVERGENCE_RUNTIME_SHA}" in brief
+    for phrase in (
+        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "SearchPlanner proposals remain passive",
+        "Ordinary initial semantic planning uses the selected fast-model SearchPlanner",
+        "the model owns question interpretation, warranted one-to-five component decomposition",
+        "DeterministicSearchPlannerAdapter` is an explicit validation-only fixture",
+        "The typed `search_planner_adapter`, `scout_disambiguation_adapter`, and `search_planner_revision_adapter` `RunDeps` seams are installed",
+        "Invalid JSON, schema, component/query structure, selected-model configuration, or model-call failure stops before proposal acceptance",
+        "Future large-document support must enter this model boundary through bounded safe supplied-context references or summaries",
+        "A transient, non-retained call wrapper supplies the current run's configured local base URL, OpenRouter key, `CostAccumulator`, and `search_planner` cost phase",
+        "The existing underlying model-helper retry and endpoint-fallback policy is unchanged",
+        "RunKernel initial AnswerContract acceptance",
+        "SearchWorkPlan",
+        "QueryPlan remains the sole exact executable-query authority",
+        "searchos_initial_query_allocation_policy_v1",
+        "one primary target",
+        "two admitted initial candidates",
+        "one immediate dispatch per accepted required component",
+        "legacy global low/medium/high `2 / 2 / 3` values are not preserved",
+        "Scout reports remain non-evidence",
+        "required truthful-targeting ambiguity fails closed",
+        "contractual revision reaches planning only after existing amendment admission and application",
+        "No live provider, model, search, recon, fetch/read, or retrieval call was made",
+    ):
+        assert phrase in current
+
+    for phrase in (
+        "Required component count: 5",
+        "Exactly one logical bounded initial planner invocation is made",
+        "Planner transport matrix: selected OpenAI provider/model; exact OpenRouter key; exact Local base URL",
+        "Planner cost accounting: 1 search_planner phase model-call entry; 0 double-counted entries",
+        "Planner connection retention: 0 credential, endpoint, or accumulator objects in governed retained surfaces",
+        "Scout/revision remain uncomposed by default",
+        "semantic interpretation of its hints and revision of the plan must be model-driven",
+        "not semantic quality on arbitrary real-world requests",
+        "Messy narrated one-intent request: 1 model-proposed and accepted component",
+        "Invalid/unavailable model fixtures: 0 QueryPlan admissions; 0 search dispatches; 0 deterministic or legacy fallbacks",
+        "Injected typed path: response-only planner -> Scout direction -> revision -> QueryPlan -> first offline search",
+        "Primary queries admitted: 5",
+        "later SearchJudgment",
+        "No global `N + 5` research cap",
+        "Technical-debt register disposition: No change",
+        "SEARCHOS-READ-SOURCE-AND-CUSTODY-01",
+        "Census ordinary and compatibility webpage-opening callsites",
+        "response-only Linkup/Tavily offline fixtures",
+        "Avoid DNS snapshots",
+    ):
+        assert phrase in brief
+
+    assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
+    assert "active next checkpoint is `SEARCHOS-READ-SOURCE-AND-CUSTODY-01`" in roadmap
+    assert "Later SearchJudgment must inspect the first result set per component" in roadmap
+    assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
@@ -809,8 +879,9 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
     assert "Specialist Proposal-Instance Admission Hardening" in roadmap
     assert "This roadmap grants no live license" in normalized
-    for marker in MARKERS[:-1]:
-        assert marker not in roadmap
+    for marker in MARKERS:
+        if marker != "PROVIDER-CAPABILITY-ROUTING":
+            assert marker not in roadmap
 
 
 def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow() -> None:

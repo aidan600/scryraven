@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
@@ -30,9 +29,8 @@ PROMPT_MODULE = ROOT / "core" / "search_planner_model_prompt.py"
 RUNTIME_MODULE = ROOT / "core" / "search_planner_runtime.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
-    ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
+    ROOT / "docs" / "roadmap" / "SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md",
 )
 
 RUN_ID = "run:ag-search-planner-model-01"
@@ -103,7 +101,7 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
         "source_obligation_candidates": [
             {
                 "candidate_id": "obligation:model-official-current",
-                "obligation_kind": "official_current_source",
+                "obligation_kind": "official_current",
                 "component_candidate_ids": ["component:model-official-threshold"],
                 "strictness": "required",
             }
@@ -116,6 +114,31 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
                 "source_obligation_candidate_ids": ["obligation:model-official-current"],
                 "preferred_source_kinds": ["official"],
                 "recency_requirement": "current for 2026",
+                "metadata": {
+                    "query_strategy_candidates": [
+                        {
+                            "strategy_id": "strategy:model-official-threshold:primary",
+                            "component_id": "component:model-official-threshold",
+                            "candidate_kind": "primary",
+                            "candidate_query_text": (
+                                "Example Permit official filing threshold 2026"
+                            ),
+                            "requested_role": "official_bias",
+                            "source_obligation_candidate_ids": [
+                                "obligation:model-official-current"
+                            ],
+                            "distinct_need_justification": (
+                                "Primary query for the accepted threshold component."
+                            ),
+                            "recon_requirement": {
+                                "posture": "not_needed",
+                                "unresolved_dimension_ids": [],
+                                "candidate_queries": [],
+                                "required_for_truthful_targeting": False,
+                            },
+                        }
+                    ]
+                },
             }
         ],
         "material_ambiguity_posture": "clear",
@@ -410,6 +433,43 @@ def test_model_adapter_component_search_requirements_remain_non_executing() -> N
     assert kernel.state.search_work_plan_projection == {}
 
 
+def test_model_adapter_preserves_query_strategy_and_recon_metadata() -> None:
+    kernel = _kernel()
+    output = _planner_output()
+    strategy = output["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]
+    strategy["recon_requirement"] = {
+        "posture": "optional",
+        "unresolved_dimension_ids": ["dimension:program-alias"],
+        "candidate_queries": [
+            {
+                "dimension_id": "dimension:program-alias",
+                "candidate_query_text": "Example Permit former current name",
+                "query_kind": "disambiguation_probe",
+            }
+        ],
+        "required_for_truthful_targeting": False,
+    }
+    fake = FakeAskModel(json.dumps(output))
+
+    _produce(kernel, _adapter(fake))
+
+    preserved = kernel.state.search_planner_proposal_projection[
+        "component_search_requirements"
+    ][0]["metadata"]["query_strategy_candidates"][0]
+    assert preserved["candidate_query_text"] == (
+        "Example Permit official filing threshold 2026"
+    )
+    assert preserved["recon_posture"] == "optional"
+    assert preserved["recon_unresolved_dimension_ids"] == [
+        "dimension:program-alias"
+    ]
+    assert preserved["recon_candidate_queries_by_dimension"] == {
+        "dimension:program-alias": "Example Permit former current name"
+    }
+
+
 def test_model_output_executing_component_requirement_fails_closed() -> None:
     kernel = _kernel()
     unsafe = deepcopy(_planner_output())
@@ -417,6 +477,52 @@ def test_model_output_executing_component_requirement_fails_closed() -> None:
     fake = FakeAskModel(json.dumps(unsafe))
 
     with pytest.raises(SearchPlannerModelAdapterError, match="closed runtime surfaces"):
+        _produce(kernel, _adapter(fake))
+
+    assert kernel.state.search_planner_proposal_state == {}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("obligation_kind", "invented_model_obligation"),
+        ("strictness", "model_decides_if_needed"),
+    ),
+)
+def test_model_output_with_invented_source_obligation_enum_fails_before_observation(
+    field: str,
+    value: str,
+) -> None:
+    kernel = _kernel()
+    invalid = deepcopy(_planner_output())
+    invalid["source_obligation_candidates"][0][field] = value
+    fake = FakeAskModel(json.dumps(invalid))
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match=f"unsupported value for {field}",
+    ):
+        _produce(kernel, _adapter(fake))
+
+    assert len(fake.calls) == 1
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
+
+
+def test_model_query_strategy_cannot_select_provider_or_model() -> None:
+    kernel = _kernel()
+    unsafe = _planner_output()
+    strategy = unsafe["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]
+    strategy["provider_name"] = "untrusted-provider"
+    strategy["model_selector"] = "untrusted-model"
+    fake = FakeAskModel(json.dumps(unsafe))
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="forbidden provider/model authority",
+    ):
         _produce(kernel, _adapter(fake))
 
     assert kernel.state.search_planner_proposal_state == {}
@@ -461,25 +567,20 @@ def test_static_closed_surface_guard_for_search_planner_model_adapter() -> None:
     for token in ("run_scout(", "SearchExecutor(", "execute_author_action("):
         assert token not in runtime_source
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert diff.stdout.strip() == ""
+    pipeline_source = _text(PIPELINE)
+    assert "execute_initial_query_strategy_convergence(" in pipeline_source
+    assert "planner_adapter = deps.search_planner_adapter" in pipeline_source
+    assert "planner_adapter = SearchPlannerModelAdapter(" in pipeline_source
+    assert "DeterministicSearchPlannerAdapter()" not in pipeline_source
+    assert "execute_query_production_action(" not in pipeline_source
 
 
-def test_docs_use_merge_stable_search_planner_model_posture() -> None:
+def test_docs_record_product_consumed_passive_search_planner_posture() -> None:
     required = (
-        "AG-SEARCH-PLANNER-RUNTIME-01",
-        "AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter",
-        "No live model calls or live validation were run",
-        "PR #327 / AG-SEARCH-PLANNER-MODEL-01",
-        "AG-SCOUT-DISAMBIGUATION-RUNTIME-01",
-        "Scout hints are not evidence",
-        "post-merge next gate is AG-SEARCH-PLANNER-REVISION-01",
+        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "SearchPlanner proposals remain passive",
+        "RunKernel initial AnswerContract acceptance",
+        "No live provider, model, search, recon, fetch/read, or retrieval call was made",
     )
     forbidden = (
         "live validation is now next",
@@ -488,11 +589,11 @@ def test_docs_use_merge_stable_search_planner_model_posture() -> None:
         "model output satisfies source obligations",
         "model planner creates final answer",
         "Author is invoked by planner",
-        "Scout is activated by AG-SEARCH-PLANNER-MODEL-01",
-        "SearchExecutor is activated by AG-SEARCH-PLANNER-MODEL-01",
+        "SearchPlanner admits executable queries",
+        "SearchPlanner selects providers",
     )
     for path in DOCS:
-        text = _text(path)
+        text = " ".join(_text(path).split())
         for needle in required:
             assert needle in text, (path, needle)
         for needle in forbidden:

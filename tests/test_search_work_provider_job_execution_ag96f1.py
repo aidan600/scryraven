@@ -104,6 +104,60 @@ def _search_work_projection() -> dict[str, Any]:
     }
 
 
+def _active_search_work_projection() -> dict[str, Any]:
+    shadow = _search_work_projection()
+    components: list[dict[str, Any]] = []
+    provider_jobs: list[dict[str, Any]] = []
+    for component in shadow["components"]:
+        component_id = component["component_id"]
+        accepted_component_ref = {
+            "component_id": component_id,
+            "component_revision": "1",
+            "component_digest": f"digest:{component_id}",
+            "requirement_posture": "required",
+        }
+        components.append(
+            {
+                "component_id": component_id,
+                "source_obligations": shadow["source_obligations_by_component"][
+                    component_id
+                ],
+                "metadata": {
+                    "accepted_component_ref": accepted_component_ref,
+                    "search_requirement_refs": [
+                        {
+                            "requirement_id": f"requirement:{component_id}",
+                            "component_id": component_id,
+                        }
+                    ],
+                },
+            }
+        )
+        for job in shadow["provider_jobs_by_component"][component_id]:
+            provider_jobs.append(
+                {
+                    "provider_job_id": job["work_id"],
+                    "provider_job_kind": job["work_kind"],
+                    "component_ids": [component_id],
+                    "source_obligation_ids": job["source_obligation_ids"],
+                }
+            )
+    return {
+        "trace_key": "search_work_plan",
+        "passive": False,
+        "runtime_consumed": True,
+        "components": components,
+        "provider_jobs": provider_jobs,
+        "metadata": {
+            "search_work_plan_id": "search-work:ag96f1-active",
+            "accepted_contract_ref": {
+                "contract_version": "1",
+                "contract_digest": "contract-digest:ag96f1",
+            },
+        },
+    }
+
+
 def _adapter() -> Any:
     return build_query_plan_runtime_adapter(
         run_id="ag96f1",
@@ -310,26 +364,61 @@ def test_official_and_numeric_records_do_not_claim_custody_or_calculation() -> N
 def test_runtime_admission_payload_exposes_handoff_without_changing_queries() -> None:
     kernel = RunKernel.start(run_id="ag96f1-runtime", request_id="request")
     action = kernel.authorize_query_plan_admission(
-        inputs={"candidate_source": "researcher", "candidate_count": 4}
+        inputs={"candidate_source": "search_planner", "candidate_count": 4}
     )
     adapter = _adapter()
+    candidate_strategies = [
+        {
+            "strategy_id": "strategy:component-fee:primary",
+            "component_id": "component-fee",
+            "candidate_kind": "primary",
+            "candidate_query_text": "official current filing fee",
+            "requested_role": "official_bias",
+            "source_obligation_candidate_ids": ["obligation-official-fee"],
+        },
+        {
+            "strategy_id": "strategy:component-legal:primary",
+            "component_id": "component-legal",
+            "candidate_kind": "primary",
+            "candidate_query_text": "legal deadline appeal rule",
+            "requested_role": "initial",
+            "source_obligation_candidate_ids": ["obligation-legal-deadline"],
+        },
+        {
+            "strategy_id": "strategy:component-api:primary",
+            "component_id": "component-api",
+            "candidate_kind": "primary",
+            "candidate_query_text": "API parameter documentation",
+            "requested_role": "canonical_bias",
+            "source_obligation_candidate_ids": ["obligation-api-docs"],
+        },
+        {
+            "strategy_id": "strategy:component-numeric:primary",
+            "component_id": "component-numeric",
+            "candidate_kind": "primary",
+            "candidate_query_text": "numeric rate amount source",
+            "requested_role": "initial",
+            "source_obligation_candidate_ids": [
+                "obligation-source-bound-numeric"
+            ],
+        },
+    ]
+    candidate_queries = [
+        strategy["candidate_query_text"] for strategy in candidate_strategies
+    ]
 
     result = execute_query_plan_admission_action(
         action,
         query_authority=adapter,
         router_query_preparation_contract=_router_state(),
-        candidate_queries=[
-            "legal deadline appeal rule",
-            "API parameter documentation",
-            "numeric rate amount source",
-            "official current filing fee",
-        ],
-        candidate_source="researcher",
+        candidate_queries=candidate_queries,
+        candidate_strategies=candidate_strategies,
+        candidate_source="search_planner",
         query_type="rule",
         current_date="June 15, 2026",
         max_queries=4,
         route_runtime_posture=_route_posture(),
-        search_work_projection=_search_work_projection(),
+        search_work_projection=_active_search_work_projection(),
     )
 
     payload = result.observation.payload
@@ -339,6 +428,7 @@ def test_runtime_admission_payload_exposes_handoff_without_changing_queries() ->
     assert result.current_queries == handoff["admitted_query_handoff_summary"][
         "authorized_queries"
     ]
+    assert result.current_queries == candidate_queries
     assert all(isinstance(query, str) for query in result.current_queries)
     assert handoff["behavior_boundary_flags"]["retrieval_behavior_changed"] is False
     assert handoff["behavior_boundary_flags"]["query_plan_admission_order_changed"] is False

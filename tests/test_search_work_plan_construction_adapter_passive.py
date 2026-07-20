@@ -473,7 +473,7 @@ def test_passive_boundary_static_import_and_call_scan() -> None:
     assert called_names.isdisjoint(forbidden_calls)
 
 
-def test_no_runtime_consumer_imports_construction_adapter() -> None:
+def test_only_converged_query_runtime_consumes_active_construction_adapter() -> None:
     runtime_paths = (
         ROOT / "core" / "run_kernel.py",
         ROOT / "core" / "query_plan.py",
@@ -486,6 +486,7 @@ def test_no_runtime_consumer_imports_construction_adapter() -> None:
         "search_work_plan_construction",
     }
 
+    importers: list[Path] = []
     for path in runtime_paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         imported_names: set[str] = set()
@@ -494,4 +495,10 @@ def test_no_runtime_consumer_imports_construction_adapter() -> None:
                 imported_names.update(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported_names.add(node.module)
-        assert imported_names.isdisjoint(forbidden_modules), path
+        if not imported_names.isdisjoint(forbidden_modules):
+            importers.append(path)
+
+    assert importers == [ROOT / "core" / "query_production_runtime.py"]
+    runtime_source = importers[0].read_text(encoding="utf-8")
+    assert "observe_contract_bound_search_work_plan_construction(" in runtime_source
+    assert "run_search_work_shadow_lane(" not in runtime_source

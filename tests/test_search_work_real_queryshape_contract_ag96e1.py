@@ -7,7 +7,10 @@ from typing import Any, Mapping
 
 import pytest
 
-from core.query_production_runtime import execute_query_production_action
+from core.query_production_runtime import (
+    QueryStrategyConvergenceError,
+    execute_query_production_action,
+)
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_kernel import QUERY_PLAN_ADMISSION_STAGE, QUERY_PRODUCTION_STAGE, RunKernel
@@ -778,18 +781,22 @@ def test_complexity_mismatch_is_shadow_recorded_without_mutating_selected_mode()
     assert lane["query_text_generated"] is False
 
 
-def test_query_production_output_remains_unchanged_with_real_shadow_path() -> None:
+def test_real_shadow_path_cannot_restore_retired_legacy_query_production() -> None:
     query = "What is the current official filing fee for Form I-130?"
     baseline_contract, baseline_route = _contract(query)
     shadow_contract, shadow_route = _contract(query)
     baseline_kernel = RunKernel.start(run_id="ag96e1-baseline", request_id="request")
     shadow_kernel = RunKernel.start(run_id="ag96e1-shadow", request_id="request")
 
-    baseline = _query_production_result(
-        baseline_kernel,
-        query=query,
-        run_contract_projection=baseline_contract,
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            baseline_kernel,
+            query=query,
+            run_contract_projection=baseline_contract,
+        )
     action = shadow_kernel.authorize_run_contract_synthesis(inputs={"fixture": True})
     shadow_kernel.reduce(
         execute_run_contract_synthesis_action(
@@ -810,15 +817,15 @@ def test_query_production_output_remains_unchanged_with_real_shadow_path() -> No
         safe_query_preview=query,
         current_date_ref={"id": "current-date:test"},
     )
-    with_lane = _query_production_result(
-        shadow_kernel,
-        query=query,
-        run_contract_projection=shadow_contract,
-    )
-
-    assert with_lane.candidate_queries == baseline.candidate_queries
-    assert with_lane.candidate_source == baseline.candidate_source
-    assert with_lane.contract_source_requirement_hints == baseline.contract_source_requirement_hints
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            shadow_kernel,
+            query=query,
+            run_contract_projection=shadow_contract,
+        )
 
 
 def test_fallback_path_is_tagged_when_deterministic_records_fail(monkeypatch: Any) -> None:
@@ -889,7 +896,7 @@ def test_redaction_preserves_sensitive_key_boundary() -> None:
         assert sentinel not in encoded
 
 
-def test_pipeline_remains_one_pass_through_lane_call_without_classifier_logic() -> None:
+def test_pipeline_has_no_shadow_lane_or_classifier_logic() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
     tree = ast.parse(source)
     calls = [
@@ -900,7 +907,7 @@ def test_pipeline_remains_one_pass_through_lane_call_without_classifier_logic() 
         and node.func.id == "run_search_work_shadow_lane"
     ]
 
-    assert len(calls) == 1
+    assert calls == []
     assert "build_deterministic_search_work_runtime_records" not in source
     assert "QueryShapeAssessment" not in source
     assert "ContractResolutionRecord" not in source
