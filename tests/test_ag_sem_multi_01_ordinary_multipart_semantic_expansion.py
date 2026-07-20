@@ -8,12 +8,9 @@ import pytest
 
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
-from core.ordinary_semantic_producer_runtime import (
-    ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP,
-    SKIP_REASON_COMPONENT_CAP_EXCEEDED,
-    OrdinarySemanticProducerHandoffStatus,
-)
+from core.ordinary_semantic_producer_runtime import OrdinarySemanticProducerHandoffStatus
 from core.protocols import NullStatusWriter
+from core.search_planner_runtime import SearchPlannerRuntimeError
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -428,21 +425,34 @@ def test_component_cap_exceeded_skips_semantic_production_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured, harness, _outcome = _run_multipart(tmp_path, monkeypatch, cap=True)
+    harness = _MultipartPermitHarness(tmp_path, cap=True)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
 
-    assert ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP == 5
-    assert captured["semantic_handoff_result"].status is (
-        OrdinarySemanticProducerHandoffStatus.SKIPPED
-    )
-    assert captured["semantic_handoff_result"].skipped_reason == (
-        SKIP_REASON_COMPONENT_CAP_EXCEEDED
-    )
-    kernel = captured["run_kernel"]
-    assert not kernel.state.initial_answer_contract
-    assert not kernel.state.semantic_observation_admission_history
-    assert not kernel.state.component_coverage_history
-    packet = captured["packet_handoff"].packet
-    assert packet.semantic_content_coverage_ref_projection.get("available") is not True
-    assert tuple(packet.semantic_packet_evidence_bindings) == ()
-    if harness.author_prompts:
-        assert "CONTROLLED SEMANTIC CONTEXT" not in harness.author_prompts[0]
+    with pytest.raises(
+        SearchPlannerRuntimeError,
+        match="exceeds the five-component acceptance ceiling",
+    ):
+        orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-06-24",
+                session_id="ag-sem-multi-01-session",
+                run_id="ag-sem-multi-01-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert harness.search_calls == []
+    assert harness.author_prompts == []
+    assert captured.get("semantic_handoff_called") is not True
+    assert captured.get("packet_handoff_called") is not True

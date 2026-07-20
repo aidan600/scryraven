@@ -284,6 +284,7 @@ class DeterministicSearchPlannerAdapter:
             )
         )
         assessment = records.query_shape_assessment
+        assessment_metadata = _safe_mapping(assessment.metadata)
         source_kind_by_id = {
             candidate.candidate_id: candidate.kind.value for candidate in assessment.source_obligation_candidates
         }
@@ -399,7 +400,22 @@ class DeterministicSearchPlannerAdapter:
                 "Interpret the request as accepted, source-bound required "
                 "components with provider-neutral initial query strategy."
             ),
-            "requested_output": ("Answer every required component with bounded source support."),
+            "requested_output": (
+                _clean_text(
+                    assessment_metadata.get("requested_synthesis_directive"),
+                    limit=300,
+                )
+                or "Answer every required component with bounded source support."
+            ),
+            # These compatibility fields are part of this explicitly injected
+            # fixture's own proposal. They do not override model-adapter output.
+            "explicit_factual_component_list": (
+                assessment_metadata.get("explicit_factual_component_list") is True
+            ),
+            "requested_synthesis_directive": _clean_text(
+                assessment_metadata.get("requested_synthesis_directive"),
+                limit=360,
+            ),
             "semantic_slots": [
                 {
                     "slot_id": "slot:subject",
@@ -1003,6 +1019,14 @@ def _question_meaning_record_from_adapter_result(
             metadata={"component_search_requirement_count": len(component_search_requirements)},
         )
 
+    adapter_explicit_component_list = adapter_result.get(
+        "explicit_factual_component_list"
+    )
+    explicit_factual_component_list = (
+        adapter_explicit_component_list is True
+        if "explicit_factual_component_list" in adapter_result
+        else len(components) > 1
+    )
     metadata = {
         "search_planner_schema_version": SEARCH_PLANNER_SCHEMA_VERSION,
         "planner_phase": "AG-SEARCH-PLANNER-RUNTIME-01",
@@ -1033,12 +1057,13 @@ def _question_meaning_record_from_adapter_result(
         ),
         "model_proposed_component_count": len(components),
         # Existing downstream multi-component consumers use these compatibility
-        # fields. They now reflect the accepted model proposal mechanically;
-        # deterministic query-shape assessment no longer decides their values.
-        "explicit_factual_component_list": len(components) > 1,
+        # fields. Ordinary model output derives them mechanically from the
+        # accepted proposal; explicit fixtures may carry their own posture.
+        "explicit_factual_component_list": explicit_factual_component_list,
         "requested_synthesis_directive": (
             _clean_text(
-                adapter_result.get("requested_output")
+                adapter_result.get("requested_synthesis_directive")
+                or adapter_result.get("requested_output")
                 or adapter_result.get("question_meaning_summary"),
                 limit=360,
             )
