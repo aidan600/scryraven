@@ -333,7 +333,16 @@ def test_static_no_production_consumer_guard() -> None:
                 elif isinstance(func, ast.Attribute):
                     called_names.add(func.attr)
 
-        assert imported_names.isdisjoint(forbidden_modules), path
+        if path.name == "query_production_runtime.py":
+            assert imported_names & forbidden_modules == {
+                "core.search_work_plan_construction"
+            }
+            assert (
+                "observe_contract_bound_search_work_plan_construction"
+                in called_names
+            )
+        else:
+            assert imported_names.isdisjoint(forbidden_modules), path
         assert "observe_search_work_plan_construction" not in called_names, path
 
     assert "core.search_work_plan_construction" not in RUN_KERNEL_MODULE.read_text(

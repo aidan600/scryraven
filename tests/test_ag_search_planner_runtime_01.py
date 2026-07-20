@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
@@ -33,9 +32,8 @@ RUNTIME_MODULE = ROOT / "core" / "search_planner_runtime.py"
 RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
-    ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
+    ROOT / "docs" / "roadmap" / "SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md",
 )
 
 RUN_ID = "run:ag-search-planner-runtime-01"
@@ -472,7 +470,7 @@ def test_projection_excludes_raw_private_sentinels() -> None:
     assert '"provider_payload":' not in trace_json
 
 
-def test_static_closed_surface_guard_and_pipeline_line_delta_zero() -> None:
+def test_static_closed_surface_guard_and_ordinary_pipeline_consumption() -> None:
     forbidden_imports = {
         "core.run_kernel",
         "core.pipeline_orchestrator",
@@ -499,19 +497,16 @@ def test_static_closed_surface_guard_and_pipeline_line_delta_zero() -> None:
     assert "SEARCH_PLANNER_PRODUCE" in _text(RUN_KERNEL)
     assert "SEARCH_PLANNER_PRODUCED" in _text(RUN_KERNEL)
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert diff.stdout.strip() == ""
+    pipeline_source = _text(PIPELINE)
+    assert "execute_initial_query_strategy_convergence(" in pipeline_source
+    assert "query_plan_admission_inputs_from_query_production_projection(" in pipeline_source
+    assert "execute_query_production_action(" not in pipeline_source
 
 
-def test_docs_use_merge_stable_planner_runtime_posture() -> None:
+def test_docs_record_converged_planner_runtime_posture() -> None:
     for path in DOCS:
-        text = _text(path)
-        assert "AG-SEARCH-PLANNER-RUNTIME-01 completes" in text, path
-        assert "AG-SEARCH-PLANNER-MODEL-01" in text, path
-        assert "post-merge next gate is AG-SEARCH-PLANNER-RUNTIME-01" not in text, path
+        text = " ".join(_text(path).split())
+        assert "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in text, path
+        assert "SearchPlanner proposals remain passive" in text, path
+        assert "RunKernel initial AnswerContract acceptance" in text, path
+        assert "legacy Brave/recon-rewriter/researcher" in text, path

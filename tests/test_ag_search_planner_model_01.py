@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
@@ -30,9 +29,8 @@ PROMPT_MODULE = ROOT / "core" / "search_planner_model_prompt.py"
 RUNTIME_MODULE = ROOT / "core" / "search_planner_runtime.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
-    ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
+    ROOT / "docs" / "roadmap" / "SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md",
 )
 
 RUN_ID = "run:ag-search-planner-model-01"
@@ -461,25 +459,18 @@ def test_static_closed_surface_guard_for_search_planner_model_adapter() -> None:
     for token in ("run_scout(", "SearchExecutor(", "execute_author_action("):
         assert token not in runtime_source
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert diff.stdout.strip() == ""
+    pipeline_source = _text(PIPELINE)
+    assert "execute_initial_query_strategy_convergence(" in pipeline_source
+    assert "DeterministicSearchPlannerAdapter()" in pipeline_source
+    assert "execute_query_production_action(" not in pipeline_source
 
 
-def test_docs_use_merge_stable_search_planner_model_posture() -> None:
+def test_docs_record_product_consumed_passive_search_planner_posture() -> None:
     required = (
-        "AG-SEARCH-PLANNER-RUNTIME-01",
-        "AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter",
-        "No live model calls or live validation were run",
-        "PR #327 / AG-SEARCH-PLANNER-MODEL-01",
-        "AG-SCOUT-DISAMBIGUATION-RUNTIME-01",
-        "Scout hints are not evidence",
-        "post-merge next gate is AG-SEARCH-PLANNER-REVISION-01",
+        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "SearchPlanner proposals remain passive",
+        "RunKernel initial AnswerContract acceptance",
+        "No live provider, model, search, recon, fetch/read, or retrieval call was made",
     )
     forbidden = (
         "live validation is now next",
@@ -488,11 +479,11 @@ def test_docs_use_merge_stable_search_planner_model_posture() -> None:
         "model output satisfies source obligations",
         "model planner creates final answer",
         "Author is invoked by planner",
-        "Scout is activated by AG-SEARCH-PLANNER-MODEL-01",
-        "SearchExecutor is activated by AG-SEARCH-PLANNER-MODEL-01",
+        "SearchPlanner admits executable queries",
+        "SearchPlanner selects providers",
     )
     for path in DOCS:
-        text = _text(path)
+        text = " ".join(_text(path).split())
         for needle in required:
             assert needle in text, (path, needle)
         for needle in forbidden:

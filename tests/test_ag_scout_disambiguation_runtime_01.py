@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
@@ -41,9 +40,8 @@ RUNTIME_MODULE = ROOT / "core" / "scout_disambiguation_runtime.py"
 RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
-    ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
+    ROOT / "docs" / "roadmap" / "SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md",
 )
 
 RUN_ID = "run:ag-scout-disambiguation-runtime-01"
@@ -979,31 +977,19 @@ def test_static_closed_surface_guard_for_scout_disambiguation_runtime() -> None:
     assert "SCOUT_DISAMBIGUATE" in _text(RUN_KERNEL)
     assert "SCOUT_DISAMBIGUATION_REPORTED" in _text(RUN_KERNEL)
 
-    diff = subprocess.run(
-        ["git", "diff", "--numstat", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    assert diff.stdout.strip() == ""
+    pipeline_source = _text(PIPELINE)
+    assert "scout_adapter=scout_adapter" in pipeline_source
+    assert 'getattr(deps, "scout_disambiguation_adapter", None)' in pipeline_source
+    assert "brave_reconnaissance(" not in pipeline_source
 
 
-def test_docs_use_merge_stable_scout_disambiguation_posture() -> None:
+def test_docs_record_product_consumed_non_evidence_scout_posture() -> None:
     required = (
-        "PR #327 / AG-SEARCH-PLANNER-MODEL-01",
-        "AG-SCOUT-DISAMBIGUATION-RUNTIME-01",
-        "RunKernel-authorized",
-        "report-only",
-        "Serper-shaped",
-        "fake injected adapters only",
-        "No live Serper/search/provider/model/fetch/read/retrieval calls were run",
-        "Scout hints are not evidence",
-        "not citations",
-        "not source-obligation satisfaction",
-        "Scout does not mutate contracts",
-        "Scout does not revise planner output",
-        "post-merge next gate is AG-SEARCH-PLANNER-REVISION-01",
+        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "Scout reports remain non-evidence",
+        "optional injected response-only Scout adapter",
+        "required truthful-targeting ambiguity fails closed",
+        "No live provider, model, search, recon, fetch/read, or retrieval call was made",
     )
     forbidden = (
         "Scout mutates contracts",
@@ -1013,12 +999,11 @@ def test_docs_use_merge_stable_scout_disambiguation_posture() -> None:
         "Scout admits evidence",
         "Scout executes SearchExecutor",
         "Scout fetches or reads pages",
-        "live Serper validation is complete",
-        "live validation is now next",
-        "partial-answer readiness is now next",
+        "Scout selects the DISCOVER provider",
+        "Scout satisfies an accepted source obligation",
     )
     for path in DOCS:
-        text = _text(path)
+        text = " ".join(_text(path).split())
         for needle in required:
             assert needle in text, (path, needle)
         for needle in forbidden:

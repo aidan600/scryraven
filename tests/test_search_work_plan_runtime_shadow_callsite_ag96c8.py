@@ -5,7 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.query_production_runtime import execute_query_production_action
+import pytest
+
+from core.query_production_runtime import (
+    QueryStrategyConvergenceError,
+    execute_query_production_action,
+)
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_kernel import (
@@ -178,15 +183,19 @@ def test_runtime_shadow_callsite_sequence_reduces_projection_after_contract() ->
     assert QUERY_PLAN_ADMISSION_STAGE not in state.stage_statuses
 
 
-def test_shadow_projection_does_not_change_query_production_result() -> None:
+def test_direct_legacy_query_production_fails_closed_with_or_without_shadow() -> None:
     contract_projection = _run_contract_projection()
     baseline_kernel = RunKernel.start(run_id="ag96c8-baseline", request_id="request")
     shadow_kernel = RunKernel.start(run_id="ag96c8-shadow", request_id="request")
 
-    baseline = _query_production_result(
-        baseline_kernel,
-        run_contract_projection=contract_projection,
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            baseline_kernel,
+            run_contract_projection=contract_projection,
+        )
     action = shadow_kernel.authorize_run_contract_synthesis(inputs={"fixture": True})
     shadow_kernel.reduce(
         contract_projection_observation := execute_run_contract_synthesis_action(
@@ -210,16 +219,16 @@ def test_shadow_projection_does_not_change_query_production_result() -> None:
             ),
         )
     )
-    with_shadow = _query_production_result(
-        shadow_kernel,
-        run_contract_projection=shadow_contract_projection,
-    )
+    with pytest.raises(
+        QueryStrategyConvergenceError,
+        match="legacy initial producer fallback is retired",
+    ):
+        _query_production_result(
+            shadow_kernel,
+            run_contract_projection=shadow_contract_projection,
+        )
 
     assert contract_projection_observation.observation_type.value == "run_contract_synthesized"
-    assert with_shadow.candidate_queries == baseline.candidate_queries
-    assert with_shadow.candidate_source == baseline.candidate_source
-    assert with_shadow.effective_route_posture == baseline.effective_route_posture
-    assert with_shadow.contract_source_requirement_hints == baseline.contract_source_requirement_hints
     assert shadow_kernel.state.search_work_plan_projection["runtime_consumed_by_query_plan"] is False
     assert QUERY_PLAN_ADMISSION_STAGE not in shadow_kernel.state.stage_statuses
 
@@ -287,17 +296,17 @@ def test_sensitive_fields_are_not_serialized_by_runtime_shadow_helper() -> None:
     assert "visible-safe-note" in encoded
 
 
-def test_pipeline_callsite_is_pass_through_after_contract_synthesis() -> None:
+def test_pipeline_retires_shadow_callsite_before_converged_planning() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
 
     contract_reduce = source.index("run_kernel.reduce(run_contract_result.observation)")
-    shadow_lane = source.index("run_search_work_shadow_lane", contract_reduce)
-    query_authorize = source.index(
-        "query_production_action = run_kernel.authorize_query_production",
-        shadow_lane,
+    convergence_call = source.index(
+        "convergence = execute_initial_query_strategy_convergence(",
+        contract_reduce,
     )
 
-    assert contract_reduce < shadow_lane < query_authorize
+    assert contract_reduce < convergence_call
+    assert "run_search_work_shadow_lane" not in source
     assert "RuntimeShadowSearchWorkPlanInput" not in source
     assert "observe_runtime_shadow_search_work_plan_construction" not in source
     assert "SearchWorkPlanConstructionInput" not in source

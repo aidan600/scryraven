@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: 4c8c544429d297ef51246a616b74fcbe985d4538
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -67,6 +67,7 @@ configuration.
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
+| `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from a validated passive SearchPlanner proposal through RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -391,9 +392,10 @@ Focused Extract, exact-URL READ consumption, final custody, Serper connection,
 Map, Crawl, compatibility rename, and evidence/final authority remain
 uninstalled. Compatibility names such as `proplex`, `python -m proplex`,
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
-model, search, fetch/read, or retrieval call was made. SearchPlanner, Scout
-disambiguation, SearchPlannerRevision, QueryPlan roles, and RunAuthority search
-judgment exist, but they are not converged into the target SearchOS loop.
+model, search, recon, fetch/read, or retrieval call was made. The initial
+SearchPlanner-to-QueryPlan path is now converged; iterative retrieval judgment,
+post-result secondary authorization, READ, navigation, custody, recovery, and
+stopping remain later SearchOS work.
 Current priority and checkpoint order belong only to [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
@@ -401,6 +403,54 @@ Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md), [Provider Capability
 And Acquisition Routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md), and
 the completed [DISCOVER result candidate handoff
 Build](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md).
+
+## Installed SearchOS Initial Query Strategy Convergence
+
+`SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` adapts
+`core.query_production_runtime` and the exact ordinary `run_pipeline()` planning
+callsite into one product-consumed initial chain. SearchPlanner proposals remain
+passive. Deterministic validation produces a QuestionMeaningRecord proposal;
+RunKernel initial AnswerContract acceptance remains the sole initial semantic
+acceptance owner and supplies the accepted component and source-obligation refs.
+Malformed required planner output creates no query production or search
+dispatch. The legacy Brave/recon-rewriter/researcher candidate-generation and
+silent `core_topic` fallback path is no longer reachable from the ordinary
+initial pass.
+
+The active SearchWorkPlan is constructed only after acceptance and any
+authorized revision. It owns compact component, source-obligation,
+provider-neutral job, requirement, contract, planner, revision, and policy refs;
+it does not retain complete executable query text. QueryPlan remains the sole
+exact executable-query authority and owns text, role, order, iteration,
+finalization, and dispatch lineage. Its items retain compact SearchWorkPlan
+requirement bindings, and the
+ordinary first DISCOVER pass consumes only the QueryPlan-authorized immediate
+wave before unchanged `core.routing` provider selection.
+
+`searchos_initial_query_allocation_policy_v1` is the single code-owned tuning
+owner. Its provisional defaults are one primary target, two admitted initial
+candidates, and one immediate dispatch per accepted required component; the
+recon ceiling is five distinct candidates per affected component. These are
+soft tuning defaults, not AnswerContract or SearchPlanner schema semantics, and
+are not uncontrolled user or environment overrides. A second candidate needs a
+recorded distinct accepted need. Without a separate immediate-wave proof it is
+preserved for later SearchJudgment and is not dispatched after results in this
+phase. Exact and materially equivalent candidates are rejected while bounded
+contributor lineage is retained. The legacy global low/medium/high `2 / 2 / 3`
+values are not preserved as SearchOS initial-allocation product policy; existing
+downstream retrieval-loop posture is unchanged and cannot truncate required
+component primaries.
+
+Recon runs only for a planner-identified affected component and distinct
+unresolved dimensions through an optional injected response-only Scout adapter.
+Scout reports remain non-evidence, non-citation, and non-source-obligation
+satisfaction. Optional unavailable recon keeps an already admitted conservative
+primary; required truthful-targeting ambiguity fails closed. SearchPlannerRevision
+query-direction-only changes cannot mutate the AnswerContract. A contractual
+revision reaches planning only after existing amendment admission and
+application. No live provider, model, search, recon, fetch/read, or retrieval
+call was made, and no provider, READ, evidence, citation, Author, recovery,
+continuation, supplemental, or remediation authority changed.
 
 ## Retired Legacy Semantic Scout And Ordinary Provider Synthesis
 
@@ -459,8 +509,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Map topology selection, Map-to-READ/Focused re-entry, or Crawl page-level
   custody.
 - Provider-failure cross-provider retry.
-- The complete SearchOS query, search, read, navigation, custody, recovery, and
-  stopping loop.
+- SearchOS post-result SearchJudgment, READ, navigation, custody, gap recovery,
+  and stopping convergence.
 - A browser or general local scraper as an ordinary product path.
 - A complete PDF acquisition path; the retained pure text-layer parser alone
   does not provide one.
@@ -468,6 +518,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 ## Not Proved
 
 - No live validation was performed.
+- Broad arbitrary-query query-strategy quality and post-result sufficiency
+  judgment remain unproved.
 - Arbitrary-query decomposition and broad route qualification remain unproved.
 - No acquisition-completeness repair was performed.
 - Exact-URL acquisition and final-custody convergence remain unproved.
