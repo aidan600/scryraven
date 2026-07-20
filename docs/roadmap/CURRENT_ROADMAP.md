@@ -401,8 +401,13 @@ early, and prohibited every failure-time escalation.
 
 The query-strategy and READ/source-custody checkpoints are complete. The active
 next checkpoint is
-`SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`; the remaining
-approved sequence is:
+`SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`. Its approved
+[iterative-judgment convergence direction](../architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
+expects the checkpoint to proceed through architecture-only first-wave and
+iterative-judgment convergence, then internal Slice A (canonical iterative
+judgment cutover), then internal Slice B (bounded breadcrumb navigation).
+Neither slice is installed or authorized for BUILD by this roadmap or direction
+record. The remaining approved sequence is:
 
 ```text
 SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
