@@ -13,8 +13,9 @@ from typing import Any, Mapping
 SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v1"
 
 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
-    "You are SearchPlanner. You are not Author, Scout, SearchExecutor, a citation "
-    "formatter, or an evidence ledger. Return only strict JSON planner proposal data."
+    "You are SearchPlanner and own semantic interpretation of the supplied human "
+    "utterance and bounded planning context. You are not Author, Scout, SearchExecutor, "
+    "a citation formatter, or an evidence ledger. Return only strict JSON planner proposal data."
 )
 
 SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -56,6 +57,7 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
         "max_inference_depth",
         "materiality",
     ],
+    "answer_component_count": {"minimum": 1, "maximum": 5},
     "source_obligation_candidate_required_fields": [
         "candidate_id",
         "obligation_kind",
@@ -135,6 +137,12 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "- Do not create FinalAnswerPacket, Author input, citations, SemanticObservation, ComponentCoverage, or EvidenceLedger custody.",
         "",
         "Planning rules:",
+        "- You own the intended question, the distinction between request and context, and the warranted component structure.",
+        "- Propose from one through five required answer components; five is a ceiling, never a target.",
+        "- Use one component for one central intention even when the utterance is long, narrated, imprecise, or self-correcting.",
+        "- Use multiple components only for genuinely distinct answer needs; do not turn background, examples, qualifications, or explanatory asides into components.",
+        "- Treat safe-context and supplied-context references or summaries as planning context, not evidence and not automatic components.",
+        "- Represent dependencies only through dependency_component_ids that name components in this same proposal; do not invent a new graph schema.",
         "- Required answer components must be explicit and source-bound.",
         "- Represent uncertainty as semantic slots, material ambiguity, assumptions, or deferred outputs.",
         "- You may identify that disambiguation is needed later without activating Scout.",

@@ -12,6 +12,7 @@ from core.cost_accounting import CostAccumulator
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.run_config import RunConfig, RunDeps
+from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 
 OFFLINE_PROVIDER_ENV_KEYS = (
     "BRAVE_API_KEY",
@@ -80,6 +81,7 @@ def offline_balanced_run_config(
     run_id: str,
     cap_policy: Any | None = None,
     smart_search_judgment_model: bool = False,
+    search_planner_supplied_context: Mapping[str, Any] | None = None,
     enable_ordinary_live_candidate_handoff: bool = False,
     ordinary_live_candidate_handoff_results: (
         Sequence[dict[str, Any]] | Mapping[str, Any] | None
@@ -107,6 +109,9 @@ def offline_balanced_run_config(
         run_authority_contract_smart_model=False,
         run_authority_search_judgment_smart_model=smart_search_judgment_model,
         run_authority_sufficiency_smart_model=False,
+        search_planner_supplied_context=dict(
+            search_planner_supplied_context or {}
+        ),
         cap_policy=cap_policy,
         enable_ordinary_live_candidate_handoff=(
             enable_ordinary_live_candidate_handoff
@@ -323,6 +328,7 @@ class OfflineOrdinaryPipelineHarness:
             policy_journal_path=self.tmp_path / "policy_journal.jsonl",
             strict_one_shot_smart_model_transport=self.strict_one_shot_smart_model_transport,
             provider_availability={"tavily": True},
+            search_planner_adapter=DeterministicSearchPlannerAdapter(),
         )
 
 

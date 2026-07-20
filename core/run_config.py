@@ -48,6 +48,11 @@ class RunConfig:
     run_authority_search_judgment_smart_model: bool = False
     run_authority_sufficiency_smart_model: bool = False
 
+    # Optional bounded planning-only context supplied alongside the utterance.
+    # Future document/page ingestion may pass safe references or summaries here;
+    # this field does not admit evidence or authorize retrieval.
+    search_planner_supplied_context: Mapping[str, Any] = field(default_factory=dict)
+
     # Provider / corpus-state overrides (from UI failure-card controls)
     provider_override: list[str] | None = None
     forced_corpus_state: str | None = None
@@ -133,6 +138,13 @@ class RunDeps:
 
     # Optional offline-only adapter for authorized component-gap recovery.
     component_gap_recovery_adapter: Callable[..., Any] | None = None
+
+    # Typed semantic-planning composition seams. Ordinary execution composes
+    # the selected fast-model SearchPlanner when no planner adapter is supplied;
+    # Scout and revision remain unavailable unless explicitly injected.
+    search_planner_adapter: Any | None = None
+    scout_disambiguation_adapter: Any | None = None
+    search_planner_revision_adapter: Any | None = None
 
     # Typed Linkup/Tavily exact-URL transports retained for a future licensed
     # post-selection proposal path selected by core.routing.

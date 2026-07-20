@@ -114,6 +114,31 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
                 "source_obligation_candidate_ids": ["obligation:model-official-current"],
                 "preferred_source_kinds": ["official"],
                 "recency_requirement": "current for 2026",
+                "metadata": {
+                    "query_strategy_candidates": [
+                        {
+                            "strategy_id": "strategy:model-official-threshold:primary",
+                            "component_id": "component:model-official-threshold",
+                            "candidate_kind": "primary",
+                            "candidate_query_text": (
+                                "Example Permit official filing threshold 2026"
+                            ),
+                            "requested_role": "official_bias",
+                            "source_obligation_candidate_ids": [
+                                "obligation:model-official-current"
+                            ],
+                            "distinct_need_justification": (
+                                "Primary query for the accepted threshold component."
+                            ),
+                            "recon_requirement": {
+                                "posture": "not_needed",
+                                "unresolved_dimension_ids": [],
+                                "candidate_queries": [],
+                                "required_for_truthful_targeting": False,
+                            },
+                        }
+                    ]
+                },
             }
         ],
         "material_ambiguity_posture": "clear",
@@ -408,6 +433,43 @@ def test_model_adapter_component_search_requirements_remain_non_executing() -> N
     assert kernel.state.search_work_plan_projection == {}
 
 
+def test_model_adapter_preserves_query_strategy_and_recon_metadata() -> None:
+    kernel = _kernel()
+    output = _planner_output()
+    strategy = output["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]
+    strategy["recon_requirement"] = {
+        "posture": "optional",
+        "unresolved_dimension_ids": ["dimension:program-alias"],
+        "candidate_queries": [
+            {
+                "dimension_id": "dimension:program-alias",
+                "candidate_query_text": "Example Permit former current name",
+                "query_kind": "disambiguation_probe",
+            }
+        ],
+        "required_for_truthful_targeting": False,
+    }
+    fake = FakeAskModel(json.dumps(output))
+
+    _produce(kernel, _adapter(fake))
+
+    preserved = kernel.state.search_planner_proposal_projection[
+        "component_search_requirements"
+    ][0]["metadata"]["query_strategy_candidates"][0]
+    assert preserved["candidate_query_text"] == (
+        "Example Permit official filing threshold 2026"
+    )
+    assert preserved["recon_posture"] == "optional"
+    assert preserved["recon_unresolved_dimension_ids"] == [
+        "dimension:program-alias"
+    ]
+    assert preserved["recon_candidate_queries_by_dimension"] == {
+        "dimension:program-alias": "Example Permit former current name"
+    }
+
+
 def test_model_output_executing_component_requirement_fails_closed() -> None:
     kernel = _kernel()
     unsafe = deepcopy(_planner_output())
@@ -415,6 +477,25 @@ def test_model_output_executing_component_requirement_fails_closed() -> None:
     fake = FakeAskModel(json.dumps(unsafe))
 
     with pytest.raises(SearchPlannerModelAdapterError, match="closed runtime surfaces"):
+        _produce(kernel, _adapter(fake))
+
+    assert kernel.state.search_planner_proposal_state == {}
+
+
+def test_model_query_strategy_cannot_select_provider_or_model() -> None:
+    kernel = _kernel()
+    unsafe = _planner_output()
+    strategy = unsafe["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]
+    strategy["provider_name"] = "untrusted-provider"
+    strategy["model_selector"] = "untrusted-model"
+    fake = FakeAskModel(json.dumps(unsafe))
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="forbidden provider/model authority",
+    ):
         _produce(kernel, _adapter(fake))
 
     assert kernel.state.search_planner_proposal_state == {}
@@ -461,7 +542,9 @@ def test_static_closed_surface_guard_for_search_planner_model_adapter() -> None:
 
     pipeline_source = _text(PIPELINE)
     assert "execute_initial_query_strategy_convergence(" in pipeline_source
-    assert "DeterministicSearchPlannerAdapter()" in pipeline_source
+    assert "planner_adapter = deps.search_planner_adapter" in pipeline_source
+    assert "planner_adapter = SearchPlannerModelAdapter(" in pipeline_source
+    assert "DeterministicSearchPlannerAdapter()" not in pipeline_source
     assert "execute_query_production_action(" not in pipeline_source
 
 

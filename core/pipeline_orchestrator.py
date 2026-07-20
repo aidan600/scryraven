@@ -277,9 +277,7 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
-from core.search_planner_runtime import (
-    DeterministicSearchPlannerAdapter,
-)
+from core.search_planner_model_adapter import SearchPlannerModelAdapter
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
 )
@@ -924,11 +922,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             session_title = query[:40]
 
     status.step("Planning accepted components and initial search strategy...")
-    planner_adapter = getattr(deps, "search_planner_adapter", None)
+    planner_adapter = deps.search_planner_adapter
     if planner_adapter is None:
-        planner_adapter = DeterministicSearchPlannerAdapter()
-    scout_adapter = getattr(deps, "scout_disambiguation_adapter", None)
-    revision_adapter = getattr(deps, "search_planner_revision_adapter", None)
+        planner_adapter = SearchPlannerModelAdapter(
+            ask_model=deps.ask_model,
+            clean_json_response=deps.clean_json_response,
+            provider=fast_provider,
+            model=fast_model,
+            use_reasoning=use_reasoning,
+            enabled=True,
+            licensed=True,
+        )
+    scout_adapter = deps.scout_disambiguation_adapter
+    revision_adapter = deps.search_planner_revision_adapter
     convergence = execute_initial_query_strategy_convergence(
         run_kernel=run_kernel,
         router_query_preparation_contract=router_query_preparation_contract,
@@ -941,6 +947,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         exclude_domains=exclude_domains,
         route_projection=run_kernel.state.projections.get("route_request", {}),
         run_contract_projection=run_contract_projection,
+        supplied_context=config.search_planner_supplied_context,
         news_preferred_domains=NEWS_PREFERRED_DOMAINS,
         planner_adapter=planner_adapter,
         scout_adapter=scout_adapter,
@@ -2604,7 +2611,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     # Revision 1 is the immutable ordinary post-DISCOVER selection snapshot.
     # It is created before source-class/conflict recovery and before synthesis,
-    # when no accepted current AnswerContract or source obligation exists.
+    # after the initial AnswerContract was accepted but before post-DISCOVER
+    # evidence can support a current-contract amendment or satisfy obligations.
     initial_discovery_top_evidence = deps.filter_top_evidence(
         all_passages,
         top_chunks,

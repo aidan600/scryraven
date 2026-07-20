@@ -1125,6 +1125,7 @@ def execute_initial_query_strategy_convergence(
     news_preferred_domains: Sequence[str],
     route_projection: Mapping[str, Any],
     run_contract_projection: Mapping[str, Any],
+    supplied_context: Mapping[str, Any] | None = None,
     planner_adapter: SearchPlannerAdapter,
     scout_adapter: ScoutDisambiguationAdapter | None = None,
     revision_adapter: SearchPlannerRevisionAdapter | None = None,
@@ -1163,6 +1164,13 @@ def execute_initial_query_strategy_convergence(
             "current_date": current_date,
             "include_domains": list(include_domains),
             "exclude_domains": list(exclude_domains),
+            "supplied_context": dict(supplied_context or {}),
+            "supplied_context_posture": {
+                "planning_context_only": True,
+                "evidence_admitted": False,
+                "source_obligation_satisfied": False,
+                "citation_eligible": False,
+            },
             "initial_query_allocation_policy_version": (initial_query_allocation_policy.policy_version),
         },
         route_context_ref={

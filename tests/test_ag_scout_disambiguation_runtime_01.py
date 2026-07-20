@@ -979,7 +979,8 @@ def test_static_closed_surface_guard_for_scout_disambiguation_runtime() -> None:
 
     pipeline_source = _text(PIPELINE)
     assert "scout_adapter=scout_adapter" in pipeline_source
-    assert 'getattr(deps, "scout_disambiguation_adapter", None)' in pipeline_source
+    assert "scout_adapter = deps.scout_disambiguation_adapter" in pipeline_source
+    assert 'getattr(deps, "scout_disambiguation_adapter", None)' not in pipeline_source
     assert "brave_reconnaissance(" not in pipeline_source
 
 

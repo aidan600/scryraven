@@ -50,6 +50,10 @@ SEARCH_PLANNER_PROPOSAL_OWNER = "RunKernel.SearchPlannerProposal"
 SEARCH_PLANNER_QMR_RESOLVER_VERSION = "ag-search-planner-runtime-01"
 SEARCH_PLANNER_INPUT_PREVIEW_CHARS = 500
 SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS = 12000
+SEARCH_PLANNER_MAX_ANSWER_COMPONENTS = 5
+SEARCH_PLANNER_SAFE_CONTEXT_MAX_DEPTH = 12
+SEARCH_PLANNER_SAFE_CONTEXT_MAX_COLLECTION_ITEMS = 64
+SEARCH_PLANNER_SAFE_CONTEXT_TEXT_CHARS = 900
 _ADAPTER_ONLY_USER_QUERY_TEXT_KEY = "user_query_text_for_planning"
 
 _ALLOWED_INITIAL_QUERY_ROLES = frozenset(
@@ -229,8 +233,8 @@ class SearchPlannerRuntimeError(ValueError):
 class SearchPlannerAdapter(Protocol):
     """Injected model/planner adapter boundary.
 
-    Production/default code must supply this explicitly. Tests may inject a
-    deterministic adapter with the same shape.
+    Product composition supplies the selected fast-model adapter. Tests and
+    bounded diagnostics may explicitly inject another adapter with this shape.
     """
 
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -239,11 +243,13 @@ class SearchPlannerAdapter(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class DeterministicSearchPlannerAdapter:
-    """Provider-free ordinary SearchPlanner composition.
+    """Explicit validation-only/offline SearchPlanner fixture.
 
     The adapter reuses the repository's deterministic query-shape assessment
     and emits the same passive proposal shape as an injected model adapter.  It
     never calls a model, provider, search, fetch/read, or environment surface.
+    It must be directly injected and is never the ordinary default or a failure
+    fallback; its query-shape interpretation is not product semantic authority.
     """
 
     adapter_version: str = "searchos_deterministic_search_planner_v1"
@@ -541,9 +547,9 @@ class SearchPlannerInput:
                 "raw_user_query_retained": False,
                 "user_query_text_for_planning_retained": False,
             },
-            "safe_context": _json_safe(self.safe_context),
-            "route_context_ref": _json_safe(self.route_context_ref),
-            "run_context_ref": _json_safe(self.run_context_ref),
+            "safe_context": _bounded_context_json_safe(self.safe_context),
+            "route_context_ref": _bounded_context_json_safe(self.route_context_ref),
+            "run_context_ref": _bounded_context_json_safe(self.run_context_ref),
             "parent_contract_refs": {
                 "initial": _contract_ref_or_empty(self.parent_initial_contract_ref),
                 "current": _contract_ref_or_empty(self.parent_current_contract_ref),
@@ -975,6 +981,9 @@ def _question_meaning_record_from_adapter_result(
         components=components,
     )
     component_search_requirements = _component_search_requirements(adapter_result)
+    planner_model_metadata = _safe_mapping(
+        adapter_result.get("planner_model_metadata")
+    )
     query_shape_metadata = _deterministic_query_shape_metadata(
         planner_input=planner_input,
         components=components,
@@ -1017,6 +1026,25 @@ def _question_meaning_record_from_adapter_result(
         "contract_amendment_candidates_deferred": bool(_safe_list(adapter_result.get("contract_amendment_candidates"))),
         "closed_surface_flags": dict(_CLOSED_SURFACE_FLAGS),
         **query_shape_metadata,
+        "semantic_planning_owner": (
+            "selected fast-model SearchPlanner"
+            if planner_model_metadata.get("model_adapter_enabled") is True
+            else "explicitly injected SearchPlanner adapter"
+        ),
+        "model_proposed_component_count": len(components),
+        # Existing downstream multi-component consumers use these compatibility
+        # fields. They now reflect the accepted model proposal mechanically;
+        # deterministic query-shape assessment no longer decides their values.
+        "explicit_factual_component_list": len(components) > 1,
+        "requested_synthesis_directive": (
+            _clean_text(
+                adapter_result.get("requested_output")
+                or adapter_result.get("question_meaning_summary"),
+                limit=360,
+            )
+            if len(components) > 1
+            else None
+        ),
     }
 
     record = QuestionMeaningRecord(
@@ -1059,7 +1087,7 @@ def _deterministic_query_shape_metadata(
     planner_input: Mapping[str, Any],
     components: Sequence[AnswerComponentContract],
 ) -> dict[str, Any]:
-    """Reprove bounded route qualification without trusting adapter output."""
+    """Emit bounded compatibility telemetry without semantic authority."""
 
     safe_context = _safe_mapping(planner_input.get("safe_context"))
     route_facts = _safe_mapping(safe_context.get("route_facts"))
@@ -1072,35 +1100,42 @@ def _deterministic_query_shape_metadata(
     if not query_text or not contract_id or not route_facts:
         return {}
 
-    records = build_deterministic_search_work_runtime_records(
-        DeterministicSearchWorkRuntimeInput(
-            contract_id=contract_id,
-            run_contract_projection=run_contract,
-            route_facts=route_facts,
-            requested_mode=_clean_token(planner_input.get("requested_mode")),
-            selected_depth=_clean_token(run_contract.get("selected_depth")),
-            safe_query_preview=query_text,
-            current_date_ref=_clean_text(safe_context.get("current_date")),
-            metadata={
-                "owner": "search_planner_qmr_query_shape_reproof",
-                "provider_free": True,
-            },
+    try:
+        records = build_deterministic_search_work_runtime_records(
+            DeterministicSearchWorkRuntimeInput(
+                contract_id=contract_id,
+                run_contract_projection=run_contract,
+                route_facts=route_facts,
+                requested_mode=_clean_token(planner_input.get("requested_mode")),
+                selected_depth=_clean_token(run_contract.get("selected_depth")),
+                safe_query_preview=query_text,
+                current_date_ref=_clean_text(safe_context.get("current_date")),
+                metadata={
+                    "owner": "search_planner_qmr_query_shape_compatibility_signal",
+                    "provider_free": True,
+                },
+            )
         )
-    )
+    except Exception as exc:  # noqa: BLE001 - telemetry cannot become authority.
+        return {
+            "deterministic_query_shape_signal_owner": (
+                "core.search_work_query_shape_runtime"
+            ),
+            "deterministic_query_shape_role": "compatibility_observability_only",
+            "deterministic_query_shape_signal_status": "unavailable",
+            "deterministic_query_shape_failure_kind": type(exc).__name__,
+        }
     assessment = records.query_shape_assessment
     assessment_metadata = _safe_mapping(assessment.metadata)
     assessment_component_ids = [candidate.component_id for candidate in assessment.component_candidates]
     proposal_component_ids = [component.component_id for component in components]
     explicitly_qualified = assessment_metadata.get("explicit_factual_component_list") is True
-    if explicitly_qualified and proposal_component_ids != assessment_component_ids:
-        raise SearchPlannerRuntimeError(
-            "SearchPlanner component topology does not match deterministic bounded multi-component qualification"
-        )
     return {
-        "query_shape_owner": "core.search_work_query_shape_runtime",
-        "query_shape_reproved_from_transient_input": True,
-        "explicit_factual_component_list": explicitly_qualified,
-        "requested_synthesis_directive": _clean_text(
+        "deterministic_query_shape_signal_owner": "core.search_work_query_shape_runtime",
+        "deterministic_query_shape_role": "compatibility_observability_only",
+        "deterministic_query_shape_assessed_from_transient_input": True,
+        "deterministic_explicit_factual_component_list": explicitly_qualified,
+        "deterministic_requested_synthesis_directive": _clean_text(
             assessment_metadata.get("requested_synthesis_directive"),
             limit=360,
         ),
@@ -1110,7 +1145,14 @@ def _deterministic_query_shape_metadata(
         "route_qualification_behavior_changed": bool(assessment_metadata.get("route_qualification_behavior_changed")),
         "query_plan_behavior_changed": bool(assessment_metadata.get("query_plan_behavior_changed")),
         "provider_search_behavior_changed": bool(assessment_metadata.get("provider_search_behavior_changed")),
-        "query_shape_component_ids": assessment_component_ids,
+        "deterministic_query_shape_component_ids": assessment_component_ids,
+        "model_proposed_component_ids": proposal_component_ids,
+        "deterministic_component_count_matches_model": (
+            len(assessment_component_ids) == len(proposal_component_ids)
+        ),
+        "deterministic_component_ids_match_model": (
+            assessment_component_ids == proposal_component_ids
+        ),
     }
 
 
@@ -1146,6 +1188,10 @@ def _answer_components(value: Any) -> list[AnswerComponentContract]:
     items = _safe_list(value)
     if not items:
         raise SearchPlannerRuntimeError("search planner proposal requires at least one answer component")
+    if len(items) > SEARCH_PLANNER_MAX_ANSWER_COMPONENTS:
+        raise SearchPlannerRuntimeError(
+            "search planner proposal exceeds the five-component acceptance ceiling"
+        )
     components: list[AnswerComponentContract] = []
     for item in items:
         mapping = _safe_mapping(item)
@@ -1897,6 +1943,41 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if hasattr(value, "to_dict"):
         return _json_safe(value.to_dict(), depth=depth + 1)
     return _clean_text(value, limit=300)
+
+
+def _bounded_context_json_safe(value: Any, *, depth: int = 0) -> Any:
+    """Bound planning-only context independently from proposal validation."""
+
+    if depth > SEARCH_PLANNER_SAFE_CONTEXT_MAX_DEPTH:
+        return "[truncated]"
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, str):
+        return _clean_text(value, limit=SEARCH_PLANNER_SAFE_CONTEXT_TEXT_CHARS)
+    if isinstance(value, Mapping):
+        out: dict[str, Any] = {}
+        items = sorted(value.items(), key=lambda item: str(item[0]))[
+            :SEARCH_PLANNER_SAFE_CONTEXT_MAX_COLLECTION_ITEMS
+        ]
+        for raw_key, item in items:
+            clean_key = str(raw_key or "").strip()[:120]
+            if not clean_key or _is_sensitive_key(clean_key):
+                continue
+            out[clean_key] = _bounded_context_json_safe(item, depth=depth + 1)
+        return out
+    if isinstance(value, tuple | list | set | frozenset):
+        items = list(value)
+        if isinstance(value, set | frozenset):
+            items = sorted(items, key=str)
+        return [
+            _bounded_context_json_safe(item, depth=depth + 1)
+            for item in items[:SEARCH_PLANNER_SAFE_CONTEXT_MAX_COLLECTION_ITEMS]
+        ]
+    if hasattr(value, "to_dict"):
+        return _bounded_context_json_safe(value.to_dict(), depth=depth + 1)
+    return _clean_text(value, limit=SEARCH_PLANNER_SAFE_CONTEXT_TEXT_CHARS)
 
 
 def _observation_envelope_safe(value: Any, *, depth: int = 0) -> Any:

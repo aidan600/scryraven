@@ -1051,7 +1051,8 @@ def test_static_closed_surface_guard_for_search_planner_revision() -> None:
 
     pipeline_source = _text(PIPELINE)
     assert "revision_adapter=revision_adapter" in pipeline_source
-    assert 'getattr(deps, "search_planner_revision_adapter", None)' in pipeline_source
+    assert "revision_adapter = deps.search_planner_revision_adapter" in pipeline_source
+    assert 'getattr(deps, "search_planner_revision_adapter", None)' not in pipeline_source
     assert "execute_initial_query_strategy_convergence(" in pipeline_source
 
 

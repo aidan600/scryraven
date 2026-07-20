@@ -210,6 +210,40 @@ def test_answer_component_refs_preserve_id_revision_digest_and_posture() -> None
     assert ref["allowed_support_kinds"] == ["direct"]
 
 
+def test_answer_component_refs_preserve_existing_dependency_relationships() -> None:
+    kernel = _start_kernel()
+    prerequisite = _component()
+    dependent = AnswerComponentContract(
+        component_id="component:derived-comparison",
+        component_revision="1",
+        user_facing_label="Derived comparison",
+        user_facing_question="How does the reported value affect the comparison?",
+        requirement_posture=RequirementPosture.REQUIRED,
+        acceptance_criteria=("use the accepted reported value",),
+        semantic_slot_ids=("slot:metric", "slot:time-period"),
+        source_obligation_candidate_ids=("obligation:primary-source",),
+        dependency_component_ids=(prerequisite.component_id,),
+        allowed_support_kinds=(SupportKind.DIRECT,),
+        materiality=Materiality.MATERIAL,
+    )
+    qmr = _qmr(components=(prerequisite, dependent))
+
+    _accept(kernel, qmr)
+
+    state_refs = kernel.state.initial_answer_contract[
+        "accepted_answer_component_refs"
+    ]
+    projection_refs = kernel.state.initial_answer_contract_projection[
+        "accepted_answer_component_refs"
+    ]
+    assert state_refs[1]["dependency_component_ids"] == [
+        prerequisite.component_id
+    ]
+    assert projection_refs[1]["dependency_component_ids"] == [
+        prerequisite.component_id
+    ]
+
+
 def test_material_unresolved_slots_are_preserved_not_resolved() -> None:
     kernel = _start_kernel()
     qmr = _qmr(
