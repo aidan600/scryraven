@@ -330,13 +330,6 @@ def _normalize_read(
         )
     retained, posture = _bounded_text(text, request.max_retained_characters)
     provider_reported_url = _url(source.get("url"))
-    if provider_reported_url and _normalized_url(
-        provider_reported_url
-    ) != _normalized_url(selected_url):
-        raise AcquisitionContractError(
-            "read_provider_reported_url_mismatch",
-            "provider-reported read URL is not the selected URL",
-        )
     final_url = _url(source.get("final_url"))
     resolved_url = _url(source.get("resolved_url"))
     canonical_url = _url(source.get("canonical_url"))

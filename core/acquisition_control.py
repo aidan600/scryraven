@@ -1616,13 +1616,23 @@ def build_acquisition_authority_snapshot(
     *,
     run_id: str,
     request_id: str,
-    current_answer_contract: Mapping[str, Any],
+    current_answer_contract: Mapping[str, Any] | None,
+    initial_answer_contract: Mapping[str, Any] | None = None,
     search_executor_handoff_state: Mapping[str, Any],
+    search_work_plan: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    contract = _mapping(current_answer_contract, "current_answer_contract_missing")
+    current = _json_clone(current_answer_contract or {})
+    initial = _json_clone(initial_answer_contract or {})
+    contract = _mapping(
+        current or initial,
+        "active_answer_contract_missing",
+    )
+    contract_source = (
+        "current_answer_contract" if current else "initial_answer_contract"
+    )
     contract_ref = _contract_ref(
         {
-            "source": "current_answer_contract",
+            "source": contract_source,
             "contract_version": contract.get("accepted_contract_version"),
             "contract_digest": contract.get("accepted_contract_digest"),
         }
@@ -1664,8 +1674,136 @@ def build_acquisition_authority_snapshot(
     )
     if handoff.get("run_id") != run_id or handoff.get("request_id") != request_id:
         raise AcquisitionControlError("search_executor_handoff_identity_mismatch")
+    if handoff.get("origin_kind") == "ordinary_query_provider":
+        if _contract_ref(handoff.get("answer_contract_ref")) != contract_ref:
+            raise AcquisitionControlError(
+                "ordinary_search_executor_handoff_contract_ref_mismatch"
+            )
+        work_plan = _mapping(search_work_plan, "search_work_plan_missing")
+        accepted_ref = _mapping(
+            _mapping(
+                work_plan.get("metadata"),
+                "search_work_plan_metadata_missing",
+            ).get("accepted_contract_ref"),
+            "search_work_plan_contract_ref_missing",
+        )
+        if not (
+            str(accepted_ref.get("contract_version") or "")
+            == str(contract_ref.get("contract_version") or "")
+            and accepted_ref.get("contract_digest")
+            == contract_ref.get("contract_digest")
+            and accepted_ref.get("parent_kind") == contract_source
+        ):
+            raise AcquisitionControlError("search_work_plan_contract_ref_mismatch")
+        obligations: dict[str, dict[str, Any]] = {}
+        seen_component_ids: set[str] = set()
+        for raw_work_component in _sequence(work_plan.get("components")):
+            work_component = _mapping(
+                raw_work_component, "search_work_component_mapping_required"
+            )
+            component_id = _required_token(
+                work_component.get("component_id"),
+                "search_work_component_id_missing",
+                limit=200,
+            )
+            canonical_component = components.get(component_id)
+            if canonical_component is None:
+                raise AcquisitionControlError(
+                    "search_work_component_not_in_active_contract"
+                )
+            raw_work_component_ref = _mapping(
+                _mapping(
+                    work_component.get("metadata"),
+                    "search_work_component_metadata_missing",
+                ).get("accepted_component_ref"),
+                "search_work_component_ref_missing",
+            )
+            work_component_ref = _component_ref(
+                {
+                    "component_id": raw_work_component_ref.get("component_id"),
+                    "component_revision": raw_work_component_ref.get(
+                        "component_revision"
+                    ),
+                    "component_digest": raw_work_component_ref.get(
+                        "component_digest"
+                    ),
+                }
+            )
+            if work_component_ref != canonical_component:
+                raise AcquisitionControlError(
+                    "search_work_component_ref_mismatch"
+                )
+            seen_component_ids.add(component_id)
+            expected_obligation_ids = {
+                obligation_id
+                for obligation_id, component_refs in obligation_to_components.items()
+                if component_id
+                in {str(ref.get("component_id")) for ref in component_refs}
+            }
+            seen_obligation_ids: set[str] = set()
+            for raw_obligation in _sequence(
+                work_component.get("source_obligations")
+            ):
+                descriptor = _mapping(
+                    raw_obligation, "source_obligation_descriptor_invalid"
+                )
+                obligation_id = _required_token(
+                    descriptor.get("obligation_id"),
+                    "source_obligation_descriptor_id_missing",
+                    limit=200,
+                )
+                if obligation_id not in expected_obligation_ids:
+                    raise AcquisitionControlError(
+                        "search_work_source_obligation_not_in_active_contract"
+                    )
+                if obligation_id in obligations:
+                    raise AcquisitionControlError(
+                        "duplicate_source_obligation_id"
+                    )
+                binding_core = {
+                    "binding_kind": "pre_acquisition_source_obligation_lineage",
+                    "answer_contract_ref": contract_ref,
+                    "source_obligation_id": obligation_id,
+                    "source_obligation_descriptor": descriptor,
+                    "component_refs": [canonical_component],
+                    "source_authority_granted": False,
+                    "source_obligation_satisfied": False,
+                }
+                obligations[obligation_id] = {
+                    "source_obligation_id": obligation_id,
+                    "source_obligation_digest": stable_json_digest(binding_core),
+                    "binding_kind": binding_core["binding_kind"],
+                    "answer_contract_digest": contract_ref["contract_digest"],
+                    "component_ids": [component_id],
+                    "active": True,
+                }
+                seen_obligation_ids.add(obligation_id)
+            if seen_obligation_ids != expected_obligation_ids:
+                raise AcquisitionControlError(
+                    "search_work_source_obligation_membership_mismatch"
+                )
+        if seen_component_ids != set(components):
+            raise AcquisitionControlError(
+                "search_work_component_membership_mismatch"
+            )
+        snapshot_core = {
+            "run_id": run_id,
+            "request_id": request_id,
+            "answer_contract_ref": contract_ref,
+            "components_by_id": components,
+            "source_obligations_by_id": obligations,
+            "lineage_posture": "pre_acquisition_only_no_satisfaction_authority",
+        }
+        return {
+            **snapshot_core,
+            "snapshot_digest": stable_json_digest(snapshot_core),
+        }
     if handoff.get("contract_parent_kind") != "current_answer_contract":
         raise AcquisitionControlError("search_executor_handoff_contract_parent_stale")
+    if contract_source != "current_answer_contract":
+        raise AcquisitionControlError(
+            "legacy_search_executor_handoff_requires_current_contract"
+        )
     if _contract_ref(handoff.get("parent_current_contract_ref")) != contract_ref:
         raise AcquisitionControlError("search_executor_handoff_contract_ref_mismatch")
     descriptors: dict[str, dict[str, Any]] = {}

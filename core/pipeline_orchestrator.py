@@ -277,7 +277,13 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
+from core.search_judgment_read_assessment_runtime import (
+    SEARCH_JUDGMENT_READ_TRACE_KEY,
+    build_full_search_judgment_containment_projection,
+    execute_search_judgment_read_source_and_custody,
+)
 from core.search_planner_model_adapter import SearchPlannerModelAdapter
+from core.search_planner_runtime import contract_ref_from_contract
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
 )
@@ -691,6 +697,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     ordinary_discovery_candidate_packet: dict[str, Any] = {}
     ordinary_discovery_candidate_handoff_projection: dict[str, Any] = {}
+    search_judgment_read_assessment_projection: dict[str, Any] = {}
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
@@ -2642,6 +2649,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         authority_snapshot=ordinary_discovery_authority_snapshot,
     )
     if ordinary_discovery_selection.candidate_count:
+        active_answer_contract_ref = contract_ref_from_contract(
+            run_kernel.state.current_answer_contract
+            or run_kernel.state.initial_answer_contract,
+            source=(
+                "current_answer_contract"
+                if run_kernel.state.current_answer_contract
+                else "initial_answer_contract"
+            ),
+        )
         ordinary_candidate_action_inputs = (
             build_ordinary_discovery_candidate_action_inputs(
                 run_id=run_id,
@@ -2650,6 +2666,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     discovery_result_store.identity_set_ref()
                 ),
                 selection=ordinary_discovery_selection,
+                answer_contract_ref=active_answer_contract_ref,
             )
         )
         ordinary_candidate_action = (
@@ -2663,6 +2680,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 selection=ordinary_discovery_selection,
                 discovery_result_store=discovery_result_store,
                 authority_snapshot=ordinary_discovery_authority_snapshot,
+                answer_contract_ref=active_answer_contract_ref,
             )
         )
         run_kernel.reduce(ordinary_candidate_execution.observation)
@@ -2672,6 +2690,37 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ordinary_discovery_candidate_handoff_projection = dict(
             ordinary_candidate_execution.projection
         )
+        search_judgment_read_result = (
+            execute_search_judgment_read_source_and_custody(
+                run_kernel=run_kernel,
+                candidate_packet=ordinary_discovery_candidate_packet,
+                query_plan=query_authority.plan,
+                discovery_result_store=discovery_result_store,
+                ask_model=_ask(phase="search_judgment_read_assessment"),
+                clean_json_response=deps.clean_json_response,
+                provider=smart_provider,
+                model=smart_model,
+                base_url=local_url,
+                api_key=or_api_key,
+                use_reasoning=use_reasoning,
+                available_providers=(
+                    provider_availability_snapshot.to_capability_available_keys()
+                ),
+                acquisition_transports=(
+                    deps.searchos_read_acquisition_transports
+                ),
+                before_transport=(
+                    cap_policy.mark_fetch_read_operation
+                    if cap_policy is not None
+                    else None
+                ),
+                measure_context_stage=_measure_context_stage,
+            )
+        )
+        search_judgment_read_assessment_projection = dict(
+            search_judgment_read_result.projection
+        )
+        urls_fetched += search_judgment_read_result.provider_calls_completed
 
     _source_tier_recovery_lifecycle = source_tier_telemetry(all_passages)
     _source_domain_recovery_lifecycle = source_domain_telemetry(
@@ -2843,7 +2892,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         _search_judgment_started = True
         _search_judgment_input = build_search_judgment_input_from_runtime(
             contract_projection=run_contract_projection,
-            evidence_ledger_projection=evidence_ledger_projection,
+            evidence_ledger_projection=(
+                build_full_search_judgment_containment_projection(
+                    evidence_ledger_projection=evidence_ledger_projection,
+                    search_judgment_read_state=(
+                        run_kernel.state.search_judgment_read_state
+                    ),
+                )
+            ),
             query_authority_trace=query_authority.to_trace_fragment(),
             core_topic=core_topic,
             primary_entity=primary_entity,
@@ -3356,7 +3412,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     _semantic_gap_search_judgment_input = build_search_judgment_input_from_runtime(
         contract_projection=run_contract_projection,
-        evidence_ledger_projection=evidence_ledger_projection,
+        evidence_ledger_projection=(
+            build_full_search_judgment_containment_projection(
+                evidence_ledger_projection=evidence_ledger_projection,
+                search_judgment_read_state=(
+                    run_kernel.state.search_judgment_read_state
+                ),
+            )
+        ),
         query_authority_trace=query_authority.to_trace_fragment(),
         core_topic=core_topic,
         primary_entity=primary_entity,
@@ -3867,6 +3930,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if ordinary_discovery_candidate_packet:
         execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = (
             ordinary_discovery_candidate_packet
+        )
+    if search_judgment_read_assessment_projection:
+        execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY] = (
+            search_judgment_read_assessment_projection
         )
     if final_answer_packet_handoff.author_input_blocked:
         execution_trace.update(

@@ -12,6 +12,9 @@ from core.cost_accounting import CostAccumulator
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.run_config import RunConfig, RunDeps
+from core.search_judgment_read_assessment_runtime import (
+    SEARCH_JUDGMENT_READ_SYSTEM_PROMPT,
+)
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 
 OFFLINE_PROVIDER_ENV_KEYS = (
@@ -156,6 +159,9 @@ class OfflineOrdinaryPipelineHarness:
     author_prompts: list[str] = field(default_factory=list)
     author_kwargs: list[dict[str, Any]] = field(default_factory=list)
     forbidden_live_calls: list[str] = field(default_factory=list)
+    read_assessment_decision: str | None = None
+    read_assessment_calls: list[dict[str, Any]] = field(default_factory=list)
+    run_kernel: Any | None = field(default=None, init=False, repr=False)
 
     def _record_model_call(self, system_prompt: str, kwargs: Mapping[str, Any]) -> None:
         self.model_calls.append(
@@ -170,6 +176,75 @@ class OfflineOrdinaryPipelineHarness:
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         self._record_model_call(system_prompt, kwargs)
+        if system_prompt == SEARCH_JUDGMENT_READ_SYSTEM_PROMPT:
+            payload = json.loads(prompt)
+            bindings = list(payload.get("eligible_bindings") or [])
+            self.read_assessment_calls.append(
+                {
+                    "slot_id": payload.get("assessment_unit", {}).get("slot_id"),
+                    "binding_ids": [item.get("binding_id") for item in bindings],
+                    "cost_phase": kwargs.get("cost_phase"),
+                }
+            )
+            if self.read_assessment_decision == "NO_READ":
+                return json.dumps(
+                    {
+                        "schema_version": (
+                            "search_judgment_read_assessment_decision_v1"
+                        ),
+                        "decision": "NO_READ",
+                        "reason_code": "offline_no_read",
+                    }
+                )
+            if self.read_assessment_decision == "REQUEST_READ_PAGE" and bindings:
+                return json.dumps(
+                    {
+                        "schema_version": (
+                            "search_judgment_read_assessment_decision_v1"
+                        ),
+                        "decision": "REQUEST_READ_PAGE",
+                        "nominated_binding_id": bindings[0]["binding_id"],
+                        "reason_code": "offline_request_page",
+                    }
+                )
+            if (
+                self.read_assessment_decision == "REQUEST_FIRST_THEN_NO_READ"
+                and bindings
+            ):
+                if len(self.read_assessment_calls) == 1:
+                    return json.dumps(
+                        {
+                            "schema_version": (
+                                "search_judgment_read_assessment_decision_v1"
+                            ),
+                            "decision": "REQUEST_READ_PAGE",
+                            "nominated_binding_id": bindings[0]["binding_id"],
+                            "reason_code": "offline_request_first_page",
+                        }
+                    )
+                return json.dumps(
+                    {
+                        "schema_version": (
+                            "search_judgment_read_assessment_decision_v1"
+                        ),
+                        "decision": "NO_READ",
+                        "reason_code": "offline_no_later_read",
+                    }
+                )
+            if self.read_assessment_decision == "INVALID_NOMINATION":
+                return json.dumps(
+                    {
+                        "schema_version": (
+                            "search_judgment_read_assessment_decision_v1"
+                        ),
+                        "decision": "REQUEST_READ_PAGE",
+                        "nominated_binding_id": "not-an-eligible-binding",
+                        "reason_code": "offline_invalid_nomination",
+                    }
+                )
+            if self.read_assessment_decision == "MALFORMED":
+                return "not-json"
+            raise AssertionError("offline READ assessment response unavailable")
         if system_prompt == DEFAULT_SYSTEM["router"]:
             return json.dumps(
                 {
@@ -470,6 +545,7 @@ def run_post_retirement_ordinary_pipeline(
     cap_policy: Any | None = None,
     deps_overrides: Mapping[str, Any] | None = None,
     environment_overrides: Mapping[str, str] | None = None,
+    read_assessment_decision: str | None = None,
 ) -> tuple[Any, PostRetirementOrdinaryPipelineHarness]:
     scrub_offline_runtime(monkeypatch)
     for key, value in (environment_overrides or {}).items():
@@ -490,6 +566,7 @@ def run_post_retirement_ordinary_pipeline(
         healthy=healthy,
         evidence_rows=evidence_rows,
         install_economist_sentinel=install_economist_sentinel,
+        read_assessment_decision=read_assessment_decision,
     )
     config = replace(
         offline_balanced_run_config(
@@ -511,12 +588,17 @@ def run_post_retirement_ordinary_pipeline(
     deps = harness.deps()
     if deps_overrides:
         deps = replace(deps, **dict(deps_overrides))
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(HANDOFF_PACKET,),
+    )
     outcome = orchestrator.run_pipeline(
         config,
         deps,
         NullStatusWriter(),
         CostAccumulator(),
     )
+    harness.run_kernel = captured.get("run_kernel")
     return outcome, harness
 
 

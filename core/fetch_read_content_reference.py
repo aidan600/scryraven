@@ -839,11 +839,13 @@ class FetchReadContentPacket:
                     candidate_packet.get("request_id"),
                     "fetch/read packet requires request_id",
                 ),
-                "current_answer_contract_ref": _safe_mapping(
-                    candidate_packet.get("current_answer_contract_ref")
+                "current_answer_contract_ref": _candidate_packet_contract_ref(
+                    candidate_packet
                 ),
                 "current_answer_contract_digest": _required_token(
-                    candidate_packet.get("current_answer_contract_digest"),
+                    _candidate_packet_contract_ref(candidate_packet).get(
+                        "contract_digest"
+                    ),
                     "fetch/read packet requires current_answer_contract_digest",
                     limit=128,
                 ),
@@ -1063,7 +1065,7 @@ def _candidate_records_by_id(candidate_packet: Mapping[str, Any]) -> dict[str, A
     by_id: dict[str, Any] = {}
     seen_digests: set[str] = set()
     for record in records:
-        safe = _safe_mapping(record)
+        safe = _candidate_record_for_fetch_read(candidate_packet, record)
         candidate_id = _required_token(
             safe.get("candidate_id"),
             "candidate record requires candidate_id",
@@ -1081,6 +1083,52 @@ def _candidate_records_by_id(candidate_packet: Mapping[str, Any]) -> dict[str, A
         by_id[candidate_id] = safe
         seen_digests.add(candidate_digest)
     return by_id
+
+
+def _candidate_packet_contract_ref(
+    candidate_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    return _safe_mapping(
+        candidate_packet.get("current_answer_contract_ref")
+        or candidate_packet.get("answer_contract_ref")
+    )
+
+
+def _candidate_record_for_fetch_read(
+    candidate_packet: Mapping[str, Any],
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(record)
+    if safe.get("origin_kind") != "ordinary_query_provider":
+        return safe
+    contract_ref = _candidate_packet_contract_ref(candidate_packet)
+    handoff_ref = _safe_mapping(candidate_packet.get("search_executor_handoff_ref"))
+    source_result_ref = _safe_mapping(safe.get("source_result_ref"))
+    url = _required_url(
+        safe.get("normalized_url"),
+        "ordinary content reference requires candidate url",
+    )
+    domain = _required_domain(
+        safe.get("domain") or _domain_from_url(url),
+        "ordinary content reference requires candidate domain",
+    )
+    return _without_empty(
+        {
+            **safe,
+            "current_answer_contract_ref": contract_ref,
+            "current_answer_contract_digest": contract_ref.get(
+                "contract_digest"
+            ),
+            "search_executor_handoff_ref": handoff_ref,
+            "search_executor_handoff_digest": handoff_ref.get("handoff_digest"),
+            "search_task_id": source_result_ref.get("source_result_id"),
+            "provider_call_index": safe.get("provider_call_ordinal"),
+            "result_rank": safe.get("provider_result_rank"),
+            "title": safe.get("title") or domain,
+            "url": url,
+            "domain": domain,
+        }
+    )
 
 
 def _validate_sanitized_content_reference(
@@ -1291,7 +1339,7 @@ def _validate_url_domain_binding(
         candidate.get("url"),
         "content reference requires candidate url",
     )
-    candidate_domain = _required_domain(
+    _required_domain(
         candidate.get("domain") or _domain_from_url(candidate_url),
         "content reference requires candidate domain",
     )
@@ -1315,27 +1363,9 @@ def _validate_url_domain_binding(
         raise FetchReadContentReferenceError(
             "sanitized fetch/read material attempted_url does not match candidate URL"
         )
-    if provider_reported_url and _normalized_url(
-        provider_reported_url
-    ) != _normalized_url(candidate_url):
-        raise FetchReadContentReferenceError(
-            "sanitized fetch/read material provider_reported_url does not match "
-            "candidate URL"
-        )
-    for label, url in (
-        ("resolved_url", resolved_url),
-        ("final_url", final_url),
-        ("canonical_url", canonical_url),
-    ):
-        url_domain = _domain_from_url(url)
-        if url_domain and url_domain != candidate_domain:
-            raise FetchReadContentReferenceError(
-                f"sanitized fetch/read material {label} domain mismatch"
-            )
-    if resolved_domain and resolved_domain != candidate_domain:
-        raise FetchReadContentReferenceError(
-            "sanitized fetch/read material resolved_domain mismatch"
-        )
+    # Provider-reported, resolved, final, canonical, and resolved-domain facts
+    # are optional provenance. They never replace requested/attempted identity
+    # and may differ without invalidating the authorized READ.
 
 
 def _bounded_text_payload(material: Mapping[str, Any]) -> dict[str, Any]:

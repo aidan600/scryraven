@@ -245,6 +245,24 @@ Synthesis inherits the underlying component evidence posture. The proposal
 contract, full catalogs, and source material do not enter canonical RunKernel,
 scheduler, graph, result, log, or trace projections.
 
+## Installed READ Custody Boundary
+
+The ordinary post-DISCOVER main RunKernel now derives exact current
+candidate/material-need bindings and obtains a separate model-owned READ
+assessment. Only an exact `REQUEST_READ_PAGE` nomination enters the existing
+acquisition controller. A successful Linkup Fetch or Tavily Extract produces
+the existing `FetchReadContentPacket` and `SanitizedContentReference` bounded
+readable-content handoff after `SearchResultCandidatePacket` and before
+EvidenceLedger custody. That custody is not evidence, is not citation-eligible,
+and does not satisfy source obligations. Fetched material does not enter this
+semantic loop in the READ/custody checkpoint; later semantic use requires its
+own explicitly installed authority.
+
+Candidate presence remains a nontrigger, provider failure has no fallback, and
+the ordinary path consults neither legacy full-SearchJudgment enablement nor
+ordinary-live source-custody flags. The installed offline path proves custody,
+not live provider quality or downstream semantic correctness.
+
 ## Live And Operator Boundaries
 
 Live provider, model, search, fetch/read, retrieval, and product work is
@@ -283,13 +301,14 @@ messy-source semantic correctness, citation rendering, source-obligation
 satisfaction, broad answer quality, or product correctness. It does not license
 new providers, prompts, retrieval behavior, source ranking, Author behavior,
 additional Specialist capabilities, or calculator scope expansion. Installed
-offline activation does not prove live calculator correctness, exact-URL READ,
-Focused Extract, final custody, Serper connection, Map, Crawl, compatibility
-rename, or broad quantitative reasoning quality. No live provider, model,
+offline activation does not prove live calculator correctness, live exact-URL
+READ behavior, downstream semantic use of custody, Focused Extract, Serper
+connection, Map, Crawl, compatibility rename, or broad quantitative reasoning
+quality. No live provider, model,
 search, fetch/read, or retrieval call was made. Current prioritization and
 checkpoint selection belong exclusively to [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md); target SearchOS sequencing and operating
 boundaries are described by [SearchOS Operating
 Model](SEARCHOS_OPERATING_MODEL.md). Nothing in this semantic-loop owner
-independently activates or reprioritizes exact-URL READ, Focused Extract, final
-custody, Serper connection, Map, Crawl, or any other uninstalled capability.
+independently activates or reprioritizes downstream READ semantic use, Focused
+Extract, Serper connection, Map, Crawl, or any other uninstalled capability.

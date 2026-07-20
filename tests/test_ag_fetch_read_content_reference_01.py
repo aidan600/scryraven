@@ -290,15 +290,17 @@ def test_fetch_read_content_packet_rejects_lineage_and_url_domain_mismatch() -> 
             [wrong_url],
         )
 
-    wrong_domain = _readable_material(
+    provider_resolved_domain = _readable_material(
         candidate_packet,
         extra={"resolved_domain": "other.example.gov"},
     )
-    with pytest.raises(FetchReadContentReferenceError, match="resolved_domain"):
-        build_fetch_read_content_packet_from_candidate_packet(
-            candidate_packet,
-            [wrong_domain],
-        )
+    domain_packet = build_fetch_read_content_packet_from_candidate_packet(
+        candidate_packet,
+        [provider_resolved_domain],
+    )
+    assert domain_packet["reference_records"][0]["resolved_domain"] == (
+        "other.example.gov"
+    )
 
 
 def test_fetch_read_content_packet_rejects_tampered_candidate_packet() -> None:

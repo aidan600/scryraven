@@ -591,6 +591,10 @@ LIVE_SEARCH_VALIDATION_STAGE = LIVE_SEARCH_VALIDATION_STAGE_NAME
 ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE = (
     "ordinary_discovery_candidate_handoff"
 )
+SEARCH_JUDGMENT_READ_BINDING_STAGE = "search_judgment_read_binding_derivation"
+SEARCH_JUDGMENT_READ_ASSESSMENT_STAGE = "search_judgment_read_assessment"
+SEARCH_JUDGMENT_READ_PROPOSAL_STAGE = "search_judgment_read_proposal_registry"
+SEARCH_JUDGMENT_READ_CUSTODY_STAGE = "search_judgment_read_custody_registry"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -773,6 +777,16 @@ class ActionType(str, Enum):
     ORDINARY_DISCOVERY_CANDIDATE_HANDOFF = (
         "ordinary_discovery_candidate_handoff"
     )
+    SEARCH_JUDGMENT_READ_BINDINGS_DERIVE = (
+        "search_judgment_read_bindings_derive"
+    )
+    SEARCH_JUDGMENT_READ_ASSESS = "search_judgment_read_assess"
+    SEARCH_JUDGMENT_READ_PROPOSAL_RECORD = (
+        "search_judgment_read_proposal_record"
+    )
+    SEARCH_JUDGMENT_READ_CUSTODY_RECORD = (
+        "search_judgment_read_custody_record"
+    )
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -910,6 +924,16 @@ class ObservationType(str, Enum):
     LIVE_SEARCH_VALIDATED = "live_search_validated"
     ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED = (
         "ordinary_discovery_candidate_handoff_created"
+    )
+    SEARCH_JUDGMENT_READ_BINDINGS_DERIVED = (
+        "search_judgment_read_bindings_derived"
+    )
+    SEARCH_JUDGMENT_READ_ASSESSED = "search_judgment_read_assessed"
+    SEARCH_JUDGMENT_READ_PROPOSAL_RECORDED = (
+        "search_judgment_read_proposal_recorded"
+    )
+    SEARCH_JUDGMENT_READ_CUSTODY_RECORDED = (
+        "search_judgment_read_custody_recorded"
     )
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
@@ -1401,6 +1425,7 @@ class RunState:
         default_factory=list
     )
     acquisition_control_state: dict[str, Any] = field(default_factory=dict)
+    search_judgment_read_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1786,6 +1811,9 @@ class RunState:
                 self.search_executor_handoff_history
             ),
             acquisition_control_state=deepcopy(self.acquisition_control_state),
+            search_judgment_read_state=deepcopy(
+                self.search_judgment_read_state
+            ),
             live_search_validation_state=deepcopy(
                 self.live_search_validation_state
             ),
@@ -2164,6 +2192,7 @@ class KernelTraceProjection:
     search_executor_handoff_projection: Mapping[str, Any]
     search_executor_handoff_history: Sequence[Mapping[str, Any]]
     acquisition_control_state: Mapping[str, Any]
+    search_judgment_read_state: Mapping[str, Any]
     live_search_validation_state: Mapping[str, Any]
     live_search_validation_projection: Mapping[str, Any]
     live_search_validation_history: Sequence[Mapping[str, Any]]
@@ -2357,6 +2386,9 @@ class KernelTraceProjection:
             ],
             "acquisition_control_state": _safe_mapping(
                 self.acquisition_control_state
+            ),
+            "search_judgment_read_state": _safe_mapping(
+                self.search_judgment_read_state
             ),
             "live_search_validation_state": _safe_mapping(
                 self.live_search_validation_state
@@ -2839,9 +2871,11 @@ class RunKernel:
                 run_id=self.state.run_id,
                 request_id=self.state.request_id,
                 current_answer_contract=self.state.current_answer_contract,
+                initial_answer_contract=self.state.initial_answer_contract,
                 search_executor_handoff_state=(
                     self.state.search_executor_handoff_state
                 ),
+                search_work_plan=self.state.search_work_plan,
             )
         except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
@@ -8194,9 +8228,18 @@ class RunKernel:
             merged_inputs.get("answer_contract_ref")
         )
         if supplied_contract_ref:
+            active_contract = (
+                self.state.current_answer_contract
+                or self.state.initial_answer_contract
+            )
+            active_source = (
+                "current_answer_contract"
+                if self.state.current_answer_contract
+                else "initial_answer_contract"
+            )
             current_contract_ref = _handoff_contract_ref_from_contract(
-                self.state.current_answer_contract,
-                source="current_answer_contract",
+                active_contract,
+                source=active_source,
             )
             if not current_contract_ref or supplied_contract_ref != (
                 current_contract_ref
@@ -8212,6 +8255,157 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=(
                 ObservationType.ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED
+            ),
+        )
+
+    def authorize_search_judgment_read_bindings(
+        self,
+        *,
+        candidate_packet: Mapping[str, Any],
+        query_plan: Any,
+        discovery_result_store: Any,
+        reason: str = "derive_current_candidate_material_need_bindings",
+    ) -> AuthorizedAction:
+        """Derive current text-free READ-assessment bindings under authority."""
+
+        from core.search_judgment_read_assessment_runtime import (
+            derive_selected_candidate_material_need_bindings,
+        )
+
+        binding_state = derive_selected_candidate_material_need_bindings(
+            run_kernel=self,
+            candidate_packet=candidate_packet,
+            query_plan=query_plan,
+            discovery_result_store=discovery_result_store,
+        )
+        return self.authorize(
+            stage=SEARCH_JUDGMENT_READ_BINDING_STAGE,
+            action_type=ActionType.SEARCH_JUDGMENT_READ_BINDINGS_DERIVE,
+            reason=reason,
+            inputs={"binding_state": binding_state},
+            expected_observation_type=(
+                ObservationType.SEARCH_JUDGMENT_READ_BINDINGS_DERIVED
+            ),
+        )
+
+    def authorize_search_judgment_read_assessment(
+        self,
+        *,
+        slot_id: str,
+        binding_ids: Sequence[str],
+        reason: str = "mandatory_model_owned_read_assessment",
+    ) -> AuthorizedAction:
+        state = _safe_mapping(self.state.search_judgment_read_state)
+        binding_state = _safe_mapping(state.get("binding_state"))
+        admitted_slots = set(
+            binding_state.get("policy_admitted_slot_ids") or []
+        )
+        expected_binding_ids = list(
+            _safe_mapping(binding_state.get("bindings_by_slot")).get(
+                slot_id, []
+            )
+            or []
+        )
+        if slot_id not in admitted_slots or not expected_binding_ids:
+            raise RunKernelTransitionError(
+                "READ assessment slot is not current and policy-admitted"
+            )
+        if list(binding_ids) != expected_binding_ids:
+            raise RunKernelTransitionError(
+                "READ assessment binding order is stale"
+            )
+        if slot_id in _safe_mapping(
+            state.get("assessment_records_by_slot")
+        ):
+            raise RunKernelTransitionError(
+                "READ assessment slot was already assessed"
+            )
+        policy_ref = _safe_mapping(binding_state.get("policy_ref"))
+        if int(state.get("logical_assessment_count") or 0) >= int(
+            policy_ref.get(
+                "maximum_logical_read_assessments_per_checkpoint_run"
+            )
+            or 0
+        ):
+            raise RunKernelTransitionError("READ assessment policy budget exhausted")
+        return self.authorize(
+            stage=SEARCH_JUDGMENT_READ_ASSESSMENT_STAGE,
+            action_type=ActionType.SEARCH_JUDGMENT_READ_ASSESS,
+            reason=reason,
+            inputs={
+                "slot_id": slot_id,
+                "binding_ids": expected_binding_ids,
+                "binding_set_digest": binding_state.get("binding_set_digest"),
+                "policy_ref": policy_ref,
+            },
+            expected_observation_type=(
+                ObservationType.SEARCH_JUDGMENT_READ_ASSESSED
+            ),
+        )
+
+    def current_search_judgment_read_custody(
+        self, normalized_url: str
+    ) -> dict[str, Any]:
+        from core.discovery_source_result import normalize_discovery_result_url
+
+        canonical_url = normalize_discovery_result_url(normalized_url)
+        state = _safe_mapping(self.state.search_judgment_read_state)
+        record = _safe_mapping(
+            _safe_mapping(state.get("custody_by_normalized_url")).get(
+                canonical_url
+            )
+        )
+        if not record:
+            return {}
+        active_contract = (
+            self.state.current_answer_contract or self.state.initial_answer_contract
+        )
+        active_source = (
+            "current_answer_contract"
+            if self.state.current_answer_contract
+            else "initial_answer_contract"
+        )
+        active_ref = _handoff_contract_ref_from_contract(
+            active_contract,
+            source=active_source,
+        )
+        if _safe_mapping(record.get("answer_contract_ref")) != active_ref:
+            return {}
+        return record
+
+    def authorize_search_judgment_read_proposal_event(
+        self,
+        *,
+        event: Mapping[str, Any],
+        reason: str = "record_binding_backed_read_acquisition_proposal",
+    ) -> AuthorizedAction:
+        if not self.state.search_judgment_read_state:
+            raise RunKernelTransitionError("READ proposal requires canonical state")
+        return self.authorize(
+            stage=SEARCH_JUDGMENT_READ_PROPOSAL_STAGE,
+            action_type=ActionType.SEARCH_JUDGMENT_READ_PROPOSAL_RECORD,
+            reason=reason,
+            inputs={"proposal_event": dict(event)},
+            expected_observation_type=(
+                ObservationType.SEARCH_JUDGMENT_READ_PROPOSAL_RECORDED
+            ),
+        )
+
+    def authorize_search_judgment_read_custody_event(
+        self,
+        *,
+        event: Mapping[str, Any],
+        reason: str = "register_or_reuse_current_read_custody",
+    ) -> AuthorizedAction:
+        if not self.state.search_judgment_read_state:
+            raise RunKernelTransitionError("READ custody requires canonical state")
+        return self.authorize(
+            stage=SEARCH_JUDGMENT_READ_CUSTODY_STAGE,
+            action_type=ActionType.SEARCH_JUDGMENT_READ_CUSTODY_RECORD,
+            reason=reason,
+            inputs={"custody_event": dict(event)},
+            expected_observation_type=(
+                ObservationType.SEARCH_JUDGMENT_READ_CUSTODY_RECORDED
             ),
         )
 
@@ -15883,6 +16077,85 @@ class RunKernel:
                 deepcopy(revision_projection)
             )
             self.state.projections[action.stage] = deepcopy(revision_projection)
+        elif action.action_type is ActionType.SEARCH_JUDGMENT_READ_BINDINGS_DERIVE:
+            from core.search_judgment_read_assessment_runtime import (
+                SearchJudgmentReadAssessmentError,
+                validate_search_judgment_read_binding_reduction,
+            )
+
+            try:
+                read_state = validate_search_judgment_read_binding_reduction(
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    initial_answer_contract=self.state.initial_answer_contract,
+                    current_answer_contract=self.state.current_answer_contract,
+                    search_work_plan=self.state.search_work_plan,
+                    search_executor_handoff_projection=(
+                        self.state.projections.get(
+                            ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE, {}
+                        )
+                    ),
+                )
+            except SearchJudgmentReadAssessmentError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.search_judgment_read_state = read_state
+            self.state.projections[action.stage] = deepcopy(read_state)
+        elif action.action_type is ActionType.SEARCH_JUDGMENT_READ_ASSESS:
+            from core.search_judgment_read_assessment_runtime import (
+                SearchJudgmentReadAssessmentError,
+                validate_search_judgment_read_assessment_reduction,
+            )
+
+            try:
+                read_state = validate_search_judgment_read_assessment_reduction(
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    current_state=self.state.search_judgment_read_state,
+                )
+            except SearchJudgmentReadAssessmentError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.search_judgment_read_state = read_state
+            self.state.projections[action.stage] = deepcopy(
+                _safe_mapping(observation.payload).get("assessment_record", {})
+            )
+        elif action.action_type is ActionType.SEARCH_JUDGMENT_READ_PROPOSAL_RECORD:
+            from core.search_judgment_read_assessment_runtime import (
+                SearchJudgmentReadAssessmentError,
+                validate_search_judgment_read_proposal_reduction,
+            )
+
+            try:
+                read_state = validate_search_judgment_read_proposal_reduction(
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    current_state=self.state.search_judgment_read_state,
+                )
+            except SearchJudgmentReadAssessmentError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.search_judgment_read_state = read_state
+            self.state.projections[action.stage] = deepcopy(
+                _safe_mapping(observation.payload).get("proposal_event", {})
+            )
+        elif action.action_type is ActionType.SEARCH_JUDGMENT_READ_CUSTODY_RECORD:
+            from core.search_judgment_read_assessment_runtime import (
+                SearchJudgmentReadAssessmentError,
+                validate_search_judgment_read_custody_reduction,
+            )
+
+            try:
+                read_state = validate_search_judgment_read_custody_reduction(
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    current_state=self.state.search_judgment_read_state,
+                )
+            except SearchJudgmentReadAssessmentError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.search_judgment_read_state = read_state
+            self.state.projections[action.stage] = deepcopy(
+                _safe_mapping(observation.payload).get("custody_event", {})
+            )
         elif (
             action.action_type
             is ActionType.ORDINARY_DISCOVERY_CANDIDATE_HANDOFF
@@ -15896,9 +16169,18 @@ class RunKernel:
                 action.inputs.get("answer_contract_ref")
             )
             if supplied_contract_ref:
+                active_contract = (
+                    self.state.current_answer_contract
+                    or self.state.initial_answer_contract
+                )
+                active_source = (
+                    "current_answer_contract"
+                    if self.state.current_answer_contract
+                    else "initial_answer_contract"
+                )
                 current_contract_ref = _handoff_contract_ref_from_contract(
-                    self.state.current_answer_contract,
-                    source="current_answer_contract",
+                    active_contract,
+                    source=active_source,
                 )
                 if not current_contract_ref or supplied_contract_ref != (
                     current_contract_ref
