@@ -205,12 +205,12 @@ Extract, Map, and bounded Crawl; and mechanically authorized general Linkup
 `deep/searchResults`. `core.routing` remains the sole policy owner.
 
 Current ordinary DISCOVER consumers remain on completed ProviderPlan decisions.
-The selected-candidate source-custody entrypoint now consumes a typed READ
-decision, dispatches one Linkup Fetch or route-time Tavily Extract adapter, and
-feeds the normalized result to the existing FetchReadContentPacket and
-EvidenceLedger custody owners. The generic single-relation product root also
-supplies a completed route decision, and `process_search_queries(None)` no
-longer manufactures a provider policy.
+The typed READ control chain and Linkup Fetch/Tavily Extract adapters exist, but
+the later initial-discovery retirement left no ordinary independent material-
+need producer. Selected-candidate presence is a nontrigger and does not reach
+READ or custody. The generic single-relation product root supplies a completed
+DISCOVER route decision, and `process_search_queries(None)` no longer
+manufactures a provider policy.
 
 The merge-blocking authority continuation is also complete: one boolean
 provider-availability snapshot is shared by discovery and READ; callables,
@@ -220,13 +220,13 @@ posture is explicit; and missing redirect, canonical, page-status, or crawl-pare
 remain unknown instead of being synthesized.
 
 The final acquisition-identity continuation is complete: ordinary generic
-PRODUCT extraction supplies a provider-neutral `general` or `domain_targeted`
+PRODUCT discovery supplies a provider-neutral `general` or `domain_targeted`
 qualifier and no acquisition-plan provider override; a requested provider name
 cannot create an academic, disambiguation, or independent-index capability.
-Tavily READ binds a provider-reported result URL to the selected candidate,
-retains a match through existing custody, and returns typed
-`read_provider_reported_url_mismatch` with zero packet or EvidenceLedger custody
-on mismatch.
+Typed-runtime Tavily READ binds a provider-reported result URL to the requested
+known URL and returns `read_provider_reported_url_mismatch` before packet or
+EvidenceLedger custody on mismatch. This is adapter/control capability, not
+ordinary READ consumption.
 
 Focused extraction, site mapping, site crawling, and general Linkup Deep are
 installed typed-runtime capabilities but have no ordinary PRODUCT requester.
@@ -320,72 +320,59 @@ call, acquisition proposal, READ or Focused Extract work, exact-URL cap charge,
 or URL transport. Serper lightweight disambiguation and compatibility renaming
 remain deferred. No live call was made.
 
-## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01
+## Active SearchOS MVP Sequence
 
-The sole active next checkpoint is
-[EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01](EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-It may proceed now that canonical ordinary DISCOVER supplies the selected-
-candidate packet. It must install a real independent current-material-need
-producer, genuinely product-consumed exact-URL READ and conditional Focused
-Extract, and final custody while preserving the selected-candidate nontrigger.
-The same checkpoint covers separately justified Focused Extract when the
-current material-need owner can truthfully supply exact bounded focus and the
-required lineage. The sequence is
-exact-URL READ and Focused Extract with final custody, then planner-
-disambiguation acquisition convergence, site-topology selection authority, and
-Crawl page custody. This checkpoint must not absorb planner disambiguation, Map
-selection, or Crawl page custody.
+[SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns the
+target subsystem boundary. The previously active combined
+`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01` brief was superseded
+before implementation because it separated planner
+disambiguation from query strategy, combined READ and Focused Extract too
+early, and prohibited every failure-time escalation.
 
-## Queued: PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01
+The approved sequence is:
 
-This checkpoint follows only after exact-URL/final-custody convergence. It may
-connect provider-neutral lightweight disambiguation and bounded query-direction
-hints, but must not fetch candidate pages, trigger READ or Focused Extract, rank
-with newly fetched page text, or become a second exact-URL authority.
+```text
+SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01
+-> SEARCHOS-READ-SOURCE-AND-CUSTODY-01
+-> SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
+-> SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
+-> offline SearchOS integration gate
+-> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
+-> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
+-> SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01
+-> SearchOS MVP release
+```
 
-## Queued: SITE-TOPOLOGY-SELECTION-AUTHORITY-01
+Query strategy is an MVP requirement, and reconnaissance policy remains to be
+calibrated. The core loop includes page reading, custody, bounded navigation,
+and at most one planned alternate or stronger attempt after a typed retrieval-
+quality failure. That adaptive fallback is approved target behavior and remains
+uninstalled. A usable success is never retried merely to compare providers, and
+a successfully read but insufficient source sends the run to search, another
+source, or bounded navigation rather than repeated extraction.
 
-[SITE-TOPOLOGY-SELECTION-AUTHORITY-01](SITE_TOPOLOGY_SELECTION_AUTHORITY_01.md)
-follows only after exact-URL/final-custody and planner-disambiguation acquisition
-convergence. It may activate Map, admit canonical topology, and add explicit
-RunKernel URL-selection authority. Provider result order cannot become
-relevance, topology cannot become evidence, and no automatic Map-to-Crawl is
-allowed.
+These checkpoint names record sequence only; this roadmap does not create their
+detailed implementation briefs or activate their capabilities.
 
-## Queued Split: CRAWL-PAGE-CUSTODY-CONVERGENCE-01
+## Optional And Post-MVP Insertions
 
-[CRAWL-PAGE-CUSTODY-CONVERGENCE-01](CRAWL_PAGE_CUSTODY_CONVERGENCE_01.md) is a
-separate checkpoint because page-level source identity and custody contracts
-have a different owner and rollback boundary from Map topology selection. It
-must preserve one source identity per page and may not manufacture search
-candidates or aggregate a page collection into a false source.
+Map may be inserted later as an optional navigation plugin only if it reuses
+existing URL-selection authority. It is not a core-MVP prerequisite. Crawl,
+provider Deep/Research, social specialization, conversation, and UI are also
+not core-MVP prerequisites.
 
-### Separately Licensed Comparative Live Validation
+A future Crawl phase must preserve one source identity and custody record per
+page. Social-domain acquisition remains provider-pluggable but grants no
+sampling, representativeness, trust, or sentiment authority. Conversation must
+remain a transport-neutral follow-up service and re-enter SearchOS only when
+new work is required. UI must consume transport-neutral product services.
 
-A separately licensed comparative live-validation phase may be considered only
-after mode-policy recovery authority containment, Specialist proposal-instance
-admission hardening, structured-list route qualification, semantic Scout
-retirement, provider-capability routing, acquisition-runtime convergence,
-RunKernel acquisition-control foundation, initial-discovery selective-fetch
-retirement, and exact-URL bounded final-custody convergence. Offline proof does
-not authorize live work, and this roadmap
-grants no live license. The queued Map and Crawl briefs are not installed
-behavior and authorize no work in the active exact-URL phase.
-Arbitrary-query coverage, broad quantitative reasoning quality, provider
-quality, and product correctness remain unproved.
-
-### Social Authority And Social Awareness
-
-Social-source acquisition authority, sampling, representativeness, trust,
-sentiment, and a possible Social Awareness Specialist require their own later
-design and offline validation. A domain-targeted discovery constraint grants
-none of those properties.
-
-### Conversation And UI
-
-Conversation, follow-up, and UI work remains later and must consume
-transport-neutral product services. It is not part of acquisition routing or
-the adapter sequence.
+Comparative calibration and live shakeout require their own explicit licenses.
+Offline proof does not authorize live work. This roadmap grants no live license
+and authorizes no live provider, model, search, read, retrieval, Map, Crawl,
+Deep, or Research call. Provider-failure retry remains uninstalled. Arbitrary-
+query coverage, broad quantitative reasoning quality, provider quality, and
+product correctness remain unproved.
 
 ## Later, Deliberately Underspecified
 

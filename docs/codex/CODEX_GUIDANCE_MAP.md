@@ -58,6 +58,7 @@ completed-phase chronology into phase briefs.
 
 | Concern | Read first |
 | --- | --- |
+| SearchOS search, source-acquisition, navigation, and recovery architecture (`canonical:searchos-operating-model`) | [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) |
 | D-prime role and authority (`canonical:dprime-role-contract`) | [D-prime Architecture](../architecture/DPRIME_ARCHITECTURE.md) |
 | Integrated query-to-answer semantic loop (`canonical:run-contract-semantic-loop`) | [Run-Contract Semantic Loop](../architecture/RUN_CONTRACT_SEMANTIC_LOOP.md) |
 | Component DAG, scheduling, leases, and concurrency (`canonical:component-dag-scheduling-concurrency`) | [RunKernel Component DAG, Scheduling, And Concurrency](../architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) |
@@ -101,6 +102,18 @@ its narrow responsibility:
 debt. A zero line delta is a scope-control fact, not architecture success.
 
 ## Provider And Operator Routing
+
+For SearchOS architecture or product work, read [SearchOS Operating
+Model](../architecture/SEARCHOS_OPERATING_MODEL.md) after the default current-
+state owner. Additionally read [Provider Capability and Acquisition
+Routing](../architecture/PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) only
+when provider selection, adapters, profiles, or escalation policy is in scope.
+Additionally read [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) only for
+prioritization, checkpoint selection, or phase sequencing. A narrow search task
+does not require all three supporting documents.
+
+SearchOS doctrine is a concern owner, not a global workflow owner. The smallest-
+owner rule and default current-state read path remain in force.
 
 | Concern | Read first |
 | --- | --- |

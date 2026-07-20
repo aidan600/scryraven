@@ -236,6 +236,12 @@ installs the canonical ordinary provider-result handoff while preserving the
 initial-discovery transport retirement at
 `48a309124764d813cf27081bf5871d5a9612db79`. The current chain is:
 
+PR #507's network-attestation code is inactive after the PR #508 revert. The
+current tree is the post-PR-#506 foundation: PRs #503 through #506 remain
+active. No DNS snapshot, connected-address, redirect-chain, or mandatory final/
+canonical-URL acceptance requirement from the reverted change governs the
+ordinary product.
+
 ```text
 QueryPlan and authorized item
 -> ProviderPlan record and completed DISCOVER route
@@ -359,10 +365,11 @@ or product correctness authority.
 RunKernel still owns post-selection proposal admission, capability, work order,
 route, execution, terminal, exhaustion, and custody authorization. The guarded
 executor and Linkup Fetch/Tavily Extract mechanical adapters remain installed
-for the sole active next phase, which must supply a separate current material
-need. Provider failure never activates a fallback. `RunConfig` keeps source
-custody and main coverage default-disabled, late main coverage cannot reacquire,
-and the retired `AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
+for a future phase with a separate current material need. No ordinary
+`READ_PAGE` consumer reaches them today. Provider-failure fallback and bounded
+navigation are not installed. `RunConfig` keeps source custody and main
+coverage default-disabled, late main coverage cannot reacquire, and the retired
+`AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
 
 Historical fetch-callsite dispositions remain exact:
 
@@ -384,11 +391,11 @@ Focused Extract, exact-URL READ consumption, final custody, Serper connection,
 Map, Crawl, compatibility rename, and evidence/final authority remain
 uninstalled. Compatibility names such as `proplex`, `python -m proplex`,
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
-model, search, fetch/read, or retrieval call was made. The sole active next is
-[`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`](../roadmap/EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md).
-Its approved scope is separately justified exact-URL READ and Focused Extract
-with final custody before planner-disambiguation acquisition convergence, site-
-topology selection authority, and Crawl page custody.
+model, search, fetch/read, or retrieval call was made. SearchPlanner, Scout
+disambiguation, SearchPlannerRevision, QueryPlan roles, and RunAuthority search
+judgment exist, but they are not converged into the target SearchOS loop.
+Current priority and checkpoint order belong only to [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
 Control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md), [Provider Capability
 And Acquisition Routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md), and
@@ -452,6 +459,11 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Map topology selection, Map-to-READ/Focused re-entry, or Crawl page-level
   custody.
 - Provider-failure cross-provider retry.
+- The complete SearchOS query, search, read, navigation, custody, recovery, and
+  stopping loop.
+- A browser or general local scraper as an ordinary product path.
+- A complete PDF acquisition path; the retained pure text-layer parser alone
+  does not provide one.
 
 ## Not Proved
 
@@ -501,6 +513,7 @@ and this document does not license changes to that surface.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.
 - [RunKernel post-discovery acquisition control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) owns post-discovery capability, work-order, route, execution, terminal, and custody authorization.
 - [Provider capability and acquisition routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) owns provider catalog, routing policy, mechanical operation matrix, and provider-material boundaries.
+- [SearchOS operating model](SEARCHOS_OPERATING_MODEL.md) owns target search, source-acquisition, navigation, and recovery architecture.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
 - [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns claim-scoped numeric projection and accepted-prose validation across active finalizers.

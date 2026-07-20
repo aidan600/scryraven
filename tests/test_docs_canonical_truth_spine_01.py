@@ -22,42 +22,25 @@ ARCH = DOCS / "architecture"
 GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
-DISCOVER_HANDOFF_BRIEF = (
-    DOCS
-    / "roadmap"
-    / "DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md"
-)
-EXACT_URL_BRIEF = (
-    DOCS
-    / "roadmap"
-    / "EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md"
-)
+DISCOVER_HANDOFF_BRIEF = DOCS / "roadmap" / "DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md"
+EXACT_URL_BRIEF = DOCS / "roadmap" / "EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md"
 CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
+SEARCHOS = ARCH / "SEARCHOS_OPERATING_MODEL.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
 ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
-ECONOMIST_TELEMETRY_POLICY = (
-    DOCS / "economist_shadow_telemetry_promotion_policy.md"
-)
+ECONOMIST_TELEMETRY_POLICY = DOCS / "economist_shadow_telemetry_promotion_policy.md"
 CONCERN_OWNERS = {
     "canonical:dprime-role-contract": ARCH / "DPRIME_ARCHITECTURE.md",
     "canonical:run-contract-semantic-loop": ARCH / "RUN_CONTRACT_SEMANTIC_LOOP.md",
-    "canonical:component-dag-scheduling-concurrency": (
-        ARCH / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md"
-    ),
+    "canonical:component-dag-scheduling-concurrency": (ARCH / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md"),
     "canonical:fap-author-boundary": ARCH / "FAP_AUTHOR_BOUNDARY.md",
-    "canonical:bounded-multicomponent-runtime": (
-        ARCH / "MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md"
-    ),
+    "canonical:bounded-multicomponent-runtime": (ARCH / "MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md"),
     "canonical:specialist-graph-substrate": ARCH / "SPECIALIST_GRAPH_SUBSTRATE.md",
-    "canonical:quantitative-specialist-product-activation": (
-        ARCH / "AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md"
-    ),
-    "canonical:quantitative-finalization-containment": (
-        ARCH / "AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md"
-    ),
+    "canonical:quantitative-specialist-product-activation": (ARCH / "AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md"),
+    "canonical:quantitative-finalization-containment": (ARCH / "AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md"),
 }
 DEFAULT_SPINE = (GUIDANCE, CURRENT_STATE, ROADMAP)
 MARKERS = (
@@ -74,28 +57,14 @@ MARKERS = (
     "QUANT-FINALIZATION-CONTAINMENT",
     "PROVIDER-CAPABILITY-ROUTING",
 )
-QUANT_FINALIZATION_RUNTIME_SHA = (
-    "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
-)
-QUANT_LINEAGE_RUNTIME_SHA = (
-    "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
-)
-STRUCTURED_ROUTE_RUNTIME_SHA = (
-    "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
-)
-SCOUT_RETIREMENT_RUNTIME_SHA = (
-    "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
-)
-PROVIDER_ROUTING_RUNTIME_SHA = (
-    "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
-)
-ACQUISITION_CONTROL_RUNTIME_SHA = (
-    "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
-)
+QUANT_FINALIZATION_RUNTIME_SHA = "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
+QUANT_LINEAGE_RUNTIME_SHA = "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
+STRUCTURED_ROUTE_RUNTIME_SHA = "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
+SCOUT_RETIREMENT_RUNTIME_SHA = "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
+PROVIDER_ROUTING_RUNTIME_SHA = "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
+ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
-DISCOVER_HANDOFF_RUNTIME_SHA = (
-    "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
-)
+DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
 CURRENT_STATE_RUNTIME_SHA = DISCOVER_HANDOFF_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
@@ -108,33 +77,19 @@ HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "implementation gate after AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01 is "
     "AG-LIVE-XAXIS-VALIDATION-01A."
 )
-SPECIALIST_ADMISSION_RUNTIME_SHA = (
-    "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
-)
-LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = (
-    "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
-)
-QUANT_CONTAINMENT_RUNTIME_SHA = (
-    "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
-)
-S1_RUNTIME_SHA = (
-    "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
-)
+SPECIALIST_ADMISSION_RUNTIME_SHA = "72251c126770e41a9b52105d860154d1cfef811b"  # pragma: allowlist secret
+LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
+QUANT_CONTAINMENT_RUNTIME_SHA = "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
+S1_RUNTIME_SHA = "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 RUNTIME_SHA_BY_CONCERN = {
     "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
-    "canonical:run-contract-semantic-loop": (
-        DISCOVER_HANDOFF_RUNTIME_SHA
-    ),
+    "canonical:run-contract-semantic-loop": (DISCOVER_HANDOFF_RUNTIME_SHA),
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
     "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:bounded-multicomponent-runtime": STRUCTURED_ROUTE_RUNTIME_SHA,
     "canonical:specialist-graph-substrate": SPECIALIST_ADMISSION_RUNTIME_SHA,
-    "canonical:quantitative-specialist-product-activation": (
-        SPECIALIST_ADMISSION_RUNTIME_SHA
-    ),
-    "canonical:quantitative-finalization-containment": (
-        QUANT_CONTAINMENT_RUNTIME_SHA
-    ),
+    "canonical:quantitative-specialist-product-activation": (SPECIALIST_ADMISSION_RUNTIME_SHA),
+    "canonical:quantitative-finalization-containment": (QUANT_CONTAINMENT_RUNTIME_SHA),
 }
 
 
@@ -195,9 +150,7 @@ def test_concern_authorities_are_unique_current_and_default_no() -> None:
 
 def test_quantitative_finalization_inventory_does_not_overclaim_saved_thread() -> None:
     current = _read(CURRENT_STATE)
-    containment = _read(
-        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
-    )
+    containment = _read(CONCERN_OWNERS["canonical:quantitative-finalization-containment"])
 
     assert "Every active accepted-prose route" not in current
     assert "every active accepted-prose finalization route" not in containment
@@ -246,6 +199,40 @@ def test_guidance_routes_to_exact_concern_owners() -> None:
     assert "implementation-status sections" not in guidance
 
 
+def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
+    markdown = tuple(DOCS.rglob("*.md"))
+    normalized = _collapsed(SEARCHOS)
+    authority = "Authority: canonical:searchos-operating-model"
+
+    assert [path for path in markdown if authority in _read(path)] == [SEARCHOS]
+    for phrase in (
+        "Status: current target architecture",
+        "Default-read: no",
+        "SearchOS architecture and SearchOS-facing provider, acquisition, navigation, and recovery work",
+        "Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities",
+        "ScryRaven is a research application",
+        "ScryRaven's search, source-acquisition, navigation, and recovery subsystem",
+        "RunKernel / RunAuthority is the root authority for a run",
+        "Sufficiency does not independently own or terminate the run",
+        "minimum shared search result",
+        "Direction material",
+        "Search-result material",
+        "Read-source material",
+        "Navigation material",
+        "Linkup Fetch and Tavily Extract are peer implementations",
+        "Adaptive retrieval is approved but uninstalled",
+        "The provider owns DNS",
+        "No SearchOS infrastructure may be added merely",
+    ):
+        assert phrase in normalized
+
+    guidance = _read(GUIDANCE)
+    assert SEARCHOS.name in guidance
+    assert "A narrow search task does not require all three supporting documents" in _collapsed(GUIDANCE)
+    for target in _links(SEARCHOS):
+        assert target.is_file(), target
+
+
 def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None:
     forbidden = (
         "recommended next phase",
@@ -285,18 +272,14 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
     assert "generic D-prime admission is not numeric rendering authority" in fap
     assert "future answer rendering" not in fap.casefold()
 
-    containment = _collapsed(
-        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
-    )
+    containment = _collapsed(CONCERN_OWNERS["canonical:quantitative-finalization-containment"])
     assert "The two authority kinds are" in containment
     assert "Generic admission is not an authority kind." in containment
     assert "`admitted_quantitative_claim`" not in containment
 
 
 def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> None:
-    containment = _collapsed(
-        CONCERN_OWNERS["canonical:quantitative-finalization-containment"]
-    )
+    containment = _collapsed(CONCERN_OWNERS["canonical:quantitative-finalization-containment"])
     current = _collapsed(CURRENT_STATE)
 
     for text in (containment, current):
@@ -320,10 +303,7 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
     assert "No model adapter changed and no live provider transport was exercised." in current
 
     assert "No route-qualification repair was performed." in containment
-    assert (
-        "Arbitrary-query decomposition and broad route qualification remain unproved."
-        in current
-    )
+    assert "Arbitrary-query decomposition and broad route qualification remain unproved." in current
 
     for phrase in (
         "No new Specialist capability was added.",
@@ -334,15 +314,12 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
         assert phrase in current
     assert "No S1 proposal or invocation policy expanded." in containment
     assert (
-        "No S1 capability, route eligibility, budget, scheduling order, recursion, or parallelism expanded."
-        in current
+        "No S1 capability, route eligibility, budget, scheduling order, recursion, or parallelism expanded." in current
     )
 
 
 def test_structured_route_qualification_is_current_and_narrow() -> None:
-    owner = _collapsed(
-        CONCERN_OWNERS["canonical:bounded-multicomponent-runtime"]
-    )
+    owner = _collapsed(CONCERN_OWNERS["canonical:bounded-multicomponent-runtime"])
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
 
@@ -369,10 +346,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert (
-            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-        in roadmap
-    )
+    assert "Active SearchOS MVP Sequence" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -441,10 +415,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert (
-            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-        in roadmap
-    )
+    assert "Active SearchOS MVP Sequence" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -474,7 +445,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
         "Tavily Extract",
         "Tavily Map",
         "Tavily Crawl",
-        "`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01`",
+        "SearchOS Operating Model",
         "social interpretation",
         "No live provider, model, search, fetch, map, crawl, or retrieval call",
     ):
@@ -501,14 +472,8 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert PROVIDER_ROUTING_RUNTIME_SHA in census
     for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING, CURRENT_STATE, ROADMAP):
-        assert (
-            f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}"
-            in _read(owner)
-        )
-    assert (
-        f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`"
-        in _read(ROADMAP)
-    )
+        assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(owner)
+    assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
         for phrase in (
@@ -537,7 +502,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert "process_search_queries(search_providers=None)" in routing
     assert "performs zero transport" in routing
-    assert "Provider failure never activates a fallback" in current
+    assert "Provider-failure fallback and bounded navigation are not installed" in current
     assert "ordinary-product consumption of focused extraction" in census
     for phrase in (
         "one boolean provider-availability snapshot",
@@ -552,12 +517,9 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert "provider-neutral DISCOVER qualifier" in routing
     assert "RunCapExceeded" in routing
 
-    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert (
-        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-        in roadmap
-    )
+    assert "## Active SearchOS MVP Sequence" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -605,43 +567,28 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     assert "selected-candidate nontrigger" in routing.casefold()
     assert "no exact-URL cap charge" in acquisition
     assert "opens a candidate source URL" in loop
-    assert "`discover_candidate_urls_admitted` counts provider-result" in _read(
-        CURRENT_STATE
-    )
-    assert "`urls_fetched` counts actual separate exact-URL" in _read(
-        CURRENT_STATE
-    )
+    assert "`discover_candidate_urls_admitted` counts provider-result" in _read(CURRENT_STATE)
+    assert "`urls_fetched` counts actual separate exact-URL" in _read(CURRENT_STATE)
     assert "`total_urls_fetched` / `urls_fetched`" not in _read(CURRENT_STATE)
-    assert (
-        "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
-        in _read(ROADMAP)
-    )
+    assert "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01" in _read(ROADMAP)
     assert "Status: completed Build" in _read(DISCOVER_HANDOFF_BRIEF)
     assert DISCOVER_HANDOFF_RUNTIME_SHA in _read(DISCOVER_HANDOFF_BRIEF)
     assert "canonical ordinary-origin revision-1 packet" in handoff
     assert "No shadow planner" in _read(DISCOVER_HANDOFF_BRIEF)
     assert "zero candidate-page or exact-URL transport" in handoff
-    assert "PLANNER-DISAMBIGUATION-ACQUISITION-CONVERGENCE-01" in roadmap
-    assert "Status: sole active next checkpoint" in _read(EXACT_URL_BRIEF)
+    assert "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
+    assert "Status: superseded before implementation" in _read(EXACT_URL_BRIEF)
+    assert "Superseded-by: SEARCHOS-OPERATING-MODEL-AND-ROADMAP-REALIGNMENT-01" in _read(EXACT_URL_BRIEF)
     assert DISCOVER_HANDOFF_RUNTIME_SHA in _read(EXACT_URL_BRIEF)
     assert "Canonical ordinary DISCOVER now populates revision 1" in exact_url
     assert "post-selection READ and FOCUSED_EXTRACT material" in exact_url
     assert "one to twenty exact URLs" in exact_url
-    assert (
-        "The producer may propose only; RunKernel must derive the capability"
-        in exact_url
-    )
+    assert "The producer may propose only; RunKernel must derive the capability" in exact_url
     assert "URL presence, or free-form tool instructions" in exact_url
     assert "READ and activated Focused Extract" in exact_url
     assert "Focused Extract remains a separate future checkpoint" not in exact_url
-    assert (
-        "If exact focus requires a distinct semantic producer, model-visible proposal"
-        in exact_url
-    )
-    assert (
-        "rather than weakening the controller or fabricating focus"
-        in exact_url
-    )
+    assert "If exact focus requires a distinct semantic producer, model-visible proposal" in exact_url
+    assert "rather than weakening the controller or fabricating focus" in exact_url
     assert "Initial DISCOVER material remains provider-returned" in exact_url
     assert "must not fetch candidate pages" in exact_url
     assert "does not yet populate" not in exact_url
@@ -649,31 +596,16 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     assert "SQLite does not store the full packet" in handoff
 
     roadmap_folded = roadmap.casefold()
-    handoff_index = roadmap_folded.index(
-        "## completed build: discover-result-candidate-handoff-convergence-01"
-    )
-    exact_index = roadmap_folded.index(
-        "## active next: exact-url-acquisition-and-final-custody-convergence-01"
-    )
-    planner_index = roadmap_folded.index(
-        "## queued: planner-disambiguation-acquisition-convergence-01"
-    )
-    map_index = roadmap_folded.index(
-        "## queued: site-topology-selection-authority-01"
-    )
-    crawl_index = roadmap_folded.index(
-        "## queued split: crawl-page-custody-convergence-01"
-    )
-    assert handoff_index < exact_index < planner_index < map_index < crawl_index
-    assert (
-        "exact-URL READ and Focused Extract with final custody, then planner-"
-        in roadmap
-    )
-    assert (
-        "site-topology selection authority, and Crawl page custody"
-        in roadmap
-    )
-    assert "exact-URL READ and Focused Extract with final custody" in current
+    handoff_index = roadmap_folded.index("## completed build: discover-result-candidate-handoff-convergence-01")
+    active_index = roadmap_folded.index("## active searchos mvp sequence")
+    query_index = roadmap_folded.index("searchos-query-strategy-and-recon-convergence-01")
+    read_index = roadmap_folded.index("searchos-read-source-and-custody-01")
+    navigation_index = roadmap_folded.index("searchos-iterative-navigation-and-retrieval-judgment-01")
+    recovery_index = roadmap_folded.index("searchos-gap-recovery-and-stop-convergence-01")
+    assert handoff_index < active_index < query_index < read_index < navigation_index < recovery_index
+    assert "Query strategy is an MVP requirement" in roadmap
+    assert "Map may be inserted later as an optional navigation plugin" in roadmap
+    assert "The complete SearchOS query, search, read" in current
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
@@ -701,7 +633,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
         "## 9. Provider-synthesis closure",
         "## 10. Owner-approved target constellation",
         "## 11. Installation profiles and capability overlays",
-        "## 12. Exact recommended implementation sequence",
+        "## 12. Current sequencing owner",
         "## 14. Nonproofs",
         "## 15. Principal proof classification",
         "RETAIN",
@@ -715,7 +647,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
         "DISCOVER(lightweight_disambiguation)",
         "DISCOVER(independent_index)",
         "Source-of-record requirement",
-            "current ordinary DISCOVER consumers; ProviderPlan, scheduling, and dispatch",
+        "current ordinary DISCOVER consumers; ProviderPlan, scheduling, and dispatch",
         "INSTALLED_FOUNDATION",
         "Minimal: Linkup",
         "Practical: Linkup + Serper",
@@ -756,12 +688,9 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     assert "General and domain-targeted discovery are Linkup `standard/searchResults` first" in normalized
 
     roadmap = _read(ROADMAP)
-    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert (
-            "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-        in roadmap
-    )
+    assert "## Active SearchOS MVP Sequence" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -776,53 +705,22 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     normalized = _collapsed(ROADMAP)
     s0 = roadmap.index("## Installed Foundation: S0")
     s1 = roadmap.index("## Installed Product Activation: S1")
-    streamlit = roadmap.index(
-        "## Completed Remediation: Legacy Streamlit Ordinary-Product Retirement"
-    )
-    economist = roadmap.index(
-        "## Completed Remediation: Legacy Economist Ordinary-Execution Retirement"
-    )
-    census = roadmap.index(
-        "## Completed Proof: Post-Retirement Product Topology and Orchestrator "
-        "Authority Census"
-    )
-    validation_repair = roadmap.index(
-        "## Completed Repair: Validation and Execution-Surface Ergonomics Closure"
-    )
-    mode_policy = roadmap.index(
-        "## Completed Repair: Mode-Policy Recovery Authority Containment"
-    )
-    proposal = roadmap.index(
-        "## Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01"
-    )
-    structured_route = roadmap.index(
-        "## Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01"
-    )
-    provider_census = roadmap.index(
-        "## Completed Audit: Provider Offerings, Adapter, and Legacy-Doctrine Census"
-    )
-    scout_retirement = roadmap.index(
-        "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
-    )
-    provider = roadmap.index(
-        "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
-    )
-    acquisition_runtime = roadmap.index(
-        "## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01"
-    )
-    acquisition_control = roadmap.index(
-        "## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01"
-    )
-    discovery_retirement = roadmap.index(
-        "## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01"
-    )
-    candidate_handoff = roadmap.index(
-        "## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01"
-    )
-    convergence = roadmap.index(
-        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-    )
-    live = roadmap.index("### Separately Licensed Comparative Live Validation")
+    streamlit = roadmap.index("## Completed Remediation: Legacy Streamlit Ordinary-Product Retirement")
+    economist = roadmap.index("## Completed Remediation: Legacy Economist Ordinary-Execution Retirement")
+    census = roadmap.index("## Completed Proof: Post-Retirement Product Topology and Orchestrator Authority Census")
+    validation_repair = roadmap.index("## Completed Repair: Validation and Execution-Surface Ergonomics Closure")
+    mode_policy = roadmap.index("## Completed Repair: Mode-Policy Recovery Authority Containment")
+    proposal = roadmap.index("## Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01")
+    structured_route = roadmap.index("## Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01")
+    provider_census = roadmap.index("## Completed Audit: Provider Offerings, Adapter, and Legacy-Doctrine Census")
+    scout_retirement = roadmap.index("## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01")
+    provider = roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01")
+    acquisition_runtime = roadmap.index("## Completed Repair: ACQUISITION-RUNTIME-READ-AND-ADAPTER-CONVERGENCE-01")
+    acquisition_control = roadmap.index("## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01")
+    discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
+    candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
+    convergence = roadmap.index("## Active SearchOS MVP Sequence")
+    live = roadmap.index("SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01")
 
     assert (
         s0
@@ -848,7 +746,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "fixed ordinary CLI product composition" in normalized
     assert "## Active Next: Separately Licensed Comparative Live Validation" not in roadmap
     assert "## Active Next: MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" not in roadmap
-    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "no product Specialist activation" in roadmap
     assert "Quantitative Specialist ordinary product activation is installed" in roadmap
@@ -856,7 +754,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "reference and migration material only" in normalized
     assert "Saved-thread Streamlit follow-up is not a current product path" in normalized
     assert "Offline proof does not authorize live work" in normalized
-    assert "this roadmap grants no live license" in normalized
+    assert "This roadmap grants no live license" in normalized
     assert "transport-neutral conversation persistence" in roadmap
     assert "follow-up application service" in roadmap
     assert "intentional delivery adapter" in roadmap
@@ -866,16 +764,14 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     assert "read-only, offline census" in normalized
     assert "without repairing, replacing, activating, or retiring" in normalized
     assert "changed no production runtime behavior" in normalized
-    assert "provider offerings, adapter, and legacy-doctrine census" in (
-        normalized.casefold()
-    )
+    assert "provider offerings, adapter, and legacy-doctrine census" in (normalized.casefold())
     assert "target decisions, not completed runtime changes" in normalized
     assert "provider synthesis disabled" in normalized
     assert PROVIDER_ROUTING_RUNTIME_SHA in roadmap
     assert "deep/sourcedAnswer" in normalized
     assert "MODE-POLICY-RECOVERY-AUTHORITY-CONTAINMENT-01" in roadmap
     assert "Specialist Proposal-Instance Admission Hardening" in roadmap
-    assert "this roadmap grants no live license" in normalized
+    assert "This roadmap grants no live license" in normalized
     for marker in MARKERS[:-1]:
         assert marker not in roadmap
 
@@ -913,24 +809,13 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     ):
         assert phrase in census
 
-    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert (
-        "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
-        in roadmap
-    )
-    assert (
-            "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-            in roadmap
-    )
-    assert (
-        "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01"
-        not in roadmap
-    )
-    assert roadmap.index(
-        "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01"
-    ) < roadmap.index(
-        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
+    assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
+    assert "## Active SearchOS MVP Sequence" in roadmap
+    assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
+    assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
+        "## Active SearchOS MVP Sequence"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -948,10 +833,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     telemetry = _collapsed(ECONOMIST_TELEMETRY_POLICY)
 
     for text in (strangler, safety, telemetry):
-        assert (
-            LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA
-            in text
-        )
+        assert LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA in text
 
     for phrase in (
         "ordinary CLI/backend composition no longer injects or executes",
@@ -968,10 +850,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert (
-            "Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-        in roadmap
-    )
+    assert "Active SearchOS MVP Sequence" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
@@ -987,9 +866,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
 
 
 def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries() -> None:
-    owner = CONCERN_OWNERS[
-        "canonical:quantitative-specialist-product-activation"
-    ]
+    owner = CONCERN_OWNERS["canonical:quantitative-specialist-product-activation"]
     text = _collapsed(owner)
     current = _collapsed(CURRENT_STATE)
     for phrase in (
