@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 2d346a73251f28a1187fb2958028db51117bf0c0
+Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -362,6 +362,15 @@ separate mandatory model-owned SearchJudgment assessment makes exactly one
 logical `NO_READ` or `REQUEST_READ_PAGE` decision per policy-admitted eligible
 slot. Candidate rank, mode, provider availability, and legacy full-judgment or
 ordinary-live flags do not decide READ.
+
+Shared source-obligation IDs are represented once in acquisition authority with
+all associated accepted component refs in deterministic order. The assessment
+unit remains component plus obligation, so each governed component retains its
+own slot and binding. The supported checkpoint envelope is eight active
+eligible slots, admitted all-or-nothing. A ninth slot raises an explicit
+ordinary-run failure before any model call; it is never recorded as a deferred
+partial success and cannot reach full SearchJudgment, recovery, synthesis, or
+Author.
 
 An exact nomination creates one binding-backed `AcquisitionNeedProposalV1` and
 reuses the existing capability, work-order, routing, guarded execution,

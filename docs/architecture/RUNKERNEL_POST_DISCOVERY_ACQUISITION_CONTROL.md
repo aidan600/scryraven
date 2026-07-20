@@ -5,7 +5,7 @@ Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
 Applies-to: ordinary post-DISCOVER result-reference handoff plus post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: SEARCHOS-READ-SOURCE-AND-CUSTODY-01
+Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
 Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
 
 ## SEARCHOS-READ-SOURCE-AND-CUSTODY-01 Architecture Checkpoint
@@ -46,6 +46,15 @@ bindings without duplicating the selected candidate. Any stale packet,
 contract, plan, contributor, component, requirement, obligation, candidate, or
 URL relationship fails closed before a model call.
 
+A source-obligation ID may govern more than one accepted component. The
+acquisition snapshot aggregates every current SearchWorkPlan occurrence before
+building `source_obligations_by_id`, compares the complete governed descriptor
+after removing only component-local lineage, and rejects any semantic conflict.
+One canonical obligation ref then lists all associated component refs in
+deterministic order. Bindings and assessment slots remain component-specific:
+two components sharing one obligation produce two distinct
+component/obligation slots that reference the same canonical obligation ref.
+
 The subordinate assessment runs after the revision-1 handoff and before source
 recovery or synthesis. A policy-admitted slot with eligible bindings receives
 exactly one logical model assessment; a slot with none receives zero. The only
@@ -53,6 +62,15 @@ successful decisions are `NO_READ` and `REQUEST_READ_PAGE` with at most one
 binding nomination. Transport failure, malformed model output, invalid
 nomination, or stale lineage becomes a typed failure and never a deterministic
 READ decision.
+
+Eight active eligible slots is the supported checkpoint envelope. Admission is
+all-or-nothing: a successful binding state has
+`policy_admitted_slot_ids == slot_order` and an empty
+`policy_deferred_slot_ids`. A ninth slot raises
+`search_judgment_read_assessment_slot_budget_exceeded` before RunKernel issues
+the first assessment action. The ordinary run stops there; no partial
+assessment, proposal, acquisition, full SearchJudgment, recovery, synthesis, or
+Author path executes.
 
 Canonical custody remains visible in EvidenceLedger. At both existing full
 SearchJudgment input seams, however, the adapter removes only this phase's

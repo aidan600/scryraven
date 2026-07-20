@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -159,19 +159,22 @@ provider text, chunks, embeddings, or raw payload. The ordinary packet identity
 binds an ordered aggregate of its candidate-record digests; RunKernel retains
 only that aggregate in the compact packet ref.
 
-Revision 1 is the immutable initial post-DISCOVER selection before the ordinary
-composition's later SearchPlanner/AnswerContract admission and subsequent
-source recovery/synthesis. The main RunKernel has no accepted AnswerContract or
-source obligation at this exact snapshot point, so the ordinary origin keeps
-the contract ref empty rather than manufacturing one. This timing does not
-negate the accepted `initial_answer_contract` used by later loop stages or the
-contract-bound historical SearchExecutor branch. Later recovery identities do
-not mutate revision 1. The
-unflagged CLI/backend path reaches this origin in Fast, Balanced, and Deep, but
-candidate presence remains a nontrigger: provider-call-caused-by-handoff,
-acquisition proposal, READ/Focused Extract work order, exact-URL cap charge,
-transport, and fetched-URL count all remain closed/zero. Serper lightweight
-disambiguation is excluded.
+Revision 1 is the immutable initial post-DISCOVER selection after ordinary
+SearchPlanner, AnswerContract, SearchWorkPlan, and QueryPlan admission and
+before subsequent source recovery/synthesis. It carries the active accepted
+AnswerContract ref at packet level while candidate records remain provenance
+only. Later recovery identities do not mutate revision 1. Candidate presence
+remains a nontrigger: the separate subordinate SearchJudgment READ checkpoint
+must first derive an exact current component/source-obligation binding and
+return `REQUEST_READ_PAGE` before acquisition can begin.
+
+One source-obligation ID may canonically govern several accepted components.
+The acquisition snapshot validates one shared governed descriptor and retains
+all associated component refs; each component plus that shared obligation is a
+distinct assessment slot. A successful checkpoint admits every eligible slot
+when the count is at most eight. Nine or more fails the ordinary run before any
+assessment call, without a deferred subset or downstream continuation. Serper
+lightweight disambiguation remains excluded.
 
 The historical AG-LIVE-XAXIS-VALIDATION-01A seam still accepts sanitized
 SearchResultCandidate records only. Its provider_preference_hint is only a hint;
