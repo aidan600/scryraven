@@ -71,7 +71,7 @@ PROVIDER_ROUTING_RUNTIME_SHA = "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pra
 ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
-QUERY_CONVERGENCE_RUNTIME_SHA = "74fb0d8877fcf25d4213c3f9a5a85027ed76ee49"  # pragma: allowlist secret
+QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
 CURRENT_STATE_RUNTIME_SHA = QUERY_CONVERGENCE_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
@@ -669,6 +669,8 @@ def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> No
         "The typed `search_planner_adapter`, `scout_disambiguation_adapter`, and `search_planner_revision_adapter` `RunDeps` seams are installed",
         "Invalid JSON, schema, component/query structure, selected-model configuration, or model-call failure stops before proposal acceptance",
         "Future large-document support must enter this model boundary through bounded safe supplied-context references or summaries",
+        "A transient, non-retained call wrapper supplies the current run's configured local base URL, OpenRouter key, `CostAccumulator`, and `search_planner` cost phase",
+        "The existing underlying model-helper retry and endpoint-fallback policy is unchanged",
         "RunKernel initial AnswerContract acceptance",
         "SearchWorkPlan",
         "QueryPlan remains the sole exact executable-query authority",
@@ -686,7 +688,10 @@ def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> No
 
     for phrase in (
         "Required component count: 5",
-        "Exactly one bounded initial planner model call is made",
+        "Exactly one logical bounded initial planner invocation is made",
+        "Planner transport matrix: selected OpenAI provider/model; exact OpenRouter key; exact Local base URL",
+        "Planner cost accounting: 1 search_planner phase model-call entry; 0 double-counted entries",
+        "Planner connection retention: 0 credential, endpoint, or accumulator objects in governed retained surfaces",
         "Scout/revision remain uncomposed by default",
         "semantic interpretation of its hints and revision of the plan must be model-driven",
         "not semantic quality on arbitrary real-world requests",

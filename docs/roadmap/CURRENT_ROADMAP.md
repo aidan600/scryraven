@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 74fb0d8877fcf25d4213c3f9a5a85027ed76ee49
+Verified-against-runtime: 2d346a73251f28a1187fb2958028db51117bf0c0
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -322,7 +322,7 @@ remain deferred. No live call was made.
 
 ## Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01
 
-Runtime/test commit `74fb0d8877fcf25d4213c3f9a5a85027ed76ee49`
+Runtime/test commit `2d346a73251f28a1187fb2958028db51117bf0c0`
 
 [SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01](SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md)
 installs one ordinary initial planning chain from validated passive SearchPlanner
@@ -337,6 +337,11 @@ owns warranted one-to-five semantic decomposition and provider-neutral strategy
 proposal; deterministic machinery validates and binds without manufacturing a
 fallback plan. Typed planner, Scout, and revision `RunDeps` seams are installed,
 while Scout/revision remain uncomposed by default.
+
+The default planner's selected OpenAI, OpenRouter, or Local connection facts
+are supplied through a transient non-retained wrapper, and its logical model
+invocation participates in run cost accounting under `search_planner`. The
+existing model-helper retry and endpoint-fallback policy is unchanged.
 
 The versioned code-owned policy gives every accepted required component one
 immediate primary by default, permits up to two initial candidates per component

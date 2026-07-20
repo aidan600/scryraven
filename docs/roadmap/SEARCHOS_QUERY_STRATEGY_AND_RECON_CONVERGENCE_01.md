@@ -4,7 +4,7 @@ Status: completed Build
 Mode: BUILD
 Proof class: offline_product_path_proof
 Starting-runtime: 607c381f71f0a6606afd7d856e034bf00d402b42
-Runtime/test commit: 74fb0d8877fcf25d4213c3f9a5a85027ed76ee49
+Runtime/test commit: 2d346a73251f28a1187fb2958028db51117bf0c0
 Does-not-authorize: live calls, post-result query dispatch, permanent mode
 budgets, provider-policy changes, READ, navigation, recovery redesign, evidence
 or citation changes, Author changes, or source-obligation semantic changes
@@ -82,7 +82,20 @@ repository-visible but cannot be reached from this ordinary initial callsite.
 - With no explicit planner adapter, ordinary `run_pipeline()` constructs the
   existing `SearchPlannerModelAdapter` with `deps.ask_model`,
   `deps.clean_json_response`, the selected fast provider/model, and the selected
-  reasoning posture. Exactly one bounded initial planner model call is made.
+  reasoning posture. Exactly one logical bounded initial planner invocation is
+  made.
+- A transient non-retained wrapper supplies the current `local_url` as
+  `base_url`, the current `or_api_key`, the current run `CostAccumulator`, and
+  `cost_phase="search_planner"` to the existing model helper. These facts are
+  absent from adapter fields, prompts, planner/contract state, SearchWorkPlan,
+  QueryPlan, traces, retained metadata, and errors.
+- OpenAI retains the selected provider/model; OpenRouter receives the configured
+  key; Local receives the configured base URL. Missing OpenRouter credentials
+  and missing or invalid Local endpoints fail before QueryPlan or search.
+- The planner contributes one logical `search_planner` model-call accounting
+  entry without double-counting. The existing underlying helper retry and
+  endpoint-fallback policy is unchanged, so this does not claim exactly one
+  provider request.
 - The model owns the intended question, the distinction between request and
   context, one-to-five warranted components, material ambiguities, source needs,
   supported component dependencies, and provider-neutral query candidates.
@@ -162,7 +175,10 @@ Recon-affected components/dimensions: 1 component / 1 identity dimension in the 
 Recon candidates admitted: 1 in the injected-recon case
 Proof no required component was globally truncated: five accepted required components produced five ordered first-wave QueryPlan primaries
 Proof no post-result follow-up was implemented: prepared secondary remains outside current_queries and names SearchJudgment as later authorizer
-Ordinary default planner calls: exactly 1 selected-fast-model SearchPlanner call
+Ordinary default planner invocations: exactly 1 logical selected-fast-model SearchPlanner invocation
+Planner transport matrix: selected OpenAI provider/model; exact OpenRouter key; exact Local base URL
+Planner cost accounting: 1 search_planner phase model-call entry; 0 double-counted entries
+Planner connection retention: 0 credential, endpoint, or accumulator objects in governed retained surfaces
 Messy narrated one-intent request: 1 model-proposed and accepted component; 1 model-proposed first query dispatched
 Bounded supplied-context fixture: reference and summary reached the planner; 0 evidence/custody/source-satisfaction/citation authority
 Model multipart ceiling fixture: 5 model-proposed components; 5 accepted dependency-preserving refs; 5 ordered QueryPlan primaries
@@ -263,8 +279,8 @@ later licensed calibration obligation. It also does not prove live provider
 availability, comparative provider quality, result sufficiency, answer-quality
 improvement, post-result judgment, READ or custody, navigation,
 recovery/stopping, source-obligation satisfaction, evidence/citation
-correctness, Author behavior, broad product correctness, latency, cost, or
-production stability.
+correctness, Author behavior, broad product correctness, latency,
+provider-reported token/cost accuracy, or production stability.
 
 ## READ-Phase Carry-Forward Requirements
 

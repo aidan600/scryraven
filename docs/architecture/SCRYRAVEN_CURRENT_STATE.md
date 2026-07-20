@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 74fb0d8877fcf25d4213c3f9a5a85027ed76ee49
+Verified-against-runtime: 2d346a73251f28a1187fb2958028db51117bf0c0
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -439,7 +439,16 @@ The typed `search_planner_adapter`, `scout_disambiguation_adapter`, and
 explicit planner adapter, `run_pipeline()` intentionally composes
 `SearchPlannerModelAdapter` from `deps.ask_model`,
 `deps.clean_json_response`, and the selected fast provider, fast model, and
-reasoning posture. It makes exactly one bounded initial planner call.
+reasoning posture. A transient, non-retained call wrapper supplies the current
+run's configured local base URL, OpenRouter key, `CostAccumulator`, and
+`search_planner` cost phase directly to the existing model helper. These
+connection and accounting facts do not enter adapter fields, prompts, planner
+or contract projections, SearchWorkPlan, QueryPlan, traces, or errors.
+
+Ordinary composition makes exactly one logical bounded initial planner
+invocation. The existing underlying model-helper retry and endpoint-fallback
+policy is unchanged, so that logical invocation is not a claim of exactly one
+provider request.
 `DeterministicSearchPlannerAdapter` is an explicit validation-only fixture and
 is not an ordinary default or failure fallback. Invalid JSON, schema,
 component/query structure, selected-model configuration, or model-call failure
