@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +15,11 @@ from core.cap_enforcement import RunCapPolicy
 from core.run_authority_search_judgment_adapter import (
     build_search_judgment_input_from_runtime,
 )
+from core.run_kernel import RunKernel
 from core.search_judgment_read_assessment_runtime import (
     SEARCH_JUDGMENT_READ_TRACE_KEY,
     build_full_search_judgment_containment_projection,
+    execute_search_judgment_read_source_and_custody,
 )
 from tests.helpers.offline_ordinary_pipeline import (
     run_post_retirement_ordinary_pipeline,
@@ -86,6 +90,29 @@ def _acquisition_actions(harness: Any) -> list[dict[str, Any]]:
         for item in _kernel_trace(harness)["actions"]
         if str(item.get("action_type") or "").startswith("acquisition_")
     ]
+
+
+def _difference_paths(left: Any, right: Any, path: str = "root") -> list[str]:
+    if isinstance(left, dict) and isinstance(right, dict):
+        differences = [
+            f"{path}.{key}: key-presence"
+            for key in sorted(set(left) ^ set(right))
+        ]
+        for key in sorted(set(left) & set(right)):
+            differences.extend(
+                _difference_paths(left[key], right[key], f"{path}.{key}")
+            )
+        return differences
+    if isinstance(left, list) and isinstance(right, list):
+        differences = []
+        if len(left) != len(right):
+            differences.append(f"{path}: length {len(left)} != {len(right)}")
+        for index, (left_item, right_item) in enumerate(zip(left, right)):
+            differences.extend(
+                _difference_paths(left_item, right_item, f"{path}[{index}]")
+            )
+        return differences
+    return [] if left == right else [f"{path}: value"]
 
 
 def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
@@ -226,6 +253,85 @@ def test_duplicate_url_contributors_create_distinct_bindings_one_candidate(
         for binding_ids in state["binding_state"]["bindings_by_slot"].values()
     )
     assert len(harness.read_assessment_calls) == 2
+
+
+def test_no_eligible_bindings_make_zero_assessment_and_acquisition_calls(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_response_only_discovery(monkeypatch)
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Fast",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=("Alpha current official operating rule",),
+        read_assessment_decision="NO_READ",
+        deps_overrides={"process_search_queries": pipeline.process_search_queries},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+    )
+    assert harness.run_kernel is not None
+    assert harness.read_candidate_packet is not None
+    assert harness.read_query_plan is not None
+    assert harness.read_discovery_result_store is not None
+
+    original_plan = harness.read_query_plan
+
+    class CurrentDisambiguationOnlyPlan:
+        plan_id = original_plan.plan_id
+        items = tuple(
+            replace(item, metadata={})
+            if item.authorized_query is not None
+            else item
+            for item in original_plan.items
+        )
+
+        @staticmethod
+        def to_ref() -> dict[str, Any]:
+            return original_plan.to_ref()
+
+        @staticmethod
+        def authorized_discovery_item_refs() -> list[dict[str, Any]]:
+            return original_plan.authorized_discovery_item_refs()
+
+    model_calls: list[str] = []
+    kernel = RunKernel(deepcopy(harness.run_kernel.state))
+    prior_acquisition_actions = sum(
+        1
+        for action in kernel.state.issued_actions.values()
+        if str(action.action_type.value).startswith("acquisition_")
+    )
+    result = execute_search_judgment_read_source_and_custody(
+        run_kernel=kernel,
+        candidate_packet=harness.read_candidate_packet,
+        query_plan=CurrentDisambiguationOnlyPlan(),
+        discovery_result_store=harness.read_discovery_result_store,
+        ask_model=lambda *_args, **_kwargs: model_calls.append("called"),
+        clean_json_response=lambda value: value,
+        provider="offline-fake-provider",
+        model="offline-fake-smart-model",
+        base_url="http://offline.invalid/v1",
+        api_key="",
+        use_reasoning=False,
+        available_providers={},
+        acquisition_transports=None,
+        before_transport=None,
+        measure_context_stage=None,
+    )
+
+    assert result.projection["eligible_binding_count"] == 0
+    assert result.projection["logical_assessment_count"] == 0
+    assert result.projection["acquisition_need_proposal_count"] == 0
+    assert result.provider_calls_attempted == 0
+    assert result.provider_calls_completed == 0
+    assert model_calls == []
+    assert sum(
+        1
+        for action in kernel.state.issued_actions.values()
+        if str(action.action_type.value).startswith("acquisition_")
+    ) == prior_acquisition_actions
 
 
 @pytest.mark.parametrize("selected_provider", ["linkup", "tavily"])
@@ -464,6 +570,87 @@ def test_full_search_judgment_containment_restores_baseline_input_facts() -> Non
 def test_both_full_search_judgment_input_seams_apply_read_containment() -> None:
     source = Path(orchestrator.__file__).read_text(encoding="utf-8")
     assert source.count("build_full_search_judgment_containment_projection(") == 2
+
+
+def test_successful_read_preserves_baseline_full_search_judgment_inputs(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_response_only_discovery(monkeypatch)
+    no_read_dir = tmp_path / "no_read"
+    read_dir = tmp_path / "read"
+    no_read_dir.mkdir()
+    read_dir.mkdir()
+    no_read_outcome, no_read_harness = run_post_retirement_ordinary_pipeline(
+        no_read_dir,
+        monkeypatch,
+        mode="Fast",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=("Alpha current official operating rule",),
+        read_assessment_decision="NO_READ",
+        deps_overrides={"process_search_queries": pipeline.process_search_queries},
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+    )
+    calls: list[dict[str, Any]] = []
+    read_outcome, read_harness = run_post_retirement_ordinary_pipeline(
+        read_dir,
+        monkeypatch,
+        mode="Fast",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=("Alpha current official operating rule",),
+        read_assessment_decision="REQUEST_READ_PAGE",
+        deps_overrides={
+            "process_search_queries": pipeline.process_search_queries,
+            "searchos_read_acquisition_transports": AcquisitionTransports(
+                tavily_extract=lambda payload: calls.append(payload)
+                or {
+                    "results": [
+                        {
+                            "url": "https://alpha.example/official-rule",
+                            "raw_content": "Alpha full page material.",
+                        }
+                    ],
+                    "failed_results": [],
+                }
+            ),
+        },
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},
+    )
+
+    assert len(calls) == 1
+    assert no_read_harness.full_search_judgment_inputs
+    assert read_harness.full_search_judgment_inputs
+    no_read_inputs = no_read_harness.full_search_judgment_inputs[:2]
+    read_candidate_ids = [
+        item.get("candidate_id")
+        for item in read_harness.full_search_judgment_inputs[0][
+            "evidence_ledger_ref"
+        ]["candidate_records"]
+    ]
+    baseline_candidate_ids = [
+        item.get("candidate_id")
+        for item in no_read_inputs[0]["evidence_ledger_ref"]["candidate_records"]
+    ]
+    assert read_candidate_ids == baseline_candidate_ids, read_candidate_ids
+    assert read_harness.full_search_judgment_inputs == no_read_inputs, {
+        "differences": _difference_paths(
+            read_harness.full_search_judgment_inputs,
+            no_read_inputs,
+        )[:30],
+        "read_candidate_ids": read_candidate_ids,
+        "baseline_candidate_ids": baseline_candidate_ids,
+        "registry_candidate_ids": [
+            item.get("candidate_id")
+            for item in _kernel_trace(read_harness)[
+                "search_judgment_read_state"
+            ]["custody_by_normalized_url"].values()
+        ],
+    }
+    assert read_outcome.report == no_read_outcome.report
 
 
 def test_provider_failure_ends_after_one_attempt_without_fallback(

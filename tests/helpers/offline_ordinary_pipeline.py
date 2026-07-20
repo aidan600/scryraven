@@ -162,6 +162,16 @@ class OfflineOrdinaryPipelineHarness:
     read_assessment_decision: str | None = None
     read_assessment_calls: list[dict[str, Any]] = field(default_factory=list)
     run_kernel: Any | None = field(default=None, init=False, repr=False)
+    read_candidate_packet: dict[str, Any] | None = field(
+        default=None, init=False, repr=False
+    )
+    read_query_plan: Any | None = field(default=None, init=False, repr=False)
+    read_discovery_result_store: Any | None = field(
+        default=None, init=False, repr=False
+    )
+    full_search_judgment_inputs: list[dict[str, Any]] = field(
+        default_factory=list, init=False, repr=False
+    )
 
     def _record_model_call(self, system_prompt: str, kwargs: Mapping[str, Any]) -> None:
         self.model_calls.append(
@@ -567,6 +577,35 @@ def run_post_retirement_ordinary_pipeline(
         evidence_rows=evidence_rows,
         install_economist_sentinel=install_economist_sentinel,
         read_assessment_decision=read_assessment_decision,
+    )
+    original_read_runtime = (
+        orchestrator.execute_search_judgment_read_source_and_custody
+    )
+
+    def capture_read_runtime(**kwargs: Any) -> Any:
+        harness.read_candidate_packet = dict(kwargs["candidate_packet"])
+        harness.read_query_plan = kwargs["query_plan"]
+        harness.read_discovery_result_store = kwargs["discovery_result_store"]
+        return original_read_runtime(**kwargs)
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_search_judgment_read_source_and_custody",
+        capture_read_runtime,
+    )
+    original_full_judgment_input = (
+        orchestrator.build_search_judgment_input_from_runtime
+    )
+
+    def capture_full_judgment_input(*args: Any, **kwargs: Any) -> Any:
+        result = original_full_judgment_input(*args, **kwargs)
+        harness.full_search_judgment_inputs.append(result.to_dict())
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "build_search_judgment_input_from_runtime",
+        capture_full_judgment_input,
     )
     config = replace(
         offline_balanced_run_config(

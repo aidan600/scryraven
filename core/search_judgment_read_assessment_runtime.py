@@ -1439,6 +1439,12 @@ def build_full_search_judgment_containment_projection(
         for record in registry.values()
         if isinstance(record, Mapping)
     }
+    candidate_ids.update(
+        str(_mapping(record).get("evidence_ledger_candidate_id") or "")
+        for record in registry.values()
+        if isinstance(record, Mapping)
+    )
+    candidate_ids.discard("")
     packet_ids = {
         str(
             _mapping(_mapping(record).get("fetch_read_content_packet_ref")).get(
@@ -1466,6 +1472,15 @@ def build_full_search_judgment_containment_projection(
     ]
     projection["candidate_records"] = candidates
     projection["candidate_count"] = len(candidates)
+    if "custody_gaps" in projection:
+        projection["custody_gaps"] = [
+            _mapping(item)
+            for item in _sequence(projection.get("custody_gaps"))
+            if str(_mapping(item).get("candidate_id") or "")
+            not in candidate_ids
+            and str(_mapping(item).get("observation_id") or "")
+            not in observation_ids
+        ]
     custody = _mapping(projection.get("fetch_read_candidate_custody"))
     records = [
         _mapping(item)
@@ -2099,9 +2114,23 @@ def _canonical_custody_record(
     )
     if not record:
         raise SearchJudgmentReadAssessmentError("ledger_custody_record_missing")
+    ledger_candidate_id = (
+        str(binding.candidate_ref.get("candidate_id") or "")
+        .casefold()
+        .replace("-", "_")
+        .replace(" ", "_")[:160]
+    )
+    if not any(
+        str(_mapping(value).get("candidate_id") or "") == ledger_candidate_id
+        for value in _sequence(ledger_projection.get("candidate_records"))
+    ):
+        raise SearchJudgmentReadAssessmentError(
+            "ledger_candidate_record_missing"
+        )
     return {
         "normalized_url": binding.normalized_url,
         "candidate_id": binding.candidate_ref.get("candidate_id"),
+        "evidence_ledger_candidate_id": ledger_candidate_id,
         "candidate_digest": binding.candidate_ref.get("candidate_digest"),
         "answer_contract_ref": binding.answer_contract_ref,
         "fetch_read_content_packet_ref": (
