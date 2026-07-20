@@ -150,6 +150,10 @@ class RunDeps:
     # post-selection proposal path selected by core.routing.
     ordinary_live_source_acquisition_transports: AcquisitionTransports | None = None
 
+    # Neutral ordinary main-RunKernel READ transports. Product composition may
+    # use installed providers; offline proof injects response-only callables.
+    searchos_read_acquisition_transports: AcquisitionTransports | None = None
+
     # Optional explicit provider-availability facts for offline composition.
     # Normal product composition derives the same boolean snapshot from
     # configured credential presence; callables never imply availability.

@@ -5,8 +5,78 @@ Authority: canonical:runkernel-post-discovery-acquisition-control
 Default-read: yes
 Applies-to: ordinary post-DISCOVER result-reference handoff plus post-discovery source-obligation acquisition proposals, capability decisions, provider-neutral work orders, routes, execution, terminal receipts, and custody authorization
 Does-not-authorize: initial DISCOVER redesign, live calls, provider-failure retry, Focused Extract product activation, Map selection, Crawl custody, general Deep, or downstream evidence/final authority
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
 Update-trigger: change to post-discovery acquisition ownership, contracts, RunKernel transitions, guarded PRODUCT execution, capability derivation, operation identity, or custody authorization
+
+## SEARCHOS-READ-SOURCE-AND-CUSTODY-01 Architecture Checkpoint
+
+Mode: BUILD
+
+Outcome: the ordinary main RunKernel consumes the immutable revision-1
+post-DISCOVER packet, derives exact current material-need bindings, obtains one
+strict subordinate SearchJudgment READ assessment for each policy-admitted
+eligible source-obligation slot, and—only for a valid `REQUEST_READ_PAGE`
+nomination—reuses the installed acquisition chain through canonical
+EvidenceLedger custody. The phase ends at custody.
+
+The implementation classification is:
+
+| Surface | Current owner and ordinary consumer | Action |
+| --- | --- | --- |
+| Revision-1 candidate handoff | RunKernel ordinary handoff; main pipeline immediately after initial DISCOVER | ADAPT to carry the already-accepted active AnswerContract ref while preserving revision 1 and reference-only candidate records |
+| Candidate-to-need lineage | discovery occurrence store, current QueryPlan, active SearchWorkPlan, and active AnswerContract; subordinate READ assessor | UPGRADE with immutable `SelectedCandidateMaterialNeedBindingV1` records derived under RunKernel authorization |
+| READ judgment | SearchJudgment model selection facts and the main pipeline | ADAPT as a separate strict subordinate contract; no deterministic answer, repair, fallback, or dependence on the legacy full-SearchJudgment enable flag |
+| Acquisition | RunKernel acquisition authority, routing, guarded executor, and adapters | REUSE after an exact binding-backed `AcquisitionNeedProposalV1`; one provider attempt and no post-dispatch provider fallback |
+| READ custody | FetchReadContentPacket and EvidenceLedger custody reducers | REUSE in the main RunKernel; same normalized URL reuses one current canonical artifact without duplicate transport |
+| Full SearchJudgment input | existing full-judgment input adapter | ADAPT with a phase-owned filtered projection so new READ lineage and custody cannot influence baseline full-judgment decisions |
+| Legacy ordinary-live wrappers and flags | compatibility-only child-kernel paths | RETIRE as authority for this feature; they remain compatible but are not consulted by the ordinary main path |
+
+Binding derivation is exact and text-free:
+
+```text
+selected candidate
+-> every current matching discovery occurrence
+-> exact current QueryPlan item
+-> exact active SearchWorkPlan component / search requirement / source obligation
+-> exact active AnswerContract component
+```
+
+Multiple contributors for one normalized URL therefore create multiple
+bindings without duplicating the selected candidate. Any stale packet,
+contract, plan, contributor, component, requirement, obligation, candidate, or
+URL relationship fails closed before a model call.
+
+A source-obligation ID may govern more than one accepted component. The
+acquisition snapshot aggregates every current SearchWorkPlan occurrence before
+building `source_obligations_by_id`, compares the complete governed descriptor
+after removing only component-local lineage, and rejects any semantic conflict.
+One canonical obligation ref then lists all associated component refs in
+deterministic order. Bindings and assessment slots remain component-specific:
+two components sharing one obligation produce two distinct
+component/obligation slots that reference the same canonical obligation ref.
+
+The subordinate assessment runs after the revision-1 handoff and before source
+recovery or synthesis. A policy-admitted slot with eligible bindings receives
+exactly one logical model assessment; a slot with none receives zero. The only
+successful decisions are `NO_READ` and `REQUEST_READ_PAGE` with at most one
+binding nomination. Transport failure, malformed model output, invalid
+nomination, or stale lineage becomes a typed failure and never a deterministic
+READ decision.
+
+Eight active eligible slots is the supported checkpoint envelope. Admission is
+all-or-nothing: a successful binding state has
+`policy_admitted_slot_ids == slot_order` and an empty
+`policy_deferred_slot_ids`. A ninth slot raises
+`search_judgment_read_assessment_slot_budget_exceeded` before RunKernel issues
+the first assessment action. The ordinary run stops there; no partial
+assessment, proposal, acquisition, full SearchJudgment, recovery, synthesis, or
+Author path executes.
+
+Canonical custody remains visible in EvidenceLedger. At both existing full
+SearchJudgment input seams, however, the adapter removes only this phase's
+candidate-custody records and observation refs. No fetched text is added to
+`all_passages`, Analyst inputs, Coverage, source-obligation satisfaction,
+citations, FAP, Sufficiency, Author, answer text, or final-answer authority.
 
 ## Purpose And Boundary
 
@@ -28,10 +98,11 @@ inside `core.pipeline` and its `core.retrieval.fetch_page` / `fetch_url_text`
 helpers are retired, not migrated under RunKernel.
 
 The installed proof is offline. Candidate selection supplies URL provenance
-only. The ordinary source-custody composition is default-disabled and returns
-`not_needed` without a supplied `AcquisitionNeedProposalV1`; the main-coverage
-continuation can consume prior custody but cannot reacquire. The retired
-`AG-LIVE-SOURCE-CUSTODY` profile is non-executable. No live provider, model,
+only and remains a nontrigger. The ordinary main RunKernel now derives current
+material-need bindings and invokes the separate model-owned READ assessment;
+only its exact `REQUEST_READ_PAGE` nomination may create the proposal that
+enters this controller. Compatibility source-custody flags and the retired
+`AG-LIVE-SOURCE-CUSTODY` profile are not consulted. No live provider, model,
 search, fetch/read, map, crawl, or retrieval call is authorized by this
 architecture.
 
@@ -72,11 +143,13 @@ their compact bindings. Duplicate action replay, stale plan/contract membership,
 mutated packet or handoff refs, and raw/private or authority-bearing state fail
 closed.
 
-This snapshot precedes later source recovery and synthesis. Because no accepted
-AnswerContract or source obligation exists then, revision 1 carries an empty
-contract ref instead of inventing authority. Later recovery occurrence
-identities do not mutate it. The ordinary branch uses origin
-`ordinary_query_provider`, not `live_search_validation`.
+This snapshot follows initial AnswerContract acceptance and SearchWorkPlan /
+QueryPlan admission but precedes later source recovery and synthesis. Revision
+1 therefore carries the exact active AnswerContract ref at packet level while
+candidate records remain provenance-only and do not gain singular component or
+source-obligation authority fields. Later recovery occurrence identities do not
+mutate it. The ordinary branch uses origin `ordinary_query_provider`, not
+`live_search_validation`.
 
 The canonical result projection is ref-only and at most 16 KiB. It retains at
 most eight selected source-result refs plus overflow facts and a digest over the
@@ -224,7 +297,7 @@ switch, or post-failure capability switch.
 
 | Need facts | Derived result | Current PRODUCT disposition |
 | --- | --- | --- |
-| one packet-bound selected URL plus an independently supplied current `full_page_or_unknown` or `ordinary_single_page` material need, or one separately justified provider-neutral `explicit_known_url` need | `READ` | controller accepts when all current-lineage, hard-bound, duplicate, active-slot, and exhaustion checks pass; no ordinary producer is installed |
+| one packet-bound selected URL plus an independently supplied current `full_page_or_unknown` or `ordinary_single_page` material need, or one separately justified provider-neutral `explicit_known_url` need | `READ` | controller accepts when all current-lineage, hard-bound, duplicate, active-slot, and exhaustion checks pass; the ordinary subordinate SearchJudgment assessment is the installed packet-bound producer |
 | one to twenty exact URLs, exact obligation/component-bound focus, and a narrow-section/field/table/rule shape, or a prior too-broad/truncated READ | `FOCUSED_EXTRACT` | recognized, then terminally blocked with `focused_extract_requester_not_installed` |
 | exact HTTP(S) site root and `site_topology` | `MAP_SITE` | recognized, then terminally blocked with `map_candidate_reentry_not_installed` |
 | exact root, allowed root domain, bounded path scope, explicit multi-page need, and `bounded_multi_page` | `CRAWL_SITE` | recognized, then terminally blocked with `crawl_page_custody_not_installed` |
@@ -255,15 +328,15 @@ authorization, route observation, and execution authorization bind that ref.
 Current post-discovery preferences are Linkup Fetch then route-time Tavily
 Extract for READ; Tavily Extract for Focused Extract; Tavily Map for Map; and
 Tavily Crawl for Crawl. READ is the only capability with guarded PRODUCT
-routing/execution machinery installed, but no ordinary current-material-need
-producer reaches it. An unavailable preferred provider may yield a route-time
-alternative before dispatch. Transport failure never causes fallback.
+routing/execution machinery and an ordinary current-material-need producer.
+An unavailable preferred provider may yield a route-time alternative before
+dispatch. Transport failure never causes fallback.
 
 The policy is not configurable through TOML, YAML, JSON, a database,
 environment, prompt, provider preference, or user option. Provider ordering is
 not URL relevance.
 
-## Selected-Candidate Nontrigger And Future READ
+## Selected-Candidate Nontrigger And Installed READ Judgment
 
 `SearchResultCandidatePacket` is a durable non-evidence candidate handoff before
 fetch/read. It is not evidence, not citation-eligible, and does not satisfy
@@ -283,11 +356,11 @@ SearchResultCandidatePacket selected candidate
 -> no exact-URL transport
 ```
 
-The retained future route begins only when another current canonical surface
-supplies an explicit material need:
+The installed ordinary route begins only when the separate subordinate
+SearchJudgment assessment establishes an explicit material need:
 
 ```text
-independent current material need + selected URL provenance
+current binding + model-owned REQUEST_READ_PAGE + selected URL provenance
 -> exact packet/current-lineage validation
 -> RunKernel capability decision and reduction
 -> RunKernel-admitted provider-neutral READ work order
@@ -303,7 +376,7 @@ independent current material need + selected URL provenance
 -> existing EvidenceLedger custody reduction
 ```
 
-No ordinary producer of the first fact was installed in this phase. The
+The main ordinary RunKernel is now the product consumer of that route. The
 guarded executor, routing policy, one-use RunKernel pre-transport claim,
 `RunCapPolicy` marker, rendering posture, requested/attempted/provider-reported
 URL lineage, Tavily selected-URL binding, normalized bounds, and no-failure-
@@ -318,8 +391,9 @@ social, or final-answer authority.
 
 The acquisition-control foundation remains installed and retained: RunKernel
 owns post-discovery decision and execution authority, truthful discovery-result
-candidate handoff remains installed, and selected-candidate presence remains a
-nontrigger.
+candidate handoff remains installed, selected-candidate presence remains a
+nontrigger, and the independent subordinate READ judgment now consumes the
+ordinary packet and current material-need lineage.
 
 [`DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01`](../roadmap/DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md)
 has populated the existing canonical `SearchResultCandidatePacket` from
@@ -328,9 +402,9 @@ page transport and the selected-candidate nontrigger.
 
 The old combined exact-URL/final-custody phase was superseded before
 implementation. [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) exclusively
-owns phase order. Its next approved SearchOS sequence begins with query strategy
-and reconnaissance, followed by read-source/custody, iterative navigation and
-retrieval judgment, and gap recovery/stopping. [SearchOS Operating
+owns phase order. Query strategy/reconnaissance and read-source/custody are now
+installed; iterative navigation/retrieval judgment and gap recovery/stopping
+remain next. [SearchOS Operating
 Model](SEARCHOS_OPERATING_MODEL.md) owns the target search/acquisition operating
 boundary.
 
@@ -342,12 +416,12 @@ order, routing, execution, terminal, or custody-authority doctrine above.
 ## Nonproofs
 
 This owner proves the selected-candidate nontrigger in offline product-path
-composition, the bounded ordinary result-reference reduction, and the typed
-RunKernel READ authority chain for an independently supplied material need. It
-does not prove an ordinary acquisition proposal producer, default CLI READ
-activation, live provider behavior, provider quality, final-custody
-convergence, Focused Extract product use, Serper connection, Map selection,
-Crawl custody, general Deep, evidence correctness, source-obligation
+composition, the bounded ordinary result-reference reduction, the independent
+model-owned READ proposal producer, and the typed main-RunKernel chain through
+canonical READ custody. It does not prove live provider behavior, provider
+quality, downstream semantic evidence use, Focused Extract product use, Serper
+connection, Map selection, Crawl custody, general Deep, evidence correctness,
+source-obligation
 satisfaction, Sufficiency, FAP, Author, answer quality, compatibility rename, or
 complete-app correctness. No live provider, model, search, fetch/read, or
 retrieval call was made.

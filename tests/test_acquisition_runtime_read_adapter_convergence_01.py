@@ -143,7 +143,7 @@ def test_linkup_route_time_unavailable_selects_tavily_extract_once() -> None:
     assert durable["normalized_representation_type"] == "text/markdown"
 
 
-def test_tavily_read_rejects_mismatched_provider_reported_url() -> None:
+def test_tavily_read_retains_distinct_provider_reported_url() -> None:
     request = _read_request(linkup=False, tavily=True)
 
     result = dispatch_acquisition(
@@ -161,10 +161,15 @@ def test_tavily_read_rejects_mismatched_provider_reported_url() -> None:
         ),
     )
 
-    assert result.status is AcquisitionExecutionStatus.FAILED
-    assert result.failure_code == "read_provider_reported_url_mismatch"
+    assert result.status is AcquisitionExecutionStatus.SUCCEEDED
+    assert result.failure_code is None
     assert len(result.artifacts) == 1
-    assert result.artifacts[0].kind is AcquisitionArtifactKind.PROVIDER_FAILURE
+    assert result.artifacts[0].kind is AcquisitionArtifactKind.SELECTED_URL_READ
+    assert result.artifacts[0].requested_url == request.selected_urls[0]
+    assert result.artifacts[0].attempted_url == request.selected_urls[0]
+    assert result.artifacts[0].provider_reported_url == (
+        "https://different.example.test/wrong-page"
+    )
 
 
 def test_minimal_linkup_read_preserves_unknown_lineage_and_explicit_rendering() -> None:

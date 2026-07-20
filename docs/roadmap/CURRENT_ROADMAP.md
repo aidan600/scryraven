@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 2d346a73251f28a1187fb2958028db51117bf0c0
+Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -205,11 +205,11 @@ Extract, Map, and bounded Crawl; and mechanically authorized general Linkup
 `deep/searchResults`. `core.routing` remains the sole policy owner.
 
 Current ordinary DISCOVER consumers remain on completed ProviderPlan decisions.
-The typed READ control chain and Linkup Fetch/Tavily Extract adapters exist, but
-the later initial-discovery retirement left no ordinary independent material-
-need producer. Selected-candidate presence is a nontrigger and does not reach
-READ or custody. The generic single-relation product root supplies a completed
-DISCOVER route decision, and `process_search_queries(None)` no longer
+The typed READ control chain and Linkup Fetch/Tavily Extract adapters are now
+consumed by the later subordinate SearchJudgment READ phase. Selected-candidate
+presence remains a nontrigger; only an exact binding-backed model nomination
+reaches READ and custody. The generic single-relation product root supplies a
+completed DISCOVER route decision, and `process_search_queries(None)` no longer
 manufactures a provider policy.
 
 The merge-blocking authority continuation is also complete: one boolean
@@ -352,6 +352,44 @@ Recon is optional, response-only in offline proof, non-evidence, and bounded per
 affected component. No post-result follow-up loop, provider policy, READ,
 navigation, evidence/citation/Author change, or live call was installed.
 
+## Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01
+
+The ordinary main RunKernel now consumes the immutable revision-1 candidate
+packet after active AnswerContract, SearchWorkPlan, and QueryPlan admission.
+It derives exact text-free `SelectedCandidateMaterialNeedBindingV1` lineage for
+each selected-candidate contributor and active source-obligation slot. A
+separate mandatory model-owned SearchJudgment assessment makes exactly one
+logical `NO_READ` or `REQUEST_READ_PAGE` decision per policy-admitted eligible
+slot. Candidate rank, mode, provider availability, and legacy full-judgment or
+ordinary-live flags do not decide READ.
+
+Shared source-obligation IDs are represented once in acquisition authority with
+all associated accepted component refs in deterministic order. The assessment
+unit remains component plus obligation, so each governed component retains its
+own slot and binding. The supported checkpoint envelope is eight active
+eligible slots, admitted all-or-nothing. A ninth slot raises an explicit
+ordinary-run failure before any model call; it is never recorded as a deferred
+partial success and cannot reach full SearchJudgment, recovery, synthesis, or
+Author.
+
+An exact nomination creates one binding-backed `AcquisitionNeedProposalV1` and
+reuses the existing capability, work-order, routing, guarded execution,
+terminal, and custody-authorization chain. Linkup Fetch and Tavily Extract
+response-only proofs each reach the existing FetchReadContentPacket,
+SanitizedContentReference, and canonical EvidenceLedger custody. Requested and
+attempted URL identity remains strict while provider-reported, resolved, final,
+and canonical URL facts may truthfully differ or remain unknown. Same normalized
+URL nominations share one transport/custody artifact; provider failure performs
+one attempt and no fallback.
+
+This checkpoint ends at candidate-content custody. READ material does not enter
+ordinary passages, Analyst/Coverage support, source-obligation satisfaction,
+citations, Sufficiency, FinalAnswerPacket, Author, or answer authority. The two
+existing full SearchJudgment input seams exclude only this phase's custody so
+their baseline-equivalent inputs remain unchanged. Offline proof grants no live
+call authority and installs no Focused Extract, navigation, recovery, stopping,
+Map, Crawl, DNS/network attestation, or downstream semantic behavior.
+
 ## Active SearchOS MVP Sequence
 
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns the
@@ -361,12 +399,13 @@ before implementation because it separated planner
 disambiguation from query strategy, combined READ and Focused Extract too
 early, and prohibited every failure-time escalation.
 
-The query-strategy checkpoint is complete. The active next checkpoint is
-`SEARCHOS-READ-SOURCE-AND-CUSTODY-01`; the remaining approved sequence is:
+The query-strategy and READ/source-custody checkpoints are complete. The active
+next checkpoint is
+`SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`; the remaining
+approved sequence is:
 
 ```text
-SEARCHOS-READ-SOURCE-AND-CUSTODY-01
--> SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
+SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
 -> SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
 -> offline SearchOS integration gate
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
@@ -386,15 +425,14 @@ uninstalled. A usable success is never retried merely to compare providers, and
 a successfully read but insufficient source sends the run to search, another
 source, or bounded navigation rather than repeated extraction.
 
-The active READ checkpoint must census ordinary and compatibility webpage
-openers; keep direct local arbitrary openers product-unreachable while
-preserving pure parsers; use response-only Linkup/Tavily fixtures; derive
-`READ_PAGE` before `core.routing` selects Linkup Fetch or Tavily Extract; preserve
-one selected provider call, claim/use and replay controls, no silent switch,
-requested-versus-reported/final/canonical URL provenance, unknown missing URL
-facts, and bounded basic URL hygiene. It must not add DNS snapshots,
-connected-IP proof, redirect-chain attestation, or provider-network-path
-ownership.
+The completed READ checkpoint kept direct local arbitrary openers
+product-unreachable while preserving pure parsers; used response-only
+Linkup/Tavily fixtures; derived `READ_PAGE` before `core.routing` selected
+Linkup Fetch or Tavily Extract; preserved one selected provider call, claim/use
+and replay controls, no silent post-dispatch switch, requested-versus-reported/
+final/canonical URL provenance, unknown missing URL facts, and bounded basic URL
+hygiene. It added no DNS snapshot, connected-IP proof, redirect-chain
+attestation, or provider-network-path ownership.
 
 These checkpoint names record sequence only; this roadmap does not create their
 detailed implementation briefs or activate their capabilities.

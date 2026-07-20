@@ -1313,7 +1313,8 @@ def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_pac
         item["not_source_obligation_satisfaction"] is True
         for item in packet["candidate_records"]
     )
-    assert packet.get("answer_contract_ref", {}) == {}
+    assert packet["answer_contract_ref"]["source"] == "initial_answer_contract"
+    assert len(packet["answer_contract_ref"]["contract_digest"]) == 64
     assert handoff["acquisition_need_proposal_created"] is False
     assert handoff["read_work_order_created"] is False
     assert handoff["focused_extract_work_order_created"] is False

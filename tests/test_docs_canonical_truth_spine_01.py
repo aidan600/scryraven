@@ -72,7 +72,8 @@ ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # 
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
 QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = QUERY_CONVERGENCE_RUNTIME_SHA
+READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = READ_SOURCE_CUSTODY_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
@@ -90,7 +91,7 @@ QUANT_CONTAINMENT_RUNTIME_SHA = "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pr
 S1_RUNTIME_SHA = "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
 RUNTIME_SHA_BY_CONCERN = {
     "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
-    "canonical:run-contract-semantic-loop": (DISCOVER_HANDOFF_RUNTIME_SHA),
+    "canonical:run-contract-semantic-loop": READ_SOURCE_CUSTODY_RUNTIME_SHA,
     "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
     "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
     "canonical:bounded-multicomponent-runtime": STRUCTURED_ROUTE_RUNTIME_SHA,
@@ -513,10 +514,14 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     roadmap = _collapsed(ROADMAP)
 
     assert PROVIDER_ROUTING_RUNTIME_SHA in census
-    for owner in (ACQUISITION_CONTROL, PROVIDER_ROUTING):
-        assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(owner)
+    assert f"Verified-against-runtime: {READ_SOURCE_CUSTODY_RUNTIME_SHA}" in _read(
+        ACQUISITION_CONTROL
+    )
+    assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(
+        PROVIDER_ROUTING
+    )
     for owner in (CURRENT_STATE, ROADMAP):
-        assert f"Verified-against-runtime: {QUERY_CONVERGENCE_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {READ_SOURCE_CUSTODY_RUNTIME_SHA}" in _read(owner)
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
@@ -641,18 +646,33 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
 
     roadmap_folded = roadmap.casefold()
     handoff_index = roadmap_folded.index("## completed build: discover-result-candidate-handoff-convergence-01")
+    query_index = roadmap_folded.index(
+        "## completed build: searchos-query-strategy-and-recon-convergence-01"
+    )
+    read_index = roadmap_folded.index(
+        "## completed build: searchos-read-source-and-custody-01"
+    )
     active_index = roadmap_folded.index("## active searchos mvp sequence")
-    query_index = roadmap_folded.index("searchos-query-strategy-and-recon-convergence-01")
-    read_index = roadmap_folded.index("searchos-read-source-and-custody-01")
-    navigation_index = roadmap_folded.index("searchos-iterative-navigation-and-retrieval-judgment-01")
-    recovery_index = roadmap_folded.index("searchos-gap-recovery-and-stop-convergence-01")
-    assert handoff_index < query_index < active_index < read_index < navigation_index < recovery_index
+    navigation_index = roadmap_folded.index(
+        "searchos-iterative-navigation-and-retrieval-judgment-01",
+        active_index,
+    )
+    recovery_index = roadmap_folded.index(
+        "searchos-gap-recovery-and-stop-convergence-01",
+        navigation_index,
+    )
+    assert handoff_index < query_index < read_index < active_index < navigation_index < recovery_index
     assert "Query strategy is now installed" in roadmap
     assert "Map may be inserted later as an optional navigation plugin" in roadmap
-    assert "SearchOS post-result SearchJudgment, READ, navigation" in current
+    assert "Exact-URL READ consumption and candidate-content custody are installed" in current
+    assert (
+        "iterative retrieval judgment, post-result secondary authorization, navigation, "
+        "recovery, and stopping remain later SearchOS work"
+        in current
+    )
 
 
-def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> None:
+def test_searchos_query_and_read_are_installed_and_navigation_is_active_next() -> None:
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
     brief = _collapsed(QUERY_CONVERGENCE_BRIEF)
@@ -710,7 +730,11 @@ def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> No
         assert phrase in brief
 
     assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
-    assert "active next checkpoint is `SEARCHOS-READ-SOURCE-AND-CUSTODY-01`" in roadmap
+    assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
+    assert (
+        "active next checkpoint is `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`"
+        in roadmap
+    )
     assert "Later SearchJudgment must inspect the first result set per component" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
