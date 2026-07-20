@@ -19,7 +19,6 @@ from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_contracts import AcquisitionArtifact
 from core.acquisition_control import (
     AcquisitionNeedProposalV1,
-    build_pre_acquisition_source_obligation_ref,
     stable_json_digest,
 )
 from core.authorized_acquisition_runtime import (
@@ -54,6 +53,7 @@ from core.run_kernel import (
     Observation,
     ObservationType,
     RunKernel,
+    RunKernelTransitionError,
     RunStageStatus,
     validate_authorized_action,
 )
@@ -90,6 +90,9 @@ SEARCH_JUDGMENT_READ_TRACE_KEY = "search_judgment_read_assessment"
 SEARCH_JUDGMENT_READ_COST_PHASE = "search_judgment_read_assessment"
 SEARCH_JUDGMENT_READ_PRODUCER_SURFACE = (
     "core.search_judgment_read_assessment_runtime"
+)
+SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED = (
+    "search_judgment_read_assessment_slot_budget_exceeded"
 )
 
 SEARCH_JUDGMENT_READ_SYSTEM_PROMPT = """You are the subordinate SearchJudgment READ assessor.
@@ -307,6 +310,17 @@ class SelectedCandidateMaterialNeedBindingV1:
             or "source"
         )
         component_id = str(_mapping(raw.get("component_ref")).get("component_id"))
+        obligation_component_ids = {
+            str(value)
+            for value in _sequence(
+                _mapping(raw.get("source_obligation_ref")).get("component_ids")
+            )
+            if str(value)
+        }
+        if component_id not in obligation_component_ids:
+            raise SearchJudgmentReadAssessmentError(
+                "binding_component_not_in_source_obligation"
+            )
         obligation_id = str(
             _mapping(raw.get("source_obligation_ref")).get(
                 "source_obligation_id"
@@ -467,6 +481,13 @@ def derive_selected_candidate_material_need_bindings(
     ):
         raise SearchJudgmentReadAssessmentError("search_work_plan_contract_stale")
     search_work_plan_ref = _search_work_plan_ref(search_work_plan)
+    try:
+        authority_snapshot = run_kernel.acquisition_authority_snapshot()
+    except RunKernelTransitionError as exc:
+        raise SearchJudgmentReadAssessmentError(str(exc)) from exc
+    canonical_obligations = _mapping(
+        authority_snapshot.get("source_obligations_by_id")
+    )
 
     contract_components = {
         str(_mapping(item).get("component_id")): _mapping(item)
@@ -642,12 +663,20 @@ def derive_selected_candidate_material_need_bindings(
                 if key in seen_binding_cores:
                     continue
                 seen_binding_cores.add(key)
-                obligation_ref = build_pre_acquisition_source_obligation_ref(
-                    answer_contract_ref=active_contract_ref,
-                    source_obligation_id=obligation_id,
-                    source_obligation_descriptor=obligation,
-                    component_refs=[expected_component_ref],
+                obligation_ref = _mapping(
+                    canonical_obligations.get(obligation_id)
                 )
+                if (
+                    not obligation_ref
+                    or component_id
+                    not in {
+                        str(value)
+                        for value in _sequence(obligation_ref.get("component_ids"))
+                    }
+                ):
+                    raise SearchJudgmentReadAssessmentError(
+                        "binding_source_obligation_snapshot_stale"
+                    )
                 binding = SelectedCandidateMaterialNeedBindingV1.create(
                     run_id=run_kernel.state.run_id,
                     request_id=run_kernel.state.request_id,
@@ -692,9 +721,13 @@ def derive_selected_candidate_material_need_bindings(
             slot_order.append(slot_id)
             bindings_by_slot[slot_id] = []
         bindings_by_slot[slot_id].append(binding.binding_id)
-    admitted_slots = slot_order[
-        : policy.maximum_logical_read_assessments_per_checkpoint_run
-    ]
+    if len(slot_order) > (
+        policy.maximum_logical_read_assessments_per_checkpoint_run
+    ):
+        raise SearchJudgmentReadAssessmentError(
+            SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED
+        )
+    admitted_slots = list(slot_order)
     state_core = {
         "schema_version": SEARCH_JUDGMENT_READ_BINDING_SET_SCHEMA_VERSION,
         "owner": "RunKernel.SearchJudgment",
@@ -714,7 +747,7 @@ def derive_selected_candidate_material_need_bindings(
         "slot_order": slot_order,
         "bindings_by_slot": bindings_by_slot,
         "policy_admitted_slot_ids": admitted_slots,
-        "policy_deferred_slot_ids": slot_order[len(admitted_slots) :],
+        "policy_deferred_slot_ids": [],
         "read_triggered": False,
         "read_need_decided": False,
         "candidate_rank_triggered_read": False,
@@ -785,6 +818,22 @@ def validate_search_judgment_read_binding_reduction(
     ]
     if expected.get("binding_count") != len(bindings):
         raise SearchJudgmentReadAssessmentError("binding_count_mismatch")
+    slot_order = list(_sequence(expected.get("slot_order")))
+    admitted_slots = list(
+        _sequence(expected.get("policy_admitted_slot_ids"))
+    )
+    deferred_slots = list(
+        _sequence(expected.get("policy_deferred_slot_ids"))
+    )
+    if (
+        admitted_slots != slot_order
+        or deferred_slots
+        or len(slot_order)
+        > SEARCH_JUDGMENT_READ_ASSESSMENT_POLICY.maximum_logical_read_assessments_per_checkpoint_run
+    ):
+        raise SearchJudgmentReadAssessmentError(
+            SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED
+        )
     core = {key: _json_clone(value) for key, value in expected.items() if key != "binding_set_digest"}
     if expected.get("binding_set_digest") != stable_json_digest(core):
         raise SearchJudgmentReadAssessmentError("binding_set_digest_mismatch")
@@ -1143,6 +1192,16 @@ def execute_search_judgment_read_source_and_custody(
             discovery_result_store=discovery_result_store,
         )
         run_kernel.reduce(execute_search_judgment_read_binding_action(binding_action))
+    except SearchJudgmentReadAssessmentError as exc:
+        if exc.code == SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED:
+            raise
+        return SearchJudgmentReadRuntimeResult(
+            projection=_closed_runtime_projection(
+                status="binding_derivation_failed_closed",
+                failure_code=exc.code,
+                run_kernel=run_kernel,
+            )
+        )
     except Exception as exc:
         return SearchJudgmentReadRuntimeResult(
             projection=_closed_runtime_projection(
@@ -2289,6 +2348,7 @@ __all__ = [
     "SEARCH_JUDGMENT_READ_ASSESSMENT_POLICY",
     "SEARCH_JUDGMENT_READ_COST_PHASE",
     "SEARCH_JUDGMENT_READ_STATE_SCHEMA_VERSION",
+    "SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED",
     "SEARCH_JUDGMENT_READ_TRACE_KEY",
     "SearchJudgmentReadAssessmentError",
     "SearchJudgmentReadAssessmentPolicyV1",

@@ -569,6 +569,7 @@ def run_post_retirement_ordinary_pipeline(
     deps_overrides: Mapping[str, Any] | None = None,
     environment_overrides: Mapping[str, str] | None = None,
     read_assessment_decision: str | None = None,
+    harness_sink: list[PostRetirementOrdinaryPipelineHarness] | None = None,
 ) -> tuple[Any, PostRetirementOrdinaryPipelineHarness]:
     scrub_offline_runtime(monkeypatch)
     for key, value in (environment_overrides or {}).items():
@@ -591,11 +592,14 @@ def run_post_retirement_ordinary_pipeline(
         install_economist_sentinel=install_economist_sentinel,
         read_assessment_decision=read_assessment_decision,
     )
+    if harness_sink is not None:
+        harness_sink.append(harness)
     original_read_runtime = (
         orchestrator.execute_search_judgment_read_source_and_custody
     )
 
     def capture_read_runtime(**kwargs: Any) -> Any:
+        harness.run_kernel = kwargs["run_kernel"]
         harness.read_candidate_packet = dict(kwargs["candidate_packet"])
         harness.read_query_plan = kwargs["query_plan"]
         harness.read_discovery_result_store = kwargs["discovery_result_store"]

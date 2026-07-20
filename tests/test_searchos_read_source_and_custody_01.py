@@ -4,26 +4,132 @@ import json
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 
 import core.pipeline as pipeline
 import core.pipeline_orchestrator as orchestrator
 from core.acquisition_adapters import AcquisitionTransports
+from core.acquisition_control import (
+    AcquisitionControlError,
+    build_acquisition_authority_snapshot,
+)
 from core.cap_enforcement import RunCapPolicy
 from core.run_authority_search_judgment_adapter import (
     build_search_judgment_input_from_runtime,
 )
 from core.run_kernel import RunKernel
 from core.search_judgment_read_assessment_runtime import (
+    SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED,
     SEARCH_JUDGMENT_READ_TRACE_KEY,
+    SearchJudgmentReadAssessmentError,
     build_full_search_judgment_containment_projection,
     execute_search_judgment_read_source_and_custody,
 )
+from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from tests.helpers.offline_ordinary_pipeline import (
     run_post_retirement_ordinary_pipeline,
 )
+
+
+class _SlotFixtureSearchPlannerAdapter:
+    """Offline proposal fixture with exact component/obligation membership."""
+
+    def __init__(
+        self,
+        component_obligation_ids: list[list[str]],
+    ) -> None:
+        self.component_obligation_ids = component_obligation_ids
+
+    def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        proposal = deepcopy(
+            DeterministicSearchPlannerAdapter().produce(planner_input)
+        )
+        base_component = deepcopy(proposal["answer_components"][0])
+        base_requirement = deepcopy(
+            proposal["component_search_requirements"][0]
+        )
+        base_strategy = deepcopy(
+            base_requirement["metadata"]["query_strategy_candidates"][0]
+        )
+        base_obligation = deepcopy(proposal["source_obligation_candidates"][0])
+
+        components: list[dict[str, Any]] = []
+        requirements: list[dict[str, Any]] = []
+        components_by_obligation: dict[str, list[str]] = {}
+        for index, obligation_ids in enumerate(
+            self.component_obligation_ids,
+            start=1,
+        ):
+            component_id = f"fixture-component-{index:02d}"
+            for obligation_id in obligation_ids:
+                components_by_obligation.setdefault(obligation_id, []).append(
+                    component_id
+                )
+            component = deepcopy(base_component)
+            component.update(
+                {
+                    "component_id": component_id,
+                    "component_revision": "1",
+                    "user_facing_label": f"Fixture component {index}",
+                    "user_facing_question": (
+                        f"What is the current official rule for fixture {index}?"
+                    ),
+                    "source_obligation_candidate_ids": list(obligation_ids),
+                    "metadata": {"fixture_slot_component": True},
+                }
+            )
+            components.append(component)
+
+            strategy = deepcopy(base_strategy)
+            strategy.update(
+                {
+                    "strategy_id": f"strategy:{component_id}:primary",
+                    "component_id": component_id,
+                    "candidate_query_text": (
+                        f"fixture {index} current official rule"
+                    ),
+                    "source_obligation_candidate_ids": list(obligation_ids),
+                }
+            )
+            requirement = deepcopy(base_requirement)
+            requirement.update(
+                {
+                    "component_id": component_id,
+                    "requirement_id": f"search-requirement:{component_id}",
+                    "requirement_summary": (
+                        f"Find current official material for fixture {index}."
+                    ),
+                    "source_obligation_candidate_ids": list(obligation_ids),
+                    "metadata": {
+                        "query_strategy_candidates": [strategy],
+                        "allocation_posture": (
+                            "one_primary_per_required_component"
+                        ),
+                        "provider_name_neutral": True,
+                    },
+                }
+            )
+            requirements.append(requirement)
+
+        obligations: list[dict[str, Any]] = []
+        for obligation_id in sorted(components_by_obligation):
+            obligation = deepcopy(base_obligation)
+            obligation.update(
+                {
+                    "candidate_id": obligation_id,
+                    "component_candidate_ids": sorted(
+                        components_by_obligation[obligation_id]
+                    ),
+                }
+            )
+            obligations.append(obligation)
+
+        proposal["answer_components"] = components
+        proposal["source_obligation_candidates"] = obligations
+        proposal["component_search_requirements"] = requirements
+        return proposal
 
 
 def _install_response_only_discovery(
@@ -254,6 +360,246 @@ def test_duplicate_url_contributors_create_distinct_bindings_one_candidate(
         for binding_ids in state["binding_state"]["bindings_by_slot"].values()
     )
     assert len(harness.read_assessment_calls) == 2
+
+
+def test_shared_obligation_has_one_canonical_ref_and_two_component_slots(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_response_only_discovery(monkeypatch)
+    shared_obligation_id = "fixture-obligation-shared"
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Fast",
+        query="What are Alpha's two current official rule dimensions?",
+        core_topic="Alpha current official rule dimensions",
+        primary_entity="Alpha",
+        read_assessment_decision="NO_READ",
+        deps_overrides={
+            "process_search_queries": pipeline.process_search_queries,
+            "search_planner_adapter": _SlotFixtureSearchPlannerAdapter(
+                [[shared_obligation_id], [shared_obligation_id]]
+            ),
+        },
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
+    )
+
+    projection = outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
+    assert projection.get("failure_code") is None, projection.get("failure_code")
+    assert projection["status"] == "checkpoint_completed", projection
+    state = _kernel_trace(harness)["search_judgment_read_state"]
+    assert state, projection
+    binding_state = state["binding_state"]
+    snapshot = harness.run_kernel.acquisition_authority_snapshot()
+    assert list(snapshot["source_obligations_by_id"]) == [
+        shared_obligation_id
+    ]
+    obligation_ref = snapshot["source_obligations_by_id"][
+        shared_obligation_id
+    ]
+    assert obligation_ref["component_ids"] == [
+        "fixture-component-01",
+        "fixture-component-02",
+    ]
+    bindings = binding_state["bindings"]
+    assert len(bindings) == 2
+    assert {
+        binding["component_ref"]["component_id"] for binding in bindings
+    } == set(obligation_ref["component_ids"])
+    assert all(
+        binding["source_obligation_ref"] == obligation_ref
+        for binding in bindings
+    )
+    assert len(binding_state["slot_order"]) == 2
+    assert len(set(binding_state["slot_order"])) == 2
+    assert len(harness.read_assessment_calls) == 2
+    assert outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY][
+        "logical_assessment_count"
+    ] == 2
+
+
+def test_shared_obligation_descriptor_conflict_is_typed_before_assessment(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_response_only_discovery(monkeypatch)
+    shared_obligation_id = "fixture-obligation-shared"
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Fast",
+        query="What are Alpha's two current official rule dimensions?",
+        core_topic="Alpha current official rule dimensions",
+        primary_entity="Alpha",
+        read_assessment_decision="NO_READ",
+        deps_overrides={
+            "process_search_queries": pipeline.process_search_queries,
+            "search_planner_adapter": _SlotFixtureSearchPlannerAdapter(
+                [[shared_obligation_id], [shared_obligation_id]]
+            ),
+        },
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
+    )
+    kernel = harness.run_kernel
+    conflicting_plan = deepcopy(kernel.state.search_work_plan)
+    conflicting_plan["components"][1]["source_obligations"][0][
+        "satisfaction_rule"
+    ] = "Conflicting component-local satisfaction rule."
+
+    with pytest.raises(AcquisitionControlError) as exc_info:
+        build_acquisition_authority_snapshot(
+            run_id=kernel.state.run_id,
+            request_id=kernel.state.request_id,
+            current_answer_contract=kernel.state.current_answer_contract,
+            initial_answer_contract=kernel.state.initial_answer_contract,
+            search_executor_handoff_state=(
+                kernel.state.search_executor_handoff_state
+            ),
+            search_work_plan=conflicting_plan,
+        )
+
+    assert exc_info.value.code == (
+        "shared_source_obligation_descriptor_conflict"
+    )
+    kernel.state.search_work_plan = conflicting_plan
+    kernel.state.search_judgment_read_state = {}
+    read_action_count = len(_read_actions(harness))
+    conflicting_model_calls: list[str] = []
+
+    result = execute_search_judgment_read_source_and_custody(
+        run_kernel=kernel,
+        candidate_packet=harness.read_candidate_packet,
+        query_plan=harness.read_query_plan,
+        discovery_result_store=harness.read_discovery_result_store,
+        ask_model=lambda *_args, **_kwargs: conflicting_model_calls.append(
+            "called"
+        ),
+        provider="offline-fake-provider",
+        model="offline-fake-smart-model",
+        base_url="http://offline.invalid/v1",
+        api_key="",
+        use_reasoning=False,
+        available_providers={},
+        acquisition_transports=None,
+        before_transport=None,
+        measure_context_stage=None,
+    )
+
+    assert result.projection["status"] == "binding_derivation_failed_closed"
+    assert result.projection["failure_code"] == (
+        "shared_source_obligation_descriptor_conflict"
+    )
+    assert conflicting_model_calls == []
+    assert len(_read_actions(harness)) == read_action_count
+
+
+def test_exactly_eight_active_slots_are_all_assessed_once(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_response_only_discovery(monkeypatch)
+    obligation_ids = [
+        f"fixture-obligation-{index:02d}" for index in range(1, 9)
+    ]
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Fast",
+        query="What are Alpha's eight current official rule dimensions?",
+        core_topic="Alpha current official rule dimensions",
+        primary_entity="Alpha",
+        read_assessment_decision="NO_READ",
+        deps_overrides={
+            "process_search_queries": pipeline.process_search_queries,
+            "search_planner_adapter": _SlotFixtureSearchPlannerAdapter(
+                [obligation_ids]
+            ),
+        },
+        environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
+    )
+
+    state = _kernel_trace(harness)["search_judgment_read_state"]
+    binding_state = state["binding_state"]
+    assert len(binding_state["slot_order"]) == 8
+    assert binding_state["policy_admitted_slot_ids"] == (
+        binding_state["slot_order"]
+    )
+    assert binding_state["policy_deferred_slot_ids"] == []
+    assert len(harness.read_assessment_calls) == 8
+    assert len(
+        {call["slot_id"] for call in harness.read_assessment_calls}
+    ) == 8
+    projection = outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
+    assert projection["logical_assessment_count"] == 8
+    assert projection["no_read_count"] == 8
+    assert projection["acquisition_need_proposal_count"] == 0
+
+
+def test_ninth_active_slot_aborts_ordinary_run_before_any_assessment(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_response_only_discovery(monkeypatch)
+    obligation_ids = [
+        f"fixture-obligation-{index:02d}" for index in range(1, 10)
+    ]
+    provider_calls: list[dict[str, Any]] = []
+    search_dispatches: list[list[str]] = []
+    harnesses: list[Any] = []
+    original_process_search_queries = pipeline.process_search_queries
+
+    def record_process_search_queries(
+        queries: list[str],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        search_dispatches.append(list(queries))
+        return original_process_search_queries(queries, *args, **kwargs)
+
+    with pytest.raises(SearchJudgmentReadAssessmentError) as exc_info:
+        run_post_retirement_ordinary_pipeline(
+            tmp_path,
+            monkeypatch,
+            mode="Fast",
+            query="What are Alpha's nine current official rule dimensions?",
+            core_topic="Alpha current official rule dimensions",
+            primary_entity="Alpha",
+            read_assessment_decision="NO_READ",
+            deps_overrides={
+                "process_search_queries": record_process_search_queries,
+                "search_planner_adapter": _SlotFixtureSearchPlannerAdapter(
+                    [obligation_ids]
+                ),
+                "searchos_read_acquisition_transports": AcquisitionTransports(
+                    tavily_extract=lambda payload: provider_calls.append(payload)
+                    or {}
+                ),
+            },
+            environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
+            harness_sink=harnesses,
+        )
+
+    assert exc_info.value.code == SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED
+    assert len(harnesses) == 1
+    harness = harnesses[0]
+    kernel = harness.run_kernel
+    assert kernel is not None
+    assert harness.read_assessment_calls == []
+    assert _read_actions(harness) == []
+    assert _acquisition_actions(harness) == []
+    assert provider_calls == []
+    assert kernel.state.search_judgment_read_state == {}
+    custody = _kernel_trace(harness)["evidence_ledger"].get(
+        "fetch_read_candidate_custody", {}
+    )
+    assert custody.get("fetch_read_candidate_custody_records", []) == []
+    assert harness.full_search_judgment_inputs == []
+    assert len(search_dispatches) == 1
+    assert harness.analyst_calls == 0
+    assert harness.analyst_prompts == []
+    assert harness.economist_calls == []
+    assert harness.author_prompts == []
 
 
 def test_no_eligible_bindings_make_zero_assessment_and_acquisition_calls(

@@ -1612,6 +1612,21 @@ def ensure_acquisition_control_state(
     return safe
 
 
+def _canonical_source_obligation_descriptor(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Remove component-local lineage from the shared governed descriptor."""
+
+    descriptor = _json_clone(value)
+    metadata = _mapping(descriptor.get("metadata"), "")
+    metadata.pop("accepted_component_id", None)
+    if metadata:
+        descriptor["metadata"] = metadata
+    else:
+        descriptor.pop("metadata", None)
+    return descriptor
+
+
 def build_pre_acquisition_source_obligation_ref(
     *,
     answer_contract_ref: Mapping[str, Any],
@@ -1627,16 +1642,28 @@ def build_pre_acquisition_source_obligation_ref(
         "source_obligation_id_missing",
         limit=200,
     )
-    descriptor = _mapping(
-        source_obligation_descriptor,
-        "source_obligation_descriptor_invalid",
+    descriptor = _canonical_source_obligation_descriptor(
+        _mapping(
+            source_obligation_descriptor,
+            "source_obligation_descriptor_invalid",
+        )
     )
-    components = [
-        _component_ref(_mapping(value, "component_mapping_required"))
-        for value in component_refs
-    ]
+    components = sorted(
+        (
+            _component_ref(_mapping(value, "component_mapping_required"))
+            for value in component_refs
+        ),
+        key=lambda value: (
+            str(value.get("component_id") or ""),
+            str(value.get("component_revision") or ""),
+            str(value.get("component_digest") or ""),
+        ),
+    )
     if not components:
         raise AcquisitionControlError("source_obligation_component_missing")
+    component_ids = [str(value.get("component_id") or "") for value in components]
+    if len(component_ids) != len(set(component_ids)):
+        raise AcquisitionControlError("source_obligation_component_duplicate")
     binding_core = {
         "binding_kind": "pre_acquisition_source_obligation_lineage",
         "answer_contract_ref": contract_ref,
@@ -1651,7 +1678,7 @@ def build_pre_acquisition_source_obligation_ref(
         "source_obligation_digest": stable_json_digest(binding_core),
         "binding_kind": binding_core["binding_kind"],
         "answer_contract_digest": contract_ref["contract_digest"],
-        "component_ids": [value.get("component_id") for value in components],
+        "component_ids": component_ids,
         "active": True,
     }
 
@@ -1739,7 +1766,7 @@ def build_acquisition_authority_snapshot(
             and accepted_ref.get("parent_kind") == contract_source
         ):
             raise AcquisitionControlError("search_work_plan_contract_ref_mismatch")
-        obligations: dict[str, dict[str, Any]] = {}
+        obligation_occurrences: dict[str, dict[str, Any]] = {}
         seen_component_ids: set[str] = set()
         for raw_work_component in _sequence(work_plan.get("components")):
             work_component = _mapping(
@@ -1800,18 +1827,25 @@ def build_acquisition_authority_snapshot(
                     raise AcquisitionControlError(
                         "search_work_source_obligation_not_in_active_contract"
                     )
-                if obligation_id in obligations:
+                if obligation_id in seen_obligation_ids:
                     raise AcquisitionControlError(
-                        "duplicate_source_obligation_id"
+                        "duplicate_source_obligation_in_component"
                     )
-                obligations[obligation_id] = (
-                    build_pre_acquisition_source_obligation_ref(
-                        answer_contract_ref=contract_ref,
-                        source_obligation_id=obligation_id,
-                        source_obligation_descriptor=descriptor,
-                        component_refs=[canonical_component],
-                    )
+                governed_descriptor = (
+                    _canonical_source_obligation_descriptor(descriptor)
                 )
+                occurrence = obligation_occurrences.get(obligation_id)
+                if occurrence is None:
+                    obligation_occurrences[obligation_id] = {
+                        "descriptor": governed_descriptor,
+                        "component_refs": [canonical_component],
+                    }
+                else:
+                    if occurrence["descriptor"] != governed_descriptor:
+                        raise AcquisitionControlError(
+                            "shared_source_obligation_descriptor_conflict"
+                        )
+                    occurrence["component_refs"].append(canonical_component)
                 seen_obligation_ids.add(obligation_id)
             if seen_obligation_ids != expected_obligation_ids:
                 raise AcquisitionControlError(
@@ -1820,6 +1854,29 @@ def build_acquisition_authority_snapshot(
         if seen_component_ids != set(components):
             raise AcquisitionControlError(
                 "search_work_component_membership_mismatch"
+            )
+        obligations: dict[str, dict[str, Any]] = {}
+        for obligation_id in sorted(obligation_occurrences):
+            occurrence = obligation_occurrences[obligation_id]
+            expected_components = {
+                str(value.get("component_id") or "")
+                for value in obligation_to_components.get(obligation_id, ())
+            }
+            occurrence_components = {
+                str(value.get("component_id") or "")
+                for value in occurrence["component_refs"]
+            }
+            if occurrence_components != expected_components:
+                raise AcquisitionControlError(
+                    "shared_source_obligation_component_membership_mismatch"
+                )
+            obligations[obligation_id] = (
+                build_pre_acquisition_source_obligation_ref(
+                    answer_contract_ref=contract_ref,
+                    source_obligation_id=obligation_id,
+                    source_obligation_descriptor=occurrence["descriptor"],
+                    component_refs=occurrence["component_refs"],
+                )
             )
         snapshot_core = {
             "run_id": run_id,
