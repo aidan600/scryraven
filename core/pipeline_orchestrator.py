@@ -924,8 +924,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     status.step("Planning accepted components and initial search strategy...")
     planner_adapter = deps.search_planner_adapter
     if planner_adapter is None:
+        planner_model_transport = deps.ask_model
+
+        def ask_search_planner_model(*args: Any, **kwargs: Any) -> Any:
+            """Bind per-run transport and accounting facts without retaining them."""
+
+            kwargs["base_url"] = local_url
+            kwargs["api_key"] = or_api_key
+            kwargs["cost_accumulator"] = accumulator
+            kwargs["cost_phase"] = "search_planner"
+            return planner_model_transport(*args, **kwargs)
+
         planner_adapter = SearchPlannerModelAdapter(
-            ask_model=deps.ask_model,
+            ask_model=ask_search_planner_model,
             clean_json_response=deps.clean_json_response,
             provider=fast_provider,
             model=fast_model,

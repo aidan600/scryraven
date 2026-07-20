@@ -55,16 +55,61 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
     planner_prompts: list[str] = field(default_factory=list)
     planner_kwargs: list[dict[str, Any]] = field(default_factory=list)
 
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+    def ask_model(
+        self,
+        prompt: str,
+        system_prompt: str,
+        provider: str = "OpenAI",
+        model: str = "gpt-5.4-mini",
+        effort: str = "low",
+        base_url: str | None = None,
+        api_key: str | None = None,
+        stream: bool = False,
+        require_json: bool = False,
+        use_reasoning: bool = True,
+        cost_accumulator: CostAccumulator | None = None,
+        cost_phase: str = "model",
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        kwargs = {
+            "provider": provider,
+            "model": model,
+            "effort": effort,
+            "base_url": base_url,
+            "api_key": api_key,
+            "stream": stream,
+            "require_json": require_json,
+            "use_reasoning": use_reasoning,
+            "cost_accumulator": cost_accumulator,
+            "cost_phase": cost_phase,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
         if system_prompt == SEARCH_PLANNER_MODEL_SYSTEM_PROMPT:
             self._record_model_call(system_prompt, kwargs)
             self.planner_prompts.append(prompt)
             self.planner_kwargs.append(dict(kwargs))
+            if provider == "OpenRouter" and not api_key:
+                raise ValueError("OpenRouter API key is missing")
+            if provider == "Local (LM Studio)" and not str(base_url or "").startswith(
+                ("http://", "https://")
+            ):
+                raise ValueError("Local model endpoint is missing or invalid")
             if isinstance(self.planner_response, Exception):
                 raise self.planner_response
             if isinstance(self.planner_response, str):
-                return self.planner_response
-            return json.dumps(self.planner_response)
+                response = self.planner_response
+            else:
+                response = json.dumps(self.planner_response)
+            if cost_accumulator is not None:
+                cost_accumulator.record_model_call(
+                    phase=cost_phase,
+                    model=model,
+                    input_tokens=11,
+                    output_tokens=7,
+                )
+            return response
         return super().ask_model(prompt, system_prompt, **kwargs)
 
 
@@ -439,6 +484,18 @@ def _router_state() -> Any:
     )
 
 
+def _contains_object_identity(value: Any, target: Any) -> bool:
+    if value is target:
+        return True
+    if isinstance(value, Mapping):
+        return any(
+            _contains_object_identity(item, target) for item in value.values()
+        )
+    if isinstance(value, list | tuple):
+        return any(_contains_object_identity(item, target) for item in value)
+    return False
+
+
 def test_rundeps_declares_typed_planner_scout_and_revision_seams() -> None:
     declared = {item.name: item for item in fields(RunDeps)}
 
@@ -456,6 +513,194 @@ def test_rundeps_declares_typed_planner_scout_and_revision_seams() -> None:
     assert "revision_adapter = deps.search_planner_revision_adapter" in source
     assert "getattr(deps, \"search_planner_adapter\"" not in source
     assert "DeterministicSearchPlannerAdapter()" not in source
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "local_url", "api_key"),
+    (
+        (
+            "OpenAI",
+            "gpt-5.4-mini",
+            "https://openai-config.invalid/v1",
+            "openai-config-key-not-for-retention",
+        ),
+        (
+            "OpenRouter",
+            "openai/gpt-5.4-mini",
+            "https://openrouter-local-placeholder.invalid/v1",
+            "openrouter-planner-key-not-for-retention",
+        ),
+        (
+            "Local (LM Studio)",
+            "local-planner-model",
+            "http://planner-local.invalid:1234/v1",
+            "local-config-key-not-for-retention",
+        ),
+    ),
+)
+def test_default_planner_receives_selected_transport_and_run_accounting(
+    tmp_path: Path,
+    monkeypatch: Any,
+    provider: str,
+    model: str,
+    local_url: str,
+    api_key: str,
+) -> None:
+    config, deps, harness, capture = _pipeline_fixture(
+        tmp_path,
+        monkeypatch,
+        query="What is the current Example rule?",
+        planner_response=_planner_payload(),
+    )
+    config = replace(
+        config,
+        fast_provider=provider,
+        fast_model=model,
+        local_url=local_url,
+        or_api_key=api_key,
+    )
+    accumulator = CostAccumulator()
+
+    outcome = orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        accumulator,
+    )
+
+    assert outcome.report
+    assert len(harness.planner_kwargs) == 1
+    planner_kwargs = harness.planner_kwargs[0]
+    assert planner_kwargs["provider"] == provider
+    assert planner_kwargs["model"] == model
+    assert planner_kwargs["effort"] == "low"
+    assert planner_kwargs["base_url"] == local_url
+    assert planner_kwargs["api_key"] == api_key
+    assert planner_kwargs["cost_accumulator"] is accumulator
+    assert planner_kwargs["cost_phase"] == "search_planner"
+    assert planner_kwargs["require_json"] is True
+    assert planner_kwargs["use_reasoning"] is True
+    assert capture["query_plan_admission_calls"] == 1
+    cost_snapshot = accumulator.snapshot()
+    assert cost_snapshot["calls_by_phase"] == {"search_planner": 1}
+    assert cost_snapshot["total_calls"] == 1
+    assert outcome.cost_snapshot == cost_snapshot
+
+
+def test_default_planner_transport_facts_are_not_retained(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    endpoint = "http://planner-endpoint-retention-sentinel.invalid:1234/v1"
+    credential = "planner-credential-retention-sentinel"
+    config, deps, harness, capture = _pipeline_fixture(
+        tmp_path,
+        monkeypatch,
+        query="What is the current Example rule?",
+        planner_response=_planner_payload(),
+    )
+    config = replace(
+        config,
+        fast_provider="OpenRouter",
+        fast_model="openai/gpt-5.4-mini",
+        local_url=endpoint,
+        or_api_key=credential,
+    )
+    accumulator = CostAccumulator()
+
+    outcome = orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        accumulator,
+    )
+
+    kernel = capture["run_kernel"]
+    retained = {
+        "planner_prompt": harness.planner_prompts[0],
+        "planner_projection": capture["planner_projection_at_convergence"],
+        "initial_contract": kernel.state.initial_answer_contract,
+        "current_contract": kernel.state.current_answer_contract,
+        "search_work_plan": kernel.state.search_work_plan,
+        "query_plan": capture["query_plan_admission"].observation.payload,
+        "run_kernel_trace": kernel.trace_projection().to_dict(),
+        "execution_trace": outcome.execution_trace,
+        "cost_snapshot": outcome.cost_snapshot,
+    }
+    retained_text = json.dumps(retained, sort_keys=True)
+    assert credential not in retained_text
+    assert endpoint not in retained_text
+    assert not _contains_object_identity(retained, accumulator)
+
+
+@pytest.mark.parametrize(
+    ("provider", "local_url", "api_key", "failure_kind"),
+    (
+        (
+            "OpenRouter",
+            "https://unused-local.invalid/v1",
+            "",
+            "OpenRouter API key is missing",
+        ),
+        (
+            "Local (LM Studio)",
+            "",
+            "unused-local-key",
+            "Local model endpoint is missing or invalid",
+        ),
+        (
+            "Local (LM Studio)",
+            "planner-local-endpoint-without-scheme",
+            "unused-local-key",
+            "Local model endpoint is missing or invalid",
+        ),
+    ),
+)
+def test_missing_planner_transport_configuration_fails_before_queryplan_and_search(
+    tmp_path: Path,
+    monkeypatch: Any,
+    provider: str,
+    local_url: str,
+    api_key: str,
+    failure_kind: str,
+) -> None:
+    config, deps, harness, capture = _pipeline_fixture(
+        tmp_path,
+        monkeypatch,
+        query="What is the current Example rule?",
+        planner_response=_planner_payload(),
+    )
+    config = replace(
+        config,
+        fast_provider=provider,
+        fast_model="configured-planner-model",
+        local_url=local_url,
+        or_api_key=api_key,
+    )
+    accumulator = CostAccumulator()
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="model call failed closed: ValueError",
+    ) as caught:
+        orchestrator.run_pipeline(
+            config,
+            deps,
+            NullStatusWriter(),
+            accumulator,
+        )
+
+    assert len(harness.planner_prompts) == 1
+    assert capture["query_plan_admission_calls"] == 0
+    assert harness.search_calls == []
+    assert accumulator.snapshot()["calls_by_phase"] == {}
+    assert failure_kind not in str(caught.value)
+    if local_url:
+        assert local_url not in harness.planner_prompts[0]
+        assert local_url not in str(caught.value)
+    if api_key:
+        assert api_key not in harness.planner_prompts[0]
+        assert api_key not in str(caught.value)
 
 
 def test_default_model_planner_owns_long_narrated_request_and_first_dispatch(
@@ -618,19 +863,34 @@ def test_explicit_response_only_planner_scout_and_revision_cross_real_pipeline(
         revision_adapter=revision,
         use_default_model=False,
     )
+    endpoint = "http://injected-adapter-endpoint-sentinel.invalid/v1"
+    credential = "injected-adapter-credential-sentinel"
+    config = replace(
+        config,
+        fast_provider="OpenRouter",
+        local_url=endpoint,
+        or_api_key=credential,
+    )
+    accumulator = CostAccumulator()
 
     orchestrator.run_pipeline(
         config,
         deps,
         NullStatusWriter(),
-        CostAccumulator(),
+        accumulator,
     )
 
     assert len(planner.calls) == 1
     assert len(scout.calls) == 1
     assert len(revision.calls) == 1
     assert harness.planner_prompts == []
+    assert harness.planner_kwargs == []
     assert SEARCH_PLANNER_MODEL_SYSTEM_PROMPT not in harness.model_system_prompts
+    injected_input_text = json.dumps(planner.calls[0], sort_keys=True)
+    assert endpoint not in injected_input_text
+    assert credential not in injected_input_text
+    assert not _contains_object_identity(planner.calls[0], accumulator)
+    assert accumulator.snapshot()["calls_by_phase"].get("search_planner", 0) == 0
     assert capture["query_plan_admission"].current_queries == [revised_query]
     assert harness.search_calls[0]["queries"] == [revised_query]
     scout_projection = capture["scout_projection_at_convergence"]
