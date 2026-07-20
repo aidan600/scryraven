@@ -56,9 +56,7 @@ class ResponseOnlyScoutAdapter:
         self.calls.append(deepcopy(dict(scout_input)))
         queries: list[dict[str, Any]] = []
         organic: list[dict[str, Any]] = []
-        for index, raw_query in enumerate(
-            scout_input.get("candidate_queries") or (), start=1
-        ):
+        for index, raw_query in enumerate(scout_input.get("candidate_queries") or (), start=1):
             query = dict(raw_query)
             query["execution_status"] = "executed_by_fake_adapter"
             queries.append(query)
@@ -104,15 +102,11 @@ class ResponseOnlyRevisionAdapter:
                     "candidate_id": "candidate:recon-caveat",
                     "operation_kind": "add_caveat",
                     "component_id": self.component_id,
-                    "caveat": (
-                        "Identity direction came from non-evidence Scout hints."
-                    ),
+                    "caveat": ("Identity direction came from non-evidence Scout hints."),
                 }
             )
         return {
-            "revised_question_meaning_summary": (
-                "Use the bounded offline identity direction for query targeting."
-            ),
+            "revised_question_meaning_summary": ("Use the bounded offline identity direction for query targeting."),
             "component_search_requirement_updates": [
                 {
                     "component_id": self.component_id,
@@ -127,24 +121,16 @@ class ResponseOnlyRevisionAdapter:
                                 "candidate_kind": "primary",
                                 "candidate_query_text": self.query_text,
                                 "requested_role": "official_bias",
-                                "source_obligation_candidate_ids": list(
-                                    self.source_ids
-                                ),
+                                "source_obligation_candidate_ids": list(self.source_ids),
                                 "official_canonical_intent": "official_source",
-                                "distinct_need_justification": (
-                                    "Scout resolved the bounded identity target."
-                                ),
+                                "distinct_need_justification": ("Scout resolved the bounded identity target."),
                             }
                         ]
                     },
                 }
             ],
-            "consumed_ambiguity_dimension_ids": list(
-                revision_input["consumed_ambiguity_dimension_ids"]
-            ),
-            "consumed_scout_hint_ids": list(
-                revision_input["consumed_scout_hint_ids"]
-            ),
+            "consumed_ambiguity_dimension_ids": list(revision_input["consumed_ambiguity_dimension_ids"]),
+            "consumed_scout_hint_ids": list(revision_input["consumed_scout_hint_ids"]),
             "amendment_candidates": amendments,
             "mandatory_caveats": ["Scout hints remain non-evidence."],
             "prohibited_upgrades": ["Do not cite Scout hints."],
@@ -239,17 +225,13 @@ def _planner_payload(
                     "component_id": component_id,
                     "candidate_kind": "secondary",
                     "candidate_query_text": (
-                        primary_query
-                        if duplicate_secondary
-                        else "Example component 1 official current rule"
+                        primary_query if duplicate_secondary else "Example component 1 official current rule"
                     ),
                     "requested_role": "official_bias",
                     "source_obligation_candidate_ids": [official_id],
                     "official_canonical_intent": "official_source",
                     "document_family": "official current rule",
-                    "distinct_need_justification": (
-                        "A separate accepted official-current obligation."
-                    ),
+                    "distinct_need_justification": ("A separate accepted official-current obligation."),
                     "immediate_dispatch_requested": immediate_secondary,
                     "immediate_dispatch_distinct_need": immediate_secondary,
                 }
@@ -282,9 +264,7 @@ def _planner_payload(
         "answer_components": components,
         "source_obligation_candidates": obligations,
         "component_search_requirements": requirements,
-        "material_ambiguity_posture": (
-            "material_ambiguity_present" if recon != "not_needed" else "none"
-        ),
+        "material_ambiguity_posture": ("material_ambiguity_present" if recon != "not_needed" else "none"),
         "mandatory_caveats": [],
         "prohibited_upgrades": ["Scout hints are not evidence."],
         "normalization_obligations": [],
@@ -376,9 +356,7 @@ def _admit(kernel: RunKernel, convergence):
         intent="general",
         clean=lambda value: " ".join(value.split()),
     )
-    action = kernel.authorize_query_plan_admission(
-        inputs={"candidate_count": len(inputs.candidate_queries)}
-    )
+    action = kernel.authorize_query_plan_admission(inputs={"candidate_count": len(inputs.candidate_queries)})
     result = execute_query_plan_admission_action(
         action,
         query_authority=adapter,
@@ -407,18 +385,14 @@ def test_five_required_components_reach_first_wave_without_global_truncation() -
     assert len(set(admission.current_queries)) == 5
     assert admission.observation.payload["small_global_initial_query_cap_applied"] is False
     assert admission.observation.payload["required_component_globally_truncated"] is False
-    assert admission.router_query_preparation_contract.retrieval_budget_seed_facts[
-        "max_queries"
-    ] == 2
+    assert admission.router_query_preparation_contract.retrieval_budget_seed_facts["max_queries"] == 2
     adapter.admit_execution_queries(
         admission.current_queries,
         iteration=1,
         recovery_active=False,
     )
     ordered = [
-        item
-        for item in adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]["items"]
-        if item.get("status") == "ordered"
+        item for item in adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]["items"] if item.get("status") == "ordered"
     ]
     assert [item["authorized_query"] for item in ordered] == admission.current_queries
     assert [item["order"] for item in ordered] == [1, 2, 3, 4, 5]
@@ -459,9 +433,7 @@ def test_secondary_is_prepared_not_dispatched_without_immediate_proof() -> None:
 
 
 def test_distinct_source_need_can_put_secondary_in_immediate_wave() -> None:
-    kernel, convergence = _converge(
-        _planner_payload(secondary=True, immediate_secondary=True)
-    )
+    kernel, convergence = _converge(_planner_payload(secondary=True, immediate_secondary=True))
     _, admission = _admit(kernel, convergence)
 
     assert len(admission.current_queries) == 2
@@ -470,9 +442,7 @@ def test_distinct_source_need_can_put_secondary_in_immediate_wave() -> None:
 
 
 def test_exact_duplicate_is_rejected_and_contributor_lineage_is_retained() -> None:
-    kernel, convergence = _converge(
-        _planner_payload(secondary=True, duplicate_secondary=True)
-    )
+    kernel, convergence = _converge(_planner_payload(secondary=True, duplicate_secondary=True))
     adapter, admission = _admit(kernel, convergence)
 
     allocation = admission.initial_query_admission
@@ -482,8 +452,7 @@ def test_exact_duplicate_is_rejected_and_contributor_lineage_is_retained() -> No
     survivor = next(
         item
         for item in trace["items"]
-        if item.get("status") == "finalized"
-        and item.get("phase") == "initial_component_query_admission"
+        if item.get("status") == "finalized" and item.get("phase") == "initial_component_query_admission"
     )
     assert survivor["metadata"]["duplicate_contributor_count"] == 1
     assert len(survivor["metadata"]["contributor_lineage"]) == 2
@@ -491,12 +460,8 @@ def test_exact_duplicate_is_rejected_and_contributor_lineage_is_retained() -> No
 
 def test_materially_equivalent_candidate_without_distinct_need_is_rejected() -> None:
     payload = _planner_payload(secondary=True)
-    secondary = payload["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ][1]
-    secondary["candidate_query_text"] = (
-        "Example required component 1 primary source official"
-    )
+    secondary = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][1]
+    secondary["candidate_query_text"] = "Example required component 1 primary source official"
     secondary["requested_role"] = "initial"
     secondary["source_obligation_candidate_ids"] = ["obligation:1:general"]
     secondary.pop("official_canonical_intent")
@@ -508,9 +473,28 @@ def test_materially_equivalent_candidate_without_distinct_need_is_rejected() -> 
     rejected = admission.initial_query_admission.duplicate_candidates_rejected
     assert len(rejected) == 1
     assert rejected[0]["duplicate_kind"] == "materially_equivalent"
-    assert admission.current_queries == [
-        "Example required component 1 primary source"
-    ]
+    assert admission.current_queries == ["Example required component 1 primary source"]
+
+
+def test_second_primary_cannot_bypass_distinct_need_requirement() -> None:
+    payload = _planner_payload()
+    strategies = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"]
+    strategies.append(
+        {
+            "strategy_id": "strategy:1:extra-primary",
+            "component_id": "component:1",
+            "candidate_kind": "primary",
+            "candidate_query_text": "Example component 1 separate broad search",
+            "requested_role": "initial",
+            "source_obligation_candidate_ids": ["obligation:1:general"],
+        }
+    )
+
+    kernel, convergence = _converge(payload)
+    _, admission = _admit(kernel, convergence)
+
+    assert admission.current_queries == ["Example required component 1 primary source"]
+    assert len(admission.initial_query_admission.unjustified_secondary_candidates_rejected) == 1
 
 
 def test_policy_is_versioned_tunable_and_not_a_schema_contract() -> None:
@@ -531,13 +515,13 @@ def test_policy_is_versioned_tunable_and_not_a_schema_contract() -> None:
     scout_source = SCOUT_RUNTIME.read_text(encoding="utf-8")
     assert "DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY" in scout_source
     assert "SCOUT_MAX_QUERIES_PER_COMPONENT = 5" not in scout_source
+    with pytest.raises(ValueError, match="positive integer"):
+        policy.with_tuning(initial_candidate_ceiling_per_required_component=2.5)
 
 
 def test_recon_ceiling_is_per_affected_component_and_fails_explicitly() -> None:
     payload = _planner_payload(recon="optional")
-    recon = payload["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ][0]["recon_requirement"]
+    recon = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][0]["recon_requirement"]
     recon["unresolved_dimension_ids"] = [f"dim:need-{index}" for index in range(6)]
     recon["candidate_queries"] = [
         {
@@ -556,27 +540,24 @@ def test_recon_ceiling_is_per_affected_component_and_fails_explicitly() -> None:
 
 
 def test_planner_provider_identity_is_ignored_before_queryplan() -> None:
-    kernel, convergence = _converge(
-        _planner_payload(planner_provider_name="untrusted-provider")
-    )
+    kernel, convergence = _converge(_planner_payload(planner_provider_name="untrusted-provider"))
     strategy = convergence.query_production_result.candidate_strategies[0]
     _, admission = _admit(kernel, convergence)
 
     assert "provider_name" not in strategy
     assert strategy["planner_provider_identity_ignored"] is True
     assert admission.current_queries == ["Example required component 1 primary source"]
-    assert admission.observation.payload["provider_job_execution_handoff"][
-        "behavior_boundary_flags"
-    ]["provider_selected"] is False
+    assert (
+        admission.observation.payload["provider_job_execution_handoff"]["behavior_boundary_flags"]["provider_selected"]
+        is False
+    )
 
 
 def test_optional_recon_unavailable_retains_conservative_primary() -> None:
     kernel, convergence = _converge(_planner_payload(recon="optional"))
     _, admission = _admit(kernel, convergence)
 
-    assert convergence.recon_summary[0]["status"] == (
-        "optional_unavailable_primary_strategy_retained"
-    )
+    assert convergence.recon_summary[0]["status"] == ("optional_unavailable_primary_strategy_retained")
     assert kernel.state.scout_disambiguation_report_state == {}
     assert len(admission.current_queries) == 1
 
@@ -611,6 +592,30 @@ def test_required_identity_recon_without_adapter_fails_before_query_production()
     assert kernel.state.search_work_plan == {}
 
 
+def test_required_recon_posture_alone_fails_closed_without_adapter() -> None:
+    kernel = _kernel_after_run_contract()
+
+    with pytest.raises(QueryStrategyConvergenceError, match="requires Scout identity"):
+        execute_initial_query_strategy_convergence(
+            run_kernel=kernel,
+            router_query_preparation_contract=_router_state(),
+            query="Compare every required Example component.",
+            strategy="Balanced",
+            current_date="2026-07-19",
+            focus_academic=False,
+            force_intent_news=False,
+            include_domains=[],
+            exclude_domains=[],
+            news_preferred_domains=[],
+            route_projection={},
+            run_contract_projection=kernel.state.run_contract_projection,
+            planner_adapter=ResponseOnlyPlannerAdapter(_planner_payload(recon="required", required_recon=False)),
+            provider_diagnostics=[],
+        )
+
+    assert QUERY_PRODUCTION_STAGE not in kernel.state.projections
+
+
 def test_injected_recon_revises_query_direction_and_remains_non_evidence() -> None:
     scout = ResponseOnlyScoutAdapter()
     revision = ResponseOnlyRevisionAdapter()
@@ -622,17 +627,11 @@ def test_injected_recon_revises_query_direction_and_remains_non_evidence() -> No
     _, admission = _admit(kernel, convergence)
 
     assert scout.calls and revision.calls
-    assert convergence.query_production_result.candidate_queries == [
-        "Renamed Example official current component 1"
-    ]
-    assert admission.current_queries == [
-        "Renamed Example official current component 1"
-    ]
+    assert convergence.query_production_result.candidate_queries == ["Renamed Example official current component 1"]
+    assert admission.current_queries == ["Renamed Example official current component 1"]
     assert convergence.recon_summary[0]["status"] == "query_direction_revised"
     revision_projection = convergence.revision_projections[0]
-    assert revision_projection["revision_effect_class"] == (
-        "query_direction_only_non_contractual"
-    )
+    assert revision_projection["revision_effect_class"] == ("query_direction_only_non_contractual")
     assert revision_projection["answer_contract_mutated"] is False
     assert kernel.state.current_answer_contract == {}
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
@@ -649,19 +648,16 @@ def test_contractual_revision_is_admitted_and_applied_before_planning_use() -> N
     )
     revision = convergence.revision_projections[0]
 
-    assert revision["revision_effect_class"] == (
-        "contractual_admitted_and_applied"
-    )
+    assert revision["revision_effect_class"] == ("contractual_admitted_and_applied")
     assert revision["contractual_effect_admitted_and_applied"] is True
     assert revision["answer_contract_mutated"] is True
     assert kernel.state.contract_amendment_admission_history
     assert kernel.state.contract_amendment_application_history
     assert kernel.state.current_answer_contract
-    assert convergence.search_work_plan["metadata"][
-        "accepted_contract_ref"
-    ]["contract_digest"] == kernel.state.current_answer_contract[
-        "accepted_contract_digest"
-    ]
+    assert (
+        convergence.search_work_plan["metadata"]["accepted_contract_ref"]["contract_digest"]
+        == kernel.state.current_answer_contract["accepted_contract_digest"]
+    )
 
 
 def test_pending_contractual_revision_cannot_change_query_direction() -> None:
@@ -683,9 +679,7 @@ def test_pending_contractual_revision_cannot_change_query_direction() -> None:
 
     with pytest.raises(QueryStrategyConvergenceError, match="before its contractual"):
         _strategies_with_authorized_revisions(
-            base_strategies=(
-                convergence.query_production_result.candidate_strategies
-            ),
+            base_strategies=(convergence.query_production_result.candidate_strategies),
             revision_projections=[pending],
             accepted_contract=kernel.state.initial_answer_contract,
         )
@@ -724,9 +718,7 @@ def test_ordinary_pipeline_consumes_convergence_before_queryplan_and_discover() 
     source = PIPELINE.read_text(encoding="utf-8")
     convergence_index = source.index("execute_initial_query_strategy_convergence(")
     admission_index = source.index("execute_query_plan_admission_action(")
-    execution_index = source.index(
-        "current_queries = query_authority.admit_execution_queries"
-    )
+    execution_index = source.index("current_queries = query_authority.admit_execution_queries")
 
     assert convergence_index < admission_index < execution_index
     assert "run_search_work_shadow_lane(" not in source

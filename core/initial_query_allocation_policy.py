@@ -12,9 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-INITIAL_QUERY_ALLOCATION_POLICY_VERSION = (
-    "searchos_initial_query_allocation_policy_v1"
-)
+INITIAL_QUERY_ALLOCATION_POLICY_VERSION = "searchos_initial_query_allocation_policy_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,26 +33,15 @@ class InitialQueryAllocationPolicy:
         if not str(self.policy_version or "").strip():
             raise ValueError("initial-query allocation policy requires a version")
         numeric_fields = {
-            "primary_query_target_per_required_component": (
-                self.primary_query_target_per_required_component
-            ),
-            "initial_candidate_ceiling_per_required_component": (
-                self.initial_candidate_ceiling_per_required_component
-            ),
-            "immediate_dispatch_target_per_required_component": (
-                self.immediate_dispatch_target_per_required_component
-            ),
-            "recon_candidate_ceiling_per_affected_component": (
-                self.recon_candidate_ceiling_per_affected_component
-            ),
+            "primary_query_target_per_required_component": (self.primary_query_target_per_required_component),
+            "initial_candidate_ceiling_per_required_component": (self.initial_candidate_ceiling_per_required_component),
+            "immediate_dispatch_target_per_required_component": (self.immediate_dispatch_target_per_required_component),
+            "recon_candidate_ceiling_per_affected_component": (self.recon_candidate_ceiling_per_affected_component),
         }
         for name, value in numeric_fields.items():
-            if isinstance(value, bool) or int(value) < 1:
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
-        if (
-            self.primary_query_target_per_required_component
-            > self.initial_candidate_ceiling_per_required_component
-        ):
+        if self.primary_query_target_per_required_component > self.initial_candidate_ceiling_per_required_component:
             raise ValueError("primary query target cannot exceed candidate ceiling")
         if (
             self.immediate_dispatch_target_per_required_component
@@ -75,22 +62,12 @@ class InitialQueryAllocationPolicy:
     def to_dict(self) -> dict[str, Any]:
         return {
             "policy_version": self.policy_version,
-            "primary_query_target_per_required_component": (
-                self.primary_query_target_per_required_component
-            ),
-            "initial_candidate_ceiling_per_required_component": (
-                self.initial_candidate_ceiling_per_required_component
-            ),
-            "immediate_dispatch_target_per_required_component": (
-                self.immediate_dispatch_target_per_required_component
-            ),
-            "recon_candidate_ceiling_per_affected_component": (
-                self.recon_candidate_ceiling_per_affected_component
-            ),
+            "primary_query_target_per_required_component": (self.primary_query_target_per_required_component),
+            "initial_candidate_ceiling_per_required_component": (self.initial_candidate_ceiling_per_required_component),
+            "immediate_dispatch_target_per_required_component": (self.immediate_dispatch_target_per_required_component),
+            "recon_candidate_ceiling_per_affected_component": (self.recon_candidate_ceiling_per_affected_component),
             "redundancy_rejection_enabled": self.redundancy_rejection_enabled,
-            "required_component_floor_enabled": (
-                self.required_component_floor_enabled
-            ),
+            "required_component_floor_enabled": (self.required_component_floor_enabled),
             "mode_specific_followup_budget_finalized": False,
             "provider_policy_changed": False,
             "post_result_followup_dispatched": False,

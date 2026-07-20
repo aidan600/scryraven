@@ -251,9 +251,7 @@ class DeterministicSearchPlannerAdapter:
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
         safe_context = _safe_mapping(planner_input.get("safe_context"))
         route_facts = _safe_mapping(safe_context.get("route_facts"))
-        run_contract = _safe_mapping(
-            safe_context.get("run_contract_projection")
-        )
+        run_contract = _safe_mapping(safe_context.get("run_contract_projection"))
         contract_id = _clean_token(run_contract.get("contract_id"))
         query_text = _clean_text(
             planner_input.get(_ADAPTER_ONLY_USER_QUERY_TEXT_KEY),
@@ -261,8 +259,7 @@ class DeterministicSearchPlannerAdapter:
         )
         if not contract_id or not route_facts or not query_text:
             raise SearchPlannerRuntimeError(
-                "deterministic SearchPlanner requires explicit route, run-contract, "
-                "and query composition"
+                "deterministic SearchPlanner requires explicit route, run-contract, and query composition"
             )
 
         records = build_deterministic_search_work_runtime_records(
@@ -281,24 +278,34 @@ class DeterministicSearchPlannerAdapter:
             )
         )
         assessment = records.query_shape_assessment
+        source_kind_by_id = {
+            candidate.candidate_id: candidate.kind.value for candidate in assessment.source_obligation_candidates
+        }
+        localized_obligation_ids = _localized_component_obligation_ids(
+            assessment=assessment,
+            requested_mode=_clean_token(planner_input.get("requested_mode")),
+            selected_depth=_clean_token(run_contract.get("selected_depth")),
+            primary_entity=_clean_text(route_facts.get("primary_entity"), limit=220),
+        )
         source_candidates = [
             {
                 "candidate_id": candidate.candidate_id,
                 "obligation_kind": candidate.kind.value,
-                "component_candidate_ids": list(candidate.component_ids),
+                "component_candidate_ids": [
+                    component.component_id
+                    for component in assessment.component_candidates
+                    if candidate.candidate_id in localized_obligation_ids.get(component.component_id, ())
+                ],
                 "strictness": candidate.strictness.value,
                 "metadata": {
                     "required_source_class": candidate.required_source_class,
                     "currentness_requirement": candidate.currentness_requirement,
                     "provider_name_neutral": True,
+                    "component_binding_posture": ("deterministic_component_local_reproof"),
                 },
             }
             for candidate in assessment.source_obligation_candidates
         ]
-        source_kind_by_id = {
-            candidate.candidate_id: candidate.kind.value
-            for candidate in assessment.source_obligation_candidates
-        }
         current_date = _clean_text(safe_context.get("current_date"), limit=40)
         include_domains = _text_list(
             safe_context.get("include_domains"),
@@ -313,18 +320,14 @@ class DeterministicSearchPlannerAdapter:
         requirements: list[dict[str, Any]] = []
         for rank, candidate in enumerate(assessment.component_candidates, start=1):
             component_id = candidate.component_id
-            obligation_ids = list(candidate.source_obligation_candidate_ids)
+            obligation_ids = list(localized_obligation_ids.get(component_id, ()))
             subquestion = candidate.user_facing_subquestion
             strategy = _deterministic_primary_query_strategy(
                 component_id=component_id,
                 rank=rank,
                 subquestion=subquestion,
                 source_obligation_candidate_ids=obligation_ids,
-                source_kinds=[
-                    source_kind_by_id[item]
-                    for item in obligation_ids
-                    if item in source_kind_by_id
-                ],
+                source_kinds=[source_kind_by_id[item] for item in obligation_ids if item in source_kind_by_id],
                 current_date=current_date,
                 include_domains=include_domains,
                 exclude_domains=exclude_domains,
@@ -337,9 +340,7 @@ class DeterministicSearchPlannerAdapter:
                     "user_facing_label": f"Required component {rank}",
                     "user_facing_question": subquestion,
                     "requirement_posture": "required",
-                    "acceptance_criteria": [
-                        "Direct source support for the accepted component need."
-                    ],
+                    "acceptance_criteria": ["Direct source support for the accepted component need."],
                     "semantic_slot_ids": ["slot:subject"],
                     "source_obligation_candidate_ids": obligation_ids,
                     "allowed_support_kinds": ["direct"],
@@ -348,6 +349,7 @@ class DeterministicSearchPlannerAdapter:
                     "partial_answer_policy": "qualify_visible_gap",
                     "metadata": {
                         "deterministic_component_candidate_id": candidate.candidate_id,
+                        "source_obligation_binding_posture": ("deterministic_component_local_reproof"),
                     },
                 }
             )
@@ -356,16 +358,11 @@ class DeterministicSearchPlannerAdapter:
                     "component_id": component_id,
                     "requirement_id": requirement_id,
                     "requirement_summary": (
-                        "Prepare a provider-neutral primary query for this accepted "
-                        "required component."
+                        "Prepare a provider-neutral primary query for this accepted required component."
                     ),
                     "source_obligation_candidate_ids": obligation_ids,
                     "preferred_source_kinds": sorted(
-                        {
-                            source_kind_by_id[item]
-                            for item in obligation_ids
-                            if item in source_kind_by_id
-                        }
+                        {source_kind_by_id[item] for item in obligation_ids if item in source_kind_by_id}
                     ),
                     "recency_requirement": (
                         current_date
@@ -384,18 +381,19 @@ class DeterministicSearchPlannerAdapter:
                 }
             )
 
-        subject = _clean_text(
-            route_facts.get("primary_entity") or route_facts.get("core_topic"),
-            limit=220,
-        ) or query_text[:220]
+        subject = (
+            _clean_text(
+                route_facts.get("primary_entity") or route_facts.get("core_topic"),
+                limit=220,
+            )
+            or query_text[:220]
+        )
         return {
             "question_meaning_summary": (
                 "Interpret the request as accepted, source-bound required "
                 "components with provider-neutral initial query strategy."
             ),
-            "requested_output": (
-                "Answer every required component with bounded source support."
-            ),
+            "requested_output": ("Answer every required component with bounded source support."),
             "semantic_slots": [
                 {
                     "slot_id": "slot:subject",
@@ -413,9 +411,7 @@ class DeterministicSearchPlannerAdapter:
             "component_search_requirements": requirements,
             "material_ambiguity_posture": "none_detected",
             "mandatory_caveats": [],
-            "prohibited_upgrades": [
-                "Do not treat query strategy or reconnaissance as evidence."
-            ],
+            "prohibited_upgrades": ["Do not treat query strategy or reconnaissance as evidence."],
             "normalization_obligations": [],
             "assumptions": [],
             "unsupported_or_deferred_outputs": [
@@ -434,6 +430,56 @@ class DeterministicSearchPlannerAdapter:
                 "provider_payload_retained": False,
             },
         }
+
+
+def _localized_component_obligation_ids(
+    *,
+    assessment: Any,
+    requested_mode: str | None,
+    selected_depth: str | None,
+    primary_entity: str | None,
+) -> dict[str, tuple[str, ...]]:
+    """Bind only component-local source needs from the deterministic owner.
+
+    The query-shape assessment can retain run-level source candidates that are
+    not attributable to any one component.  Reusing its first-component
+    fallback as an accepted component binding would make unrelated obligations
+    look jointly satisfiable by one source.  Re-assessing each bounded
+    subquestion without run-level source requirements preserves the source-kind
+    semantics while keeping those unscoped candidates at QMR level.
+    """
+
+    candidates = tuple(assessment.source_obligation_candidates)
+    localized: dict[str, tuple[str, ...]] = {}
+    for component in assessment.component_candidates:
+        local_records = build_deterministic_search_work_runtime_records(
+            DeterministicSearchWorkRuntimeInput(
+                contract_id=f"search-planner-local:{component.component_id}",
+                run_contract_projection={"selected_depth": selected_depth},
+                route_facts={
+                    "core_topic": component.user_facing_subquestion,
+                    "primary_entity": primary_entity,
+                },
+                requested_mode=requested_mode,
+                selected_depth=selected_depth,
+                safe_query_preview=component.user_facing_subquestion,
+                metadata={
+                    "owner": "search_planner_component_source_binding_reproof",
+                    "provider_free": True,
+                    "run_level_source_requirements_excluded": True,
+                },
+            )
+        )
+        local_kinds = {
+            candidate.kind.value for candidate in local_records.query_shape_assessment.source_obligation_candidates
+        }
+        localized[component.component_id] = tuple(
+            candidate.candidate_id
+            for candidate in candidates
+            if candidate.kind.value in local_kinds
+            or (candidate.kind.value == "source_bound_numeric" and component.component_id in candidate.component_ids)
+        )
+    return localized
 
 
 @dataclass(frozen=True, slots=True)
@@ -553,7 +599,10 @@ def build_search_planner_observation_payload(
 
     qmr = _question_meaning_record_from_adapter_result(
         adapter_result=result,
-        planner_input=planner_input_ref,
+        # The exact query is transient adapter input.  Use it only to rederive
+        # the repository-owned deterministic query-shape qualification that
+        # the accepted QMR must carry; it is never retained in the observation.
+        planner_input=planner_input,
     )
     qmr_payload = qmr.to_dict()
     component_search_requirements = _component_search_requirements(result)
@@ -617,17 +666,25 @@ def build_search_planner_observation_payload(
         f"{qmr_payload.get('record_digest', '')[:16]}"
     )
     proposal_without_digest = {**proposal_base, "proposal_id": proposal_id}
-    proposal_digest = _digest_json(_proposal_digest_payload(proposal_without_digest))
-    planner_proposal = {
-        **proposal_without_digest,
+    # RunKernel's closed Observation envelope performs one final bounded JSON
+    # projection before reduction.  Compute proposal identity from that exact
+    # nested shape so depth/string bounding cannot invalidate an otherwise
+    # truthful proposal between execution and canonical reduction.
+    observation_payload = _observation_envelope_safe(
+        {
+            "schema_version": SEARCH_PLANNER_OBSERVATION_SCHEMA_VERSION,
+            "planner_input": planner_input_ref,
+            "planner_proposal": proposal_without_digest,
+            "question_meaning_record": qmr_payload,
+        }
+    )
+    bounded_proposal = _safe_mapping(observation_payload.get("planner_proposal"))
+    proposal_digest = _digest_json(_proposal_digest_payload(bounded_proposal))
+    observation_payload["planner_proposal"] = {
+        **bounded_proposal,
         "proposal_digest": proposal_digest,
     }
-    return {
-        "schema_version": SEARCH_PLANNER_OBSERVATION_SCHEMA_VERSION,
-        "planner_input": planner_input_ref,
-        "planner_proposal": planner_proposal,
-        "question_meaning_record": qmr_payload,
-    }
+    return _observation_envelope_safe(observation_payload)
 
 
 def build_search_planner_proposal_state(
@@ -918,6 +975,10 @@ def _question_meaning_record_from_adapter_result(
         components=components,
     )
     component_search_requirements = _component_search_requirements(adapter_result)
+    query_shape_metadata = _deterministic_query_shape_metadata(
+        planner_input=planner_input,
+        components=components,
+    )
     search_work_plan_ref = None
     if component_search_requirements:
         search_work_plan_ref = SearchWorkPlanRef(
@@ -953,10 +1014,9 @@ def _question_meaning_record_from_adapter_result(
         ),
         "component_search_requirements_subordinate": True,
         "component_search_requirements_executed": False,
-        "contract_amendment_candidates_deferred": bool(
-            _safe_list(adapter_result.get("contract_amendment_candidates"))
-        ),
+        "contract_amendment_candidates_deferred": bool(_safe_list(adapter_result.get("contract_amendment_candidates"))),
         "closed_surface_flags": dict(_CLOSED_SURFACE_FLAGS),
+        **query_shape_metadata,
     }
 
     record = QuestionMeaningRecord(
@@ -992,6 +1052,66 @@ def _question_meaning_record_from_adapter_result(
         runtime_behavior_changed=False,
     )
     return record.require_valid()
+
+
+def _deterministic_query_shape_metadata(
+    *,
+    planner_input: Mapping[str, Any],
+    components: Sequence[AnswerComponentContract],
+) -> dict[str, Any]:
+    """Reprove bounded route qualification without trusting adapter output."""
+
+    safe_context = _safe_mapping(planner_input.get("safe_context"))
+    route_facts = _safe_mapping(safe_context.get("route_facts"))
+    run_contract = _safe_mapping(safe_context.get("run_contract_projection"))
+    query_text = _clean_text(
+        planner_input.get(_ADAPTER_ONLY_USER_QUERY_TEXT_KEY),
+        limit=SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS,
+    )
+    contract_id = _clean_token(run_contract.get("contract_id"))
+    if not query_text or not contract_id or not route_facts:
+        return {}
+
+    records = build_deterministic_search_work_runtime_records(
+        DeterministicSearchWorkRuntimeInput(
+            contract_id=contract_id,
+            run_contract_projection=run_contract,
+            route_facts=route_facts,
+            requested_mode=_clean_token(planner_input.get("requested_mode")),
+            selected_depth=_clean_token(run_contract.get("selected_depth")),
+            safe_query_preview=query_text,
+            current_date_ref=_clean_text(safe_context.get("current_date")),
+            metadata={
+                "owner": "search_planner_qmr_query_shape_reproof",
+                "provider_free": True,
+            },
+        )
+    )
+    assessment = records.query_shape_assessment
+    assessment_metadata = _safe_mapping(assessment.metadata)
+    assessment_component_ids = [candidate.component_id for candidate in assessment.component_candidates]
+    proposal_component_ids = [component.component_id for component in components]
+    explicitly_qualified = assessment_metadata.get("explicit_factual_component_list") is True
+    if explicitly_qualified and proposal_component_ids != assessment_component_ids:
+        raise SearchPlannerRuntimeError(
+            "SearchPlanner component topology does not match deterministic bounded multi-component qualification"
+        )
+    return {
+        "query_shape_owner": "core.search_work_query_shape_runtime",
+        "query_shape_reproved_from_transient_input": True,
+        "explicit_factual_component_list": explicitly_qualified,
+        "requested_synthesis_directive": _clean_text(
+            assessment_metadata.get("requested_synthesis_directive"),
+            limit=360,
+        ),
+        "structured_route_posture": _clean_token(assessment_metadata.get("structured_route_posture")),
+        "structured_route_syntax_kind": _clean_token(assessment_metadata.get("structured_route_syntax_kind")),
+        "newly_licensed_route_form": bool(assessment_metadata.get("newly_licensed_route_form")),
+        "route_qualification_behavior_changed": bool(assessment_metadata.get("route_qualification_behavior_changed")),
+        "query_plan_behavior_changed": bool(assessment_metadata.get("query_plan_behavior_changed")),
+        "provider_search_behavior_changed": bool(assessment_metadata.get("provider_search_behavior_changed")),
+        "query_shape_component_ids": assessment_component_ids,
+    }
 
 
 def _semantic_slots(value: Any) -> list[SemanticSlot]:
@@ -1058,8 +1178,7 @@ def _answer_components(value: Any) -> list[AnswerComponentContract]:
                 normalization_policy=_clean_text(mapping.get("normalization_policy"), limit=300),
                 calculation_policy=_clean_text(mapping.get("calculation_policy"), limit=300),
                 dependency_component_ids=tuple(_text_list(mapping.get("dependency_component_ids"), limit=160)),
-                partial_answer_policy=mapping.get("partial_answer_policy")
-                or PartialAnswerPolicy.QUALIFY_VISIBLE_GAP,
+                partial_answer_policy=mapping.get("partial_answer_policy") or PartialAnswerPolicy.QUALIFY_VISIBLE_GAP,
                 mandatory_caveats=tuple(_text_list(mapping.get("mandatory_caveats"), limit=260)),
                 prohibited_upgrades=tuple(_text_list(mapping.get("prohibited_upgrades"), limit=260)),
                 materiality=mapping.get("materiality") or Materiality.MATERIAL,
@@ -1088,8 +1207,7 @@ def _source_obligation_refs(
                     obligation_kind=_clean_token(mapping.get("obligation_kind")) or "source_support",
                     component_candidate_ids=tuple(
                         _text_list(
-                            mapping.get("component_candidate_ids")
-                            or mapping.get("component_ids"),
+                            mapping.get("component_candidate_ids") or mapping.get("component_ids"),
                             limit=160,
                         )
                     ),
@@ -1131,9 +1249,7 @@ def _component_search_requirements(adapter_result: Mapping[str, Any]) -> list[di
         if not mapping:
             continue
         component_id = _clean_token(mapping.get("component_id"))
-        requirement_id = _clean_token(
-            mapping.get("requirement_id") or mapping.get("search_requirement_id")
-        )
+        requirement_id = _clean_token(mapping.get("requirement_id") or mapping.get("search_requirement_id"))
         metadata = _provider_neutral_requirement_metadata(
             mapping.get("metadata"),
             component_id=component_id,
@@ -1145,9 +1261,7 @@ def _component_search_requirements(adapter_result: Mapping[str, Any]) -> list[di
                     "component_id": component_id,
                     "requirement_id": requirement_id,
                     "requirement_summary": _clean_text(
-                        mapping.get("requirement_summary")
-                        or mapping.get("summary")
-                        or mapping.get("query_goal"),
+                        mapping.get("requirement_summary") or mapping.get("summary") or mapping.get("query_goal"),
                         limit=320,
                     ),
                     "source_obligation_candidate_ids": _text_list(
@@ -1183,9 +1297,7 @@ def initial_query_strategies_from_planner_state(
     state = _safe_mapping(planner_state)
     contract = _safe_mapping(accepted_contract)
     requirements = [
-        _safe_mapping(item)
-        for item in _safe_list(state.get("component_search_requirements"))
-        if _safe_mapping(item)
+        _safe_mapping(item) for item in _safe_list(state.get("component_search_requirements")) if _safe_mapping(item)
     ]
     accepted_components = [
         _safe_mapping(item)
@@ -1193,19 +1305,13 @@ def initial_query_strategies_from_planner_state(
         if _safe_mapping(item)
     ]
     if not state or not accepted_components:
-        raise SearchPlannerRuntimeError(
-            "initial query strategy requires planner state and an accepted contract"
-        )
+        raise SearchPlannerRuntimeError("initial query strategy requires planner state and an accepted contract")
 
     planner_ref = {
         "proposal_id": state.get("proposal_id"),
         "proposal_digest": state.get("proposal_digest"),
-        "question_meaning_record_id": _safe_mapping(
-            state.get("question_meaning_record_ref")
-        ).get("record_id"),
-        "question_meaning_record_digest": _safe_mapping(
-            state.get("question_meaning_record_ref")
-        ).get("record_digest"),
+        "question_meaning_record_id": _safe_mapping(state.get("question_meaning_record_ref")).get("record_id"),
+        "question_meaning_record_digest": _safe_mapping(state.get("question_meaning_record_ref")).get("record_digest"),
     }
     required_components = [
         component
@@ -1213,29 +1319,22 @@ def initial_query_strategies_from_planner_state(
         if _clean_token(component.get("requirement_posture")) == "required"
     ]
     if not required_components:
-        raise SearchPlannerRuntimeError(
-            "initial query strategy requires at least one accepted required component"
-        )
+        raise SearchPlannerRuntimeError("initial query strategy requires at least one accepted required component")
 
     strategies: list[dict[str, Any]] = []
     seen_strategy_ids: set[str] = set()
     for component in required_components:
         component_id = _clean_token(component.get("component_id"))
         if not component_id:
-            raise SearchPlannerRuntimeError(
-                "accepted required component is missing component_id"
-            )
+            raise SearchPlannerRuntimeError("accepted required component is missing component_id")
         accepted_source_ids = set(
             _text_list(
-                component.get("source_obligation_candidate_ids")
-                or component.get("source_obligation_candidate_refs"),
+                component.get("source_obligation_candidate_ids") or component.get("source_obligation_candidate_refs"),
                 limit=160,
             )
         )
         component_requirements = [
-            requirement
-            for requirement in requirements
-            if _clean_token(requirement.get("component_id")) == component_id
+            requirement for requirement in requirements if _clean_token(requirement.get("component_id")) == component_id
         ]
         component_strategies: list[dict[str, Any]] = []
         for requirement in component_requirements:
@@ -1247,13 +1346,10 @@ def initial_query_strategies_from_planner_state(
                 )
             )
             if not requirement_id:
-                raise SearchPlannerRuntimeError(
-                    f"component {component_id} search requirement is missing identity"
-                )
+                raise SearchPlannerRuntimeError(f"component {component_id} search requirement is missing identity")
             if not requirement_source_ids.issubset(accepted_source_ids):
                 raise SearchPlannerRuntimeError(
-                    f"component {component_id} search requirement references "
-                    "an unaccepted source obligation"
+                    f"component {component_id} search requirement references an unaccepted source obligation"
                 )
             requirement_ref = {
                 "requirement_id": requirement_id,
@@ -1263,40 +1359,25 @@ def initial_query_strategies_from_planner_state(
                     {
                         "requirement_id": requirement_id,
                         "component_id": component_id,
-                        "source_obligation_candidate_ids": sorted(
-                            requirement_source_ids
-                        ),
-                        "requirement_summary": requirement.get(
-                            "requirement_summary"
-                        ),
-                        "recency_requirement": requirement.get(
-                            "recency_requirement"
-                        ),
+                        "source_obligation_candidate_ids": sorted(requirement_source_ids),
+                        "requirement_summary": requirement.get("requirement_summary"),
+                        "recency_requirement": requirement.get("recency_requirement"),
                     }
                 ),
             }
             metadata = _safe_mapping(requirement.get("metadata"))
-            for raw_strategy in _safe_list(
-                metadata.get("query_strategy_candidates")
-            ):
+            for raw_strategy in _safe_list(metadata.get("query_strategy_candidates")):
                 strategy = _safe_mapping(raw_strategy)
                 strategy_id = _clean_token(strategy.get("strategy_id"))
                 if not strategy_id:
-                    raise SearchPlannerRuntimeError(
-                        f"component {component_id} query strategy requires strategy_id"
-                    )
+                    raise SearchPlannerRuntimeError(f"component {component_id} query strategy requires strategy_id")
                 if strategy_id in seen_strategy_ids:
-                    raise SearchPlannerRuntimeError(
-                        f"duplicate initial query strategy id: {strategy_id}"
-                    )
+                    raise SearchPlannerRuntimeError(f"duplicate initial query strategy id: {strategy_id}")
                 seen_strategy_ids.add(strategy_id)
-                strategy_component_id = _clean_token(
-                    strategy.get("component_id")
-                )
+                strategy_component_id = _clean_token(strategy.get("component_id"))
                 if strategy_component_id != component_id:
                     raise SearchPlannerRuntimeError(
-                        "initial query strategy component binding does not match "
-                        f"accepted component {component_id}"
+                        f"initial query strategy component binding does not match accepted component {component_id}"
                     )
                 strategy_source_ids = set(
                     _text_list(
@@ -1313,9 +1394,7 @@ def initial_query_strategies_from_planner_state(
                         **strategy,
                         "accepted_component_ref": {
                             "component_id": component_id,
-                            "component_revision": component.get(
-                                "component_revision"
-                            ),
+                            "component_revision": component.get("component_revision"),
                             "component_digest": component.get("component_digest"),
                         },
                         "search_requirement_ref": requirement_ref,
@@ -1323,19 +1402,12 @@ def initial_query_strategies_from_planner_state(
                         "allocation_policy_version": policy.policy_version,
                     }
                 )
-        primary_count = sum(
-            1
-            for strategy in component_strategies
-            if strategy.get("candidate_kind") == "primary"
-        )
+        primary_count = sum(1 for strategy in component_strategies if strategy.get("candidate_kind") == "primary")
         if (
             policy.required_component_floor_enabled
-            and primary_count
-            < policy.primary_query_target_per_required_component
+            and primary_count < policy.primary_query_target_per_required_component
         ):
-            raise SearchPlannerRuntimeError(
-                f"accepted required component {component_id} has no primary query strategy"
-            )
+            raise SearchPlannerRuntimeError(f"accepted required component {component_id} has no primary query strategy")
         strategies.extend(component_strategies)
     return strategies
 
@@ -1348,9 +1420,7 @@ def _provider_neutral_requirement_metadata(
 ) -> dict[str, Any]:
     metadata = _safe_mapping(value)
     raw_strategies = _safe_list(metadata.get("query_strategy_candidates"))
-    provider_identity_supplied = any(
-        _contains_provider_selection_key(item) for item in raw_strategies
-    )
+    provider_identity_supplied = any(_contains_provider_selection_key(item) for item in raw_strategies)
     safe_metadata = {
         key: item
         for key, item in metadata.items()
@@ -1391,46 +1461,31 @@ def _normalize_query_strategy_candidate(
     candidate = _safe_mapping(value)
     if not candidate:
         return {}
-    strategy_id = _clean_token(
-        candidate.get("strategy_id") or candidate.get("candidate_id")
-    )
+    strategy_id = _clean_token(candidate.get("strategy_id") or candidate.get("candidate_id"))
     query_text = _clean_text(
         candidate.get("candidate_query_text") or candidate.get("query_text"),
         limit=300,
     )
     if not strategy_id or not query_text:
-        raise SearchPlannerRuntimeError(
-            "query strategy candidate requires strategy_id and bounded query text"
-        )
+        raise SearchPlannerRuntimeError("query strategy candidate requires strategy_id and bounded query text")
     bound_component_id = _clean_token(candidate.get("component_id")) or component_id
-    if not bound_component_id or (
-        component_id and bound_component_id != component_id
-    ):
-        raise SearchPlannerRuntimeError(
-            "query strategy candidate component binding is missing or stale"
-        )
+    if not bound_component_id or (component_id and bound_component_id != component_id):
+        raise SearchPlannerRuntimeError("query strategy candidate component binding is missing or stale")
     requested_role = _clean_token(candidate.get("requested_role")) or "initial"
     if requested_role not in _ALLOWED_INITIAL_QUERY_ROLES:
-        raise SearchPlannerRuntimeError(
-            f"unsupported initial query role requested: {requested_role}"
-        )
+        raise SearchPlannerRuntimeError(f"unsupported initial query role requested: {requested_role}")
     candidate_kind = _clean_token(candidate.get("candidate_kind")) or "primary"
     if candidate_kind not in {"primary", "secondary"}:
-        raise SearchPlannerRuntimeError(
-            "query strategy candidate_kind must be primary or secondary"
-        )
+        raise SearchPlannerRuntimeError("query strategy candidate_kind must be primary or secondary")
     recon = _normalize_recon_requirement(candidate.get("recon_requirement"))
     recon_candidates = [
-        _safe_mapping(item)
-        for item in _safe_list(recon.get("candidate_queries"))
-        if _safe_mapping(item)
+        _safe_mapping(item) for item in _safe_list(recon.get("candidate_queries")) if _safe_mapping(item)
     ]
     return _without_empty(
         {
             "strategy_id": strategy_id,
             "component_id": bound_component_id,
-            "requirement_id": _clean_token(candidate.get("requirement_id"))
-            or requirement_id,
+            "requirement_id": _clean_token(candidate.get("requirement_id")) or requirement_id,
             "candidate_kind": candidate_kind,
             "candidate_query_text": query_text,
             "requested_role": requested_role,
@@ -1438,56 +1493,37 @@ def _normalize_query_strategy_candidate(
                 candidate.get("source_obligation_candidate_ids"),
                 limit=160,
             ),
-            "entity_alias_posture": _clean_token(
-                candidate.get("entity_alias_posture")
-            ),
+            "entity_alias_posture": _clean_token(candidate.get("entity_alias_posture")),
             "currentness_posture": _clean_text(
                 candidate.get("currentness_posture"),
                 limit=180,
             ),
-            "official_canonical_intent": _clean_token(
-                candidate.get("official_canonical_intent")
-            ),
-            "domain_constraints": _safe_domain_constraints(
-                candidate.get("domain_constraints")
-            ),
+            "official_canonical_intent": _clean_token(candidate.get("official_canonical_intent")),
+            "domain_constraints": _safe_domain_constraints(candidate.get("domain_constraints")),
             "document_family": _clean_text(
                 candidate.get("document_family"),
                 limit=160,
             ),
             "distinct_need_justification": _clean_text(
-                candidate.get("distinct_need_justification")
-                or candidate.get("nonredundancy_reason"),
+                candidate.get("distinct_need_justification") or candidate.get("nonredundancy_reason"),
                 limit=300,
             ),
-            "immediate_dispatch_requested": bool(
-                candidate.get("immediate_dispatch_requested")
-            ),
-            "immediate_dispatch_distinct_need": bool(
-                candidate.get("immediate_dispatch_distinct_need")
-            ),
+            "immediate_dispatch_requested": bool(candidate.get("immediate_dispatch_requested")),
+            "immediate_dispatch_distinct_need": bool(candidate.get("immediate_dispatch_distinct_need")),
             # Candidate text is flattened one level so the existing bounded
             # RunKernel Observation sanitizer preserves it without changing
             # the SearchPlanner or QueryPlan schemas.
             "recon_posture": recon.get("posture"),
-            "recon_unresolved_dimension_ids": recon.get(
-                "unresolved_dimension_ids"
-            ),
-            "recon_required_for_truthful_targeting": bool(
-                recon.get("required_for_truthful_targeting")
-            ),
+            "recon_unresolved_dimension_ids": recon.get("unresolved_dimension_ids"),
+            "recon_required_for_truthful_targeting": bool(recon.get("required_for_truthful_targeting")),
             "recon_candidate_queries_by_dimension": {
-                str(item["dimension_id"]): item["candidate_query_text"]
-                for item in recon_candidates
+                str(item["dimension_id"]): item["candidate_query_text"] for item in recon_candidates
             },
             "recon_query_kinds_by_dimension": {
-                str(item["dimension_id"]): item["query_kind"]
-                for item in recon_candidates
+                str(item["dimension_id"]): item["query_kind"] for item in recon_candidates
             },
             "provider_name_neutral": True,
-            "planner_provider_identity_ignored": (
-                _contains_provider_selection_key(candidate)
-            ),
+            "planner_provider_identity_ignored": (_contains_provider_selection_key(candidate)),
         }
     )
 
@@ -1506,9 +1542,7 @@ def normalize_provider_neutral_query_strategy_candidate(
         requirement_id=requirement_id,
     )
     if not normalized:
-        raise SearchPlannerRuntimeError(
-            "query strategy candidate did not survive provider-neutral validation"
-        )
+        raise SearchPlannerRuntimeError("query strategy candidate did not survive provider-neutral validation")
     return normalized
 
 
@@ -1518,12 +1552,9 @@ def _normalize_recon_requirement(value: Any) -> dict[str, Any]:
         return {"posture": "not_needed", "required_for_truthful_targeting": False}
     posture = _clean_token(recon.get("posture")) or "not_needed"
     if posture not in _ALLOWED_RECON_POSTURES:
-        raise SearchPlannerRuntimeError(
-            f"unsupported recon requirement posture: {posture}"
-        )
+        raise SearchPlannerRuntimeError(f"unsupported recon requirement posture: {posture}")
     dimension_ids = _text_list(
-        recon.get("unresolved_dimension_ids")
-        or recon.get("dimension_ids"),
+        recon.get("unresolved_dimension_ids") or recon.get("dimension_ids"),
         limit=160,
     )
     candidates: list[dict[str, Any]] = []
@@ -1536,20 +1567,15 @@ def _normalize_recon_requirement(value: Any) -> dict[str, Any]:
             limit=300,
         )
         if not dimension_id or not query_text:
-            raise SearchPlannerRuntimeError(
-                "recon candidate requires dimension_id and bounded query text"
-            )
+            raise SearchPlannerRuntimeError("recon candidate requires dimension_id and bounded query text")
         if dimension_id in seen_dimensions:
-            raise SearchPlannerRuntimeError(
-                "recon candidates must address distinct unresolved dimensions"
-            )
+            raise SearchPlannerRuntimeError("recon candidates must address distinct unresolved dimensions")
         seen_dimensions.add(dimension_id)
         candidates.append(
             {
                 "dimension_id": dimension_id,
                 "candidate_query_text": query_text,
-                "query_kind": _clean_token(item.get("query_kind"))
-                or "disambiguation_probe",
+                "query_kind": _clean_token(item.get("query_kind")) or "disambiguation_probe",
             }
         )
     if posture != "not_needed" and not dimension_ids:
@@ -1558,9 +1584,7 @@ def _normalize_recon_requirement(value: Any) -> dict[str, Any]:
         "posture": posture,
         "unresolved_dimension_ids": dimension_ids,
         "candidate_queries": candidates,
-        "required_for_truthful_targeting": bool(
-            recon.get("required_for_truthful_targeting")
-        ),
+        "required_for_truthful_targeting": bool(recon.get("required_for_truthful_targeting")),
     }
 
 
@@ -1621,27 +1645,19 @@ def _deterministic_primary_query_strategy(
         document_family = "canonical documentation or release"
     if kinds & {"official_current", "date_bound_currentness"} and current_date:
         year = next(
-            (
-                token
-                for token in current_date.replace("-", " ").split()
-                if len(token) == 4 and token.isdigit()
-            ),
+            (token for token in current_date.replace("-", " ").split() if len(token) == 4 and token.isdigit()),
             None,
         )
         if year and year not in subquestion:
             suffixes.append(year)
-    query_text = " ".join(
-        item for item in [subquestion.rstrip(" ?."), *suffixes] if item
-    )[:300]
+    query_text = " ".join(item for item in [subquestion.rstrip(" ?."), *suffixes] if item)[:300]
     return {
         "strategy_id": f"strategy:{component_id}:primary:{rank}",
         "component_id": component_id,
         "candidate_kind": "primary",
         "candidate_query_text": query_text,
         "requested_role": role,
-        "source_obligation_candidate_ids": list(
-            source_obligation_candidate_ids
-        ),
+        "source_obligation_candidate_ids": list(source_obligation_candidate_ids),
         "currentness_posture": current_date if suffixes else None,
         "official_canonical_intent": official_intent,
         "domain_constraints": {
@@ -1649,9 +1665,7 @@ def _deterministic_primary_query_strategy(
             "exclude": list(exclude_domains),
         },
         "document_family": document_family,
-        "distinct_need_justification": (
-            "Primary intentional query path for the accepted required component."
-        ),
+        "distinct_need_justification": ("Primary intentional query path for the accepted required component."),
         "immediate_dispatch_requested": True,
         "immediate_dispatch_distinct_need": True,
         "recon_requirement": {
@@ -1810,7 +1824,9 @@ def _reject_forbidden_surface_claims(value: Any) -> None:
     keys = _collect_keys(value)
     forbidden = sorted(keys & _FORBIDDEN_AUTHORITY_KEYS)
     if forbidden:
-        raise SearchPlannerRuntimeError("search planner proposal includes closed authority fields: " + ", ".join(forbidden))
+        raise SearchPlannerRuntimeError(
+            "search planner proposal includes closed authority fields: " + ", ".join(forbidden)
+        )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:
         raise SearchPlannerRuntimeError("search planner proposal opens closed surfaces: " + ", ".join(dangerous))
@@ -1881,6 +1897,49 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if hasattr(value, "to_dict"):
         return _json_safe(value.to_dict(), depth=depth + 1)
     return _clean_text(value, limit=300)
+
+
+def _observation_envelope_safe(value: Any, *, depth: int = 0) -> Any:
+    """Project the exact bounded shape accepted by the closed RunKernel seam.
+
+    SearchPlanner cannot import RunKernel.  This pure transport projection is
+    intentionally narrower than planner-state sanitization and mirrors the
+    existing Observation JSON envelope without changing that authority owner.
+    """
+
+    if depth > 8:
+        return "[redacted]"
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, str):
+        return _observation_clean_text(value, limit=800)
+    if isinstance(value, Mapping):
+        projected: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = _observation_clean_text(key, limit=100)
+            if not key_text:
+                continue
+            if key_text.casefold() in _SENSITIVE_KEYS:
+                projected[key_text] = "[redacted]"
+            else:
+                projected[key_text] = _observation_envelope_safe(
+                    item,
+                    depth=depth + 1,
+                )
+        return projected
+    if isinstance(value, list | tuple | set | frozenset):
+        ordered = list(value)
+        if isinstance(value, set | frozenset):
+            ordered = sorted(ordered, key=str)
+        return [_observation_envelope_safe(item, depth=depth + 1) for item in ordered[:80]]
+    return _observation_clean_text(value, limit=300)
+
+
+def _observation_clean_text(value: Any, *, limit: int) -> str | None:
+    text = " ".join(str(value or "").split())
+    return text[:limit] if text else None
 
 
 def _clean_text(value: Any, *, limit: int = 500) -> str | None:

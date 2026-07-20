@@ -4,6 +4,7 @@ AG-89C keeps this seam deliberately narrow: existing query producers may still
 produce candidates, but finalized query identity, ordering, and trace projection
 are represented here before retrieval consumes query text.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,13 +31,9 @@ from core.search_work_query_plan_consumption import (
 )
 
 QUERY_PLAN_TRACE_KEY = "query_plan"
-_RECORDED_DISPATCH_ADMISSION_REASON = (
-    "recorded_from_existing_dispatch_authority"
-)
+_RECORDED_DISPATCH_ADMISSION_REASON = "recorded_from_existing_dispatch_authority"
 _AUTHORITY_SOURCE_TOKEN_MAX_LENGTH = 120
-_AUTHORITY_SOURCE_TOKEN_CHARACTERS = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-"
-)
+_AUTHORITY_SOURCE_TOKEN_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-")
 
 
 class QueryPlanStatus(str, Enum):
@@ -154,19 +151,12 @@ def _is_bounded_authority_source_token(value: Any) -> bool:
     return (
         isinstance(value, str)
         and 0 < len(value) <= _AUTHORITY_SOURCE_TOKEN_MAX_LENGTH
-        and all(
-            character in _AUTHORITY_SOURCE_TOKEN_CHARACTERS
-            for character in value
-        )
+        and all(character in _AUTHORITY_SOURCE_TOKEN_CHARACTERS for character in value)
     )
 
 
 def _is_full_sha256_digest(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,23 +243,15 @@ class InitialQueryAdmissionResult:
         return {
             "admitted_candidate_queries": list(self.admitted_candidate_queries),
             "immediate_dispatch_queries": list(self.immediate_dispatch_queries),
-            "prepared_secondary_candidates": [
-                dict(item) for item in self.prepared_secondary_candidates
-            ],
+            "prepared_secondary_candidates": [dict(item) for item in self.prepared_secondary_candidates],
             "required_component_ids": list(self.required_component_ids),
             "primary_item_ids_by_component": {
-                component_id: list(item_ids)
-                for component_id, item_ids in self.primary_item_ids_by_component.items()
+                component_id: list(item_ids) for component_id, item_ids in self.primary_item_ids_by_component.items()
             },
-            "duplicate_candidates_rejected": [
-                dict(item) for item in self.duplicate_candidates_rejected
-            ],
-            "over_ceiling_candidates_rejected": [
-                dict(item) for item in self.over_ceiling_candidates_rejected
-            ],
+            "duplicate_candidates_rejected": [dict(item) for item in self.duplicate_candidates_rejected],
+            "over_ceiling_candidates_rejected": [dict(item) for item in self.over_ceiling_candidates_rejected],
             "unjustified_secondary_candidates_rejected": [
-                dict(item)
-                for item in self.unjustified_secondary_candidates_rejected
+                dict(item) for item in self.unjustified_secondary_candidates_rejected
             ],
             "post_result_followup_dispatched": False,
         }
@@ -329,35 +311,23 @@ class QueryPlan:
 
         bindings = initial_strategy_search_work_bindings(search_work_projection)
         required_component_ids = tuple(
-            component_id
-            for component_id, binding in bindings.items()
-            if binding.get("required_component") is True
+            component_id for component_id, binding in bindings.items() if binding.get("required_component") is True
         )
         if not required_component_ids:
-            raise ValueError(
-                "initial QueryPlan admission requires accepted required components"
-            )
-        grouped: dict[str, list[Mapping[str, Any]]] = {
-            component_id: [] for component_id in bindings
-        }
+            raise ValueError("initial QueryPlan admission requires accepted required components")
+        grouped: dict[str, list[Mapping[str, Any]]] = {component_id: [] for component_id in bindings}
         for strategy in strategies:
             component_id = _clean_text(strategy.get("component_id"), limit=160)
             if not component_id or component_id not in bindings:
-                raise ValueError(
-                    "initial query strategy references an unknown SearchWork component"
-                )
+                raise ValueError("initial query strategy references an unknown SearchWork component")
             grouped[component_id].append(strategy)
 
         plan = self
         admitted_candidates: list[str] = []
-        immediate_primary: dict[str, list[str]] = {
-            component_id: [] for component_id in required_component_ids
-        }
+        immediate_primary: dict[str, list[str]] = {component_id: [] for component_id in required_component_ids}
         immediate_secondary: list[str] = []
         prepared_secondary: list[dict[str, Any]] = []
-        primary_item_ids: dict[str, list[str]] = {
-            component_id: [] for component_id in required_component_ids
-        }
+        primary_item_ids: dict[str, list[str]] = {component_id: [] for component_id in required_component_ids}
         duplicates: list[dict[str, Any]] = []
         over_ceiling: list[dict[str, Any]] = []
         unjustified_secondary: list[dict[str, Any]] = []
@@ -367,35 +337,27 @@ class QueryPlan:
         for component_id in bindings:
             component_strategies = sorted(
                 grouped.get(component_id, []),
-                key=lambda item: (
-                    0 if item.get("candidate_kind") == "primary" else 1,
-                    str(item.get("strategy_id") or ""),
-                ),
+                # Stable partition: primaries precede secondaries while the
+                # planner/revision proposal order remains exact within each
+                # class.  Strategy identifiers never become an order policy.
+                key=lambda item: 0 if item.get("candidate_kind") == "primary" else 1,
             )
             admitted_for_component = 0
             primary_for_component = 0
             immediate_for_component = 0
             for strategy in component_strategies:
                 strategy_id = _clean_text(strategy.get("strategy_id"), limit=160)
-                candidate_kind = _clean_text(
-                    strategy.get("candidate_kind"), limit=40
-                ) or "primary"
-                raw_query = _clean_text(
-                    strategy.get("candidate_query_text"), limit=300
-                )
-                requested_role = _clean_text(
-                    strategy.get("requested_role"), limit=80
-                ) or QueryPlanRole.INITIAL.value
+                candidate_kind = _clean_text(strategy.get("candidate_kind"), limit=40) or "primary"
+                if candidate_kind not in {"primary", "secondary"}:
+                    raise ValueError("initial query strategy candidate_kind must be primary or secondary")
+                raw_query = _clean_text(strategy.get("candidate_query_text"), limit=300)
+                requested_role = _clean_text(strategy.get("requested_role"), limit=80) or QueryPlanRole.INITIAL.value
                 if not strategy_id or not raw_query:
-                    raise ValueError(
-                        "initial query strategy requires identity and bounded text"
-                    )
+                    raise ValueError("initial query strategy requires identity and bounded text")
                 try:
                     role = QueryPlanRole(requested_role)
                 except ValueError as exc:
-                    raise ValueError(
-                        f"unsupported initial QueryPlan role: {requested_role}"
-                    ) from exc
+                    raise ValueError(f"unsupported initial QueryPlan role: {requested_role}") from exc
                 authorized = clean(raw_query)[:300]
                 compact_strategy = _compact_initial_strategy_metadata(strategy)
                 binding = dict(bindings[component_id])
@@ -429,17 +391,13 @@ class QueryPlan:
                     authorized,
                     strategy,
                     canonical_candidates,
-                    redundancy_rejection_enabled=(
-                        policy.redundancy_rejection_enabled
-                    ),
+                    redundancy_rejection_enabled=(policy.redundancy_rejection_enabled),
                 )
                 if duplicate is not None:
                     contributor_ref = {
                         "strategy_id": strategy_id,
                         "component_id": component_id,
-                        "search_requirement_ref": strategy.get(
-                            "search_requirement_ref"
-                        ),
+                        "search_requirement_ref": strategy.get("search_requirement_ref"),
                     }
                     plan = _append_contributor_to_item(
                         plan,
@@ -466,14 +424,14 @@ class QueryPlan:
                     )
                     continue
 
+                additional_candidate = admitted_for_component > 0
                 if (
-                    candidate_kind == "secondary"
-                    and not _secondary_candidate_has_distinct_need(strategy)
-                ):
+                    candidate_kind == "secondary" or additional_candidate
+                ) and not _secondary_candidate_has_distinct_need(strategy):
                     rejection = {
                         "strategy_id": strategy_id,
                         "component_id": component_id,
-                        "reason": "secondary_missing_distinct_need_justification",
+                        "reason": "additional_candidate_missing_distinct_need_justification",
                     }
                     unjustified_secondary.append(rejection)
                     plan = plan.append(
@@ -482,22 +440,17 @@ class QueryPlan:
                         status=QueryPlanStatus.REJECTED_BLOCKED,
                         original_query=raw_query,
                         authorized_query=authorized,
-                        admission_reason="secondary_distinct_need_not_proved",
+                        admission_reason="additional_distinct_need_not_proved",
                         phase=phase,
                         metadata={**metadata, **rejection},
                     )
                     continue
 
-                if (
-                    admitted_for_component
-                    >= policy.initial_candidate_ceiling_per_required_component
-                ):
+                if admitted_for_component >= policy.initial_candidate_ceiling_per_required_component:
                     rejection = {
                         "strategy_id": strategy_id,
                         "component_id": component_id,
-                        "per_component_candidate_ceiling": (
-                            policy.initial_candidate_ceiling_per_required_component
-                        ),
+                        "per_component_candidate_ceiling": (policy.initial_candidate_ceiling_per_required_component),
                     }
                     over_ceiling.append(rejection)
                     plan = plan.append(
@@ -516,10 +469,10 @@ class QueryPlan:
                 if candidate_kind == "primary":
                     primary_for_component += 1
                     immediate = (
-                        immediate_for_component
-                        < policy.immediate_dispatch_target_per_required_component
+                        not additional_candidate
+                        and immediate_for_component < policy.immediate_dispatch_target_per_required_component
                     )
-                elif (
+                if additional_candidate and (
                     strategy.get("immediate_dispatch_requested") is True
                     and strategy.get("immediate_dispatch_distinct_need") is True
                     and _secondary_need_cannot_reasonably_share_primary(
@@ -529,11 +482,7 @@ class QueryPlan:
                 ):
                     immediate = True
 
-                status = (
-                    QueryPlanStatus.FINALIZED
-                    if immediate
-                    else QueryPlanStatus.ADMITTED
-                )
+                status = QueryPlanStatus.FINALIZED if immediate else QueryPlanStatus.ADMITTED
                 admission_reason = (
                     "required_component_primary_first_wave"
                     if candidate_kind == "primary" and immediate
@@ -554,18 +503,14 @@ class QueryPlan:
                         **metadata,
                         "candidate_kind": candidate_kind,
                         "dispatch_posture": (
-                            "immediate_first_wave"
-                            if immediate
-                            else "prepared_for_later_search_judgment"
+                            "immediate_first_wave" if immediate else "prepared_for_later_search_judgment"
                         ),
                         "post_result_followup_authorized": False,
                         "contributor_lineage": [
                             {
                                 "strategy_id": strategy_id,
                                 "component_id": component_id,
-                                "search_requirement_ref": strategy.get(
-                                    "search_requirement_ref"
-                                ),
+                                "search_requirement_ref": strategy.get("search_requirement_ref"),
                             }
                         ],
                     },
@@ -582,18 +527,14 @@ class QueryPlan:
                 admitted_candidates.append(authorized)
                 query_metadata[authorized] = dict(item.metadata)
                 if candidate_kind == "primary":
-                    primary_item_ids.setdefault(component_id, []).append(
-                        item.item_id
-                    )
+                    primary_item_ids.setdefault(component_id, []).append(item.item_id)
                 if immediate:
                     immediate_for_component += 1
                     if candidate_kind == "primary":
-                        immediate_primary.setdefault(component_id, []).append(
-                            authorized
-                        )
+                        immediate_primary.setdefault(component_id, []).append(authorized)
                     else:
                         immediate_secondary.append(authorized)
-                elif candidate_kind == "secondary":
+                elif candidate_kind == "secondary" or additional_candidate:
                     prepared_secondary.append(
                         {
                             "query_plan_item_id": item.item_id,
@@ -601,14 +542,10 @@ class QueryPlan:
                             "component_id": component_id,
                             "authorized_query": authorized,
                             "requested_role": role.value,
-                            "distinct_need_justification": strategy.get(
-                                "distinct_need_justification"
-                            ),
+                            "candidate_kind": candidate_kind,
+                            "distinct_need_justification": strategy.get("distinct_need_justification"),
                             "source_obligation_candidate_ids": list(
-                                strategy.get(
-                                    "source_obligation_candidate_ids"
-                                )
-                                or []
+                                strategy.get("source_obligation_candidate_ids") or []
                             ),
                             "later_authorizer": "SearchJudgment",
                             "post_result_followup_authorized": False,
@@ -617,28 +554,20 @@ class QueryPlan:
 
             if component_id in required_component_ids and (
                 policy.required_component_floor_enabled
-                and primary_for_component
-                < policy.primary_query_target_per_required_component
+                and primary_for_component < policy.primary_query_target_per_required_component
             ):
-                raise ValueError(
-                    f"required component {component_id} was not admitted a primary query"
-                )
+                raise ValueError(f"required component {component_id} was not admitted a primary query")
 
         immediate_queries = tuple(
-            query
-            for component_id in required_component_ids
-            for query in immediate_primary.get(component_id, [])
+            query for component_id in required_component_ids for query in immediate_primary.get(component_id, [])
         ) + tuple(immediate_secondary)
         if policy.required_component_floor_enabled:
             uncovered = [
-                component_id
-                for component_id in required_component_ids
-                if not immediate_primary.get(component_id)
+                component_id for component_id in required_component_ids if not immediate_primary.get(component_id)
             ]
             if uncovered:
                 raise ValueError(
-                    "initial first-wave safety floor would omit required components: "
-                    + ", ".join(uncovered)
+                    "initial first-wave safety floor would omit required components: " + ", ".join(uncovered)
                 )
 
         consumption = {
@@ -646,9 +575,7 @@ class QueryPlan:
             "search_work_consumed_by_query_plan": True,
             "allocation_policy": policy.to_dict(),
             "required_component_ids": list(required_component_ids),
-            "primary_item_ids_by_component": {
-                key: list(value) for key, value in primary_item_ids.items()
-            },
+            "primary_item_ids_by_component": {key: list(value) for key, value in primary_item_ids.items()},
             "admitted_query_order": list(admitted_candidates),
             "immediate_dispatch_query_order": list(immediate_queries),
             "prepared_secondary_candidates": prepared_secondary,
@@ -663,14 +590,10 @@ class QueryPlan:
             immediate_dispatch_queries=immediate_queries,
             prepared_secondary_candidates=tuple(prepared_secondary),
             required_component_ids=required_component_ids,
-            primary_item_ids_by_component={
-                key: tuple(value) for key, value in primary_item_ids.items()
-            },
+            primary_item_ids_by_component={key: tuple(value) for key, value in primary_item_ids.items()},
             duplicate_candidates_rejected=tuple(duplicates),
             over_ceiling_candidates_rejected=tuple(over_ceiling),
-            unjustified_secondary_candidates_rejected=tuple(
-                unjustified_secondary
-            ),
+            unjustified_secondary_candidates_rejected=tuple(unjustified_secondary),
         )
         return plan, result
 
@@ -692,8 +615,7 @@ class QueryPlan:
                         item
                         for item in reversed(plan.items)
                         if item.authorized_query == query
-                        and item.status
-                        in {QueryPlanStatus.FINALIZED, QueryPlanStatus.ADMITTED}
+                        and item.status in {QueryPlanStatus.FINALIZED, QueryPlanStatus.ADMITTED}
                         and item.phase == "initial_component_query_admission"
                     ),
                     None,
@@ -703,9 +625,7 @@ class QueryPlan:
                 {
                     **dict(parent_item.metadata),
                     "parent_initial_query_plan_item_id": parent_item.item_id,
-                    "parent_initial_query_plan_item_digest": _canonical_sha256(
-                        parent_item.to_dict()
-                    ),
+                    "parent_initial_query_plan_item_digest": _canonical_sha256(parent_item.to_dict()),
                     "exact_query_text_preserved_from_initial_admission": True,
                 }
                 if parent_item is not None
@@ -747,9 +667,7 @@ class QueryPlan:
         for order, value in enumerate(queries, start=1):
             query = str(value)
             if not query.strip():
-                raise ValueError(
-                    "authorized discovery dispatch cannot record an empty query"
-                )
+                raise ValueError("authorized discovery dispatch cannot record an empty query")
             plan = plan.append(
                 origin=origin,
                 role=role,
@@ -844,30 +762,24 @@ class QueryPlan:
         role: QueryPlanRole | str = QueryPlanRole.FINALIZED,
         phase: str = "search_judgment_component_gap_authority",
     ) -> "QueryPlan":
-        metadata, consumed, authorized_query, fallback_reason = (
-            authorize_existing_query_by_version_bound_component_gap(
-                existing_queries=queries,
-                query_metadata=self.search_work_consumption.get(
-                    "query_metadata",
-                    {},
-                )
-                if isinstance(self.search_work_consumption, Mapping)
-                else {},
-                search_judgment_projection=search_judgment_projection,
+        metadata, consumed, authorized_query, fallback_reason = authorize_existing_query_by_version_bound_component_gap(
+            existing_queries=queries,
+            query_metadata=self.search_work_consumption.get(
+                "query_metadata",
+                {},
             )
+            if isinstance(self.search_work_consumption, Mapping)
+            else {},
+            search_judgment_projection=search_judgment_projection,
         )
         consumption = dict(self.search_work_consumption or {})
         if metadata:
             consumption["query_metadata"] = metadata
         consumption["version_bound_component_gap_authority_consumed"] = consumed
         if authorized_query:
-            consumption["version_bound_component_gap_authorized_query"] = (
-                authorized_query
-            )
+            consumption["version_bound_component_gap_authorized_query"] = authorized_query
         if fallback_reason:
-            consumption["version_bound_component_gap_fallback_reason"] = (
-                fallback_reason
-            )
+            consumption["version_bound_component_gap_fallback_reason"] = fallback_reason
         plan = replace(self, search_work_consumption=consumption)
         if not consumed or not authorized_query:
             return plan
@@ -885,7 +797,8 @@ class QueryPlan:
     def queries_by_iteration(self) -> dict[int, list[str]]:
         out: dict[int, list[str]] = {}
         ordered = [
-            item for item in self.items
+            item
+            for item in self.items
             if item.status == QueryPlanStatus.ORDERED and item.iteration is not None and item.authorized_query
         ]
         for item in sorted(ordered, key=lambda x: (int(x.iteration or 0), int(x.order or 0), x.item_id)):
@@ -925,10 +838,7 @@ class QueryPlan:
 
         refs: list[dict[str, Any]] = []
         for item in self.items:
-            if (
-                not isinstance(item.authorized_query, str)
-                or not item.authorized_query.strip()
-            ):
+            if not isinstance(item.authorized_query, str) or not item.authorized_query.strip():
                 continue
             if item.status == QueryPlanStatus.ORDERED:
                 refs.append(item.to_ref(self.plan_id))
@@ -940,12 +850,8 @@ class QueryPlan:
                 item.admission_reason != _RECORDED_DISPATCH_ADMISSION_REASON
                 or not isinstance(metadata, Mapping)
                 or metadata.get("query_text_unchanged") is not True
-                or not _is_bounded_authority_source_token(
-                    metadata.get("authority_source")
-                )
-                or not _is_full_sha256_digest(
-                    metadata.get("authority_ref_digest")
-                )
+                or not _is_bounded_authority_source_token(metadata.get("authority_source"))
+                or not _is_full_sha256_digest(metadata.get("authority_ref_digest"))
             ):
                 continue
             refs.append(item.to_ref(self.plan_id))
@@ -963,17 +869,13 @@ class QueryPlan:
         payload = {
             "plan_id": _clean_text(self.plan_id, limit=80),
             "items": [item.to_dict() for item in self.items],
-            "authorized_queries_by_iteration": {
-                str(key): value for key, value in self.queries_by_iteration().items()
-            },
+            "authorized_queries_by_iteration": {str(key): value for key, value in self.queries_by_iteration().items()},
             "provider_policy": QueryPlanStatus.PROVIDER_POLICY_UNCHANGED.value,
             "depth_policy": QueryPlanStatus.DEPTH_POLICY_UNCHANGED.value,
             "custody_satisfaction_owner": "official_current_source_custody",
         }
         if self.search_work_consumption:
-            payload["search_work_consumption"] = _safe_json(
-                self.search_work_consumption
-            )
+            payload["search_work_consumption"] = _safe_json(self.search_work_consumption)
         return payload
 
     def to_trace_fragment(self) -> dict[str, Any]:
@@ -987,59 +889,32 @@ def _compact_initial_strategy_metadata(
     recon = dict(recon) if isinstance(recon, Mapping) else {}
     return {
         "strategy_id": _clean_text(strategy.get("strategy_id"), limit=160),
-        "candidate_kind": _clean_text(
-            strategy.get("candidate_kind"), limit=40
-        ),
-        "requested_role": _clean_text(
-            strategy.get("requested_role"), limit=80
-        ),
-        "source_obligation_candidate_ids": list(
-            strategy.get("source_obligation_candidate_ids") or []
-        ),
-        "search_requirement_ref": _safe_json(
-            strategy.get("search_requirement_ref")
-        ),
-        "accepted_component_ref": _safe_json(
-            strategy.get("accepted_component_ref")
-        ),
-        "parent_search_planner_proposal_ref": _safe_json(
-            strategy.get("parent_search_planner_proposal_ref")
-        ),
-        "parent_search_planner_revision_ref": _safe_json(
-            strategy.get("parent_search_planner_revision_ref")
-        ),
-        "distinct_need_justification": _clean_text(
-            strategy.get("distinct_need_justification"), limit=300
-        ),
-        "currentness_posture": _clean_text(
-            strategy.get("currentness_posture"), limit=180
-        ),
-        "official_canonical_intent": _clean_text(
-            strategy.get("official_canonical_intent"), limit=120
-        ),
+        "candidate_kind": _clean_text(strategy.get("candidate_kind"), limit=40),
+        "requested_role": _clean_text(strategy.get("requested_role"), limit=80),
+        "source_obligation_candidate_ids": list(strategy.get("source_obligation_candidate_ids") or []),
+        "search_requirement_ref": _safe_json(strategy.get("search_requirement_ref")),
+        "accepted_component_ref": _safe_json(strategy.get("accepted_component_ref")),
+        "parent_search_planner_proposal_ref": _safe_json(strategy.get("parent_search_planner_proposal_ref")),
+        "parent_search_planner_revision_ref": _safe_json(strategy.get("parent_search_planner_revision_ref")),
+        "distinct_need_justification": _clean_text(strategy.get("distinct_need_justification"), limit=300),
+        "currentness_posture": _clean_text(strategy.get("currentness_posture"), limit=180),
+        "official_canonical_intent": _clean_text(strategy.get("official_canonical_intent"), limit=120),
         "domain_constraints": _safe_json(strategy.get("domain_constraints")),
-        "document_family": _clean_text(
-            strategy.get("document_family"), limit=160
-        ),
+        "document_family": _clean_text(strategy.get("document_family"), limit=160),
         "recon_requirement_ref": {
             "posture": _clean_text(
                 recon.get("posture") or strategy.get("recon_posture"),
                 limit=40,
             ),
             "unresolved_dimension_ids": list(
-                recon.get("unresolved_dimension_ids")
-                or strategy.get("recon_unresolved_dimension_ids")
-                or []
+                recon.get("unresolved_dimension_ids") or strategy.get("recon_unresolved_dimension_ids") or []
             ),
             "required_for_truthful_targeting": bool(
-                recon.get("required_for_truthful_targeting")
-                or strategy.get("recon_required_for_truthful_targeting")
+                recon.get("required_for_truthful_targeting") or strategy.get("recon_required_for_truthful_targeting")
             ),
             "recon_query_text_retained": False,
         },
-        "planner_provider_identity_ignored": bool(
-            strategy.get("planner_provider_identity_ignored")
-        ),
+        "planner_provider_identity_ignored": bool(strategy.get("planner_provider_identity_ignored")),
         "provider_name_neutral": True,
     }
 
@@ -1061,12 +936,9 @@ def _find_duplicate_initial_candidate(
         if not redundancy_rejection_enabled:
             continue
         existing_strategy = candidate.get("strategy")
-        existing_strategy = (
-            existing_strategy if isinstance(existing_strategy, Mapping) else {}
-        )
-        if (
-            _queries_materially_equivalent(query, existing_query)
-            and not _strategies_prove_distinct_need(strategy, existing_strategy)
+        existing_strategy = existing_strategy if isinstance(existing_strategy, Mapping) else {}
+        if _queries_materially_equivalent(query, existing_query) and not _strategies_prove_distinct_need(
+            strategy, existing_strategy
         ):
             return {
                 "item_id": candidate.get("item_id"),
@@ -1130,17 +1002,13 @@ def _strategies_prove_distinct_need(
 def _secondary_candidate_has_distinct_need(
     strategy: Mapping[str, Any],
 ) -> bool:
-    justification = _clean_text(
-        strategy.get("distinct_need_justification"), limit=300
-    )
+    justification = _clean_text(strategy.get("distinct_need_justification"), limit=300)
     if not justification:
         return False
     recon = strategy.get("recon_requirement")
     recon = recon if isinstance(recon, Mapping) else {}
     domain_constraints = strategy.get("domain_constraints")
-    domain_constraints = (
-        domain_constraints if isinstance(domain_constraints, Mapping) else {}
-    )
+    domain_constraints = domain_constraints if isinstance(domain_constraints, Mapping) else {}
     return bool(
         strategy.get("source_obligation_candidate_ids")
         or strategy.get("currentness_posture")
@@ -1159,14 +1027,11 @@ def _secondary_need_cannot_reasonably_share_primary(
     primaries = [
         item
         for item in component_strategies
-        if item.get("candidate_kind") == "primary"
+        if item.get("candidate_kind") == "primary" and item.get("strategy_id") != secondary.get("strategy_id")
     ]
     if not primaries:
         return False
-    return all(
-        _strategies_prove_distinct_need(secondary, primary)
-        for primary in primaries
-    )
+    return all(_strategies_prove_distinct_need(secondary, primary) for primary in primaries)
 
 
 def _append_contributor_to_item(
@@ -1181,9 +1046,7 @@ def _append_contributor_to_item(
             continue
         metadata = dict(item.metadata)
         contributors = [
-            dict(value)
-            for value in metadata.get("contributor_lineage") or []
-            if isinstance(value, Mapping)
+            dict(value) for value in metadata.get("contributor_lineage") or [] if isinstance(value, Mapping)
         ]
         contributors.append(dict(contributor_ref))
         metadata["contributor_lineage"] = contributors
@@ -1269,8 +1132,7 @@ def authorize_retrieval_queries(
         phrase = official_bias_phrase(user_query)
         candidate_queries = [str(item["authorized_query"]) for item in candidates]
         has_existing = any(
-            "official" in query.lower() and query_has_domain_anchor(query, aliases)
-            for query in candidate_queries
+            "official" in query.lower() and query_has_domain_anchor(query, aliases) for query in candidate_queries
         )
         if has_existing:
             active = active.append(

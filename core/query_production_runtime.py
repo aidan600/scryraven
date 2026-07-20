@@ -219,13 +219,9 @@ def _recon_unavailable_summary(
                 "component_id": component_id,
                 "posture": component_work["posture"],
                 "status": "optional_unavailable_primary_strategy_retained",
-                "unresolved_dimension_ids": list(
-                    component_work["unresolved_dimension_ids"]
-                ),
+                "unresolved_dimension_ids": list(component_work["unresolved_dimension_ids"]),
                 "candidate_count": len(component_work["candidate_queries"]),
-                "per_affected_component_ceiling": (
-                    policy.recon_candidate_ceiling_per_affected_component
-                ),
+                "per_affected_component_ceiling": (policy.recon_candidate_ceiling_per_affected_component),
                 "required_for_truthful_targeting": False,
                 "evidence_admitted": False,
                 "source_obligation_satisfied": False,
@@ -249,18 +245,12 @@ def _recon_work_by_component(
     for strategy in strategies:
         recon = strategy.get("recon_requirement")
         recon = dict(recon) if isinstance(recon, Mapping) else {}
-        posture = str(
-            recon.get("posture")
-            or strategy.get("recon_posture")
-            or "not_needed"
-        ).strip()
+        posture = str(recon.get("posture") or strategy.get("recon_posture") or "not_needed").strip()
         if posture == "not_needed":
             continue
         component_id = str(strategy.get("component_id") or "").strip()
         if not component_id:
-            raise QueryStrategyConvergenceError(
-                "recon requirement is missing its accepted component binding"
-            )
+            raise QueryStrategyConvergenceError("recon requirement is missing its accepted component binding")
         component_work = work.setdefault(
             component_id,
             {
@@ -275,20 +265,18 @@ def _recon_work_by_component(
             component_work["posture"] = "required"
         component_work["required_for_truthful_targeting"] = bool(
             component_work["required_for_truthful_targeting"]
+            or posture == "required"
             or recon.get("required_for_truthful_targeting")
             or strategy.get("recon_required_for_truthful_targeting")
         )
         for dimension_id in (
-            recon.get("unresolved_dimension_ids")
-            or strategy.get("recon_unresolved_dimension_ids")
-            or ()
+            recon.get("unresolved_dimension_ids") or strategy.get("recon_unresolved_dimension_ids") or ()
         ):
             clean_id = str(dimension_id or "").strip()
             if clean_id and clean_id not in component_work["unresolved_dimension_ids"]:
                 component_work["unresolved_dimension_ids"].append(clean_id)
         known_candidate_dimensions = {
-            str(item.get("dimension_id") or "").strip()
-            for item in component_work["candidate_queries"]
+            str(item.get("dimension_id") or "").strip() for item in component_work["candidate_queries"]
         }
         for raw_candidate in recon.get("candidate_queries") or ():
             if not isinstance(raw_candidate, Mapping):
@@ -297,8 +285,7 @@ def _recon_work_by_component(
             dimension_id = str(candidate.get("dimension_id") or "").strip()
             if not dimension_id or dimension_id in known_candidate_dimensions:
                 raise QueryStrategyConvergenceError(
-                    f"component {component_id} recon candidates must address "
-                    "distinct unresolved dimensions"
+                    f"component {component_id} recon candidates must address distinct unresolved dimensions"
                 )
             known_candidate_dimensions.add(dimension_id)
             if dimension_id not in component_work["unresolved_dimension_ids"]:
@@ -306,9 +293,7 @@ def _recon_work_by_component(
             component_work["candidate_queries"].append(candidate)
         query_text_by_dimension = (
             dict(strategy.get("recon_candidate_queries_by_dimension") or {})
-            if isinstance(
-                strategy.get("recon_candidate_queries_by_dimension"), Mapping
-            )
+            if isinstance(strategy.get("recon_candidate_queries_by_dimension"), Mapping)
             else {}
         )
         query_kind_by_dimension = (
@@ -320,23 +305,18 @@ def _recon_work_by_component(
             clean_dimension_id = str(dimension_id or "").strip()
             clean_query_text = str(query_text or "").strip()
             if not clean_dimension_id or not clean_query_text:
-                raise QueryStrategyConvergenceError(
-                    f"component {component_id} has malformed flattened recon strategy"
-                )
+                raise QueryStrategyConvergenceError(f"component {component_id} has malformed flattened recon strategy")
             if clean_dimension_id in known_candidate_dimensions:
                 continue
             known_candidate_dimensions.add(clean_dimension_id)
             if clean_dimension_id not in component_work["unresolved_dimension_ids"]:
-                component_work["unresolved_dimension_ids"].append(
-                    clean_dimension_id
-                )
+                component_work["unresolved_dimension_ids"].append(clean_dimension_id)
             component_work["candidate_queries"].append(
                 {
                     "dimension_id": clean_dimension_id,
                     "candidate_query_text": clean_query_text,
                     "query_kind": str(
-                        query_kind_by_dimension.get(clean_dimension_id)
-                        or "disambiguation_probe"
+                        query_kind_by_dimension.get(clean_dimension_id) or "disambiguation_probe"
                     ).strip(),
                 }
             )
@@ -348,8 +328,7 @@ def _recon_work_by_component(
             or len(component_work["unresolved_dimension_ids"]) > ceiling
         ):
             raise QueryStrategyConvergenceError(
-                f"component {component_id} exceeds the policy-owned "
-                "per-affected-component recon ceiling"
+                f"component {component_id} exceeds the policy-owned per-affected-component recon ceiling"
             )
     return work
 
@@ -390,15 +369,12 @@ def _component_and_slot_refs(
         (
             dict(item)
             for item in accepted_contract.get("accepted_answer_component_refs") or ()
-            if isinstance(item, Mapping)
-            and str(item.get("component_id") or "").strip() == component_id
+            if isinstance(item, Mapping) and str(item.get("component_id") or "").strip() == component_id
         ),
         {},
     )
     if not accepted_component:
-        raise QueryStrategyConvergenceError(
-            f"recon component {component_id} is not in the accepted contract"
-        )
+        raise QueryStrategyConvergenceError(f"recon component {component_id} is not in the accepted contract")
     qmr = (
         dict(planner_state.get("question_meaning_record") or {})
         if isinstance(planner_state.get("question_meaning_record"), Mapping)
@@ -408,16 +384,11 @@ def _component_and_slot_refs(
         (
             dict(item)
             for item in qmr.get("answer_components") or ()
-            if isinstance(item, Mapping)
-            and str(item.get("component_id") or "").strip() == component_id
+            if isinstance(item, Mapping) and str(item.get("component_id") or "").strip() == component_id
         ),
         {},
     )
-    slot_ids = [
-        str(item).strip()
-        for item in proposed_component.get("semantic_slot_ids") or ()
-        if str(item).strip()
-    ]
+    slot_ids = [str(item).strip() for item in proposed_component.get("semantic_slot_ids") or () if str(item).strip()]
     if not slot_ids:
         slot_ids = [
             str(item.get("slot_id") or "").strip()
@@ -425,9 +396,7 @@ def _component_and_slot_refs(
             if isinstance(item, Mapping) and str(item.get("slot_id") or "").strip()
         ][:1]
     if not slot_ids:
-        raise QueryStrategyConvergenceError(
-            f"recon component {component_id} has no semantic-slot binding"
-        )
+        raise QueryStrategyConvergenceError(f"recon component {component_id} has no semantic-slot binding")
     return accepted_component, slot_ids
 
 
@@ -455,26 +424,14 @@ def _revision_lineage_inputs(revision: Mapping[str, Any]) -> dict[str, Any]:
         "amendment_origin": "search_planner_revision",
         "planner_revision_id": revision.get("revision_id"),
         "parent_search_planner_proposal_id": planner_ref.get("proposal_id"),
-        "parent_search_planner_proposal_digest": planner_ref.get(
-            "proposal_digest"
-        ),
-        "parent_question_meaning_record_id": planner_ref.get(
-            "question_meaning_record_id"
-        ),
-        "parent_question_meaning_record_digest": planner_ref.get(
-            "question_meaning_record_digest"
-        ),
+        "parent_search_planner_proposal_digest": planner_ref.get("proposal_digest"),
+        "parent_question_meaning_record_id": planner_ref.get("question_meaning_record_id"),
+        "parent_question_meaning_record_digest": planner_ref.get("question_meaning_record_digest"),
         "parent_scout_disambiguation_report_id": scout_ref.get("report_id"),
-        "parent_scout_disambiguation_report_digest": scout_ref.get(
-            "report_digest"
-        ),
+        "parent_scout_disambiguation_report_digest": scout_ref.get("report_digest"),
         "component_id": revision.get("component_id"),
-        "consumed_ambiguity_dimension_ids": list(
-            revision.get("consumed_ambiguity_dimension_ids") or ()
-        ),
-        "consumed_scout_hint_ids": list(
-            revision.get("consumed_scout_hint_ids") or ()
-        ),
+        "consumed_ambiguity_dimension_ids": list(revision.get("consumed_ambiguity_dimension_ids") or ()),
+        "consumed_scout_hint_ids": list(revision.get("consumed_scout_hint_ids") or ()),
     }
 
 
@@ -482,11 +439,7 @@ def _admit_and_apply_revision_amendment(
     run_kernel: Any,
     revision: Mapping[str, Any],
 ) -> dict[str, Any]:
-    candidates = [
-        dict(item)
-        for item in revision.get("amendment_candidates") or ()
-        if isinstance(item, Mapping)
-    ]
+    candidates = [dict(item) for item in revision.get("amendment_candidates") or () if isinstance(item, Mapping)]
     if len(candidates) != 1:
         raise QueryStrategyConvergenceError(
             "ordinary initial convergence supports exactly one monotonic "
@@ -496,9 +449,7 @@ def _admit_and_apply_revision_amendment(
     record_id = str(record.get("amendment_record_id") or "").strip()
     record_digest = str(record.get("record_digest") or "").strip()
     if not record_id or not record_digest:
-        raise QueryStrategyConvergenceError(
-            "revision amendment candidate is missing record identity"
-        )
+        raise QueryStrategyConvergenceError("revision amendment candidate is missing record identity")
     admission_action = run_kernel.authorize_contract_amendment_admission(
         amendment_record_id=record_id,
         amendment_record_digest=record_digest,
@@ -555,9 +506,7 @@ def _execute_recon_and_revisions(
     if scout_adapter is None:
         return _recon_unavailable_summary(candidate_strategies, policy=policy), []
     if revision_adapter is None:
-        raise QueryStrategyConvergenceError(
-            "Scout composition requires an explicit SearchPlannerRevision adapter"
-        )
+        raise QueryStrategyConvergenceError("Scout composition requires an explicit SearchPlannerRevision adapter")
 
     summaries: list[dict[str, Any]] = []
     revisions: list[dict[str, Any]] = []
@@ -569,8 +518,7 @@ def _execute_recon_and_revisions(
         if not candidates:
             if required:
                 raise QueryStrategyConvergenceError(
-                    f"component {component_id} requires recon but has no bounded "
-                    "dimension-specific candidate"
+                    f"component {component_id} requires recon but has no bounded dimension-specific candidate"
                 )
             summaries.append(
                 {
@@ -587,10 +535,7 @@ def _execute_recon_and_revisions(
             )
             continue
 
-        accepted_contract = (
-            run_kernel.state.current_answer_contract
-            or run_kernel.state.initial_answer_contract
-        )
+        accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
         accepted_component, slot_ids = _component_and_slot_refs(
             planner_state=run_kernel.state.search_planner_proposal_state,
             accepted_contract=accepted_contract,
@@ -611,12 +556,8 @@ def _execute_recon_and_revisions(
         scout_candidates = [
             {
                 "query_id": f"scout-query:{component_id}:{index}",
-                "safe_query_text": str(
-                    candidate.get("candidate_query_text") or ""
-                ).strip(),
-                "query_kind": _scout_query_kind(
-                    str(candidate.get("dimension_id") or "")
-                ),
+                "safe_query_text": str(candidate.get("candidate_query_text") or "").strip(),
+                "query_kind": _scout_query_kind(str(candidate.get("dimension_id") or "")),
                 "priority": index,
                 "related_dimension_ids": [candidate.get("dimension_id")],
                 "not_live": True,
@@ -627,9 +568,7 @@ def _execute_recon_and_revisions(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             parent_search_planner_proposal_ref=(
-                planner_ref_from_search_planner_state(
-                    run_kernel.state.search_planner_proposal_state
-                )
+                planner_ref_from_search_planner_state(run_kernel.state.search_planner_proposal_state)
             ),
             parent_initial_contract_ref=scout_contract_ref_from_contract(
                 run_kernel.state.initial_answer_contract,
@@ -643,12 +582,8 @@ def _execute_recon_and_revisions(
             answer_component_ref=accepted_component,
             ambiguity_dimensions=dimension_records,
             query_budget={
-                "max_queries_per_component": (
-                    policy.recon_candidate_ceiling_per_affected_component
-                ),
-                "max_dimensions_per_component": (
-                    policy.recon_candidate_ceiling_per_affected_component
-                ),
+                "max_queries_per_component": (policy.recon_candidate_ceiling_per_affected_component),
+                "max_dimensions_per_component": (policy.recon_candidate_ceiling_per_affected_component),
                 "authorized_query_count": len(scout_candidates),
             },
             candidate_queries=scout_candidates,
@@ -661,12 +596,8 @@ def _execute_recon_and_revisions(
         scout_action = run_kernel.authorize_scout_disambiguation(
             component_id=component_id,
             ambiguity_dimension_ids=dimensions,
-            max_queries_per_component=(
-                policy.recon_candidate_ceiling_per_affected_component
-            ),
-            max_dimensions_per_component=(
-                policy.recon_candidate_ceiling_per_affected_component
-            ),
+            max_queries_per_component=(policy.recon_candidate_ceiling_per_affected_component),
+            max_dimensions_per_component=(policy.recon_candidate_ceiling_per_affected_component),
             inputs={"allocation_policy_version": policy.policy_version},
         )
         scout_result = execute_scout_disambiguation_action(
@@ -687,8 +618,7 @@ def _execute_recon_and_revisions(
         if executed_count == 0:
             if required:
                 raise QueryStrategyConvergenceError(
-                    f"required Scout recon for component {component_id} returned "
-                    "no executed offline response"
+                    f"required Scout recon for component {component_id} returned no executed offline response"
                 )
             summaries.append(
                 {
@@ -710,14 +640,10 @@ def _execute_recon_and_revisions(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             parent_search_planner_proposal_ref=(
-                planner_ref_from_search_planner_state(
-                    run_kernel.state.search_planner_proposal_state
-                )
+                planner_ref_from_search_planner_state(run_kernel.state.search_planner_proposal_state)
             ),
             parent_scout_disambiguation_report_ref=(
-                scout_ref_from_scout_report_state(
-                    run_kernel.state.scout_disambiguation_report_state
-                )
+                scout_ref_from_scout_report_state(run_kernel.state.scout_disambiguation_report_state)
             ),
             parent_initial_contract_ref=planner_contract_ref_from_contract(
                 run_kernel.state.initial_answer_contract,
@@ -733,17 +659,9 @@ def _execute_recon_and_revisions(
             safe_revision_context={
                 "answer_component_ref": accepted_component,
                 "parent_question_meaning_record": dict(
-                    run_kernel.state.search_planner_proposal_state.get(
-                        "question_meaning_record"
-                    )
-                    or {}
+                    run_kernel.state.search_planner_proposal_state.get("question_meaning_record") or {}
                 ),
-                "user_query_ref": dict(
-                    run_kernel.state.search_planner_proposal_state.get(
-                        "user_query_ref"
-                    )
-                    or {}
-                ),
+                "user_query_ref": dict(run_kernel.state.search_planner_proposal_state.get("user_query_ref") or {}),
                 "scout_report_ref": scout_ref_from_scout_report_state(
                     run_kernel.state.scout_disambiguation_report_state
                 ),
@@ -774,8 +692,7 @@ def _execute_recon_and_revisions(
         if revision.get("amendment_candidates"):
             if contractual_revision_applied:
                 raise QueryStrategyConvergenceError(
-                    "multiple contractual recon revisions require a later "
-                    "contract-mutation phase"
+                    "multiple contractual recon revisions require a later contract-mutation phase"
                 )
             revision = _admit_and_apply_revision_amendment(run_kernel, revision)
             contractual_revision_applied = True
@@ -829,9 +746,7 @@ def _strategies_with_authorized_revisions(
         component_id = str(strategy.get("component_id") or "").strip()
         accepted = accepted_components.get(component_id)
         if not accepted:
-            raise QueryStrategyConvergenceError(
-                "base planner strategy became stale against the current contract"
-            )
+            raise QueryStrategyConvergenceError("base planner strategy became stale against the current contract")
         strategy["accepted_component_ref"] = {
             "component_id": component_id,
             "component_revision": accepted.get("component_revision"),
@@ -853,15 +768,12 @@ def _strategies_with_authorized_revisions(
             or revision.get("contractual_effect_admitted_and_applied") is True
         ):
             raise QueryStrategyConvergenceError(
-                "revision query direction cannot affect planning before its "
-                "contractual effect is admitted and applied"
+                "revision query direction cannot affect planning before its contractual effect is admitted and applied"
             )
         component_id = str(revision.get("component_id") or "").strip()
         accepted = accepted_components.get(component_id)
         if not accepted:
-            raise QueryStrategyConvergenceError(
-                "planner revision references a component absent from current contract"
-            )
+            raise QueryStrategyConvergenceError("planner revision references a component absent from current contract")
         accepted_source_ids = {
             str(item).strip()
             for item in accepted.get("source_obligation_candidate_ids")
@@ -874,24 +786,15 @@ def _strategies_with_authorized_revisions(
             update_component_id = str(update.get("component_id") or "").strip()
             requirement_id = str(update.get("requirement_id") or "").strip()
             if update_component_id != component_id or not requirement_id:
-                raise QueryStrategyConvergenceError(
-                    "revision search requirement has stale component identity"
-                )
+                raise QueryStrategyConvergenceError("revision search requirement has stale component identity")
             source_ids = {
-                str(item).strip()
-                for item in update.get("source_obligation_candidate_ids") or ()
-                if str(item).strip()
+                str(item).strip() for item in update.get("source_obligation_candidate_ids") or () if str(item).strip()
             }
             if not source_ids.issubset(accepted_source_ids):
                 raise QueryStrategyConvergenceError(
-                    "revision search requirement references an unaccepted "
-                    "source obligation"
+                    "revision search requirement references an unaccepted source obligation"
                 )
-            metadata = (
-                dict(update.get("metadata") or {})
-                if isinstance(update.get("metadata"), Mapping)
-                else {}
-            )
+            metadata = dict(update.get("metadata") or {}) if isinstance(update.get("metadata"), Mapping) else {}
             requirement_ref = {
                 "requirement_id": requirement_id,
                 "component_id": component_id,
@@ -921,44 +824,32 @@ def _strategies_with_authorized_revisions(
                 }
                 if not strategy_source_ids.issubset(accepted_source_ids):
                     raise QueryStrategyConvergenceError(
-                        "revision query strategy references an unaccepted "
-                        "source obligation"
+                        "revision query strategy references an unaccepted source obligation"
                     )
                 revised_strategies.append(
                     {
                         **strategy,
                         "accepted_component_ref": {
                             "component_id": component_id,
-                            "component_revision": accepted.get(
-                                "component_revision"
-                            ),
+                            "component_revision": accepted.get("component_revision"),
                             "component_digest": accepted.get("component_digest"),
                         },
                         "search_requirement_ref": requirement_ref,
                         "parent_search_planner_proposal_ref": dict(
                             revision.get("parent_search_planner_proposal_ref") or {}
                         ),
-                        "parent_search_planner_revision_ref": (
-                            revision_ref_from_revision_state(revision)
-                        ),
-                        "revision_effect_class": revision.get(
-                            "revision_effect_class"
-                        ),
+                        "parent_search_planner_revision_ref": (revision_ref_from_revision_state(revision)),
+                        "revision_effect_class": revision.get("revision_effect_class"),
                     }
                 )
         if revised_strategies:
-            if any(
-                item.get("candidate_kind") == "primary"
-                for item in revised_strategies
-            ):
+            if any(item.get("candidate_kind") == "primary" for item in revised_strategies):
                 strategies_by_component[component_id] = revised_strategies
             else:
                 strategies_by_component[component_id].extend(revised_strategies)
 
     return [
-        strategy
-        for component_id in accepted_components
-        for strategy in strategies_by_component.get(component_id, ())
+        strategy for component_id in accepted_components for strategy in strategies_by_component.get(component_id, ())
     ]
 
 
@@ -1044,9 +935,7 @@ def _effective_route_posture(
         "max_iterations": int(max_iterations),
         "run_contract_ref": dict(run_contract_ref or {}),
         "contract_source_requirement_hints": [
-            dict(item)
-            for item in (contract_source_requirement_hints or ())
-            if isinstance(item, Mapping)
+            dict(item) for item in (contract_source_requirement_hints or ()) if isinstance(item, Mapping)
         ],
         "contract_consumed_by_query_production": bool(run_contract_ref),
     }
@@ -1080,12 +969,8 @@ def _build_query_production_payload(
         "candidate_source": candidate_source,
         "candidate_query_count": len(list(candidate_queries)),
         "candidate_query_projection": _clean_query_projection(candidate_queries),
-        "candidate_strategy_projection": [
-            dict(item) for item in candidate_strategies
-        ],
-        "initial_query_allocation_policy": (
-            initial_query_allocation_policy.to_dict()
-        ),
+        "candidate_strategy_projection": [dict(item) for item in candidate_strategies],
+        "initial_query_allocation_policy": (initial_query_allocation_policy.to_dict()),
         "accepted_contract_ref": dict(accepted_contract_ref),
         "search_work_plan_ref": dict(search_work_plan_ref),
         "recon": {
@@ -1104,18 +989,12 @@ def _build_query_production_payload(
             "core_topic_fallback_executed": False,
         },
         "contract_source_requirement_hints": [
-            dict(item)
-            for item in contract_source_requirement_hints
-            if isinstance(item, Mapping)
+            dict(item) for item in contract_source_requirement_hints if isinstance(item, Mapping)
         ],
         "diagnostics": {
             "anchor_packet_present": bool(anchor_packet_telemetry.get("anchor_packet_present")),
-            "nutrition_lookup_detected": bool(
-                nutrition_lookup_telemetry.get("nutrition_lookup_detected")
-            ),
-            "news_domain_augmentation_applied": (
-                str(effective_route_posture.get("intent") or "") == "news"
-            ),
+            "nutrition_lookup_detected": bool(nutrition_lookup_telemetry.get("nutrition_lookup_detected")),
+            "news_domain_augmentation_applied": (str(effective_route_posture.get("intent") or "") == "news"),
             "include_domain_count": len(list(include_domains)),
             "provider_diagnostic_count": len(list(provider_diagnostics)),
             "small_global_initial_query_cap_applied": False,
@@ -1140,9 +1019,7 @@ def query_plan_admission_inputs_from_query_production_projection(
 
     candidate_queries = list(projection.get("candidate_query_projection") or [])
     candidate_strategies = [
-        dict(item)
-        for item in projection.get("candidate_strategy_projection") or []
-        if isinstance(item, Mapping)
+        dict(item) for item in projection.get("candidate_strategy_projection") or [] if isinstance(item, Mapping)
     ]
     candidate_source = str(projection.get("candidate_source") or "").strip()
     effective_route_posture = dict(projection.get("effective_route_posture") or {})
@@ -1156,24 +1033,16 @@ def query_plan_admission_inputs_from_query_production_projection(
         raise ValueError("query production projection missing effective route posture")
     if not candidate_strategies:
         raise ValueError("query production projection missing candidate strategies")
-    if [item.get("candidate_query_text") for item in candidate_strategies] != (
-        candidate_queries
-    ):
-        raise ValueError(
-            "query production candidate strategy/text projection does not match"
-        )
-    policy = _policy_from_projection(
-        projection.get("initial_query_allocation_policy")
-    )
+    if [item.get("candidate_query_text") for item in candidate_strategies] != (candidate_queries):
+        raise ValueError("query production candidate strategy/text projection does not match")
+    policy = _policy_from_projection(projection.get("initial_query_allocation_policy"))
     return QueryProductionAdmissionInputs(
         candidate_queries=[str(query) for query in candidate_queries],
         candidate_strategies=candidate_strategies,
         candidate_source=candidate_source,
         effective_route_posture=effective_route_posture,
         contract_source_requirement_hints=[
-            dict(item)
-            for item in projection.get("contract_source_requirement_hints", [])
-            if isinstance(item, Mapping)
+            dict(item) for item in projection.get("contract_source_requirement_hints", []) if isinstance(item, Mapping)
         ],
         initial_query_allocation_policy=policy,
     )
@@ -1183,9 +1052,7 @@ def _policy_from_projection(value: Any) -> InitialQueryAllocationPolicy:
     if isinstance(value, InitialQueryAllocationPolicy):
         return value
     if not isinstance(value, Mapping):
-        raise ValueError(
-            "query production projection missing initial-query allocation policy"
-        )
+        raise ValueError("query production projection missing initial-query allocation policy")
     field_names = (
         "policy_version",
         "primary_query_target_per_required_component",
@@ -1209,15 +1076,11 @@ def _accepted_contract_ref(
     version = str(contract.get("accepted_contract_version") or "").strip()
     digest = str(contract.get("accepted_contract_digest") or "").strip()
     if not version or not digest:
-        raise QueryStrategyConvergenceError(
-            "query production requires an accepted AnswerContract version/digest"
-        )
+        raise QueryStrategyConvergenceError("query production requires an accepted AnswerContract version/digest")
     return {
         "contract_version": version,
         "contract_digest": digest,
-        "parent_kind": (
-            "current_answer_contract" if current else "initial_answer_contract"
-        ),
+        "parent_kind": ("current_answer_contract" if current else "initial_answer_contract"),
     }
 
 
@@ -1227,33 +1090,19 @@ def _search_work_plan_ref(
     accepted_contract_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     plan = dict(search_work_plan or {})
-    metadata = (
-        dict(plan.get("metadata") or {})
-        if isinstance(plan.get("metadata"), Mapping)
-        else {}
-    )
+    metadata = dict(plan.get("metadata") or {}) if isinstance(plan.get("metadata"), Mapping) else {}
     plan_contract_ref = (
         dict(metadata.get("accepted_contract_ref") or {})
         if isinstance(metadata.get("accepted_contract_ref"), Mapping)
         else {}
     )
     if not plan or plan.get("passive") is not False:
-        raise QueryStrategyConvergenceError(
-            "query production requires an active contract-bound SearchWorkPlan"
-        )
+        raise QueryStrategyConvergenceError("query production requires an active contract-bound SearchWorkPlan")
     if plan_contract_ref != dict(accepted_contract_ref):
-        raise QueryStrategyConvergenceError(
-            "SearchWorkPlan accepted-contract binding became stale"
-        )
-    plan_id = str(
-        metadata.get("search_work_plan_id")
-        or metadata.get("construction_id")
-        or ""
-    ).strip()
+        raise QueryStrategyConvergenceError("SearchWorkPlan accepted-contract binding became stale")
+    plan_id = str(metadata.get("search_work_plan_id") or metadata.get("construction_id") or "").strip()
     if not plan_id:
-        raise QueryStrategyConvergenceError(
-            "contract-bound SearchWorkPlan requires stable identity"
-        )
+        raise QueryStrategyConvergenceError("contract-bound SearchWorkPlan requires stable identity")
     return {
         "search_work_plan_id": plan_id,
         "schema_version": plan.get("schema_version"),
@@ -1281,9 +1130,7 @@ def execute_initial_query_strategy_convergence(
     revision_adapter: SearchPlannerRevisionAdapter | None = None,
     provider_diagnostics: MutableSequence[dict[str, Any]],
     waste_flags: Sequence[str] | None = None,
-    initial_query_allocation_policy: InitialQueryAllocationPolicy = (
-        DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY
-    ),
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
 ) -> InitialQueryStrategyConvergenceResult:
     """Run the one ordinary initial semantic-planning producer chain.
 
@@ -1293,9 +1140,7 @@ def execute_initial_query_strategy_convergence(
     """
 
     if not isinstance(initial_query_allocation_policy, InitialQueryAllocationPolicy):
-        raise QueryStrategyConvergenceError(
-            "initial strategy convergence requires the code-owned policy"
-        )
+        raise QueryStrategyConvergenceError("initial strategy convergence requires the code-owned policy")
     route_facts = {
         "intent": router_query_preparation_contract.intent,
         "report_type": router_query_preparation_contract.report_type,
@@ -1318,9 +1163,7 @@ def execute_initial_query_strategy_convergence(
             "current_date": current_date,
             "include_domains": list(include_domains),
             "exclude_domains": list(exclude_domains),
-            "initial_query_allocation_policy_version": (
-                initial_query_allocation_policy.policy_version
-            ),
+            "initial_query_allocation_policy_version": (initial_query_allocation_policy.policy_version),
         },
         route_context_ref={
             "route_id": route_projection.get("route_id"),
@@ -1343,9 +1186,7 @@ def execute_initial_query_strategy_convergence(
         inputs={
             "route_id": route_projection.get("route_id"),
             "run_contract_id": run_contract_projection.get("contract_id"),
-            "allocation_policy_version": (
-                initial_query_allocation_policy.policy_version
-            ),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
         },
     )
     planner_result = execute_search_planner_action(
@@ -1362,24 +1203,15 @@ def execute_initial_query_strategy_convergence(
         )
     )
 
-    qmr = dict(
-        run_kernel.state.search_planner_proposal_state.get(
-            "question_meaning_record"
-        )
-        or {}
-    )
+    qmr = dict(run_kernel.state.search_planner_proposal_state.get("question_meaning_record") or {})
     if not qmr:
-        raise QueryStrategyConvergenceError(
-            "SearchPlanner reduction did not produce a QuestionMeaningRecord"
-        )
+        raise QueryStrategyConvergenceError("SearchPlanner reduction did not produce a QuestionMeaningRecord")
     acceptance_action = run_kernel.authorize_initial_answer_contract_acceptance(
         parent_question_meaning_record_id=str(qmr.get("record_id") or ""),
         parent_proposal_digest=str(qmr.get("record_digest") or ""),
         inputs={
             "planner_action_id": planner_action.action_id,
-            "allocation_policy_version": (
-                initial_query_allocation_policy.policy_version
-            ),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
         },
     )
     run_kernel.reduce(
@@ -1390,10 +1222,7 @@ def execute_initial_query_strategy_convergence(
             payload={"question_meaning_record": qmr},
         )
     )
-    accepted_contract = (
-        run_kernel.state.current_answer_contract
-        or run_kernel.state.initial_answer_contract
-    )
+    accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     base_candidate_strategies = initial_query_strategies_from_planner_state(
         planner_state=run_kernel.state.search_planner_proposal_state,
         accepted_contract=accepted_contract,
@@ -1406,10 +1235,7 @@ def execute_initial_query_strategy_convergence(
         scout_adapter=scout_adapter,
         revision_adapter=revision_adapter,
     )
-    accepted_contract = (
-        run_kernel.state.current_answer_contract
-        or run_kernel.state.initial_answer_contract
-    )
+    accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     candidate_strategies = _strategies_with_authorized_revisions(
         base_strategies=base_candidate_strategies,
         revision_projections=revision_projections,
@@ -1419,24 +1245,14 @@ def execute_initial_query_strategy_convergence(
     search_work_action = run_kernel.authorize_search_work_plan_construction(
         reason="contract_bound_search_work_plan_before_query_plan",
         inputs={
-            "planner_proposal_digest": (
-                run_kernel.state.search_planner_proposal_state.get(
-                    "proposal_digest"
-                )
-            ),
-            "accepted_contract_digest": accepted_contract.get(
-                "accepted_contract_digest"
-            ),
-            "allocation_policy_version": (
-                initial_query_allocation_policy.policy_version
-            ),
+            "planner_proposal_digest": (run_kernel.state.search_planner_proposal_state.get("proposal_digest")),
+            "accepted_contract_digest": accepted_contract.get("accepted_contract_digest"),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
         },
     )
     search_work_observation = observe_contract_bound_search_work_plan_construction(
         search_work_action,
-        construction_id=(
-            f"search-work-plan:{run_kernel.state.request_id}:initial"
-        ),
+        construction_id=(f"search-work-plan:{run_kernel.state.request_id}:initial"),
         requested_mode=strategy,
         planner_state=run_kernel.state.search_planner_proposal_state,
         initial_contract=run_kernel.state.initial_answer_contract,
@@ -1454,12 +1270,8 @@ def execute_initial_query_strategy_convergence(
             "initial_contract_acceptance_action_id": acceptance_action.action_id,
             "search_work_action_id": search_work_action.action_id,
             "candidate_count": len(candidate_strategies),
-            "required_component_count": len(
-                accepted_contract.get("accepted_answer_component_refs") or ()
-            ),
-            "allocation_policy_version": (
-                initial_query_allocation_policy.policy_version
-            ),
+            "required_component_count": len(accepted_contract.get("accepted_answer_component_refs") or ()),
+            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
             "small_global_initial_query_cap_applied": False,
         },
     )
@@ -1509,9 +1321,7 @@ def execute_query_production_action(
     current_answer_contract: Mapping[str, Any] | None = None,
     search_work_plan: Mapping[str, Any] | None = None,
     recon_summary: Sequence[Mapping[str, Any]] = (),
-    initial_query_allocation_policy: InitialQueryAllocationPolicy = (
-        DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY
-    ),
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
     provider_diagnostics: MutableSequence[dict[str, Any]],
     waste_flags: Sequence[str] | None = None,
     run_contract_projection: Mapping[str, Any] | None = None,
@@ -1546,27 +1356,16 @@ def execute_query_production_action(
     active_waste_flags = list(waste_flags or [])
     policy = initial_query_allocation_policy
     if not isinstance(policy, InitialQueryAllocationPolicy):
-        raise QueryStrategyConvergenceError(
-            "query production requires the code-owned allocation policy"
-        )
-    strategies = [
-        dict(item)
-        for item in (candidate_strategies or ())
-        if isinstance(item, Mapping)
-    ]
+        raise QueryStrategyConvergenceError("query production requires the code-owned allocation policy")
+    strategies = [dict(item) for item in (candidate_strategies or ()) if isinstance(item, Mapping)]
     if not strategies:
         raise QueryStrategyConvergenceError(
             "SearchPlanner produced no valid initial component query strategies; "
             "legacy initial producer fallback is retired"
         )
-    candidate_queries = [
-        str(item.get("candidate_query_text") or "").strip()
-        for item in strategies
-    ]
+    candidate_queries = [str(item.get("candidate_query_text") or "").strip() for item in strategies]
     if any(not query or len(query) > 300 for query in candidate_queries):
-        raise QueryStrategyConvergenceError(
-            "SearchPlanner initial query strategies require bounded exact text"
-        )
+        raise QueryStrategyConvergenceError("SearchPlanner initial query strategies require bounded exact text")
     accepted_contract_ref = _accepted_contract_ref(
         initial_answer_contract,
         current_answer_contract,
@@ -1575,9 +1374,7 @@ def execute_query_production_action(
         search_work_plan,
         accepted_contract_ref=accepted_contract_ref,
     )
-    contract_source_requirement_hints = contract_query_hints_from_projection(
-        run_contract_projection
-    )
+    contract_source_requirement_hints = contract_query_hints_from_projection(run_contract_projection)
     run_contract_ref = {}
     if isinstance(run_contract_projection, Mapping) and run_contract_projection:
         run_contract_ref = {
@@ -1634,12 +1431,9 @@ def execute_query_production_action(
     top_chunks = int(budget["top_chunks"])
     max_iterations = int(budget["max_iterations"])
 
-    normalized_recon_summary = [
-        dict(item) for item in recon_summary if isinstance(item, Mapping)
-    ]
+    normalized_recon_summary = [dict(item) for item in recon_summary if isinstance(item, Mapping)]
     recon_fired = any(
-        str(item.get("status") or "").strip()
-        in {"completed", "revision_applied", "query_direction_revised"}
+        str(item.get("status") or "").strip() in {"completed", "revision_applied", "query_direction_revised"}
         for item in normalized_recon_summary
     )
     confidence_values = [
@@ -1649,10 +1443,7 @@ def execute_query_production_action(
     ]
     recon_confidence = confidence_values[-1] if confidence_values else None
     canonical_subject_resolved = None
-    recon_seconds = sum(
-        max(0.0, float(item.get("duration_seconds") or 0.0))
-        for item in normalized_recon_summary
-    )
+    recon_seconds = sum(max(0.0, float(item.get("duration_seconds") or 0.0)) for item in normalized_recon_summary)
 
     entity_count_before = len(entities_list)
     canonical_inserted = False
@@ -1777,22 +1568,16 @@ def _query_plan_projection(
         "current_query_count": len(list(current_queries)),
         "query_order_owner": "QueryPlan",
         "initial_query_admission": initial_query_admission.to_dict(),
-        "initial_query_allocation_policy": (
-            initial_query_allocation_policy.to_dict()
-        ),
+        "initial_query_allocation_policy": (initial_query_allocation_policy.to_dict()),
         "small_global_initial_query_cap_applied": False,
         "required_component_globally_truncated": False,
         "post_result_followup_dispatched": False,
         "contract_source_requirement_hints": [
-            dict(item)
-            for item in (contract_source_requirement_hints or ())
-            if isinstance(item, Mapping)
+            dict(item) for item in (contract_source_requirement_hints or ()) if isinstance(item, Mapping)
         ],
     }
     if provider_job_execution_handoff:
-        projection["provider_job_execution_handoff"] = dict(
-            provider_job_execution_handoff
-        )
+        projection["provider_job_execution_handoff"] = dict(provider_job_execution_handoff)
         projection["provider_job_execution_handoff_present"] = True
     return projection
 
@@ -1810,9 +1595,7 @@ def execute_query_plan_admission_action(
     max_queries: int,
     route_runtime_posture: Mapping[str, Any],
     search_work_projection: Mapping[str, Any] | None = None,
-    initial_query_allocation_policy: InitialQueryAllocationPolicy = (
-        DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY
-    ),
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
     search_judgment_projection: Mapping[str, Any] | None = None,
 ) -> QueryPlanAdmissionResult:
     """Admit component-bound planner strategies into the first DISCOVER wave."""
@@ -1826,21 +1609,11 @@ def execute_query_plan_admission_action(
     if candidate_source not in {"search_planner", "search_planner_revision"}:
         raise ValueError(f"unsupported query admission candidate source: {candidate_source}")
     if search_judgment_projection:
-        raise ValueError(
-            "initial QueryPlan admission cannot dispatch post-result "
-            "SearchJudgment follow-up"
-        )
-    strategies = [
-        dict(item) for item in candidate_strategies if isinstance(item, Mapping)
-    ]
-    strategy_queries = [
-        str(item.get("candidate_query_text") or "").strip()
-        for item in strategies
-    ]
+        raise ValueError("initial QueryPlan admission cannot dispatch post-result SearchJudgment follow-up")
+    strategies = [dict(item) for item in candidate_strategies if isinstance(item, Mapping)]
+    strategy_queries = [str(item.get("candidate_query_text") or "").strip() for item in strategies]
     if strategy_queries != [str(query) for query in candidate_queries]:
-        raise ValueError(
-            "QueryPlan admission requires exact SearchPlanner strategy/query order"
-        )
+        raise ValueError("QueryPlan admission requires exact SearchPlanner strategy/query order")
     if not isinstance(initial_query_allocation_policy, InitialQueryAllocationPolicy):
         raise ValueError("QueryPlan admission requires the code-owned policy")
     allocation = query_authority.admit_initial_component_strategies(
@@ -1855,15 +1628,12 @@ def execute_query_plan_admission_action(
     queries = list(current_queries)
     immediate_set = set(current_queries)
     immediate_strategies = [
-        item
-        for item in strategies
-        if str(item.get("candidate_query_text") or "").strip() in immediate_set
+        item for item in strategies if str(item.get("candidate_query_text") or "").strip() in immediate_set
     ]
     recency_queries = [
         str(item.get("candidate_query_text") or "").strip()
         for item in immediate_strategies
-        if str(item.get("requested_role") or "").strip()
-        == QueryPlanRole.RECENCY.value
+        if str(item.get("requested_role") or "").strip() == QueryPlanRole.RECENCY.value
     ]
     recency_merge_used = bool(recency_queries)
     recency_merge_query = recency_queries[0] if len(recency_queries) == 1 else None
