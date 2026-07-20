@@ -646,18 +646,33 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
 
     roadmap_folded = roadmap.casefold()
     handoff_index = roadmap_folded.index("## completed build: discover-result-candidate-handoff-convergence-01")
+    query_index = roadmap_folded.index(
+        "## completed build: searchos-query-strategy-and-recon-convergence-01"
+    )
+    read_index = roadmap_folded.index(
+        "## completed build: searchos-read-source-and-custody-01"
+    )
     active_index = roadmap_folded.index("## active searchos mvp sequence")
-    query_index = roadmap_folded.index("searchos-query-strategy-and-recon-convergence-01")
-    read_index = roadmap_folded.index("searchos-read-source-and-custody-01")
-    navigation_index = roadmap_folded.index("searchos-iterative-navigation-and-retrieval-judgment-01")
-    recovery_index = roadmap_folded.index("searchos-gap-recovery-and-stop-convergence-01")
-    assert handoff_index < query_index < active_index < read_index < navigation_index < recovery_index
+    navigation_index = roadmap_folded.index(
+        "searchos-iterative-navigation-and-retrieval-judgment-01",
+        active_index,
+    )
+    recovery_index = roadmap_folded.index(
+        "searchos-gap-recovery-and-stop-convergence-01",
+        navigation_index,
+    )
+    assert handoff_index < query_index < read_index < active_index < navigation_index < recovery_index
     assert "Query strategy is now installed" in roadmap
     assert "Map may be inserted later as an optional navigation plugin" in roadmap
-    assert "SearchOS post-result SearchJudgment, READ, navigation" in current
+    assert "Exact-URL READ consumption and candidate-content custody are installed" in current
+    assert (
+        "iterative retrieval judgment, post-result secondary authorization, navigation, "
+        "recovery, and stopping remain later SearchOS work"
+        in current
+    )
 
 
-def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> None:
+def test_searchos_query_and_read_are_installed_and_navigation_is_active_next() -> None:
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
     brief = _collapsed(QUERY_CONVERGENCE_BRIEF)
@@ -715,7 +730,11 @@ def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> No
         assert phrase in brief
 
     assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
-    assert "active next checkpoint is `SEARCHOS-READ-SOURCE-AND-CUSTODY-01`" in roadmap
+    assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
+    assert (
+        "active next checkpoint is `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`"
+        in roadmap
+    )
     assert "Later SearchJudgment must inspect the first result set per component" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
