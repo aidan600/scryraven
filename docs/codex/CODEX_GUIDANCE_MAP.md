@@ -74,6 +74,7 @@ completed-phase chronology into phase briefs.
 | Concern | Read first |
 | --- | --- |
 | SearchOS search, source-acquisition, navigation, and recovery architecture (`canonical:searchos-operating-model`) | [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) |
+| SearchOS iterative retrieval judgment, first-wave SearchJudgment cutover, follow-up DISCOVER result admission, iteration candidate-set continuity, narrow READ migration, evaluator/expander retirement, AG-92B isolation or convergence, bounded breadcrumb navigation planning, or provisional SearchOS policy profiles | [SearchOS Iterative Judgment Direction](../architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md) |
 | D-prime role and authority (`canonical:dprime-role-contract`) | [D-prime Architecture](../architecture/DPRIME_ARCHITECTURE.md) |
 | Integrated query-to-answer semantic loop (`canonical:run-contract-semantic-loop`) | [Run-Contract Semantic Loop](../architecture/RUN_CONTRACT_SEMANTIC_LOOP.md) |
 | Component DAG, scheduling, leases, and concurrency (`canonical:component-dag-scheduling-concurrency`) | [RunKernel Component DAG, Scheduling, And Concurrency](../architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) |

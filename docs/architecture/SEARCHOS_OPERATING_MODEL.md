@@ -114,6 +114,12 @@ the needed information is source insufficiency, not a transport failure: return
 to search, another source, or bounded navigation rather than extracting the
 same page repeatedly.
 
+[SearchOS Iterative Judgment Direction](SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
+records the approved iterative-judgment convergence direction for the active
+roadmap checkpoint beneath this durable target subsystem doctrine. It does not
+replace current code, tests, or [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
+as installed truth, and it does not authorize BUILD.
+
 ## Query And Primary-Source Strategy
 
 Query design is part of the SearchOS MVP. It should support:

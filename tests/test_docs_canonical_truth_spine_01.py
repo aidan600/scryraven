@@ -33,6 +33,7 @@ CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 SEARCHOS = ARCH / "SEARCHOS_OPERATING_MODEL.md"
+SEARCHOS_ITERATIVE_DIRECTION = ARCH / "SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
 ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
@@ -239,6 +240,49 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
     assert "A narrow search task does not require all three supporting documents" in _collapsed(GUIDANCE)
     for target in _links(SEARCHOS):
         assert target.is_file(), target
+
+
+def test_searchos_iterative_direction_is_routed_linked_and_build_closed() -> None:
+    guidance = _collapsed(GUIDANCE)
+    operating_model = _collapsed(SEARCHOS)
+    roadmap = _collapsed(ROADMAP)
+    direction = _collapsed(SEARCHOS_ITERATIVE_DIRECTION)
+
+    for phrase in (
+        "SearchOS iterative retrieval judgment",
+        "first-wave SearchJudgment cutover",
+        "follow-up DISCOVER result admission",
+        "iteration candidate-set continuity",
+        "narrow READ migration",
+        "evaluator/expander retirement",
+        "AG-92B isolation or convergence",
+        "bounded breadcrumb navigation planning",
+        "provisional SearchOS policy profiles",
+    ):
+        assert phrase in guidance
+    assert SEARCHOS_ITERATIVE_DIRECTION.name in guidance
+
+    assert SEARCHOS_ITERATIVE_DIRECTION.name in operating_model
+    assert "beneath this durable target subsystem doctrine" in operating_model
+    assert "does not replace current code, tests" in operating_model
+    assert "as installed truth" in operating_model
+    assert "does not authorize BUILD" in operating_model
+
+    assert SEARCHOS_ITERATIVE_DIRECTION.name in roadmap
+    assert "architecture-only first-wave and iterative-judgment convergence" in roadmap
+    assert "internal Slice A (canonical iterative judgment cutover)" in roadmap
+    assert "internal Slice B (bounded breadcrumb navigation)" in roadmap
+    assert "Neither slice is installed or authorized for BUILD" in roadmap
+    assert "SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01" in roadmap
+
+    assert "Status: approved architecture direction; BUILD not yet authorized" in direction
+    assert "Does-not-authorize: BUILD" in direction
+    assert "Cursor Build: NOT AUTHORIZED" in direction
+    assert "Codex BUILD brief: NOT AUTHORIZED" in direction
+
+    for path in (GUIDANCE, SEARCHOS, ROADMAP, SEARCHOS_ITERATIVE_DIRECTION):
+        for target in _links(path):
+            assert target.is_file(), (path, target)
 
 
 def test_active_technical_debt_register_is_unique_routed_and_nonactivating() -> None:
