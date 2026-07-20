@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 4c8c544429d297ef51246a616b74fcbe985d4538
+Verified-against-runtime: 74fb0d8877fcf25d4213c3f9a5a85027ed76ee49
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -322,7 +322,7 @@ remain deferred. No live call was made.
 
 ## Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01
 
-Runtime/test commit `4c8c544429d297ef51246a616b74fcbe985d4538`
+Runtime/test commit `74fb0d8877fcf25d4213c3f9a5a85027ed76ee49`
 
 [SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01](SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md)
 installs one ordinary initial planning chain from validated passive SearchPlanner
@@ -331,6 +331,12 @@ non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan,
 QueryPlan admission, and first DISCOVER. SearchPlanner proposals remain passive;
 QueryPlan remains the sole exact executable-query authority; `core.routing`
 remains the sole provider selector.
+
+Ordinary composition now uses the selected fast-model SearchPlanner. The model
+owns warranted one-to-five semantic decomposition and provider-neutral strategy
+proposal; deterministic machinery validates and binds without manufacturing a
+fallback plan. Typed planner, Scout, and revision `RunDeps` seams are installed,
+while Scout/revision remain uncomposed by default.
 
 The versioned code-owned policy gives every accepted required component one
 immediate primary by default, permits up to two initial candidates per component

@@ -71,7 +71,7 @@ PROVIDER_ROUTING_RUNTIME_SHA = "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pra
 ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
-QUERY_CONVERGENCE_RUNTIME_SHA = "4c8c544429d297ef51246a616b74fcbe985d4538"  # pragma: allowlist secret
+QUERY_CONVERGENCE_RUNTIME_SHA = "74fb0d8877fcf25d4213c3f9a5a85027ed76ee49"  # pragma: allowlist secret
 CURRENT_STATE_RUNTIME_SHA = QUERY_CONVERGENCE_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
@@ -663,6 +663,12 @@ def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> No
     for phrase in (
         "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
         "SearchPlanner proposals remain passive",
+        "Ordinary initial semantic planning uses the selected fast-model SearchPlanner",
+        "the model owns question interpretation, warranted one-to-five component decomposition",
+        "DeterministicSearchPlannerAdapter` is an explicit validation-only fixture",
+        "The typed `search_planner_adapter`, `scout_disambiguation_adapter`, and `search_planner_revision_adapter` `RunDeps` seams are installed",
+        "Invalid JSON, schema, component/query structure, selected-model configuration, or model-call failure stops before proposal acceptance",
+        "Future large-document support must enter this model boundary through bounded safe supplied-context references or summaries",
         "RunKernel initial AnswerContract acceptance",
         "SearchWorkPlan",
         "QueryPlan remains the sole exact executable-query authority",
@@ -680,6 +686,13 @@ def test_searchos_query_convergence_is_installed_and_read_is_active_next() -> No
 
     for phrase in (
         "Required component count: 5",
+        "Exactly one bounded initial planner model call is made",
+        "Scout/revision remain uncomposed by default",
+        "semantic interpretation of its hints and revision of the plan must be model-driven",
+        "not semantic quality on arbitrary real-world requests",
+        "Messy narrated one-intent request: 1 model-proposed and accepted component",
+        "Invalid/unavailable model fixtures: 0 QueryPlan admissions; 0 search dispatches; 0 deterministic or legacy fallbacks",
+        "Injected typed path: response-only planner -> Scout direction -> revision -> QueryPlan -> first offline search",
         "Primary queries admitted: 5",
         "later SearchJudgment",
         "No global `N + 5` research cap",

@@ -4,7 +4,7 @@ Status: completed Build
 Mode: BUILD
 Proof class: offline_product_path_proof
 Starting-runtime: 607c381f71f0a6606afd7d856e034bf00d402b42
-Runtime/test commit: 4c8c544429d297ef51246a616b74fcbe985d4538
+Runtime/test commit: 74fb0d8877fcf25d4213c3f9a5a85027ed76ee49
 Does-not-authorize: live calls, post-result query dispatch, permanent mode
 budgets, provider-policy changes, READ, navigation, recovery redesign, evidence
 or citation changes, Author changes, or source-obligation semantic changes
@@ -15,8 +15,11 @@ The ordinary initial `run_pipeline()` path now consumes one converged,
 provider-neutral planning chain:
 
 ```text
-question
--> validated passive SearchPlanner QuestionMeaningRecord proposal
+human utterance plus bounded safe/supplied context
+-> selected fast-model SearchPlanner
+-> structured semantic and provider-neutral query-strategy proposal
+-> deterministic schema, safety, bounds, and lineage validation
+-> passive QuestionMeaningRecord proposal
 -> RunKernel initial AnswerContract acceptance
 -> accepted component and source-obligation refs
 -> optional bounded non-evidence Scout report
@@ -34,13 +37,20 @@ sole exact executable-query authority. Malformed required planner/revision
 output and unresolved required truthful-targeting ambiguity fail before query
 production and create no search dispatch.
 
+Ordinary initial semantic planning uses the selected fast-model SearchPlanner.
+The model owns question interpretation, warranted one-to-five component
+decomposition, ambiguity assessment, source-need proposal, and provider-neutral
+query-strategy proposal. Five components is a ceiling, not a target.
+Deterministic machinery validates, binds, admits, and executes the proposal but
+does not manufacture semantic planning.
+
 No live provider, model, search, recon, fetch/read, or retrieval call was made.
 
 ## Owner Map And Dispositions
 
 | Concern | Current owner | Disposition |
 | --- | --- | --- |
-| passive QuestionMeaningRecord and query-strategy proposal | `core.search_planner_runtime.execute_search_planner_action` plus deterministic validation and `normalize_provider_neutral_query_strategy_candidate` | `ADAPT` |
+| model-owned passive QuestionMeaningRecord and query-strategy proposal | ordinary `core.search_planner_model_adapter.SearchPlannerModelAdapter`, then `core.search_planner_runtime.execute_search_planner_action` plus deterministic validation | `UPGRADE` |
 | initial AnswerContract acceptance | `RunKernel.authorize_initial_answer_contract_acceptance` and `RunKernel.reduce(INITIAL_ANSWER_CONTRACT_ACCEPTED)` | `REUSE` |
 | current AnswerContract state | `RunKernel.state.current_answer_contract` with `initial_answer_contract` as the accepted initial root | `REUSE` |
 | accepted component/source-obligation refs | accepted AnswerContract projections consumed by `initial_query_strategies_from_planner_state` | `REUSE` |
@@ -69,6 +79,26 @@ repository-visible but cannot be reached from this ordinary initial callsite.
 
 ## Installed Now
 
+- With no explicit planner adapter, ordinary `run_pipeline()` constructs the
+  existing `SearchPlannerModelAdapter` with `deps.ask_model`,
+  `deps.clean_json_response`, the selected fast provider/model, and the selected
+  reasoning posture. Exactly one bounded initial planner model call is made.
+- The model owns the intended question, the distinction between request and
+  context, one-to-five warranted components, material ambiguities, source needs,
+  supported component dependencies, and provider-neutral query candidates.
+- Deterministic validation enforces schema, identifiers, the five-component
+  ceiling, accepted references, dependency/source lineage, safe authority
+  closure, and query bounds/nonredundancy. It does not replace the model's
+  semantic topology with deterministic query-shape output.
+- `DeterministicSearchPlannerAdapter` is an explicitly injected
+  validation-only/offline fixture. It is neither the ordinary default nor a
+  fallback after model/configuration/JSON/schema/strategy failure.
+- `RunDeps` declares typed optional `search_planner_adapter`,
+  `scout_disambiguation_adapter`, and `search_planner_revision_adapter` seams.
+  Scout/revision remain uncomposed by default.
+- Invalid or unavailable model planning fails closed before accepted planner
+  state, initial AnswerContract acceptance, SearchWorkPlan activation,
+  QueryPlan admission, or first search dispatch.
 - Deterministic SearchPlanner proposal validation binds every candidate strategy
   to an accepted required component and accepted source-obligation refs.
 - One active SearchWorkPlan is built after accepted contract and revision
@@ -80,7 +110,8 @@ repository-visible but cannot be reached from this ordinary initial callsite.
   is retained with its justification for later SearchJudgment.
 - Exact and materially equivalent candidates are rejected deterministically;
   bounded contributor lineage is retained on the surviving QueryPlan item.
-- Planner-supplied provider identities are sanitized and cannot affect routing.
+- Model-planner provider/model selection claims are rejected. Explicit
+  response-only compatibility proposals cannot affect unchanged routing.
 - Optional recon has an explicit unavailable posture. Required identity or
   jurisdiction ambiguity needed for truthful targeting fails closed.
 - SearchPlannerRevision classifies query-direction-only, contractual-pending,
@@ -131,6 +162,12 @@ Recon-affected components/dimensions: 1 component / 1 identity dimension in the 
 Recon candidates admitted: 1 in the injected-recon case
 Proof no required component was globally truncated: five accepted required components produced five ordered first-wave QueryPlan primaries
 Proof no post-result follow-up was implemented: prepared secondary remains outside current_queries and names SearchJudgment as later authorizer
+Ordinary default planner calls: exactly 1 selected-fast-model SearchPlanner call
+Messy narrated one-intent request: 1 model-proposed and accepted component; 1 model-proposed first query dispatched
+Bounded supplied-context fixture: reference and summary reached the planner; 0 evidence/custody/source-satisfaction/citation authority
+Model multipart ceiling fixture: 5 model-proposed components; 5 accepted dependency-preserving refs; 5 ordered QueryPlan primaries
+Invalid/unavailable model fixtures: 0 QueryPlan admissions; 0 search dispatches; 0 deterministic or legacy fallbacks
+Injected typed path: response-only planner -> Scout direction -> revision -> QueryPlan -> first offline search
 ```
 
 ## SearchWorkPlan And QueryPlan Split
@@ -170,6 +207,16 @@ it and the existing application owner creates the current derived contract.
 Unsupported, stale, or multiple contractual candidates do not affect planning
 or dispatch.
 
+Whenever ordinary Scout reconnaissance is activated, semantic interpretation
+of its hints and revision of the plan must be model-driven. Deterministic code
+may validate and admit the revision but may not semantically rewrite the plan.
+
+The planner input boundary preserves the complete normalized user utterance up
+to 12,000 characters plus bounded safe context, route/run references, and
+future supplied-context/document references or summaries. Those context facts
+remain planning-only and are not independently parsed into components or
+promoted to evidence. This phase does not implement document ingestion.
+
 ## Preserved Unchanged
 
 - `core.routing` remains the sole provider selector; capability and provider
@@ -201,21 +248,23 @@ or dispatch.
 
 ## Closed Surfaces
 
-Provider routing/availability and adapters; RunDeps and RunKernel schema;
+Provider routing/availability and provider adapters;
 source-obligation schema/kinds/meaning/satisfaction/coverage/citation policy;
 READ/navigation/fallback; recovery/continuation/supplemental/remediation;
 EvidenceLedger/citations/Analyst/Author/final authority; permanent mode budgets;
-live calls, secrets, raw prompts/provider payloads, private traces, caches, and
-artifacts all remained closed.
+live validation and phase-time external calls; secrets, raw prompts/provider
+payloads, private traces, caches, and artifacts all remained closed.
 
 ## Nonproofs
 
-This offline product-path proof does not prove planner or query quality on
-arbitrary requests, live provider availability, comparative provider quality,
-result sufficiency, answer-quality improvement, post-result judgment, READ or
-custody, navigation, recovery/stopping, source-obligation satisfaction,
-evidence/citation correctness, Author behavior, broad product correctness,
-latency, cost, or production stability.
+This offline product-path proof proves model ownership and context plumbing,
+not semantic quality on arbitrary real-world requests. That quality remains a
+later licensed calibration obligation. It also does not prove live provider
+availability, comparative provider quality, result sufficiency, answer-quality
+improvement, post-result judgment, READ or custody, navigation,
+recovery/stopping, source-obligation satisfaction, evidence/citation
+correctness, Author behavior, broad product correctness, latency, cost, or
+production stability.
 
 ## READ-Phase Carry-Forward Requirements
 

@@ -1,3 +1,16 @@
+"""Offline product-path proof for model-owned initial semantic planning.
+
+Test path: tests/test_searchos_model_owned_semantic_planning_01.py
+Proof class: offline_product_path_proof.
+Validation bucket: phase_focus.
+Surface guarded: selected-fast-model planning, typed planner/Scout/revision seams,
+bounded supplied context, accepted component lineage, and first QueryPlan dispatch.
+Runtime/product path guarded: real ``run_pipeline()`` plus authorized convergence.
+Expected cost: offline fakes only, under five seconds.
+Promotion posture: remain phase_focus.
+Why not fast_pr: this is detailed phase proof; existing broad sentinels remain cheaper.
+"""
+
 from __future__ import annotations
 
 import json
