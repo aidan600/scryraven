@@ -35,6 +35,21 @@ must not be treated as paths in this repository.
 Do not infer current status or next work from completed phase chronology in a
 deep contract, workflow guide, PR record, or historical document.
 
+## Active Technical-Debt Routing
+
+| Concern | Exclusive owner |
+| --- | --- |
+| Active confirmed technical debt, duplicate check, or debt-resolution disposition | [ScryRaven Active Technical-Debt Register](../TECH_DEBT_REGISTER.md) |
+
+Read the register when a phase discovers a confirmed out-of-scope defect, is
+explicitly repairing a TD item, or claims in its final bundle that debt was
+added, updated, or resolved. Do not read it for every ordinary implementation
+task. It records active debt but does not choose phase order; [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md) remains the priority and sequencing
+owner. GitHub Issues may support execution but do not replace the canonical
+register. Do not convert speculative improvements or future features into debt
+merely because they are not implemented.
+
 ## Phase Operation
 
 | Task | Canonical owner |

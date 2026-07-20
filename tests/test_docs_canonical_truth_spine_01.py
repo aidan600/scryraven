@@ -20,8 +20,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 ARCH = DOCS / "architecture"
 GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
+PROOF_GATE = DOCS / "codex" / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
+TECH_DEBT = DOCS / "TECH_DEBT_REGISTER.md"
 DISCOVER_HANDOFF_BRIEF = DOCS / "roadmap" / "DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md"
 EXACT_URL_BRIEF = DOCS / "roadmap" / "EXACT_URL_ACQUISITION_AND_FINAL_CUSTODY_CONVERGENCE_01.md"
 CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
@@ -231,6 +233,41 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
     assert "A narrow search task does not require all three supporting documents" in _collapsed(GUIDANCE)
     for target in _links(SEARCHOS):
         assert target.is_file(), target
+
+
+def test_active_technical_debt_register_is_unique_routed_and_nonactivating() -> None:
+    assert TECH_DEBT.is_file()
+
+    markdown = tuple(DOCS.rglob("*.md"))
+    normalized = _collapsed(TECH_DEBT)
+    authority = "Authority: canonical:active-technical-debt-register"
+    assert [path for path in markdown if authority in _read(path)] == [TECH_DEBT]
+
+    for phrase in (
+        "Status: current",
+        "Default-read: no",
+        "Next-ID: TD-0003",
+        "canonical active-only inventory",
+        "sole owner of priority and phase order",
+        "IDs are monotonic and never reused",
+        "TD-0001 — Provider-routing fixture availability drift",
+        "TD-0002 — Analyst Workbench injected-runner availability drift",
+        "Does-not-authorize: implementation, priority, roadmap sequencing, live calls, provider changes, or scope expansion",
+    ):
+        assert phrase in normalized
+
+    guidance = _read(GUIDANCE)
+    assert TECH_DEBT.name in guidance
+    assert "Active confirmed technical debt, duplicate check, or debt-resolution disposition" in guidance
+    default_read = guidance.split("## Smallest Default Read Path", maxsplit=1)[1].split(
+        "## Temporal Owners", maxsplit=1
+    )[0]
+    assert TECH_DEBT.name not in default_read
+    assert "Do not read it for every ordinary implementation task" in _collapsed(GUIDANCE)
+
+    proof_gate = _read(PROOF_GATE)
+    assert "Technical-debt register disposition:" in proof_gate
+    assert "Discovery does not authorize repair" in proof_gate
 
 
 def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None:
