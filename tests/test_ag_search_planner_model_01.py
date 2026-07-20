@@ -101,7 +101,7 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
         "source_obligation_candidates": [
             {
                 "candidate_id": "obligation:model-official-current",
-                "obligation_kind": "official_current_source",
+                "obligation_kind": "official_current",
                 "component_candidate_ids": ["component:model-official-threshold"],
                 "strictness": "required",
             }
@@ -480,6 +480,33 @@ def test_model_output_executing_component_requirement_fails_closed() -> None:
         _produce(kernel, _adapter(fake))
 
     assert kernel.state.search_planner_proposal_state == {}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("obligation_kind", "invented_model_obligation"),
+        ("strictness", "model_decides_if_needed"),
+    ),
+)
+def test_model_output_with_invented_source_obligation_enum_fails_before_observation(
+    field: str,
+    value: str,
+) -> None:
+    kernel = _kernel()
+    invalid = deepcopy(_planner_output())
+    invalid["source_obligation_candidates"][0][field] = value
+    fake = FakeAskModel(json.dumps(invalid))
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match=f"unsupported value for {field}",
+    ):
+        _produce(kernel, _adapter(fake))
+
+    assert len(fake.calls) == 1
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
 
 
 def test_model_query_strategy_cannot_select_provider_or_model() -> None:

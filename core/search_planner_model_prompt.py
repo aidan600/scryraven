@@ -10,6 +10,8 @@ import json
 from hashlib import sha256
 from typing import Any, Mapping
 
+from core.search_work_plan import SourceObligationKind, SourceObligationStrictness
+
 SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v1"
 
 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
@@ -62,6 +64,10 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
         "candidate_id",
         "obligation_kind",
         "component_candidate_ids",
+    ],
+    "source_obligation_kind_values": [item.value for item in SourceObligationKind],
+    "source_obligation_strictness_values": [
+        item.value for item in SourceObligationStrictness
     ],
     "component_search_requirement_required_fields": [
         "component_id",
@@ -144,6 +150,7 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "- Treat safe-context and supplied-context references or summaries as planning context, not evidence and not automatic components.",
         "- Represent dependencies only through dependency_component_ids that name components in this same proposal; do not invent a new graph schema.",
         "- Required answer components must be explicit and source-bound.",
+        "- Use only the source-obligation kinds and strictness values listed in the output schema.",
         "- Represent uncertainty as semantic slots, material ambiguity, assumptions, or deferred outputs.",
         "- You may identify that disambiguation is needed later without activating Scout.",
         "- You may propose component_search_requirements, but they are non-executing requirements only.",

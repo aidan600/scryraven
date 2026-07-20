@@ -22,6 +22,7 @@ from core.search_planner_runtime import (
     SEARCH_PLANNER_MAX_ANSWER_COMPONENTS,
     SearchPlannerRuntimeError,
 )
+from core.search_work_plan import SourceObligationKind, SourceObligationStrictness
 
 SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION = "search_planner_model_adapter_ag_search_planner_model_01_v1"
 
@@ -84,6 +85,10 @@ _QUERY_ROLES = frozenset(
     }
 )
 _RECON_POSTURES = frozenset({"not_needed", "optional", "required"})
+_SOURCE_OBLIGATION_KINDS = frozenset(item.value for item in SourceObligationKind)
+_SOURCE_OBLIGATION_STRICTNESSES = frozenset(
+    item.value for item in SourceObligationStrictness
+)
 _FORBIDDEN_QUERY_AUTHORITY_KEYS = frozenset(
     {
         "provider",
@@ -504,13 +509,22 @@ def _source_obligation_candidates(value: Any) -> list[dict[str, Any]]:
         if candidate_id in seen:
             raise SearchPlannerModelAdapterError(f"duplicate source obligation candidate id: {candidate_id}")
         seen.add(candidate_id)
+        strictness = _clean_text(mapping.get("strictness"))
+        if strictness is not None and strictness not in _SOURCE_OBLIGATION_STRICTNESSES:
+            raise SearchPlannerModelAdapterError(
+                f"unsupported value for strictness: {strictness}"
+            )
         candidates.append(
             _without_empty(
                 {
                     "candidate_id": candidate_id,
-                    "obligation_kind": _required_text(mapping, "obligation_kind"),
+                    "obligation_kind": _required_enum_text(
+                        mapping,
+                        "obligation_kind",
+                        allowed=_SOURCE_OBLIGATION_KINDS,
+                    ),
                     "component_candidate_ids": _required_text_list(mapping, "component_candidate_ids"),
-                    "strictness": _clean_text(mapping.get("strictness")),
+                    "strictness": strictness,
                     "metadata": _safe_metadata(mapping.get("metadata")),
                 }
             )
