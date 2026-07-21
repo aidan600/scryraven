@@ -20,6 +20,7 @@ from core.cost_accounting import CostAccumulator
 from core.protocols import NullStatusWriter
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.run_config import RunDeps, compose_component_gap_recovery_deps
+from core.run_kernel import RunKernel
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -62,18 +63,8 @@ _RETIRED_FORWARD_RECOVERY_TESTS = {
     "test_ag_bal_harden_01_poisoned_adapter_authority_is_neutral_before_rebuild",
     "test_ag_bal_harden_01_poisoned_adapter_authority_cannot_promote_failed_coverage",
     "test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_observation",
-    "test_ag_bal_01_ineligible_modes_do_not_invoke_or_record_recovery",
-    "test_ag_bal_01_recovery_stops_when_final_answer_packet_already_present",
-    "test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter",
-    "test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency",
-    "test_ag_bal_01_multiple_component_gaps_block_before_adapter",
-    "test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter",
-    "test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter",
-    "test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter",
-    "test_ag_bal_01_generated_query_metadata_blocks_before_adapter",
     "test_initial_and_recovered_material_use_one_shared_typed_owner",
     "test_incomplete_post_recovery_shared_material_fails_closed_before_fap_or_author",
-    "test_cycle_budget_exhaustion_blocks_before_another_adapter_invocation",
 }
 
 
@@ -344,6 +335,96 @@ def _remove_final_answer_packet_guard_state(captured: dict[str, Any]) -> None:
         state.final_answer_packet_projection = {}
 
 
+def _retained_recovery_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    final_answer_packet: bool = False,
+    prior_history: list[dict[str, Any]] | None = None,
+    gap_stop_reason: str | None = None,
+) -> dict[str, Any]:
+    contract_digest = "a" * 64
+    component_digest = "b" * 64
+    gap = {
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": contract_digest,
+        "answer_component_id": "component-1",
+        "component_digest": component_digest,
+        "semantic_gap_code": "missing_required_component_coverage",
+        "requirement_kind": "semantic_component_coverage",
+    }
+    kernel = RunKernel.start(
+        run_id="retained-recovery-run",
+        request_id="retained-recovery-request",
+    )
+    kernel.state.initial_answer_contract = {
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": contract_digest,
+        "accepted_answer_component_refs": [
+            {
+                "component_id": "component-1",
+                "component_revision": "1",
+                "component_digest": component_digest,
+                "requirement_posture": "required",
+            }
+        ],
+    }
+    kernel.state.component_gap_recovery_history = deepcopy(prior_history or [])
+    if final_answer_packet:
+        kernel.state.final_answer_packet = {"packet_id": "already-final"}
+    if gap_stop_reason:
+        gap_result = {
+            "stop_reason": gap_stop_reason,
+            "semantic_state_facts": {"semantic_state_facts_digest": "c" * 64},
+        }
+    else:
+        gap_result = {
+            "component_gap": gap,
+            "component_ref": kernel.state.initial_answer_contract[
+                "accepted_answer_component_refs"
+            ][0],
+            "semantic_state_facts": {"semantic_state_facts_digest": "c" * 64},
+        }
+    monkeypatch.setattr(
+        recovery_runtime,
+        "_single_component_gap",
+        lambda **_kwargs: deepcopy(gap_result),
+    )
+    authority = deepcopy(gap)
+    query = "appeal deadline legal rule"
+    query_plan = {
+        QUERY_PLAN_TRACE_KEY: {
+            "admitted_query_order": [query],
+            "authorized_queries_by_iteration": {"1": [query]},
+            "search_work_consumption": {
+                "query_metadata": {
+                    query: {
+                        "version_bound_component_gap_authorized": True,
+                        "version_bound_component_gap_authority": authority,
+                        "query_text_generated": False,
+                    }
+                }
+            },
+        }
+    }
+    return {
+        "run_kernel": kernel,
+        "query_plan_trace": query_plan,
+        "search_judgment_projection": {
+            "owner": "RunKernel.RunAuthoritySearchJudgment",
+            "trace_only": False,
+            "gaps": [deepcopy(gap)],
+        },
+        "evidence_ledger_projection": {},
+        "runtime_context": {
+            "query": "retained compatibility recovery",
+            "intent": "research",
+            "complexity": "standard",
+            "search_depth": "basic",
+            "results_per_query": 4,
+        },
+    }
+
+
 def _direct_recovery_kwargs(
     captured: dict[str, Any],
     *,
@@ -352,18 +433,24 @@ def _direct_recovery_kwargs(
     offline_recovery_adapter: Any = None,
 ) -> dict[str, Any]:
     run_kernel = captured["run_kernel"]
-    runtime_scope = captured["packet_runtime_scope"]
+    runtime_scope = captured.get("packet_runtime_scope") or {}
     return {
         "run_kernel": run_kernel,
         "policy": _balanced_policy(),
         "query_plan_trace": query_plan_trace
+        or captured.get("query_plan_trace")
         or runtime_scope["query_authority"].to_trace_fragment(),
         "search_judgment_projection": search_judgment_projection
+        or captured.get("search_judgment_projection")
         or run_kernel.state.search_judgment_projection,
-        "evidence_ledger_projection": runtime_scope["evidence_ledger_projection"],
+        "evidence_ledger_projection": captured.get(
+            "evidence_ledger_projection",
+            runtime_scope.get("evidence_ledger_projection"),
+        ),
         "search_work_projection": None,
         "offline_recovery_adapter": offline_recovery_adapter,
-        "runtime_context": {
+        "runtime_context": captured.get("runtime_context")
+        or {
             "query": runtime_scope["query"],
             "intent": runtime_scope["intent"],
             "complexity": runtime_scope["complexity"],
@@ -790,46 +877,34 @@ def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_obs
 
 @pytest.mark.parametrize("mode", ("Fast", "Deep"))
 def test_ag_bal_01_ineligible_modes_do_not_invoke_or_record_recovery(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
-    coordinator_policies: list[ComponentGapRecoveryPolicy] = []
-    original_coordinator = orchestrator.execute_component_gap_recovery
-
-    def shared_coordinator(*args: Any, **kwargs: Any) -> Any:
-        coordinator_policies.append(kwargs["policy"])
-        return original_coordinator(*args, **kwargs)
-
-    monkeypatch.setattr(
-        orchestrator,
-        "execute_component_gap_recovery",
-        shared_coordinator,
-    )
-    harness, captured = _run_blocked_offline_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
-        mode=mode,
+    policy = recovery_coordinator.resolve_component_gap_recovery_mode_policy(mode)
+    adapter = _AdapterSpy()
+    result = execute_authorized_component_gap_recovery(
+        run_kernel=object(),
+        policy=policy,
+        query_plan_trace=None,
+        search_judgment_projection=None,
+        evidence_ledger_projection=None,
+        search_work_projection=None,
+        offline_recovery_adapter=adapter,
     )
 
-    assert harness.forbidden_live_calls == []
-    assert harness.author_prompts == []
-    assert len(harness.search_calls) == 1
-    state = captured["run_kernel"].state
-    assert len(coordinator_policies) == 1
-    assert coordinator_policies[0].requested_mode == mode
-    assert coordinator_policies[0].recovery_eligible is False
-    assert state.component_gap_recovery_history == []
-    assert COMPONENT_GAP_RECOVERY_TRACE_KEY not in state.projections
+    assert policy.requested_mode == mode
+    assert policy.recovery_eligible is False
+    assert result.status.value == "not_applicable"
+    assert result.stop_reason == policy.closure_reason
+    assert result.budget_record["adapter_invoked"] is False
+    assert adapter.calls == []
 
 
 def test_ag_bal_01_recovery_stops_when_final_answer_packet_already_present(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
+    captured = _retained_recovery_fixture(
+        monkeypatch,
+        final_answer_packet=True,
     )
     assert captured["run_kernel"].state.final_answer_packet
     adapter = _AdapterSpy()
@@ -843,18 +918,18 @@ def test_ag_bal_01_recovery_stops_when_final_answer_packet_already_present(
 
 
 def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
+    captured = _retained_recovery_fixture(
+        monkeypatch,
+    )
+    execute_authorized_component_gap_recovery(
+        **_direct_recovery_kwargs(captured, offline_recovery_adapter=None)
     )
     first = captured["run_kernel"].state.projections[
         COMPONENT_GAP_RECOVERY_TRACE_KEY
     ]["latest"]
     assert first["stop_reason"] == "offline_recovery_adapter_absent"
-    _remove_final_answer_packet_guard_state(captured)
 
     adapter = _AdapterSpy()
     second = execute_authorized_component_gap_recovery(
@@ -865,16 +940,16 @@ def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
 
 
 def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
+    captured = _retained_recovery_fixture(
+        monkeypatch,
+    )
+    execute_authorized_component_gap_recovery(
+        **_direct_recovery_kwargs(captured, offline_recovery_adapter=None)
     )
     run_kernel = captured["run_kernel"]
     assert len(run_kernel.state.component_gap_recovery_history) == 1
-    _remove_final_answer_packet_guard_state(captured)
     del run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
 
     adapter = _AdapterSpy()
@@ -891,15 +966,12 @@ def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
 
 
 def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
+    captured = _retained_recovery_fixture(
+        monkeypatch,
+        gap_stop_reason="multiple_component_gaps",
     )
-    _remove_final_answer_packet_guard_state(captured)
-    captured["run_kernel"].state.component_coverage_history = []
     adapter = _AdapterSpy()
 
     result = execute_authorized_component_gap_recovery(
@@ -911,17 +983,10 @@ def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
 
 
 def test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
-    )
-    _remove_final_answer_packet_guard_state(captured)
-    query_plan_trace = deepcopy(
-        captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
-    )
+    captured = _retained_recovery_fixture(monkeypatch)
+    query_plan_trace = deepcopy(captured["query_plan_trace"])
     metadata = query_plan_trace[QUERY_PLAN_TRACE_KEY]["search_work_consumption"][
         "query_metadata"
     ]["appeal deadline legal rule"]
@@ -942,17 +1007,10 @@ def test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter(
 
 
 def test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
-    )
-    _remove_final_answer_packet_guard_state(captured)
-    query_plan_trace = deepcopy(
-        captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
-    )
+    captured = _retained_recovery_fixture(monkeypatch)
+    query_plan_trace = deepcopy(captured["query_plan_trace"])
     query_plan = query_plan_trace[QUERY_PLAN_TRACE_KEY]
     metadata = query_plan["search_work_consumption"]["query_metadata"][
         "appeal deadline legal rule"
@@ -990,19 +1048,12 @@ def test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter
     ),
 )
 def test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     stale_field: str,
     expected_reason: str,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
-    )
-    _remove_final_answer_packet_guard_state(captured)
-    search_judgment_projection = deepcopy(
-        captured["run_kernel"].state.search_judgment_projection
-    )
+    captured = _retained_recovery_fixture(monkeypatch)
+    search_judgment_projection = deepcopy(captured["search_judgment_projection"])
     search_judgment_projection["gaps"][0][stale_field] = "stale-digest"
     adapter = _AdapterSpy()
 
@@ -1019,17 +1070,10 @@ def test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter(
 
 
 def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _harness, captured = _run_balanced_adapter_absent_path(
-        tmp_path=tmp_path,
-        monkeypatch=monkeypatch,
-    )
-    _remove_final_answer_packet_guard_state(captured)
-    query_plan_trace = deepcopy(
-        captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
-    )
+    captured = _retained_recovery_fixture(monkeypatch)
+    query_plan_trace = deepcopy(captured["query_plan_trace"])
     metadata = query_plan_trace[QUERY_PLAN_TRACE_KEY]["search_work_consumption"][
         "query_metadata"
     ]["appeal deadline legal rule"]
@@ -1126,26 +1170,17 @@ def test_incomplete_post_recovery_shared_material_fails_closed_before_fap_or_aut
 
 
 def test_cycle_budget_exhaustion_blocks_before_another_adapter_invocation(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    harness = _WeakRecoveryHarness(tmp_path)
-    captured = install_handoff_capture(
+    captured = _retained_recovery_fixture(
         monkeypatch,
-        capture_stages=(HANDOFF_PACKET,),
+        prior_history=[
+            {
+                "adapter_invoked": True,
+                "idempotency_key": "prior-cycle",
+            }
+        ],
     )
-    orchestrator.run_pipeline(
-        offline_balanced_run_config(
-            query=harness.query,
-            current_date="2026-06-24",
-            session_id="ag-bal-01-exhausted-session",
-            run_id="ag-bal-01-exhausted-run",
-        ),
-        harness.deps(),
-        NullStatusWriter(),
-        CostAccumulator(),
-    )
-    _remove_final_answer_packet_guard_state(captured)
     adapter = _AdapterSpy()
 
     result = execute_authorized_component_gap_recovery(
