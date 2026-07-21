@@ -1149,11 +1149,7 @@ def _build_read_custody_judgment_materials(
             raise SearchOSRuntimeError("READ custody packet candidate binding is ambiguous")
         reference = references[0]
         url = normalize_discovery_result_url(
-            reference.get("canonical_url")
-            or reference.get("final_url")
-            or reference.get("resolved_url")
-            or reference.get("provider_reported_url")
-            or reference.get("attempted_url")
+            reference.get("attempted_url") or reference.get("candidate_url")
         )
         if url != custody.get("normalized_url") or url != current_option.get(
             "normalized_url"

@@ -582,8 +582,11 @@ def test_default_planner_receives_selected_transport_and_run_accounting(
     assert planner_kwargs["use_reasoning"] is True
     assert capture["query_plan_admission_calls"] == 1
     cost_snapshot = accumulator.snapshot()
-    assert cost_snapshot["calls_by_phase"] == {"search_planner": 1}
-    assert cost_snapshot["total_calls"] == 1
+    assert cost_snapshot["calls_by_phase"] == {
+        "model": 2,
+        "search_planner": 1,
+    }
+    assert cost_snapshot["total_calls"] == 3
     assert outcome.cost_snapshot == cost_snapshot
 
 
