@@ -274,14 +274,15 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
 
 
 @pytest.mark.parametrize(
-    ("decision", "expected_failure"),
+    ("decision", "expected_failure", "expected_posture"),
     [
-        ("MODEL_FAILURE", "model_transport_failed:AssertionError"),
-        ("MALFORMED", "model_output_malformed"),
-        ("WRAPPED_JSON", "model_output_malformed"),
+        ("MODEL_FAILURE", "model_transport_failed:AssertionError", "judgment_failed"),
+        ("MALFORMED", "model_output_malformed", "judgment_failed"),
+        ("WRAPPED_JSON", "model_output_malformed", "judgment_failed"),
         (
             "INVALID_NOMINATION",
             "model_output_invalid:read_nomination_is_outside_current_candidate_window",
+            "stale_or_invalid",
         ),
     ],
 )
@@ -290,6 +291,7 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     monkeypatch: pytest.MonkeyPatch,
     decision: str,
     expected_failure: str,
+    expected_posture: str,
 ) -> None:
     _install_response_only_discovery(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
@@ -311,7 +313,7 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     slots = _searchos_slots(harness)
     assert len(harness.read_assessment_calls) == len(slots)
     assert state["budget"]["failed_logical_judgment_calls"] == len(slots)
-    assert all(slot["posture"] == "judgment_failed" for slot in slots)
+    assert all(slot["posture"] == expected_posture for slot in slots)
     assert all(slot["latest_reason"] == expected_failure for slot in slots)
     assert all(slot["custody_refs"] == [] for slot in slots)
     assert projection["provider_calls_attempted"] == 0
@@ -996,6 +998,12 @@ def test_provider_failure_ends_after_one_attempt_without_fallback(
     assert projection["provider_calls_attempted"] == 1
     assert projection["provider_calls_completed"] == 0
     assert sum(slot["read_nomination_count"] for slot in slots) == 1
+    failed_read_slot = next(
+        slot for slot in slots if slot["read_nomination_count"] == 1
+    )
+    assert failed_read_slot["latest_reason"] == (
+        "read_transport_failure:selected_provider_transport_failed"
+    )
     assert all(slot["custody_refs"] == [] for slot in slots)
     assert projection["semantic_handoff_refs"] == []
     assert projection["standalone_read_assessment_invoked"] is False

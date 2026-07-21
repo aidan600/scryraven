@@ -715,6 +715,14 @@ class QueryPlan:
             raise ValueError("SearchOS follow-up query must be exact bounded text")
         if query != query.strip():
             raise ValueError("SearchOS follow-up query cannot be rewritten at admission")
+        if any(
+            str(item.authorized_query or "").strip().casefold()
+            == query.casefold()
+            for item in self.items
+        ):
+            raise SearchOSRuntimeError(
+                "SearchOS follow-up query duplicates existing QueryPlan text"
+            )
         iteration_ordinal = int(iteration)
         if iteration_ordinal < 2:
             raise ValueError("SearchOS follow-up query requires iteration >= 2")

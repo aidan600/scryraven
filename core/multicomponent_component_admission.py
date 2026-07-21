@@ -185,7 +185,7 @@ def _typed_lane_custody_gap_exception_authorized(
     return (
         metadata.get("explicit_factual_component_list") is True
         and _clean_text(metadata.get("requested_synthesis_directive"), limit=360) is not None
-        and 1 <= len(component_refs) <= 5
+        and 2 <= len(component_refs) <= 5
     )
 
 

@@ -53,6 +53,9 @@ Only read_custody_material may be handed to semantic evaluation.
 Never invent a URL, query, custody ref, component, obligation, or fallback.
 """
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
+TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
+    {"read_insufficient", "invalid", "declined"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +173,9 @@ def execute_searchos_slice_a_iterative_judgment(
         if not participating:
             break
         try:
-            reservation = run_kernel.reserve_searchos_judgment_round(slot_ids=participating)
+            reservation = run_kernel.reserve_searchos_judgment_round(
+                slot_ids=participating
+            )
         except ValueError:
             for slot_id in participating:
                 _mark_budget_exhausted(run_kernel, slot_id)
@@ -178,73 +183,58 @@ def execute_searchos_slice_a_iterative_judgment(
 
         for slot_id in participating:
             slot = run_kernel.state.searchos_state["slots_by_id"][slot_id]
-            option_inputs = _candidate_option_inputs(
-                bindings=bindings,
-                slot_ref=slot["slot_ref"],
-                binding_candidate_states=binding_candidate_states,
-                binding_iteration_refs=binding_iteration_refs,
-                discovery_result_store=discovery_result_store,
-            )
-            options = build_candidate_use_options_v1(option_inputs)
-            window_ordinal = max(1, int(slot["candidate_window_count"] or 0))
-            terminal_dispositions = {
-                "read_insufficient",
-                "invalid",
-                "declined",
-            }
-            window_dispositions = {
-                option_id: disposition
-                for option_id, disposition in dispositions.items()
-                if disposition in terminal_dispositions
-            }
-            window = build_candidate_use_window_v1(
-                slot_ref=slot["slot_ref"],
-                ordered_options=options,
-                window_ordinal=window_ordinal,
-                policy_snapshot=run_kernel.state.searchos_state["policy_snapshot"],
-                option_dispositions=window_dispositions,
-            )
-            while (
-                window["ordered_candidate_use_option_refs"]
-                and all(
-                    dispositions.get(ref["candidate_use_option_id"]) in terminal_dispositions
-                    for ref in window["ordered_candidate_use_option_refs"]
-                )
-                and window["next_window_available"]
-            ):
-                window_ordinal += 1
-                window = build_candidate_use_window_v1(
-                    slot_ref=slot["slot_ref"],
-                    ordered_options=options,
-                    window_ordinal=window_ordinal,
+            try:
+                options, window, exhaustion_reason = _prepare_candidate_window(
+                    slot=slot,
+                    bindings=bindings,
+                    binding_candidate_states=binding_candidate_states,
+                    binding_iteration_refs=binding_iteration_refs,
+                    discovery_result_store=discovery_result_store,
                     policy_snapshot=run_kernel.state.searchos_state["policy_snapshot"],
-                    option_dispositions=window_dispositions,
+                    dispositions=dispositions,
                 )
-            if (
-                window["ordered_candidate_use_option_refs"]
-                and all(
-                    dispositions.get(ref["candidate_use_option_id"]) in terminal_dispositions
-                    for ref in window["ordered_candidate_use_option_refs"]
+            except Exception as exc:
+                run_kernel.return_searchos_pre_call_reservation(
+                    reservation_ref=reservation,
+                    slot_id=slot_id,
+                    reason="candidate_window_preparation_rejected",
                 )
-                and not window["next_window_available"]
-            ):
+                run_kernel.mark_searchos_slot_stale_or_invalid(
+                    slot_id=slot_id,
+                    reason=f"candidate_window_preparation_failed:{type(exc).__name__}",
+                )
+                continue
+            if exhaustion_reason:
+                run_kernel.return_searchos_pre_call_reservation(
+                    reservation_ref=reservation,
+                    slot_id=slot_id,
+                    reason=exhaustion_reason,
+                )
                 run_kernel.mark_searchos_slot_unresolved(
                     slot_id=slot_id,
-                    reason=(
-                        "candidate_window_budget_exhausted"
-                        if window["remaining_option_count"] > 0
-                        else "candidate_options_exhausted"
-                    ),
+                    reason=exhaustion_reason,
                 )
                 continue
             run_kernel.expose_searchos_candidate_window(window=window)
             current_slot = run_kernel.state.searchos_state["slots_by_id"][slot_id]
-            action = run_kernel.authorize_searchos_judgment(
-                reservation_ref=reservation,
-                slot_id=slot_id,
-                candidate_window=window,
-                read_custody_refs=current_slot["custody_refs"],
-            )
+            try:
+                action = run_kernel.authorize_searchos_judgment(
+                    reservation_ref=reservation,
+                    slot_id=slot_id,
+                    candidate_window=window,
+                    read_custody_refs=current_slot["custody_refs"],
+                )
+            except Exception as exc:
+                run_kernel.return_searchos_pre_call_reservation(
+                    reservation_ref=reservation,
+                    slot_id=slot_id,
+                    reason="judgment_authorization_rejected",
+                )
+                run_kernel.mark_searchos_slot_stale_or_invalid(
+                    slot_id=slot_id,
+                    reason=f"judgment_authorization_rejected:{type(exc).__name__}",
+                )
+                continue
             request = action.inputs["judgment_request"]
             try:
                 raw = _invoke_judgment_model(
@@ -263,17 +253,23 @@ def execute_searchos_slice_a_iterative_judgment(
                     model_output=parsed,
                 )
             except Exception as exc:
+                failure_reason = _failure_reason(exc)
                 run_kernel.reduce(
                     Observation.from_action(
                         action,
                         observation_type=ObservationType.SEARCHOS_JUDGMENT_DECIDED,
                         status=RunStageStatus.FAILED,
                         payload={
-                            "failure_reason": _failure_reason(exc),
+                            "failure_reason": failure_reason,
                             "raw_model_response_retained": False,
                         },
                     )
                 )
+                if _invalid_or_stale_nomination(exc):
+                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                        slot_id=slot_id,
+                        reason=failure_reason,
+                    )
                 continue
             run_kernel.reduce(
                 Observation.from_action(
@@ -288,7 +284,10 @@ def execute_searchos_slice_a_iterative_judgment(
             if decision_action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
                 option_ref = dict(decision["candidate_use_option_ref"])
                 option_id = option_ref["candidate_use_option_id"]
-                if dispositions.get(option_id) in terminal_dispositions:
+                if (
+                    dispositions.get(option_id)
+                    in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+                ):
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
                         reason="read_nomination_already_disposed",
@@ -325,7 +324,7 @@ def execute_searchos_slice_a_iterative_judgment(
                             acquisition_transports=acquisition_transports,
                             before_transport=before_transport,
                         )
-                    except Exception:
+                    except Exception as exc:
                         after_attempted, after_completed = (
                             _acquisition_provider_call_totals(run_kernel)
                         )
@@ -334,7 +333,7 @@ def execute_searchos_slice_a_iterative_judgment(
                         dispositions[option_id] = "read_insufficient"
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
-                            reason="read_transport_or_source_insufficient",
+                            reason=_read_failure_reason(exc),
                         )
                         continue
                     after_attempted, after_completed = (
@@ -381,25 +380,32 @@ def execute_searchos_slice_a_iterative_judgment(
                     )
                     continue
                 iteration = len(iteration_sets) + 2
-                query_plan_action = run_kernel.authorize_query_plan_admission(
-                    inputs={
-                        "authority": "SearchOSJudgment",
-                        "judgment_decision_ref": _decision_ref(decision),
-                        "iteration": iteration,
-                    }
-                )
-                query_admission = query_authority.admit_searchos_followup_query(
-                    judgment_decision=decision,
-                    iteration=iteration,
-                )
-                run_kernel.reduce(
-                    Observation.from_action(
-                        query_plan_action,
-                        observation_type=ObservationType.QUERY_PLAN_ADMITTED,
-                        status=RunStageStatus.COMPLETED,
-                        payload=query_admission,
+                try:
+                    query_plan_action = run_kernel.authorize_query_plan_admission(
+                        inputs={
+                            "authority": "SearchOSJudgment",
+                            "judgment_decision_ref": _decision_ref(decision),
+                            "iteration": iteration,
+                        }
                     )
-                )
+                    query_admission = query_authority.admit_searchos_followup_query(
+                        judgment_decision=decision,
+                        iteration=iteration,
+                    )
+                    run_kernel.reduce(
+                        Observation.from_action(
+                            query_plan_action,
+                            observation_type=ObservationType.QUERY_PLAN_ADMITTED,
+                            status=RunStageStatus.COMPLETED,
+                            payload=query_admission,
+                        )
+                    )
+                except Exception as exc:
+                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                        slot_id=slot_id,
+                        reason=f"followup_query_admission_rejected:{type(exc).__name__}",
+                    )
+                    continue
                 before_identities = list(discovery_result_store.identities())
                 parent_ref = deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
                 wave = dict(
@@ -470,6 +476,14 @@ def execute_searchos_slice_a_iterative_judgment(
                     binding_candidate_states[binding.binding_id] = iteration_ref
                 for binding in wave_bindings:
                     binding_iteration_refs[binding.binding_id] = iteration_ref
+                if wave.get("followup_failure_reason"):
+                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                        slot_id=slot_id,
+                        reason=(
+                            "followup_discover_failed:"
+                            + str(wave["followup_failure_reason"])
+                        )[:240],
+                    )
             elif decision_action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
                 handoff_action = run_kernel.authorize_searchos_semantic_handoff(
                     slot_id=slot_id,
@@ -679,6 +693,73 @@ def _candidate_option_inputs(
     return rows
 
 
+def _prepare_candidate_window(
+    *,
+    slot: Mapping[str, Any],
+    bindings: Sequence[SelectedCandidateMaterialNeedBindingV1],
+    binding_candidate_states: Mapping[str, Mapping[str, Any]],
+    binding_iteration_refs: Mapping[str, Mapping[str, Any]],
+    discovery_result_store: Any,
+    policy_snapshot: Mapping[str, Any],
+    dispositions: Mapping[str, str],
+) -> tuple[list[dict[str, Any]], dict[str, Any], str | None]:
+    option_inputs = _candidate_option_inputs(
+        bindings=bindings,
+        slot_ref=dict(slot["slot_ref"]),
+        binding_candidate_states=binding_candidate_states,
+        binding_iteration_refs=binding_iteration_refs,
+        discovery_result_store=discovery_result_store,
+    )
+    options = build_candidate_use_options_v1(option_inputs)
+    window_ordinal = max(1, int(slot.get("candidate_window_count") or 0))
+    window_dispositions = {
+        option_id: disposition
+        for option_id, disposition in dispositions.items()
+        if disposition in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+    }
+    window = build_candidate_use_window_v1(
+        slot_ref=dict(slot["slot_ref"]),
+        ordered_options=options,
+        window_ordinal=window_ordinal,
+        policy_snapshot=policy_snapshot,
+        option_dispositions=window_dispositions,
+    )
+    while (
+        window["ordered_candidate_use_option_refs"]
+        and all(
+            dispositions.get(ref["candidate_use_option_id"])
+            in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+            for ref in window["ordered_candidate_use_option_refs"]
+        )
+        and window["next_window_available"]
+    ):
+        window_ordinal += 1
+        window = build_candidate_use_window_v1(
+            slot_ref=dict(slot["slot_ref"]),
+            ordered_options=options,
+            window_ordinal=window_ordinal,
+            policy_snapshot=policy_snapshot,
+            option_dispositions=window_dispositions,
+        )
+    exhausted = bool(
+        window["ordered_candidate_use_option_refs"]
+        and all(
+            dispositions.get(ref["candidate_use_option_id"])
+            in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+            for ref in window["ordered_candidate_use_option_refs"]
+        )
+        and not window["next_window_available"]
+    )
+    reason = None
+    if exhausted:
+        reason = (
+            "candidate_window_budget_exhausted"
+            if window["remaining_option_count"] > 0
+            else "candidate_options_exhausted"
+        )
+    return options, window, reason
+
+
 def _binding_for_option(
     *,
     bindings: Sequence[SelectedCandidateMaterialNeedBindingV1],
@@ -757,10 +838,36 @@ def _failure_reason(exc: Exception) -> str:
     if isinstance(exc, SearchOSRuntimeError):
         detail = str(exc).strip().casefold().replace(" ", "_")
         return ("model_output_invalid:" + detail)[:240]
-    if isinstance(exc, (AssertionError, RuntimeError)):
-        return f"model_transport_failed:{type(exc).__name__}"
-    value = str(exc or type(exc).__name__).strip().replace(" ", "_")
-    return value[:240] or type(exc).__name__
+    return f"model_transport_failed:{type(exc).__name__}"
+
+
+def _invalid_or_stale_nomination(exc: Exception) -> bool:
+    if not isinstance(exc, SearchOSRuntimeError):
+        return False
+    detail = str(exc).casefold()
+    return any(
+        token in detail
+        for token in (
+            "nomination",
+            "outside current candidate window",
+            "stale or altered",
+        )
+    )
+
+
+def _read_failure_reason(exc: Exception) -> str:
+    raw_code = getattr(exc, "code", None)
+    code = str(raw_code) if raw_code else type(exc).__name__
+    if "transport" in code.casefold():
+        posture = "read_transport_failure"
+    elif any(
+        token in code.casefold()
+        for token in ("unreadable", "empty", "content", "material")
+    ):
+        posture = "read_source_insufficient"
+    else:
+        posture = "read_authority_or_route_blocked"
+    return f"{posture}:{code}"[:240]
 
 
 def _profile_name(value: str) -> str:

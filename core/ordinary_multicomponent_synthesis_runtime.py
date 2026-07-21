@@ -511,6 +511,7 @@ def _semantic_material(
     ).require_valid()
     _qualify_searchos_read_material_after_component_dprime(
         run_kernel=run_kernel,
+        component_ref=component_ref,
         bindable=bindable,
         dprime_artifact=dprime_artifact,
     )
@@ -555,6 +556,7 @@ def _semantic_material(
 def _qualify_searchos_read_material_after_component_dprime(
     *,
     run_kernel: Any,
+    component_ref: Mapping[str, Any],
     bindable: Any,
     dprime_artifact: Mapping[str, Any],
 ) -> None:
@@ -570,13 +572,18 @@ def _qualify_searchos_read_material_after_component_dprime(
     passage = _safe_mapping(bindable.passage)
     slot_ref = _safe_mapping(passage.get("searchos_slot_ref"))
     handoff_ref = _safe_mapping(passage.get("searchos_semantic_handoff_ref"))
+    component_id = str(component_ref.get("component_id") or "")
     if not (
         passage.get("material_authority") == "read_custody_material"
         and passage.get("_provider") == "searchos_read_custody"
-        and slot_ref.get("slot_id")
+        and _current_searchos_read_handoff_for_component(
+            run_kernel=run_kernel,
+            passage=passage,
+            component_id=component_id,
+        )
         and slot_ref.get("source_obligation_id")
         and handoff_ref.get("semantic_handoff_id")
-        and dprime_artifact.get("semantic_output", {}).get("validation_status")
+        and _safe_mapping(dprime_artifact.get("semantic_output")).get("validation_status")
         in {"supported", "supported_with_caveats"}
     ):
         return
@@ -650,6 +657,49 @@ def _qualify_searchos_read_material_after_component_dprime(
         payload=payload,
     )
     run_kernel.reduce(result.observation)
+
+
+def _current_searchos_read_handoff_for_component(
+    *,
+    run_kernel: Any,
+    passage: Mapping[str, Any],
+    component_id: str,
+) -> bool:
+    searchos_state = _safe_mapping(run_kernel.state.searchos_state)
+    slots_by_id = _safe_mapping(searchos_state.get("slots_by_id"))
+    slot_ref = _safe_mapping(passage.get("searchos_slot_ref"))
+    slot = _safe_mapping(slots_by_id.get(str(slot_ref.get("slot_id") or "")))
+    if (
+        not slot
+        or slot.get("posture") != "semantically_handed_off"
+        or _safe_mapping(slot.get("slot_ref")) != slot_ref
+        or slot_ref.get("component_id") != component_id
+    ):
+        return False
+    handoff_ref = _safe_mapping(passage.get("searchos_semantic_handoff_ref"))
+    current_handoff = any(
+        _safe_mapping(item).get("semantic_handoff_id")
+        == handoff_ref.get("semantic_handoff_id")
+        and _safe_mapping(item).get("semantic_handoff_digest")
+        == handoff_ref.get("semantic_handoff_digest")
+        and _safe_mapping(_safe_mapping(item).get("slot_ref")) == slot_ref
+        for item in searchos_state.get("semantic_handoff_refs") or ()
+        if isinstance(item, Mapping)
+    )
+    evidence_ref_id = str(
+        passage.get("searchos_evidence_ledger_candidate_id")
+        or passage.get("source_id")
+        or ""
+    )
+    current_custody = any(
+        _safe_mapping(item).get("evidence_ledger_candidate_id") == evidence_ref_id
+        and _safe_mapping(item).get("material_authority") == "read_custody_material"
+        and _safe_mapping(item).get("readable") is True
+        and _safe_mapping(item).get("stale") is False
+        for item in slot.get("custody_refs") or ()
+        if isinstance(item, Mapping)
+    )
+    return bool(current_handoff and current_custody)
 
 
 def _execute_fresh_resynthesis(
@@ -2714,12 +2764,14 @@ def _execute_selected_lane(
         if not allow_searchos_component_receiver or component_id not in selected:
             return False
         passage = _safe_mapping(selected[component_id].passage)
-        slot_ref = _safe_mapping(passage.get("searchos_slot_ref"))
         return (
             passage.get("material_authority") == "read_custody_material"
             and passage.get("_provider") == "searchos_read_custody"
-            and slot_ref.get("component_id") == component_id
-            and bool(passage.get("searchos_semantic_handoff_ref"))
+            and _current_searchos_read_handoff_for_component(
+                run_kernel=run_kernel,
+                passage=passage,
+                component_id=component_id,
+            )
         )
 
     missing_component_reasons: dict[str, str] = {}

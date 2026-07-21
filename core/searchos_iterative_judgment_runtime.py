@@ -200,8 +200,7 @@ def build_searchos_policy_snapshot(
 
 
 def searchos_policy_snapshot_ref(snapshot: Mapping[str, Any]) -> dict[str, Any]:
-    safe = _mapping(snapshot)
-    _require_schema(safe, SEARCHOS_POLICY_SCHEMA_VERSION, "SearchOS policy")
+    safe = _validated_policy_snapshot(snapshot)
     return {
         "policy_snapshot_id": _token(
             safe.get("policy_snapshot_id"), "policy_snapshot_id"
@@ -228,8 +227,8 @@ def build_searchos_initial_state(
     run = _token(run_id, "run_id")
     request = _token(request_id, "request_id")
     contract_ref = _required_ref(answer_contract_ref, "answer_contract_ref")
-    policy_ref = searchos_policy_snapshot_ref(policy_snapshot)
-    policy = _mapping(policy_snapshot)
+    policy = _validated_policy_snapshot(policy_snapshot)
+    policy_ref = searchos_policy_snapshot_ref(policy)
     if policy.get("run_id") != run or policy.get("request_id") != request:
         raise SearchOSRuntimeError("SearchOS policy snapshot scope mismatch")
     if not active_slots or len(active_slots) > int(policy["maximum_active_slots"]):
@@ -423,6 +422,10 @@ def validate_searchos_revision_1_candidate_state(
     }
     if _digest(core) != claimed:
         raise SearchOSRuntimeError("revision 1 candidate state digest mismatch")
+    if safe.get("candidate_state_id") != f"searchos-revision-1:{claimed[:24]}" or safe.get(
+        "replay_identity"
+    ) != f"searchos-revision-1:{claimed}":
+        raise SearchOSRuntimeError("revision 1 candidate state identity mismatch")
     if safe.get("revision") != 1 or safe.get("byte_immutable") is not True or safe.get("digest_immutable") is not True:
         raise SearchOSRuntimeError("revision 1 immutability posture is invalid")
     return deepcopy(safe)
@@ -458,16 +461,34 @@ def begin_searchos_judgment_round(
         budget["reserved_calls_remaining_by_required_slot"]
     )
     required = set(candidate["required_slot_ids"])
+    outstanding = {
+        str(item.get("slot_id") or "")
+        for round_record in budget["round_history"]
+        for item in round_record.get("required_slot_reservations") or ()
+        if item.get("charged") is not True and item.get("returned") is not True
+    }
+    if outstanding & set(ordered_ids):
+        raise SearchOSRuntimeError(
+            "judgment round overlaps an outstanding required-slot reservation"
+        )
+    shared_needed = sum(
+        1
+        for slot_id in ordered_ids
+        if slot_id in required and int(remaining.get(slot_id) or 0) <= 0
+    )
     unavailable = [
         slot_id
         for slot_id in ordered_ids
         if slot_id in required and int(remaining.get(slot_id) or 0) <= 0
-    ]
+    ] if int(budget["shared_calls_remaining"]) < shared_needed else []
     if unavailable:
         raise SearchOSRuntimeError(
             "complete-round reservation unavailable for required slot(s): "
             + ",".join(unavailable)
         )
+    budget["shared_calls_remaining"] = (
+        int(budget["shared_calls_remaining"]) - shared_needed
+    )
     round_ordinal = len(budget["round_history"]) + 1
     reservation_core = {
         "schema_version": "searchos_judgment_round_reservation_v1",
@@ -476,7 +497,11 @@ def begin_searchos_judgment_round(
         "required_slot_reservations": [
             {
                 "slot_id": slot_id,
-                "capacity_source": "required_slot_reserve",
+                "capacity_source": (
+                    "required_slot_reserve"
+                    if int(remaining.get(slot_id) or 0) > 0
+                    else "shared_pool"
+                ),
                 "charged": False,
                 "returned": False,
             }
@@ -490,10 +515,87 @@ def begin_searchos_judgment_round(
         **reservation_core,
         "reservation_id": f"searchos-round:{reservation_digest[:24]}",
         "reservation_digest": reservation_digest,
+        "replay_identity": f"searchos-round:{reservation_digest}",
     }
     budget["round_history"].append(reservation)
     candidate["budget"] = budget
     return _refresh_state(candidate), deepcopy(reservation)
+
+
+def return_searchos_pre_call_reservation(
+    state: Mapping[str, Any],
+    *,
+    reservation_ref: Mapping[str, Any],
+    slot_id: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Release a required-slot hold when work is rejected before model call."""
+
+    candidate = _validated_state_copy(state)
+    slot_token = _token(slot_id, "slot_id")
+    budget = _mutable_mapping(candidate["budget"])
+    reservation = _required_ref(reservation_ref, "reservation_ref")
+    round_id = _token(reservation.get("reservation_id"), "reservation_id")
+    reservation_digest = _digest_token(
+        reservation.get("reservation_digest"), "reservation_digest"
+    )
+    if round_id != f"searchos-round:{reservation_digest[:24]}" or reservation.get(
+        "replay_identity"
+    ) != f"searchos-round:{reservation_digest}":
+        raise SearchOSRuntimeError("pre-call return reservation identity is invalid")
+    history = list(budget["round_history"])
+    round_index = next(
+        (
+            index
+            for index, item in enumerate(history)
+            if item.get("reservation_id") == round_id
+        ),
+        None,
+    )
+    if round_index is None:
+        raise SearchOSRuntimeError("pre-call return reservation is stale")
+    round_record = deepcopy(history[round_index])
+    if reservation.get("reservation_digest") != round_record.get(
+        "reservation_digest"
+    ):
+        raise SearchOSRuntimeError("pre-call return reservation was altered")
+    if slot_token not in round_record["participating_slot_ids"]:
+        raise SearchOSRuntimeError("pre-call return slot was not reserved")
+    required_record = next(
+        (
+            item
+            for item in round_record["required_slot_reservations"]
+            if item.get("slot_id") == slot_token
+        ),
+        None,
+    )
+    if required_record is not None:
+        if required_record.get("charged") is True:
+            raise SearchOSRuntimeError("charged judgment capacity cannot be returned")
+        if required_record.get("returned") is True:
+            raise SearchOSRuntimeError("judgment capacity was already returned")
+        required_record["returned"] = True
+        required_record["return_reason"] = _bounded_reason(reason)
+        if required_record.get("capacity_source") == "shared_pool":
+            budget["shared_calls_remaining"] = int(
+                budget["shared_calls_remaining"]
+            ) + 1
+        budget["returned_pre_call_reservations"] = int(
+            budget["returned_pre_call_reservations"]
+        ) + 1
+    else:
+        rejected = list(round_record.get("optional_pre_call_rejections") or ())
+        rejected.append(
+            {
+                "slot_id": slot_token,
+                "reason": _bounded_reason(reason),
+            }
+        )
+        round_record["optional_pre_call_rejections"] = rejected
+    history[round_index] = round_record
+    budget["round_history"] = history
+    candidate["budget"] = budget
+    return _refresh_state(candidate)
 
 
 def charge_searchos_judgment_call(
@@ -507,7 +609,15 @@ def charge_searchos_judgment_call(
     if slot_token not in slots:
         raise SearchOSRuntimeError("judgment charge references an inactive slot")
     budget = _mutable_mapping(candidate["budget"])
-    round_id = _token(reservation_ref.get("reservation_id"), "reservation_id")
+    reservation = _required_ref(reservation_ref, "reservation_ref")
+    round_id = _token(reservation.get("reservation_id"), "reservation_id")
+    reservation_digest = _digest_token(
+        reservation.get("reservation_digest"), "reservation_digest"
+    )
+    if round_id != f"searchos-round:{reservation_digest[:24]}" or reservation.get(
+        "replay_identity"
+    ) != f"searchos-round:{reservation_digest}":
+        raise SearchOSRuntimeError("judgment charge reservation identity is invalid")
     history = list(budget["round_history"])
     round_index = next(
         (index for index, item in enumerate(history) if item.get("reservation_id") == round_id),
@@ -516,8 +626,23 @@ def charge_searchos_judgment_call(
     if round_index is None:
         raise SearchOSRuntimeError("judgment charge reservation is stale")
     round_record = deepcopy(history[round_index])
+    if reservation.get("reservation_digest") != round_record.get(
+        "reservation_digest"
+    ):
+        raise SearchOSRuntimeError("judgment charge reservation was altered")
     if slot_token not in round_record["participating_slot_ids"]:
         raise SearchOSRuntimeError("judgment charge slot was not reserved in this round")
+    returned = next(
+        (
+            item
+            for item in round_record["required_slot_reservations"]
+            if item.get("slot_id") == slot_token
+            and item.get("returned") is True
+        ),
+        None,
+    )
+    if returned is not None:
+        raise SearchOSRuntimeError("returned judgment reservation cannot be charged")
     if any(
         item.get("slot_id") == slot_token and item.get("charged") is True
         for item in budget["charge_history"]
@@ -534,11 +659,24 @@ def charge_searchos_judgment_call(
     remaining = _mutable_mapping(
         budget["reserved_calls_remaining_by_required_slot"]
     )
-    capacity_source = "shared_pool"
-    if required and int(remaining.get(slot_token) or 0) > 0:
+    reservation_record = next(
+        (
+            item
+            for item in round_record["required_slot_reservations"]
+            if item.get("slot_id") == slot_token
+        ),
+        None,
+    )
+    capacity_source = (
+        str(reservation_record.get("capacity_source"))
+        if reservation_record is not None
+        else "shared_pool"
+    )
+    if required and capacity_source == "required_slot_reserve":
+        if int(remaining.get(slot_token) or 0) <= 0:
+            raise SearchOSRuntimeError("required-slot reservation capacity became stale")
         remaining[slot_token] = int(remaining[slot_token]) - 1
-        capacity_source = "required_slot_reserve"
-    else:
+    elif not required:
         shared = int(budget["shared_calls_remaining"])
         if shared <= 0:
             raise SearchOSRuntimeError("SearchOS logical judgment budget exhausted")
@@ -566,6 +704,7 @@ def charge_searchos_judgment_call(
         **charge_core,
         "charge_id": f"searchos-charge:{charge_digest[:24]}",
         "charge_digest": charge_digest,
+        "replay_identity": f"searchos-charge:{charge_digest}",
     }
     budget["charge_history"].append(charge)
     slot = deepcopy(slots[slot_token])
@@ -582,7 +721,8 @@ def record_searchos_judgment_failure(
     """Record model unavailability/malformed output without a semantic fallback."""
 
     candidate = _validated_state_copy(state)
-    charge_id = _token(charge_ref.get("charge_id"), "charge_id")
+    supplied_charge = _required_ref(charge_ref, "charge_ref")
+    charge_id = _token(supplied_charge.get("charge_id"), "charge_id")
     budget = _mutable_mapping(candidate["budget"])
     charge = next(
         (item for item in budget["charge_history"] if item.get("charge_id") == charge_id),
@@ -590,6 +730,8 @@ def record_searchos_judgment_failure(
     )
     if not charge:
         raise SearchOSRuntimeError("judgment failure charge is stale")
+    if _compact_ref(supplied_charge) != _compact_ref(charge):
+        raise SearchOSRuntimeError("judgment failure charge was altered")
     slot_id = _token(charge.get("slot_id"), "slot_id")
     slots = _mutable_mapping(candidate["slots_by_id"])
     slot = deepcopy(slots[slot_id])
@@ -725,6 +867,25 @@ def record_searchos_iteration_candidate_set(
         }
     )
     slots[slot_id] = _refresh_slot(slot)
+    for peer_slot_id, peer_slot_value in list(slots.items()):
+        if peer_slot_id == slot_id:
+            continue
+        peer_slot = deepcopy(_mapping(peer_slot_value))
+        if peer_slot.get("posture") != SearchOSSlotPosture.ACTIVE_UNJUDGED.value:
+            continue
+        peer_slot["current_candidate_state_ref"] = ref
+        peer_slot["candidate_window_count"] = 0
+        peer_slot["current_window_ref"] = {}
+        peer_slot["candidate_use_option_refs"] = []
+        peer_slot["latest_reason"] = "peer_slot_iteration_candidate_state_admitted"
+        peer_slot["action_history"].append(
+            {
+                "event": "candidate_state_advanced_by_peer_slot_iteration",
+                "iteration_candidate_set_ref": ref,
+                "originating_slot_id": slot_id,
+            }
+        )
+        slots[peer_slot_id] = _refresh_slot(peer_slot)
     candidate["slots_by_id"] = slots
     candidate["iteration_candidate_set_refs"].append(ref)
     candidate["current_candidate_state_ref"] = ref
@@ -737,7 +898,7 @@ def record_searchos_read_custody_material(
     """Register exact post-READ EvidenceLedger custody and reopen judgment."""
 
     candidate = _validated_state_copy(state)
-    custody = _required_ref(custody_material_ref, "read_custody_material_ref")
+    custody = _validated_read_custody_material_ref(custody_material_ref)
     if custody.get("material_authority") != (
         SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value
     ):
@@ -869,6 +1030,10 @@ def record_searchos_readiness_projection(
     }
     if _digest(core) != claimed:
         raise SearchOSRuntimeError("Slice A readiness digest mismatch")
+    if safe.get("readiness_projection_id") != (
+        f"searchos-readiness:{claimed[:24]}"
+    ) or safe.get("replay_identity") != f"searchos-readiness:{claimed}":
+        raise SearchOSRuntimeError("Slice A readiness identity mismatch")
     candidate["readiness_projection_ref"] = {
         "readiness_projection_id": safe["readiness_projection_id"],
         "readiness_projection_digest": claimed,
@@ -898,6 +1063,12 @@ def record_searchos_required_needs_block(
     }
     if _digest(core) != claimed:
         raise SearchOSRuntimeError("required-needs block digest mismatch")
+    if safe.get("block_id") != (
+        f"searchos-required-needs-block:{claimed[:24]}"
+    ) or safe.get("replay_identity") != (
+        f"searchos-required-needs-block:{claimed}"
+    ):
+        raise SearchOSRuntimeError("required-needs block identity mismatch")
     if any(
         safe.get(field) is not False
         for field in (
@@ -1035,6 +1206,10 @@ def validate_searchos_iteration_candidate_set(
     }
     if _digest(core) != claimed:
         raise SearchOSRuntimeError("iteration candidate set digest mismatch")
+    if safe.get("iteration_candidate_set_id") != (
+        f"searchos-iteration:{int(safe.get('iteration') or 0)}:{claimed[:20]}"
+    ) or safe.get("replay_identity") != f"searchos-iteration:{claimed}":
+        raise SearchOSRuntimeError("iteration candidate set identity mismatch")
     if safe.get("raw_store_visibility_allowed") is not False:
         raise SearchOSRuntimeError("raw discovery store cannot become judgment-visible")
     return deepcopy(safe)
@@ -1293,8 +1468,7 @@ def build_candidate_use_window_v1(
 
 def record_searchos_candidate_window(state: Mapping[str, Any], *, window: Mapping[str, Any]) -> dict[str, Any]:
     candidate = _validated_state_copy(state)
-    safe = _mapping(window)
-    _require_schema(safe, SEARCHOS_CANDIDATE_USE_WINDOW_SCHEMA_VERSION, "candidate-use window")
+    safe = _validated_candidate_use_window(window)
     slot_ref = _required_ref(safe.get("slot_ref"), "slot_ref")
     slot_id = _token(slot_ref.get("slot_id"), "slot_id")
     slots = _mutable_mapping(candidate["slots_by_id"])
@@ -1328,10 +1502,7 @@ def record_searchos_candidate_window(state: Mapping[str, Any], *, window: Mappin
     return _refresh_state(candidate)
 
 def candidate_use_option_ref(option: Mapping[str, Any]) -> dict[str, Any]:
-    safe = _mapping(option)
-    _require_schema(
-        safe, SEARCHOS_CANDIDATE_USE_OPTION_SCHEMA_VERSION, "candidate-use option"
-    )
+    safe = _validated_candidate_use_option(option)
     return {
         "candidate_use_option_id": _token(
             safe.get("candidate_use_option_id"), "candidate_use_option_id"
@@ -1350,10 +1521,7 @@ def candidate_use_option_ref(option: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def candidate_use_window_ref(window: Mapping[str, Any]) -> dict[str, Any]:
-    safe = _mapping(window)
-    _require_schema(
-        safe, SEARCHOS_CANDIDATE_USE_WINDOW_SCHEMA_VERSION, "candidate-use window"
-    )
+    safe = _validated_candidate_use_window(window)
     return {
         "candidate_use_window_id": _token(
             safe.get("candidate_use_window_id"), "candidate_use_window_id"
@@ -1384,9 +1552,26 @@ def build_searchos_judgment_request_v1(
     window_ref = candidate_use_window_ref(candidate_window)
     if _mapping(candidate_window.get("slot_ref")).get("slot_id") != token:
         raise SearchOSRuntimeError("judgment window does not bind current slot")
+    if window_ref != _mapping(slot.get("current_window_ref")):
+        raise SearchOSRuntimeError("judgment window is not the current exposed window")
     charge = _required_ref(charge_ref, "charge_ref")
     if charge.get("slot_id") != token:
         raise SearchOSRuntimeError("judgment charge does not bind current slot")
+    current_charge = next(
+        (
+            item
+            for item in _mapping(canonical["budget"]).get("charge_history") or ()
+            if _mapping(item).get("charge_id") == charge.get("charge_id")
+        ),
+        None,
+    )
+    if current_charge is None or _mapping(current_charge) != charge:
+        raise SearchOSRuntimeError("judgment charge is stale or altered")
+    custody_refs = [
+        _validated_read_custody_material_ref(item) for item in read_custody_refs
+    ]
+    if custody_refs != list(slot.get("custody_refs") or ()):
+        raise SearchOSRuntimeError("judgment READ custody refs are stale")
     request_core = {
         "schema_version": SEARCHOS_JUDGMENT_REQUEST_SCHEMA_VERSION,
         "owner": SEARCHOS_OWNER,
@@ -1401,7 +1586,7 @@ def build_searchos_judgment_request_v1(
         "candidate_use_options": [
             deepcopy(_mapping(item)) for item in candidate_window.get("model_visible_candidate_use_options") or ()
         ],
-        "read_custody_refs": [_required_ref(item, "read_custody_ref") for item in read_custody_refs],
+        "read_custody_refs": custody_refs,
         "charge_ref": charge,
         "legal_actions": [item.value for item in SearchOSJudgmentAction],
         "exactly_one_action_required": True,
@@ -1453,6 +1638,9 @@ def validate_searchos_judgment_model_output(
         raise SearchOSRuntimeError("judgment action is not in the neutral vocabulary") from exc
     option_ref = _optional_ref(output.get("candidate_use_option_ref"))
     custody_refs = [_required_ref(item, "read_custody_ref") for item in output.get("read_custody_refs") or ()]
+    custody_ids = [_first_ref_id(item) for item in custody_refs]
+    if len(custody_ids) != len(set(custody_ids)):
+        raise SearchOSRuntimeError("semantic handoff repeats READ custody")
     followup_query = _bounded_optional(output.get("followup_query"), MAX_FOLLOWUP_QUERY_CHARS)
     reason = _bounded_reason(output.get("reason"))
     visible_options = {
@@ -1464,6 +1652,10 @@ def validate_searchos_judgment_model_output(
         option_id = _first_ref_id(option_ref)
         if not option_ref or option_id not in visible_options:
             raise SearchOSRuntimeError("READ nomination is outside current candidate window")
+        if option_ref != _mapping(
+            _mapping(visible_options[option_id]).get("candidate_use_option_ref")
+        ):
+            raise SearchOSRuntimeError("READ nomination ref is stale or altered")
         if custody_refs or followup_query:
             raise SearchOSRuntimeError("READ nomination contains incompatible payload")
     elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
@@ -1472,8 +1664,14 @@ def validate_searchos_judgment_model_output(
     elif action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
         if not custody_refs or option_ref or followup_query:
             raise SearchOSRuntimeError("semantic handoff requires exact READ custody refs")
-        if any(_first_ref_id(item) not in current_custody for item in custody_refs):
-            raise SearchOSRuntimeError("semantic handoff nominated stale READ custody")
+        for item in custody_refs:
+            custody_id = _first_ref_id(item)
+            if custody_id not in current_custody or item != _mapping(
+                current_custody[custody_id]
+            ):
+                raise SearchOSRuntimeError(
+                    "semantic handoff nominated stale or altered READ custody"
+                )
     else:
         if option_ref or custody_refs or followup_query or not reason:
             raise SearchOSRuntimeError("unresolved handoff payload is invalid")
@@ -1596,7 +1794,16 @@ def build_searchos_semantic_evaluation_handoff_v1(
     ]
     if not custody:
         raise SearchOSRuntimeError("semantic handoff requires READ custody material")
+    admitted_custody = {
+        _first_ref_id(item): deepcopy(_mapping(item))
+        for item in slot.get("custody_refs") or ()
+    }
     for ref in custody:
+        custody_id = _first_ref_id(ref)
+        if custody_id not in admitted_custody or ref != admitted_custody[custody_id]:
+            raise SearchOSRuntimeError(
+                "semantic handoff custody is not exact current admitted material"
+            )
         if ref.get("material_authority") != (
             SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value
         ):
@@ -1607,6 +1814,10 @@ def build_searchos_semantic_evaluation_handoff_v1(
             raise SearchOSRuntimeError("semantic handoff READ custody is unreadable or stale")
         if _mapping(ref.get("slot_ref")) != _mapping(slot["slot_ref"]):
             raise SearchOSRuntimeError("semantic handoff custody slot lineage mismatch")
+    decision_ref = _compact_ref(_required_ref(judgment_decision_ref, "judgment_decision_ref"))
+    latest_action = _mapping((slot.get("action_history") or [{}])[-1])
+    if decision_ref != _mapping(latest_action.get("judgment_decision_ref")):
+        raise SearchOSRuntimeError("semantic handoff judgment decision is stale")
     core = {
         "schema_version": SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
         "owner": SEARCHOS_OWNER,
@@ -1616,9 +1827,7 @@ def build_searchos_semantic_evaluation_handoff_v1(
         "policy_snapshot_ref": canonical["policy_snapshot_ref"],
         "slot_ref": deepcopy(slot["slot_ref"]),
         "candidate_state_ref": canonical["current_candidate_state_ref"],
-        "judgment_decision_ref": _required_ref(
-            judgment_decision_ref, "judgment_decision_ref"
-        ),
+        "judgment_decision_ref": decision_ref,
         "read_custody_material_refs": custody,
         "material_authority": SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value,
         "component_analyst_proposal_eligible": True,
@@ -1642,15 +1851,16 @@ def record_searchos_semantic_handoff(
     state: Mapping[str, Any], *, handoff: Mapping[str, Any]
 ) -> dict[str, Any]:
     candidate = _validated_state_copy(state)
-    safe = _mapping(handoff)
-    _require_schema(
-        safe, SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION, "semantic handoff"
-    )
+    safe = _validated_semantic_handoff(handoff)
     slot_id = _token(_mapping(safe.get("slot_ref")).get("slot_id"), "slot_id")
     slots = _mutable_mapping(candidate["slots_by_id"])
     slot = deepcopy(slots[slot_id])
     if slot["posture"] != SearchOSSlotPosture.READY_FOR_SEMANTIC_EVALUATION.value:
         raise SearchOSRuntimeError("semantic handoff follows stale slot state")
+    if _mapping(safe.get("candidate_state_ref")) != _mapping(
+        candidate.get("current_candidate_state_ref")
+    ):
+        raise SearchOSRuntimeError("semantic handoff candidate state is stale")
     ref = searchos_semantic_handoff_ref(safe)
     slot["posture"] = SearchOSSlotPosture.SEMANTICALLY_HANDED_OFF.value
     slot["semantic_handoff_refs"].append(ref)
@@ -1662,7 +1872,7 @@ def record_searchos_semantic_handoff(
 
 
 def searchos_semantic_handoff_ref(handoff: Mapping[str, Any]) -> dict[str, Any]:
-    safe = _mapping(handoff)
+    safe = _validated_semantic_handoff(handoff)
     return {
         "semantic_handoff_id": _token(
             safe.get("semantic_handoff_id"), "semantic_handoff_id"
@@ -1845,6 +2055,90 @@ def _readiness_failure_reason(
     return "stale_or_invalid"
 
 
+def _validated_policy_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_digest_envelope(
+        value,
+        schema_version=SEARCHOS_POLICY_SCHEMA_VERSION,
+        digest_field="policy_snapshot_digest",
+        id_field="policy_snapshot_id",
+        identity_prefix="searchos-policy",
+        label="SearchOS policy",
+    )
+
+
+def _validated_candidate_use_option(value: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_digest_envelope(
+        value,
+        schema_version=SEARCHOS_CANDIDATE_USE_OPTION_SCHEMA_VERSION,
+        digest_field="candidate_use_option_digest",
+        id_field="candidate_use_option_id",
+        identity_prefix="searchos-option",
+        label="candidate-use option",
+    )
+
+
+def _validated_candidate_use_window(value: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_digest_envelope(
+        value,
+        schema_version=SEARCHOS_CANDIDATE_USE_WINDOW_SCHEMA_VERSION,
+        digest_field="candidate_use_window_digest",
+        id_field="candidate_use_window_id",
+        identity_prefix="searchos-window",
+        label="candidate-use window",
+    )
+
+
+def _validated_read_custody_material_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    return _validated_digest_envelope(
+        value,
+        schema_version="searchos_read_custody_material_ref_v1",
+        digest_field="read_custody_material_digest",
+        id_field="read_custody_material_id",
+        identity_prefix="searchos-read-custody",
+        label="SearchOS READ custody material",
+    )
+
+
+def _validated_semantic_handoff(value: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_digest_envelope(
+        value,
+        schema_version=SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
+        digest_field="semantic_handoff_digest",
+        id_field="semantic_handoff_id",
+        identity_prefix="searchos-semantic-handoff",
+        label="SearchOS semantic handoff",
+    )
+
+
+def _validated_digest_envelope(
+    value: Mapping[str, Any],
+    *,
+    schema_version: str,
+    digest_field: str,
+    id_field: str,
+    identity_prefix: str,
+    label: str,
+) -> dict[str, Any]:
+    safe = _mapping(value)
+    _require_schema(safe, schema_version, label)
+    claimed = _digest_token(safe.get(digest_field), digest_field)
+    _token(safe.get(id_field), id_field)
+    core = {
+        key: deepcopy(item)
+        for key, item in safe.items()
+        if key not in {id_field, digest_field, "replay_identity"}
+    }
+    if _digest(core) != claimed:
+        raise SearchOSRuntimeError(f"{label} digest mismatch")
+    if safe.get(id_field) != f"{identity_prefix}:{claimed[:24]}" or safe.get(
+        "replay_identity"
+    ) != f"{identity_prefix}:{claimed}":
+        raise SearchOSRuntimeError(f"{label} identity mismatch")
+    return deepcopy(safe)
+
+
 def _with_state_digest(core: Mapping[str, Any]) -> dict[str, Any]:
     safe = deepcopy(dict(core))
     digest = _digest(safe)
@@ -1876,6 +2170,10 @@ def _validated_state_copy(state: Mapping[str, Any]) -> dict[str, Any]:
     }
     if _digest(core) != claimed:
         raise SearchOSRuntimeError("SearchOS state digest mismatch")
+    if safe.get("state_id") != f"searchos-state:{claimed[:24]}" or safe.get(
+        "replay_identity"
+    ) != f"searchos-state:{claimed}":
+        raise SearchOSRuntimeError("SearchOS state identity mismatch")
     return deepcopy(safe)
 
 
@@ -2033,6 +2331,7 @@ __all__ = [
     "record_searchos_iteration_candidate_set",
     "record_searchos_read_custody_material",
     "record_searchos_readiness_projection",
+    "return_searchos_pre_call_reservation",
     "record_searchos_required_needs_block",
     "record_searchos_semantic_handoff",
     "reduce_searchos_judgment_decision",

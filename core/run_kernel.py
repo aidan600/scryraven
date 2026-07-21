@@ -4415,10 +4415,23 @@ class RunKernel:
                 )
         directive = _clean_text(requested_synthesis_directive, limit=360)
         metadata = _safe_mapping(contract.get("question_meaning_metadata"))
+        searchos_slots = _safe_mapping(
+            _safe_mapping(self.state.searchos_state).get("slots_by_id")
+        )
+        component_id = str(component_refs[0].get("component_id") or "") if len(component_refs) == 1 else ""
         single_component_direct_admission = (
             allow_single_component_direct_admission
             and len(component_refs) == 1
             and directive == "single_component_direct_admission"
+            and any(
+                _safe_mapping(_safe_mapping(slot).get("slot_ref")).get(
+                    "component_id"
+                )
+                == component_id
+                and _safe_mapping(slot).get("posture")
+                == "semantically_handed_off"
+                for slot in searchos_slots.values()
+            )
         )
         if not directive or (
             directive != _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
@@ -8515,6 +8528,30 @@ class RunKernel:
         self.state.searchos_state = state
         self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(state)
         return reservation
+
+    def return_searchos_pre_call_reservation(
+        self,
+        *,
+        reservation_ref: Mapping[str, Any],
+        slot_id: str,
+        reason: str,
+    ) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            return_searchos_pre_call_reservation,
+        )
+
+        try:
+            self.state.searchos_state = return_searchos_pre_call_reservation(
+                self.state.searchos_state,
+                reservation_ref=reservation_ref,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
+            self.state.searchos_state
+        )
 
     def expose_searchos_candidate_window(self, *, window: Mapping[str, Any]) -> dict[str, Any]:
         from core.searchos_iterative_judgment_runtime import (

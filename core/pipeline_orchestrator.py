@@ -2761,7 +2761,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 choose_search_depth=choose_retrieval_search_depth,
             )
             if followup_schedule.route_blocked:
-                raise ProviderRouteBlockedError(provider_plan.records[-1].route_decision)
+                run_kernel.reduce(
+                    Observation.from_action(
+                        followup_action,
+                        observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+                        status=RunStageStatus.FAILED,
+                        payload={
+                            "failure_reason": "searchos_followup_provider_route_blocked",
+                            "provider_dispatch_attempted": False,
+                        },
+                    )
+                )
+                return {
+                    "candidate_packet": {},
+                    "provider_plan_ref": dict(followup_schedule.provider_plan_ref),
+                    "route_refs": [dict(followup_schedule.provider_route_ref)],
+                    "retrieval_action_refs": [],
+                    "selection_facts": {
+                        "selected_candidate_count": 0,
+                        "discover_passage_count": 0,
+                    },
+                    "overflow_facts": {},
+                    "followup_failure_reason": "provider_route_blocked",
+                }
             (
                 exact_queries,
                 followup_depth,
@@ -2777,10 +2799,40 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     "retrieval_scheduled_action": followup_schedule,
                 }
             )
-            followup_outcome = execute_main_retrieval_pass_from_scope(
-                followup_scope,
-                retrieval_pass_records=retrieval_pass_records,
-            )
+            try:
+                followup_outcome = execute_main_retrieval_pass_from_scope(
+                    followup_scope,
+                    retrieval_pass_records=retrieval_pass_records,
+                )
+            except Exception as exc:
+                run_kernel.reduce(
+                    Observation.from_action(
+                        followup_action,
+                        observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+                        status=RunStageStatus.FAILED,
+                        payload={
+                            "failure_reason": (
+                                "searchos_followup_retrieval_failed:"
+                                + type(exc).__name__
+                            ),
+                            "provider_dispatch_attempted": True,
+                        },
+                    )
+                )
+                return {
+                    "candidate_packet": {},
+                    "provider_plan_ref": dict(followup_schedule.provider_plan_ref),
+                    "route_refs": [dict(followup_schedule.provider_route_ref)],
+                    "retrieval_action_refs": [],
+                    "selection_facts": {
+                        "selected_candidate_count": 0,
+                        "discover_passage_count": 0,
+                    },
+                    "overflow_facts": {},
+                    "followup_failure_reason": (
+                        "retrieval_failed:" + type(exc).__name__
+                    ),
+                }
             run_kernel.reduce(followup_outcome.observation)
             retrieval_loop_contract_state = followup_outcome.retrieval_loop_contract_state
             discover_candidate_urls_admitted += followup_outcome.seen_url_delta
@@ -3353,7 +3405,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 )
                 searchos_component_receiver_selected = True
             except OrdinaryMulticomponentRuntimeError as exc:
-                searchos_slice_a_projection["component_receiver_failure"] = f"{type(exc).__name__}:{str(exc)[:360]}"
+                searchos_slice_a_projection["component_receiver_failure"] = (
+                    type(exc).__name__
+                )
     elif ordinary_multicomponent_path_selected(run_kernel):
         execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             run_kernel,

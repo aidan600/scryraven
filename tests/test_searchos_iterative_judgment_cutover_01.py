@@ -35,6 +35,7 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_iteration_candidate_set_v1,
     build_searchos_judgment_request_v1,
     build_searchos_policy_snapshot,
+    build_searchos_read_custody_material_ref,
     build_searchos_required_needs_block,
     build_searchos_semantic_evaluation_handoff_v1,
     build_searchos_slice_a_readiness_v1,
@@ -43,9 +44,12 @@ from core.searchos_iterative_judgment_runtime import (
     mark_searchos_slot_budget_exhausted,
     mark_searchos_slot_stale_or_invalid,
     mark_searchos_slot_unresolved,
+    record_searchos_candidate_window,
     record_searchos_judgment_failure,
+    record_searchos_read_custody_material,
     record_searchos_semantic_handoff,
     reduce_searchos_judgment_decision,
+    return_searchos_pre_call_reservation,
     searchos_iteration_candidate_set_ref,
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
@@ -141,6 +145,26 @@ def test_policy_profiles_and_complete_round_reservation_prevent_starvation() -> 
         "slot-2": 0,
     }
     assert state["budget"]["shared_calls_remaining"] == 2
+    state, third_round = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-1", "slot-2"],
+    )
+    assert {
+        item["capacity_source"]
+        for item in third_round["required_slot_reservations"]
+    } == {"shared_pool"}
+    assert state["budget"]["shared_calls_remaining"] == 0
+    state, _ = charge_searchos_judgment_call(
+        state,
+        reservation_ref=third_round,
+        slot_id="slot-1",
+    )
+    state, _ = charge_searchos_judgment_call(
+        state,
+        reservation_ref=third_round,
+        slot_id="slot-2",
+    )
+    assert state["budget"]["charged_logical_judgment_calls"] == 6
     with pytest.raises(SearchOSRuntimeError, match="complete-round reservation"):
         begin_searchos_judgment_round(state, slot_ids=["slot-1", "slot-2"])
 
@@ -159,6 +183,60 @@ def test_model_failure_is_distinct_and_never_gets_a_fallback() -> None:
     assert slot["satisfaction_claimed"] is False
     assert slot["action_history"][-1]["deterministic_semantic_fallback_invoked"] is False
     assert failed["budget"]["failed_logical_judgment_calls"] == 1
+
+
+def test_pre_call_rejection_returns_required_slot_reservation() -> None:
+    state = _state(slots=2)
+    state, reservation = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-1", "slot-2"],
+    )
+    state = return_searchos_pre_call_reservation(
+        state,
+        reservation_ref=reservation,
+        slot_id="slot-2",
+        reason="candidate_window_preparation_rejected",
+    )
+    state, _ = charge_searchos_judgment_call(
+        state,
+        reservation_ref=reservation,
+        slot_id="slot-1",
+    )
+    assert state["budget"]["returned_pre_call_reservations"] == 1
+    returned = state["budget"]["round_history"][0][
+        "required_slot_reservations"
+    ][1]
+    assert returned["returned"] is True
+    assert returned["charged"] is False
+    state, next_round = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-2"],
+    )
+    assert next_round["participating_slot_ids"] == ["slot-2"]
+
+    shared_state = _state()
+    for _ in range(2):
+        shared_state, own_round = begin_searchos_judgment_round(
+            shared_state,
+            slot_ids=["slot-1"],
+        )
+        shared_state, _ = charge_searchos_judgment_call(
+            shared_state,
+            reservation_ref=own_round,
+            slot_id="slot-1",
+        )
+    shared_state, shared_round = begin_searchos_judgment_round(
+        shared_state,
+        slot_ids=["slot-1"],
+    )
+    assert shared_state["budget"]["shared_calls_remaining"] == 0
+    shared_state = return_searchos_pre_call_reservation(
+        shared_state,
+        reservation_ref=shared_round,
+        slot_id="slot-1",
+        reason="candidate_window_preparation_rejected",
+    )
+    assert shared_state["budget"]["shared_calls_remaining"] == 1
 
 
 def test_candidate_options_aggregate_slot_plus_url_and_windows_are_progressive() -> None:
@@ -380,18 +458,68 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         window_ordinal=1,
         policy_snapshot=state["policy_snapshot"],
     )
+    state = record_searchos_candidate_window(state, window=window)
     state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
     state, charge = charge_searchos_judgment_call(
         state, reservation_ref=round_ref, slot_id="slot-1"
     )
-    custody = {
-        **_ref("read_custody", "one"),
-        "material_authority": "read_custody_material",
-        "slot_ref": slot_ref,
-        "candidate_use_option_ref": candidate_use_option_ref(options[0]),
-        "readable": True,
-        "stale": False,
-    }
+    read_request = build_searchos_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=window,
+        read_custody_refs=[],
+    )
+    altered_option_ref = candidate_use_option_ref(options[0])
+    altered_option_ref["normalized_url"] = "https://example.com/altered"
+    with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
+        validate_searchos_judgment_model_output(
+            request=read_request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "judgment_request_id": read_request["judgment_request_id"],
+                "judgment_request_digest": read_request["judgment_request_digest"],
+                "slot_id": "slot-1",
+                "action": "REQUEST_READ_PAGE",
+                "candidate_use_option_ref": altered_option_ref,
+                "reason": "attempt to alter an admitted option ref",
+            },
+        )
+    read_decision = validate_searchos_judgment_model_output(
+        request=read_request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "judgment_request_id": read_request["judgment_request_id"],
+            "judgment_request_digest": read_request["judgment_request_digest"],
+            "slot_id": "slot-1",
+            "action": "REQUEST_READ_PAGE",
+            "candidate_use_option_ref": candidate_use_option_ref(options[0]),
+            "reason": "read the exact admitted candidate",
+        },
+    )
+    state = reduce_searchos_judgment_decision(state, decision=read_decision)
+    custody = build_searchos_read_custody_material_ref(
+        slot_ref=slot_ref,
+        candidate_use_option_ref=candidate_use_option_ref(options[0]),
+        custody_record={
+            "normalized_url": options[0]["normalized_url"],
+            "fetch_read_content_packet_ref": _ref("fetch_read_content_packet", "one"),
+            "evidence_ledger_custody_ref": _ref("evidence_ledger_custody", "one"),
+            "evidence_ledger_candidate_id": "candidate:one",
+            "terminal_receipt_ref": _ref("terminal_receipt", "one"),
+            "custody_authorization_ref": _ref("custody_authorization", "one"),
+            "bounded_content_present": True,
+        },
+        same_normalized_url_reused=False,
+    )
+    state = record_searchos_read_custody_material(
+        state,
+        custody_material_ref=custody,
+    )
+    state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state, reservation_ref=round_ref, slot_id="slot-1"
+    )
     request = build_searchos_judgment_request_v1(
         state=state,
         slot_id="slot-1",
@@ -412,7 +540,7 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         },
     )
     state = reduce_searchos_judgment_decision(state, decision=decision)
-    with pytest.raises(SearchOSRuntimeError, match="directional candidate context"):
+    with pytest.raises(SearchOSRuntimeError, match="exact current admitted material"):
         build_searchos_semantic_evaluation_handoff_v1(
             state=state,
             slot_id="slot-1",
@@ -638,6 +766,12 @@ def test_query_plan_admits_exact_model_followup_without_evaluator_or_expander() 
     assert current.items[-1].metadata["evaluator_authority_used"] is False
     assert current.items[-1].metadata["expander_authority_used"] is False
     assert current.to_dict()["items"][: len(plan.items)] == plan.to_dict()["items"]
+    duplicate = {**decision, "followup_query": "INITIAL QUERY"}
+    with pytest.raises(SearchOSRuntimeError, match="duplicates existing"):
+        plan.admit_searchos_followup_query(
+            judgment_decision=duplicate,
+            iteration=2,
+        )
 
 
 def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
@@ -670,6 +804,7 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
         window_ordinal=1,
         policy_snapshot=state["policy_snapshot"],
     )
+    kernel.expose_searchos_candidate_window(window=window)
     reservation = kernel.reserve_searchos_judgment_round(slot_ids=["slot-1"])
     judgment = kernel.authorize_searchos_judgment(
         reservation_ref=reservation,

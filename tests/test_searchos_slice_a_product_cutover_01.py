@@ -157,7 +157,13 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     searchos = dict(trace["searchos_slice_a"])
     readiness = dict(searchos["readiness_projection"])
     assert readiness["all_required_slots_slice_a_ready"] is False
-    assert all(item["latest_judgment_posture"] == "judgment_failed" for item in readiness["unresolved_required_slots"])
+    expected_posture = (
+        "stale_or_invalid" if decision == "INVALID_NOMINATION" else "judgment_failed"
+    )
+    assert all(
+        item["latest_judgment_posture"] == expected_posture
+        for item in readiness["unresolved_required_slots"]
+    )
     assert searchos["required_needs_block_ref"]["block_type"] == (SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED)
     assert trace["blocked_fap_terminal"]["author_called"] is False
     assert harness.read_transport_calls == []
