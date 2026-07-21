@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
+Verified-against-runtime: 1d00742b742ebfae5a9838242513be9de765a4f4
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -354,6 +354,11 @@ navigation, evidence/citation/Author change, or live call was installed.
 
 ## Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01
 
+This checkpoint records the READ/custody foundation as installed at that
+milestone. The later Slice A cutover below subordinates its binding and
+acquisition mechanics beneath neutral SearchJudgment and retires its standalone
+ordinary manager and full-judgment containment posture from the forward path.
+
 The ordinary main RunKernel now consumes the immutable revision-1 candidate
 packet after active AnswerContract, SearchWorkPlan, and QueryPlan admission.
 It derives exact text-free `SelectedCandidateMaterialNeedBindingV1` lineage for
@@ -390,6 +395,32 @@ their baseline-equivalent inputs remain unchanged. Offline proof grants no live
 call authority and installs no Focused Extract, navigation, recovery, stopping,
 Map, Crawl, DNS/network attestation, or downstream semantic behavior.
 
+## Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01
+
+Runtime/test checkpoint `1d00742b742ebfae5a9838242513be9de765a4f4`
+
+[SearchOS First-Wave And Iterative-Judgment Cutover](../architecture/SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md)
+installs internal Slice A of the iterative-navigation parent. Exactly one first
+DISCOVER wave now precedes immutable revision 1 and the sole forward
+RunKernel-owned SearchJudgment. The model may hand exact READ custody to
+semantic evaluation, request an exact admitted candidate page, propose exact
+follow-up query text through QueryPlan, or preserve a slot as unresolved.
+
+Follow-up results enter append-only iteration candidate sets; deterministic
+candidate-use windows preserve all admitted contributor lineage and same-URL
+custody reuse. DISCOVER remains directional, non-support-bearing context. READ
+custody alone may enter the shared N-component Analyst / D-prime / RunKernel
+semantic receiver, and it creates no support without current semantic
+admission. Required needs that do not complete that chain produce the typed
+Slice A required-needs block and the existing safe blocked non-Author terminal.
+
+Evaluator, expander, disambiguation retry, weak-corpus continuation, and AG-92B
+have no forward post-first-wave authority. Direct known-URL READ,
+DISCOVER-attached readable-source custody, navigation, comprehensive recovery,
+final stopping, permanent policy calibration, and live execution remain closed.
+Slice B is still required before the parent iterative-navigation checkpoint is
+complete.
+
 ## Active SearchOS MVP Sequence
 
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns the
@@ -399,18 +430,22 @@ before implementation because it separated planner
 disambiguation from query strategy, combined READ and Focused Extract too
 early, and prohibited every failure-time escalation.
 
-The query-strategy and READ/source-custody checkpoints are complete. The active
-next checkpoint is
+The query-strategy and READ/source-custody checkpoints are complete. Internal
+Slice A, `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01`, is also
+complete: one RunKernel-owned SearchJudgment now owns forward ordinary
+post-first-wave query, candidate READ, semantic-handoff, and unresolved-slot
+decisions. The active work remains within
 `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`. Its approved
 [iterative-judgment convergence direction](../architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
 expects the checkpoint to proceed through architecture-only first-wave and
 iterative-judgment convergence, then internal Slice A (canonical iterative
-judgment cutover), then internal Slice B (bounded breadcrumb navigation).
-Neither slice is installed or authorized for BUILD by this roadmap or direction
-record. The remaining approved sequence is:
+judgment cutover), then internal Slice B (bounded breadcrumb navigation). Slice
+A is installed; Slice B remains pending. The parent checkpoint is not complete
+until Slice B lands or a maintainer explicitly moves navigation later. The
+remaining approved sequence is:
 
 ```text
-SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
+SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01 (Slice B pending)
 -> SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
 -> offline SearchOS integration gate
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
@@ -419,25 +454,26 @@ SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01
 -> SearchOS MVP release
 ```
 
-Query strategy is now installed, and reconnaissance policy remains provisional
-and subject to later calibration. Later SearchJudgment must inspect the first
-result set per component and authorize an additional query only when the
-accepted component or source-obligation need remains unmet and the proposed
-query is materially nonredundant. The core loop includes page reading, custody, bounded navigation,
-and at most one planned alternate or stronger attempt after a typed retrieval-
-quality failure. That adaptive fallback is approved target behavior and remains
-uninstalled. A usable success is never retried merely to compare providers, and
-a successfully read but insufficient source sends the run to search, another
-source, or bounded navigation rather than repeated extraction.
+Query strategy and neutral iterative SearchJudgment are installed, and their
+policy remains provisional and subject to later calibration. After exactly one
+first DISCOVER wave, the model may nominate an exact admitted candidate READ,
+propose an exact materially nonredundant follow-up through QueryPlan, hand READ
+custody to the N-component semantic receiver, or preserve the need as
+unresolved. Slice A does not navigate. Bounded breadcrumb extraction,
+selection, cycle/depth control, and separate READ remain Slice B work.
+Comprehensive retry/recovery and final whole-run stopping remain in the later
+gap-recovery-and-stop checkpoint. A usable success is never retried merely to
+compare providers.
 
-The completed READ checkpoint kept direct local arbitrary openers
-product-unreachable while preserving pure parsers; used response-only
-Linkup/Tavily fixtures; derived `READ_PAGE` before `core.routing` selected
-Linkup Fetch or Tavily Extract; preserved one selected provider call, claim/use
-and replay controls, no silent post-dispatch switch, requested-versus-reported/
-final/canonical URL provenance, unknown missing URL facts, and bounded basic URL
-hygiene. It added no DNS snapshot, connected-IP proof, redirect-chain
-attestation, or provider-network-path ownership.
+The installed Slice A preserves the completed READ checkpoint's direct-opener
+closure and existing `core.routing` Linkup Fetch/Tavily Extract path. It allows
+only exact admitted candidate-use URLs from immutable revision 1 or an admitted
+iteration set, preserves requested-versus-reported/final/canonical provenance,
+reuses same-URL custody, and performs no silent fallback. DISCOVER material
+remains directional and non-support-bearing; only READ custody may enter the
+governed Analyst / D-prime / RunKernel semantic chain. Direct known-URL READ,
+DISCOVER-attached readable-source custody, DNS/network attestation, and
+provider-network-path ownership remain uninstalled.
 
 These checkpoint names record sequence only; this roadmap does not create their
 detailed implementation briefs or activate their capabilities.

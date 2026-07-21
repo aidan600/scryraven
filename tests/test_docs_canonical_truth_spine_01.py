@@ -34,6 +34,7 @@ PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 SEARCHOS = ARCH / "SEARCHOS_OPERATING_MODEL.md"
 SEARCHOS_ITERATIVE_DIRECTION = ARCH / "SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md"
+SEARCHOS_SLICE_A = ARCH / "SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md"
 QUARANTINE = ARCH / "AG_CURRENT_PATH_QUARANTINE_01.md"
 ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
@@ -63,6 +64,7 @@ MARKERS = (
     "QUANT-FINALIZATION-CONTAINMENT",
     "PROVIDER-CAPABILITY-ROUTING",
     "SEARCHOS-QUERY-CONVERGENCE",
+    "SEARCHOS-SLICE-A-CUTOVER",
 )
 QUANT_FINALIZATION_RUNTIME_SHA = "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
 QUANT_LINEAGE_RUNTIME_SHA = "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
@@ -74,7 +76,8 @@ INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
 QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = READ_SOURCE_CUSTODY_RUNTIME_SHA
+SEARCHOS_SLICE_A_RUNTIME_SHA = "1d00742b742ebfae5a9838242513be9de765a4f4"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = SEARCHOS_SLICE_A_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
@@ -272,7 +275,8 @@ def test_searchos_iterative_direction_is_routed_linked_and_build_closed() -> Non
     assert "architecture-only first-wave and iterative-judgment convergence" in roadmap
     assert "internal Slice A (canonical iterative judgment cutover)" in roadmap
     assert "internal Slice B (bounded breadcrumb navigation)" in roadmap
-    assert "Neither slice is installed or authorized for BUILD" in roadmap
+    assert "Slice A is installed; Slice B remains pending" in roadmap
+    assert "parent checkpoint is not complete" in roadmap
     assert "SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01" in roadmap
 
     assert "Status: approved architecture direction; BUILD not yet authorized" in direction
@@ -280,7 +284,13 @@ def test_searchos_iterative_direction_is_routed_linked_and_build_closed() -> Non
     assert "Cursor Build: NOT AUTHORIZED" in direction
     assert "Codex BUILD brief: NOT AUTHORIZED" in direction
 
-    for path in (GUIDANCE, SEARCHOS, ROADMAP, SEARCHOS_ITERATIVE_DIRECTION):
+    for path in (
+        GUIDANCE,
+        SEARCHOS,
+        ROADMAP,
+        SEARCHOS_ITERATIVE_DIRECTION,
+        SEARCHOS_SLICE_A,
+    ):
         for target in _links(path):
             assert target.is_file(), (path, target)
 
@@ -565,7 +575,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
         PROVIDER_ROUTING
     )
     for owner in (CURRENT_STATE, ROADMAP):
-        assert f"Verified-against-runtime: {READ_SOURCE_CUSTODY_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {SEARCHOS_SLICE_A_RUNTIME_SHA}" in _read(owner)
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
@@ -696,6 +706,9 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     read_index = roadmap_folded.index(
         "## completed build: searchos-read-source-and-custody-01"
     )
+    slice_a_index = roadmap_folded.index(
+        "## completed build: searchos-first-wave-and-iterative-judgment-cutover-01"
+    )
     active_index = roadmap_folded.index("## active searchos mvp sequence")
     navigation_index = roadmap_folded.index(
         "searchos-iterative-navigation-and-retrieval-judgment-01",
@@ -705,18 +718,26 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
         "searchos-gap-recovery-and-stop-convergence-01",
         navigation_index,
     )
-    assert handoff_index < query_index < read_index < active_index < navigation_index < recovery_index
-    assert "Query strategy is now installed" in roadmap
-    assert "Map may be inserted later as an optional navigation plugin" in roadmap
-    assert "Exact-URL READ consumption and candidate-content custody are installed" in current
     assert (
-        "iterative retrieval judgment, post-result secondary authorization, navigation, "
-        "recovery, and stopping remain later SearchOS work"
+        handoff_index
+        < query_index
+        < read_index
+        < slice_a_index
+        < active_index
+        < navigation_index
+        < recovery_index
+    )
+    assert "Query strategy and neutral iterative SearchJudgment are installed" in roadmap
+    assert "Map may be inserted later as an optional navigation plugin" in roadmap
+    assert "Exact-candidate READ, custody, and governed component semantic handoff are installed" in current
+    assert (
+        "Breadcrumb navigation, post-Analyst re-entry, comprehensive gap recovery, "
+        "and final stopping remain later SearchOS work"
         in current
     )
 
 
-def test_searchos_query_and_read_are_installed_and_navigation_is_active_next() -> None:
+def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
     brief = _collapsed(QUERY_CONVERGENCE_BRIEF)
@@ -775,11 +796,10 @@ def test_searchos_query_and_read_are_installed_and_navigation_is_active_next() -
 
     assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
-    assert (
-        "active next checkpoint is `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`"
-        in roadmap
-    )
-    assert "Later SearchJudgment must inspect the first result set per component" in roadmap
+    assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
+    assert "active work remains within `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`" in roadmap
+    assert "Slice A is installed; Slice B remains pending" in roadmap
+    assert "Query strategy and neutral iterative SearchJudgment are installed" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
 
