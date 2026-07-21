@@ -28,7 +28,11 @@ from core.prompts import DEFAULT_SYSTEM
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
 )
-from core.searchos_slice_a_product_runtime import SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
+    SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+    build_searchos_judgment_decision_contract_v1,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     OfflineOrdinaryPipelineHarness,
     run_post_retirement_ordinary_pipeline,
@@ -37,6 +41,123 @@ from tests.helpers.offline_ordinary_pipeline import (
 
 def _execution_events(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_production_judgment_prompt_states_the_strict_validator_contract() -> None:
+    required_instructions = (
+        "copy judgment_request_id, judgment_request_digest, and slot_id exactly",
+        "read_insufficient assessment for every current READ custody ref",
+        "PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text",
+        "Forbidden fields must be absent",
+        "active_need",
+        "candidate_directional_contexts",
+        "read_custody_materials",
+        "authorized_request.legal_actions",
+        "this is the only action allowed to author",
+        "QueryPlan independently validates the exact text",
+        "Never invent or alter a URL, authority ref",
+        "Do not treat custody-ref presence alone as readiness",
+    )
+
+    assert all(
+        instruction in SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+        for instruction in required_instructions
+    )
+    assert "Never invent a URL, query" not in SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+
+
+def test_transient_decision_contract_describes_every_action_and_input_role() -> None:
+    contract = build_searchos_judgment_decision_contract_v1()
+    shared = [
+        "schema_version",
+        "judgment_request_id",
+        "judgment_request_digest",
+        "slot_id",
+        "action",
+        "reason",
+    ]
+    action_expectations = {
+        "REQUEST_READ_PAGE": (
+            [*shared, "candidate_use_option_ref"],
+            {"read_custody_refs", "followup_query"},
+            "required_exact_if_current_custody_else_absent",
+        ),
+        "PROPOSE_FOLLOWUP_QUERY": (
+            [*shared, "followup_query"],
+            {"candidate_use_option_ref", "read_custody_refs"},
+            "required_exact_if_current_custody_else_absent",
+        ),
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION": (
+            [*shared, "read_custody_refs"],
+            {
+                "candidate_use_option_ref",
+                "followup_query",
+                "read_custody_assessments",
+            },
+            "forbidden",
+        ),
+        "HANDOFF_UNRESOLVED": (
+            shared,
+            {"candidate_use_option_ref", "read_custody_refs", "followup_query"},
+            "required_exact_if_current_custody_else_absent",
+        ),
+    }
+
+    assert contract["schema_version"] == (
+        SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
+    )
+    assert contract["decision_schema_version"] == "searchos_judgment_decision_v1"
+    assert contract["shared_required_fields"] == shared
+    assert contract["unsupported_fields_forbidden"] is True
+    assert set(contract["input_field_roles"]) == {
+        "authorized_request",
+        "active_need",
+        "candidate_directional_contexts",
+        "read_custody_materials",
+    }
+    assert set(contract["actions"]) == set(action_expectations)
+    for action, (required, forbidden, assessment_mode) in action_expectations.items():
+        action_contract = contract["actions"][action]
+        assert action_contract["required_fields"] == required
+        assert set(action_contract["forbidden_fields"]) == forbidden
+        assert action_contract["read_custody_assessments_mode"] == assessment_mode
+    assert "copy exactly one" in contract["actions"]["REQUEST_READ_PAGE"][
+        "candidate_use_option_ref_rule"
+    ]
+    followup_contract = contract["actions"]["PROPOSE_FOLLOWUP_QUERY"]
+    assert "accepted active need and the inspected material" in followup_contract[
+        "followup_query_rule"
+    ]
+    assert set(followup_contract["authorship_forbidden"]) == {
+        "urls",
+        "authority_refs",
+        "component_refs",
+        "source_obligation_refs",
+        "candidate_refs",
+        "provider_choices",
+    }
+    handoff_contract = contract["actions"][
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+    ]
+    assert "nonempty selection of exact refs" in handoff_contract[
+        "read_custody_refs_rule"
+    ]
+    assert "not simultaneously labeled insufficient" in handoff_contract[
+        "semantic_handoff_rule"
+    ]
+    assert "not success" in contract["actions"]["HANDOFF_UNRESOLVED"][
+        "unresolved_rule"
+    ]
+    assessment_contract = contract["post_read_assessment_contract"]
+    assert assessment_contract["one_per_current_custody_ref"] is True
+    assert assessment_contract["required_fields"] == [
+        "reviewed_custody_ref",
+        "material_disposition",
+        "reason_code",
+    ]
+    assert assessment_contract["material_disposition"] == "read_insufficient"
+    assert contract["durable_retention_allowed"] is False
+    assert len(contract["decision_contract_digest"]) == 64
 
 
 def test_offline_judgment_fixture_uses_need_and_read_text_not_custody_presence(
@@ -70,6 +191,7 @@ def test_offline_judgment_fixture_uses_need_and_read_text_not_custody_presence(
     base = {
         "schema_version": "searchos_judgment_model_input_v1",
         "authorized_request": authorized,
+        "decision_contract": build_searchos_judgment_decision_contract_v1(),
         "active_need": {
             "component": {
                 "user_facing_question": "What is Alpha's current official operating rule?"
@@ -174,6 +296,19 @@ def test_one_component_read_to_semantic_receiver_is_ready(
         and item["answer_contract_ref"]
         for item in post_read_calls
     )
+    assert all(
+        item["decision_contract_schema_version"]
+        == SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
+        and len(str(item["decision_contract_digest"])) == 64
+        and item["decision_contract_actions"]
+        == [
+            "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+            "HANDOFF_UNRESOLVED",
+            "PROPOSE_FOLLOWUP_QUERY",
+            "REQUEST_READ_PAGE",
+        ]
+        for item in harness.read_assessment_calls
+    )
     assert harness.full_search_judgment_inputs == []
     assert trace["searchos_slice_a"]["all_passages_iteration_append_count"] == 0
 
@@ -185,6 +320,15 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
     first_url = "https://alpha.example/insufficient"
     second_url = "https://alpha.example/useful"
     transient_sentinel = "TRANSIENT_READ_JUDGMENT_SENTINEL_513"
+    decision_contract_sentinel = (
+        "The model has inspected every existing READ material and determined "
+        "that it does not satisfy the active need, so the selected non-handoff "
+        "action is justified."
+    )
+    assert decision_contract_sentinel in json.dumps(
+        build_searchos_judgment_decision_contract_v1(),
+        sort_keys=True,
+    )
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
@@ -246,12 +390,18 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
             for action_id, action in harness.run_kernel.state.issued_actions.items()
         },
         "projections": harness.run_kernel.state.projections,
+        "run_outcome": outcome,
         "execution_trace": outcome.execution_trace,
         "execution_jsonl": (tmp_path / "execution.jsonl").read_text(
             encoding="utf-8"
         ),
     }
     assert transient_sentinel not in json.dumps(
+        durable_surfaces,
+        sort_keys=True,
+        default=str,
+    )
+    assert decision_contract_sentinel not in json.dumps(
         durable_surfaces,
         sort_keys=True,
         default=str,

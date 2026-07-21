@@ -30,6 +30,9 @@ from core.search_result_candidate_packet import (
     search_result_candidate_packet_ref_from_packet,
 )
 from core.searchos_iterative_judgment_runtime import (
+    MAX_FOLLOWUP_QUERY_CHARS,
+    MAX_UNRESOLVED_REASON_CHARS,
+    SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
     SearchOSJudgmentAction,
     SearchOSRuntimeError,
     SearchOSSlotPosture,
@@ -45,25 +48,202 @@ from core.searchos_iterative_judgment_runtime import (
     validate_searchos_judgment_model_output,
 )
 
-SEARCHOS_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
-Return exactly one JSON object matching searchos_judgment_decision_v1.
-Choose exactly one action:
-- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
-- REQUEST_READ_PAGE
-- PROPOSE_FOLLOWUP_QUERY
-- HANDOFF_UNRESOLVED
-Use only the exact slot, candidate-use options, and READ custody refs supplied.
-DISCOVER material is directional_candidate_context and cannot support an answer.
-Only read_custody_material may be handed to semantic evaluation.
-Never invent a URL, query, custody ref, component, obligation, or fallback.
-"""
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
 SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
     "searchos_judgment_model_input_v1"
 )
+SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
+    "searchos_judgment_decision_contract_v1"
+)
+SEARCHOS_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
+The input is one searchos_judgment_model_input_v1 JSON object. Its
+authorized_request is the sole authority for request identity, legal_actions,
+exact candidate-use option refs, and exact current READ custody refs. Its
+active_need explains the component question, source obligation, and authorized
+search work that the action must advance. candidate_directional_contexts are
+DISCOVER-only hints: they may guide a READ or follow-up decision but cannot
+support an answer. read_custody_materials contain the bounded readable content
+that must be judged against active_need; only this material may be handed to
+semantic evaluation. Do not treat custody-ref presence alone as readiness.
+decision_contract is the normative output contract.
+
+Return exactly one JSON object matching searchos_judgment_decision_v1. Always
+include schema_version, judgment_request_id, judgment_request_digest, slot_id,
+action, and a nonempty bounded reason; copy judgment_request_id, judgment_request_digest, and slot_id exactly
+from authorized_request. Choose exactly one action from
+authorized_request.legal_actions:
+- REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
+- PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
+  active_need and inspected material; this is the only action allowed to author
+  a query, and QueryPlan independently validates the exact text.
+- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
+  of exact current read_custody_refs.
+- HANDOFF_UNRESOLVED supplies only the shared fields and its reason.
+
+After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY, and
+HANDOFF_UNRESOLVED must include exactly one read_insufficient assessment for every current READ custody ref,
+copied exactly, with the contract's exact assessment fields and disposition.
+Semantic handoff must not include those assessments. Forbidden fields must be absent, and no unsupported fields are
+allowed. Never invent or alter a URL, authority ref, candidate ref, custody ref,
+component ref, source-obligation ref, provider choice, request identity,
+disposition, deterministic fallback, or unsupported field.
+"""
 TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
     {"custodied", "read_insufficient", "invalid", "declined"}
 )
+
+
+def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
+    """Build the transient machine-readable mirror of the strict validator."""
+
+    shared_required_fields = [
+        "schema_version",
+        "judgment_request_id",
+        "judgment_request_digest",
+        "slot_id",
+        "action",
+        "reason",
+    ]
+    conditionally_assessed = "required_exact_if_current_custody_else_absent"
+    actions = {
+        SearchOSJudgmentAction.REQUEST_READ_PAGE.value: {
+            "required_fields": [
+                *shared_required_fields,
+                "candidate_use_option_ref",
+            ],
+            "forbidden_fields": ["read_custody_refs", "followup_query"],
+            "candidate_use_option_ref_rule": (
+                "copy exactly one candidate_use_option_ref from "
+                "authorized_request.candidate_use_options"
+            ),
+            "post_read_assessment_rule": (
+                "each existing READ material was inspected and does not satisfy "
+                "the active need, so another candidate READ is justified"
+            ),
+            "read_custody_assessments_mode": conditionally_assessed,
+        },
+        SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY.value: {
+            "required_fields": [*shared_required_fields, "followup_query"],
+            "forbidden_fields": [
+                "candidate_use_option_ref",
+                "read_custody_refs",
+            ],
+            "followup_query_rule": (
+                "SearchJudgment authors one exact bounded follow-up query from "
+                "the accepted active need and the inspected material; QueryPlan "
+                "independently validates and authorizes the exact text"
+            ),
+            "authorship_forbidden": [
+                "urls",
+                "authority_refs",
+                "component_refs",
+                "source_obligation_refs",
+                "candidate_refs",
+                "provider_choices",
+            ],
+            "read_custody_assessments_mode": conditionally_assessed,
+        },
+        SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION.value: {
+            "required_fields": [*shared_required_fields, "read_custody_refs"],
+            "forbidden_fields": [
+                "candidate_use_option_ref",
+                "followup_query",
+                "read_custody_assessments",
+            ],
+            "read_custody_refs_rule": (
+                "copy a nonempty selection of exact refs from "
+                "authorized_request.read_custody_refs"
+            ),
+            "semantic_handoff_rule": (
+                "material selected for semantic handoff is not simultaneously "
+                "labeled insufficient"
+            ),
+            "read_custody_assessments_mode": "forbidden",
+        },
+        SearchOSJudgmentAction.HANDOFF_UNRESOLVED.value: {
+            "required_fields": list(shared_required_fields),
+            "forbidden_fields": [
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+            ],
+            "unresolved_rule": (
+                "bounded explanation of an open need; this action is not success "
+                "and is not final whole-run stopping"
+            ),
+            "read_custody_assessments_mode": conditionally_assessed,
+        },
+    }
+    core = {
+        "schema_version": SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
+        "decision_schema_version": SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
+        "shared_required_fields": shared_required_fields,
+        "copy_exactly_from_authorized_request": {
+            "judgment_request_id": "judgment_request_id",
+            "judgment_request_digest": "judgment_request_digest",
+            "slot_id": "slot_ref.slot_id",
+        },
+        "allowed_output_fields": [
+            *shared_required_fields,
+            "candidate_use_option_ref",
+            "read_custody_refs",
+            "followup_query",
+            "read_custody_assessments",
+        ],
+        "unsupported_fields_forbidden": True,
+        "input_field_roles": {
+            "authorized_request": (
+                "sole request identity and legal-action authority; its option "
+                "and custody refs are exact-copy sources"
+            ),
+            "active_need": (
+                "accepted component question, source-obligation standard, and "
+                "authorized search work that this decision must advance"
+            ),
+            "candidate_directional_contexts": (
+                "DISCOVER-only non-support-bearing hints for READ or follow-up"
+            ),
+            "read_custody_materials": (
+                "bounded readable content corresponding exactly to current "
+                "custody refs and inspected for usefulness or insufficiency "
+                "against active_need"
+            ),
+        },
+        "post_read_assessment_contract": {
+            "required_when": (
+                "authorized_request.read_custody_refs is nonempty and action "
+                "is not HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+            ),
+            "absent_when_no_current_custody": True,
+            "one_per_current_custody_ref": True,
+            "required_fields": [
+                "reviewed_custody_ref",
+                "material_disposition",
+                "reason_code",
+            ],
+            "reviewed_custody_ref_rule": (
+                "copy each authorized_request.read_custody_refs item exactly"
+            ),
+            "material_disposition": "read_insufficient",
+            "reason_code_rule": (
+                "nonempty machine-readable lower-case token of at most 80 "
+                "characters using letters, digits, underscore, period, colon, "
+                "or hyphen"
+            ),
+            "meaning": (
+                "The model has inspected every existing READ material and "
+                "determined that it does not satisfy the active need, so the "
+                "selected non-handoff action is justified."
+            ),
+        },
+        "bounds": {
+            "followup_query_max_characters": MAX_FOLLOWUP_QUERY_CHARS,
+            "reason_max_characters": MAX_UNRESOLVED_REASON_CHARS,
+        },
+        "actions": actions,
+        "durable_retention_allowed": False,
+    }
+    return {**core, "decision_contract_digest": _digest(core)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -926,6 +1106,7 @@ def _build_searchos_judgment_model_input(
         "active_need": active_need,
         "candidate_directional_contexts": directional_contexts,
         "read_custody_materials": read_materials,
+        "decision_contract": build_searchos_judgment_decision_contract_v1(),
         "bounded_transient_input": True,
         "durable_retention_allowed": False,
     }
@@ -1541,9 +1722,11 @@ def _digest(value: Any) -> str:
 
 
 __all__ = [
+    "SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION",
     "SEARCHOS_JUDGMENT_SYSTEM_PROMPT",
     "SEARCHOS_SLICE_A_TRACE_KEY",
     "SearchOSSliceAProductResult",
+    "build_searchos_judgment_decision_contract_v1",
     "build_searchos_required_needs_blocked_fap_projection",
     "build_searchos_semantic_outcomes_by_slot",
     "execute_searchos_slice_a_iterative_judgment",

@@ -25,6 +25,7 @@ from core.search_judgment_read_assessment_runtime import (
 )
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
     SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
 )
 
@@ -203,6 +204,14 @@ class OfflineOrdinaryPipelineHarness:
         if system_prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT:
             payload = json.loads(prompt)
             authorized = dict(payload.get("authorized_request") or payload)
+            decision_contract = dict(payload.get("decision_contract") or {})
+            assert decision_contract.get("schema_version") == (
+                SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
+            )
+            assert decision_contract.get("unsupported_fields_forbidden") is True
+            decision_actions = dict(decision_contract.get("actions") or {})
+            assert decision_actions
+            assert set(authorized.get("legal_actions") or ()) <= set(decision_actions)
             options = list(authorized.get("candidate_use_options") or [])
             custody_refs = list(authorized.get("read_custody_refs") or [])
             active_need = dict(payload.get("active_need") or {})
@@ -238,74 +247,118 @@ class OfflineOrdinaryPipelineHarness:
                         int(dict(item).get("bounded_character_count") or len(str(dict(item).get("bounded_text") or "")))
                         for item in read_materials
                     ),
+                    "decision_contract_schema_version": decision_contract.get(
+                        "schema_version"
+                    ),
+                    "decision_contract_digest": decision_contract.get(
+                        "decision_contract_digest"
+                    ),
+                    "decision_contract_actions": sorted(decision_actions),
                     "cost_phase": kwargs.get("cost_phase"),
                 }
             )
             common = {
-                "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": authorized["judgment_request_id"],
-                "judgment_request_digest": authorized["judgment_request_digest"],
-                "slot_id": dict(authorized["slot_ref"])["slot_id"],
+                "schema_version": decision_contract["decision_schema_version"]
             }
+            for output_field, request_path in dict(
+                decision_contract.get("copy_exactly_from_authorized_request") or {}
+            ).items():
+                if request_path == "slot_ref.slot_id":
+                    common[output_field] = dict(authorized["slot_ref"])["slot_id"]
+                else:
+                    common[output_field] = authorized[request_path]
+            assessment_contract = dict(
+                decision_contract.get("post_read_assessment_contract") or {}
+            )
+            assessment_fields = list(
+                assessment_contract.get("required_fields") or ()
+            )
+            assert assessment_fields == [
+                "reviewed_custody_ref",
+                "material_disposition",
+                "reason_code",
+            ]
+            assessments = [
+                {
+                    assessment_fields[0]: item,
+                    assessment_fields[1]: assessment_contract[
+                        "material_disposition"
+                    ],
+                    assessment_fields[2]: "required_information_absent",
+                }
+                for item in custody_refs
+            ]
+
+            def contract_decision(action: str, **action_payload: Any) -> str:
+                assert action in set(authorized.get("legal_actions") or ())
+                action_contract = dict(decision_actions[action])
+                decision = {**common, "action": action, **action_payload}
+                assessment_mode = action_contract[
+                    "read_custody_assessments_mode"
+                ]
+                if assessment_mode == (
+                    "required_exact_if_current_custody_else_absent"
+                ):
+                    if custody_refs:
+                        decision["read_custody_assessments"] = assessments
+                    else:
+                        assert "read_custody_assessments" not in decision
+                else:
+                    assert assessment_mode == "forbidden"
+                    assert "read_custody_assessments" not in decision
+                assert set(action_contract["required_fields"]) <= set(decision)
+                assert not set(action_contract["forbidden_fields"]) & set(decision)
+                assert set(decision) <= set(
+                    decision_contract["allowed_output_fields"]
+                )
+                return json.dumps(decision)
+
             if self.read_assessment_decision == "MODEL_FAILURE":
                 raise AssertionError("offline SearchOS model transport failure")
             if self.read_assessment_decision == "MALFORMED":
                 return "not-json"
             if self.read_assessment_decision == "WRAPPED_JSON":
-                return "Decision follows: " + json.dumps(
-                    {
-                        **common,
-                        "action": "HANDOFF_UNRESOLVED",
-                        "reason": "must_not_be_repaired",
-                    }
+                return "Decision follows: " + contract_decision(
+                    "HANDOFF_UNRESOLVED",
+                    reason="must_not_be_repaired",
                 )
             if self.read_assessment_decision == "NO_READ":
-                return json.dumps(
-                    {
-                        **common,
-                        "action": "HANDOFF_UNRESOLVED",
-                        "reason": "offline_no_read",
-                    }
+                return contract_decision(
+                    "HANDOFF_UNRESOLVED",
+                    reason="offline_no_read",
                 )
             if (
                 self.read_assessment_decision == "FOLLOWUP_THEN_READ"
                 and len(self.read_assessment_calls) == 1
                 and not custody_refs
             ):
-                return json.dumps(
-                    {
-                        **common,
-                        "action": "PROPOSE_FOLLOWUP_QUERY",
-                        "followup_query": ("Alpha exact model-authored follow-up query"),
-                        "reason": "offline_followup_needed",
-                    }
+                return contract_decision(
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    followup_query="Alpha exact model-authored follow-up query",
+                    reason="offline_followup_needed",
                 )
             if self.read_assessment_decision == "REQUEST_FIRST_THEN_NO_READ" and len(self.read_assessment_calls) > 1:
-                return json.dumps(
+                assessments = [
                     {
-                        **common,
-                        "action": "HANDOFF_UNRESOLVED",
-                        "reason": "offline_no_later_read",
-                        "read_custody_assessments": [
-                            {
-                                "reviewed_custody_ref": item,
-                                "material_disposition": "read_insufficient",
-                                "reason_code": "fixture_declined_later_read",
-                            }
-                            for item in custody_refs
+                        assessment_fields[0]: item,
+                        assessment_fields[1]: assessment_contract[
+                            "material_disposition"
                         ],
+                        assessment_fields[2]: "fixture_declined_later_read",
                     }
+                    for item in custody_refs
+                ]
+                return contract_decision(
+                    "HANDOFF_UNRESOLVED",
+                    reason="offline_no_later_read",
                 )
             if self.read_assessment_decision == "INVALID_NOMINATION":
                 invalid_ref = dict(dict(options[0])["candidate_use_option_ref"])
                 invalid_ref["candidate_use_option_id"] = "not-an-eligible-option"
-                return json.dumps(
-                    {
-                        **common,
-                        "action": "REQUEST_READ_PAGE",
-                        "candidate_use_option_ref": invalid_ref,
-                        "reason": "offline_invalid_nomination",
-                    }
+                return contract_decision(
+                    "REQUEST_READ_PAGE",
+                    candidate_use_option_ref=invalid_ref,
+                    reason="offline_invalid_nomination",
                 )
             need_text = " ".join(
                 str(value or "")
@@ -341,25 +394,14 @@ class OfflineOrdinaryPipelineHarness:
                 and bool(need_text.strip())
                 and bool(useful_materials)
             )
-            assessments = [
-                {
-                    "reviewed_custody_ref": item,
-                    "material_disposition": "read_insufficient",
-                    "reason_code": "required_information_absent",
-                }
-                for item in custody_refs
-            ]
             if custody_refs and useful_read:
-                return json.dumps(
-                    {
-                        **common,
-                        "action": ("HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"),
-                        "read_custody_refs": [
-                            dict(item.get("read_custody_ref") or {})
-                            for item in useful_materials
-                        ],
-                        "reason": "offline_read_material_ready",
-                    }
+                return contract_decision(
+                    "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+                    read_custody_refs=[
+                        dict(item.get("read_custody_ref") or {})
+                        for item in useful_materials
+                    ],
+                    reason="offline_read_material_ready",
                 )
             if options:
                 selected_option = (
@@ -368,22 +410,16 @@ class OfflineOrdinaryPipelineHarness:
                     and len(self.read_assessment_calls) > 1
                     else options[0]
                 )
-                return json.dumps(
-                    {
-                        **common,
-                        "action": "REQUEST_READ_PAGE",
-                        "candidate_use_option_ref": dict(dict(selected_option)["candidate_use_option_ref"]),
-                        "reason": "offline_request_page",
-                        "read_custody_assessments": assessments,
-                    }
+                return contract_decision(
+                    "REQUEST_READ_PAGE",
+                    candidate_use_option_ref=dict(
+                        dict(selected_option)["candidate_use_option_ref"]
+                    ),
+                    reason="offline_request_page",
                 )
-            return json.dumps(
-                {
-                    **common,
-                    "action": "HANDOFF_UNRESOLVED",
-                    "reason": "offline_no_candidates",
-                    "read_custody_assessments": assessments,
-                }
+            return contract_decision(
+                "HANDOFF_UNRESOLVED",
+                reason="offline_no_candidates",
             )
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
             payload = json.loads(prompt)

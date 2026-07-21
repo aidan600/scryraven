@@ -524,6 +524,14 @@ separate transient validated input containing the accepted component need,
 source-obligation/SearchWorkPlan semantics, bounded directional context, and
 bounded sanitized content from exact current READ packets; none of that
 transient prompt text is retained in canonical state or persistence.
+The same transient input carries
+`searchos_judgment_decision_contract_v1`, a machine-readable mirror of the
+strict `searchos_judgment_decision_v1` validator. It defines the shared copied
+identity/action/reason fields, exact per-action payload and forbidden fields,
+and the one-per-current-custody `read_insufficient` assessment required for
+every post-READ action except exact semantic handoff. The model may author a
+bounded query only for `PROPOSE_FOLLOWUP_QUERY`; QueryPlan still independently
+admits or rejects that exact text. The contract is not canonical or persisted.
 
 Follow-up query text is admitted unchanged through QueryPlan and ordinary
 DISCOVER routing. Each result wave enters one append-only

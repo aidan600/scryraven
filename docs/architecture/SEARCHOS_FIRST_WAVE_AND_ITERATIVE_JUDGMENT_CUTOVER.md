@@ -58,6 +58,21 @@ context, and bounded sanitized text from each exact current READ packet. The
 transient text and prompt are not written to RunKernel state, actions,
 projections, execution traces, or persisted output.
 
+Every transient input also carries a versioned
+`searchos_judgment_decision_contract_v1`. It identifies the roles of the
+authorized request, active need, directional DISCOVER contexts, and current
+READ materials; enumerates the validator's allowed output fields; and gives the
+exact required, forbidden, copied-ref, and conditional assessment fields for
+all four actions. Every output copies request ID, request digest, and slot ID
+and supplies an action and bounded reason. A non-semantic-handoff action after
+READ must assess every exact current custody ref as `read_insufficient` with
+the three-field assessment shape. Semantic handoff instead carries a nonempty
+exact custody selection and no assessments. Follow-up query text is authored
+only by `PROPOSE_FOLLOWUP_QUERY` and remains independently validated by
+QueryPlan. The decision contract, like the bounded material and prompt, is a
+transient model-call aid; only non-content digests may cross the durable
+boundary.
+
 `HANDOFF_UNRESOLVED` is a slot-level open-need record. It is not rewritten as
 `STOP_INSUFFICIENT` and does not authorize recovery or final stopping.
 
