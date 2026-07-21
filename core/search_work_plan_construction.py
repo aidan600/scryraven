@@ -878,9 +878,11 @@ def _compact_search_requirement_ref(
     component_id = _clean_token(requirement.get("component_id"))
     if not requirement_id or not component_id:
         return {}
-    source_ids = list(
-        _text_tuple(requirement.get("source_obligation_candidate_ids"))
-    )
+    # SearchPlanner owns the canonical requirement identity and sorts the
+    # obligation identities before hashing. Preserve that same canonical
+    # ordering when SearchWorkPlan consumes the requirement so a component
+    # with more than one obligation cannot acquire a stale parallel digest.
+    source_ids = sorted(_text_tuple(requirement.get("source_obligation_candidate_ids")))
     digest_payload = {
         "requirement_id": requirement_id,
         "component_id": component_id,

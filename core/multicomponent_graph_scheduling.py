@@ -1447,6 +1447,11 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
     if not graph_raw:
         if len(admissions) != len(component_refs):
             return []
+        if len(component_refs) == 1:
+            # The installed N-component receiver terminates N=1 directly from
+            # its admitted component; no cross-component relation exists to
+            # schedule or synthesize.
+            return []
         from core.component_work_node import component_work_node_v1_from_admitted_component
 
         nodes = [

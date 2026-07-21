@@ -4347,6 +4347,7 @@ class RunKernel:
         configured_provider: str = "OpenAI",
         specialist_capability_registry: Any | None = None,
         specialist_execution_policy: Any | None = None,
+        allow_single_component_direct_admission: bool = False,
     ) -> dict[str, Any]:
         """Initialize the qualifying lane's RunKernel-owned V2/V3 scheduler."""
 
@@ -4414,16 +4415,17 @@ class RunKernel:
                 )
         directive = _clean_text(requested_synthesis_directive, limit=360)
         metadata = _safe_mapping(contract.get("question_meaning_metadata"))
-        if not directive or directive != _clean_text(
-            metadata.get("requested_synthesis_directive"), limit=360
-        ):
-            raise RunKernelTransitionError(
-                "scheduler synthesis directive is not current contract authority"
-            )
-        specialist_injected = (
-            specialist_capability_registry is not None
-            or specialist_execution_policy is not None
+        single_component_direct_admission = (
+            allow_single_component_direct_admission
+            and len(component_refs) == 1
+            and directive == "single_component_direct_admission"
         )
+        if not directive or (
+            directive != _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
+            and not single_component_direct_admission
+        ):
+            raise RunKernelTransitionError("scheduler synthesis directive is not current contract authority")
+        specialist_injected = specialist_capability_registry is not None or specialist_execution_policy is not None
         if specialist_injected and not (
             isinstance(specialist_capability_registry, SpecialistCapabilityRegistry)
             and isinstance(specialist_execution_policy, SpecialistExecutionPolicy)
@@ -4451,6 +4453,7 @@ class RunKernel:
             "specialist_scheduler_enabled": specialist_injected,
             "specialist_registry_projection": deepcopy(registry_projection),
             "specialist_execution_policy_projection": deepcopy(policy_projection),
+            "single_component_direct_admission": (single_component_direct_admission),
         }
         action = self.authorize(
             stage=MULTICOMPONENT_SCHEDULER_STAGE,
@@ -8512,6 +8515,66 @@ class RunKernel:
         self.state.searchos_state = state
         self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(state)
         return reservation
+
+    def expose_searchos_candidate_window(self, *, window: Mapping[str, Any]) -> dict[str, Any]:
+        from core.searchos_iterative_judgment_runtime import (
+            record_searchos_candidate_window,
+        )
+
+        try:
+            self.state.searchos_state = record_searchos_candidate_window(
+                self.state.searchos_state,
+                window=window,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections["searchos_candidate_use_window"] = deepcopy(dict(window))
+        return deepcopy(dict(window))
+
+    def mark_searchos_slot_unresolved(self, *, slot_id: str, reason: str) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            mark_searchos_slot_unresolved,
+        )
+
+        try:
+            self.state.searchos_state = mark_searchos_slot_unresolved(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+
+    def mark_searchos_slot_stale_or_invalid(self, *, slot_id: str, reason: str) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            mark_searchos_slot_stale_or_invalid,
+        )
+
+        try:
+            self.state.searchos_state = mark_searchos_slot_stale_or_invalid(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+
+    def mark_searchos_slot_budget_exhausted(self, *, slot_id: str, reason: str) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            mark_searchos_slot_budget_exhausted,
+        )
+
+        try:
+            self.state.searchos_state = mark_searchos_slot_budget_exhausted(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
 
     def authorize_searchos_judgment(
         self,
@@ -22093,6 +22156,7 @@ class RunKernel:
                 MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
                 build_synthesis_carry_forward_projection,
                 component_work_graph_v1_from_cross_component_artifact,
+                component_work_graph_v1_from_single_component_admission,
                 component_work_graph_v1_resynthesis_from_cross_component_artifact,
                 component_work_graph_v1_selective_resynthesis_from_cross_artifact,
                 derive_multicomponent_role_call_accounting,
@@ -22466,25 +22530,28 @@ class RunKernel:
                         )
                     component_packets = current_component_packets_for_graph_reproof(
                         component_nodes=expected_component_nodes,
-                        requested_synthesis_directive=str(
-                            graph.get("requested_synthesis_directive") or ""
-                        ),
+                        requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
                     )
-                    structure_graph = (
-                        component_work_graph_v1_from_cross_component_artifact(
+                    if len(expected_component_nodes) == 1:
+                        structure_graph = component_work_graph_v1_from_single_component_admission(
                             run_id=self.state.run_id,
                             request_id=self.state.request_id,
                             accepted_contract_ref=contract_ref,
-                            requested_synthesis_directive=str(
-                                graph.get("requested_synthesis_directive") or ""
-                            ),
+                            requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
+                            component_node=expected_component_nodes[0],
+                        )
+                    else:
+                        structure_graph = component_work_graph_v1_from_cross_component_artifact(
+                            run_id=self.state.run_id,
+                            request_id=self.state.request_id,
+                            accepted_contract_ref=contract_ref,
+                            requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
                             component_nodes=expected_component_nodes,
                             cross_component_artifact=current_cross_artifact,
                             component_analyst_input_packets=component_packets,
                             additional_scrutineer_trigger_reasons=tuple(
                                 reason
-                                for reason in graph.get("scrutineer_trigger_reasons")
-                                or ()
+                                for reason in graph.get("scrutineer_trigger_reasons") or ()
                                 if reason
                                 in {
                                     "deep_mode",
@@ -22492,7 +22559,6 @@ class RunKernel:
                                 }
                             ),
                         )
-                    )
                 except RunKernelTransitionError:
                     raise
                 except (KeyError, ValueError) as exc:
@@ -22510,11 +22576,8 @@ class RunKernel:
                     != accepted_contract.get("accepted_contract_digest")
                     or component_admission.get("accepted_contract_version")
                     != accepted_contract.get("accepted_contract_version")
-                    or any(
-                        contract_ref.get(key) != value
-                        for key, value in expected_contract_fields.items()
-                    )
-                    or not expected_cross_ref
+                    or any(contract_ref.get(key) != value for key, value in expected_contract_fields.items())
+                    or (len(expected_component_nodes) > 1 and not expected_cross_ref)
                     or any(
                         _safe_mapping(node.get("proposal_ref")).get(
                             "cross_component_analyst_ref"

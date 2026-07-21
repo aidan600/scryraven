@@ -329,6 +329,20 @@ class QueryPlanRuntimeAdapter:
         )
         return [dict(item_ref) for item_ref in item_refs]
 
+    def admit_searchos_followup_query(
+        self,
+        *,
+        judgment_decision: Mapping[str, Any],
+        iteration: int,
+    ) -> dict[str, Any]:
+        """Append one exact SearchJudgment query under QueryPlan ownership."""
+
+        self.plan, projection = self.plan.admit_searchos_followup_query(
+            judgment_decision=judgment_decision,
+            iteration=iteration,
+        )
+        return projection
+
     def authorized_queries_for_iteration(self, iteration: int) -> list[str]:
         return list(self.plan.queries_by_iteration().get(iteration, []))
 

@@ -9,6 +9,14 @@ from typing import Any, Mapping, Sequence
 import core.pipeline_orchestrator as orchestrator
 from core.acquisition_adapters import AcquisitionTransports
 from core.cost_accounting import CostAccumulator
+from core.multicomponent_role_runtime import (
+    ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_DPRIME,
+    ROLE_CROSS_COMPONENT_ANALYST,
+    ROLE_SCRUTINEER,
+    ROLE_SYNTHESIS_DPRIME,
+    ROLE_SYSTEM_PROMPTS,
+)
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.run_config import RunConfig, RunDeps
@@ -16,6 +24,9 @@ from core.search_judgment_read_assessment_runtime import (
     SEARCH_JUDGMENT_READ_SYSTEM_PROMPT,
 )
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
+from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+)
 
 OFFLINE_PROVIDER_ENV_KEYS = (
     "BRAVE_API_KEY",
@@ -161,6 +172,7 @@ class OfflineOrdinaryPipelineHarness:
     forbidden_live_calls: list[str] = field(default_factory=list)
     read_assessment_decision: str | None = None
     read_assessment_calls: list[dict[str, Any]] = field(default_factory=list)
+    read_transport_calls: list[str] = field(default_factory=list)
     run_kernel: Any | None = field(default=None, init=False, repr=False)
     read_candidate_packet: dict[str, Any] | None = field(
         default=None, init=False, repr=False
@@ -186,6 +198,166 @@ class OfflineOrdinaryPipelineHarness:
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         self._record_model_call(system_prompt, kwargs)
+        if system_prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT:
+            payload = json.loads(prompt)
+            options = list(payload.get("candidate_use_options") or [])
+            custody_refs = list(payload.get("read_custody_refs") or [])
+            self.read_assessment_calls.append(
+                {
+                    "slot_id": dict(payload.get("slot_ref") or {}).get("slot_id"),
+                    "binding_ids": [
+                        dict(item.get("candidate_use_option_ref") or {}).get("candidate_use_option_id")
+                        for item in options
+                    ],
+                    "cost_phase": kwargs.get("cost_phase"),
+                }
+            )
+            common = {
+                "schema_version": "searchos_judgment_decision_v1",
+                "judgment_request_id": payload["judgment_request_id"],
+                "judgment_request_digest": payload["judgment_request_digest"],
+                "slot_id": dict(payload["slot_ref"])["slot_id"],
+            }
+            if self.read_assessment_decision == "MALFORMED":
+                return "not-json"
+            if self.read_assessment_decision == "WRAPPED_JSON":
+                return "Decision follows: " + json.dumps(
+                    {
+                        **common,
+                        "action": "HANDOFF_UNRESOLVED",
+                        "reason": "must_not_be_repaired",
+                    }
+                )
+            if self.read_assessment_decision == "NO_READ":
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "HANDOFF_UNRESOLVED",
+                        "reason": "offline_no_read",
+                    }
+                )
+            if (
+                self.read_assessment_decision == "FOLLOWUP_THEN_READ"
+                and len(self.read_assessment_calls) == 1
+                and not custody_refs
+            ):
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "PROPOSE_FOLLOWUP_QUERY",
+                        "followup_query": ("Alpha exact model-authored follow-up query"),
+                        "reason": "offline_followup_needed",
+                    }
+                )
+            if self.read_assessment_decision == "REQUEST_FIRST_THEN_NO_READ" and len(self.read_assessment_calls) > 1:
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "HANDOFF_UNRESOLVED",
+                        "reason": "offline_no_later_read",
+                    }
+                )
+            if self.read_assessment_decision == "INVALID_NOMINATION":
+                invalid_ref = dict(dict(options[0])["candidate_use_option_ref"])
+                invalid_ref["candidate_use_option_id"] = "not-an-eligible-option"
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "REQUEST_READ_PAGE",
+                        "candidate_use_option_ref": invalid_ref,
+                        "reason": "offline_invalid_nomination",
+                    }
+                )
+            if custody_refs:
+                return json.dumps(
+                    {
+                        **common,
+                        "action": ("HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"),
+                        "read_custody_refs": custody_refs,
+                        "reason": "offline_read_material_ready",
+                    }
+                )
+            if options:
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "REQUEST_READ_PAGE",
+                        "candidate_use_option_ref": dict(dict(options[0])["candidate_use_option_ref"]),
+                        "reason": "offline_request_page",
+                    }
+                )
+            return json.dumps(
+                {
+                    **common,
+                    "action": "HANDOFF_UNRESOLVED",
+                    "reason": "offline_no_candidates",
+                }
+            )
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+            payload = json.loads(prompt)
+            question = str(dict(payload.get("component_ref") or {}).get("user_facing_question") or self.core_topic)
+            return json.dumps(
+                {
+                    "claim_text": "Offline supported finding for " + question,
+                    "support_status": "supported",
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            )
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
+            return json.dumps(
+                {
+                    "validation_status": "supported",
+                    "reasons": ["Offline exact READ material supports the finding."],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            )
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
+            payload = json.loads(prompt)
+            component_ids = [
+                str(item.get("component_id") or "")
+                for item in payload.get("component_nodes") or ()
+                if isinstance(item, Mapping) and item.get("component_id")
+            ]
+            return json.dumps(
+                {
+                    "synthesis_proposals": [
+                        {
+                            "synthesis_key": "S",
+                            "claim_text": "Offline admitted component findings form the requested synthesis.",
+                            "relationship_type": "requested_synthesis",
+                            "component_inputs": component_ids,
+                            "synthesis_inputs": [],
+                            "caveats": [],
+                            "nonclaims": [],
+                            "blockers": [],
+                        }
+                    ]
+                }
+            )
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:
+            return json.dumps(
+                {
+                    "validation_status": "supported",
+                    "reasons": ["Offline admitted inputs support the synthesis."],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            )
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER]:
+            return json.dumps(
+                {
+                    "challenge_status": "passed",
+                    "reasons": ["Offline full case is coherent."],
+                    "challenged_synthesis_keys": [],
+                    "caveats": [],
+                    "nonclaims": [],
+                }
+            )
         if system_prompt == SEARCH_JUDGMENT_READ_SYSTEM_PROMPT:
             payload = json.loads(prompt)
             bindings = list(payload.get("eligible_bindings") or [])
@@ -340,6 +512,50 @@ class OfflineOrdinaryPipelineHarness:
         if seen_urls is None and len(_args) >= 4:
             seen_urls = _args[3]
         passages = self.build_search_passages()
+        discovery_context = kwargs.get("discovery_result_context")
+        discovery_store = kwargs.get("discovery_result_store")
+        if discovery_context is not None and discovery_store is not None:
+            context = dict(discovery_context)
+            item_refs = [dict(item) for item in context.get("query_plan_item_refs") or () if isinstance(item, Mapping)]
+            if not item_refs:
+                raise AssertionError("offline discovery fixture lacks QueryPlan item lineage")
+            provider = str(context.get("provider") or "")
+            call_ordinal = discovery_store.reserve_provider_call_ordinal()
+            discovery_store.note_call(
+                returned_count=len(passages),
+                admitted_limit=results_per_query,
+            )
+            lineaged: list[dict[str, Any]] = []
+            for rank, raw_passage in enumerate(passages[:results_per_query], start=1):
+                item_ref = item_refs[(rank - 1) % len(item_refs)]
+                result_context = {
+                    **context,
+                    "query_plan_item_ref": item_ref,
+                    "query_role": item_ref.get("query_plan_role"),
+                }
+                passage = dict(raw_passage)
+                identity = discovery_store.admit_result(
+                    context=result_context,
+                    provider=provider,
+                    call_ordinal=call_ordinal,
+                    result_rank=rank,
+                    result=passage,
+                    material_text=str(passage.get("text") or ""),
+                    material_class="provider_returned_discovery_material",
+                )
+                if identity is None:
+                    continue
+                passage["source_result_ref"] = identity.ref()
+                passage["source_material_ref"] = dict(identity.material_ref)
+                passage["source_result_material_class"] = identity.material_class
+                passage["source_result_material_digest"] = identity.material_digest
+                passage["provider_call_ordinal"] = identity.provider_call_ordinal
+                passage["provider_rank_or_position"] = identity.result_rank
+                passage["query_digest"] = identity.query_digest
+                passage["normalized_url"] = identity.normalized_url
+                passage["url"] = identity.normalized_url
+                lineaged.append(passage)
+            passages = lineaged
         if seen_urls is not None:
             for passage in passages:
                 seen_urls.add(passage["url"])
@@ -400,6 +616,22 @@ class OfflineOrdinaryPipelineHarness:
         )
 
     def deps(self) -> RunDeps:
+        def offline_tavily_extract(payload: dict[str, Any]) -> dict[str, Any]:
+            requested = payload.get("urls")
+            requested_url = str(requested[0]) if isinstance(requested, list) else str(requested or "")
+            self.read_transport_calls.append(requested_url)
+            return {
+                "results": [
+                    {
+                        "url": requested_url,
+                        "attempted_url": requested_url,
+                        "title": "Offline exact READ source",
+                        "raw_content": ("Offline exact-URL readable source material for " + requested_url),
+                    }
+                ],
+                "failed_results": [],
+            }
+
         return RunDeps(
             ask_model=self.ask_model,
             embed_texts=self.embed_texts,
@@ -427,6 +659,7 @@ class OfflineOrdinaryPipelineHarness:
             strict_one_shot_smart_model_transport=self.strict_one_shot_smart_model_transport,
             provider_availability={"tavily": True},
             search_planner_adapter=DeterministicSearchPlannerAdapter(),
+            searchos_read_acquisition_transports=AcquisitionTransports(tavily_extract=offline_tavily_extract),
         )
 
 
@@ -594,20 +827,18 @@ def run_post_retirement_ordinary_pipeline(
     )
     if harness_sink is not None:
         harness_sink.append(harness)
-    original_read_runtime = (
-        orchestrator.execute_search_judgment_read_source_and_custody
-    )
+    original_read_runtime = orchestrator.execute_searchos_slice_a_iterative_judgment
 
     def capture_read_runtime(**kwargs: Any) -> Any:
         harness.run_kernel = kwargs["run_kernel"]
         harness.read_candidate_packet = dict(kwargs["candidate_packet"])
-        harness.read_query_plan = kwargs["query_plan"]
+        harness.read_query_plan = kwargs["query_authority"].plan
         harness.read_discovery_result_store = kwargs["discovery_result_store"]
         return original_read_runtime(**kwargs)
 
     monkeypatch.setattr(
         orchestrator,
-        "execute_search_judgment_read_source_and_custody",
+        "execute_searchos_slice_a_iterative_judgment",
         capture_read_runtime,
     )
     original_full_judgment_input = (
@@ -654,7 +885,7 @@ def run_post_retirement_ordinary_pipeline(
         NullStatusWriter(),
         CostAccumulator(),
     )
-    harness.run_kernel = captured.get("run_kernel")
+    harness.run_kernel = captured.get("run_kernel") or harness.run_kernel
     return outcome, harness
 
 

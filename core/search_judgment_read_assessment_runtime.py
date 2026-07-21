@@ -1572,6 +1572,7 @@ def _execute_one_acquisition_to_custody(
     available_providers: Mapping[str, object],
     acquisition_transports: AcquisitionTransports | None,
     before_transport: Callable[[], Any] | None,
+    register_legacy_event: bool = True,
 ) -> dict[str, Any]:
     snapshot = run_kernel.acquisition_authority_snapshot()
     capability_action = run_kernel.authorize_acquisition_capability_decision(
@@ -1705,22 +1706,55 @@ def _execute_one_acquisition_to_custody(
         terminal_receipt_ref=terminal_result.terminal_receipt.ref(),
         custody_authorization_ref=custody_result.custody_authorization.ref(),
     )
-    event = _custody_event(
-        binding=binding,
-        assessment=assessment,
-        proposal=proposal,
-        reused=False,
-        custody_record=custody_record,
-    )
-    event_action = run_kernel.authorize_search_judgment_read_custody_event(
-        event=event
-    )
-    run_kernel.reduce(_custody_event_observation(event_action))
+    if register_legacy_event:
+        event = _custody_event(
+            binding=binding,
+            assessment=assessment,
+            proposal=proposal,
+            reused=False,
+            custody_record=custody_record,
+        )
+        event_action = run_kernel.authorize_search_judgment_read_custody_event(event=event)
+        run_kernel.reduce(_custody_event_observation(event_action))
     return {
         "fetch_read_content_packet": packet,
+        "custody_record": custody_record,
         "provider_calls_attempted": execution.provider_calls_attempted,
         "provider_calls_completed": execution.provider_calls_completed,
     }
+
+
+def execute_searchos_candidate_read_to_custody(
+    *,
+    run_kernel: RunKernel,
+    candidate_packet: Mapping[str, Any],
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    before_transport: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """Execute one neutral SearchOS READ through existing acquisition owners.
+
+    SearchJudgment has already selected the exact admitted candidate binding.
+    This subordinate transport composition performs no model judgment and does
+    not write the retired standalone READ-assessment registry.
+    """
+
+    proposal = build_binding_backed_acquisition_need_proposal(
+        run_kernel=run_kernel,
+        binding=binding,
+    )
+    return _execute_one_acquisition_to_custody(
+        run_kernel=run_kernel,
+        candidate_packet=candidate_packet,
+        binding=binding,
+        assessment={},
+        proposal=proposal,
+        available_providers=available_providers,
+        acquisition_transports=acquisition_transports,
+        before_transport=before_transport,
+        register_legacy_event=False,
+    )
 
 
 def _sanitized_material_from_artifact(
@@ -2360,6 +2394,7 @@ __all__ = [
     "execute_search_judgment_read_assessment_action",
     "execute_search_judgment_read_binding_action",
     "execute_search_judgment_read_source_and_custody",
+    "execute_searchos_candidate_read_to_custody",
     "validate_binding_backed_acquisition_need_proposal",
     "validate_search_judgment_read_assessment_reduction",
     "validate_search_judgment_read_binding_reduction",

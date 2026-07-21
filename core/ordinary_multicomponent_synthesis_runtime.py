@@ -291,6 +291,8 @@ def _accepted_component_text_by_id(
 
 def _selected_multicomponent_contract(
     accepted: Mapping[str, Any],
+    *,
+    allow_searchos_component_receiver: bool = False,
 ) -> bool:
     metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
     component_refs = [
@@ -298,6 +300,8 @@ def _selected_multicomponent_contract(
         for item in accepted.get("accepted_answer_component_refs") or ()
         if isinstance(item, Mapping)
     ]
+    if allow_searchos_component_receiver:
+        return 1 <= len(component_refs) <= 5
     return (
         metadata.get("explicit_factual_component_list") is True
         and _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
@@ -505,6 +509,11 @@ def _semantic_material(
             "direct_semantic_producer_used": False,
         },
     ).require_valid()
+    _qualify_searchos_read_material_after_component_dprime(
+        run_kernel=run_kernel,
+        bindable=bindable,
+        dprime_artifact=dprime_artifact,
+    )
     coverage = build_component_coverage_proposal(
         accepted_contract=accepted,
         observation=observation,
@@ -523,6 +532,12 @@ def _semantic_material(
             or component_ref.get("source_obligation_candidate_refs")
             or ()
         )
+        qualified_requirement_ids = source_requirement_ids_for_component_candidate(
+            run_kernel.state.evidence_ledger.to_projection().to_dict(),
+            evidence_ref_id=bindable.evidence_ref_id,
+            source_obligation_candidate_ids=tuple(obligation_ids),
+            ignore_satisfied_provider_job_historical_gaps=True,
+        )
         raise OrdinaryMulticomponentRuntimeError(
             "component D-prime support could not satisfy canonical coverage for "
             + component_id
@@ -530,9 +545,111 @@ def _semantic_material(
             + str(bindable.evidence_ref_id)
             + ", obligations="
             + ",".join(str(item) for item in obligation_ids)
+            + ", qualified_requirements="
+            + ",".join(qualified_requirement_ids)
             + ")"
         )
     return observation.to_dict(), [content_ref.to_dict()], coverage.to_dict()
+
+
+def _qualify_searchos_read_material_after_component_dprime(
+    *,
+    run_kernel: Any,
+    bindable: Any,
+    dprime_artifact: Mapping[str, Any],
+) -> None:
+    """Link one exact READ-custody material only after D-prime support.
+
+    Fetch/read custody alone remains non-supporting.  This reducer adds the
+    narrow EvidenceLedger source-requirement link needed by the existing
+    component coverage reducer only when the selected passage proves an exact
+    SearchOS semantic handoff and the completed component D-prime artifact has
+    already supported that bounded Analyst proposal.
+    """
+
+    passage = _safe_mapping(bindable.passage)
+    slot_ref = _safe_mapping(passage.get("searchos_slot_ref"))
+    handoff_ref = _safe_mapping(passage.get("searchos_semantic_handoff_ref"))
+    if not (
+        passage.get("material_authority") == "read_custody_material"
+        and passage.get("_provider") == "searchos_read_custody"
+        and slot_ref.get("slot_id")
+        and slot_ref.get("source_obligation_id")
+        and handoff_ref.get("semantic_handoff_id")
+        and dprime_artifact.get("semantic_output", {}).get("validation_status")
+        in {"supported", "supported_with_caveats"}
+    ):
+        return
+
+    from core.evidence_ledger_runtime import (
+        execute_evidence_ledger_reduction_action,
+    )
+
+    slot_id = str(slot_ref["slot_id"])
+    obligation_id = str(slot_ref["source_obligation_id"])
+    requirement_id = (
+        "searchos_semantic_requirement:"
+        + obligation_id.split(":", 1)[-1]
+        + ":"
+        + safe_packet_digest({"slot_id": slot_id})[:24]
+    )
+    evidence_ref_id = str(bindable.evidence_ref_id)
+    observation_id = (
+        f"{run_kernel.state.run_id}:evidence-ledger:searchos-dprime:"
+        f"{str(dprime_artifact.get('artifact_digest') or '')[:16]}:"
+        f"{safe_packet_digest({'slot_id': slot_id})[:16]}"
+    )
+    payload = {
+        "observation_id": observation_id,
+        "observation_source": "searchos_component_dprime_material_qualification",
+        "source_requirements": [
+            {
+                "requirement_id": requirement_id,
+                "requirement_kind": obligation_id.split(":", 1)[-1],
+                "source_obligation_id": obligation_id,
+                "origin_ref": ("RunKernel.SearchOSIterativeJudgment:" + str(handoff_ref["semantic_handoff_id"])),
+                "aggregate_counts_insufficient": False,
+            }
+        ],
+        "candidates": [
+            {
+                "candidate_id": evidence_ref_id,
+                "url": passage.get("url"),
+                "title": passage.get("title"),
+                "disposition": "accepted",
+                "record_kind": "fact",
+                "linked_requirement_ids": [requirement_id],
+                "link_reason": ("exact_searchos_read_custody_component_dprime_supported"),
+                "readable_status": "readable",
+                "fetchable_status": "fetchable",
+                "eligible_for_stronger_obligation": True,
+                "contextual_only": False,
+                "lower_tier": False,
+                "final_evidence_eligible": True,
+            }
+        ],
+        "requirement_links": [
+            {
+                "requirement_id": requirement_id,
+                "candidate_id": evidence_ref_id,
+                "link_reason": ("exact_searchos_read_custody_component_dprime_supported"),
+                "link_status": "accepted",
+            }
+        ],
+    }
+    action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": payload["observation_source"],
+            "searchos_slot_id": slot_id,
+            "searchos_semantic_handoff_id": handoff_ref["semantic_handoff_id"],
+            "component_dprime_artifact_digest": dprime_artifact.get("artifact_digest"),
+        }
+    )
+    result = execute_evidence_ledger_reduction_action(
+        action,
+        payload=payload,
+    )
+    run_kernel.reduce(result.observation)
 
 
 def _execute_fresh_resynthesis(
@@ -1609,6 +1726,10 @@ def _consume_scheduler_selected_artifact(
             sanitized_content_references=content_refs,
             component_coverage_record=coverage,
             specialist_need_handoff=specialist_handoff or None,
+            allow_searchos_semantic_requirement_historical_gap_exception=(
+                _safe_mapping(bindable.passage).get("material_authority") == "read_custody_material"
+                and _safe_mapping(bindable.passage).get("_provider") == "searchos_read_custody"
+            ),
         )
         if work.get("recovery_authorization_ref"):
             if component_admission_ref.get("admission_status") not in {
@@ -2467,6 +2588,65 @@ def _drive_run_kernel_selected_semantic_work(
         run_kernel.dispose_exhausted_optional_specialist_proposals()
         ready = run_kernel.derive_current_multicomponent_ready_work()
         if not ready:
+            if not run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
+                accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+                component_refs = [
+                    _safe_mapping(item)
+                    for item in accepted.get("accepted_answer_component_refs") or ()
+                    if isinstance(item, Mapping)
+                ]
+                if len(component_refs) == 1:
+                    from core.component_work_graph_v1 import (
+                        component_work_graph_v1_from_single_component_admission,
+                    )
+                    from core.component_work_node import (
+                        component_work_node_v1_from_admitted_component,
+                    )
+                    from core.multicomponent_component_admission import (
+                        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+                    )
+
+                    aggregate = _safe_mapping(
+                        run_kernel.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
+                    )
+                    admissions = [
+                        _safe_mapping(item)
+                        for item in aggregate.get("component_admission_refs") or ()
+                        if isinstance(item, Mapping)
+                    ]
+                    if len(admissions) != 1:
+                        raise OrdinaryMulticomponentRuntimeError("N=1 receiver lacks its canonical component admission")
+                    component_node = component_work_node_v1_from_admitted_component(
+                        run_id=run_kernel.state.run_id,
+                        request_id=run_kernel.state.request_id,
+                        accepted_component_ref=component_refs[0],
+                        component_admission_ref=admissions[0],
+                    )
+                    single_graph = component_work_graph_v1_from_single_component_admission(
+                        run_id=run_kernel.state.run_id,
+                        request_id=run_kernel.state.request_id,
+                        accepted_contract_ref={
+                            "owner": accepted.get("owner"),
+                            "canonical_state": accepted.get("canonical_state"),
+                            "run_id": run_kernel.state.run_id,
+                            "request_id": run_kernel.state.request_id,
+                            "accepted_contract_version": accepted.get("accepted_contract_version"),
+                            "accepted_contract_digest": accepted.get("accepted_contract_digest"),
+                        },
+                        requested_synthesis_directive=str(
+                            _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get(
+                                "requested_synthesis_directive"
+                            )
+                            or ""
+                        ),
+                        component_node=component_node,
+                    )
+                    reduce_component_work_graph_v1(
+                        run_kernel=run_kernel,
+                        operation="structure",
+                        graph_candidate=single_graph,
+                    )
+                    continue
             if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
                 _finalize_scheduler_graph(
                     run_kernel=run_kernel,
@@ -2498,29 +2678,27 @@ def _execute_selected_lane(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
     requested_synthesis_directive: str,
+    allow_searchos_component_receiver: bool = False,
 ) -> None:
     accepted = run_kernel.state.initial_answer_contract
-    if not _selected_multicomponent_contract(accepted):
-        raise OrdinaryMulticomponentRuntimeError(
-            "accepted contract lost typed multi-component qualification"
-        )
-    metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
-    if (
-        _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
-        != requested_synthesis_directive
+    if not _selected_multicomponent_contract(
+        accepted,
+        allow_searchos_component_receiver=(allow_searchos_component_receiver),
     ):
-        raise OrdinaryMulticomponentRuntimeError(
-            "accepted contract lost typed multi-component qualification"
-        )
+        raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
+    metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
+    component_refs = [
+        dict(item) for item in accepted.get("accepted_answer_component_refs") or () if isinstance(item, Mapping)
+    ]
+    single_component_direct_admission = allow_searchos_component_receiver and len(component_refs) == 1
+    if _clean_text(metadata.get("requested_synthesis_directive"), limit=360) != requested_synthesis_directive and not (
+        single_component_direct_admission and requested_synthesis_directive == "single_component_direct_admission"
+    ):
+        raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
 
     final_top_evidence = [
         dict(item)
         for item in runtime_scope.get("final_top_evidence") or ()
-        if isinstance(item, Mapping)
-    ]
-    component_refs = [
-        dict(item)
-        for item in accepted.get("accepted_answer_component_refs") or ()
         if isinstance(item, Mapping)
     ]
     selected = select_bindable_final_passages_for_components(
@@ -2531,20 +2709,35 @@ def _execute_selected_lane(
     )
     # Custody-gap exception is authorized only for the selected typed lane.
     typed_lane_custody_exception = True
-    missing_component_ids = [
-        str(component_ref["component_id"])
-        for component_ref in component_refs
-        if str(component_ref["component_id"]) not in selected
-        or (
-            bool(
-                component_ref.get("source_obligation_candidate_ids")
-                or component_ref.get("source_obligation_candidate_refs")
-            )
+
+    def _searchos_read_custody_matches_component(component_id: str) -> bool:
+        if not allow_searchos_component_receiver or component_id not in selected:
+            return False
+        passage = _safe_mapping(selected[component_id].passage)
+        slot_ref = _safe_mapping(passage.get("searchos_slot_ref"))
+        return (
+            passage.get("material_authority") == "read_custody_material"
+            and passage.get("_provider") == "searchos_read_custody"
+            and slot_ref.get("component_id") == component_id
+            and bool(passage.get("searchos_semantic_handoff_ref"))
+        )
+
+    missing_component_reasons: dict[str, str] = {}
+    for component_ref in component_refs:
+        component_id = str(component_ref["component_id"])
+        if component_id not in selected:
+            missing_component_reasons[component_id] = "no_bindable_passage"
+            continue
+        has_obligations = bool(
+            component_ref.get("source_obligation_candidate_ids")
+            or component_ref.get("source_obligation_candidate_refs")
+        )
+        if (
+            has_obligations
+            and not _searchos_read_custody_matches_component(component_id)
             and not source_requirement_ids_for_component_candidate(
                 run_kernel.state.evidence_ledger.to_projection().to_dict(),
-                evidence_ref_id=selected[
-                    str(component_ref["component_id"])
-                ].evidence_ref_id,
+                evidence_ref_id=selected[component_id].evidence_ref_id,
                 source_obligation_candidate_ids=tuple(
                     component_ref.get("source_obligation_candidate_ids")
                     or component_ref.get("source_obligation_candidate_refs")
@@ -2554,12 +2747,16 @@ def _execute_selected_lane(
                     typed_lane_custody_exception
                 ),
             )
-        )
-    ]
+        ):
+            missing_component_reasons[component_id] = "source_obligation_custody_not_current"
+    missing_component_ids = list(missing_component_reasons)
     if missing_component_ids:
         raise OrdinaryMulticomponentRuntimeError(
             "selected multi-component lane lacks legitimate current evidence custody "
-            "for: " + ",".join(missing_component_ids)
+            "for: "
+            + ",".join(
+                f"{component_id}={missing_component_reasons[component_id]}" for component_id in missing_component_ids
+            )
         )
     query = str(runtime_scope.get("query") or "")
     analyst_inputs = {
@@ -2588,6 +2785,7 @@ def _execute_selected_lane(
             "specialist_execution_policy",
             None,
         ),
+        allow_single_component_direct_admission=(single_component_direct_admission),
     )
     try:
         _drive_run_kernel_selected_semantic_work(
@@ -2606,6 +2804,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
     runtime_scope: Mapping[str, Any],
     *,
     execute_selected_lane: bool = True,
+    allow_searchos_component_receiver: bool = False,
 ) -> OrdinaryMulticomponentResult:
     """Select the typed lane before canonical semantic production."""
 
@@ -2640,7 +2839,10 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
     if run_kernel.state.initial_answer_contract:
         accepted = run_kernel.state.initial_answer_contract
         metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
-        if _selected_multicomponent_contract(accepted):
+        if _selected_multicomponent_contract(
+            accepted,
+            allow_searchos_component_receiver=(allow_searchos_component_receiver),
+        ):
             if not execute_selected_lane:
                 return OrdinaryMulticomponentResult(
                     status=OrdinaryMulticomponentStatus.SELECTED_PENDING
@@ -2649,12 +2851,18 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 metadata.get("requested_synthesis_directive"),
                 limit=360,
             )
+            component_count = len(
+                [item for item in accepted.get("accepted_answer_component_refs") or () if isinstance(item, Mapping)]
+            )
+            if requested_synthesis_directive is None and allow_searchos_component_receiver and component_count == 1:
+                requested_synthesis_directive = "single_component_direct_admission"
             assert requested_synthesis_directive is not None
             try:
                 _execute_selected_lane(
                     run_kernel=run_kernel,
                     runtime_scope=runtime_scope,
                     requested_synthesis_directive=requested_synthesis_directive,
+                    allow_searchos_component_receiver=(allow_searchos_component_receiver),
                 )
             except _ScheduledSemanticWorkBlocked:
                 # Canonical exhaustion/failure is ordinary readiness input.  Do
