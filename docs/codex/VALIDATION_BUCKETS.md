@@ -14,14 +14,14 @@ adds, promotes, demotes, or retires tests.
 | `docs_only` | Docs, runbooks, prompts, or operator-only markdown/text changed, with no code, test, manifest, script, or workflow changes. | Changed-file pre-commit and diff checks. No pytest by default. | Pull requests only when changed files are documentation/operator-only. |
 | `fast_pr` | Ordinary code PR validation. | Full-suite collection guard followed by the tiny execution-sentinel set from `tests/buckets/fast_pr.txt`; target under about 3 minutes after dependency setup/cache. It collects, but does not execute, the full suite and is not the full Author lane. | Default pull-request bucket for non-docs-only changes. |
 | `phase_focus` | Local/Codex phase-specific proof. | The current phase test plus immediate producer/consumer tests chosen by the phase prompt. | Not a GitHub default bucket. Run locally with exact pytest node IDs or paths. |
-| `semantic_lane` | Semantic producer, semantic reducer, semantic sufficiency, component coverage, and semantic projection validation. | Durable semantic manifest in `tests/buckets/semantic_lane.txt`, including AG-SEM reducer contracts, semantic sufficiency consumption, ordinary semantic producer atomicity, and structural guards. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
-| `semantic_search_lane` | SearchJudgment and QueryPlan consumers of semantic missing assessments and semantic component gaps. | Durable semantic-search manifest in `tests/buckets/semantic_search_lane.txt`, including AG-GAP, SearchJudgment, and QueryPlan semantic-gap consumer tests. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
+| `semantic_lane` | Semantic producer/receiver, semantic reducer, semantic sufficiency, component coverage, and semantic projection validation. | Durable semantic manifest in `tests/buckets/semantic_lane.txt`, including AG-SEM reducer contracts, semantic sufficiency, isolated direct-producer compatibility, the SearchOS N-component receiver, and structural guards. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
+| `semantic_search_lane` | SearchJudgment and QueryPlan iteration, unresolved-need, and residual semantic-gap compatibility. | Durable semantic-search manifest in `tests/buckets/semantic_search_lane.txt`, including the SearchOS Slice A product terminal/follow-up sentinels, isolated legacy SearchJudgment/recovery compatibility, and QueryPlan consumers. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
 | `author_lane` | Comprehensive Author-lane custody validation. | `tests/buckets/author_lane.txt`, including the former inline AF/U/V/W/X/Y/Z/AC/AD/AE/AF4/AF5 custody set and adjacent RunKernel/final-answer files. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. |
 | `full` | Complete offline suite. | `python -m pytest -q` using the configured tracked test root. Generated outputs, local review mirrors, caches, logs, secrets, and other local artifacts must not be collected. | Push to `main` and manual serious validation only. |
 
 `semantic_lane` and `semantic_search_lane` are not default `fast_pr` scope because
 they are domain validation sweeps, not tiny broad sentinels. Run them when a
-phase changes semantic record construction, ordinary semantic producer handoff,
+phase changes semantic record construction, SearchOS/component semantic handoff,
 semantic sufficiency consumption, ledger-qualified coverage integrity,
 SearchJudgment consumption of semantic missing assessments, or QueryPlan handling
 of semantic component gaps. `fast_pr` remains the ordinary PR tax.
@@ -178,19 +178,23 @@ If root collection starts walking those directories, fix the collection route or
 report the blocker. Do not delete user output directories to make validation
 pass.
 
-## AG-BAL / AG-BAL-HARDEN Routing
+## SearchOS And Legacy Recovery Routing
 
-AG-BAL recovery proof is intentionally split by invariant:
+SearchOS Slice A retires ordinary forward component-gap recovery until the
+separately licensed recovery/stopping convergence phase. Validation is split by
+current authority:
 
-- `semantic_search_lane` owns the durable offline product-path recovery sentinel
-  for QueryPlan/SearchJudgment authorization and one-cycle recovery budget
-  containment.
-- `author_lane` owns the recovered factual text and recovered source identity
-  reaching FinalAnswerPacket-owned Author material after semantic coverage
-  succeeds.
+- `semantic_search_lane` owns durable Slice A required-needs terminal and exact
+  follow-up QueryPlan sentinels plus direct, isolated legacy SearchJudgment and
+  recovery compatibility contracts.
+- Retired ordinary AG-BAL forward-product fixtures remain explicit skips. They
+  are not `author_lane` or current product proof and may be replaced only when
+  comprehensive SearchOS recovery/re-entry is licensed and installed.
+- `author_lane` contains no component-gap-recovery materialization sentinel
+  while that product path is closed.
 
-Keep additional AG-BAL-HARDEN phase-detail tests in `phase_focus` unless they
-become cheap durable sentinels with a clear owner and cost posture.
+Keep additional recovery detail in `phase_focus` unless it becomes current,
+cheap durable proof with a clear owner and cost posture.
 
 ## Required New-Test Classification
 

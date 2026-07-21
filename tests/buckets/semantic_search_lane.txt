@@ -12,7 +12,17 @@ tests/test_runauthority_iterative_search_judgment_ag92b.py
 # execution behavior changes.
 tests/test_search_work_query_plan_consumption_ag96e2.py
 
-# Owner: component-gap recovery product path. Reason: one canonical, offline,
-# one-cycle recovery remains QueryPlan-authorized and projection deletion cannot
-# reset RunKernel-owned recovery budget/idempotency.
+# Owner: component-gap recovery compatibility. Reason: direct legacy recovery
+# contracts remain isolated and baseline-equivalent, while retired ordinary
+# forward-product fixtures are explicitly skipped until recovery/stopping
+# convergence installs a new SearchOS re-entry path.
 tests/test_ag_bal_01_component_gap_recovery.py
+
+# Owner: RunKernel SearchOS Slice A. Reason: durable ordinary product sentinels
+# prove exact follow-up QueryPlan continuity and the required-needs safe terminal.
+tests/test_searchos_slice_a_product_cutover_01.py::test_required_unresolved_slot_uses_existing_safe_non_author_terminal
+tests/test_searchos_slice_a_product_cutover_01.py::test_exact_model_followup_is_appended_and_dispatched_through_query_plan
+
+# Owner: QueryPlan SearchOS continuation. Reason: exact model-authored text is
+# admitted append-only without evaluator or expander query-writing authority.
+tests/test_searchos_iterative_judgment_cutover_01.py::test_query_plan_admits_exact_model_followup_without_evaluator_or_expander

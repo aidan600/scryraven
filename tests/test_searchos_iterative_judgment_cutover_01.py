@@ -1,3 +1,15 @@
+"""SearchOS Slice A contract and reducer boundary proof.
+
+Proof class: PRODUCT-supporting structural proof. Validation bucket:
+phase_focus, with exact QueryPlan follow-up admission promoted to
+semantic_search_lane. Surface: policy, reservations, candidate windows,
+append-only lineage, material authority, readiness, and RunKernel ownership;
+navigation/recovery are closed. Runtime path: deterministic contracts and
+reducers only. Expected cost: milliseconds per node. Promotion posture: one
+durable domain sentinel, never fast_pr. Replace when the exact QueryPlan
+continuation contract is retired.
+"""
+
 from __future__ import annotations
 
 from copy import deepcopy

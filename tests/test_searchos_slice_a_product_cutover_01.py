@@ -1,4 +1,14 @@
-"""PRODUCT-PATH-REGRESSION: SearchOS Slice A ordinary cutover."""
+"""PRODUCT-PATH-REGRESSION: SearchOS Slice A ordinary cutover.
+
+Proof class: PRODUCT. Validation bucket: phase_focus, with the required-needs
+terminal and exact-follow-up nodes promoted to semantic_search_lane. Surface:
+SearchOS first-wave, READ/semantic custody, N-component admission, and safe
+terminal; navigation and comprehensive recovery remain closed. Runtime path:
+offline ordinary product pipeline with fake model/provider responses. Expected
+cost: sub-second per node. Promotion posture: durable domain-lane sentinels,
+never fast_pr. Replace or narrow when Slice B or recovery/stopping changes the
+state machine.
+"""
 
 from __future__ import annotations
 

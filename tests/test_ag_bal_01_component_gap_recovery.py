@@ -55,6 +55,26 @@ POISONED_AUTHORITY_FIELDS = {
 PRE_RECOVERY_FINAL_PACKET_STOP_REASON = (
     "pre_recovery_final_answer_packet_already_present"
 )
+_RETIRED_FORWARD_RECOVERY_TESTS = {
+    "test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author",
+    "test_ag_bal_01_fails_closed_without_offline_recovery_adapter",
+    "test_ag_bal_01_fails_closed_when_recovered_evidence_cannot_cover_gap",
+    "test_ag_bal_harden_01_poisoned_adapter_authority_is_neutral_before_rebuild",
+    "test_ag_bal_harden_01_poisoned_adapter_authority_cannot_promote_failed_coverage",
+    "test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_observation",
+    "test_ag_bal_01_ineligible_modes_do_not_invoke_or_record_recovery",
+    "test_ag_bal_01_recovery_stops_when_final_answer_packet_already_present",
+    "test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter",
+    "test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency",
+    "test_ag_bal_01_multiple_component_gaps_block_before_adapter",
+    "test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter",
+    "test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter",
+    "test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter",
+    "test_ag_bal_01_generated_query_metadata_blocks_before_adapter",
+    "test_initial_and_recovered_material_use_one_shared_typed_owner",
+    "test_incomplete_post_recovery_shared_material_fails_closed_before_fap_or_author",
+    "test_cycle_budget_exhaustion_blocks_before_another_adapter_invocation",
+}
 
 
 class _AdapterSpy:
@@ -86,7 +106,16 @@ class _AdapterSpy:
 
 
 @pytest.fixture(autouse=True)
-def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+def _offline_runtime(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_name = getattr(request.node, "originalname", request.node.name)
+    if original_name in _RETIRED_FORWARD_RECOVERY_TESTS:
+        pytest.skip(
+            "ordinary forward component-gap recovery is retired by SearchOS "
+            "Slice A and remains deferred to gap-recovery/stopping convergence"
+        )
     scrub_offline_runtime(
         monkeypatch,
         available_search_providers=("linkup",),

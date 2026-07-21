@@ -42,11 +42,6 @@ tests/test_ag96i3af5c_offline_author_lane_e2e_smoke.py::test_af5c_offline_author
 tests/test_ag96i3af6d_author_component_runner.py
 tests/test_ag_auth_mat_02_packet_owned_component_materialization.py
 
-# Owner: component-gap recovery Author materialization. Reason: recovered
-# factual text and recovered source identity reach FinalAnswerPacket-owned
-# Author material only after semantic coverage succeeds.
-tests/test_ag_bal_01_component_gap_recovery.py::test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author
-
 # The former inline lane also ran these adjacent files after the custody list.
 tests/test_final_answer_author_runkernel_ag91k.py
 tests/test_run_kernel_ag91h.py

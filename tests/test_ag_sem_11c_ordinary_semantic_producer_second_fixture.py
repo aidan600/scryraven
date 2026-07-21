@@ -602,6 +602,12 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert harness.author_prompts[0] not in execution_trace
 
 
+@pytest.mark.skip(
+    reason=(
+        "the direct ordinary semantic producer is retired as an independent "
+        "SearchOS consumer; current handoff proof uses the N-component receiver"
+    )
+)
 def test_second_fixture_missing_evidence_skips_without_orphan_semantic_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

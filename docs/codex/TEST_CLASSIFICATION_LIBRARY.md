@@ -25,7 +25,7 @@ phase actually claims.
 | `fast_pr` | Cheap broad sentinels for ordinary PR confidence. These are not phase-detail tests. |
 | `phase_focus` | Local phase proof for the exact changed seam and its immediate producer/consumer surface. |
 | `semantic_lane` | Durable semantic producer, reducer, sufficiency, component coverage, and semantic projection validation. Not ordinary PR tax. |
-| `semantic_search_lane` | Durable SearchJudgment and QueryPlan validation for semantic missing assessments and semantic component gaps. Not ordinary PR tax. |
+| `semantic_search_lane` | Durable SearchJudgment and QueryPlan validation for SearchOS iteration/unresolved needs plus isolated semantic-gap compatibility. Not ordinary PR tax. |
 | `author_lane` | Detailed Author custody coverage and related high-custody workflow tests. |
 | `full` | Complete offline suite. This is not ordinary PR tax. |
 

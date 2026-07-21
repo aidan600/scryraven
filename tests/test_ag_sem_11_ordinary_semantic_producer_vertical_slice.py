@@ -161,8 +161,36 @@ def _assert_failed_atomic_projection(kernel: RunKernel) -> None:
     assert projection["semantic_state_mutated"] is False
 
 
+_RETIRED_FORWARD_PRODUCER_FIXTURES = {
+    "test_stale_readable_official_evidence_blocks_satisfied_source_obligation_coverage",
+    "test_unqualified_or_stale_evidence_blocks_ready_direct",
+    "test_prerequisites_absent_leaves_no_orphan_initial_answer_contract",
+    "test_preflight_bundle_builds_for_ag_check_01_scope",
+    "test_atomic_bundle_commit_commits_contract_observations_and_coverage",
+    "test_atomic_bundle_commit_failures_leave_no_semantic_state",
+    "test_handoff_preflight_uses_kernel_ledger_not_stale_scope_projection",
+    "test_multipart_assessment_can_commit_bounded_component_subset",
+    "test_coverage_preflight_blocks_obligation_incompatible_readable_candidate",
+    "test_coverage_preflight_blocks_unlinked_source_requirement",
+    "test_coverage_preflight_blocks_unsatisfied_source_requirement",
+    "test_coverage_preflight_blocks_custody_gap_on_requirement",
+    "test_coverage_preflight_blocks_observed_disposition_candidate",
+    "test_contract_preflight_failed_skipped_reason",
+    "test_admission_preflight_failed_skipped_reason",
+}
+
+
 @pytest.fixture(autouse=True)
-def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+def _offline_runtime(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_name = getattr(request.node, "originalname", request.node.name)
+    if original_name in _RETIRED_FORWARD_PRODUCER_FIXTURES:
+        pytest.skip(
+            "the direct ordinary semantic producer is retired as an independent "
+            "SearchOS consumer; reducer compatibility remains covered separately"
+        )
     scrub_offline_runtime(monkeypatch)
 
 
