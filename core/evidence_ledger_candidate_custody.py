@@ -229,6 +229,35 @@ def admit_navigation_packet_commit_to_evidence_ledger(
     )
 
 
+def validate_navigation_evidence_ledger_observation(
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    observation: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+) -> EvidenceLedgerObservation:
+    """Rebuild and verify the successful v2 custody observation exactly."""
+
+    packet = validate_fetch_read_content_packet(fetch_read_content_packet)
+    observed = dict(observation)
+    observation_id = str(observed.get("observation_id") or "")
+    if not observation_id:
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation ledger observation identity missing"
+        )
+    expected, expected_custody_ref = _navigation_observation_from_packet(
+        packet,
+        observation_id=observation_id,
+    )
+    if (
+        expected.to_dict() != observed
+        or expected_custody_ref != dict(evidence_ledger_custody_ref)
+    ):
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation ledger observation does not match committed packet"
+        )
+    return expected
+
+
 def _navigation_observation_from_packet(
     packet: Mapping[str, Any],
     *,

@@ -21,10 +21,13 @@ from core.acquisition_control import (
     AcquisitionControlError,
     AcquisitionCustodyAuthorizationV1,
     AcquisitionExecutionObservationV1,
+    AcquisitionExecutionObservationV2,
     AcquisitionNeedProposalV1,
+    AcquisitionNeedProposalV2,
     AcquisitionRouteObservationV1,
     AcquisitionTerminalReceiptV1,
     AcquisitionWorkOrderV1,
+    AcquisitionWorkOrderV2,
     build_acquisition_authority_snapshot,
     build_acquisition_work_order,
     build_terminal_receipt_from_decision,
@@ -604,6 +607,15 @@ SEARCHOS_READ_CUSTODY_ADMISSION_STAGE = "searchos_read_custody_admission"
 SEARCHOS_SEMANTIC_HANDOFF_STAGE = "searchos_semantic_evaluation_handoff"
 SEARCHOS_SLICE_A_READINESS_STAGE = "searchos_slice_a_readiness"
 SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE = "searchos_required_needs_block"
+SEARCHOS_NAVIGATION_CANDIDATE_ADMISSION_STAGE = (
+    "searchos_navigation_candidate_admission"
+)
+SEARCHOS_NAVIGATION_SELECTION_STAGE = "searchos_navigation_selection"
+SEARCHOS_NAVIGATION_TERMINAL_STAGE = "searchos_navigation_terminal"
+SEARCHOS_NAVIGATION_PHYSICAL_CUSTODY_STAGE = (
+    "searchos_navigation_physical_custody"
+)
+SEARCHOS_NAVIGATION_USE_CUSTODY_STAGE = "searchos_navigation_use_custody"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -805,6 +817,19 @@ class ActionType(str, Enum):
     SEARCHOS_SEMANTIC_HANDOFF_ADMIT = "searchos_semantic_handoff_admit"
     SEARCHOS_SLICE_A_READINESS_DERIVE = "searchos_slice_a_readiness_derive"
     SEARCHOS_REQUIRED_NEEDS_BLOCK = "searchos_required_needs_block"
+    SEARCHOS_NAVIGATION_CANDIDATES_ADMIT = (
+        "searchos_navigation_candidates_admit"
+    )
+    SEARCHOS_NAVIGATION_SELECT = "searchos_navigation_select"
+    SEARCHOS_NAVIGATION_TERMINAL_RECORD = (
+        "searchos_navigation_terminal_record"
+    )
+    ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMIT = (
+        "acquisition_navigation_physical_custody_commit"
+    )
+    SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT = (
+        "searchos_navigation_use_custody_admit"
+    )
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -962,6 +987,19 @@ class ObservationType(str, Enum):
     SEARCHOS_SEMANTIC_HANDOFF_ADMITTED = "searchos_semantic_handoff_admitted"
     SEARCHOS_SLICE_A_READINESS_DERIVED = "searchos_slice_a_readiness_derived"
     SEARCHOS_REQUIRED_NEEDS_BLOCKED = "searchos_required_needs_blocked"
+    SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED = (
+        "searchos_navigation_candidates_admitted"
+    )
+    SEARCHOS_NAVIGATION_SELECTED = "searchos_navigation_selected"
+    SEARCHOS_NAVIGATION_TERMINAL_RECORDED = (
+        "searchos_navigation_terminal_recorded"
+    )
+    ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMITTED = (
+        "acquisition_navigation_physical_custody_committed"
+    )
+    SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED = (
+        "searchos_navigation_use_custody_admitted"
+    )
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -1184,6 +1222,33 @@ def _acquisition_safe_mapping(
 ) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}), string_limit=2_000)
     return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _acquisition_proposal_from_payload(
+    value: Mapping[str, Any],
+) -> AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2:
+    payload = _acquisition_safe_mapping(value)
+    if payload.get("schema_version") == "acquisition_need_proposal_v2":
+        return AcquisitionNeedProposalV2.from_dict(payload)
+    return AcquisitionNeedProposalV1.from_dict(payload)
+
+
+def _acquisition_work_order_from_payload(
+    value: Mapping[str, Any],
+) -> AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2:
+    payload = _acquisition_safe_mapping(value)
+    if payload.get("schema_version") == "acquisition_work_order_v2":
+        return AcquisitionWorkOrderV2.from_dict(payload)
+    return AcquisitionWorkOrderV1.from_dict(payload)
+
+
+def _acquisition_execution_from_payload(
+    value: Mapping[str, Any],
+) -> AcquisitionExecutionObservationV1 | AcquisitionExecutionObservationV2:
+    payload = _acquisition_safe_mapping(value)
+    if payload.get("schema_version") == "acquisition_execution_observation_v2":
+        return AcquisitionExecutionObservationV2.from_dict(payload)
+    return AcquisitionExecutionObservationV1.from_dict(payload)
 
 
 def _stable_packet_safe_json_digest(value: Any) -> str:
@@ -1454,6 +1519,7 @@ class RunState:
     acquisition_control_state: dict[str, Any] = field(default_factory=dict)
     search_judgment_read_state: dict[str, Any] = field(default_factory=dict)
     searchos_state: dict[str, Any] = field(default_factory=dict)
+    searchos_navigation_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1843,6 +1909,9 @@ class RunState:
                 self.search_judgment_read_state
             ),
             searchos_state=deepcopy(self.searchos_state),
+            searchos_navigation_state=deepcopy(
+                self.searchos_navigation_state
+            ),
             live_search_validation_state=deepcopy(
                 self.live_search_validation_state
             ),
@@ -2223,6 +2292,7 @@ class KernelTraceProjection:
     acquisition_control_state: Mapping[str, Any]
     search_judgment_read_state: Mapping[str, Any]
     searchos_state: Mapping[str, Any]
+    searchos_navigation_state: Mapping[str, Any]
     live_search_validation_state: Mapping[str, Any]
     live_search_validation_projection: Mapping[str, Any]
     live_search_validation_history: Sequence[Mapping[str, Any]]
@@ -2421,6 +2491,9 @@ class KernelTraceProjection:
                 self.search_judgment_read_state
             ),
             "searchos_state": _safe_mapping(self.searchos_state),
+            "searchos_navigation_state": _safe_mapping(
+                self.searchos_navigation_state
+            ),
             "live_search_validation_state": _safe_mapping(
                 self.live_search_validation_state
             ),
@@ -2943,14 +3016,21 @@ class RunKernel:
     def authorize_acquisition_capability_decision(
         self,
         *,
-        proposal: AcquisitionNeedProposalV1 | Mapping[str, Any],
+        proposal: (
+            AcquisitionNeedProposalV1
+            | AcquisitionNeedProposalV2
+            | Mapping[str, Any]
+        ),
         reason: str = "runkernel_post_discovery_capability_decision",
     ) -> AuthorizedAction:
         try:
             admitted = (
                 proposal
-                if isinstance(proposal, AcquisitionNeedProposalV1)
-                else AcquisitionNeedProposalV1.from_dict(proposal)
+                if isinstance(
+                    proposal,
+                    (AcquisitionNeedProposalV1, AcquisitionNeedProposalV2),
+                )
+                else _acquisition_proposal_from_payload(proposal)
             )
             if admitted.run_id != self.state.run_id:
                 raise AcquisitionControlError("proposal_run_id_mismatch")
@@ -3010,7 +3090,7 @@ class RunKernel:
             if decision.ref() != dict(capability_decision_ref):
                 raise AcquisitionControlError("capability_decision_ref_mismatch")
             proposal_id = decision.proposal_ref.get("proposal_id")
-            proposal = AcquisitionNeedProposalV1.from_dict(
+            proposal = _acquisition_proposal_from_payload(
                 control["proposals_by_id"].get(proposal_id, {})
             )
             current_decision = derive_acquisition_capability_decision(
@@ -3051,7 +3131,7 @@ class RunKernel:
             work_order_ref.get("work_order_id"), limit=400
         )
         try:
-            work_order = AcquisitionWorkOrderV1.from_dict(
+            work_order = _acquisition_work_order_from_payload(
                 control["work_orders_by_id"].get(work_order_id, {})
             )
             if work_order.ref() != dict(work_order_ref):
@@ -3099,6 +3179,7 @@ class RunKernel:
         *,
         work_order_ref: Mapping[str, Any],
         route_observation_ref: Mapping[str, Any],
+        navigation_execution_overlay_ref: Mapping[str, Any] | None = None,
         reason: str = "runkernel_guarded_acquisition_execution",
     ) -> AuthorizedAction:
         control = self._acquisition_control()
@@ -3109,7 +3190,7 @@ class RunKernel:
             route_observation_ref.get("route_observation_id"), limit=400
         )
         try:
-            work_order = AcquisitionWorkOrderV1.from_dict(
+            work_order = _acquisition_work_order_from_payload(
                 control["work_orders_by_id"].get(work_order_id, {})
             )
             route = AcquisitionRouteObservationV1.from_dict(
@@ -3149,6 +3230,16 @@ class RunKernel:
                         "execution_authorization_already_active"
                     )
             authority_snapshot = self.acquisition_authority_snapshot()
+            overlay_ref = _safe_mapping(navigation_execution_overlay_ref)
+            if isinstance(work_order, AcquisitionWorkOrderV2):
+                if not overlay_ref:
+                    raise AcquisitionControlError(
+                        "navigation_execution_overlay_ref_missing"
+                    )
+            elif overlay_ref:
+                raise AcquisitionControlError(
+                    "discovery_execution_overlay_not_allowed"
+                )
         except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         predicted_authorization_ref = {
@@ -3175,6 +3266,11 @@ class RunKernel:
                 "answer_contract_ref": work_order.answer_contract_ref,
                 "component_ref": work_order.component_ref,
                 "source_obligation_ref": work_order.source_obligation_ref,
+                **(
+                    {"navigation_execution_overlay_ref": overlay_ref}
+                    if overlay_ref
+                    else {}
+                ),
             },
             expected_observation_type=(
                 ObservationType.ACQUISITION_EXECUTION_OBSERVED
@@ -3188,6 +3284,11 @@ class RunKernel:
             "routing_policy_ref": acquisition_routing_policy_ref(),
             "claim_status": "authorized",
             "transport_claimed": False,
+            **(
+                {"navigation_execution_overlay_ref": overlay_ref}
+                if overlay_ref
+                else {}
+            ),
         }
         return action
 
@@ -3222,7 +3323,7 @@ class RunKernel:
                 "execution authorization is not canonical"
             )
         try:
-            work_order = AcquisitionWorkOrderV1.from_dict(
+            work_order = _acquisition_work_order_from_payload(
                 control["work_orders_by_id"].get(
                     work_order_ref.get("work_order_id"), {}
                 )
@@ -3276,7 +3377,7 @@ class RunKernel:
     def _validate_current_acquisition_work_order(
         self,
         *,
-        work_order: AcquisitionWorkOrderV1,
+        work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
         control: Mapping[str, Any],
     ) -> None:
         snapshot = self.acquisition_authority_snapshot()
@@ -3314,7 +3415,7 @@ class RunKernel:
     def _current_acquisition_work_order_invalidation_code(
         self,
         *,
-        work_order: AcquisitionWorkOrderV1,
+        work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
         control: Mapping[str, Any],
     ) -> str:
         try:
@@ -3365,7 +3466,7 @@ class RunKernel:
                 source_ref.get("execution_observation_id"), limit=400
             )
             try:
-                source = AcquisitionExecutionObservationV1.from_dict(
+                source = _acquisition_execution_from_payload(
                     control["execution_observations_by_id"].get(source_id, {})
                 )
             except AcquisitionControlError as exc:
@@ -3420,7 +3521,7 @@ class RunKernel:
                 source_ref.get("work_order_id"), limit=400
             )
             try:
-                work_order = AcquisitionWorkOrderV1.from_dict(
+                work_order = _acquisition_work_order_from_payload(
                     control["work_orders_by_id"].get(work_order_id, {})
                 )
                 if work_order.ref() != source_ref:
@@ -3485,7 +3586,7 @@ class RunKernel:
                 "custody_authorizations_by_receipt"
             ]:
                 raise AcquisitionControlError("custody_already_authorized")
-            work_order = AcquisitionWorkOrderV1.from_dict(
+            work_order = _acquisition_work_order_from_payload(
                 control["work_orders_by_id"].get(
                     receipt.work_order_ref.get("work_order_id"), {}
                 )
@@ -3515,7 +3616,7 @@ class RunKernel:
         )
 
     def _validate_acquisition_lineage_for_custody(
-        self, work_order: AcquisitionWorkOrderV1
+        self, work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2
     ) -> None:
         snapshot = self.acquisition_authority_snapshot()
         components = _safe_mapping(snapshot.get("components_by_id"))
@@ -3561,7 +3662,7 @@ class RunKernel:
                 raise AcquisitionControlError(
                     "custody_authorization_ref_mismatch"
                 )
-            work_order = AcquisitionWorkOrderV1.from_dict(
+            work_order = _acquisition_work_order_from_payload(
                 control["work_orders_by_id"].get(
                     authorization.work_order_ref.get("work_order_id"), {}
                 )
@@ -8485,8 +8586,12 @@ class RunKernel:
         from core.searchos_iterative_judgment_runtime import (
             build_searchos_initial_state,
         )
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            build_searchos_navigation_retained_state,
+        )
 
-        if self.state.searchos_state:
+        if self.state.searchos_state or self.state.searchos_navigation_state:
             raise RunKernelTransitionError("SearchOS Slice A state is already initialized")
         try:
             candidate_state = build_searchos_initial_state(
@@ -8497,14 +8602,281 @@ class RunKernel:
                 active_slots=active_slots,
                 initial_candidate_state_ref=initial_candidate_state_ref,
             )
-        except ValueError as exc:
+            required_slot_ids = [
+                str(dict(slot).get("slot_id") or "")
+                for slot in active_slots
+                if isinstance(slot, Mapping)
+                and slot.get("requirement_posture") == "required"
+            ]
+            navigation_state = build_searchos_navigation_retained_state(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                required_slot_ids=required_slot_ids,
+            )
+        except (ValueError, SearchOSNavigationError) as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         return self.authorize(
             stage=SEARCHOS_INITIALIZATION_STAGE,
             action_type=ActionType.SEARCHOS_INITIALIZE,
             reason=reason,
-            inputs={"searchos_state": candidate_state},
+            inputs={
+                "searchos_state": candidate_state,
+                "searchos_navigation_state": navigation_state,
+            },
             expected_observation_type=ObservationType.SEARCHOS_INITIALIZED,
+        )
+
+    def authorize_searchos_navigation_candidate_admission(
+        self,
+        *,
+        candidate_set: Mapping[str, Any],
+        reason: str = "admit_parent_custody_bound_navigation_candidates",
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            admit_searchos_navigation_candidate_set,
+            searchos_navigation_candidate_set_ref,
+        )
+
+        if not self.state.searchos_navigation_state:
+            raise RunKernelTransitionError(
+                "navigation candidate admission requires initialized state"
+            )
+        try:
+            predicted = admit_searchos_navigation_candidate_set(
+                self.state.searchos_navigation_state,
+                candidate_set=candidate_set,
+            )
+            prior_ids = set(
+                self.state.searchos_navigation_state["candidate_sets_by_id"]
+            )
+            new_ids = set(predicted["candidate_sets_by_id"]).difference(
+                prior_ids
+            )
+            if len(new_ids) != 1:
+                raise SearchOSNavigationError(
+                    "navigation_candidate_set_atomic_admission_invalid"
+                )
+            admitted = predicted["candidate_sets_by_id"][new_ids.pop()]
+            admitted_ref = searchos_navigation_candidate_set_ref(admitted)
+        except (ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_CANDIDATE_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_CANDIDATES_ADMIT,
+            reason=reason,
+            inputs={
+                "candidate_set": dict(candidate_set),
+                "predicted_admitted_candidate_set_ref": admitted_ref,
+            },
+            expected_observation_type=(
+                ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED
+            ),
+        )
+
+    def authorize_searchos_navigation_selection(
+        self,
+        *,
+        navigation_candidate_ref: Mapping[str, Any],
+        destination_registry: Any,
+        reason: str = "admit_exact_current_navigation_selection",
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            admit_searchos_navigation_selection,
+            navigation_edge_ref,
+            navigation_selection_ref,
+        )
+
+        if not self.state.searchos_navigation_state:
+            raise RunKernelTransitionError(
+                "navigation selection requires initialized state"
+            )
+        try:
+            _, selection, edge = admit_searchos_navigation_selection(
+                self.state.searchos_navigation_state,
+                navigation_candidate_ref=navigation_candidate_ref,
+                destination_registry=destination_registry,
+            )
+        except (ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_SELECTION_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_SELECT,
+            reason=reason,
+            inputs={
+                "navigation_candidate_ref": dict(navigation_candidate_ref),
+                "predicted_navigation_selection_ref": (
+                    navigation_selection_ref(selection)
+                ),
+                "predicted_navigation_edge_ref": navigation_edge_ref(edge),
+                "destination_binding_resolution_validated": True,
+            },
+            expected_observation_type=(
+                ObservationType.SEARCHOS_NAVIGATION_SELECTED
+            ),
+        )
+
+    def authorize_searchos_navigation_terminal_record(
+        self,
+        *,
+        outcome_scope: str,
+        contributor_ref: Mapping[str, Any] | None = None,
+        stable_option_ref: Mapping[str, Any] | None = None,
+        operation_identity_key: str | None = None,
+        disposition: str | None = None,
+        failure_code: str,
+        reason: str = "record_bounded_navigation_terminal_outcome",
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            record_searchos_navigation_contributor_failure,
+            record_searchos_navigation_destination_terminal,
+        )
+
+        scope = _clean_text(outcome_scope, limit=80)
+        try:
+            if scope == "contributor":
+                record_searchos_navigation_contributor_failure(
+                    self.state.searchos_navigation_state,
+                    contributor_ref=dict(contributor_ref or {}),
+                    failure_code=failure_code,
+                )
+            elif scope == "destination":
+                record_searchos_navigation_destination_terminal(
+                    self.state.searchos_navigation_state,
+                    stable_option_ref=dict(stable_option_ref or {}),
+                    operation_identity_key=str(operation_identity_key or ""),
+                    disposition=str(disposition or "destination_failed"),
+                    failure_code=failure_code,
+                )
+            else:
+                raise SearchOSNavigationError(
+                    "navigation_terminal_outcome_scope_invalid"
+                )
+        except (ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_TERMINAL_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_TERMINAL_RECORD,
+            reason=reason,
+            inputs={
+                "outcome_scope": scope,
+                "contributor_ref": dict(contributor_ref or {}),
+                "stable_option_ref": dict(stable_option_ref or {}),
+                "operation_identity_key": operation_identity_key,
+                "disposition": disposition,
+                "failure_code": failure_code,
+            },
+            expected_observation_type=(
+                ObservationType.SEARCHOS_NAVIGATION_TERMINAL_RECORDED
+            ),
+        )
+
+    def authorize_searchos_navigation_physical_custody_commit(
+        self,
+        *,
+        packet_commit_ref: Mapping[str, Any],
+        fetch_read_content_packet_ref: Mapping[str, Any],
+        navigation_selection_ref: Mapping[str, Any],
+        navigation_edge_ref: Mapping[str, Any],
+        destination_binding_ref: Mapping[str, Any],
+        physical_identity_digest: str,
+        operation_identity_key: str,
+        reason: str = "commit_navigation_packet_after_atomic_ledger_custody",
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            validate_navigation_destination_binding_ref,
+        )
+
+        try:
+            binding = validate_navigation_destination_binding_ref(
+                destination_binding_ref
+            )
+            physical_digest = str(physical_identity_digest or "")
+            if (
+                binding["physical_identity_digest"] != physical_digest
+                or operation_identity_key
+                != f"read-navigation:{physical_digest}"
+            ):
+                raise SearchOSNavigationError(
+                    "navigation_physical_custody_authority_mismatch"
+                )
+            selection = self.state.searchos_navigation_state[
+                "selection_leases_by_id"
+            ].get(navigation_selection_ref.get("navigation_selection_id"))
+            edge = self.state.searchos_navigation_state["edges_by_id"].get(
+                navigation_edge_ref.get("navigation_edge_id")
+            )
+            if (
+                not isinstance(selection, Mapping)
+                or not isinstance(edge, Mapping)
+                or selection.get("navigation_selection_digest")
+                != navigation_selection_ref.get(
+                    "navigation_selection_digest"
+                )
+                or edge.get("navigation_edge_digest")
+                != navigation_edge_ref.get("navigation_edge_digest")
+                or edge.get("navigation_selection_ref")
+                != dict(navigation_selection_ref)
+                or edge.get("destination_binding_ref") != binding
+            ):
+                raise SearchOSNavigationError(
+                    "navigation_physical_custody_authority_mismatch"
+                )
+        except (KeyError, ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_PHYSICAL_CUSTODY_STAGE,
+            action_type=(
+                ActionType.ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMIT
+            ),
+            reason=reason,
+            inputs={
+                "packet_commit_ref": dict(packet_commit_ref),
+                "fetch_read_content_packet_ref": dict(
+                    fetch_read_content_packet_ref
+                ),
+                "navigation_selection_ref": dict(
+                    navigation_selection_ref
+                ),
+                "navigation_edge_ref": dict(navigation_edge_ref),
+                "destination_binding_ref": binding,
+                "physical_identity_digest": physical_digest,
+                "operation_identity_key": operation_identity_key,
+            },
+            expected_observation_type=(
+                ObservationType.ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMITTED
+            ),
+        )
+
+    def authorize_searchos_navigation_use_custody_admission(
+        self,
+        *,
+        use_custody_ref: Mapping[str, Any],
+        reason: str = "admit_slot_specific_navigation_custody_use",
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            admit_searchos_navigation_use_custody,
+        )
+
+        try:
+            admit_searchos_navigation_use_custody(
+                self.state.searchos_navigation_state,
+                use_custody_ref=use_custody_ref,
+            )
+        except (ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_USE_CUSTODY_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT,
+            reason=reason,
+            inputs={"use_custody_ref": dict(use_custody_ref)},
+            expected_observation_type=(
+                ObservationType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED
+            ),
         )
 
     def reserve_searchos_judgment_round(
@@ -15664,11 +16036,11 @@ class RunKernel:
                         )
                     )
                 )
-                proposal = AcquisitionNeedProposalV1.from_dict(
+                proposal = _acquisition_proposal_from_payload(
                     _acquisition_safe_mapping(action.inputs.get("proposal"))
                 )
                 control = self._acquisition_control()
-                canonical_proposal = AcquisitionNeedProposalV1.from_dict(
+                canonical_proposal = _acquisition_proposal_from_payload(
                     control["proposals_by_id"].get(proposal.proposal_id, {})
                 )
                 if canonical_proposal.to_dict() != proposal.to_dict():
@@ -15706,7 +16078,7 @@ class RunKernel:
             }
         elif action.action_type is ActionType.ACQUISITION_WORK_ORDER_ADMIT:
             try:
-                observed_work_order = AcquisitionWorkOrderV1.from_dict(
+                observed_work_order = _acquisition_work_order_from_payload(
                     _acquisition_safe_mapping(
                         observation.payload.get("work_order")
                     )
@@ -15720,7 +16092,7 @@ class RunKernel:
                         decision_ref.get("decision_id"), {}
                     )
                 )
-                proposal = AcquisitionNeedProposalV1.from_dict(
+                proposal = _acquisition_proposal_from_payload(
                     control["proposals_by_id"].get(
                         decision.proposal_ref.get("proposal_id"), {}
                     )
@@ -15793,7 +16165,7 @@ class RunKernel:
                 )
                 control = self._acquisition_control()
                 work_ref = _safe_mapping(action.inputs.get("work_order_ref"))
-                work_order = AcquisitionWorkOrderV1.from_dict(
+                work_order = _acquisition_work_order_from_payload(
                     control["work_orders_by_id"].get(
                         work_ref.get("work_order_id"), {}
                     )
@@ -15808,16 +16180,36 @@ class RunKernel:
                     "routing_policy_ref"
                 ) != acquisition_routing_policy_ref():
                     raise AcquisitionControlError("routing_policy_is_stale")
+                if isinstance(work_order, AcquisitionWorkOrderV2):
+                    navigation_hostname = str(
+                        work_order.navigation_destination_binding_ref.get(
+                            "normalized_hostname"
+                        )
+                        or ""
+                    )
+                    if not navigation_hostname:
+                        raise AcquisitionControlError(
+                            "navigation_destination_binding_hostname_missing"
+                        )
+                    include_domains = (navigation_hostname,)
+                    exclude_domains: tuple[str, ...] = ()
+                    derivation_reason = (
+                        "runkernel_authorized_navigation_candidate_work_order"
+                    )
+                else:
+                    include_domains = work_order.include_domains
+                    exclude_domains = work_order.exclude_domains
+                    derivation_reason = (
+                        "runkernel_authorized_post_discovery_work_order"
+                    )
                 route_request = ProviderCapabilityRequest(
                     capability=AcquisitionCapability(
                         work_order.authorized_capability
                     ),
-                    domain_constraints=work_order.include_domains,
-                    include_domains=work_order.include_domains,
-                    exclude_domains=work_order.exclude_domains,
-                    derivation_reason=(
-                        "runkernel_authorized_post_discovery_work_order"
-                    ),
+                    domain_constraints=include_domains,
+                    include_domains=include_domains,
+                    exclude_domains=exclude_domains,
+                    derivation_reason=derivation_reason,
                 )
                 route_decision = route_provider_capability(
                     route_request,
@@ -15863,7 +16255,7 @@ class RunKernel:
             }
         elif action.action_type is ActionType.ACQUISITION_EXECUTE:
             try:
-                observed_execution = AcquisitionExecutionObservationV1.from_dict(
+                observed_execution = _acquisition_execution_from_payload(
                     _acquisition_safe_mapping(
                         observation.payload.get("execution_observation")
                     )
@@ -15873,7 +16265,7 @@ class RunKernel:
                 route_ref = _safe_mapping(
                     action.inputs.get("route_observation_ref")
                 )
-                work_order = AcquisitionWorkOrderV1.from_dict(
+                work_order = _acquisition_work_order_from_payload(
                     control["work_orders_by_id"].get(
                         work_ref.get("work_order_id"), {}
                     )
@@ -15927,6 +16319,40 @@ class RunKernel:
                     work_order=work_order,
                     control=control,
                 )
+                if isinstance(work_order, AcquisitionWorkOrderV2):
+                    if not isinstance(
+                        observed_execution, AcquisitionExecutionObservationV2
+                    ):
+                        raise AcquisitionControlError(
+                            "navigation_execution_observation_v2_required"
+                        )
+                    if (
+                        observed_execution.execution_action_ref
+                        != _acquisition_action_ref(action)
+                        or observed_execution.navigation_execution_overlay_ref
+                        != _safe_mapping(
+                            action.inputs.get("navigation_execution_overlay_ref")
+                        )
+                        or observed_execution.navigation_destination_binding_ref
+                        != work_order.navigation_destination_binding_ref
+                        or observed_execution.navigation_edge_ref
+                        != work_order.navigation_edge_ref
+                        or observed_execution.navigation_selection_ref
+                        != work_order.navigation_selection_ref
+                        or observed_execution.physical_identity_digest
+                        != work_order.physical_identity_digest
+                        or observed_execution.full_destination_digest
+                        != work_order.full_destination_digest
+                    ):
+                        raise AcquisitionControlError(
+                            "navigation_execution_authority_binding_mismatch"
+                        )
+                elif not isinstance(
+                    observed_execution, AcquisitionExecutionObservationV1
+                ):
+                    raise AcquisitionControlError(
+                        "discovery_execution_observation_v1_required"
+                    )
                 if observed_execution.terminal_status not in {
                     "completed",
                     "failed",
@@ -15956,14 +16382,12 @@ class RunKernel:
                             "completed_execution_material_invalid"
                         )
                     completed_artifact = observed_execution.artifact_refs[0]
-                    if (
+                    common_invalid = (
                         work_order.authorized_capability
                         != AcquisitionCapability.READ.value
                         or completed_artifact.get("kind")
                         != "selected_url_read_material"
                         or completed_artifact.get("status") != "readable"
-                        or completed_artifact.get("requested_url")
-                        not in work_order.selected_urls
                         or len(
                             str(
                                 completed_artifact.get("retained_digest")
@@ -15988,7 +16412,36 @@ class RunKernel:
                         > work_order.hard_operation_bounds.get(
                             "max_retained_characters", 0
                         )
-                    ):
+                    )
+                    if isinstance(work_order, AcquisitionWorkOrderV2):
+                        material_invalid = (
+                            completed_artifact.get(
+                                "physical_acquisition_origin"
+                            )
+                            != "navigation_candidate"
+                            or completed_artifact.get(
+                                "navigation_destination_binding_ref"
+                            )
+                            != work_order.navigation_destination_binding_ref
+                            or completed_artifact.get("navigation_edge_ref")
+                            != work_order.navigation_edge_ref
+                            or completed_artifact.get("navigation_selection_ref")
+                            != work_order.navigation_selection_ref
+                            or completed_artifact.get(
+                                "physical_identity_digest"
+                            )
+                            != work_order.physical_identity_digest
+                            or completed_artifact.get("full_destination_digest")
+                            != work_order.full_destination_digest
+                            or completed_artifact.get("exact_locator_included")
+                            is not False
+                        )
+                    else:
+                        material_invalid = (
+                            completed_artifact.get("requested_url")
+                            not in work_order.selected_urls
+                        )
+                    if common_invalid or material_invalid:
                         raise AcquisitionControlError(
                             "completed_read_artifact_invalid"
                         )
@@ -16037,12 +16490,12 @@ class RunKernel:
                 active_obligation_id: str | None = None
                 active_work_order_ref: dict[str, Any] = {}
                 if source_kind == "execution":
-                    execution = AcquisitionExecutionObservationV1.from_dict(
+                    execution = _acquisition_execution_from_payload(
                         control["execution_observations_by_id"].get(
                             source_ref.get("execution_observation_id"), {}
                         )
                     )
-                    work_order = AcquisitionWorkOrderV1.from_dict(
+                    work_order = _acquisition_work_order_from_payload(
                         control["work_orders_by_id"].get(
                             execution.work_order_ref.get("work_order_id"), {}
                         )
@@ -16070,7 +16523,7 @@ class RunKernel:
                             source_ref.get("route_observation_id"), {}
                         )
                     )
-                    work_order = AcquisitionWorkOrderV1.from_dict(
+                    work_order = _acquisition_work_order_from_payload(
                         control["work_orders_by_id"].get(
                             route.work_order_ref.get("work_order_id"), {}
                         )
@@ -16084,7 +16537,7 @@ class RunKernel:
                     )
                     active_work_order_ref = work_order.ref()
                 elif source_kind == "work_order_invalidation":
-                    work_order = AcquisitionWorkOrderV1.from_dict(
+                    work_order = _acquisition_work_order_from_payload(
                         control["work_orders_by_id"].get(
                             source_ref.get("work_order_id"), {}
                         )
@@ -16119,7 +16572,7 @@ class RunKernel:
                             )
                         )
                     )
-                    proposal = AcquisitionNeedProposalV1.from_dict(
+                    proposal = _acquisition_proposal_from_payload(
                         control["proposals_by_id"].get(
                             decision.proposal_ref.get("proposal_id"), {}
                         )
@@ -16234,7 +16687,7 @@ class RunKernel:
                 receipt = AcquisitionTerminalReceiptV1.from_dict(
                     receipt_payload
                 )
-                work_order = AcquisitionWorkOrderV1.from_dict(
+                work_order = _acquisition_work_order_from_payload(
                     control["work_orders_by_id"].get(
                         receipt.work_order_ref.get("work_order_id"), {}
                     )
@@ -16448,20 +16901,372 @@ class RunKernel:
             from core.searchos_iterative_judgment_runtime import (
                 validate_searchos_state,
             )
+            from core.searchos_navigation_runtime import (
+                SearchOSNavigationError,
+                validate_searchos_navigation_retained_state,
+            )
 
             expected = _safe_mapping(action.inputs.get("searchos_state"))
             observed = _safe_mapping(observation.payload.get("searchos_state"))
-            if observed != expected:
+            expected_navigation = _safe_mapping(
+                action.inputs.get("searchos_navigation_state")
+            )
+            raw_observed_navigation = observation.payload.get(
+                "searchos_navigation_state"
+            )
+            observed_navigation = (
+                _safe_mapping(raw_observed_navigation)
+                if isinstance(raw_observed_navigation, Mapping)
+                else deepcopy(expected_navigation)
+            )
+            if observed != expected or observed_navigation != expected_navigation:
                 raise RunKernelTransitionError(
                     "SearchOS initialization observation differs from authorization"
                 )
             try:
                 self.state.searchos_state = validate_searchos_state(observed)
-            except ValueError as exc:
+                self.state.searchos_navigation_state = (
+                    validate_searchos_navigation_retained_state(
+                        observed_navigation
+                    )
+                )
+            except (ValueError, SearchOSNavigationError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(
-                self.state.searchos_state
+                {
+                    "searchos_state": self.state.searchos_state,
+                    "searchos_navigation_state": (
+                        self.state.searchos_navigation_state
+                    ),
+                }
             )
+        elif action.action_type is ActionType.SEARCHOS_NAVIGATION_CANDIDATES_ADMIT:
+            from core.searchos_navigation_runtime import (
+                admit_searchos_navigation_candidate_set,
+                searchos_navigation_candidate_set_ref,
+            )
+
+            try:
+                prior_ids = set(
+                    self.state.searchos_navigation_state[
+                        "candidate_sets_by_id"
+                    ]
+                )
+                next_navigation_state = (
+                    admit_searchos_navigation_candidate_set(
+                        self.state.searchos_navigation_state,
+                        candidate_set=_safe_mapping(
+                            action.inputs.get("candidate_set")
+                        ),
+                    )
+                )
+                new_ids = set(
+                    next_navigation_state["candidate_sets_by_id"]
+                ).difference(prior_ids)
+                if len(new_ids) != 1:
+                    raise ValueError(
+                        "navigation_candidate_set_atomic_admission_invalid"
+                    )
+                admitted = next_navigation_state[
+                    "candidate_sets_by_id"
+                ][new_ids.pop()]
+                admitted_ref = searchos_navigation_candidate_set_ref(
+                    admitted
+                )
+                if (
+                    admitted_ref
+                    != _safe_mapping(
+                        action.inputs.get(
+                            "predicted_admitted_candidate_set_ref"
+                        )
+                    )
+                    or admitted_ref
+                    != _safe_mapping(
+                        observation.payload.get(
+                            "admitted_navigation_candidate_set_ref"
+                        )
+                    )
+                ):
+                    raise ValueError(
+                        "navigation_candidate_set_observation_mismatch"
+                    )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.searchos_navigation_state = next_navigation_state
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                "canonical_state": True,
+                "admitted_navigation_candidate_set_ref": admitted_ref,
+                "admission_excluded_count": admitted.get(
+                    "admission_excluded_count", 0
+                ),
+                "admission_overflow_digest": admitted.get(
+                    "admission_overflow_digest"
+                ),
+            }
+        elif action.action_type is ActionType.SEARCHOS_NAVIGATION_SELECT:
+            from core.searchos_navigation_runtime import (
+                admit_searchos_navigation_selection,
+                navigation_edge_ref,
+                navigation_selection_ref,
+            )
+
+            try:
+                next_navigation_state, selection, edge = (
+                    admit_searchos_navigation_selection(
+                        self.state.searchos_navigation_state,
+                        navigation_candidate_ref=_safe_mapping(
+                            action.inputs.get("navigation_candidate_ref")
+                        ),
+                        binding_resolution_validated=(
+                            action.inputs.get(
+                                "destination_binding_resolution_validated"
+                            )
+                            is True
+                        ),
+                    )
+                )
+                selection_ref = navigation_selection_ref(selection)
+                edge_ref = navigation_edge_ref(edge)
+                if (
+                    selection_ref
+                    != _safe_mapping(
+                        action.inputs.get(
+                            "predicted_navigation_selection_ref"
+                        )
+                    )
+                    or edge_ref
+                    != _safe_mapping(
+                        action.inputs.get("predicted_navigation_edge_ref")
+                    )
+                    or selection_ref
+                    != _safe_mapping(
+                        observation.payload.get(
+                            "navigation_selection_ref"
+                        )
+                    )
+                    or edge_ref
+                    != _safe_mapping(
+                        observation.payload.get("navigation_edge_ref")
+                    )
+                ):
+                    raise ValueError(
+                        "navigation_selection_observation_mismatch"
+                    )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.searchos_navigation_state = next_navigation_state
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                "canonical_state": True,
+                "navigation_selection_ref": selection_ref,
+                "navigation_edge_ref": edge_ref,
+                "logical_edge_charged": True,
+                "logical_read_nomination_charged": True,
+                "destination_exact_locator_retained": False,
+            }
+        elif action.action_type is ActionType.SEARCHOS_NAVIGATION_TERMINAL_RECORD:
+            from core.searchos_navigation_runtime import (
+                record_searchos_navigation_contributor_failure,
+                record_searchos_navigation_destination_terminal,
+            )
+
+            expected_outcome = _safe_mapping(action.inputs)
+            observed_outcome = _safe_mapping(
+                observation.payload.get("navigation_terminal_outcome")
+            )
+            if observed_outcome != expected_outcome:
+                raise RunKernelTransitionError(
+                    "navigation terminal observation differs from authorization"
+                )
+            try:
+                if action.inputs.get("outcome_scope") == "contributor":
+                    next_navigation_state = (
+                        record_searchos_navigation_contributor_failure(
+                            self.state.searchos_navigation_state,
+                            contributor_ref=_safe_mapping(
+                                action.inputs.get("contributor_ref")
+                            ),
+                            failure_code=str(
+                                action.inputs.get("failure_code") or ""
+                            ),
+                        )
+                    )
+                elif action.inputs.get("outcome_scope") == "destination":
+                    next_navigation_state = (
+                        record_searchos_navigation_destination_terminal(
+                            self.state.searchos_navigation_state,
+                            stable_option_ref=_safe_mapping(
+                                action.inputs.get("stable_option_ref")
+                            ),
+                            operation_identity_key=str(
+                                action.inputs.get("operation_identity_key")
+                                or ""
+                            ),
+                            disposition=str(
+                                action.inputs.get("disposition") or ""
+                            ),
+                            failure_code=str(
+                                action.inputs.get("failure_code") or ""
+                            ),
+                        )
+                    )
+                else:
+                    raise ValueError(
+                        "navigation_terminal_outcome_scope_invalid"
+                    )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.searchos_navigation_state = next_navigation_state
+            self.state.projections[action.stage] = deepcopy(
+                observed_outcome
+            )
+        elif action.action_type is (
+            ActionType.ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMIT
+        ):
+            from core.evidence_ledger_candidate_custody import (
+                validate_navigation_evidence_ledger_observation,
+            )
+            from core.fetch_read_content_reference import (
+                fetch_read_content_packet_ref_from_packet,
+                validate_fetch_read_content_packet,
+            )
+            from core.searchos_navigation_runtime import (
+                admit_searchos_navigation_use_custody,
+                record_searchos_navigation_physical_custody,
+            )
+
+            try:
+                if _safe_mapping(
+                    observation.payload.get("packet_commit_ref")
+                ) != _safe_mapping(action.inputs.get("packet_commit_ref")):
+                    raise ValueError(
+                        "navigation_packet_commit_observation_mismatch"
+                    )
+                raw_packet = observation.payload.get(
+                    "committed_fetch_read_content_packet"
+                )
+                if not isinstance(raw_packet, Mapping):
+                    raise ValueError(
+                        "navigation committed packet observation missing"
+                    )
+                packet = validate_fetch_read_content_packet(
+                    dict(raw_packet)
+                )
+                packet_ref = fetch_read_content_packet_ref_from_packet(
+                    packet
+                )
+                if (
+                    packet_ref
+                    != _safe_mapping(
+                        action.inputs.get("fetch_read_content_packet_ref")
+                    )
+                    or packet.get("navigation_selection_ref")
+                    != _safe_mapping(
+                        action.inputs.get("navigation_selection_ref")
+                    )
+                    or packet.get("navigation_edge_ref")
+                    != _safe_mapping(
+                        action.inputs.get("navigation_edge_ref")
+                    )
+                    or packet.get("navigation_destination_binding_ref")
+                    != _safe_mapping(
+                        action.inputs.get("destination_binding_ref")
+                    )
+                    or packet.get("physical_identity_digest")
+                    != action.inputs.get("physical_identity_digest")
+                    or packet.get("operation_identity_key")
+                    != action.inputs.get("operation_identity_key")
+                ):
+                    raise ValueError(
+                        "navigation_committed_packet_authority_mismatch"
+                    )
+                ledger_custody_ref = _safe_mapping(
+                    observation.payload.get(
+                        "evidence_ledger_custody_ref"
+                    )
+                )
+                ledger_observation = _acquisition_safe_mapping(
+                    observation.payload.get("evidence_ledger_observation")
+                )
+                validated_ledger_observation = (
+                    validate_navigation_evidence_ledger_observation(
+                        fetch_read_content_packet=packet,
+                        observation=ledger_observation,
+                        evidence_ledger_custody_ref=ledger_custody_ref,
+                    )
+                )
+                next_navigation_state, physical_custody = (
+                    record_searchos_navigation_physical_custody(
+                        self.state.searchos_navigation_state,
+                        fetch_read_content_packet=packet,
+                        evidence_ledger_custody_ref=ledger_custody_ref,
+                    )
+                )
+                if physical_custody != _acquisition_safe_mapping(
+                    observation.payload.get(
+                        "navigation_physical_custody_record"
+                    )
+                ):
+                    raise ValueError(
+                        "navigation_physical_custody_observation_mismatch"
+                    )
+                use_custody_ref = _acquisition_safe_mapping(
+                    observation.payload.get(
+                        "navigation_use_custody_ref"
+                    )
+                )
+                next_navigation_state = (
+                    admit_searchos_navigation_use_custody(
+                        next_navigation_state,
+                        use_custody_ref=use_custody_ref,
+                    )
+                )
+                next_ledger = deepcopy(self.state.evidence_ledger)
+                next_ledger.reduce_observation(
+                    validated_ledger_observation
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.searchos_navigation_state = next_navigation_state
+            self.state.evidence_ledger = next_ledger
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                "canonical_state": True,
+                "navigation_physical_custody_record": physical_custody,
+                "navigation_use_custody_ref": use_custody_ref,
+                "durable_source_commit_boundary": True,
+            }
+        elif action.action_type is ActionType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT:
+            from core.searchos_navigation_runtime import (
+                admit_searchos_navigation_use_custody,
+            )
+
+            expected_use = _safe_mapping(
+                action.inputs.get("use_custody_ref")
+            )
+            observed_use = _safe_mapping(
+                observation.payload.get("navigation_use_custody_ref")
+            )
+            if observed_use != expected_use:
+                raise RunKernelTransitionError(
+                    "navigation use custody observation differs from authorization"
+                )
+            try:
+                self.state.searchos_navigation_state = (
+                    admit_searchos_navigation_use_custody(
+                        self.state.searchos_navigation_state,
+                        use_custody_ref=observed_use,
+                    )
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                "canonical_state": True,
+                "navigation_use_custody_ref": observed_use,
+                "physical_provider_operation_reused": True,
+            }
         elif action.action_type is ActionType.SEARCHOS_JUDGMENT_DECIDE:
             from core.searchos_iterative_judgment_runtime import (
                 record_searchos_judgment_failure,

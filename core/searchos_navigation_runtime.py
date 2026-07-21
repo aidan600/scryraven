@@ -1385,6 +1385,10 @@ def build_searchos_navigation_retained_state(
         "selection_leases_by_id": {},
         "terminal_physical_operations_by_key": {},
         "physical_custody_by_digest": {},
+        "use_custody_refs_by_id": {},
+        "visited_physical_identity_digests_by_slot": {},
+        "validated_redirect_alias_digests_by_physical_digest": {},
+        "contributor_failures_by_id": {},
         "logical_edge_charges": 0,
         "logical_read_nomination_charges": 0,
         "next_admission_ordinal": 1,
@@ -1426,7 +1430,8 @@ def admit_searchos_navigation_candidate_set(
     planned_options: set[str] = set()
     planned_contributors: set[str] = set()
     planned_lineages: set[str] = set()
-    for contributor in contributors:
+    excluded: list[dict[str, Any]] = []
+    for contributor_index, contributor in enumerate(contributors):
         option_id = contributor["stable_option_ref"]["navigation_option_id"]
         contributor_id = contributor["navigation_contributor_id"]
         existing_state = next_state["option_states_by_id"].get(option_id, {})
@@ -1440,6 +1445,7 @@ def admit_searchos_navigation_candidate_set(
             for item in accepted
             if item["stable_option_ref"]["navigation_option_id"] == option_id
         ) >= NAVIGATION_CONTRIBUTORS_PER_OPTION_CEILING:
+            excluded = contributors[contributor_index:]
             break
         option_cost = (
             0
@@ -1454,6 +1460,7 @@ def admit_searchos_navigation_candidate_set(
             slot_id,
             len(planned_options) + option_cost,
         ):
+            excluded = contributors[contributor_index:]
             break
         if contributor_cost and not _capacity_available(
             next_state,
@@ -1461,6 +1468,7 @@ def admit_searchos_navigation_candidate_set(
             slot_id,
             len(planned_contributors) + contributor_cost,
         ):
+            excluded = contributors[contributor_index:]
             break
         if lineage_cost and not _capacity_available(
             next_state,
@@ -1468,6 +1476,7 @@ def admit_searchos_navigation_candidate_set(
             slot_id,
             len(planned_lineages) + lineage_cost,
         ):
+            excluded = contributors[contributor_index:]
             break
         accepted.append(contributor)
         if option_cost:
@@ -1475,7 +1484,7 @@ def admit_searchos_navigation_candidate_set(
         planned_contributors.add(contributor_id)
         planned_lineages.add(option_id)
         changed_options.add(option_id)
-    excluded_count = len(contributors) - len(accepted)
+    excluded_count = len(excluded)
     option_candidates: list[dict[str, Any]] = []
     for contributor in accepted:
         option_id = contributor["stable_option_ref"]["navigation_option_id"]
@@ -1565,7 +1574,7 @@ def admit_searchos_navigation_candidate_set(
             ),
             "admission_excluded_count": excluded_count,
             "admission_overflow_digest": _digest(
-                [navigation_contributor_ref(item) for item in contributors[len(accepted) :]]
+                [navigation_contributor_ref(item) for item in excluded]
             ),
             "admission_posture": "runkernel_admitted",
             "admission_ordinal": next_state["next_admission_ordinal"],
@@ -1590,7 +1599,24 @@ def admit_searchos_navigation_candidate_set(
         "deep_edges": len(next_state["edges_by_id"]),
     }
     if excluded_count:
-        next_state["overflow_totals"]["contributors"] += excluded_count
+        excluded_option_ids = {
+            item["stable_option_ref"]["navigation_option_id"]
+            for item in excluded
+        }
+        next_state["overflow_totals"]["contributors"] += len(
+            {
+                item["navigation_contributor_id"]
+                for item in excluded
+                if item["navigation_contributor_id"]
+                not in next_state["contributors_by_id"]
+            }
+        )
+        next_state["overflow_totals"]["stable_options"] += len(
+            excluded_option_ids.difference(next_state["options_by_id"])
+        )
+        next_state["overflow_totals"]["lineages"] += len(
+            excluded_option_ids
+        )
         next_state["rolling_overflow_digest"] = _digest(
             {
                 "prior": next_state["rolling_overflow_digest"],
@@ -1660,7 +1686,8 @@ def admit_searchos_navigation_selection(
     state: Mapping[str, Any],
     *,
     navigation_candidate_ref: Mapping[str, Any],
-    destination_registry: SearchOSNavigationDestinationRegistry,
+    destination_registry: SearchOSNavigationDestinationRegistry | None = None,
+    binding_resolution_validated: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Admit one exact current candidate, immutable lease, and logical edge."""
 
@@ -1696,7 +1723,12 @@ def admit_searchos_navigation_selection(
     )
     if expected != candidate:
         raise SearchOSNavigationError("navigation_candidate_hidden_or_stale")
-    destination_registry.resolve(candidate["destination_binding_ref"])
+    if destination_registry is not None:
+        destination_registry.resolve(candidate["destination_binding_ref"])
+    elif binding_resolution_validated is not True:
+        raise SearchOSNavigationError(
+            NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
+        )
     if not _capacity_available(current, "deep_edges", option["slot_id"], 1):
         raise SearchOSNavigationError("navigation_deep_edge_capacity_exhausted")
     selection_core = {
@@ -1840,7 +1872,12 @@ def record_searchos_navigation_contributor_failure(
         for lineage in next_state["lineages_by_id"].values()
         if lineage.get("stable_option_ref", {}).get("navigation_option_id") == option_id
     )
-    if next_state["retained_counts"]["lineages"] >= next_state["ceilings"]["lineages"]:
+    if not _capacity_available(
+        next_state,
+        "lineages",
+        option["slot_id"],
+        1,
+    ):
         raise SearchOSNavigationError("navigation_lineage_capacity_exhausted")
     lineage = build_searchos_navigation_lineage_snapshot_v1(
         stable_option_identity=option,
@@ -1848,6 +1885,18 @@ def record_searchos_navigation_contributor_failure(
         generation_ordinal=generation,
     )
     next_state["lineages_by_id"][lineage["navigation_lineage_id"]] = lineage
+    failure_core = {
+        "contributor_ref": ref,
+        "stable_option_ref": contributor["stable_option_ref"],
+        "failure_code": _token(
+            failure_code, "navigation_contributor_failure_code", maximum=240
+        ),
+        "failure_scope": "contributor_only",
+    }
+    failure_digest = _digest(failure_core)
+    next_state["contributor_failures_by_id"][
+        f"navigation-contributor-failure:{failure_digest[:24]}"
+    ] = {**failure_core, "failure_digest": failure_digest}
     next_state["option_states_by_id"][option_id] = build_searchos_navigation_option_state_v1(
         stable_option_identity=option,
         lineage_snapshot=lineage,
@@ -1886,6 +1935,13 @@ def record_searchos_navigation_destination_terminal(
     }:
         raise SearchOSNavigationError("navigation_terminal_disposition_invalid")
     operation_key = _token(operation_identity_key, "operation_identity_key")
+    existing_terminal = current["terminal_physical_operations_by_key"].get(
+        operation_key
+    )
+    if existing_terminal:
+        raise SearchOSNavigationError(
+            "navigation_physical_operation_already_terminal"
+        )
     next_state = deepcopy(current)
     next_state["terminal_physical_operations_by_key"][operation_key] = {
         "stable_option_ref": dict(stable_option_ref),
@@ -1912,6 +1968,304 @@ def record_searchos_navigation_destination_terminal(
         f"{updated['navigation_option_state_digest'][:24]}"
     )
     next_state["option_states_by_id"][option_id] = updated
+    return _validated_retained_state(next_state)
+
+
+def build_searchos_navigation_physical_custody_record_v2(
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the immutable post-ledger physical-custody record.
+
+    This builder is intentionally usable only after the caller has obtained the
+    successful EvidenceLedger custody ref.  The exact attempted URL therefore
+    first becomes durable at the custody observation/record boundary.
+    """
+
+    from core.fetch_read_content_reference import (
+        FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION,
+        fetch_read_content_packet_ref_from_packet,
+        validate_fetch_read_content_packet,
+    )
+
+    packet = validate_fetch_read_content_packet(fetch_read_content_packet)
+    if (
+        packet.get("schema_version")
+        != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION
+        or packet.get("physical_acquisition_origin") != "navigation_candidate"
+    ):
+        raise SearchOSNavigationError(
+            "navigation_physical_custody_packet_v2_required"
+        )
+    binding = validate_navigation_destination_binding_ref(
+        packet.get("navigation_destination_binding_ref")
+    )
+    physical_digest = binding["physical_identity_digest"]
+    if (
+        packet.get("physical_identity_digest") != physical_digest
+        or packet.get("operation_identity_key")
+        != f"read-navigation:{physical_digest}"
+        or packet.get("attempted_url") != packet.get("durable_source_url")
+    ):
+        raise SearchOSNavigationError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        )
+    core = {
+        "schema_version": "searchos_navigation_physical_custody_v2",
+        "owner": SEARCHOS_NAVIGATION_OWNER,
+        "run_id": _token(packet.get("run_id"), "run_id"),
+        "request_id": _token(packet.get("request_id"), "request_id"),
+        "physical_acquisition_origin": "navigation_candidate",
+        "operation_identity_key": packet["operation_identity_key"],
+        "physical_identity_digest": physical_digest,
+        "full_destination_digest": packet["full_destination_digest"],
+        "destination_binding_ref": binding,
+        "navigation_edge_ref": _required_ref(
+            packet.get("navigation_edge_ref"), "navigation_edge_ref"
+        ),
+        "navigation_selection_ref": _required_ref(
+            packet.get("navigation_selection_ref"),
+            "navigation_selection_ref",
+        ),
+        "navigation_lineage_snapshot_ref": _required_ref(
+            packet.get("navigation_lineage_snapshot_ref"),
+            "navigation_lineage_snapshot_ref",
+        ),
+        "representative_contributor_ref": _required_ref(
+            packet.get("representative_contributor_ref"),
+            "representative_contributor_ref",
+        ),
+        "parent_custody_ref": _required_ref(
+            packet.get("parent_custody_ref"), "parent_custody_ref"
+        ),
+        "physical_acquisition_ref": _required_ref(
+            packet.get("physical_acquisition_ref"),
+            "physical_acquisition_ref",
+        ),
+        "fetch_read_content_packet_ref": fetch_read_content_packet_ref_from_packet(
+            packet
+        ),
+        "evidence_ledger_custody_ref": _required_ref(
+            evidence_ledger_custody_ref,
+            "evidence_ledger_custody_ref",
+        ),
+        "attempted_url": _token(packet.get("attempted_url"), "attempted_url"),
+        "durable_source_url": _token(
+            packet.get("durable_source_url"), "durable_source_url"
+        ),
+        "source_host": _token(packet.get("source_host"), "source_host"),
+        "source_domain": _token(
+            packet.get("source_domain"), "source_domain"
+        ),
+        "retained_digest": _digest_token(
+            packet.get("retained_digest"), "retained_digest"
+        ),
+        "retained_character_count": _bounded_positive_int(
+            packet.get("retained_character_count"),
+            "retained_character_count",
+        ),
+        "validated_redirect_alias_full_digests": sorted(
+            {
+                normalize_navigation_url(str(alias_url)).full_digest
+                for reference in packet.get("reference_records", ())
+                if isinstance(reference, Mapping)
+                for alias_key, alias_url in dict(
+                    reference.get("secondary_source_provenance") or {}
+                ).items()
+                if alias_key in {"resolved_url", "final_url"}
+                and alias_url
+            }
+        ),
+        "custody_posture": "immutable_physical_custody",
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "navigation_physical_custody_id": (
+            f"searchos-navigation-physical-custody:{physical_digest}:{digest[:20]}"
+        ),
+        "navigation_physical_custody_digest": digest,
+    }
+
+
+def searchos_navigation_physical_custody_ref(
+    record: Mapping[str, Any],
+) -> dict[str, str]:
+    value = _mapping(record, "navigation_physical_custody")
+    return {
+        "navigation_physical_custody_id": _token(
+            value.get("navigation_physical_custody_id"),
+            "navigation_physical_custody_id",
+        ),
+        "navigation_physical_custody_digest": _digest_token(
+            value.get("navigation_physical_custody_digest"),
+            "navigation_physical_custody_digest",
+        ),
+    }
+
+
+def record_searchos_navigation_physical_custody(
+    state: Mapping[str, Any],
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Atomically retain one successful physical custody and terminalize it."""
+
+    current = _validated_retained_state(state)
+    record = build_searchos_navigation_physical_custody_record_v2(
+        fetch_read_content_packet=fetch_read_content_packet,
+        evidence_ledger_custody_ref=evidence_ledger_custody_ref,
+    )
+    if (
+        record["run_id"] != current["run_id"]
+        or record["request_id"] != current["request_id"]
+    ):
+        raise SearchOSNavigationError(
+            "navigation_physical_custody_scope_mismatch"
+        )
+    physical_digest = record["physical_identity_digest"]
+    if physical_digest in current["physical_custody_by_digest"]:
+        raise SearchOSNavigationError(
+            "navigation_physical_custody_already_exists"
+        )
+    edge_ref = record["navigation_edge_ref"]
+    selection_ref = record["navigation_selection_ref"]
+    edge = current["edges_by_id"].get(edge_ref.get("navigation_edge_id"))
+    selection = current["selection_leases_by_id"].get(
+        selection_ref.get("navigation_selection_id")
+    )
+    if (
+        edge is None
+        or selection is None
+        or navigation_edge_ref(edge) != edge_ref
+        or navigation_selection_ref(selection) != selection_ref
+        or edge.get("navigation_selection_ref") != selection_ref
+        or edge.get("destination_binding_ref")
+        != record["destination_binding_ref"]
+    ):
+        raise SearchOSNavigationError(
+            "navigation_physical_custody_edge_binding_mismatch"
+        )
+    option_ref = edge["stable_option_ref"]
+    next_state = record_searchos_navigation_destination_terminal(
+        current,
+        stable_option_ref=option_ref,
+        operation_identity_key=record["operation_identity_key"],
+        disposition="custodied",
+    )
+    next_state["physical_custody_by_digest"][physical_digest] = record
+    next_state[
+        "validated_redirect_alias_digests_by_physical_digest"
+    ][physical_digest] = list(
+        record["validated_redirect_alias_full_digests"]
+    )
+    return _validated_retained_state(next_state), deepcopy(record)
+
+
+def admit_searchos_navigation_use_custody(
+    state: Mapping[str, Any],
+    *,
+    use_custody_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Admit one slot-specific logical use of immutable physical custody."""
+
+    current = _validated_retained_state(state)
+    use = _mapping(use_custody_ref, "navigation_use_custody_ref")
+    required = {
+        "schema_version",
+        "slot_ref",
+        "navigation_selection_ref",
+        "navigation_edge_ref",
+        "physical_custody_ref",
+        "fetch_read_content_packet_ref",
+        "evidence_ledger_custody_ref",
+        "destination_binding_ref",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "physical_acquisition_origin",
+        "navigation_depth",
+        "ancestor_physical_identity_digests",
+        "bounded_content_present",
+        "searchos_navigation_use_custody_id",
+        "searchos_navigation_use_custody_digest",
+    }
+    if set(use) != required:
+        raise SearchOSNavigationError(
+            "navigation_use_custody_fields_invalid"
+        )
+    expected = build_searchos_navigation_use_custody_ref_v2(
+        slot_ref=use["slot_ref"],
+        selection_ref=use["navigation_selection_ref"],
+        edge_ref=use["navigation_edge_ref"],
+        physical_custody_ref=use["physical_custody_ref"],
+        fetch_read_content_packet_ref=use["fetch_read_content_packet_ref"],
+        evidence_ledger_custody_ref=use["evidence_ledger_custody_ref"],
+        destination_binding_ref=use["destination_binding_ref"],
+        physical_acquisition_origin=use["physical_acquisition_origin"],
+        navigation_depth=use["navigation_depth"],
+        ancestor_physical_identity_digests=use[
+            "ancestor_physical_identity_digests"
+        ],
+    )
+    if expected != use:
+        raise SearchOSNavigationError(
+            "navigation_use_custody_identity_mismatch"
+        )
+    physical = current["physical_custody_by_digest"].get(
+        use["physical_identity_digest"]
+    )
+    if physical is None:
+        raise SearchOSNavigationError(
+            "navigation_physical_custody_unavailable"
+        )
+    if (
+        searchos_navigation_physical_custody_ref(physical)
+        != use["physical_custody_ref"]
+        or physical["fetch_read_content_packet_ref"]
+        != use["fetch_read_content_packet_ref"]
+        or physical["evidence_ledger_custody_ref"]
+        != use["evidence_ledger_custody_ref"]
+        or physical["destination_binding_ref"]
+        != use["destination_binding_ref"]
+        or physical["physical_acquisition_origin"]
+        != use["physical_acquisition_origin"]
+    ):
+        raise SearchOSNavigationError(
+            "navigation_use_custody_physical_binding_mismatch"
+        )
+    edge = current["edges_by_id"].get(
+        use["navigation_edge_ref"].get("navigation_edge_id")
+    )
+    if (
+        edge is None
+        or navigation_edge_ref(edge) != use["navigation_edge_ref"]
+        or edge.get("navigation_selection_ref")
+        != use["navigation_selection_ref"]
+    ):
+        raise SearchOSNavigationError(
+            "navigation_use_custody_edge_binding_mismatch"
+        )
+    use_id = use["searchos_navigation_use_custody_id"]
+    existing = current["use_custody_refs_by_id"].get(use_id)
+    if existing and existing != use:
+        raise SearchOSNavigationError(
+            "navigation_use_custody_identity_collision"
+        )
+    next_state = deepcopy(current)
+    next_state["use_custody_refs_by_id"][use_id] = deepcopy(use)
+    slot_id = _slot_id(use["slot_ref"])
+    visited = list(
+        next_state["visited_physical_identity_digests_by_slot"].get(
+            slot_id, ()
+        )
+    )
+    if use["physical_identity_digest"] not in visited:
+        visited.append(use["physical_identity_digest"])
+    next_state["visited_physical_identity_digests_by_slot"][slot_id] = (
+        visited
+    )
     return _validated_retained_state(next_state)
 
 
@@ -1967,6 +2321,14 @@ def build_searchos_navigation_use_custody_ref_v2(
         ),
         "searchos_navigation_use_custody_digest": digest,
     }
+
+
+def validate_searchos_navigation_retained_state(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate and copy canonical URL-safe navigation authority state."""
+
+    return _validated_retained_state(value)
 
 
 def _validate_navigation_parent_custody_join(
@@ -2178,6 +2540,10 @@ def _validated_retained_state(value: Mapping[str, Any]) -> dict[str, Any]:
         "selection_leases_by_id",
         "terminal_physical_operations_by_key",
         "physical_custody_by_digest",
+        "use_custody_refs_by_id",
+        "visited_physical_identity_digests_by_slot",
+        "validated_redirect_alias_digests_by_physical_digest",
+        "contributor_failures_by_id",
         "overflow_totals",
     )
     if any(not isinstance(state.get(key), Mapping) for key in required_buckets):

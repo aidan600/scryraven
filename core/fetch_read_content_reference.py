@@ -1345,7 +1345,6 @@ def build_navigation_fetch_read_content_packet_v2(
         "citation_eligible": False,
         "source_obligation_satisfied": False,
     }
-    reference_core = _without_empty(reference_core)
     reference_digest = _digest_json(reference_core)
     reference = {
         **reference_core,
