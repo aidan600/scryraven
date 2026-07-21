@@ -56,11 +56,12 @@ SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
     "searchos_judgment_decision_contract_v1"
 )
 SEARCHOS_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
-The input is one searchos_judgment_model_input_v1 JSON object. Its
-authorized_request is the sole authority for request identity, legal_actions,
-exact candidate-use option refs, and exact current READ custody refs. Its
-active_need explains the component question, source obligation, and authorized
-search work that the action must advance. candidate_directional_contexts are
+The input is one searchos_judgment_model_input_v1 JSON object.
+authorized_request is the sole legal-action and exact-ref authority. Inspect
+authorized_request.legal_actions, authorized_request.candidate_use_options,
+and authorized_request.read_custody_refs. active_need explains the component
+question, source obligation, and authorized search work that the action must
+advance. candidate_directional_contexts are
 DISCOVER-only hints: they may guide a READ or follow-up decision but cannot
 support an answer. read_custody_materials contain the bounded readable content
 that must be judged against active_need; only this material may be handed to
@@ -69,8 +70,9 @@ decision_contract is the normative output contract.
 
 Return exactly one JSON object matching searchos_judgment_decision_v1. Always
 include schema_version, judgment_request_id, judgment_request_digest, slot_id,
-action, and a nonempty bounded reason; copy judgment_request_id, judgment_request_digest, and slot_id exactly
-from authorized_request. Choose exactly one action from
+action, and a nonempty bounded reason; copy judgment_request_id,
+judgment_request_digest, and slot_id exactly from authorized_request. Choose
+exactly one action from
 authorized_request.legal_actions:
 - REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
@@ -81,11 +83,12 @@ authorized_request.legal_actions:
 - HANDOFF_UNRESOLVED supplies only the shared fields and its reason.
 
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY, and
-HANDOFF_UNRESOLVED must include exactly one read_insufficient assessment for every current READ custody ref,
-copied exactly, with the contract's exact assessment fields and disposition.
-Semantic handoff must not include those assessments. Forbidden fields must be absent, and no unsupported fields are
-allowed. Never invent or alter a URL, authority ref, candidate ref, custody ref,
-component ref, source-obligation ref, provider choice, request identity,
+HANDOFF_UNRESOLVED must include exactly one read_insufficient assessment for
+every current READ custody ref, copied exactly, with the contract's exact
+assessment fields and disposition. Semantic handoff must not include those
+assessments. Forbidden fields must be absent, and no unsupported fields are
+allowed. Never invent or alter a URL, authority ref, candidate ref, custody
+ref, component ref, source-obligation ref, provider choice, request identity,
 disposition, deterministic fallback, or unsupported field.
 """
 TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
@@ -175,6 +178,7 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
         },
     }
     core = {
+        "contract_name": "SearchOSJudgmentDecisionContractV1",
         "schema_version": SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
         "decision_schema_version": SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
         "shared_required_fields": shared_required_fields,

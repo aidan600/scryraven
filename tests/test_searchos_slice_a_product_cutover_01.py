@@ -44,6 +44,7 @@ def _execution_events(path: Path) -> list[dict[str, object]]:
 
 
 def test_production_judgment_prompt_states_the_strict_validator_contract() -> None:
+    normalized_prompt = " ".join(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.split())
     required_instructions = (
         "copy judgment_request_id, judgment_request_digest, and slot_id exactly",
         "read_insufficient assessment for every current READ custody ref",
@@ -53,6 +54,8 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "candidate_directional_contexts",
         "read_custody_materials",
         "authorized_request.legal_actions",
+        "authorized_request.candidate_use_options",
+        "authorized_request.read_custody_refs",
         "this is the only action allowed to author",
         "QueryPlan independently validates the exact text",
         "Never invent or alter a URL, authority ref",
@@ -60,7 +63,7 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
     )
 
     assert all(
-        instruction in SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+        instruction in normalized_prompt
         for instruction in required_instructions
     )
     assert "Never invent a URL, query" not in SEARCHOS_JUDGMENT_SYSTEM_PROMPT
@@ -106,6 +109,7 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     assert contract["schema_version"] == (
         SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
     )
+    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV1"
     assert contract["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert contract["shared_required_fields"] == shared
     assert contract["unsupported_fields_forbidden"] is True
