@@ -689,6 +689,90 @@ class QueryPlan:
             appended.append(plan.items[-1])
         return plan, tuple(item.to_ref(plan.plan_id) for item in appended)
 
+    def admit_searchos_followup_query(
+        self,
+        *,
+        judgment_decision: Mapping[str, Any],
+        iteration: int,
+    ) -> tuple["QueryPlan", dict[str, Any]]:
+        """Append one exact model-authored SearchOS follow-up DISCOVER query.
+
+        SearchJudgment owns the nomination; QueryPlan remains the sole owner of
+        executable query text and append-only query identity.  This method does
+        not clean, rewrite, expand, or otherwise substitute the admitted text.
+        """
+
+        from core.searchos_iterative_judgment_runtime import (
+            SearchOSJudgmentAction,
+            SearchOSRuntimeError,
+        )
+
+        decision = dict(judgment_decision) if isinstance(judgment_decision, Mapping) else {}
+        if decision.get("action") != SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY.value:
+            raise ValueError("SearchOS QueryPlan admission requires a follow-up decision")
+        query = decision.get("followup_query")
+        if not isinstance(query, str) or not query.strip() or len(query) > 300:
+            raise ValueError("SearchOS follow-up query must be exact bounded text")
+        if query != query.strip():
+            raise ValueError("SearchOS follow-up query cannot be rewritten at admission")
+        iteration_ordinal = int(iteration)
+        if iteration_ordinal < 2:
+            raise ValueError("SearchOS follow-up query requires iteration >= 2")
+        decision_id = _clean_text(decision.get("judgment_decision_id"), limit=260)
+        decision_digest = _clean_text(
+            decision.get("judgment_decision_digest"), limit=128
+        )
+        slot_ref = decision.get("slot_ref")
+        if (
+            not decision_id
+            or not _is_full_sha256_digest(decision_digest)
+            or not isinstance(slot_ref, Mapping)
+            or not _clean_text(slot_ref.get("slot_id"), limit=260)
+        ):
+            raise SearchOSRuntimeError(
+                "SearchOS follow-up decision lacks exact judgment/slot lineage"
+            )
+        parent_plan_ref = self.to_ref()
+        plan = self.append(
+            origin="searchos_iterative_judgment",
+            role=QueryPlanRole.FINALIZED,
+            status=QueryPlanStatus.ORDERED,
+            original_query=query,
+            authorized_query=query,
+            mutation_reason=None,
+            admission_reason="searchos_exact_model_followup_query",
+            phase="searchos_followup_discover",
+            iteration=iteration_ordinal,
+            order=1,
+            metadata={
+                "searchos_judgment_decision_id": decision_id,
+                "searchos_judgment_decision_digest": decision_digest,
+                "searchos_slot_ref": dict(slot_ref),
+                "parent_query_plan_ref": parent_plan_ref,
+                "query_text_unchanged": True,
+                "evaluator_authority_used": False,
+                "expander_authority_used": False,
+            },
+        )
+        item_ref = plan.items[-1].to_ref(plan.plan_id)
+        projection = {
+            "schema_version": "searchos_followup_query_admission_v1",
+            "owner": "QueryPlan",
+            "parent_query_plan_ref": parent_plan_ref,
+            "current_query_plan_ref": plan.to_ref(),
+            "query_plan_item_ref": item_ref,
+            "judgment_decision_ref": {
+                "judgment_decision_id": decision_id,
+                "judgment_decision_digest": decision_digest,
+            },
+            "slot_ref": dict(slot_ref),
+            "exact_query_text_preserved": True,
+            "append_only": True,
+            "provider_selection_unchanged": True,
+            "provider_depth_unchanged": True,
+        }
+        return plan, projection
+
     def consume_search_work_for_existing_queries(
         self,
         queries: Sequence[str],

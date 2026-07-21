@@ -1,0 +1,523 @@
+from __future__ import annotations
+
+from copy import deepcopy
+
+import pytest
+
+from core.query_plan import QueryPlan, QueryPlanRole, QueryPlanStatus
+from core.run_kernel import (
+    ActionType,
+    Observation,
+    ObservationType,
+    RunKernel,
+    RunKernelTransitionError,
+    RunStageStatus,
+)
+from core.searchos_iterative_judgment_runtime import (
+    SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
+    SearchOSRuntimeError,
+    begin_searchos_judgment_round,
+    build_candidate_use_options_v1,
+    build_candidate_use_window_v1,
+    build_searchos_initial_state,
+    build_searchos_iteration_candidate_set_v1,
+    build_searchos_judgment_request_v1,
+    build_searchos_policy_snapshot,
+    build_searchos_required_needs_block,
+    build_searchos_semantic_evaluation_handoff_v1,
+    build_searchos_slice_a_readiness_v1,
+    candidate_use_option_ref,
+    charge_searchos_judgment_call,
+    record_searchos_judgment_failure,
+    record_searchos_semantic_handoff,
+    reduce_searchos_judgment_decision,
+    searchos_iteration_candidate_set_ref,
+    validate_searchos_append_only_lineage,
+    validate_searchos_judgment_model_output,
+)
+
+
+def _digest(seed: str) -> str:
+    return (seed.encode("utf-8").hex() + "0" * 64)[:64]
+
+
+def _ref(kind: str, seed: str) -> dict[str, str]:
+    return {f"{kind}_id": f"{kind}:{seed}", f"{kind}_digest": _digest(seed)}
+
+
+def _slot(slot_id: str, *, required: bool = True) -> dict[str, object]:
+    return {
+        "slot_id": slot_id,
+        "component_ref": _ref("component", slot_id),
+        "source_obligation_ref": _ref("source_obligation", slot_id),
+        "requirement_posture": "required" if required else "optional",
+    }
+
+
+def _state(*, profile: str = "Fast", slots: int = 1) -> dict[str, object]:
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name=profile
+    )
+    return build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract"),
+        policy_snapshot=policy,
+        active_slots=[_slot(f"slot-{index}") for index in range(1, slots + 1)],
+        initial_candidate_state_ref=_ref("candidate_state", "revision-1"),
+    )
+
+
+def _candidate(
+    *, slot_ref: dict[str, object], ordinal: int, url: str | None = None
+) -> dict[str, object]:
+    seed = f"candidate-{ordinal}"
+    return {
+        "slot_ref": slot_ref,
+        "normalized_url": url or f"https://example.com/{ordinal}",
+        "candidate_state_ref": _ref("candidate_state", "revision-1"),
+        "candidate_ref": _ref("candidate", seed),
+        "query_plan_item_ref": _ref("query_plan_item", seed),
+        "provider_result_occurrence_ref": _ref("source_result", seed),
+        "source_material_ref": _ref("material", seed),
+        "title": f"Candidate {ordinal}",
+        "snippet": f"Directional context {ordinal}",
+    }
+
+
+def test_policy_profiles_and_complete_round_reservation_prevent_starvation() -> None:
+    fast = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name="Fast"
+    )
+    balanced = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name="Balanced"
+    )
+    deep = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name="Deep"
+    )
+    assert fast["minimum_reserved_judgment_calls_per_required_slot"] == 2
+    assert balanced["minimum_reserved_judgment_calls_per_required_slot"] == 3
+    assert deep["minimum_reserved_judgment_calls_per_required_slot"] == 4
+    assert {fast["candidate_use_window_size"], balanced["candidate_use_window_size"], deep["candidate_use_window_size"]} == {12}
+    assert fast["navigation_runtime_open"] is False
+    assert fast["post_analyst_reentry_runtime_open"] is False
+
+    state = _state(slots=2)
+    state, first_round = begin_searchos_judgment_round(
+        state, slot_ids=["slot-1", "slot-2"]
+    )
+    state, _ = charge_searchos_judgment_call(
+        state, reservation_ref=first_round, slot_id="slot-1"
+    )
+    state, _ = charge_searchos_judgment_call(
+        state, reservation_ref=first_round, slot_id="slot-2"
+    )
+    state, second_round = begin_searchos_judgment_round(
+        state, slot_ids=["slot-1", "slot-2"]
+    )
+    state, _ = charge_searchos_judgment_call(
+        state, reservation_ref=second_round, slot_id="slot-1"
+    )
+    state, _ = charge_searchos_judgment_call(
+        state, reservation_ref=second_round, slot_id="slot-2"
+    )
+    assert state["budget"]["reserved_calls_remaining_by_required_slot"] == {
+        "slot-1": 0,
+        "slot-2": 0,
+    }
+    assert state["budget"]["shared_calls_remaining"] == 2
+    with pytest.raises(SearchOSRuntimeError, match="complete-round reservation"):
+        begin_searchos_judgment_round(state, slot_ids=["slot-1", "slot-2"])
+
+
+def test_model_failure_is_distinct_and_never_gets_a_fallback() -> None:
+    state = _state()
+    state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state, reservation_ref=round_ref, slot_id="slot-1"
+    )
+    failed = record_searchos_judgment_failure(
+        state, charge_ref=charge, reason="model_unavailable"
+    )
+    slot = failed["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "judgment_failed"
+    assert slot["satisfaction_claimed"] is False
+    assert slot["action_history"][-1]["deterministic_semantic_fallback_invoked"] is False
+    assert failed["budget"]["failed_logical_judgment_calls"] == 1
+
+
+def test_candidate_options_aggregate_slot_plus_url_and_windows_are_progressive() -> None:
+    state = _state()
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    first = _candidate(slot_ref=slot_ref, ordinal=1, url="https://EXAMPLE.com/a#fragment")
+    duplicate = _candidate(slot_ref=slot_ref, ordinal=2, url="https://example.com/a")
+    options = build_candidate_use_options_v1([first, duplicate])
+    assert len(options) == 1
+    assert options[0]["normalized_url"] == "https://example.com/a"
+    assert len(options[0]["provider_result_occurrence_refs"]) == 2
+    assert options[0]["material_authority"] == "directional_candidate_context"
+    assert options[0]["support_proposal_eligible"] is False
+
+    many = build_candidate_use_options_v1(
+        [_candidate(slot_ref=slot_ref, ordinal=index) for index in range(1, 26)]
+    )
+    policy = state["policy_snapshot"]
+    first_window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=many,
+        window_ordinal=1,
+        policy_snapshot=policy,
+    )
+    second_window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=many,
+        window_ordinal=2,
+        policy_snapshot=policy,
+    )
+    assert first_window["retained_option_count"] == 12
+    assert first_window["remaining_option_count"] == 13
+    assert first_window["next_window_available"] is True
+    assert second_window["retained_option_count"] == 12
+    assert second_window["remaining_option_count"] == 1
+    assert second_window["next_window_available"] is False
+    assert second_window["next_window_requires_provider_dispatch"] is False
+    assert second_window["next_window_consumes_read_budget"] is False
+    with pytest.raises(SearchOSRuntimeError, match="policy budget exhausted"):
+        build_candidate_use_window_v1(
+            slot_ref=slot_ref,
+            ordered_options=many,
+            window_ordinal=3,
+            policy_snapshot=policy,
+        )
+
+
+def test_append_only_lineage_rejects_plan_rewrite_and_omitted_delta() -> None:
+    initial_plan = [_ref("query_plan_item", "initial")]
+    current_plan = initial_plan + [_ref("query_plan_item", "followup")]
+    initial_identity = [_ref("source_result", "initial")]
+    delta_identity = [_ref("source_result", "followup")]
+    delta_ref = {
+        **_ref("identity_set_delta", "delta"),
+        "identity_count": 1,
+        "identity_refs_digest": __import__(
+            "hashlib"
+        ).sha256(
+            __import__("json").dumps(
+                delta_identity,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
+    revision_ref = _ref("candidate_state", "revision-1")
+    revision = {
+        **revision_ref,
+        "initial_query_plan_ref": _ref("query_plan", "initial"),
+        "initial_identity_set_ref": _ref("identity_set", "initial"),
+        "candidate_state_ref": revision_ref,
+    }
+    iteration = build_searchos_iteration_candidate_set_v1(
+        run_id="run-1",
+        request_id="request-1",
+        iteration=2,
+        parent_candidate_state_ref=revision_ref,
+        slot_ref=_ref("slot", "one"),
+        query_plan_item_ref=current_plan[-1],
+        provider_plan_ref=_ref("provider_plan", "one"),
+        route_refs=[_ref("route", "one")],
+        retrieval_action_refs=[_ref("retrieval_action", "one")],
+        ordered_provider_result_occurrence_refs=delta_identity,
+        identity_set_delta_ref=delta_ref,
+        selected_candidate_refs=[_ref("candidate", "one")],
+        bounded_candidate_material_refs=[_ref("material", "one")],
+        selection_facts={"selected": 1},
+        overflow_facts={"overflow": 0},
+        zero_useful_result=False,
+    )
+    proof = validate_searchos_append_only_lineage(
+        revision_1=revision,
+        initial_query_plan_items=initial_plan,
+        current_query_plan_items=current_plan,
+        initial_identity_refs=initial_identity,
+        iteration_candidate_sets=[iteration],
+        identity_deltas_by_digest={delta_ref["identity_set_delta_digest"]: delta_identity},
+        current_identity_refs=initial_identity + delta_identity,
+    )
+    assert proof["initial_plan_is_exact_prefix"] is True
+    assert proof["identity_delta_equality_proven"] is True
+    assert searchos_iteration_candidate_set_ref(iteration)["iteration"] == 2
+
+    rewritten = [deepcopy(initial_plan[0]), current_plan[-1]]
+    rewritten[0]["query_plan_item_id"] = "query_plan_item:rewritten"
+    with pytest.raises(SearchOSRuntimeError, match="exact current-plan prefix"):
+        validate_searchos_append_only_lineage(
+            revision_1=revision,
+            initial_query_plan_items=initial_plan,
+            current_query_plan_items=rewritten,
+            initial_identity_refs=initial_identity,
+            iteration_candidate_sets=[iteration],
+            identity_deltas_by_digest={delta_ref["identity_set_delta_digest"]: delta_identity},
+            current_identity_refs=initial_identity + delta_identity,
+        )
+    with pytest.raises(SearchOSRuntimeError, match="delta is omitted"):
+        validate_searchos_append_only_lineage(
+            revision_1=revision,
+            initial_query_plan_items=initial_plan,
+            current_query_plan_items=current_plan,
+            initial_identity_refs=initial_identity,
+            iteration_candidate_sets=[iteration],
+            identity_deltas_by_digest={},
+            current_identity_refs=initial_identity + delta_identity,
+        )
+
+
+def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() -> None:
+    state = _state()
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    options = build_candidate_use_options_v1(
+        [_candidate(slot_ref=slot_ref, ordinal=1)]
+    )
+    window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=options,
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state, reservation_ref=round_ref, slot_id="slot-1"
+    )
+    custody = {
+        **_ref("read_custody", "one"),
+        "material_authority": "read_custody_material",
+        "slot_ref": slot_ref,
+        "candidate_use_option_ref": candidate_use_option_ref(options[0]),
+        "readable": True,
+        "stale": False,
+    }
+    request = build_searchos_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=window,
+        read_custody_refs=[custody],
+    )
+    decision = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "judgment_request_id": request["judgment_request_id"],
+            "judgment_request_digest": request["judgment_request_digest"],
+            "slot_id": "slot-1",
+            "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+            "read_custody_refs": [custody],
+            "reason": "current read custody is suitable for governed analysis",
+        },
+    )
+    state = reduce_searchos_judgment_decision(state, decision=decision)
+    with pytest.raises(SearchOSRuntimeError, match="directional candidate context"):
+        build_searchos_semantic_evaluation_handoff_v1(
+            state=state,
+            slot_id="slot-1",
+            judgment_decision_ref=decision,
+            read_custody_material_refs=[
+                {
+                    **custody,
+                    "material_authority": "directional_candidate_context",
+                }
+            ],
+        )
+    handoff = build_searchos_semantic_evaluation_handoff_v1(
+        state=state,
+        slot_id="slot-1",
+        judgment_decision_ref=decision,
+        read_custody_material_refs=[custody],
+    )
+    state = record_searchos_semantic_handoff(state, handoff=handoff)
+    readiness = build_searchos_slice_a_readiness_v1(
+        state=state,
+        semantic_outcomes_by_slot={
+            "slot-1": {
+                "semantic_handoff_ref": handoff,
+                "component_analyst_proposal_ref": _ref("analyst_proposal", "one"),
+                "component_analyst_proposal_status": "proposed",
+                "component_dprime_validation_ref": _ref("dprime_validation", "one"),
+                "component_dprime_validation_status": "accepted",
+                "semantic_admission_outcome_ref": _ref("semantic_admission", "one"),
+                "semantic_admission_status": "admitted",
+                "material_authority": "read_custody_material",
+            }
+        },
+    )
+    assert readiness["all_required_slots_slice_a_ready"] is True
+    assert readiness["successful_sufficiency_allowed"] is True
+
+    blocked = build_searchos_slice_a_readiness_v1(
+        state=state,
+        semantic_outcomes_by_slot={},
+    )
+    block = build_searchos_required_needs_block(blocked)
+    assert block["block_type"] == SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
+    assert block["successful_sufficiency_allowed"] is False
+    assert block["final_answer_packet_allowed"] is False
+    assert block["author_execution_allowed"] is False
+    assert block["query_authorized"] is False
+    assert block["read_authorized"] is False
+    assert block["recovery_authorized"] is False
+    assert block["stop_insufficient_emitted"] is False
+
+
+def test_optional_slot_is_not_promoted_or_silently_satisfied() -> None:
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name="Fast"
+    )
+    state = build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract"),
+        policy_snapshot=policy,
+        active_slots=[_slot("required"), _slot("optional", required=False)],
+        initial_candidate_state_ref=_ref("candidate_state", "revision-1"),
+    )
+    readiness = build_searchos_slice_a_readiness_v1(
+        state=state,
+        semantic_outcomes_by_slot={},
+    )
+    optional = next(
+        item
+        for item in readiness["slot_records"]
+        if item["slot_ref"]["slot_id"] == "optional"
+    )
+    assert optional["requirement_posture"] == "optional"
+    assert optional["slice_a_ready"] is False
+    assert len(readiness["unresolved_required_slots"]) == 1
+
+    ambiguous = _slot("ambiguous")
+    ambiguous.pop("requirement_posture")
+    with pytest.raises(SearchOSRuntimeError, match="posture is ambiguous"):
+        build_searchos_initial_state(
+            run_id="run-1",
+            request_id="request-1",
+            answer_contract_ref=_ref("answer_contract", "contract"),
+            policy_snapshot=policy,
+            active_slots=[ambiguous],
+            initial_candidate_state_ref=_ref("candidate_state", "revision-1"),
+        )
+
+
+def test_query_plan_admits_exact_model_followup_without_evaluator_or_expander() -> None:
+    plan = QueryPlan().append(
+        origin="search_planner",
+        role=QueryPlanRole.INITIAL,
+        status=QueryPlanStatus.ORDERED,
+        authorized_query="initial query",
+        iteration=1,
+        order=1,
+    )
+    decision = {
+        **_ref("judgment_decision", "followup"),
+        "action": "PROPOSE_FOLLOWUP_QUERY",
+        "followup_query": "exact model-authored query",
+        "slot_ref": _ref("slot", "one"),
+    }
+    current, admission = plan.admit_searchos_followup_query(
+        judgment_decision=decision,
+        iteration=2,
+    )
+    assert current.items[-1].authorized_query == "exact model-authored query"
+    assert current.items[-1].original_query == "exact model-authored query"
+    assert admission["exact_query_text_preserved"] is True
+    assert current.items[-1].metadata["evaluator_authority_used"] is False
+    assert current.items[-1].metadata["expander_authority_used"] is False
+    assert current.to_dict()["items"][: len(plan.items)] == plan.to_dict()["items"]
+
+
+def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
+    kernel = RunKernel.start(run_id="run-1", request_id="request-1")
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name="Fast"
+    )
+    initialize = kernel.authorize_searchos_initialization(
+        answer_contract_ref=_ref("answer_contract", "contract"),
+        policy_snapshot=policy,
+        active_slots=[_slot("slot-1")],
+        initial_candidate_state_ref=_ref("candidate_state", "revision-1"),
+    )
+    kernel.reduce(
+        Observation.from_action(
+            initialize,
+            observation_type=ObservationType.SEARCHOS_INITIALIZED,
+            status=RunStageStatus.COMPLETED,
+            payload={"searchos_state": initialize.inputs["searchos_state"]},
+        )
+    )
+    state = kernel.state.searchos_state
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    options = build_candidate_use_options_v1(
+        [_candidate(slot_ref=slot_ref, ordinal=1)]
+    )
+    window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=options,
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    reservation = kernel.reserve_searchos_judgment_round(slot_ids=["slot-1"])
+    judgment = kernel.authorize_searchos_judgment(
+        reservation_ref=reservation,
+        slot_id="slot-1",
+        candidate_window=window,
+    )
+    request = judgment.inputs["judgment_request"]
+    kernel.reduce(
+        Observation.from_action(
+            judgment,
+            observation_type=ObservationType.SEARCHOS_JUDGMENT_DECIDED,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "model_output": {
+                    "schema_version": "searchos_judgment_decision_v1",
+                    "judgment_request_id": request["judgment_request_id"],
+                    "judgment_request_digest": request["judgment_request_digest"],
+                    "slot_id": "slot-1",
+                    "action": "HANDOFF_UNRESOLVED",
+                    "reason": "current candidates cannot resolve the required need",
+                }
+            },
+        )
+    )
+    assert kernel.state.searchos_state["slots_by_id"]["slot-1"]["posture"] == (
+        "unresolved_handoff"
+    )
+    readiness_action = kernel.authorize_searchos_slice_a_readiness(
+        semantic_outcomes_by_slot={}
+    )
+    kernel.reduce(
+        Observation.from_action(
+            readiness_action,
+            observation_type=ObservationType.SEARCHOS_SLICE_A_READINESS_DERIVED,
+            status=RunStageStatus.COMPLETED,
+            payload={"readiness": readiness_action.inputs["readiness"]},
+        )
+    )
+    block_action = kernel.authorize_searchos_required_needs_block()
+    kernel.reduce(
+        Observation.from_action(
+            block_action,
+            observation_type=ObservationType.SEARCHOS_REQUIRED_NEEDS_BLOCKED,
+            status=RunStageStatus.COMPLETED,
+            payload={"block": block_action.inputs["block"]},
+        )
+    )
+    assert kernel.state.searchos_state["required_needs_block_ref"]["block_type"] == (
+        SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
+    )
+    with pytest.raises(RunKernelTransitionError, match="keeps Sufficiency"):
+        kernel.authorize(
+            stage="forbidden_author",
+            action_type=ActionType.AUTHOR_EXECUTE,
+            reason="must remain closed",
+            inputs={},
+            expected_observation_type=ObservationType.AUTHOR_OUTPUT_OBSERVED,
+        )
