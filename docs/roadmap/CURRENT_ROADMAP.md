@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 1d00742b742ebfae5a9838242513be9de765a4f4
+Verified-against-runtime: 4431ff46ed1e8367b124f596ccc04e90040217b6
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -397,7 +397,7 @@ Map, Crawl, DNS/network attestation, or downstream semantic behavior.
 
 ## Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01
 
-Runtime/test checkpoint `1d00742b742ebfae5a9838242513be9de765a4f4`
+Runtime/test checkpoint `4431ff46ed1e8367b124f596ccc04e90040217b6`
 
 [SearchOS First-Wave And Iterative-Judgment Cutover](../architecture/SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md)
 installs internal Slice A of the iterative-navigation parent. Exactly one first

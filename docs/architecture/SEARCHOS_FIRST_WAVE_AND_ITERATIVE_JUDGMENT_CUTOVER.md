@@ -5,7 +5,7 @@ Authority: canonical:searchos-slice-a-installed-runtime
 Default-read: no
 Applies-to: ordinary post-first-DISCOVER SearchOS judgment, governed READ, follow-up DISCOVER, semantic handoff, and Slice A readiness
 Does-not-authorize: live calls, direct known-URL READ, DISCOVER-content custody, navigation, comprehensive recovery, final stopping, provider-policy changes, or FAP/Author redesign
-Verified-against-runtime: 1d00742b742ebfae5a9838242513be9de765a4f4
+Verified-against-runtime: 4431ff46ed1e8367b124f596ccc04e90040217b6
 Update-trigger: merged change to the ordinary SearchOS Slice A state machine, candidate continuity, material-entry boundary, semantic receiver, or readiness terminal
 
 ## Responsibility And Product Boundary
