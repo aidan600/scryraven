@@ -15,17 +15,25 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from core.routing import AcquisitionCapability, acquisition_routing_policy_ref
+from core.searchos_navigation_runtime import (
+    validate_navigation_destination_binding_ref,
+)
 
 ACQUISITION_NEED_PROPOSAL_SCHEMA_VERSION = "acquisition_need_proposal_v1"
+ACQUISITION_NEED_PROPOSAL_V2_SCHEMA_VERSION = "acquisition_need_proposal_v2"
 ACQUISITION_CAPABILITY_DECISION_SCHEMA_VERSION = (
     "acquisition_capability_decision_observation_v1"
 )
 ACQUISITION_WORK_ORDER_SCHEMA_VERSION = "acquisition_work_order_v1"
+ACQUISITION_WORK_ORDER_V2_SCHEMA_VERSION = "acquisition_work_order_v2"
 ACQUISITION_ROUTE_OBSERVATION_SCHEMA_VERSION = (
     "acquisition_route_observation_v1"
 )
 ACQUISITION_EXECUTION_OBSERVATION_SCHEMA_VERSION = (
     "acquisition_execution_observation_v1"
+)
+ACQUISITION_EXECUTION_OBSERVATION_V2_SCHEMA_VERSION = (
+    "acquisition_execution_observation_v2"
 )
 ACQUISITION_TERMINAL_RECEIPT_SCHEMA_VERSION = "acquisition_terminal_receipt_v1"
 ACQUISITION_CUSTODY_AUTHORIZATION_SCHEMA_VERSION = (
@@ -81,6 +89,35 @@ _PROPOSAL_FIELDS = frozenset(
         "prior_acquisition_receipt_refs",
         "proposal_reason_code",
         "advisory_proposed_capability",
+    }
+)
+
+_NAVIGATION_PROPOSAL_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "proposal_id",
+        "proposal_digest",
+        "run_id",
+        "request_id",
+        "producer_surface",
+        "producer_posture",
+        "physical_acquisition_origin",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "requested_material_shape",
+        "navigation_destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "navigation_lineage_snapshot_ref",
+        "representative_contributor_ref",
+        "parent_custody_ref",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "operation_identity_key",
+        "requested_bounds",
+        "prior_acquisition_receipt_refs",
+        "proposal_reason_code",
     }
 )
 
@@ -148,6 +185,37 @@ _WORK_ORDER_FIELDS = frozenset(
         "authority_posture",
     }
 )
+
+_NAVIGATION_WORK_ORDER_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "work_order_id",
+        "work_order_digest",
+        "accepted_capability_observation_ref",
+        "runkernel_authorization_ref",
+        "run_id",
+        "request_id",
+        "physical_acquisition_origin",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "authorized_capability",
+        "navigation_destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "navigation_lineage_snapshot_ref",
+        "representative_contributor_ref",
+        "parent_custody_ref",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "hard_operation_bounds",
+        "routing_policy_ref",
+        "operation_identity_key",
+        "duplicate_check",
+        "exhaustion_check",
+        "authority_posture",
+    }
+)
 _ROUTE_FIELDS = frozenset(
     {
         "schema_version",
@@ -181,6 +249,32 @@ _EXECUTION_FIELDS = frozenset(
         "provider_failure_fallback_attempted",
         "capability_switch_attempted",
         "downstream_authority_granted",
+    }
+)
+_NAVIGATION_EXECUTION_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "execution_observation_id",
+        "execution_observation_digest",
+        "work_order_ref",
+        "completed_route_ref",
+        "execution_action_ref",
+        "navigation_execution_overlay_ref",
+        "navigation_destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "execution_result_ref",
+        "artifact_refs",
+        "provider_calls_attempted",
+        "provider_calls_completed",
+        "terminal_status",
+        "failure_or_block_code",
+        "provider_failure_fallback_attempted",
+        "capability_switch_attempted",
+        "downstream_authority_granted",
+        "exact_locator_included",
     }
 )
 _EXECUTION_RESULT_REF_FIELDS = frozenset(
@@ -565,6 +659,291 @@ class AcquisitionNeedProposalV1:
                 "advisory_proposed_capability": (
                     self.advisory_proposed_capability
                 ),
+            }
+        )
+
+    def ref(self) -> dict[str, str]:
+        return {
+            "proposal_id": self.proposal_id,
+            "proposal_digest": self.proposal_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AcquisitionNeedProposalV2:
+    """URL-free navigation-origin acquisition-need proposal."""
+
+    proposal_id: str
+    proposal_digest: str
+    run_id: str
+    request_id: str
+    producer_surface: str
+    answer_contract_ref: Mapping[str, Any]
+    source_obligation_ref: Mapping[str, Any]
+    component_ref: Mapping[str, Any]
+    navigation_destination_binding_ref: Mapping[str, Any]
+    navigation_edge_ref: Mapping[str, Any]
+    navigation_selection_ref: Mapping[str, Any]
+    navigation_lineage_snapshot_ref: Mapping[str, Any]
+    representative_contributor_ref: Mapping[str, Any]
+    parent_custody_ref: Mapping[str, Any]
+    physical_identity_digest: str
+    full_destination_digest: str
+    operation_identity_key: str
+    requested_bounds: Mapping[str, Any] = field(default_factory=dict)
+    prior_acquisition_receipt_refs: tuple[Mapping[str, Any], ...] = ()
+    proposal_reason_code: str = "searchos_navigation_candidate_read"
+    requested_material_shape: str = "ordinary_single_page"
+    physical_acquisition_origin: str = "navigation_candidate"
+    schema_version: str = ACQUISITION_NEED_PROPOSAL_V2_SCHEMA_VERSION
+    producer_posture: str = PROPOSER_POSTURE
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        run_id: str,
+        request_id: str,
+        producer_surface: str,
+        answer_contract_ref: Mapping[str, Any],
+        source_obligation_ref: Mapping[str, Any],
+        component_ref: Mapping[str, Any],
+        navigation_destination_binding_ref: Mapping[str, Any],
+        navigation_edge_ref: Mapping[str, Any],
+        navigation_selection_ref: Mapping[str, Any],
+        navigation_lineage_snapshot_ref: Mapping[str, Any],
+        representative_contributor_ref: Mapping[str, Any],
+        parent_custody_ref: Mapping[str, Any],
+        physical_identity_digest: str,
+        full_destination_digest: str,
+        operation_identity_key: str,
+        requested_bounds: Mapping[str, Any] | None = None,
+        prior_acquisition_receipt_refs: Sequence[Mapping[str, Any]] = (),
+        proposal_reason_code: str = "searchos_navigation_candidate_read",
+    ) -> "AcquisitionNeedProposalV2":
+        binding = validate_navigation_destination_binding_ref(
+            navigation_destination_binding_ref
+        )
+        physical_digest = _digest64(
+            physical_identity_digest,
+            "navigation_physical_identity_digest_invalid",
+        )
+        full_digest = _digest64(
+            full_destination_digest,
+            "navigation_full_destination_digest_invalid",
+        )
+        if binding["physical_identity_digest"] != physical_digest:
+            raise AcquisitionControlError(
+                "navigation_physical_identity_digest_mismatch"
+            )
+        if binding["full_destination_digest"] != full_digest:
+            raise AcquisitionControlError(
+                "navigation_full_destination_digest_mismatch"
+            )
+        expected_operation = f"read-navigation:{physical_digest}"
+        if operation_identity_key != expected_operation:
+            raise AcquisitionControlError(
+                "navigation_operation_identity_key_mismatch"
+            )
+        core = {
+            "schema_version": ACQUISITION_NEED_PROPOSAL_V2_SCHEMA_VERSION,
+            "run_id": _required_token(run_id, "proposal_run_id_missing"),
+            "request_id": _required_token(
+                request_id, "proposal_request_id_missing"
+            ),
+            "producer_surface": _required_token(
+                producer_surface,
+                "proposal_producer_surface_missing",
+                limit=240,
+            ),
+            "producer_posture": PROPOSER_POSTURE,
+            "physical_acquisition_origin": "navigation_candidate",
+            "answer_contract_ref": _contract_ref(answer_contract_ref),
+            "source_obligation_ref": _source_obligation_ref(
+                source_obligation_ref
+            ),
+            "component_ref": _component_ref(component_ref),
+            "requested_material_shape": "ordinary_single_page",
+            "navigation_destination_binding_ref": binding,
+            "navigation_edge_ref": _navigation_safe_ref(
+                navigation_edge_ref, "navigation_edge_ref"
+            ),
+            "navigation_selection_ref": _navigation_safe_ref(
+                navigation_selection_ref, "navigation_selection_ref"
+            ),
+            "navigation_lineage_snapshot_ref": _navigation_safe_ref(
+                navigation_lineage_snapshot_ref,
+                "navigation_lineage_snapshot_ref",
+            ),
+            "representative_contributor_ref": _navigation_safe_ref(
+                representative_contributor_ref,
+                "representative_contributor_ref",
+            ),
+            "parent_custody_ref": _navigation_safe_ref(
+                parent_custody_ref, "parent_custody_ref"
+            ),
+            "physical_identity_digest": physical_digest,
+            "full_destination_digest": full_digest,
+            "operation_identity_key": expected_operation,
+            "requested_bounds": _bounded_int_mapping(requested_bounds),
+            "prior_acquisition_receipt_refs": [
+                _compact_ref(item) for item in prior_acquisition_receipt_refs
+            ],
+            "proposal_reason_code": _required_token(
+                proposal_reason_code,
+                "proposal_reason_code_missing",
+                limit=160,
+            ),
+        }
+        digest = stable_json_digest(core)
+        payload = {
+            **core,
+            "proposal_id": (
+                f"acquisition-need-navigation:{core['request_id']}:{digest[:20]}"
+            ),
+            "proposal_digest": digest,
+        }
+        return cls.from_dict(payload)
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "AcquisitionNeedProposalV2":
+        raw = _mapping(value, "proposal_mapping_required")
+        _reject_unknown_fields(raw, _NAVIGATION_PROPOSAL_V2_FIELDS, "proposal")
+        _reject_navigation_exact_locator_keys(raw, "navigation proposal")
+        if raw.get("schema_version") != ACQUISITION_NEED_PROPOSAL_V2_SCHEMA_VERSION:
+            raise AcquisitionControlError("proposal_schema_version_invalid")
+        if raw.get("producer_posture") != PROPOSER_POSTURE:
+            raise AcquisitionControlError("proposal_posture_invalid")
+        if raw.get("physical_acquisition_origin") != "navigation_candidate":
+            raise AcquisitionControlError(
+                "navigation_physical_acquisition_origin_invalid"
+            )
+        if raw.get("requested_material_shape") != "ordinary_single_page":
+            raise AcquisitionControlError(
+                "navigation_requested_material_shape_invalid"
+            )
+        core = {
+            key: _json_clone(raw.get(key))
+            for key in _NAVIGATION_PROPOSAL_V2_FIELDS
+            if key not in {"proposal_id", "proposal_digest"}
+        }
+        digest = stable_json_digest(core)
+        request_id = _required_token(
+            raw.get("request_id"), "proposal_request_id_missing"
+        )
+        expected_id = f"acquisition-need-navigation:{request_id}:{digest[:20]}"
+        if raw.get("proposal_digest") != digest or raw.get("proposal_id") != expected_id:
+            raise AcquisitionControlError("proposal_identity_mismatch")
+        binding = validate_navigation_destination_binding_ref(
+            raw.get("navigation_destination_binding_ref")
+        )
+        physical_digest = _digest64(
+            raw.get("physical_identity_digest"),
+            "navigation_physical_identity_digest_invalid",
+        )
+        full_digest = _digest64(
+            raw.get("full_destination_digest"),
+            "navigation_full_destination_digest_invalid",
+        )
+        operation_key = _required_token(
+            raw.get("operation_identity_key"),
+            "operation_identity_key_missing",
+            limit=180,
+        )
+        if (
+            binding["physical_identity_digest"] != physical_digest
+            or binding["full_destination_digest"] != full_digest
+            or operation_key != f"read-navigation:{physical_digest}"
+        ):
+            raise AcquisitionControlError(
+                "navigation_proposal_destination_identity_mismatch"
+            )
+        result = cls(
+            proposal_id=expected_id,
+            proposal_digest=digest,
+            run_id=_required_token(raw.get("run_id"), "proposal_run_id_missing"),
+            request_id=request_id,
+            producer_surface=_required_token(
+                raw.get("producer_surface"),
+                "proposal_producer_surface_missing",
+                limit=240,
+            ),
+            answer_contract_ref=_contract_ref(raw.get("answer_contract_ref")),
+            source_obligation_ref=_source_obligation_ref(
+                raw.get("source_obligation_ref")
+            ),
+            component_ref=_component_ref(raw.get("component_ref")),
+            navigation_destination_binding_ref=binding,
+            navigation_edge_ref=_navigation_safe_ref(
+                raw.get("navigation_edge_ref"), "navigation_edge_ref"
+            ),
+            navigation_selection_ref=_navigation_safe_ref(
+                raw.get("navigation_selection_ref"), "navigation_selection_ref"
+            ),
+            navigation_lineage_snapshot_ref=_navigation_safe_ref(
+                raw.get("navigation_lineage_snapshot_ref"),
+                "navigation_lineage_snapshot_ref",
+            ),
+            representative_contributor_ref=_navigation_safe_ref(
+                raw.get("representative_contributor_ref"),
+                "representative_contributor_ref",
+            ),
+            parent_custody_ref=_navigation_safe_ref(
+                raw.get("parent_custody_ref"), "parent_custody_ref"
+            ),
+            physical_identity_digest=physical_digest,
+            full_destination_digest=full_digest,
+            operation_identity_key=operation_key,
+            requested_bounds=_bounded_int_mapping(raw.get("requested_bounds")),
+            prior_acquisition_receipt_refs=tuple(
+                _compact_ref(item)
+                for item in _sequence(raw.get("prior_acquisition_receipt_refs"))
+            ),
+            proposal_reason_code=_required_token(
+                raw.get("proposal_reason_code"),
+                "proposal_reason_code_missing",
+                limit=160,
+            ),
+        )
+        if result.to_dict() != raw:
+            raise AcquisitionControlError("proposal_not_canonical")
+        return result
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_clone(
+            {
+                "schema_version": self.schema_version,
+                "proposal_id": self.proposal_id,
+                "proposal_digest": self.proposal_digest,
+                "run_id": self.run_id,
+                "request_id": self.request_id,
+                "producer_surface": self.producer_surface,
+                "producer_posture": self.producer_posture,
+                "physical_acquisition_origin": self.physical_acquisition_origin,
+                "answer_contract_ref": self.answer_contract_ref,
+                "source_obligation_ref": self.source_obligation_ref,
+                "component_ref": self.component_ref,
+                "requested_material_shape": self.requested_material_shape,
+                "navigation_destination_binding_ref": (
+                    self.navigation_destination_binding_ref
+                ),
+                "navigation_edge_ref": self.navigation_edge_ref,
+                "navigation_selection_ref": self.navigation_selection_ref,
+                "navigation_lineage_snapshot_ref": (
+                    self.navigation_lineage_snapshot_ref
+                ),
+                "representative_contributor_ref": (
+                    self.representative_contributor_ref
+                ),
+                "parent_custody_ref": self.parent_custody_ref,
+                "physical_identity_digest": self.physical_identity_digest,
+                "full_destination_digest": self.full_destination_digest,
+                "operation_identity_key": self.operation_identity_key,
+                "requested_bounds": self.requested_bounds,
+                "prior_acquisition_receipt_refs": list(
+                    self.prior_acquisition_receipt_refs
+                ),
+                "proposal_reason_code": self.proposal_reason_code,
             }
         )
 
@@ -964,6 +1343,196 @@ class AcquisitionWorkOrderV1:
 
 
 @dataclass(frozen=True, slots=True)
+class AcquisitionWorkOrderV2:
+    """URL-free RunKernel authority for one navigation-origin READ."""
+
+    work_order_id: str
+    work_order_digest: str
+    accepted_capability_observation_ref: Mapping[str, Any]
+    runkernel_authorization_ref: Mapping[str, Any]
+    run_id: str
+    request_id: str
+    answer_contract_ref: Mapping[str, Any]
+    source_obligation_ref: Mapping[str, Any]
+    component_ref: Mapping[str, Any]
+    navigation_destination_binding_ref: Mapping[str, Any]
+    navigation_edge_ref: Mapping[str, Any]
+    navigation_selection_ref: Mapping[str, Any]
+    navigation_lineage_snapshot_ref: Mapping[str, Any]
+    representative_contributor_ref: Mapping[str, Any]
+    parent_custody_ref: Mapping[str, Any]
+    physical_identity_digest: str
+    full_destination_digest: str
+    hard_operation_bounds: Mapping[str, Any]
+    routing_policy_ref: Mapping[str, Any]
+    operation_identity_key: str
+    authorized_capability: str = AcquisitionCapability.READ.value
+    physical_acquisition_origin: str = "navigation_candidate"
+    duplicate_check: str = "clear"
+    exhaustion_check: str = "clear"
+    schema_version: str = ACQUISITION_WORK_ORDER_V2_SCHEMA_VERSION
+    authority_posture: str = WORK_ORDER_AUTHORITY_POSTURE
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "AcquisitionWorkOrderV2":
+        raw = _mapping(value, "work_order_mapping_required")
+        _reject_unknown_fields(raw, _NAVIGATION_WORK_ORDER_V2_FIELDS, "work_order")
+        _reject_navigation_exact_locator_keys(raw, "navigation work order")
+        if raw.get("schema_version") != ACQUISITION_WORK_ORDER_V2_SCHEMA_VERSION:
+            raise AcquisitionControlError("work_order_schema_invalid")
+        if raw.get("physical_acquisition_origin") != "navigation_candidate":
+            raise AcquisitionControlError(
+                "navigation_physical_acquisition_origin_invalid"
+            )
+        if raw.get("authorized_capability") != AcquisitionCapability.READ.value:
+            raise AcquisitionControlError(
+                "navigation_work_order_capability_invalid"
+            )
+        if raw.get("authority_posture") != WORK_ORDER_AUTHORITY_POSTURE:
+            raise AcquisitionControlError("work_order_authority_posture_invalid")
+        if raw.get("duplicate_check") != "clear" or raw.get("exhaustion_check") != "clear":
+            raise AcquisitionControlError(
+                "work_order_duplicate_or_exhaustion_invalid"
+            )
+        core = {
+            key: _json_clone(raw.get(key))
+            for key in _NAVIGATION_WORK_ORDER_V2_FIELDS
+            if key not in {"work_order_id", "work_order_digest"}
+        }
+        digest = stable_json_digest(core)
+        decision_ref = _compact_ref(
+            raw.get("accepted_capability_observation_ref")
+        )
+        decision_id = _required_token(
+            decision_ref.get("decision_id"),
+            "work_order_decision_id_missing",
+            limit=300,
+        )
+        expected_id = (
+            f"acquisition-work-order-navigation:{decision_id}:{digest[:20]}"
+        )
+        if raw.get("work_order_digest") != digest or raw.get("work_order_id") != expected_id:
+            raise AcquisitionControlError("work_order_identity_mismatch")
+        binding = validate_navigation_destination_binding_ref(
+            raw.get("navigation_destination_binding_ref")
+        )
+        physical_digest = _digest64(
+            raw.get("physical_identity_digest"),
+            "navigation_physical_identity_digest_invalid",
+        )
+        full_digest = _digest64(
+            raw.get("full_destination_digest"),
+            "navigation_full_destination_digest_invalid",
+        )
+        operation_key = _required_token(
+            raw.get("operation_identity_key"),
+            "operation_identity_key_missing",
+            limit=180,
+        )
+        if (
+            binding["physical_identity_digest"] != physical_digest
+            or binding["full_destination_digest"] != full_digest
+            or operation_key != f"read-navigation:{physical_digest}"
+        ):
+            raise AcquisitionControlError(
+                "navigation_work_order_destination_identity_mismatch"
+            )
+        result = cls(
+            work_order_id=expected_id,
+            work_order_digest=digest,
+            accepted_capability_observation_ref=decision_ref,
+            runkernel_authorization_ref=_compact_ref(
+                raw.get("runkernel_authorization_ref")
+            ),
+            run_id=_required_token(
+                raw.get("run_id"), "work_order_run_id_missing"
+            ),
+            request_id=_required_token(
+                raw.get("request_id"), "work_order_request_id_missing"
+            ),
+            answer_contract_ref=_contract_ref(raw.get("answer_contract_ref")),
+            source_obligation_ref=_source_obligation_ref(
+                raw.get("source_obligation_ref")
+            ),
+            component_ref=_component_ref(raw.get("component_ref")),
+            navigation_destination_binding_ref=binding,
+            navigation_edge_ref=_navigation_safe_ref(
+                raw.get("navigation_edge_ref"), "navigation_edge_ref"
+            ),
+            navigation_selection_ref=_navigation_safe_ref(
+                raw.get("navigation_selection_ref"), "navigation_selection_ref"
+            ),
+            navigation_lineage_snapshot_ref=_navigation_safe_ref(
+                raw.get("navigation_lineage_snapshot_ref"),
+                "navigation_lineage_snapshot_ref",
+            ),
+            representative_contributor_ref=_navigation_safe_ref(
+                raw.get("representative_contributor_ref"),
+                "representative_contributor_ref",
+            ),
+            parent_custody_ref=_navigation_safe_ref(
+                raw.get("parent_custody_ref"), "parent_custody_ref"
+            ),
+            physical_identity_digest=physical_digest,
+            full_destination_digest=full_digest,
+            hard_operation_bounds=_bounded_int_mapping(
+                raw.get("hard_operation_bounds")
+            ),
+            routing_policy_ref=_routing_policy_ref(raw.get("routing_policy_ref")),
+            operation_identity_key=operation_key,
+        )
+        if result.to_dict() != raw:
+            raise AcquisitionControlError("work_order_not_canonical")
+        return result
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_clone(
+            {
+                "schema_version": self.schema_version,
+                "work_order_id": self.work_order_id,
+                "work_order_digest": self.work_order_digest,
+                "accepted_capability_observation_ref": (
+                    self.accepted_capability_observation_ref
+                ),
+                "runkernel_authorization_ref": self.runkernel_authorization_ref,
+                "run_id": self.run_id,
+                "request_id": self.request_id,
+                "physical_acquisition_origin": self.physical_acquisition_origin,
+                "answer_contract_ref": self.answer_contract_ref,
+                "source_obligation_ref": self.source_obligation_ref,
+                "component_ref": self.component_ref,
+                "authorized_capability": self.authorized_capability,
+                "navigation_destination_binding_ref": (
+                    self.navigation_destination_binding_ref
+                ),
+                "navigation_edge_ref": self.navigation_edge_ref,
+                "navigation_selection_ref": self.navigation_selection_ref,
+                "navigation_lineage_snapshot_ref": (
+                    self.navigation_lineage_snapshot_ref
+                ),
+                "representative_contributor_ref": (
+                    self.representative_contributor_ref
+                ),
+                "parent_custody_ref": self.parent_custody_ref,
+                "physical_identity_digest": self.physical_identity_digest,
+                "full_destination_digest": self.full_destination_digest,
+                "hard_operation_bounds": self.hard_operation_bounds,
+                "routing_policy_ref": self.routing_policy_ref,
+                "operation_identity_key": self.operation_identity_key,
+                "duplicate_check": self.duplicate_check,
+                "exhaustion_check": self.exhaustion_check,
+                "authority_posture": self.authority_posture,
+            }
+        )
+
+    def ref(self) -> dict[str, str]:
+        return {
+            "work_order_id": self.work_order_id,
+            "work_order_digest": self.work_order_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class AcquisitionRouteObservationV1:
     route_observation_id: str
     route_observation_digest: str
@@ -1302,6 +1871,265 @@ class AcquisitionExecutionObservationV1:
                 "provider_failure_fallback_attempted": False,
                 "capability_switch_attempted": False,
                 "downstream_authority_granted": False,
+            }
+        )
+
+    def ref(self) -> dict[str, str]:
+        return {
+            "execution_observation_id": self.execution_observation_id,
+            "execution_observation_digest": self.execution_observation_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AcquisitionExecutionObservationV2:
+    """URL-free terminal execution fact for navigation-origin acquisition."""
+
+    execution_observation_id: str
+    execution_observation_digest: str
+    work_order_ref: Mapping[str, Any]
+    completed_route_ref: Mapping[str, Any]
+    execution_action_ref: Mapping[str, Any]
+    navigation_execution_overlay_ref: Mapping[str, Any]
+    navigation_destination_binding_ref: Mapping[str, Any]
+    navigation_edge_ref: Mapping[str, Any]
+    navigation_selection_ref: Mapping[str, Any]
+    physical_identity_digest: str
+    full_destination_digest: str
+    execution_result_ref: Mapping[str, Any]
+    artifact_refs: tuple[Mapping[str, Any], ...]
+    provider_calls_attempted: int
+    provider_calls_completed: int
+    terminal_status: str
+    failure_or_block_code: str | None
+    schema_version: str = ACQUISITION_EXECUTION_OBSERVATION_V2_SCHEMA_VERSION
+    provider_failure_fallback_attempted: bool = False
+    capability_switch_attempted: bool = False
+    downstream_authority_granted: bool = False
+    exact_locator_included: bool = False
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        work_order: AcquisitionWorkOrderV2,
+        completed_route_ref: Mapping[str, Any],
+        execution_action_ref: Mapping[str, Any],
+        navigation_execution_overlay_ref: Mapping[str, Any],
+        execution_result_trace: Mapping[str, Any],
+        artifact_refs: Sequence[Mapping[str, Any]],
+        provider_calls_attempted: int,
+        provider_calls_completed: int,
+        terminal_status: str,
+        failure_or_block_code: str | None,
+    ) -> "AcquisitionExecutionObservationV2":
+        if not isinstance(work_order, AcquisitionWorkOrderV2):
+            raise AcquisitionControlError(
+                "navigation_execution_work_order_v2_required"
+            )
+        result_trace = _json_clone(execution_result_trace)
+        _reject_navigation_exact_locator_values(
+            result_trace, "navigation execution result trace"
+        )
+        result_digest = stable_json_digest(result_trace)
+        result_ref = {
+            "execution_result_id": (
+                f"acquisition-execution-result-navigation:"
+                f"{work_order.work_order_id}:{result_digest[:20]}"
+            ),
+            "execution_result_digest": result_digest,
+        }
+        core = {
+            "schema_version": ACQUISITION_EXECUTION_OBSERVATION_V2_SCHEMA_VERSION,
+            "work_order_ref": work_order.ref(),
+            "completed_route_ref": _compact_ref(completed_route_ref),
+            "execution_action_ref": _compact_ref(execution_action_ref),
+            "navigation_execution_overlay_ref": _compact_ref(
+                navigation_execution_overlay_ref
+            ),
+            "navigation_destination_binding_ref": _json_clone(
+                work_order.navigation_destination_binding_ref
+            ),
+            "navigation_edge_ref": _json_clone(work_order.navigation_edge_ref),
+            "navigation_selection_ref": _json_clone(
+                work_order.navigation_selection_ref
+            ),
+            "physical_identity_digest": work_order.physical_identity_digest,
+            "full_destination_digest": work_order.full_destination_digest,
+            "execution_result_ref": result_ref,
+            "artifact_refs": [
+                _navigation_artifact_observation_ref(item)
+                for item in artifact_refs
+            ],
+            "provider_calls_attempted": int(provider_calls_attempted),
+            "provider_calls_completed": int(provider_calls_completed),
+            "terminal_status": _required_token(
+                terminal_status, "execution_terminal_status_missing"
+            ),
+            "failure_or_block_code": _optional_token(
+                failure_or_block_code, limit=180
+            ),
+            "provider_failure_fallback_attempted": False,
+            "capability_switch_attempted": False,
+            "downstream_authority_granted": False,
+            "exact_locator_included": False,
+        }
+        digest = stable_json_digest(core)
+        payload = {
+            **core,
+            "execution_observation_id": (
+                f"acquisition-execution-navigation:"
+                f"{work_order.work_order_id}:{digest[:20]}"
+            ),
+            "execution_observation_digest": digest,
+        }
+        return cls.from_dict(payload)
+
+    @classmethod
+    def from_dict(
+        cls, value: Mapping[str, Any]
+    ) -> "AcquisitionExecutionObservationV2":
+        raw = _mapping(value, "execution_observation_mapping_required")
+        _reject_unknown_fields(
+            raw, _NAVIGATION_EXECUTION_V2_FIELDS, "execution_observation"
+        )
+        if raw.get("schema_version") != ACQUISITION_EXECUTION_OBSERVATION_V2_SCHEMA_VERSION:
+            raise AcquisitionControlError("execution_observation_schema_invalid")
+        for false_key in (
+            "provider_failure_fallback_attempted",
+            "capability_switch_attempted",
+            "downstream_authority_granted",
+            "exact_locator_included",
+        ):
+            if raw.get(false_key) is not False:
+                raise AcquisitionControlError(
+                    "execution_observation_authority_invalid"
+                )
+        _reject_navigation_exact_locator_values(
+            raw, "navigation execution observation"
+        )
+        work_ref = _compact_ref(raw.get("work_order_ref"))
+        work_id = _required_token(
+            work_ref.get("work_order_id"),
+            "execution_work_order_id_missing",
+            limit=500,
+        )
+        binding = validate_navigation_destination_binding_ref(
+            raw.get("navigation_destination_binding_ref")
+        )
+        physical_digest = _digest64(
+            raw.get("physical_identity_digest"),
+            "navigation_physical_identity_digest_invalid",
+        )
+        full_digest = _digest64(
+            raw.get("full_destination_digest"),
+            "navigation_full_destination_digest_invalid",
+        )
+        if (
+            binding["physical_identity_digest"] != physical_digest
+            or binding["full_destination_digest"] != full_digest
+        ):
+            raise AcquisitionControlError(
+                "navigation_execution_destination_identity_mismatch"
+            )
+        attempted = _nonnegative_int(raw.get("provider_calls_attempted"))
+        completed = _nonnegative_int(raw.get("provider_calls_completed"))
+        if attempted > 1 or completed > attempted:
+            raise AcquisitionControlError("execution_call_counts_invalid")
+        status = _required_token(
+            raw.get("terminal_status"), "execution_terminal_status_missing"
+        )
+        if status not in {"completed", "failed", "blocked"}:
+            raise AcquisitionControlError("execution_terminal_status_invalid")
+        failure = _optional_token(raw.get("failure_or_block_code"), limit=180)
+        if (status == "completed") == bool(failure):
+            raise AcquisitionControlError("execution_failure_status_mismatch")
+        artifacts = tuple(
+            _navigation_artifact_observation_ref(item)
+            for item in _sequence(raw.get("artifact_refs"))
+        )
+        if status == "completed" and (
+            attempted != 1 or completed != 1 or len(artifacts) != 1
+        ):
+            raise AcquisitionControlError(
+                "completed_execution_material_invalid"
+            )
+        if status == "blocked" and (attempted or completed):
+            raise AcquisitionControlError(
+                "blocked_execution_call_count_invalid"
+            )
+        core = {
+            key: _json_clone(raw.get(key))
+            for key in _NAVIGATION_EXECUTION_V2_FIELDS
+            if key
+            not in {
+                "execution_observation_id",
+                "execution_observation_digest",
+            }
+        }
+        digest = stable_json_digest(core)
+        expected_id = (
+            f"acquisition-execution-navigation:{work_id}:{digest[:20]}"
+        )
+        if raw.get("execution_observation_digest") != digest or raw.get("execution_observation_id") != expected_id:
+            raise AcquisitionControlError(
+                "execution_observation_identity_mismatch"
+            )
+        return cls(
+            execution_observation_id=expected_id,
+            execution_observation_digest=digest,
+            work_order_ref=work_ref,
+            completed_route_ref=_compact_ref(raw.get("completed_route_ref")),
+            execution_action_ref=_compact_ref(raw.get("execution_action_ref")),
+            navigation_execution_overlay_ref=_compact_ref(
+                raw.get("navigation_execution_overlay_ref")
+            ),
+            navigation_destination_binding_ref=binding,
+            navigation_edge_ref=_navigation_safe_ref(
+                raw.get("navigation_edge_ref"), "navigation_edge_ref"
+            ),
+            navigation_selection_ref=_navigation_safe_ref(
+                raw.get("navigation_selection_ref"), "navigation_selection_ref"
+            ),
+            physical_identity_digest=physical_digest,
+            full_destination_digest=full_digest,
+            execution_result_ref=_compact_ref(raw.get("execution_result_ref")),
+            artifact_refs=artifacts,
+            provider_calls_attempted=attempted,
+            provider_calls_completed=completed,
+            terminal_status=status,
+            failure_or_block_code=failure,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_clone(
+            {
+                "schema_version": self.schema_version,
+                "execution_observation_id": self.execution_observation_id,
+                "execution_observation_digest": self.execution_observation_digest,
+                "work_order_ref": self.work_order_ref,
+                "completed_route_ref": self.completed_route_ref,
+                "execution_action_ref": self.execution_action_ref,
+                "navigation_execution_overlay_ref": (
+                    self.navigation_execution_overlay_ref
+                ),
+                "navigation_destination_binding_ref": (
+                    self.navigation_destination_binding_ref
+                ),
+                "navigation_edge_ref": self.navigation_edge_ref,
+                "navigation_selection_ref": self.navigation_selection_ref,
+                "physical_identity_digest": self.physical_identity_digest,
+                "full_destination_digest": self.full_destination_digest,
+                "execution_result_ref": self.execution_result_ref,
+                "artifact_refs": list(self.artifact_refs),
+                "provider_calls_attempted": self.provider_calls_attempted,
+                "provider_calls_completed": self.provider_calls_completed,
+                "terminal_status": self.terminal_status,
+                "failure_or_block_code": self.failure_or_block_code,
+                "provider_failure_fallback_attempted": False,
+                "capability_switch_attempted": False,
+                "downstream_authority_granted": False,
+                "exact_locator_included": False,
             }
         )
 
@@ -1955,10 +2783,18 @@ def build_acquisition_authority_snapshot(
 
 def derive_acquisition_capability_decision(
     *,
-    proposal: AcquisitionNeedProposalV1,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2,
     authority_snapshot: Mapping[str, Any],
     acquisition_control_state: Mapping[str, Any],
 ) -> AcquisitionCapabilityDecisionObservationV1:
+    if isinstance(proposal, AcquisitionNeedProposalV2):
+        return _derive_navigation_acquisition_capability_decision(
+            proposal=proposal,
+            authority_snapshot=authority_snapshot,
+            acquisition_control_state=acquisition_control_state,
+        )
+    if not isinstance(proposal, AcquisitionNeedProposalV1):
+        raise AcquisitionControlError("acquisition_need_proposal_required")
     snapshot = _mapping(authority_snapshot, "authority_snapshot_missing")
     state = _mapping(acquisition_control_state, "acquisition_control_state_missing")
     current_contract_ref = _mapping(
@@ -2098,10 +2934,18 @@ def derive_acquisition_capability_decision(
 
 def build_acquisition_work_order(
     *,
-    proposal: AcquisitionNeedProposalV1,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2,
     decision: AcquisitionCapabilityDecisionObservationV1,
     runkernel_authorization_ref: Mapping[str, Any],
-) -> AcquisitionWorkOrderV1:
+) -> AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2:
+    if isinstance(proposal, AcquisitionNeedProposalV2):
+        return _build_navigation_acquisition_work_order_v2(
+            proposal=proposal,
+            decision=decision,
+            runkernel_authorization_ref=runkernel_authorization_ref,
+        )
+    if not isinstance(proposal, AcquisitionNeedProposalV1):
+        raise AcquisitionControlError("acquisition_need_proposal_required")
     if decision.decision_status != "accepted" or not decision.derived_capability:
         raise AcquisitionControlError("blocked_decision_cannot_create_work_order")
     bounds = _hard_bounds_for_capability(
@@ -2140,9 +2984,197 @@ def build_acquisition_work_order(
     return AcquisitionWorkOrderV1.from_dict(payload)
 
 
+def _derive_navigation_acquisition_capability_decision(
+    *,
+    proposal: AcquisitionNeedProposalV2,
+    authority_snapshot: Mapping[str, Any],
+    acquisition_control_state: Mapping[str, Any],
+) -> AcquisitionCapabilityDecisionObservationV1:
+    snapshot = _mapping(authority_snapshot, "authority_snapshot_missing")
+    state = _mapping(
+        acquisition_control_state, "acquisition_control_state_missing"
+    )
+    contract = _mapping(
+        snapshot.get("answer_contract_ref"), "snapshot_contract_ref_missing"
+    )
+    components = _mapping(
+        snapshot.get("components_by_id"), "snapshot_components_missing"
+    )
+    obligations = _mapping(
+        snapshot.get("source_obligations_by_id"),
+        "snapshot_source_obligations_missing",
+    )
+    component_id = str(proposal.component_ref.get("component_id") or "")
+    obligation_id = str(
+        proposal.source_obligation_ref.get("source_obligation_id") or ""
+    )
+    contract_current = proposal.answer_contract_ref == contract
+    component_current = bool(component_id) and proposal.component_ref == _mapping(
+        components.get(component_id), ""
+    )
+    obligation_current = bool(obligation_id) and proposal.source_obligation_ref == _mapping(
+        obligations.get(obligation_id), ""
+    )
+    obligation_active = obligation_current and (
+        proposal.source_obligation_ref.get("active") is True
+    )
+    bounds_error: str | None = None
+    try:
+        _hard_bounds_for_capability(
+            AcquisitionCapability.READ.value, proposal.requested_bounds
+        )
+    except AcquisitionControlError as exc:
+        bounds_error = exc.code
+    active = _mapping(state.get("active_by_source_obligation"), "")
+    receipts = _mapping(state.get("terminal_receipts_by_operation_key"), "")
+    exhausted = _mapping(state.get("exhausted_operation_keys"), "")
+    prior_receipt = _mapping(
+        receipts.get(proposal.operation_identity_key), ""
+    )
+    canonical_receipt_refs = {
+        (item.get("receipt_id"), item.get("receipt_digest"))
+        for item in receipts.values()
+        if isinstance(item, Mapping)
+    }
+    prior_refs_current = all(
+        (item.get("receipt_id"), item.get("receipt_digest"))
+        in canonical_receipt_refs
+        for item in proposal.prior_acquisition_receipt_refs
+    )
+    prerequisites = {
+        "run_id_current": proposal.run_id == snapshot.get("run_id"),
+        "request_id_current": proposal.request_id == snapshot.get("request_id"),
+        "answer_contract_current": contract_current,
+        "component_revision_current": component_current,
+        "source_obligation_current": obligation_current,
+        "source_obligation_active": obligation_active,
+        "material_shape_recognized": True,
+        "operation_identity_present": True,
+        "hard_operation_bounds_valid": bounds_error is None,
+        "duplicate_completed_operation": (
+            prior_receipt.get("terminal_status") == "completed"
+        ),
+        "duplicate_terminal_operation": bool(prior_receipt)
+        and prior_receipt.get("terminal_status") != "completed",
+        "operation_exhausted": bool(
+            exhausted.get(proposal.operation_identity_key)
+        ),
+        "prior_receipt_refs_current": prior_refs_current,
+        "active_conflicting_operation": bool(active.get(obligation_id)),
+        "provider_availability_consulted": False,
+        "mode_or_complexity_consulted": False,
+    }
+    block_code: str | None = None
+    if not prerequisites["run_id_current"] or not prerequisites["request_id_current"]:
+        block_code = "proposal_run_or_request_mismatch"
+    elif not contract_current:
+        block_code = "stale_answer_contract"
+    elif not component_current:
+        block_code = "stale_component_revision"
+    elif not obligation_current or not obligation_active:
+        block_code = "mismatched_source_obligation"
+    elif bounds_error:
+        block_code = bounds_error
+    elif not prior_refs_current:
+        block_code = "prior_acquisition_receipt_ref_stale"
+    elif prerequisites["duplicate_completed_operation"]:
+        block_code = "duplicate_completed_operation"
+    elif prerequisites["duplicate_terminal_operation"] or prerequisites[
+        "operation_exhausted"
+    ]:
+        block_code = "duplicate_terminal_operation_retry_unlicensed"
+    elif prerequisites["active_conflicting_operation"]:
+        block_code = "active_conflicting_operation"
+    core = {
+        "schema_version": ACQUISITION_CAPABILITY_DECISION_SCHEMA_VERSION,
+        "proposal_ref": proposal.ref(),
+        "derived_capability": AcquisitionCapability.READ.value,
+        "advisory_proposal_match_status": "not_supplied",
+        "prerequisite_evaluation": prerequisites,
+        "decision_status": "blocked" if block_code else "accepted",
+        "block_code": block_code,
+        "material_shape_interpretation": "navigation_candidate_single_url_read",
+        "operation_identity_key": proposal.operation_identity_key,
+        "authority_posture": "capability_decision_only",
+    }
+    digest = stable_json_digest(core)
+    payload = {
+        **core,
+        "decision_id": (
+            f"acquisition-capability-decision:{proposal.proposal_id}:{digest[:20]}"
+        ),
+        "decision_digest": digest,
+    }
+    return AcquisitionCapabilityDecisionObservationV1.from_dict(payload)
+
+
+def _build_navigation_acquisition_work_order_v2(
+    *,
+    proposal: AcquisitionNeedProposalV2,
+    decision: AcquisitionCapabilityDecisionObservationV1,
+    runkernel_authorization_ref: Mapping[str, Any],
+) -> AcquisitionWorkOrderV2:
+    if (
+        decision.decision_status != "accepted"
+        or decision.derived_capability != AcquisitionCapability.READ.value
+    ):
+        raise AcquisitionControlError("blocked_decision_cannot_create_work_order")
+    if decision.proposal_ref != proposal.ref():
+        raise AcquisitionControlError("work_order_decision_proposal_mismatch")
+    if decision.operation_identity_key != proposal.operation_identity_key:
+        raise AcquisitionControlError("work_order_operation_identity_mismatch")
+    core = {
+        "schema_version": ACQUISITION_WORK_ORDER_V2_SCHEMA_VERSION,
+        "accepted_capability_observation_ref": decision.ref(),
+        "runkernel_authorization_ref": _compact_ref(
+            runkernel_authorization_ref
+        ),
+        "run_id": proposal.run_id,
+        "request_id": proposal.request_id,
+        "physical_acquisition_origin": "navigation_candidate",
+        "answer_contract_ref": _json_clone(proposal.answer_contract_ref),
+        "source_obligation_ref": _json_clone(proposal.source_obligation_ref),
+        "component_ref": _json_clone(proposal.component_ref),
+        "authorized_capability": AcquisitionCapability.READ.value,
+        "navigation_destination_binding_ref": _json_clone(
+            proposal.navigation_destination_binding_ref
+        ),
+        "navigation_edge_ref": _json_clone(proposal.navigation_edge_ref),
+        "navigation_selection_ref": _json_clone(
+            proposal.navigation_selection_ref
+        ),
+        "navigation_lineage_snapshot_ref": _json_clone(
+            proposal.navigation_lineage_snapshot_ref
+        ),
+        "representative_contributor_ref": _json_clone(
+            proposal.representative_contributor_ref
+        ),
+        "parent_custody_ref": _json_clone(proposal.parent_custody_ref),
+        "physical_identity_digest": proposal.physical_identity_digest,
+        "full_destination_digest": proposal.full_destination_digest,
+        "hard_operation_bounds": _hard_bounds_for_capability(
+            AcquisitionCapability.READ.value, proposal.requested_bounds
+        ),
+        "routing_policy_ref": acquisition_routing_policy_ref(),
+        "operation_identity_key": proposal.operation_identity_key,
+        "duplicate_check": "clear",
+        "exhaustion_check": "clear",
+        "authority_posture": WORK_ORDER_AUTHORITY_POSTURE,
+    }
+    digest = stable_json_digest(core)
+    payload = {
+        **core,
+        "work_order_id": (
+            f"acquisition-work-order-navigation:{decision.decision_id}:{digest[:20]}"
+        ),
+        "work_order_digest": digest,
+    }
+    return AcquisitionWorkOrderV2.from_dict(payload)
+
+
 def build_terminal_receipt_from_decision(
     *,
-    proposal: AcquisitionNeedProposalV1,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2,
     decision: AcquisitionCapabilityDecisionObservationV1,
 ) -> AcquisitionTerminalReceiptV1 | None:
     if (
@@ -2168,7 +3200,7 @@ def build_terminal_receipt_from_decision(
 
 def build_terminal_receipt_from_route(
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route: AcquisitionRouteObservationV1,
 ) -> AcquisitionTerminalReceiptV1:
     if route.terminal_status != "blocked":
@@ -2186,7 +3218,7 @@ def build_terminal_receipt_from_route(
 
 def build_terminal_receipt_from_work_order_invalidation(
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     block_code: str,
 ) -> AcquisitionTerminalReceiptV1:
     if block_code not in {
@@ -2210,9 +3242,9 @@ def build_terminal_receipt_from_work_order_invalidation(
 
 def build_terminal_receipt_from_execution(
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route: AcquisitionRouteObservationV1,
-    execution: AcquisitionExecutionObservationV1,
+    execution: AcquisitionExecutionObservationV1 | AcquisitionExecutionObservationV2,
 ) -> AcquisitionTerminalReceiptV1:
     return AcquisitionTerminalReceiptV1.create(
         operation_identity_key=work_order.operation_identity_key,
@@ -2452,6 +3484,59 @@ def _hard_bounds_for_capability(
             )
         result[key] = value
     return result
+
+
+def _navigation_safe_ref(value: Any, field: str) -> dict[str, Any]:
+    ref = _mapping(value, f"{field}_missing")
+    if not ref:
+        raise AcquisitionControlError(f"{field}_missing")
+    _reject_navigation_exact_locator_keys(ref, field)
+    return _json_clone(ref)
+
+
+def _reject_navigation_exact_locator_keys(value: Any, context: str) -> None:
+    forbidden = {
+        "url",
+        "urls",
+        "href",
+        "raw_href",
+        "path",
+        "query",
+        "available_urls",
+        "selected_urls",
+        "root_url",
+        "requested_url",
+        "attempted_url",
+        "provider_reported_url",
+        "resolved_url",
+        "final_url",
+        "canonical_url",
+        "durable_source_url",
+        "exact_execution_url",
+    }
+    forbidden_tokens = {_canonical_key(item) for item in forbidden}
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = _canonical_key(key)
+            if normalized in forbidden_tokens:
+                raise AcquisitionControlError(
+                    "navigation_exact_locator_forbidden",
+                    f"{context} contains forbidden locator field {key!r}",
+                )
+            _reject_navigation_exact_locator_keys(item, context)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_navigation_exact_locator_keys(item, context)
+
+
+def _digest64(value: Any, code: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise AcquisitionControlError(code)
+    return value
 
 
 def _contract_ref(value: Any) -> dict[str, Any]:
@@ -2766,6 +3851,53 @@ def _artifact_observation_ref(value: Any) -> dict[str, Any]:
     ):
         raise AcquisitionControlError("artifact_ref_identity_invalid")
     return result
+
+
+def _navigation_artifact_observation_ref(value: Any) -> dict[str, Any]:
+    ref = _mapping(value, "navigation_artifact_ref_missing")
+    _reject_navigation_exact_locator_values(ref, "navigation artifact ref")
+    artifact_id = _required_token(
+        ref.get("artifact_id"), "artifact_id_missing", limit=700
+    )
+    artifact_digest = _digest64(
+        ref.get("artifact_digest"), "artifact_digest_invalid"
+    )
+    job_id = _required_token(
+        ref.get("acquisition_job_id"),
+        "artifact_acquisition_job_id_missing",
+        limit=500,
+    )
+    expected_id = (
+        f"acquisition-artifact-navigation:{job_id}:{artifact_digest[:20]}"
+    )
+    if artifact_id != expected_id:
+        raise AcquisitionControlError("artifact_ref_identity_invalid")
+    if ref.get("physical_acquisition_origin") != "navigation_candidate":
+        raise AcquisitionControlError("navigation_artifact_origin_invalid")
+    if ref.get("exact_locator_included") is not False:
+        raise AcquisitionControlError("navigation_artifact_locator_posture_invalid")
+    validate_navigation_destination_binding_ref(
+        ref.get("navigation_destination_binding_ref")
+    )
+    return _json_clone(ref)
+
+
+def _reject_navigation_exact_locator_values(value: Any, context: str) -> None:
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _reject_navigation_exact_locator_values(item, context)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_navigation_exact_locator_values(item, context)
+        return
+    if isinstance(value, str) and value.strip().casefold().startswith(
+        ("http://", "https://")
+    ):
+        raise AcquisitionControlError(
+            "navigation_exact_locator_forbidden",
+            f"{context} contains an exact locator value",
+        )
 
 
 def _compact_ref(value: Any) -> dict[str, Any]:

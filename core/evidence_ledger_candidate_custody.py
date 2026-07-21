@@ -10,17 +10,26 @@ correctness claims.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any
 
 from core.evidence_ledger import (
     CandidateCustodyKind,
     CandidateDisposition,
+    EvidenceLedger,
     EvidenceLedgerObservation,
 )
 from core.fetch_read_content_reference import (
+    FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION,
     fetch_read_content_packet_ref_from_packet,
     validate_fetch_read_content_packet,
+)
+from core.searchos_navigation_runtime import (
+    SearchOSNavigationPacketCommitRegistry,
 )
 
 FETCH_READ_CANDIDATE_CUSTODY_OBSERVATION_SOURCE = (
@@ -111,12 +120,31 @@ class EvidenceLedgerCandidateCustodyError(ValueError):
     """Raised when fetch/read custody would upgrade into a closed surface."""
 
 
+@dataclass(frozen=True, slots=True)
+class NavigationEvidenceLedgerAdmissionResult:
+    """Atomically admitted v2 ledger plus the first exact-URL observation."""
+
+    evidence_ledger: EvidenceLedger
+    observation: EvidenceLedgerObservation
+    evidence_ledger_custody_ref: Mapping[str, Any]
+    committed_fetch_read_packet: Mapping[str, Any]
+
+
 def build_evidence_ledger_observation_from_fetch_read_content_packet(
     fetch_read_content_packet: Mapping[str, Any],
     *,
     observation_id: str | None = None,
 ) -> EvidenceLedgerObservation:
     """Build a sanitized EvidenceLedger observation from a fetch/read packet."""
+
+    if (
+        isinstance(fetch_read_content_packet, Mapping)
+        and fetch_read_content_packet.get("schema_version")
+        == FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION
+    ):
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation v2 custody requires a transient packet commit ref"
+        )
 
     _reject_upgrade_claims(
         fetch_read_content_packet,
@@ -161,6 +189,198 @@ def build_evidence_ledger_observation_from_fetch_read_content_packet(
         source=FETCH_READ_CANDIDATE_CUSTODY_OBSERVATION_SOURCE,
         payload=payload,
     )
+
+
+def admit_navigation_packet_commit_to_evidence_ledger(
+    *,
+    evidence_ledger: EvidenceLedger,
+    packet_registry: SearchOSNavigationPacketCommitRegistry,
+    packet_commit_ref: Mapping[str, Any],
+    observation_id: str | None = None,
+) -> NavigationEvidenceLedgerAdmissionResult:
+    """Atomically admit a local v2 packet and first publish its exact URL."""
+
+    if not isinstance(evidence_ledger, EvidenceLedger):
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation custody requires EvidenceLedger"
+        )
+    if not isinstance(packet_registry, SearchOSNavigationPacketCommitRegistry):
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation custody requires transient packet registry"
+        )
+    try:
+        local_packet = packet_registry.resolve(packet_commit_ref)
+        packet = validate_fetch_read_content_packet(local_packet)
+        observation, custody_ref = _navigation_observation_from_packet(
+            packet,
+            observation_id=observation_id,
+        )
+        trial = deepcopy(evidence_ledger)
+        trial.reduce_observation(observation)
+    except Exception:
+        packet_registry.discard(packet_commit_ref)
+        raise
+    committed = packet_registry.commit_success(packet_commit_ref)
+    return NavigationEvidenceLedgerAdmissionResult(
+        evidence_ledger=trial,
+        observation=observation,
+        evidence_ledger_custody_ref=custody_ref,
+        committed_fetch_read_packet=committed,
+    )
+
+
+def _navigation_observation_from_packet(
+    packet: Mapping[str, Any],
+    *,
+    observation_id: str | None,
+) -> tuple[EvidenceLedgerObservation, dict[str, str]]:
+    if packet.get("schema_version") != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION:
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation custody requires fetch/read packet v2"
+        )
+    references = packet.get("reference_records")
+    if not isinstance(references, list) or len(references) != 1:
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation custody requires one sanitized reference"
+        )
+    reference = dict(references[0])
+    packet_ref = fetch_read_content_packet_ref_from_packet(packet)
+    candidate_id = (
+        "navigation-physical-source:"
+        f"{packet['physical_identity_digest'][:24]}"
+    )
+    custody_core = {
+        "fetch_read_content_packet_ref": packet_ref,
+        "physical_acquisition_ref": packet["physical_acquisition_ref"],
+        "physical_acquisition_origin": "navigation_candidate",
+        "candidate_id": candidate_id,
+        "sanitized_content_reference_ref": {
+            "sanitized_content_reference_id": reference[
+                "sanitized_content_reference_id"
+            ],
+            "sanitized_content_reference_digest": reference[
+                "sanitized_content_reference_digest"
+            ],
+        },
+        "physical_identity_digest": packet["physical_identity_digest"],
+        "full_destination_digest": packet["full_destination_digest"],
+        "durable_source_url": packet["durable_source_url"],
+        "attempted_url": packet["attempted_url"],
+    }
+    custody_digest = _stable_digest(custody_core)
+    custody_ref = {
+        "evidence_ledger_custody_id": (
+            f"evidence-ledger-navigation-custody:{custody_digest[:24]}"
+        ),
+        "evidence_ledger_custody_digest": custody_digest,
+    }
+    observation_identity = observation_id or (
+        f"{packet['run_id']}:evidence-ledger:navigation-custody:"
+        f"{custody_digest[:20]}"
+    )
+    custody_record = {
+        "record_kind": "fetch_read_candidate_custody",
+        "candidate_id": candidate_id,
+        "candidate_digest": packet["full_destination_digest"],
+        "reference_id": reference["sanitized_content_reference_id"],
+        "reference_digest": reference[
+            "sanitized_content_reference_digest"
+        ],
+        "run_id": packet["run_id"],
+        "request_id": packet["request_id"],
+        "fetch_read_content_packet_ref": packet_ref,
+        "fetch_read_content_packet_id": packet[
+            "fetch_read_content_packet_id"
+        ],
+        "fetch_read_content_packet_digest": packet[
+            "fetch_read_content_packet_digest"
+        ],
+        "evidence_ledger_custody_ref": custody_ref,
+        "physical_acquisition_ref": packet["physical_acquisition_ref"],
+        "physical_acquisition_origin": "navigation_candidate",
+        "navigation_destination_binding_ref": packet[
+            "navigation_destination_binding_ref"
+        ],
+        "navigation_edge_ref": packet["navigation_edge_ref"],
+        "navigation_selection_ref": packet["navigation_selection_ref"],
+        "navigation_lineage_snapshot_ref": packet[
+            "navigation_lineage_snapshot_ref"
+        ],
+        "representative_contributor_ref": packet[
+            "representative_contributor_ref"
+        ],
+        "parent_custody_ref": packet["parent_custody_ref"],
+        "operation_identity_key": packet["operation_identity_key"],
+        "physical_identity_digest": packet["physical_identity_digest"],
+        "full_destination_digest": packet["full_destination_digest"],
+        "attempted_source_full_digest": packet[
+            "attempted_source_full_digest"
+        ],
+        "attempted_url": packet["attempted_url"],
+        "durable_source_url": packet["durable_source_url"],
+        "candidate_url": packet["durable_source_url"],
+        "candidate_domain": packet["source_domain"],
+        "candidate_title": reference.get("content_title")
+        or packet["source_domain"],
+        "fetch_read_status": "readable",
+        "disposition": CandidateDisposition.OBSERVED.value,
+        "bounded_content_present": True,
+        "bounded_character_count": reference["bounded_character_count"],
+        "excerpt_digest": reference["bounded_text_digest"],
+        "retained_digest": packet["retained_digest"],
+        "retained_character_count": packet["retained_character_count"],
+        "lineage_only": True,
+        "eligible_for_stronger_obligation": False,
+        "final_evidence_eligible": False,
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+    payload = {
+        "observation_id": observation_identity,
+        "observation_source": (
+            "navigation_fetch_read_content_packet_candidate_custody"
+        ),
+        "owner": "RunKernel.EvidenceLedger",
+        "fetch_read_content_packet_ref": packet_ref,
+        "evidence_ledger_custody_ref": custody_ref,
+        "durable_source_commit_boundary": True,
+        "candidates": [
+            {
+                "candidate_id": candidate_id,
+                "url": packet["durable_source_url"],
+                "normalized_source_identity": packet["durable_source_url"],
+                "domain": packet["source_domain"],
+                "title": custody_record["candidate_title"],
+                "provider_name": reference.get("provider"),
+                "readable_status": "readable",
+                "fetchable_status": "fetchable",
+                "record_kind": CandidateCustodyKind.FACT.value,
+                "disposition": CandidateDisposition.OBSERVED.value,
+                "eligible_for_stronger_obligation": False,
+                "final_evidence_eligible": False,
+            }
+        ],
+        "fetch_read_candidate_custody": [custody_record],
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+        "semantic_support_created": False,
+    }
+    return (
+        EvidenceLedgerObservation(
+            observation_id=observation_identity,
+            source="navigation_fetch_read_content_packet_candidate_custody",
+            payload=payload,
+        ),
+        custody_ref,
+    )
+
+
+def _stable_digest(value: Any) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
 
 
 def _candidate_record_from_reference(reference: Mapping[str, Any]) -> dict[str, Any]:
@@ -378,5 +598,7 @@ def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
 __all__ = [
     "FETCH_READ_CANDIDATE_CUSTODY_OBSERVATION_SOURCE",
     "EvidenceLedgerCandidateCustodyError",
+    "NavigationEvidenceLedgerAdmissionResult",
+    "admit_navigation_packet_commit_to_evidence_ledger",
     "build_evidence_ledger_observation_from_fetch_read_content_packet",
 ]

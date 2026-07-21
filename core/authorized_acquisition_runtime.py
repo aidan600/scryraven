@@ -30,10 +30,13 @@ from core.acquisition_control import (
     AcquisitionControlError,
     AcquisitionCustodyAuthorizationV1,
     AcquisitionExecutionObservationV1,
+    AcquisitionExecutionObservationV2,
     AcquisitionNeedProposalV1,
+    AcquisitionNeedProposalV2,
     AcquisitionRouteObservationV1,
     AcquisitionTerminalReceiptV1,
     AcquisitionWorkOrderV1,
+    AcquisitionWorkOrderV2,
     build_acquisition_work_order,
     build_terminal_receipt_from_decision,
     build_terminal_receipt_from_execution,
@@ -60,6 +63,11 @@ from core.run_kernel import (
     RunKernelTransitionError,
     RunStageStatus,
     validate_authorized_action,
+)
+from core.searchos_navigation_runtime import (
+    SearchOSNavigationError,
+    SearchOSNavigationExecutionOverlayV1,
+    validate_navigation_execution_artifact,
 )
 
 ACQUISITION_CAPABILITY_DECISION_STAGE = "acquisition_capability_decision"
@@ -98,7 +106,7 @@ class AcquisitionCapabilityDecisionRuntimeResult:
 class AcquisitionWorkOrderAdmissionRuntimeResult:
     """Provider-neutral admitted work order plus its observation."""
 
-    work_order: AcquisitionWorkOrderV1
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2
     observation: Observation
 
 
@@ -117,9 +125,12 @@ class AuthorizedAcquisitionExecutionRuntimeResult:
     """Ephemeral material, compact execution fact, and deferred cap error."""
 
     execution_result: AcquisitionExecutionResult
-    execution_observation: AcquisitionExecutionObservationV1
+    execution_observation: (
+        AcquisitionExecutionObservationV1 | AcquisitionExecutionObservationV2
+    )
     observation: Observation
     deferred_error: RunCapExceeded | None = None
+    navigation_response_validation: Mapping[str, Any] | None = None
 
     def raise_deferred_error(self) -> None:
         """Re-raise a run-cap terminal after RunKernel releases active custody."""
@@ -172,7 +183,7 @@ def build_provider_availability_snapshot_ref(
 def execute_acquisition_capability_decision_action(
     action: AuthorizedAction,
     *,
-    proposal: AcquisitionNeedProposalV1,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2,
     authority_snapshot: Mapping[str, Any],
     acquisition_control_state: Mapping[str, Any],
 ) -> AcquisitionCapabilityDecisionRuntimeResult:
@@ -197,10 +208,13 @@ def execute_acquisition_capability_decision_action(
         "acquisition_control_state_digest",
         stable_json_digest(state),
     )
-    canonical_proposal = AcquisitionNeedProposalV1.from_dict(
-        _mapping_bucket(state, "proposals_by_id").get(
-            proposal.proposal_id, {}
-        )
+    proposal_type = (
+        AcquisitionNeedProposalV2
+        if isinstance(proposal, AcquisitionNeedProposalV2)
+        else AcquisitionNeedProposalV1
+    )
+    canonical_proposal = proposal_type.from_dict(
+        _mapping_bucket(state, "proposals_by_id").get(proposal.proposal_id, {})
     )
     _require_canonical_record(
         state,
@@ -225,7 +239,7 @@ def execute_acquisition_capability_decision_action(
 def execute_acquisition_work_order_admission_action(
     action: AuthorizedAction,
     *,
-    proposal: AcquisitionNeedProposalV1,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2,
     decision: AcquisitionCapabilityDecisionObservationV1,
     acquisition_control_state: Mapping[str, Any],
 ) -> AcquisitionWorkOrderAdmissionRuntimeResult:
@@ -268,7 +282,7 @@ def execute_acquisition_work_order_admission_action(
 def execute_acquisition_route_action(
     action: AuthorizedAction,
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     available_providers: Mapping[str, object] | None,
     acquisition_control_state: Mapping[str, Any],
 ) -> AcquisitionRouteRuntimeResult:
@@ -303,12 +317,31 @@ def execute_acquisition_route_action(
         code="route_work_order_not_canonical",
     )
     _require_active_work_order(state, work_order)
+    navigation_origin = isinstance(work_order, AcquisitionWorkOrderV2)
+    include_domains = (
+        (
+            str(
+                work_order.navigation_destination_binding_ref.get(
+                    "normalized_hostname"
+                )
+                or ""
+            ),
+        )
+        if navigation_origin
+        else tuple(work_order.include_domains)
+    )
     request = ProviderCapabilityRequest(
         capability=_authorized_capability(work_order.authorized_capability),
-        domain_constraints=tuple(work_order.include_domains),
-        include_domains=tuple(work_order.include_domains),
-        exclude_domains=tuple(work_order.exclude_domains),
-        derivation_reason="runkernel_authorized_post_discovery_work_order",
+        domain_constraints=include_domains,
+        include_domains=include_domains,
+        exclude_domains=(
+            () if navigation_origin else tuple(work_order.exclude_domains)
+        ),
+        derivation_reason=(
+            "runkernel_authorized_navigation_candidate_work_order"
+            if navigation_origin
+            else "runkernel_authorized_post_discovery_work_order"
+        ),
     )
     route_decision = route_provider_capability(
         request,
@@ -332,11 +365,13 @@ def execute_authorized_acquisition_work_order(
     action: AuthorizedAction,
     *,
     run_kernel: RunKernel,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route_observation: AcquisitionRouteObservationV1,
     route_decision: ProviderRouteDecision,
     transports: AcquisitionTransports | None = None,
     before_transport: Callable[[], None] | None = None,
+    navigation_execution_overlay: SearchOSNavigationExecutionOverlayV1
+    | None = None,
 ) -> AuthorizedAcquisitionExecutionRuntimeResult:
     """Guard and dispatch exactly one current, selected acquisition order."""
 
@@ -384,10 +419,55 @@ def execute_authorized_acquisition_work_order(
         route_observation=route_observation,
         route_decision=route_decision,
     )
-    request = _materialize_acquisition_request(work_order, route_decision)
+    navigation_overlay_ref: Mapping[str, Any] = {}
+    if isinstance(work_order, AcquisitionWorkOrderV2):
+        if not isinstance(
+            navigation_execution_overlay,
+            SearchOSNavigationExecutionOverlayV1,
+        ):
+            raise AcquisitionControlError(
+                "navigation_execution_overlay_unavailable"
+            )
+        navigation_overlay_ref = navigation_execution_overlay.ref()
+        _require_action_binding(
+            authorized,
+            "navigation_execution_overlay_ref",
+            navigation_overlay_ref,
+        )
+        if (
+            navigation_execution_overlay.run_id != authorized.run_id
+            or navigation_execution_overlay.request_id != work_order.request_id
+        ):
+            raise AcquisitionControlError(
+                "navigation_execution_overlay_scope_mismatch"
+            )
+        try:
+            navigation_execution_overlay.validate_lineage(
+                work_order_ref=work_order.ref(),
+                route_observation_ref=route_observation.ref(),
+                navigation_edge_ref=work_order.navigation_edge_ref,
+                navigation_selection_ref=work_order.navigation_selection_ref,
+                destination_binding_ref=(
+                    work_order.navigation_destination_binding_ref
+                ),
+            )
+        except SearchOSNavigationError as exc:
+            raise AcquisitionControlError(exc.code) from exc
+        request = _materialize_navigation_acquisition_request(
+            work_order,
+            route_decision,
+            navigation_execution_overlay,
+        )
+    else:
+        if navigation_execution_overlay is not None:
+            raise AcquisitionControlError(
+                "discovery_execution_overlay_not_allowed"
+            )
+        request = _materialize_acquisition_request(work_order, route_decision)
     deferred_error: RunCapExceeded | None = None
     execution_result: AcquisitionExecutionResult | None = None
     transport_claimed = False
+    navigation_response_validation: Mapping[str, Any] | None = None
 
     def claim_execution_authorization() -> None:
         nonlocal transport_claimed
@@ -409,6 +489,13 @@ def execute_authorized_acquisition_work_order(
                 claim_execution_authorization()
                 raise
         claim_execution_authorization()
+        if navigation_execution_overlay is not None:
+            try:
+                navigation_execution_overlay.consume(
+                    execution_action_ref=_action_ref(authorized)
+                )
+            except SearchOSNavigationError as exc:
+                raise AcquisitionControlError(exc.code) from exc
 
     try:
         try:
@@ -430,30 +517,100 @@ def execute_authorized_acquisition_work_order(
             )
         if not transport_claimed:
             claim_execution_authorization()
+        if (
+            isinstance(work_order, AcquisitionWorkOrderV2)
+            and execution_result.succeeded
+        ):
+            if len(execution_result.artifacts) != 1:
+                raise AcquisitionControlError(
+                    "navigation_read_artifact_cardinality_invalid"
+                )
+            artifact = execution_result.artifacts[0]
+            try:
+                navigation_response_validation = (
+                    validate_navigation_execution_artifact(
+                        overlay=navigation_execution_overlay,
+                        attempted_url=artifact.attempted_url,
+                        requested_url=artifact.requested_url,
+                        final_url=artifact.final_url,
+                        resolved_url=artifact.resolved_url,
+                        canonical_url=artifact.canonical_url,
+                        provider_reported_url=artifact.provider_reported_url,
+                        retained_digest=artifact.retained_digest,
+                        retained_character_count=(
+                            artifact.retained_character_count
+                        ),
+                    )
+                )
+            except SearchOSNavigationError as exc:
+                execution_result = AcquisitionExecutionResult(
+                    request=request,
+                    status=AcquisitionExecutionStatus.FAILED,
+                    artifacts=(),
+                    provider_calls_attempted=(
+                        execution_result.provider_calls_attempted
+                    ),
+                    provider_calls_completed=(
+                        execution_result.provider_calls_completed
+                    ),
+                    failure_code=exc.code,
+                    detail=None,
+                    transport_posture="navigation_response_policy_blocked",
+                )
         artifact_refs = tuple(
-            _artifact_ref(artifact)
+            (
+                _navigation_artifact_ref(
+                    artifact,
+                    work_order=work_order,
+                    response_validation=navigation_response_validation,
+                )
+                if isinstance(work_order, AcquisitionWorkOrderV2)
+                else _artifact_ref(artifact)
+            )
             for artifact in execution_result.artifacts
         )
-        execution_observation = AcquisitionExecutionObservationV1.create(
-            work_order_ref=work_order.ref(),
-            completed_route_ref=route_observation.ref(),
-            execution_result_trace=_execution_result_projection(
-                execution_result,
-                artifact_refs=artifact_refs,
-            ),
+        execution_projection = _execution_result_projection(
+            execution_result,
             artifact_refs=artifact_refs,
-            provider_calls_attempted=(
-                execution_result.provider_calls_attempted
-            ),
-            provider_calls_completed=(
-                execution_result.provider_calls_completed
-            ),
-            terminal_status=_terminal_status(execution_result),
-            failure_or_block_code=(
-                execution_result.failure_code
-                or execution_result.block_code
-            ),
         )
+        if isinstance(work_order, AcquisitionWorkOrderV2):
+            execution_observation = AcquisitionExecutionObservationV2.create(
+                work_order=work_order,
+                completed_route_ref=route_observation.ref(),
+                execution_action_ref=_action_ref(authorized),
+                navigation_execution_overlay_ref=navigation_overlay_ref,
+                execution_result_trace=execution_projection,
+                artifact_refs=artifact_refs,
+                provider_calls_attempted=(
+                    execution_result.provider_calls_attempted
+                ),
+                provider_calls_completed=(
+                    execution_result.provider_calls_completed
+                ),
+                terminal_status=_terminal_status(execution_result),
+                failure_or_block_code=(
+                    execution_result.failure_code
+                    or execution_result.block_code
+                ),
+            )
+        else:
+            execution_observation = AcquisitionExecutionObservationV1.create(
+                work_order_ref=work_order.ref(),
+                completed_route_ref=route_observation.ref(),
+                execution_result_trace=execution_projection,
+                artifact_refs=artifact_refs,
+                provider_calls_attempted=(
+                    execution_result.provider_calls_attempted
+                ),
+                provider_calls_completed=(
+                    execution_result.provider_calls_completed
+                ),
+                terminal_status=_terminal_status(execution_result),
+                failure_or_block_code=(
+                    execution_result.failure_code
+                    or execution_result.block_code
+                ),
+            )
     except Exception:
         if not transport_claimed:
             raise
@@ -478,19 +635,36 @@ def execute_authorized_acquisition_work_order(
                 "claimed_execution_failed_closed_no_replay"
             ),
         )
-        execution_observation = AcquisitionExecutionObservationV1.create(
-            work_order_ref=work_order.ref(),
-            completed_route_ref=route_observation.ref(),
-            execution_result_trace=_execution_result_projection(
-                execution_result,
-                artifact_refs=(),
-            ),
+        execution_projection = _execution_result_projection(
+            execution_result,
             artifact_refs=(),
-            provider_calls_attempted=attempted,
-            provider_calls_completed=completed,
-            terminal_status="failed",
-            failure_or_block_code="guarded_execution_failed_closed",
         )
+        if isinstance(work_order, AcquisitionWorkOrderV2):
+            execution_observation = AcquisitionExecutionObservationV2.create(
+                work_order=work_order,
+                completed_route_ref=route_observation.ref(),
+                execution_action_ref=_action_ref(authorized),
+                navigation_execution_overlay_ref=navigation_overlay_ref,
+                execution_result_trace=execution_projection,
+                artifact_refs=(),
+                provider_calls_attempted=attempted,
+                provider_calls_completed=completed,
+                terminal_status="failed",
+                failure_or_block_code="guarded_execution_failed_closed",
+            )
+        else:
+            execution_observation = AcquisitionExecutionObservationV1.create(
+                work_order_ref=work_order.ref(),
+                completed_route_ref=route_observation.ref(),
+                execution_result_trace=execution_projection,
+                artifact_refs=(),
+                provider_calls_attempted=attempted,
+                provider_calls_completed=completed,
+                terminal_status="failed",
+                failure_or_block_code="guarded_execution_failed_closed",
+            )
+    if navigation_execution_overlay is not None:
+        navigation_execution_overlay.expire()
     return AuthorizedAcquisitionExecutionRuntimeResult(
         execution_result=execution_result,
         execution_observation=execution_observation,
@@ -499,6 +673,7 @@ def execute_authorized_acquisition_work_order(
             {"execution_observation": execution_observation.to_dict()},
         ),
         deferred_error=deferred_error,
+        navigation_response_validation=navigation_response_validation,
     )
 
 
@@ -506,11 +681,15 @@ def execute_acquisition_terminal_reduction_action(
     action: AuthorizedAction,
     *,
     acquisition_control_state: Mapping[str, Any],
-    proposal: AcquisitionNeedProposalV1 | None = None,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2 | None = None,
     decision: AcquisitionCapabilityDecisionObservationV1 | None = None,
-    work_order: AcquisitionWorkOrderV1 | None = None,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2 | None = None,
     route_observation: AcquisitionRouteObservationV1 | None = None,
-    execution_observation: AcquisitionExecutionObservationV1 | None = None,
+    execution_observation: (
+        AcquisitionExecutionObservationV1
+        | AcquisitionExecutionObservationV2
+        | None
+    ) = None,
     invalidation_code: str | None = None,
 ) -> AcquisitionTerminalReductionRuntimeResult:
     """Create one receipt for a blocked decision/route or terminal execution."""
@@ -620,7 +799,7 @@ def execute_acquisition_terminal_reduction_action(
 def execute_acquisition_custody_authorization_action(
     action: AuthorizedAction,
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route_observation: AcquisitionRouteObservationV1,
     terminal_receipt: AcquisitionTerminalReceiptV1,
     custody_consumer: str,
@@ -689,7 +868,7 @@ def _guard_execution_state(
     *,
     state: Mapping[str, Any],
     action: AuthorizedAction,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route_observation: AcquisitionRouteObservationV1,
     route_decision: ProviderRouteDecision,
 ) -> None:
@@ -755,7 +934,7 @@ def _guard_execution_state(
 
 def _require_current_work_order_lineage(
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     authority_snapshot: Mapping[str, Any],
 ) -> None:
     contract_ref = authority_snapshot.get("answer_contract_ref")
@@ -778,9 +957,11 @@ def _require_current_work_order_lineage(
 def _require_terminal_execution_lineage(
     state: Mapping[str, Any],
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route_observation: AcquisitionRouteObservationV1,
-    execution_observation: AcquisitionExecutionObservationV1,
+    execution_observation: (
+        AcquisitionExecutionObservationV1 | AcquisitionExecutionObservationV2
+    ),
 ) -> None:
     _require_terminal_route_lineage(
         state,
@@ -804,7 +985,7 @@ def _require_terminal_execution_lineage(
 def _require_terminal_route_lineage(
     state: Mapping[str, Any],
     *,
-    work_order: AcquisitionWorkOrderV1,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
     route_observation: AcquisitionRouteObservationV1,
     require_blocked: bool = True,
 ) -> None:
@@ -873,6 +1054,64 @@ def _materialize_acquisition_request(
     )
 
 
+def _materialize_navigation_acquisition_request(
+    work_order: AcquisitionWorkOrderV2,
+    route_decision: ProviderRouteDecision,
+    overlay: SearchOSNavigationExecutionOverlayV1,
+) -> AcquisitionRequest:
+    """Materialize an exact URL only for the already-validated adapter call."""
+
+    if route_decision.capability is not AcquisitionCapability.READ:
+        raise AcquisitionControlError("navigation_route_capability_mismatch")
+    bounds = dict(work_order.hard_operation_bounds)
+    hostname = str(
+        work_order.navigation_destination_binding_ref.get("normalized_hostname")
+        or ""
+    )
+    if not hostname:
+        raise AcquisitionControlError(
+            "navigation_destination_binding_hostname_missing"
+        )
+    return AcquisitionRequest(
+        acquisition_job_id=work_order.work_order_id,
+        route_decision=route_decision,
+        parent_acquisition_job_id=None,
+        acquisition_lineage_id=work_order.source_obligation_ref.get(
+            "source_obligation_digest"
+        ),
+        selected_urls=(overlay.exact_execution_url,),
+        root_url=None,
+        render_javascript=False,
+        focus_text=None,
+        include_domains=(hostname,),
+        exclude_domains=(),
+        include_path_prefix=None,
+        exclude_path_prefixes=(),
+        max_results=1,
+        max_pages=0,
+        max_depth=0,
+        max_retained_characters=int(
+            bounds.get(
+                "max_retained_characters",
+                READ_RETAINED_CHARACTER_CEILING,
+            )
+        ),
+        max_aggregate_retained_characters=(
+            CRAWL_AGGREGATE_RETAINED_CHARACTER_CEILING
+        ),
+        crawl_job_ordinal=1,
+        candidate_reference=str(
+            work_order.navigation_destination_binding_ref.get(
+                "destination_binding_id"
+            )
+            or ""
+        ),
+        obligation_reference=str(
+            work_order.source_obligation_ref.get("source_obligation_id") or ""
+        ),
+    )
+
+
 def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:
     core = {
         "kind": artifact.kind.value,
@@ -903,6 +1142,68 @@ def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:
         **compact_core,
         "retained_text_included": False,
         "raw_provider_payload_included": False,
+    }
+
+
+def _navigation_artifact_ref(
+    artifact: AcquisitionArtifact,
+    *,
+    work_order: AcquisitionWorkOrderV2,
+    response_validation: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Project navigation acquisition material without any exact locator."""
+
+    validation = dict(response_validation or {})
+    core = {
+        "kind": artifact.kind.value,
+        "acquisition_job_id": artifact.acquisition_job_id,
+        "provider": artifact.provider,
+        "operation": artifact.operation,
+        "provider_variant": artifact.provider_variant,
+        "output_type": artifact.output_type,
+        "status": artifact.status,
+        "physical_acquisition_origin": "navigation_candidate",
+        "navigation_destination_binding_ref": (
+            work_order.navigation_destination_binding_ref
+        ),
+        "navigation_edge_ref": work_order.navigation_edge_ref,
+        "navigation_selection_ref": work_order.navigation_selection_ref,
+        "physical_identity_digest": work_order.physical_identity_digest,
+        "full_destination_digest": work_order.full_destination_digest,
+        "retained_digest": artifact.retained_digest,
+        "retained_character_count": artifact.retained_character_count,
+        "response_validation_ref": (
+            {
+                "navigation_response_validation_id": validation.get(
+                    "navigation_response_validation_id"
+                ),
+                "navigation_response_validation_digest": validation.get(
+                    "navigation_response_validation_digest"
+                ),
+            }
+            if validation
+            else {}
+        ),
+        "secondary_url_postures": validation.get(
+            "secondary_url_postures", {}
+        ),
+        "failure_code": artifact.failure_code,
+        "authority_posture": artifact.authority_posture,
+    }
+    compact = {
+        key: value for key, value in core.items() if value not in (None, "", {})
+    }
+    digest = stable_json_digest(compact)
+    return {
+        "artifact_id": (
+            f"acquisition-artifact-navigation:"
+            f"{artifact.acquisition_job_id}:{digest[:20]}"
+        ),
+        "artifact_digest": digest,
+        **compact,
+        "retained_text_included": False,
+        "raw_provider_payload_included": False,
+        "exact_locator_included": False,
     }
 
 

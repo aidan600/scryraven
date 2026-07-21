@@ -10,6 +10,7 @@ raw href, path, query, or reconstructable execution URL.
 from __future__ import annotations
 
 import json
+import secrets
 from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
@@ -319,6 +320,387 @@ class SearchOSNavigationDestinationRegistry:
             raise SearchOSNavigationError(
                 NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
             )
+
+
+class SearchOSNavigationExecutionOverlayV1:
+    """One-shot exact execution authority kept outside canonical state."""
+
+    __slots__ = (
+        "overlay_id",
+        "overlay_digest",
+        "run_id",
+        "request_id",
+        "destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "work_order_ref",
+        "route_observation_ref",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "exact_execution_url",
+        "_nonce",
+        "_posture",
+        "_consumed_action_ref",
+    )
+
+    def __init__(
+        self,
+        *,
+        run_id: str,
+        request_id: str,
+        destination_binding_ref: Mapping[str, Any],
+        navigation_edge_ref: Mapping[str, Any],
+        navigation_selection_ref: Mapping[str, Any],
+        work_order_ref: Mapping[str, Any],
+        route_observation_ref: Mapping[str, Any],
+        physical_identity_digest: str,
+        full_destination_digest: str,
+        exact_execution_url: str,
+    ) -> None:
+        self.run_id = _token(run_id, "run_id")
+        self.request_id = _token(request_id, "request_id")
+        self.destination_binding_ref = validate_navigation_destination_binding_ref(
+            destination_binding_ref
+        )
+        self.navigation_edge_ref = _required_ref(
+            navigation_edge_ref, "navigation_edge_ref"
+        )
+        self.navigation_selection_ref = _required_ref(
+            navigation_selection_ref, "navigation_selection_ref"
+        )
+        self.work_order_ref = _required_ref(work_order_ref, "work_order_ref")
+        self.route_observation_ref = _required_ref(
+            route_observation_ref, "route_observation_ref"
+        )
+        self.physical_identity_digest = _digest_token(
+            physical_identity_digest, "physical_identity_digest"
+        )
+        self.full_destination_digest = _digest_token(
+            full_destination_digest, "full_destination_digest"
+        )
+        normalized = normalize_navigation_url(exact_execution_url)
+        if normalized.query_present:
+            raise SearchOSNavigationError(
+                NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED
+            )
+        if (
+            normalized.physical_digest != self.physical_identity_digest
+            or normalized.full_digest != self.full_destination_digest
+            or self.destination_binding_ref["physical_identity_digest"]
+            != self.physical_identity_digest
+            or self.destination_binding_ref["full_destination_digest"]
+            != self.full_destination_digest
+        ):
+            raise SearchOSNavigationError(
+                NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
+            )
+        self.exact_execution_url = normalized.exact_url
+        self._nonce = secrets.token_hex(16)
+        safe_core = {
+            "schema_version": "searchos_navigation_execution_overlay_v1",
+            "run_id": self.run_id,
+            "request_id": self.request_id,
+            "destination_binding_ref": self.destination_binding_ref,
+            "navigation_edge_ref": self.navigation_edge_ref,
+            "navigation_selection_ref": self.navigation_selection_ref,
+            "work_order_ref": self.work_order_ref,
+            "route_observation_ref": self.route_observation_ref,
+            "physical_identity_digest": self.physical_identity_digest,
+            "full_destination_digest": self.full_destination_digest,
+            "nonce_digest": _digest_text(self._nonce),
+            "one_shot_posture": "active",
+        }
+        self.overlay_digest = _digest(
+            {**safe_core, "exact_execution_url": self.exact_execution_url}
+        )
+        self.overlay_id = (
+            f"navigation-execution-overlay:{self.run_id}:"
+            f"{self.overlay_digest[:24]}"
+        )
+        self._posture = "active"
+        self._consumed_action_ref: dict[str, Any] = {}
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        run_id: str,
+        request_id: str,
+        destination_binding_ref: Mapping[str, Any],
+        navigation_edge_ref: Mapping[str, Any],
+        navigation_selection_ref: Mapping[str, Any],
+        work_order_ref: Mapping[str, Any],
+        route_observation_ref: Mapping[str, Any],
+        destination_registry: SearchOSNavigationDestinationRegistry,
+    ) -> "SearchOSNavigationExecutionOverlayV1":
+        binding = validate_navigation_destination_binding_ref(
+            destination_binding_ref
+        )
+        exact_url = destination_registry.resolve(binding)
+        return cls(
+            run_id=run_id,
+            request_id=request_id,
+            destination_binding_ref=binding,
+            navigation_edge_ref=navigation_edge_ref,
+            navigation_selection_ref=navigation_selection_ref,
+            work_order_ref=work_order_ref,
+            route_observation_ref=route_observation_ref,
+            physical_identity_digest=binding["physical_identity_digest"],
+            full_destination_digest=binding["full_destination_digest"],
+            exact_execution_url=exact_url,
+        )
+
+    def ref(self) -> dict[str, str]:
+        self.require_active()
+        return {
+            "navigation_execution_overlay_id": self.overlay_id,
+            "navigation_execution_overlay_digest": self.overlay_digest,
+        }
+
+    def require_active(self) -> None:
+        if self._posture != "active":
+            raise SearchOSNavigationError(
+                "navigation_execution_overlay_unavailable"
+            )
+
+    def validate_lineage(
+        self,
+        *,
+        work_order_ref: Mapping[str, Any],
+        route_observation_ref: Mapping[str, Any],
+        navigation_edge_ref: Mapping[str, Any],
+        navigation_selection_ref: Mapping[str, Any],
+        destination_binding_ref: Mapping[str, Any],
+    ) -> None:
+        self.require_active()
+        checks = (
+            (self.work_order_ref, dict(work_order_ref)),
+            (self.route_observation_ref, dict(route_observation_ref)),
+            (self.navigation_edge_ref, dict(navigation_edge_ref)),
+            (self.navigation_selection_ref, dict(navigation_selection_ref)),
+            (
+                self.destination_binding_ref,
+                validate_navigation_destination_binding_ref(
+                    destination_binding_ref
+                ),
+            ),
+        )
+        if any(expected != actual for expected, actual in checks):
+            raise SearchOSNavigationError(
+                "navigation_execution_overlay_lineage_mismatch"
+            )
+
+    def consume(self, *, execution_action_ref: Mapping[str, Any]) -> None:
+        self.require_active()
+        action_ref = _required_ref(
+            execution_action_ref, "execution_action_ref"
+        )
+        self._consumed_action_ref = action_ref
+        self._posture = "consumed"
+
+    @property
+    def consumed_action_ref(self) -> dict[str, Any]:
+        return deepcopy(self._consumed_action_ref)
+
+    def expire(self) -> None:
+        self.exact_execution_url = ""
+        self._nonce = ""
+        if self._posture == "active":
+            self._posture = "expired"
+        else:
+            self._posture = "destroyed"
+
+    def __reduce__(self) -> Any:
+        raise TypeError("navigation execution overlays are nonserializable")
+
+
+class SearchOSNavigationPacketCommitRegistry:
+    """Local packet owner used to make ledger admission the URL commit gate."""
+
+    __slots__ = ("run_id", "request_id", "_packets", "_closed")
+
+    def __init__(self, *, run_id: str, request_id: str) -> None:
+        self.run_id = _token(run_id, "run_id")
+        self.request_id = _token(request_id, "request_id")
+        self._packets: dict[str, dict[str, Any]] = {}
+        self._closed = False
+
+    def register(self, packet: Mapping[str, Any]) -> dict[str, str]:
+        if self._closed:
+            raise SearchOSNavigationError("navigation_packet_registry_closed")
+        value = deepcopy(_mapping(packet, "navigation_fetch_read_packet"))
+        if value.get("schema_version") != "fetch_read_content_packet_v2":
+            raise SearchOSNavigationError("navigation_packet_v2_required")
+        if value.get("run_id") != self.run_id or value.get("request_id") != self.request_id:
+            raise SearchOSNavigationError("navigation_packet_registry_scope_mismatch")
+        packet_id = _token(
+            value.get("fetch_read_content_packet_id"),
+            "fetch_read_content_packet_id",
+        )
+        packet_digest = _digest_token(
+            value.get("fetch_read_content_packet_digest"),
+            "fetch_read_content_packet_digest",
+        )
+        commit_core = {
+            "packet_id": packet_id,
+            "packet_digest": packet_digest,
+            "run_id": self.run_id,
+            "request_id": self.request_id,
+        }
+        commit_digest = _digest(commit_core)
+        commit_id = f"navigation-packet-commit:{commit_digest[:24]}"
+        self._packets[commit_id] = value
+        return {
+            "navigation_packet_commit_id": commit_id,
+            "navigation_packet_commit_digest": commit_digest,
+        }
+
+    def resolve(self, commit_ref: Mapping[str, Any]) -> dict[str, Any]:
+        ref = _navigation_packet_commit_ref(commit_ref)
+        packet = self._packets.get(ref["navigation_packet_commit_id"])
+        if packet is None:
+            raise SearchOSNavigationError(
+                "navigation_packet_commit_unavailable"
+            )
+        expected = _digest(
+            {
+                "packet_id": packet["fetch_read_content_packet_id"],
+                "packet_digest": packet["fetch_read_content_packet_digest"],
+                "run_id": self.run_id,
+                "request_id": self.request_id,
+            }
+        )
+        if expected != ref["navigation_packet_commit_digest"]:
+            raise SearchOSNavigationError(
+                "navigation_packet_commit_unavailable"
+            )
+        return deepcopy(packet)
+
+    def commit_success(self, commit_ref: Mapping[str, Any]) -> dict[str, Any]:
+        packet = self.resolve(commit_ref)
+        ref = _navigation_packet_commit_ref(commit_ref)
+        self._packets.pop(ref["navigation_packet_commit_id"], None)
+        return packet
+
+    def discard(self, commit_ref: Mapping[str, Any] | None = None) -> None:
+        if commit_ref is None:
+            self._packets.clear()
+            self._closed = True
+            return
+        ref = _navigation_packet_commit_ref(commit_ref)
+        self._packets.pop(ref["navigation_packet_commit_id"], None)
+
+    def __reduce__(self) -> Any:
+        raise TypeError("navigation packet registries are nonserializable")
+
+
+def _navigation_packet_commit_ref(value: Mapping[str, Any]) -> dict[str, str]:
+    raw = _mapping(value, "navigation_packet_commit_ref")
+    if set(raw) != {
+        "navigation_packet_commit_id",
+        "navigation_packet_commit_digest",
+    }:
+        raise SearchOSNavigationError("navigation_packet_commit_ref_invalid")
+    return {
+        "navigation_packet_commit_id": _token(
+            raw.get("navigation_packet_commit_id"),
+            "navigation_packet_commit_id",
+        ),
+        "navigation_packet_commit_digest": _digest_token(
+            raw.get("navigation_packet_commit_digest"),
+            "navigation_packet_commit_digest",
+        ),
+    }
+
+
+def validate_navigation_execution_artifact(
+    *,
+    overlay: SearchOSNavigationExecutionOverlayV1,
+    attempted_url: str | None,
+    requested_url: str | None,
+    final_url: str | None,
+    resolved_url: str | None,
+    canonical_url: str | None,
+    provider_reported_url: str | None,
+    retained_digest: str | None,
+    retained_character_count: int,
+) -> dict[str, Any]:
+    """Validate the local URL-bearing response and return only safe facts."""
+
+    if not isinstance(overlay, SearchOSNavigationExecutionOverlayV1):
+        raise SearchOSNavigationError(
+            "navigation_execution_overlay_unavailable"
+        )
+    if overlay._posture != "consumed":
+        raise SearchOSNavigationError(
+            "navigation_execution_overlay_not_consumed"
+        )
+    try:
+        attempted = normalize_navigation_url(str(attempted_url or ""))
+        requested = normalize_navigation_url(str(requested_url or ""))
+    except SearchOSNavigationError as exc:
+        raise SearchOSNavigationError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        ) from exc
+    expected = normalize_navigation_url(overlay.exact_execution_url)
+    if (
+        attempted.exact_url != expected.exact_url
+        or requested.exact_url != expected.exact_url
+        or attempted.full_digest != overlay.full_destination_digest
+        or attempted.physical_digest != overlay.physical_identity_digest
+    ):
+        raise SearchOSNavigationError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        )
+    secondary: dict[str, Any] = {}
+    for label, value in (
+        ("final_url", final_url),
+        ("resolved_url", resolved_url),
+        ("canonical_url", canonical_url),
+        ("provider_reported_url", provider_reported_url),
+    ):
+        if not value:
+            continue
+        try:
+            normalized = normalize_navigation_url(value)
+            _validate_origin_transition(expected, normalized)
+        except SearchOSNavigationError:
+            if label in {"final_url", "resolved_url"}:
+                raise SearchOSNavigationError(
+                    NAVIGATION_REDIRECT_CROSS_DOMAIN_BLOCKED
+                )
+            secondary[label] = {
+                "exact_retention_eligible": False,
+                "safe_digest": _digest_text(str(value)),
+            }
+            continue
+        secondary[label] = {
+            "exact_retention_eligible": True,
+            "safe_digest": normalized.full_digest,
+        }
+    retained = _digest_token(retained_digest, "retained_digest")
+    count = _bounded_nonnegative_int(
+        retained_character_count,
+        "retained_character_count",
+        maximum=NAVIGATION_RETAINED_TEXT_CEILING,
+    )
+    core = {
+        "response_policy": "navigation_queryless_same_host_v1",
+        "attempted_source_full_digest": attempted.full_digest,
+        "physical_identity_digest": attempted.physical_digest,
+        "retained_digest": retained,
+        "retained_character_count": count,
+        "secondary_url_postures": secondary,
+        "durable_source_commit_eligible": True,
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "navigation_response_validation_id": (
+            f"navigation-response-validation:{digest[:24]}"
+        ),
+        "navigation_response_validation_digest": digest,
+    }
 
 
 def normalize_navigation_url(value: str) -> _NormalizedNavigationURL:

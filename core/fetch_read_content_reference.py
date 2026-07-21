@@ -20,12 +20,22 @@ from core.search_result_candidate_packet import (
     search_result_candidate_packet_ref_from_packet,
     validate_search_result_candidate_packet,
 )
+from core.searchos_navigation_runtime import (
+    NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID,
+    SearchOSNavigationError,
+    normalize_navigation_url,
+    validate_navigation_destination_binding_ref,
+)
 
 FETCH_READ_CONTENT_PACKET_SCHEMA_VERSION = (
     "fetch_read_content_packet_ag_fetch_read_content_reference_01_v1"
 )
 SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION = (
     "sanitized_content_reference_ag_fetch_read_content_reference_01_v1"
+)
+FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION = "fetch_read_content_packet_v2"
+SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION = (
+    "sanitized_content_reference_v2"
 )
 FETCH_READ_CONTENT_PACKET_TRACE_KEY = "fetch_read_content_packet"
 FETCH_READ_CONTENT_PACKET_OWNER = "RunKernel.FetchReadContentPacket"
@@ -942,6 +952,8 @@ def validate_fetch_read_content_packet(packet: Mapping[str, Any]) -> dict[str, A
     """Validate and return a sanitized fetch/read content packet."""
 
     raw = _required_mapping(packet, "fetch/read content packet")
+    if raw.get("schema_version") == FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION:
+        return validate_fetch_read_content_packet_v2(raw)
     _reject_forbidden_surface_claims(raw, context="fetch/read content packet")
     safe = _safe_mapping(raw)
     if safe.get("schema_version") != FETCH_READ_CONTENT_PACKET_SCHEMA_VERSION:
@@ -1048,6 +1060,21 @@ def fetch_read_content_packet_ref_from_packet(
     """Return the compact downstream reference for a fetch/read content packet."""
 
     safe = _safe_mapping(packet)
+    if safe.get("schema_version") == FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION:
+        packet_id = _clean_token(
+            safe.get("fetch_read_content_packet_id"), limit=320
+        )
+        packet_digest = _clean_token(
+            safe.get("fetch_read_content_packet_digest"), limit=128
+        )
+        if not packet_id or not packet_digest:
+            return {}
+        return {
+            "fetch_read_content_packet_id": packet_id,
+            "fetch_read_content_packet_digest": packet_digest,
+            "schema_version": FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION,
+            "reference_count": 1,
+        }
     packet_id = _clean_token(safe.get("packet_id"), limit=260)
     packet_digest = _clean_token(safe.get("packet_digest"), limit=128)
     if not packet_id or not packet_digest:
@@ -1058,6 +1085,547 @@ def fetch_read_content_packet_ref_from_packet(
         "schema_version": _clean_token(safe.get("schema_version")),
         "reference_count": _bounded_int(safe.get("reference_count")),
     }
+
+
+_NAVIGATION_SANITIZED_REFERENCE_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "sanitized_content_reference_id",
+        "sanitized_content_reference_digest",
+        "record_kind",
+        "run_id",
+        "request_id",
+        "physical_acquisition_origin",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "acquisition_work_order_ref",
+        "route_observation_ref",
+        "execution_action_ref",
+        "acquisition_artifact_ref",
+        "physical_acquisition_ref",
+        "navigation_destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "navigation_lineage_snapshot_ref",
+        "representative_contributor_ref",
+        "parent_custody_ref",
+        "operation_identity_key",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "attempted_source_full_digest",
+        "attempted_url",
+        "durable_source_url",
+        "source_host",
+        "source_domain",
+        "provider",
+        "operation",
+        "content_type",
+        "http_status",
+        "content_title",
+        "bounded_text",
+        "bounded_text_digest",
+        "bounded_character_count",
+        "retained_digest",
+        "retained_character_count",
+        "secondary_source_provenance",
+        "fetch_read_status",
+        "lineage_only",
+        "semantic_support_created",
+        "citation_eligible",
+        "source_obligation_satisfied",
+    }
+)
+
+_NAVIGATION_FETCH_PACKET_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "fetch_read_content_packet_id",
+        "fetch_read_content_packet_digest",
+        "packet_kind",
+        "owner",
+        "run_id",
+        "request_id",
+        "physical_acquisition_origin",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "acquisition_work_order_ref",
+        "route_observation_ref",
+        "execution_action_ref",
+        "acquisition_artifact_ref",
+        "physical_acquisition_ref",
+        "navigation_destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "navigation_lineage_snapshot_ref",
+        "representative_contributor_ref",
+        "parent_custody_ref",
+        "operation_identity_key",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "attempted_source_full_digest",
+        "attempted_url",
+        "durable_source_url",
+        "source_host",
+        "source_domain",
+        "retained_digest",
+        "retained_character_count",
+        "reference_count",
+        "reference_records",
+        "commit_boundary",
+        "semantic_support_created",
+        "citation_eligible",
+        "source_obligation_satisfied",
+    }
+)
+
+
+def build_navigation_fetch_read_content_packet_v2(
+    *,
+    run_id: str,
+    request_id: str,
+    answer_contract_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    acquisition_work_order_ref: Mapping[str, Any],
+    route_observation_ref: Mapping[str, Any],
+    execution_action_ref: Mapping[str, Any],
+    acquisition_artifact_ref: Mapping[str, Any],
+    physical_acquisition_ref: Mapping[str, Any],
+    navigation_destination_binding_ref: Mapping[str, Any],
+    navigation_edge_ref: Mapping[str, Any],
+    navigation_selection_ref: Mapping[str, Any],
+    navigation_lineage_snapshot_ref: Mapping[str, Any],
+    representative_contributor_ref: Mapping[str, Any],
+    parent_custody_ref: Mapping[str, Any],
+    operation_identity_key: str,
+    attempted_url: str,
+    durable_source_url: str,
+    provider: str,
+    operation: str,
+    bounded_text: str,
+    retained_digest: str,
+    retained_character_count: int,
+    content_type: str | None = None,
+    http_status: int | None = None,
+    content_title: str | None = None,
+    secondary_source_provenance: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a local uncommitted navigation packet.
+
+    Validation does not make this packet canonical.  The caller must keep it
+    in ``SearchOSNavigationPacketCommitRegistry`` until atomic EvidenceLedger
+    admission succeeds.
+    """
+
+    binding = validate_navigation_destination_binding_ref(
+        navigation_destination_binding_ref
+    )
+    try:
+        attempted = normalize_navigation_url(attempted_url)
+        durable = normalize_navigation_url(durable_source_url)
+    except SearchOSNavigationError as exc:
+        raise FetchReadContentReferenceError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        ) from exc
+    if (
+        attempted.exact_url != durable.exact_url
+        or attempted.query_present
+        or attempted.full_digest != binding["full_destination_digest"]
+        or attempted.physical_digest != binding["physical_identity_digest"]
+        or operation_identity_key
+        != f"read-navigation:{attempted.physical_digest}"
+    ):
+        raise FetchReadContentReferenceError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        )
+    text = _clean_text(bounded_text, limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS)
+    if not text:
+        raise FetchReadContentReferenceError(
+            "navigation readable packet requires bounded text"
+        )
+    bounded_digest = _digest_text(text)
+    retained = _required_token(
+        retained_digest,
+        "navigation packet requires retained_digest",
+        limit=64,
+    )
+    if not _is_sha256(retained):
+        raise FetchReadContentReferenceError(
+            "navigation packet retained_digest invalid"
+        )
+    retained_count = _bounded_int(retained_character_count)
+    if retained_count <= 0 or retained_count > 20_000:
+        raise FetchReadContentReferenceError(
+            "navigation packet retained character count invalid"
+        )
+    secondary = _validated_navigation_secondary_provenance(
+        attempted, secondary_source_provenance or {}
+    )
+    shared = {
+        "run_id": _required_token(run_id, "navigation packet requires run_id"),
+        "request_id": _required_token(
+            request_id, "navigation packet requires request_id"
+        ),
+        "physical_acquisition_origin": "navigation_candidate",
+        "answer_contract_ref": _nonempty_safe_ref(
+            answer_contract_ref, "answer_contract_ref"
+        ),
+        "source_obligation_ref": _nonempty_safe_ref(
+            source_obligation_ref, "source_obligation_ref"
+        ),
+        "component_ref": _nonempty_safe_ref(component_ref, "component_ref"),
+        "acquisition_work_order_ref": _nonempty_safe_ref(
+            acquisition_work_order_ref, "acquisition_work_order_ref"
+        ),
+        "route_observation_ref": _nonempty_safe_ref(
+            route_observation_ref, "route_observation_ref"
+        ),
+        "execution_action_ref": _nonempty_safe_ref(
+            execution_action_ref, "execution_action_ref"
+        ),
+        "acquisition_artifact_ref": _nonempty_safe_ref(
+            acquisition_artifact_ref, "acquisition_artifact_ref"
+        ),
+        "physical_acquisition_ref": _nonempty_safe_ref(
+            physical_acquisition_ref, "physical_acquisition_ref"
+        ),
+        "navigation_destination_binding_ref": binding,
+        "navigation_edge_ref": _nonempty_safe_ref(
+            navigation_edge_ref, "navigation_edge_ref"
+        ),
+        "navigation_selection_ref": _nonempty_safe_ref(
+            navigation_selection_ref, "navigation_selection_ref"
+        ),
+        "navigation_lineage_snapshot_ref": _nonempty_safe_ref(
+            navigation_lineage_snapshot_ref,
+            "navigation_lineage_snapshot_ref",
+        ),
+        "representative_contributor_ref": _nonempty_safe_ref(
+            representative_contributor_ref,
+            "representative_contributor_ref",
+        ),
+        "parent_custody_ref": _nonempty_safe_ref(
+            parent_custody_ref, "parent_custody_ref"
+        ),
+        "operation_identity_key": _required_token(
+            operation_identity_key,
+            "navigation packet requires operation identity",
+            limit=180,
+        ),
+        "physical_identity_digest": attempted.physical_digest,
+        "full_destination_digest": attempted.full_digest,
+        "attempted_source_full_digest": attempted.full_digest,
+        "attempted_url": attempted.exact_url,
+        "durable_source_url": attempted.exact_url,
+        "source_host": attempted.hostname,
+        "source_domain": attempted.hostname,
+        "retained_digest": retained,
+        "retained_character_count": retained_count,
+    }
+    reference_core = {
+        "schema_version": SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION,
+        "record_kind": "sanitized_content_reference",
+        **shared,
+        "provider": _required_token(provider, "navigation packet requires provider"),
+        "operation": _required_token(
+            operation, "navigation packet requires operation"
+        ),
+        "content_type": _clean_token(content_type, limit=160),
+        "http_status": _http_status(http_status),
+        "content_title": _clean_text(content_title, limit=300),
+        "bounded_text": text,
+        "bounded_text_digest": bounded_digest,
+        "bounded_character_count": len(text),
+        "secondary_source_provenance": secondary,
+        "fetch_read_status": "readable",
+        "lineage_only": True,
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+    reference_core = _without_empty(reference_core)
+    reference_digest = _digest_json(reference_core)
+    reference = {
+        **reference_core,
+        "sanitized_content_reference_id": (
+            f"sanitized-content-reference-navigation:"
+            f"{reference_core['request_id']}:{reference_digest[:20]}"
+        ),
+        "sanitized_content_reference_digest": reference_digest,
+    }
+    packet_core = {
+        "schema_version": FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION,
+        "packet_kind": FETCH_READ_CONTENT_PACKET_KIND,
+        "owner": FETCH_READ_CONTENT_PACKET_OWNER,
+        **shared,
+        "reference_count": 1,
+        "reference_records": [reference],
+        "commit_boundary": "local_uncommitted_until_evidence_ledger_admission",
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+    packet_digest = _digest_json(packet_core)
+    packet = {
+        **packet_core,
+        "fetch_read_content_packet_id": (
+            f"fetch-read-content-packet-navigation:"
+            f"{packet_core['request_id']}:{packet_digest[:20]}"
+        ),
+        "fetch_read_content_packet_digest": packet_digest,
+    }
+    return validate_fetch_read_content_packet_v2(packet)
+
+
+def validate_fetch_read_content_packet_v2(
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = _required_mapping(packet, "navigation fetch/read content packet")
+    if set(raw) != _NAVIGATION_FETCH_PACKET_V2_FIELDS:
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet fields mismatch"
+        )
+    if raw.get("schema_version") != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION:
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet schema mismatch"
+        )
+    if raw.get("packet_kind") != FETCH_READ_CONTENT_PACKET_KIND or raw.get("owner") != FETCH_READ_CONTENT_PACKET_OWNER:
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet owner or kind mismatch"
+        )
+    if raw.get("physical_acquisition_origin") != "navigation_candidate":
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet origin mismatch"
+        )
+    if raw.get("commit_boundary") != "local_uncommitted_until_evidence_ledger_admission":
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet commit boundary mismatch"
+        )
+    if any(
+        raw.get(key) is not False
+        for key in (
+            "semantic_support_created",
+            "citation_eligible",
+            "source_obligation_satisfied",
+        )
+    ):
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet authority spoof"
+        )
+    binding = validate_navigation_destination_binding_ref(
+        raw.get("navigation_destination_binding_ref")
+    )
+    try:
+        attempted = normalize_navigation_url(str(raw.get("attempted_url") or ""))
+        durable = normalize_navigation_url(
+            str(raw.get("durable_source_url") or "")
+        )
+    except SearchOSNavigationError as exc:
+        raise FetchReadContentReferenceError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        ) from exc
+    if (
+        attempted.exact_url != durable.exact_url
+        or attempted.full_digest != binding["full_destination_digest"]
+        or attempted.physical_digest != binding["physical_identity_digest"]
+        or raw.get("full_destination_digest") != attempted.full_digest
+        or raw.get("attempted_source_full_digest") != attempted.full_digest
+        or raw.get("physical_identity_digest") != attempted.physical_digest
+        or raw.get("operation_identity_key")
+        != f"read-navigation:{attempted.physical_digest}"
+        or raw.get("source_host") != attempted.hostname
+        or raw.get("source_domain") != attempted.hostname
+    ):
+        raise FetchReadContentReferenceError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        )
+    references = raw.get("reference_records")
+    if raw.get("reference_count") != 1 or not isinstance(references, list) or len(references) != 1:
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet reference count mismatch"
+        )
+    reference = _validate_sanitized_content_reference_v2(references[0])
+    for key in (
+        "run_id",
+        "request_id",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "acquisition_work_order_ref",
+        "route_observation_ref",
+        "execution_action_ref",
+        "acquisition_artifact_ref",
+        "physical_acquisition_ref",
+        "navigation_destination_binding_ref",
+        "navigation_edge_ref",
+        "navigation_selection_ref",
+        "navigation_lineage_snapshot_ref",
+        "representative_contributor_ref",
+        "parent_custody_ref",
+        "operation_identity_key",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "attempted_source_full_digest",
+        "attempted_url",
+        "durable_source_url",
+        "source_host",
+        "source_domain",
+        "retained_digest",
+        "retained_character_count",
+    ):
+        if reference.get(key) != raw.get(key):
+            raise FetchReadContentReferenceError(
+                f"navigation fetch/read reference {key} mismatch"
+            )
+    core = {
+        key: _safe_value(value)
+        for key, value in raw.items()
+        if key
+        not in {
+            "fetch_read_content_packet_id",
+            "fetch_read_content_packet_digest",
+        }
+    }
+    digest = _digest_json(core)
+    expected_id = (
+        f"fetch-read-content-packet-navigation:{raw['request_id']}:{digest[:20]}"
+    )
+    if raw.get("fetch_read_content_packet_digest") != digest or raw.get("fetch_read_content_packet_id") != expected_id:
+        raise FetchReadContentReferenceError(
+            "navigation fetch/read packet identity mismatch"
+        )
+    return _safe_mapping(raw)
+
+
+def _validate_sanitized_content_reference_v2(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = _required_mapping(value, "navigation sanitized content reference")
+    if set(raw) != _NAVIGATION_SANITIZED_REFERENCE_V2_FIELDS:
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference fields mismatch"
+        )
+    if raw.get("schema_version") != SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION:
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference schema mismatch"
+        )
+    if raw.get("physical_acquisition_origin") != "navigation_candidate":
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference origin mismatch"
+        )
+    if raw.get("fetch_read_status") != "readable" or raw.get("lineage_only") is not True:
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference posture mismatch"
+        )
+    if any(
+        raw.get(key) is not False
+        for key in (
+            "semantic_support_created",
+            "citation_eligible",
+            "source_obligation_satisfied",
+        )
+    ):
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference authority spoof"
+        )
+    text = raw.get("bounded_text")
+    if not isinstance(text, str) or not text or len(text) > FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS:
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference text invalid"
+        )
+    if raw.get("bounded_character_count") != len(text) or raw.get("bounded_text_digest") != _digest_text(text):
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference text identity mismatch"
+        )
+    binding = validate_navigation_destination_binding_ref(
+        raw.get("navigation_destination_binding_ref")
+    )
+    attempted = normalize_navigation_url(str(raw.get("attempted_url") or ""))
+    if (
+        raw.get("durable_source_url") != attempted.exact_url
+        or raw.get("full_destination_digest") != binding["full_destination_digest"]
+        or raw.get("physical_identity_digest") != binding["physical_identity_digest"]
+    ):
+        raise FetchReadContentReferenceError(
+            NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
+        )
+    core = {
+        key: _safe_value(item)
+        for key, item in raw.items()
+        if key
+        not in {
+            "sanitized_content_reference_id",
+            "sanitized_content_reference_digest",
+        }
+    }
+    digest = _digest_json(core)
+    expected_id = (
+        f"sanitized-content-reference-navigation:{raw['request_id']}:{digest[:20]}"
+    )
+    if raw.get("sanitized_content_reference_digest") != digest or raw.get("sanitized_content_reference_id") != expected_id:
+        raise FetchReadContentReferenceError(
+            "navigation sanitized content reference identity mismatch"
+        )
+    return _safe_mapping(raw)
+
+
+def _validated_navigation_secondary_provenance(
+    attempted: Any, values: Mapping[str, str]
+) -> dict[str, str]:
+    allowed = {
+        "provider_reported_url",
+        "resolved_url",
+        "final_url",
+        "canonical_url",
+    }
+    if set(values).difference(allowed):
+        raise FetchReadContentReferenceError(
+            "navigation secondary provenance fields invalid"
+        )
+    accepted: dict[str, str] = {}
+    for key, value in values.items():
+        if not value:
+            continue
+        try:
+            normalized = normalize_navigation_url(value)
+        except SearchOSNavigationError:
+            continue
+        same_scheme = normalized.scheme == attempted.scheme
+        implicit_upgrade = (
+            attempted.scheme == "http"
+            and normalized.scheme == "https"
+            and attempted.port_posture == "implicit_default_80"
+            and normalized.port_posture == "implicit_default_443"
+        )
+        if (
+            normalized.query_present
+            or normalized.hostname != attempted.hostname
+            or (not same_scheme and not implicit_upgrade)
+            or (
+                same_scheme
+                and normalized.port_posture != attempted.port_posture
+            )
+        ):
+            continue
+        accepted[key] = normalized.exact_url
+    return accepted
+
+
+def _nonempty_safe_ref(value: Mapping[str, Any], field: str) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    if not safe:
+        raise FetchReadContentReferenceError(
+            f"navigation packet requires {field}"
+        )
+    return safe
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _candidate_records_by_id(candidate_packet: Mapping[str, Any]) -> dict[str, Any]:
@@ -2086,12 +2654,21 @@ def _digest_json(value: Any) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _digest_text(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()
+
+
+def _safe_value(value: Any) -> Any:
+    return _json_safe(value)
+
+
 __all__ = [
     "FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS",
     "FETCH_READ_CONTENT_PACKET_KIND",
     "FETCH_READ_CONTENT_PACKET_OWNER",
     "FETCH_READ_CONTENT_PACKET_POSTURE",
     "FETCH_READ_CONTENT_PACKET_SCHEMA_VERSION",
+    "FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION",
     "FETCH_READ_CONTENT_PACKET_TRACE_KEY",
     "FETCH_READ_CONTENT_RECORD_KIND",
     "FETCH_READ_STATUSES",
@@ -2101,11 +2678,14 @@ __all__ = [
     "FetchReadContentRecord",
     "FetchReadContentReferenceError",
     "SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION",
+    "SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION",
     "SanitizedContentReference",
     "build_fetch_read_content_packet_from_candidate_packet",
+    "build_navigation_fetch_read_content_packet_v2",
     "build_sanitized_content_reference_from_candidate",
     "fetch_read_content_packet_ref_from_packet",
     "reduce_candidate_packet_and_sanitized_reads_to_fetch_read_packet",
     "select_bounded_answer_bearing_text",
     "validate_fetch_read_content_packet",
+    "validate_fetch_read_content_packet_v2",
 ]

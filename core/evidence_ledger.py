@@ -2260,7 +2260,53 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
         "resolved_url": _clean_text(record.get("resolved_url"), limit=700),
         "final_url": _clean_text(record.get("final_url"), limit=700),
         "canonical_url": _clean_text(record.get("canonical_url"), limit=700),
+        "durable_source_url": _clean_text(
+            record.get("durable_source_url"), limit=700
+        ),
         "resolved_domain": _clean_text(record.get("resolved_domain"), limit=260),
+        "physical_acquisition_origin": _clean_token(
+            record.get("physical_acquisition_origin"), limit=80
+        ),
+        "evidence_ledger_custody_ref": _safe_mapping(
+            record.get("evidence_ledger_custody_ref")
+        ),
+        "physical_acquisition_ref": _safe_mapping(
+            record.get("physical_acquisition_ref")
+        ),
+        "navigation_destination_binding_ref": _safe_mapping(
+            record.get("navigation_destination_binding_ref")
+        ),
+        "navigation_edge_ref": _safe_mapping(
+            record.get("navigation_edge_ref")
+        ),
+        "navigation_selection_ref": _safe_mapping(
+            record.get("navigation_selection_ref")
+        ),
+        "navigation_lineage_snapshot_ref": _safe_mapping(
+            record.get("navigation_lineage_snapshot_ref")
+        ),
+        "representative_contributor_ref": _safe_mapping(
+            record.get("representative_contributor_ref")
+        ),
+        "parent_custody_ref": _safe_mapping(record.get("parent_custody_ref")),
+        "operation_identity_key": _clean_text(
+            record.get("operation_identity_key"), limit=180
+        ),
+        "physical_identity_digest": _clean_text(
+            record.get("physical_identity_digest"), limit=128
+        ),
+        "full_destination_digest": _clean_text(
+            record.get("full_destination_digest"), limit=128
+        ),
+        "attempted_source_full_digest": _clean_text(
+            record.get("attempted_source_full_digest"), limit=128
+        ),
+        "retained_digest": _clean_text(
+            record.get("retained_digest"), limit=128
+        ),
+        "retained_character_count": _positive_int(
+            record.get("retained_character_count")
+        ),
         "fetch_read_status": status,
         "disposition": disposition,
         "bounded_content_present": bool(record.get("bounded_content_present")),
