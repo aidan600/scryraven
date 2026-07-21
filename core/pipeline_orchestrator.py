@@ -3428,6 +3428,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
             execution_trace["provider_plan"] = provider_plan.to_trace()
             execution_trace.update(query_authority.to_trace_fragment())
+            blocked_discovery_telemetry = discovery_result_store.telemetry()
+            blocked_discovery_telemetry.update(
+                {
+                    "candidate_packets_created": int(bool(ordinary_discovery_candidate_packet)),
+                    "selected_candidates_handed_off": int(
+                        ordinary_discovery_candidate_handoff_projection.get("selected_candidate_count", 0)
+                    ),
+                }
+            )
+            execution_trace["discovery_result_telemetry"] = blocked_discovery_telemetry
+            if ordinary_discovery_candidate_handoff_projection:
+                execution_trace[ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY] = (
+                    ordinary_discovery_candidate_handoff_projection
+                )
+            if ordinary_discovery_candidate_packet:
+                execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = ordinary_discovery_candidate_packet
             execution_trace.update(build_blocked_fap_terminal_trace_fragment(blocked_fap_summary))
             latency_seconds = round(time.time() - pipeline_start_time, 2)
             cost_snapshot = accumulator.snapshot()

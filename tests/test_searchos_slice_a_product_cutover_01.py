@@ -159,6 +159,20 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    initial_rows = [
+        {
+            "title": "Alpha initial directional candidate",
+            "url": "https://alpha.example/initial",
+            "text": "Initial directional context does not answer the current rule.",
+        }
+    ]
+    followup_rows = [
+        {
+            "title": "Alpha exact follow-up source",
+            "url": "https://alpha.example/followup-new",
+            "text": "The exact follow-up source contains the current official rule.",
+        }
+    ]
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
@@ -168,6 +182,8 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
         primary_entity="Alpha",
         researcher_queries=["Alpha current official operating rule"],
         read_assessment_decision="FOLLOWUP_THEN_READ",
+        evidence_rows=initial_rows,
+        followup_evidence_rows=followup_rows,
     )
 
     trace = outcome.execution_trace
@@ -178,6 +194,8 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
 
     assert len(harness.search_calls) == 2
     assert harness.search_calls[1]["queries"] == [exact_query]
+    assert "https://alpha.example/followup-new" in harness.read_transport_calls
+    assert harness.read_transport_calls[-1] == "https://alpha.example/followup-new"
     assert iteration_refs and iteration_refs[0]["iteration"] == 2
     assert searchos["append_only_lineage_proof_ref"]
     assert query_plan["items"][-1]["authorized_query"] == exact_query
@@ -189,6 +207,23 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
     assert searchos["expander_invoked_after_first_wave"] is False
     assert searchos["ag92b_full_search_judgment_invoked"] is False
     assert harness.full_search_judgment_inputs == []
+    assert harness.searchos_product_result is not None
+    revision_1 = dict(harness.searchos_product_result.revision_1)
+    [iteration_set] = harness.searchos_product_result.iteration_candidate_sets
+    assert revision_1["initial_identity_count"] == 1
+    assert revision_1["selected_candidate_refs"][0]["normalized_url"] == (
+        "https://alpha.example/initial"
+    )
+    assert iteration_set["selected_candidate_refs"][0]["normalized_url"] == (
+        "https://alpha.example/followup-new"
+    )
+    assert iteration_set["parent_candidate_state_ref"] == (
+        searchos["revision_1_ref"]
+    )
+    assert json.dumps(revision_1, sort_keys=True) == json.dumps(
+        harness.searchos_product_result.revision_1,
+        sort_keys=True,
+    )
 
 
 def test_two_components_use_one_shared_n_component_receiver(

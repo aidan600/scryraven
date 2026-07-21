@@ -28,6 +28,9 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_slice_a_readiness_v1,
     candidate_use_option_ref,
     charge_searchos_judgment_call,
+    mark_searchos_slot_budget_exhausted,
+    mark_searchos_slot_stale_or_invalid,
+    mark_searchos_slot_unresolved,
     record_searchos_judgment_failure,
     record_searchos_semantic_handoff,
     reduce_searchos_judgment_decision,
@@ -191,6 +194,39 @@ def test_candidate_options_aggregate_slot_plus_url_and_windows_are_progressive()
         )
 
 
+@pytest.mark.parametrize(
+    ("candidate_count", "retained", "remaining", "next_available"),
+    [
+        (11, 11, 0, False),
+        (12, 12, 0, False),
+        (13, 12, 1, True),
+    ],
+)
+def test_candidate_window_limit_minus_at_and_plus_one(
+    candidate_count: int,
+    retained: int,
+    remaining: int,
+    next_available: bool,
+) -> None:
+    state = _state()
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    options = build_candidate_use_options_v1(
+        [
+            _candidate(slot_ref=slot_ref, ordinal=index)
+            for index in range(1, candidate_count + 1)
+        ]
+    )
+    window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=options,
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    assert window["retained_option_count"] == retained
+    assert window["remaining_option_count"] == remaining
+    assert window["next_window_available"] is next_available
+
+
 def test_append_only_lineage_rejects_plan_rewrite_and_omitted_delta() -> None:
     initial_plan = [_ref("query_plan_item", "initial")]
     current_plan = initial_plan + [_ref("query_plan_item", "followup")]
@@ -270,6 +306,54 @@ def test_append_only_lineage_rejects_plan_rewrite_and_omitted_delta() -> None:
             identity_deltas_by_digest={},
             current_identity_refs=initial_identity + delta_identity,
         )
+    with pytest.raises(SearchOSRuntimeError, match="do not equal"):
+        validate_searchos_append_only_lineage(
+            revision_1=revision,
+            initial_query_plan_items=initial_plan,
+            current_query_plan_items=current_plan,
+            initial_identity_refs=initial_identity,
+            iteration_candidate_sets=[iteration],
+            identity_deltas_by_digest={
+                delta_ref["identity_set_delta_digest"]: delta_identity
+            },
+            current_identity_refs=initial_identity + delta_identity + delta_identity,
+        )
+    with pytest.raises(SearchOSRuntimeError, match="do not equal"):
+        validate_searchos_append_only_lineage(
+            revision_1=revision,
+            initial_query_plan_items=initial_plan,
+            current_query_plan_items=current_plan,
+            initial_identity_refs=initial_identity,
+            iteration_candidate_sets=[iteration],
+            identity_deltas_by_digest={
+                delta_ref["identity_set_delta_digest"]: delta_identity
+            },
+            current_identity_refs=delta_identity + initial_identity,
+        )
+
+    zero_useful = build_searchos_iteration_candidate_set_v1(
+        run_id="run-1",
+        request_id="request-1",
+        iteration=2,
+        parent_candidate_state_ref=revision_ref,
+        slot_ref=_ref("slot", "one"),
+        query_plan_item_ref=current_plan[-1],
+        provider_plan_ref=_ref("provider_plan", "one"),
+        route_refs=[_ref("route", "one")],
+        retrieval_action_refs=[_ref("retrieval_action", "one")],
+        ordered_provider_result_occurrence_refs=[],
+        identity_set_delta_ref={
+            **_ref("identity_set_delta", "zero"),
+            "identity_count": 0,
+        },
+        selected_candidate_refs=[],
+        bounded_candidate_material_refs=[],
+        selection_facts={"selected": 0},
+        overflow_facts={"overflow": 0},
+        zero_useful_result=True,
+    )
+    assert zero_useful["zero_useful_result"] is True
+    assert zero_useful["selected_candidate_refs"] == []
 
 
 def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() -> None:
@@ -353,6 +437,48 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
     assert readiness["all_required_slots_slice_a_ready"] is True
     assert readiness["successful_sufficiency_allowed"] is True
 
+    exact_outcome = {
+        "semantic_handoff_ref": handoff,
+        "component_analyst_proposal_ref": _ref("analyst_proposal", "one"),
+        "component_analyst_proposal_status": "proposed",
+        "component_dprime_validation_ref": _ref("dprime_validation", "one"),
+        "component_dprime_validation_status": "accepted",
+        "semantic_admission_outcome_ref": _ref("semantic_admission", "one"),
+        "semantic_admission_status": "admitted",
+        "material_authority": "read_custody_material",
+    }
+    negative_outcomes = [
+        (
+            {**exact_outcome, "material_authority": "directional_candidate_context"},
+            "candidate_only_or_directional_context_only",
+        ),
+        (
+            {
+                **exact_outcome,
+                "component_dprime_validation_ref": {},
+                "component_dprime_validation_status": "not_accepted",
+            },
+            "component_dprime_validation_missing_or_rejected",
+        ),
+        (
+            {
+                **exact_outcome,
+                "semantic_admission_outcome_ref": {},
+                "semantic_admission_status": "not_admitted",
+            },
+            "runkernel_semantic_admission_missing_or_rejected",
+        ),
+    ]
+    for outcome, expected_reason in negative_outcomes:
+        not_ready = build_searchos_slice_a_readiness_v1(
+            state=state,
+            semantic_outcomes_by_slot={"slot-1": outcome},
+        )
+        assert not_ready["all_required_slots_slice_a_ready"] is False
+        assert not_ready["unresolved_required_slots"][0]["reason"] == (
+            expected_reason
+        )
+
     blocked = build_searchos_slice_a_readiness_v1(
         state=state,
         semantic_outcomes_by_slot={},
@@ -404,6 +530,75 @@ def test_optional_slot_is_not_promoted_or_silently_satisfied() -> None:
             active_slots=[ambiguous],
             initial_candidate_state_ref=_ref("candidate_state", "revision-1"),
         )
+
+
+def test_required_terminal_postures_share_block_family_with_distinct_reasons() -> None:
+    cases: list[tuple[dict[str, object], str]] = []
+    state = _state()
+    cases.append(
+        (
+            mark_searchos_slot_unresolved(
+                state,
+                slot_id="slot-1",
+                reason="offline_unresolved",
+            ),
+            "unresolved_handoff",
+        )
+    )
+    cases.append(
+        (
+            mark_searchos_slot_budget_exhausted(
+                state,
+                slot_id="slot-1",
+                reason="offline_budget_exhausted",
+            ),
+            "budget_exhausted",
+        )
+    )
+    cases.append(
+        (
+            mark_searchos_slot_stale_or_invalid(
+                state,
+                slot_id="slot-1",
+                reason="offline_stale",
+            ),
+            "stale_or_invalid",
+        )
+    )
+    failed, reservation = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-1"],
+    )
+    failed, charge = charge_searchos_judgment_call(
+        failed,
+        reservation_ref=reservation,
+        slot_id="slot-1",
+    )
+    cases.append(
+        (
+            record_searchos_judgment_failure(
+                failed,
+                charge_ref=charge,
+                reason="offline_model_failure",
+            ),
+            "judgment_failed",
+        )
+    )
+
+    block_ids: set[str] = set()
+    for terminal_state, expected_reason in cases:
+        readiness = build_searchos_slice_a_readiness_v1(
+            state=terminal_state,
+            semantic_outcomes_by_slot={},
+        )
+        assert readiness["unresolved_required_slots"][0]["reason"] == (
+            expected_reason
+        )
+        block = build_searchos_required_needs_block(readiness)
+        assert block["block_type"] == SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
+        assert block["author_execution_allowed"] is False
+        block_ids.add(block["block_id"])
+    assert len(block_ids) == 4
 
 
 def test_query_plan_admits_exact_model_followup_without_evaluator_or_expander() -> None:

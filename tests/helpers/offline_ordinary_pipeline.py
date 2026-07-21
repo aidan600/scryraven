@@ -181,6 +181,7 @@ class OfflineOrdinaryPipelineHarness:
     read_discovery_result_store: Any | None = field(
         default=None, init=False, repr=False
     )
+    searchos_product_result: Any | None = field(default=None, init=False, repr=False)
     full_search_judgment_inputs: list[dict[str, Any]] = field(
         default_factory=list, init=False, repr=False
     )
@@ -218,6 +219,8 @@ class OfflineOrdinaryPipelineHarness:
                 "judgment_request_digest": payload["judgment_request_digest"],
                 "slot_id": dict(payload["slot_ref"])["slot_id"],
             }
+            if self.read_assessment_decision == "MODEL_FAILURE":
+                raise AssertionError("offline SearchOS model transport failure")
             if self.read_assessment_decision == "MALFORMED":
                 return "not-json"
             if self.read_assessment_decision == "WRAPPED_JSON":
@@ -278,11 +281,17 @@ class OfflineOrdinaryPipelineHarness:
                     }
                 )
             if options:
+                selected_option = (
+                    options[-1]
+                    if self.read_assessment_decision == "FOLLOWUP_THEN_READ"
+                    and len(self.read_assessment_calls) > 1
+                    else options[0]
+                )
                 return json.dumps(
                     {
                         **common,
                         "action": "REQUEST_READ_PAGE",
-                        "candidate_use_option_ref": dict(dict(options[0])["candidate_use_option_ref"]),
+                        "candidate_use_option_ref": dict(dict(selected_option)["candidate_use_option_ref"]),
                         "reason": "offline_request_page",
                     }
                 )
@@ -672,6 +681,7 @@ class PostRetirementOrdinaryPipelineHarness(OfflineOrdinaryPipelineHarness):
     router_entities: Sequence[str] | None = None
     healthy: bool = True
     evidence_rows: Sequence[Mapping[str, Any]] | None = None
+    followup_evidence_rows: Sequence[Mapping[str, Any]] | None = None
     install_economist_sentinel: bool = True
     analyst_prompts: list[str] = field(default_factory=list)
     analyst_calls: int = 0
@@ -702,7 +712,9 @@ class PostRetirementOrdinaryPipelineHarness(OfflineOrdinaryPipelineHarness):
         return super().ask_model(prompt, system_prompt, **kwargs)
 
     def build_search_passages(self) -> list[dict[str, Any]]:
-        if self.evidence_rows is not None:
+        if len(self.search_calls) > 1 and self.followup_evidence_rows is not None:
+            rows = self.followup_evidence_rows
+        elif self.evidence_rows is not None:
             rows = self.evidence_rows
         elif self.healthy:
             entities = list(self.router_entities or (self.primary_entity,))
@@ -786,6 +798,7 @@ def run_post_retirement_ordinary_pipeline(
     healthy: bool = True,
     forced_corpus_state: str | None = None,
     evidence_rows: Sequence[Mapping[str, Any]] | None = None,
+    followup_evidence_rows: Sequence[Mapping[str, Any]] | None = None,
     query: str = "Compare Alpha and Beta operating rates using current evidence.",
     core_topic: str = "Alpha and Beta operating rates",
     primary_entity: str = "Alpha",
@@ -822,6 +835,7 @@ def run_post_retirement_ordinary_pipeline(
         router_entities=router_entities,
         healthy=healthy,
         evidence_rows=evidence_rows,
+        followup_evidence_rows=followup_evidence_rows,
         install_economist_sentinel=install_economist_sentinel,
         read_assessment_decision=read_assessment_decision,
     )
@@ -834,7 +848,9 @@ def run_post_retirement_ordinary_pipeline(
         harness.read_candidate_packet = dict(kwargs["candidate_packet"])
         harness.read_query_plan = kwargs["query_authority"].plan
         harness.read_discovery_result_store = kwargs["discovery_result_store"]
-        return original_read_runtime(**kwargs)
+        result = original_read_runtime(**kwargs)
+        harness.searchos_product_result = result
+        return result
 
     monkeypatch.setattr(
         orchestrator,

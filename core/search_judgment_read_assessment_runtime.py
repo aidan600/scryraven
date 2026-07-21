@@ -571,20 +571,51 @@ def derive_selected_candidate_material_need_bindings(
             if item is None:
                 raise SearchJudgmentReadAssessmentError("contributor_query_item_missing")
             metadata = _mapping(item.metadata)
-            component_ref = _mapping(metadata.get("accepted_component_ref"))
-            requirement_ref = _mapping(metadata.get("search_requirement_ref"))
-            obligation_ids = [
-                str(value)
-                for value in _sequence(
-                    metadata.get("source_obligation_candidate_ids")
+            searchos_slot_ref = _mapping(metadata.get("searchos_slot_ref"))
+            searchos_slot: Mapping[str, Any] = {}
+            if searchos_slot_ref:
+                searchos_state = _mapping(run_kernel.state.searchos_state)
+                searchos_slot = _mapping(
+                    _mapping(searchos_state.get("slots_by_id")).get(
+                        str(searchos_slot_ref.get("slot_id") or "")
+                    )
                 )
-                if str(value)
-            ]
+                if (
+                    not searchos_slot
+                    or _mapping(searchos_slot.get("slot_ref"))
+                    != searchos_slot_ref
+                ):
+                    raise SearchJudgmentReadAssessmentError(
+                        "searchos_contributor_slot_stale"
+                    )
+                component_ref = _mapping(searchos_slot.get("component_ref"))
+                slot_obligation_ref = _mapping(
+                    searchos_slot.get("source_obligation_ref")
+                )
+                obligation_ids = [
+                    str(slot_obligation_ref.get("source_obligation_id") or "")
+                ]
+                requirement_ref: Mapping[str, Any] = {}
+            else:
+                component_ref = _mapping(metadata.get("accepted_component_ref"))
+                requirement_ref = _mapping(metadata.get("search_requirement_ref"))
+                obligation_ids = [
+                    str(value)
+                    for value in _sequence(
+                        metadata.get("source_obligation_candidate_ids")
+                    )
+                    if str(value)
+                ]
             if not component_ref or not requirement_ref or not obligation_ids:
                 # A current discovery contributor can be intentionally
                 # disambiguation-only.  It is current but has no eligible
                 # material-need lineage, so it creates no binding or model call.
-                continue
+                if not searchos_slot_ref:
+                    continue
+                if not component_ref or not obligation_ids[0]:
+                    raise SearchJudgmentReadAssessmentError(
+                        "searchos_contributor_slot_incomplete"
+                    )
             component_id = str(component_ref.get("component_id") or "")
             contract_component = contract_components.get(component_id)
             work_component = work_components.get(component_id)
@@ -610,15 +641,30 @@ def derive_selected_candidate_material_need_bindings(
                     )
                 )
             ]
-            matching_requirements = [
-                value
-                for value in current_requirements
-                if _search_requirement_refs_match(
-                    requirement_ref,
-                    value,
-                    component_id=component_id,
-                )
-            ]
+            if searchos_slot_ref:
+                matching_requirements = [
+                    value
+                    for value in current_requirements
+                    if str(value.get("component_id") or "") == component_id
+                    and obligation_ids[0]
+                    in {
+                        str(obligation_id)
+                        for obligation_id in _sequence(
+                            value.get("source_obligation_candidate_ids")
+                        )
+                        if str(obligation_id)
+                    }
+                ]
+            else:
+                matching_requirements = [
+                    value
+                    for value in current_requirements
+                    if _search_requirement_refs_match(
+                        requirement_ref,
+                        value,
+                        component_id=component_id,
+                    )
+                ]
             if len(matching_requirements) != 1:
                 raise SearchJudgmentReadAssessmentError(
                     "binding_search_requirement_stale"
@@ -666,6 +712,12 @@ def derive_selected_candidate_material_need_bindings(
                 obligation_ref = _mapping(
                     canonical_obligations.get(obligation_id)
                 )
+                if searchos_slot_ref and obligation_ref != _mapping(
+                    searchos_slot.get("source_obligation_ref")
+                ):
+                    raise SearchJudgmentReadAssessmentError(
+                        "searchos_contributor_obligation_stale"
+                    )
                 if (
                     not obligation_ref
                     or component_id

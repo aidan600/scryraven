@@ -313,6 +313,9 @@ def execute_searchos_slice_a_iterative_judgment(
                             reason="candidate_packet_stale",
                         )
                         continue
+                    before_attempted, before_completed = (
+                        _acquisition_provider_call_totals(run_kernel)
+                    )
                     try:
                         custody_outcome = execute_searchos_candidate_read_to_custody(
                             run_kernel=run_kernel,
@@ -323,14 +326,32 @@ def execute_searchos_slice_a_iterative_judgment(
                             before_transport=before_transport,
                         )
                     except Exception:
+                        after_attempted, after_completed = (
+                            _acquisition_provider_call_totals(run_kernel)
+                        )
+                        attempted += max(0, after_attempted - before_attempted)
+                        completed += max(0, after_completed - before_completed)
                         dispositions[option_id] = "read_insufficient"
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
                             reason="read_transport_or_source_insufficient",
                         )
                         continue
-                    attempted += int(custody_outcome.get("provider_calls_attempted") or 0)
-                    completed += int(custody_outcome.get("provider_calls_completed") or 0)
+                    after_attempted, after_completed = (
+                        _acquisition_provider_call_totals(run_kernel)
+                    )
+                    attempt_delta = max(0, after_attempted - before_attempted)
+                    completion_delta = max(0, after_completed - before_completed)
+                    if attempt_delta != int(
+                        custody_outcome.get("provider_calls_attempted") or 0
+                    ) or completion_delta != int(
+                        custody_outcome.get("provider_calls_completed") or 0
+                    ):
+                        raise SearchOSRuntimeError(
+                            "SearchOS READ provider-call accounting is stale"
+                        )
+                    attempted += attempt_delta
+                    completed += completion_delta
                     custody_by_url[binding.normalized_url] = custody_outcome
                     reused = False
                 custody_ref = build_searchos_read_custody_material_ref(
@@ -731,6 +752,13 @@ def _strict_json_object(raw: Any) -> dict[str, Any]:
 
 
 def _failure_reason(exc: Exception) -> str:
+    if isinstance(exc, json.JSONDecodeError):
+        return "model_output_malformed"
+    if isinstance(exc, SearchOSRuntimeError):
+        detail = str(exc).strip().casefold().replace(" ", "_")
+        return ("model_output_invalid:" + detail)[:240]
+    if isinstance(exc, (AssertionError, RuntimeError)):
+        return f"model_transport_failed:{type(exc).__name__}"
     value = str(exc or type(exc).__name__).strip().replace(" ", "_")
     return value[:240] or type(exc).__name__
 
@@ -951,6 +979,25 @@ def _semantic_passages(
                     }
                 )
     return passages
+
+
+def _acquisition_provider_call_totals(run_kernel: RunKernel) -> tuple[int, int]:
+    control = dict(run_kernel.state.acquisition_control_state or {})
+    observations = list(
+        dict(control.get("execution_observations_by_id") or {}).values()
+    )
+    return (
+        sum(
+            int(dict(item).get("provider_calls_attempted") or 0)
+            for item in observations
+            if isinstance(item, Mapping)
+        ),
+        sum(
+            int(dict(item).get("provider_calls_completed") or 0)
+            for item in observations
+            if isinstance(item, Mapping)
+        ),
+    )
 
 
 def _digest(value: Any) -> str:
