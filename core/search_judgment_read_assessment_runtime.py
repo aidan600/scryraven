@@ -571,20 +571,51 @@ def derive_selected_candidate_material_need_bindings(
             if item is None:
                 raise SearchJudgmentReadAssessmentError("contributor_query_item_missing")
             metadata = _mapping(item.metadata)
-            component_ref = _mapping(metadata.get("accepted_component_ref"))
-            requirement_ref = _mapping(metadata.get("search_requirement_ref"))
-            obligation_ids = [
-                str(value)
-                for value in _sequence(
-                    metadata.get("source_obligation_candidate_ids")
+            searchos_slot_ref = _mapping(metadata.get("searchos_slot_ref"))
+            searchos_slot: Mapping[str, Any] = {}
+            if searchos_slot_ref:
+                searchos_state = _mapping(run_kernel.state.searchos_state)
+                searchos_slot = _mapping(
+                    _mapping(searchos_state.get("slots_by_id")).get(
+                        str(searchos_slot_ref.get("slot_id") or "")
+                    )
                 )
-                if str(value)
-            ]
+                if (
+                    not searchos_slot
+                    or _mapping(searchos_slot.get("slot_ref"))
+                    != searchos_slot_ref
+                ):
+                    raise SearchJudgmentReadAssessmentError(
+                        "searchos_contributor_slot_stale"
+                    )
+                component_ref = _mapping(searchos_slot.get("component_ref"))
+                slot_obligation_ref = _mapping(
+                    searchos_slot.get("source_obligation_ref")
+                )
+                obligation_ids = [
+                    str(slot_obligation_ref.get("source_obligation_id") or "")
+                ]
+                requirement_ref: Mapping[str, Any] = {}
+            else:
+                component_ref = _mapping(metadata.get("accepted_component_ref"))
+                requirement_ref = _mapping(metadata.get("search_requirement_ref"))
+                obligation_ids = [
+                    str(value)
+                    for value in _sequence(
+                        metadata.get("source_obligation_candidate_ids")
+                    )
+                    if str(value)
+                ]
             if not component_ref or not requirement_ref or not obligation_ids:
                 # A current discovery contributor can be intentionally
                 # disambiguation-only.  It is current but has no eligible
                 # material-need lineage, so it creates no binding or model call.
-                continue
+                if not searchos_slot_ref:
+                    continue
+                if not component_ref or not obligation_ids[0]:
+                    raise SearchJudgmentReadAssessmentError(
+                        "searchos_contributor_slot_incomplete"
+                    )
             component_id = str(component_ref.get("component_id") or "")
             contract_component = contract_components.get(component_id)
             work_component = work_components.get(component_id)
@@ -610,15 +641,30 @@ def derive_selected_candidate_material_need_bindings(
                     )
                 )
             ]
-            matching_requirements = [
-                value
-                for value in current_requirements
-                if _search_requirement_refs_match(
-                    requirement_ref,
-                    value,
-                    component_id=component_id,
-                )
-            ]
+            if searchos_slot_ref:
+                matching_requirements = [
+                    value
+                    for value in current_requirements
+                    if str(value.get("component_id") or "") == component_id
+                    and obligation_ids[0]
+                    in {
+                        str(obligation_id)
+                        for obligation_id in _sequence(
+                            value.get("source_obligation_candidate_ids")
+                        )
+                        if str(obligation_id)
+                    }
+                ]
+            else:
+                matching_requirements = [
+                    value
+                    for value in current_requirements
+                    if _search_requirement_refs_match(
+                        requirement_ref,
+                        value,
+                        component_id=component_id,
+                    )
+                ]
             if len(matching_requirements) != 1:
                 raise SearchJudgmentReadAssessmentError(
                     "binding_search_requirement_stale"
@@ -666,6 +712,12 @@ def derive_selected_candidate_material_need_bindings(
                 obligation_ref = _mapping(
                     canonical_obligations.get(obligation_id)
                 )
+                if searchos_slot_ref and obligation_ref != _mapping(
+                    searchos_slot.get("source_obligation_ref")
+                ):
+                    raise SearchJudgmentReadAssessmentError(
+                        "searchos_contributor_obligation_stale"
+                    )
                 if (
                     not obligation_ref
                     or component_id
@@ -1572,6 +1624,7 @@ def _execute_one_acquisition_to_custody(
     available_providers: Mapping[str, object],
     acquisition_transports: AcquisitionTransports | None,
     before_transport: Callable[[], Any] | None,
+    register_legacy_event: bool = True,
 ) -> dict[str, Any]:
     snapshot = run_kernel.acquisition_authority_snapshot()
     capability_action = run_kernel.authorize_acquisition_capability_decision(
@@ -1705,22 +1758,55 @@ def _execute_one_acquisition_to_custody(
         terminal_receipt_ref=terminal_result.terminal_receipt.ref(),
         custody_authorization_ref=custody_result.custody_authorization.ref(),
     )
-    event = _custody_event(
-        binding=binding,
-        assessment=assessment,
-        proposal=proposal,
-        reused=False,
-        custody_record=custody_record,
-    )
-    event_action = run_kernel.authorize_search_judgment_read_custody_event(
-        event=event
-    )
-    run_kernel.reduce(_custody_event_observation(event_action))
+    if register_legacy_event:
+        event = _custody_event(
+            binding=binding,
+            assessment=assessment,
+            proposal=proposal,
+            reused=False,
+            custody_record=custody_record,
+        )
+        event_action = run_kernel.authorize_search_judgment_read_custody_event(event=event)
+        run_kernel.reduce(_custody_event_observation(event_action))
     return {
         "fetch_read_content_packet": packet,
+        "custody_record": custody_record,
         "provider_calls_attempted": execution.provider_calls_attempted,
         "provider_calls_completed": execution.provider_calls_completed,
     }
+
+
+def execute_searchos_candidate_read_to_custody(
+    *,
+    run_kernel: RunKernel,
+    candidate_packet: Mapping[str, Any],
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    before_transport: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """Execute one neutral SearchOS READ through existing acquisition owners.
+
+    SearchJudgment has already selected the exact admitted candidate binding.
+    This subordinate transport composition performs no model judgment and does
+    not write the retired standalone READ-assessment registry.
+    """
+
+    proposal = build_binding_backed_acquisition_need_proposal(
+        run_kernel=run_kernel,
+        binding=binding,
+    )
+    return _execute_one_acquisition_to_custody(
+        run_kernel=run_kernel,
+        candidate_packet=candidate_packet,
+        binding=binding,
+        assessment={},
+        proposal=proposal,
+        available_providers=available_providers,
+        acquisition_transports=acquisition_transports,
+        before_transport=before_transport,
+        register_legacy_event=False,
+    )
 
 
 def _sanitized_material_from_artifact(
@@ -2360,6 +2446,7 @@ __all__ = [
     "execute_search_judgment_read_assessment_action",
     "execute_search_judgment_read_binding_action",
     "execute_search_judgment_read_source_and_custody",
+    "execute_searchos_candidate_read_to_custody",
     "validate_binding_backed_acquisition_need_proposal",
     "validate_search_judgment_read_assessment_reduction",
     "validate_search_judgment_read_binding_reduction",

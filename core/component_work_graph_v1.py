@@ -41,7 +41,7 @@ MULTICOMPONENT_CARRY_FORWARD_OWNER = (
 )
 
 MAX_COMPONENT_NODES = 5
-MIN_COMPONENT_NODES = 2
+MIN_COMPONENT_NODES = 1
 MAX_SYNTHESIS_NODES = 4
 MAX_SYNTHESIS_DEPTH = 2
 
@@ -1281,6 +1281,75 @@ def component_work_graph_v1_from_cross_component_artifact(
         "graph_challenge_posture": "none",
         "graph_output_suppressed": False,
         "graph_status": GRAPH_STATUS_SYNTHESIS_VALIDATION_REQUIRED,
+        "logical_accounting": {},
+        "physical_call_accounting": {},
+        "automatic_recovery_rounds": 0,
+        "graph_amendment_rounds": 0,
+        "runtime_parallelism": False,
+        "scheduler_created": False,
+        "budget_lease_created": False,
+    }
+    graph["graph_digest"] = _digest(_without_graph_digest(graph))
+    return validate_component_work_graph_v1(graph)
+
+
+def component_work_graph_v1_from_single_component_admission(
+    *,
+    run_id: str,
+    request_id: str,
+    accepted_contract_ref: Mapping[str, Any],
+    requested_synthesis_directive: str,
+    component_node: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the N=1 receiver graph from its admitted component.
+
+    N=1 still traverses Component Analyst, component D-prime, and RunKernel
+    component admission.  It has no cross-component relationship to invent and
+    therefore terminates as one direct-output component node rather than
+    manufacturing a Cross-Component Analyst or synthesis-node call.
+    """
+
+    component = validate_component_work_node_v1(component_node)
+    if component.get("run_id") != run_id or component.get("request_id") != request_id:
+        raise ComponentWorkGraphV1Error("single-component graph cross-run binding")
+    if component.get("direct_output_eligible") is not True:
+        raise ComponentWorkGraphV1Error("single-component graph requires current admitted component output")
+    graph_seed = _digest(
+        {
+            "run_id": run_id,
+            "request_id": request_id,
+            "component_node_digest": component["node_digest"],
+            "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
+        }
+    )
+    graph = {
+        "schema_version": COMPONENT_WORK_GRAPH_V1_SCHEMA_VERSION,
+        "supported_query_class": SUPPORTED_QUERY_CLASS,
+        "owner": "pending_runkernel_admission",
+        "canonical_state": False,
+        "graph_id": f"component-work-graph:v1:{graph_seed[:20]}",
+        "graph_revision": 1,
+        "graph_digest": None,
+        "previous_graph_digest": None,
+        "run_id": run_id,
+        "request_id": request_id,
+        "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
+        "requested_synthesis_directive": _clean_text(requested_synthesis_directive, limit=360),
+        "dependency_posture": "single_component_direct_admission",
+        "component_nodes": [component],
+        "synthesis_nodes": [],
+        "edges": [],
+        "direct_output_component_ids": [component["component_id"]],
+        "synthesis_topological_order": [],
+        "maximum_synthesis_depth": 0,
+        "scrutineer_required": False,
+        "scrutineer_trigger_reasons": [],
+        "scrutineer_status": "not_required",
+        "scrutineer_ref": {},
+        "challenge_refs": [],
+        "graph_challenge_posture": "none",
+        "graph_output_suppressed": False,
+        "graph_status": "single_component_admission_complete",
         "logical_accounting": {},
         "physical_call_accounting": {},
         "automatic_recovery_rounds": 0,
@@ -2741,6 +2810,14 @@ def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]
         status = GRAPH_STATUS_MISSING_SCRUTINY
     elif direct_count < component_count:
         status = GRAPH_STATUS_PARTIAL
+    elif (
+        component_count == 1
+        and direct_count == 1
+        and not synth_statuses
+        and current.get("dependency_posture") == "single_component_direct_admission"
+    ):
+        caveated = bool(current["component_nodes"][0].get("required_caveats"))
+        status = GRAPH_STATUS_READY_WITH_CAVEATS if caveated else GRAPH_STATUS_READY
     elif synth_statuses and synth_statuses == {"admitted"}:
         caveated = any(
             item.get("required_caveats") for item in current["synthesis_nodes"]
@@ -2880,10 +2957,13 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
     ]
     if not MIN_COMPONENT_NODES <= len(components) <= MAX_COMPONENT_NODES:
         raise ComponentWorkGraphV1Error("Graph V1 component count invalid")
-    synthesis_nodes = [
-        _validate_synthesis_node(item, graph=graph)
-        for item in graph.get("synthesis_nodes") or ()
-    ]
+    synthesis_nodes = [_validate_synthesis_node(item, graph=graph) for item in graph.get("synthesis_nodes") or ()]
+    single_component_direct = bool(
+        len(components) == 1
+        and not synthesis_nodes
+        and graph.get("dependency_posture") == "single_component_direct_admission"
+        and graph.get("direct_output_component_ids") == [components[0]["component_id"]]
+    )
     amended_awaiting_resynthesis = (
         not synthesis_nodes
         and graph.get("dependency_posture") == "requires_fresh_resynthesis"
@@ -2899,8 +2979,11 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         and int(graph.get("selective_recomputation_rounds") or 0) == 1
         and int(graph.get("whole_graph_resynthesis_rounds") or 0) == 0
     )
-    if not amended_awaiting_resynthesis and not selective_awaiting_resynthesis and not (
-        1 <= len(synthesis_nodes) <= MAX_SYNTHESIS_NODES
+    if (
+        not single_component_direct
+        and not amended_awaiting_resynthesis
+        and not selective_awaiting_resynthesis
+        and not (1 <= len(synthesis_nodes) <= MAX_SYNTHESIS_NODES)
     ):
         raise ComponentWorkGraphV1Error("Graph V1 synthesis count invalid")
     all_nodes = [*components, *synthesis_nodes]
@@ -2962,16 +3045,16 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         selective_awaiting_resynthesis and not synthesis_nodes
     ):
         if edges:
-            raise ComponentWorkGraphV1Error(
-                "awaiting-resynthesis Graph V1 cannot retain current semantic edges"
-            )
-    elif not edges or graph.get("dependency_posture") not in {
-        "explicitly_assessed",
-        "requires_selective_resynthesis",
-    }:
-        raise ComponentWorkGraphV1Error(
-            "Graph V1 cannot treat empty or unknown dependency posture as independence"
-        )
+            raise ComponentWorkGraphV1Error("awaiting-resynthesis Graph V1 cannot retain current semantic edges")
+    elif not single_component_direct and (
+        not edges
+        or graph.get("dependency_posture")
+        not in {
+            "explicitly_assessed",
+            "requires_selective_resynthesis",
+        }
+    ):
+        raise ComponentWorkGraphV1Error("Graph V1 cannot treat empty or unknown dependency posture as independence")
     if max((item["synthesis_depth"] for item in synthesis_nodes), default=0) > MAX_SYNTHESIS_DEPTH:
         raise ComponentWorkGraphV1Error("Graph V1 synthesis depth invalid")
     order = list(graph.get("synthesis_topological_order") or ())
@@ -3279,6 +3362,7 @@ __all__ = [
     "admit_synthesis_node_via_runkernel",
     "build_synthesis_carry_forward_projection",
     "component_work_graph_v1_from_cross_component_artifact",
+    "component_work_graph_v1_from_single_component_admission",
     "component_work_graph_v1_resynthesis_from_cross_component_artifact",
     "component_work_graph_v1_selective_resynthesis_from_cross_artifact",
     "cross_component_input_packet",

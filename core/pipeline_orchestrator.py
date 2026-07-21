@@ -166,10 +166,14 @@ from core.ordinary_live_source_custody_runtime import (
     execute_ordinary_live_source_custody,
 )
 from core.ordinary_multicomponent_synthesis_runtime import (
+    OrdinaryMulticomponentRuntimeError,
     execute_ordinary_semantic_or_multicomponent_handoff_from_scope,
     ordinary_multicomponent_path_selected,
 )
-from core.persistence_side_effects import execute_persistence_side_effects
+from core.persistence_side_effects import (
+    execute_persistence_side_effects,
+    execute_safe_blocked_terminal_persistence,
+)
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
     economist_schema_telemetry_defaults,
@@ -265,7 +269,13 @@ from core.run_authority_sufficiency_runtime import (
 )
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
-from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel
+from core.run_kernel import (
+    QUERY_PRODUCTION_STAGE,
+    Observation,
+    ObservationType,
+    RunKernel,
+    RunStageStatus,
+)
 from core.run_logging import (
     current_code_version_metadata,
     log_run_failed,
@@ -280,12 +290,17 @@ from core.runtime_prompt_assembly import (
 from core.search_judgment_read_assessment_runtime import (
     SEARCH_JUDGMENT_READ_TRACE_KEY,
     build_full_search_judgment_containment_projection,
-    execute_search_judgment_read_source_and_custody,
 )
 from core.search_planner_model_adapter import SearchPlannerModelAdapter
 from core.search_planner_runtime import contract_ref_from_contract
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
+)
+from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_SLICE_A_TRACE_KEY,
+    build_searchos_required_needs_blocked_fap_projection,
+    build_searchos_semantic_outcomes_by_slot,
+    execute_searchos_slice_a_iterative_judgment,
 )
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
@@ -698,6 +713,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ordinary_discovery_candidate_packet: dict[str, Any] = {}
     ordinary_discovery_candidate_handoff_projection: dict[str, Any] = {}
     search_judgment_read_assessment_projection: dict[str, Any] = {}
+    searchos_slice_a_active = True
+    searchos_slice_a_projection: dict[str, Any] = {}
+    searchos_slice_a_result: Any | None = None
+    searchos_component_receiver_selected = False
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
@@ -2088,10 +2107,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         to_merge = list(new_passages)
 
-        if iteration == 1:
-            _ent = utilization_entity_anchor(
-                (primary_entity or core_topic or "").strip(), query_type
-            )
+        if iteration == 1 and not searchos_slice_a_active:
+            _ent = utilization_entity_anchor((primary_entity or core_topic or "").strip(), query_type)
             utilization_pre_retry = utilization_rate(to_merge, _ent) if _ent else None
             if (
                 _ent
@@ -2167,6 +2184,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         all_passages.sort(key=lambda x: x.get("score", 0), reverse=True)
         max_domain_chunks = 4 if complexity == "high" else (3 if complexity == "medium" else 2)
         diverse_top_evidence = deps.filter_top_evidence(all_passages, top_chunks, max_domain_chunks)
+
+        if searchos_slice_a_active:
+            # Revision 1 is cut after exactly one admitted ordinary DISCOVER
+            # wave.  All former post-first-wave recovery/evaluator/expander
+            # authorities are outside the forward Slice A path.
+            _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
+            iterations_run += 1
+            iteration += 1
+            break
 
         if iteration == 1:
             recovery_queries: list[str] = []
@@ -2648,6 +2674,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         selected_candidate_cap=top_chunks,
         authority_snapshot=ordinary_discovery_authority_snapshot,
     )
+    searchos_slice_a_projection["revision_1_selection_facts"] = {
+        "candidate_count": ordinary_discovery_selection.candidate_count,
+        "source_result_identity_count": len(discovery_result_store.identities()),
+    }
     if ordinary_discovery_selection.candidate_count:
         active_answer_contract_ref = contract_ref_from_contract(
             run_kernel.state.current_answer_contract
@@ -2684,42 +2714,209 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
         )
         run_kernel.reduce(ordinary_candidate_execution.observation)
-        ordinary_discovery_candidate_packet = dict(
-            ordinary_candidate_execution.packet
-        )
-        ordinary_discovery_candidate_handoff_projection = dict(
-            ordinary_candidate_execution.projection
-        )
-        search_judgment_read_result = (
-            execute_search_judgment_read_source_and_custody(
-                run_kernel=run_kernel,
-                candidate_packet=ordinary_discovery_candidate_packet,
-                query_plan=query_authority.plan,
-                discovery_result_store=discovery_result_store,
-                ask_model=_ask(phase="search_judgment_read_assessment"),
-                provider=smart_provider,
-                model=smart_model,
-                base_url=local_url,
-                api_key=or_api_key,
-                use_reasoning=use_reasoning,
-                available_providers=(
-                    provider_availability_snapshot.to_capability_available_keys()
-                ),
-                acquisition_transports=(
-                    deps.searchos_read_acquisition_transports
-                ),
-                before_transport=(
-                    cap_policy.mark_fetch_read_operation
-                    if cap_policy is not None
-                    else None
-                ),
-                measure_context_stage=_measure_context_stage,
+        ordinary_discovery_candidate_packet = dict(ordinary_candidate_execution.packet)
+        ordinary_discovery_candidate_handoff_projection = dict(ordinary_candidate_execution.projection)
+        _searchos_followup_base_scope = dict(locals())
+
+        def _execute_searchos_followup_discover(
+            followup_query: str,
+            followup_iteration: int,
+            query_admission: Mapping[str, Any],
+        ) -> dict[str, Any]:
+            nonlocal discover_candidate_urls_admitted
+            nonlocal total_chunks_embedded
+            nonlocal retrieval_loop_contract_state
+
+            followup_action = run_kernel.authorize_main_retrieval_pass(
+                inputs={
+                    "iteration": followup_iteration,
+                    "query_plan_id": query_authority.plan.plan_id,
+                    "query_count": 1,
+                    "recovery_active": False,
+                    "provider_plan_record_count": len(provider_plan.records),
+                    "searchos_followup_query_plan_item_ref": dict(query_admission["query_plan_item_ref"]),
+                }
             )
+            followup_scope = dict(_searchos_followup_base_scope)
+            followup_scope.update(
+                {
+                    "iteration": followup_iteration,
+                    "iterations_run": followup_iteration,
+                    "max_iterations": max(max_iterations, followup_iteration),
+                    "current_queries": [followup_query],
+                    "main_retrieval_kernel_action": followup_action,
+                    "query_authority": query_authority,
+                    "retrieval_loop_contract_state": (retrieval_loop_contract_state),
+                    "similarity_prior_queries": [],
+                    "query_similarity_basis": None,
+                    "weak_corpus_recovery_used": False,
+                    "weak_corpus_recovery_attempted": False,
+                }
+            )
+            followup_schedule = schedule_main_retrieval_from_kernel_action(
+                followup_action,
+                followup_scope,
+                current_queries=[followup_query],
+                recovery_active=False,
+                choose_search_depth=choose_retrieval_search_depth,
+            )
+            if followup_schedule.route_blocked:
+                run_kernel.reduce(
+                    Observation.from_action(
+                        followup_action,
+                        observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+                        status=RunStageStatus.FAILED,
+                        payload={
+                            "failure_reason": "searchos_followup_provider_route_blocked",
+                            "provider_dispatch_attempted": False,
+                        },
+                    )
+                )
+                return {
+                    "candidate_packet": {},
+                    "provider_plan_ref": dict(followup_schedule.provider_plan_ref),
+                    "route_refs": [dict(followup_schedule.provider_route_ref)],
+                    "retrieval_action_refs": [],
+                    "selection_facts": {
+                        "selected_candidate_count": 0,
+                        "discover_passage_count": 0,
+                    },
+                    "overflow_facts": {},
+                    "followup_failure_reason": "provider_route_blocked",
+                }
+            (
+                exact_queries,
+                followup_depth,
+                followup_providers,
+                force_followup_component_providers,
+            ) = main_retrieval_action_values(followup_schedule)
+            followup_scope.update(
+                {
+                    "current_queries": exact_queries,
+                    "current_search_depth": followup_depth,
+                    "loop_providers": followup_providers,
+                    "force_component_providers": (force_followup_component_providers),
+                    "retrieval_scheduled_action": followup_schedule,
+                }
+            )
+            try:
+                followup_outcome = execute_main_retrieval_pass_from_scope(
+                    followup_scope,
+                    retrieval_pass_records=retrieval_pass_records,
+                )
+            except Exception as exc:
+                run_kernel.reduce(
+                    Observation.from_action(
+                        followup_action,
+                        observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+                        status=RunStageStatus.FAILED,
+                        payload={
+                            "failure_reason": (
+                                "searchos_followup_retrieval_failed:"
+                                + type(exc).__name__
+                            ),
+                            "provider_dispatch_attempted": True,
+                        },
+                    )
+                )
+                return {
+                    "candidate_packet": {},
+                    "provider_plan_ref": dict(followup_schedule.provider_plan_ref),
+                    "route_refs": [dict(followup_schedule.provider_route_ref)],
+                    "retrieval_action_refs": [],
+                    "selection_facts": {
+                        "selected_candidate_count": 0,
+                        "discover_passage_count": 0,
+                    },
+                    "overflow_facts": {},
+                    "followup_failure_reason": (
+                        "retrieval_failed:" + type(exc).__name__
+                    ),
+                }
+            run_kernel.reduce(followup_outcome.observation)
+            retrieval_loop_contract_state = followup_outcome.retrieval_loop_contract_state
+            discover_candidate_urls_admitted += followup_outcome.seen_url_delta
+            total_chunks_embedded += followup_outcome.chunk_delta
+            providers_by_iteration.append(list(followup_providers))
+            past_searches.extend(exact_queries)
+
+            wave_top = deps.filter_top_evidence(
+                list(followup_outcome.passages),
+                top_chunks,
+                max_domain_chunks,
+            )
+            wave_authority = build_ordinary_discovery_authority_snapshot(
+                query_plan=query_authority.plan,
+                provider_plan=provider_plan,
+            )
+            wave_selection = prepare_ordinary_discovery_selection(
+                final_top_evidence=wave_top,
+                discovery_result_store=discovery_result_store,
+                selected_candidate_cap=top_chunks,
+                authority_snapshot=wave_authority,
+            )
+            wave_packet: dict[str, Any] = {}
+            if wave_selection.candidate_count:
+                wave_inputs = build_ordinary_discovery_candidate_action_inputs(
+                    run_id=run_id,
+                    request_id=session_id,
+                    source_result_identity_set_ref=(discovery_result_store.identity_set_ref()),
+                    selection=wave_selection,
+                    answer_contract_ref=active_answer_contract_ref,
+                )
+                wave_action = run_kernel.authorize_ordinary_discovery_candidate_handoff(inputs=wave_inputs)
+                wave_execution = execute_ordinary_discovery_candidate_handoff_action(
+                    action=wave_action,
+                    selection=wave_selection,
+                    discovery_result_store=discovery_result_store,
+                    authority_snapshot=wave_authority,
+                    answer_contract_ref=active_answer_contract_ref,
+                )
+                run_kernel.reduce(wave_execution.observation)
+                wave_packet = dict(wave_execution.packet)
+            return {
+                "candidate_packet": wave_packet,
+                "provider_plan_ref": dict(followup_schedule.provider_plan_ref),
+                "route_refs": [dict(followup_schedule.provider_route_ref)],
+                "retrieval_action_refs": [dict(item) for item in wave_selection.retrieval_action_refs],
+                "selection_facts": {
+                    "selected_candidate_count": wave_selection.candidate_count,
+                    "discover_passage_count": len(followup_outcome.passages),
+                },
+                "overflow_facts": {
+                    "selection_overflow_count": int(wave_packet.get("selection_overflow_count") or 0),
+                    "provider_identity_run_cap_overflow_count": int(
+                        discovery_result_store.telemetry().get("identity_run_cap_overflow_count") or 0
+                    ),
+                },
+            }
+
+        searchos_slice_a_result = execute_searchos_slice_a_iterative_judgment(
+            run_kernel=run_kernel,
+            candidate_packet=ordinary_discovery_candidate_packet,
+            query_authority=query_authority,
+            discovery_result_store=discovery_result_store,
+            profile_name=strategy,
+            ask_model=_cap_model_phase(
+                _ask(phase="searchos_iterative_judgment"),
+                "search_judgment",
+            ),
+            provider=smart_provider,
+            model=smart_model,
+            base_url=local_url,
+            api_key=or_api_key,
+            use_reasoning=use_reasoning,
+            available_providers=(provider_availability_snapshot.to_capability_available_keys()),
+            acquisition_transports=deps.searchos_read_acquisition_transports,
+            execute_followup_discover=_execute_searchos_followup_discover,
+            before_transport=(cap_policy.mark_fetch_read_operation if cap_policy is not None else None),
+            measure_context_stage=_measure_context_stage,
         )
-        search_judgment_read_assessment_projection = dict(
-            search_judgment_read_result.projection
-        )
-        urls_fetched += search_judgment_read_result.provider_calls_completed
+        searchos_slice_a_projection = dict(searchos_slice_a_result.projection)
+        urls_fetched += searchos_slice_a_result.provider_calls_completed
+        # DISCOVER passages remain directional candidate context.  Only the
+        # exact READ-custody handoff material enters downstream semantics.
+        all_passages = list(searchos_slice_a_result.searchos_semantic_material)
 
     _source_tier_recovery_lifecycle = source_tier_telemetry(all_passages)
     _source_domain_recovery_lifecycle = source_domain_telemetry(
@@ -2888,86 +3085,81 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 locals(),
                 execute_selected_lane=False,
             )
-        _search_judgment_started = True
-        _search_judgment_input = build_search_judgment_input_from_runtime(
-            contract_projection=run_contract_projection,
-            evidence_ledger_projection=(
-                build_full_search_judgment_containment_projection(
-                    evidence_ledger_projection=evidence_ledger_projection,
-                    search_judgment_read_state=(
-                        run_kernel.state.search_judgment_read_state
-                    ),
-                )
-            ),
-            query_authority_trace=query_authority.to_trace_fragment(),
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            result_count=len(all_passages),
-            iterations_run=iterations_run,
-            source_tier_counts=_source_tier_recovery_lifecycle[
-                "source_tier_counts"
-            ],
-            source_domain_counts=_source_domain_recovery_lifecycle[
-                "source_domain_counts"
-            ],
-            top_source_domains=_source_domain_recovery_lifecycle[
-                "top_source_domains"
-            ],
-            provider_diagnostic_count=len(provider_diagnostics),
-            source_class_recovery_recommendation=(
-                _source_class_recovery_lifecycle_recommendation
-            ),
-            source_class_observability=(
-                _source_class_recovery_answer_contract_observability
-            ),
-            retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-            retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-            answer_contract_projection=_pre_recovery_answer_contract_projection,
-            max_iterations=max_iterations,
-            recovery_attempt_count=(
-                _run_controller_mirror.state.active_source_class_recovery_attempt_count
-            ),
-            initial_answer_contract=run_kernel.state.initial_answer_contract,
-            component_coverage_history=run_kernel.state.component_coverage_history,
-            contract_amendment_admission_history=(
-                run_kernel.state.contract_amendment_admission_history
-            ),
-        )
-        _search_judgment_action = run_kernel.authorize_search_judgment(
-            inputs={
-                "contract_id": run_contract_projection.get("contract_id"),
-                "candidate_count": evidence_ledger_projection.get("candidate_count"),
-                "requirement_count": evidence_ledger_projection.get(
-                    "requirement_count"
+        _search_judgment_started = not searchos_slice_a_active
+        _search_judgment_input = (
+            None
+            if searchos_slice_a_active
+            else build_search_judgment_input_from_runtime(
+                contract_projection=run_contract_projection,
+                evidence_ledger_projection=(
+                    build_full_search_judgment_containment_projection(
+                        evidence_ledger_projection=evidence_ledger_projection,
+                        search_judgment_read_state=(run_kernel.state.search_judgment_read_state),
+                    )
                 ),
-                "iteration": iterations_run,
-                "max_iterations": max_iterations,
+                query_authority_trace=query_authority.to_trace_fragment(),
+                core_topic=core_topic,
+                primary_entity=primary_entity,
+                result_count=len(all_passages),
+                iterations_run=iterations_run,
+                source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
+                source_domain_counts=_source_domain_recovery_lifecycle["source_domain_counts"],
+                top_source_domains=_source_domain_recovery_lifecycle["top_source_domains"],
+                provider_diagnostic_count=len(provider_diagnostics),
+                source_class_recovery_recommendation=(_source_class_recovery_lifecycle_recommendation),
+                source_class_observability=(_source_class_recovery_answer_contract_observability),
+                retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
+                retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
+                answer_contract_projection=_pre_recovery_answer_contract_projection,
+                max_iterations=max_iterations,
+                recovery_attempt_count=(_run_controller_mirror.state.active_source_class_recovery_attempt_count),
+                initial_answer_contract=run_kernel.state.initial_answer_contract,
+                component_coverage_history=run_kernel.state.component_coverage_history,
+                contract_amendment_admission_history=(run_kernel.state.contract_amendment_admission_history),
+            )
+        )
+        if searchos_slice_a_active:
+            search_judgment_projection = {
+                "schema_version": "searchos_legacy_authority_retirement_v1",
+                "owner": "RunKernel.SearchOSIterativeJudgment",
+                "status": "retired_from_forward_path",
+                "ag92b_full_search_judgment_invoked": False,
+                "component_gap_query_authority_created": False,
             }
-        )
-        _search_judgment_result = execute_run_authority_search_judgment_action(
-            _search_judgment_action,
-            judgment_input=_search_judgment_input,
-            ask_model=(
-                _cap_model_phase(ask_model, "search_judgment")
-                if run_authority_search_judgment_smart_model
-                else None
-            ),
-            clean_json_response=deps.clean_json_response,
-            smart_model_enabled=run_authority_search_judgment_smart_model,
-            provider=smart_provider,
-            model=smart_model,
-            base_url=local_url,
-            api_key=or_api_key,
-            effort="high",
-            use_reasoning=use_reasoning,
-            measure_context_stage=_measure_context_stage,
-        )
-        run_kernel.reduce(_search_judgment_result.observation)
-        search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
-        current_queries = query_authority.consume_search_judgment_component_gap_authority(
-            current_queries,
-            search_judgment_projection=search_judgment_projection,
-        )
+        else:
+            _search_judgment_action = run_kernel.authorize_search_judgment(
+                inputs={
+                    "contract_id": run_contract_projection.get("contract_id"),
+                    "candidate_count": evidence_ledger_projection.get("candidate_count"),
+                    "requirement_count": evidence_ledger_projection.get("requirement_count"),
+                    "iteration": iterations_run,
+                    "max_iterations": max_iterations,
+                }
+            )
+            _search_judgment_result = execute_run_authority_search_judgment_action(
+                _search_judgment_action,
+                judgment_input=_search_judgment_input,
+                ask_model=(
+                    _cap_model_phase(ask_model, "search_judgment")
+                    if run_authority_search_judgment_smart_model
+                    else None
+                ),
+                clean_json_response=deps.clean_json_response,
+                smart_model_enabled=run_authority_search_judgment_smart_model,
+                provider=smart_provider,
+                model=smart_model,
+                base_url=local_url,
+                api_key=or_api_key,
+                effort="high",
+                use_reasoning=use_reasoning,
+                measure_context_stage=_measure_context_stage,
+            )
+            run_kernel.reduce(_search_judgment_result.observation)
+            search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
+            current_queries = query_authority.consume_search_judgment_component_gap_authority(
+                current_queries,
+                search_judgment_projection=search_judgment_projection,
+            )
     except Exception as exc:
         if _search_judgment_started:
             raise
@@ -3062,20 +3254,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     authorized_spine_action = _retrieval_authority_stage.authorized_spine_action
 
-    source_class_recovery_result = run_source_class_recovery_dispatch(
-        source_class_recovery_context_from_scope(
-            locals(),
-            error_type=PipelineError,
+    if searchos_slice_a_active:
+        authorized_spine_action = None
+        source_class_recovery_execution = {
+            "attempted": False,
+            "status": "retired_from_searchos_forward_path",
+        }
+    else:
+        source_class_recovery_result = run_source_class_recovery_dispatch(
+            source_class_recovery_context_from_scope(
+                locals(),
+                error_type=PipelineError,
+            )
         )
-    )
-    source_class_recovery_execution = (
-        source_class_recovery_result.source_class_recovery_execution
-    )
-    discover_candidate_urls_admitted += source_class_recovery_result.total_urls_delta
-    total_chunks_embedded += source_class_recovery_result.total_chunks_delta
+        source_class_recovery_execution = source_class_recovery_result.source_class_recovery_execution
+        discover_candidate_urls_admitted += source_class_recovery_result.total_urls_delta
+        total_chunks_embedded += source_class_recovery_result.total_chunks_delta
 
     conflict_resolution_execution: dict[str, int | bool]
-    if authorized_spine_action == RESOLVE_CONFLICT:
+    if not searchos_slice_a_active and authorized_spine_action == RESOLVE_CONFLICT:
         if conflict_resolution_decision_for_checkpoint_gate is None:
             raise PipelineError("conflict_resolution gate approved without decision")
         conflict_resolution_execution = execute_conflict_resolution_from_scope(
@@ -3103,6 +3300,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     final_evidence_bundle = final_evidence_handoff.bundle
     final_top_evidence = final_evidence_handoff.final_top_evidence
+    if searchos_slice_a_active and searchos_slice_a_result is not None:
+        # SearchOS semantic consumption is bound to the exact READ-custody
+        # material selected by SearchJudgment.  The legacy ranking/filtering
+        # projection may describe that material, but it cannot replace or
+        # silently drop the canonical semantic handoff.
+        final_top_evidence = list(searchos_slice_a_result.searchos_semantic_material)
     unique_source_urls = final_evidence_handoff.unique_source_urls
     ordered_sources = final_evidence_handoff.ordered_sources
     evidence_ledger_projection = final_evidence_handoff.evidence_ledger_projection
@@ -3183,22 +3386,202 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         analyst_quant_packet_handoff_telemetry.update(assembly.quant_packet_handoff)
         return assembly.prefix
 
-    # Qualifying selected 2-5-component requests execute the typed lane here so
+    # Qualifying selected N-component requests execute the typed lane here so
     # legacy Analyst/review are bypassed. Nonqualifying requests must not invoke
     # the direct semantic producer before legacy review finalizes evidence.
-    if ordinary_multicomponent_path_selected(run_kernel):
+    if searchos_slice_a_active:
+        required_slot_ids = list(run_kernel.state.searchos_state.get("required_slot_ids") or ())
+        slots_by_id = dict(run_kernel.state.searchos_state.get("slots_by_id") or {})
+        all_required_material_handed = bool(required_slot_ids) and all(
+            dict(slots_by_id.get(slot_id) or {}).get("posture") == "semantically_handed_off"
+            for slot_id in required_slot_ids
+        )
+        if all_required_material_handed:
+            try:
+                execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+                    run_kernel,
+                    locals(),
+                    allow_searchos_component_receiver=True,
+                )
+                searchos_component_receiver_selected = True
+            except OrdinaryMulticomponentRuntimeError as exc:
+                searchos_slice_a_projection["component_receiver_failure"] = (
+                    type(exc).__name__
+                )
+    elif ordinary_multicomponent_path_selected(run_kernel):
         execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             run_kernel,
             locals(),
         )
+        searchos_component_receiver_selected = True
+
+    if searchos_component_receiver_selected:
         if run_kernel.state.current_answer_contract:
             # Dynamic Graph V1 recovery re-enters the ordinary acquisition
             # boundary after the legacy retrieval projection was assembled.
             # Carry its canonical EvidenceLedger reduction into the ordinary
             # Sufficiency handoff instead of leaving that consumer on the
             # pre-amendment snapshot.
-            evidence_ledger_projection = (
-                run_kernel.state.evidence_ledger.to_projection().to_dict()
+            evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    if searchos_slice_a_active:
+        if searchos_slice_a_result is None:
+            raise PipelineError(
+                "SearchOS revision 1 has no admitted candidate packet "
+                f"(selected={ordinary_discovery_selection.candidate_count}, "
+                f"identities={len(discovery_result_store.identities())})"
+            )
+        semantic_outcomes_by_slot = build_searchos_semantic_outcomes_by_slot(
+            searchos_state=run_kernel.state.searchos_state,
+            semantic_handoffs=searchos_slice_a_result.semantic_handoffs,
+            searchos_semantic_material=(searchos_slice_a_result.searchos_semantic_material),
+            component_admission_projection=dict(
+                run_kernel.state.projections.get("multicomponent_component_admission") or {}
+            ),
+        )
+        searchos_slice_a_projection["semantic_outcomes_by_slot"] = semantic_outcomes_by_slot
+        readiness_action = run_kernel.authorize_searchos_slice_a_readiness(
+            semantic_outcomes_by_slot=semantic_outcomes_by_slot
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                readiness_action,
+                observation_type=(ObservationType.SEARCHOS_SLICE_A_READINESS_DERIVED),
+                status=RunStageStatus.COMPLETED,
+                payload={"readiness": readiness_action.inputs["readiness"]},
+            )
+        )
+        searchos_readiness_projection = dict(run_kernel.state.projections["searchos_slice_a_readiness"])
+        searchos_slice_a_projection["readiness_projection_ref"] = {
+            "readiness_projection_id": searchos_readiness_projection.get("readiness_projection_id"),
+            "readiness_projection_digest": searchos_readiness_projection.get("readiness_projection_digest"),
+        }
+        searchos_slice_a_projection["readiness_projection"] = dict(searchos_readiness_projection)
+        if not searchos_readiness_projection.get("all_required_slots_slice_a_ready"):
+            block_action = run_kernel.authorize_searchos_required_needs_block()
+            run_kernel.reduce(
+                Observation.from_action(
+                    block_action,
+                    observation_type=(ObservationType.SEARCHOS_REQUIRED_NEEDS_BLOCKED),
+                    status=RunStageStatus.COMPLETED,
+                    payload={"block": block_action.inputs["block"]},
+                )
+            )
+            required_needs_block = dict(run_kernel.state.projections["searchos_required_needs_block"])
+            searchos_slice_a_projection["required_needs_block_ref"] = {
+                "block_id": required_needs_block.get("block_id"),
+                "block_digest": required_needs_block.get("block_digest"),
+                "block_type": required_needs_block.get("block_type"),
+            }
+            blocked_fap_projection = build_searchos_required_needs_blocked_fap_projection(
+                required_needs_block=required_needs_block,
+                readiness_projection=searchos_readiness_projection,
+            )
+            blocked_fap_summary = build_safe_blocked_fap_summary(blocked_fap_projection)
+            report = build_blocked_fap_terminal_report(blocked_fap_summary)
+            execution_trace = run_kernel.to_trace_fragment()
+            execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
+            execution_trace["provider_plan"] = provider_plan.to_trace()
+            execution_trace.update(query_authority.to_trace_fragment())
+            blocked_discovery_telemetry = discovery_result_store.telemetry()
+            blocked_discovery_telemetry.update(
+                {
+                    "candidate_packets_created": int(bool(ordinary_discovery_candidate_packet)),
+                    "selected_candidates_handed_off": int(
+                        ordinary_discovery_candidate_handoff_projection.get("selected_candidate_count", 0)
+                    ),
+                }
+            )
+            execution_trace["discovery_result_telemetry"] = blocked_discovery_telemetry
+            if ordinary_discovery_candidate_handoff_projection:
+                execution_trace[ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY] = (
+                    ordinary_discovery_candidate_handoff_projection
+                )
+            if ordinary_discovery_candidate_packet:
+                execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = ordinary_discovery_candidate_packet
+            execution_trace.update(build_blocked_fap_terminal_trace_fragment(blocked_fap_summary))
+            latency_seconds = round(time.time() - pipeline_start_time, 2)
+            cost_snapshot = accumulator.snapshot()
+            failure_card_payload = {
+                "show": True,
+                "reason": "searchos_slice_a_required_needs_unresolved",
+                "corpus_state": corpus_state,
+            }
+            pipeline_config = {
+                "intent": intent,
+                "complexity": complexity,
+                "search_depth": search_depth,
+                "mode": strategy,
+            }
+            new_session = {
+                "id": session_id,
+                "run_id": run_id,
+                "title": session_title,
+                "timestamp": current_date,
+                "query": query,
+                "core_topic": core_topic,
+                "report": report,
+                "top_passages": list(all_passages),
+                "chat_messages": [],
+                "seen_urls": list(seen_urls),
+                "collected_images": list(collected_images),
+                "last_report_mode": strategy,
+                "pipeline_config": pipeline_config,
+                "run_history": list(prior_run_history),
+                "failure_card": failure_card_payload,
+            }
+            execute_safe_blocked_terminal_persistence(
+                execution_log_path=execution_log_path,
+                execution_log_entry={
+                    "event": "execution",
+                    "timestamp": current_date,
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "query": query[:100],
+                    "intent": intent,
+                    "query_type": query_type,
+                    "primary_entity": (primary_entity or "")[:200],
+                    "entities": [str(entity)[:200] for entity in entities_list],
+                    "corpus_state": corpus_state,
+                    "complexity": complexity,
+                    "mode": strategy,
+                    "latency_seconds": latency_seconds,
+                    "output_word_count": len(report.split()),
+                    "final_output_preview": report[:300],
+                    "cost": cost_snapshot,
+                    "failure_card": failure_card_payload,
+                    "terminal_kind": "safe_blocked_non_author",
+                    "execution_trace": execution_trace,
+                    **current_code_version_metadata(),
+                },
+                run_id=run_id,
+                session_id=session_id,
+                latency_seconds=latency_seconds,
+                strategy=strategy,
+                execution_trace=execution_trace,
+                run_log=run_log,
+            )
+            status.update("SearchOS required material remains unresolved.")
+            return RunOutcome(
+                session_id=session_id,
+                run_id=run_id,
+                session_title=session_title,
+                query=query,
+                core_topic=core_topic,
+                report=report,
+                top_passages=list(all_passages),
+                seen_urls=list(seen_urls),
+                collected_images=list(collected_images),
+                execution_trace=execution_trace,
+                failure_card=failure_card_payload,
+                new_session=new_session,
+                cost_snapshot=cost_snapshot,
+                latency_seconds=latency_seconds,
+                intent=intent,
+                complexity=complexity,
+                corpus_state=corpus_state,
+                pipeline_config=pipeline_config,
+                author_streamed=False,
             )
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
@@ -3222,12 +3605,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         pre_analyst_retrieval_gate=_pre_analyst_retrieval_gate,
         post_economist_analyst_gate=_post_economist_analyst_gate,
     )
-    if ordinary_multicomponent_path_selected(run_kernel):
-        analyst_runtime_outcome = (
-            analyst_runtime_stage.multicomponent_analyst_bypass_outcome_from_scope(
-                locals()
-            )
-        )
+    if searchos_component_receiver_selected or ordinary_multicomponent_path_selected(run_kernel):
+        analyst_runtime_outcome = analyst_runtime_stage.multicomponent_analyst_bypass_outcome_from_scope(locals())
     else:
         analyst_runtime_outcome = analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
             locals(), deps=analyst_runtime_deps
@@ -3275,11 +3654,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         select_providers=select_providers,
         choose_supplemental_search_depth=choose_supplemental_search_depth,
     )
-    if ordinary_multicomponent_path_selected(run_kernel):
-        legacy_review_outcome = (
-            legacy_review_runtime_stage.multicomponent_legacy_review_bypass_outcome_from_scope(
-                locals()
-            )
+    if searchos_component_receiver_selected or ordinary_multicomponent_path_selected(run_kernel):
+        legacy_review_outcome = legacy_review_runtime_stage.multicomponent_legacy_review_bypass_outcome_from_scope(
+            locals()
         )
     else:
         legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(
@@ -3405,55 +3782,44 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ) = _consume_final_material_runtime_handoff(initial_final_material_handoff)
 
     status.step("Judging final answer sufficiency...")
-    execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
-        run_kernel,
-        locals(),
+    if not searchos_slice_a_active:
+        execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+            run_kernel,
+            locals(),
+        )
+    _semantic_gap_search_judgment_input = (
+        build_search_judgment_input_from_runtime(
+            contract_projection=run_contract_projection,
+            evidence_ledger_projection=(
+                build_full_search_judgment_containment_projection(
+                    evidence_ledger_projection=evidence_ledger_projection,
+                    search_judgment_read_state=(run_kernel.state.search_judgment_read_state),
+                )
+            ),
+            query_authority_trace=query_authority.to_trace_fragment(),
+            core_topic=core_topic,
+            primary_entity=primary_entity,
+            result_count=len(all_passages),
+            iterations_run=iterations_run,
+            source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
+            source_domain_counts=_source_domain_recovery_lifecycle["source_domain_counts"],
+            top_source_domains=_source_domain_recovery_lifecycle["top_source_domains"],
+            provider_diagnostic_count=len(provider_diagnostics),
+            source_class_recovery_recommendation=(_source_class_recovery_lifecycle_recommendation),
+            source_class_observability=(_source_class_recovery_answer_contract_observability),
+            retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
+            retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
+            answer_contract_projection=answer_contract_projection,
+            max_iterations=max_iterations,
+            recovery_attempt_count=(_run_controller_mirror.state.active_source_class_recovery_attempt_count),
+            initial_answer_contract=run_kernel.state.initial_answer_contract,
+            component_coverage_history=run_kernel.state.component_coverage_history,
+            contract_amendment_admission_history=(run_kernel.state.contract_amendment_admission_history),
+        )
+        if not searchos_slice_a_active
+        else None
     )
-    _semantic_gap_search_judgment_input = build_search_judgment_input_from_runtime(
-        contract_projection=run_contract_projection,
-        evidence_ledger_projection=(
-            build_full_search_judgment_containment_projection(
-                evidence_ledger_projection=evidence_ledger_projection,
-                search_judgment_read_state=(
-                    run_kernel.state.search_judgment_read_state
-                ),
-            )
-        ),
-        query_authority_trace=query_authority.to_trace_fragment(),
-        core_topic=core_topic,
-        primary_entity=primary_entity,
-        result_count=len(all_passages),
-        iterations_run=iterations_run,
-        source_tier_counts=_source_tier_recovery_lifecycle[
-            "source_tier_counts"
-        ],
-        source_domain_counts=_source_domain_recovery_lifecycle[
-            "source_domain_counts"
-        ],
-        top_source_domains=_source_domain_recovery_lifecycle[
-            "top_source_domains"
-        ],
-        provider_diagnostic_count=len(provider_diagnostics),
-        source_class_recovery_recommendation=(
-            _source_class_recovery_lifecycle_recommendation
-        ),
-        source_class_observability=(
-            _source_class_recovery_answer_contract_observability
-        ),
-        retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-        retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-        answer_contract_projection=answer_contract_projection,
-        max_iterations=max_iterations,
-        recovery_attempt_count=(
-            _run_controller_mirror.state.active_source_class_recovery_attempt_count
-        ),
-        initial_answer_contract=run_kernel.state.initial_answer_contract,
-        component_coverage_history=run_kernel.state.component_coverage_history,
-        contract_amendment_admission_history=(
-            run_kernel.state.contract_amendment_admission_history
-        ),
-    )
-    if _semantic_gap_search_judgment_input.helper_proposals.get(
+    if _semantic_gap_search_judgment_input is not None and _semantic_gap_search_judgment_input.helper_proposals.get(
         "semantic_missing_assessments"
     ):
         _semantic_gap_search_judgment_action = run_kernel.authorize_search_judgment(
@@ -3499,27 +3865,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     sufficiency_judgment_projection = sufficiency_handoff.projection
 
-    recovery_policy = resolve_component_gap_recovery_mode_policy(strategy)
-    component_gap_recovery_handoff = execute_component_gap_recovery(
-        inputs=ComponentGapRecoveryPipelineInputs(
-            run_kernel=run_kernel,
-            query_plan_trace=query_authority.to_trace_fragment(),
-            search_judgment_projection=search_judgment_projection,
-            evidence_ledger_projection=evidence_ledger_projection,
-            search_work_projection=run_kernel.state.search_work_plan,
-            query=query,
-            intent=intent,
-            complexity=complexity,
-            search_depth=search_depth,
-            results_per_query=results_per_query,
-            all_passages=all_passages,
-        ),
-        policy=recovery_policy,
-        offline_recovery_adapter=deps.component_gap_recovery_adapter,
-        seen_urls=seen_urls,
-    )
-    component_gap_recovery_result = component_gap_recovery_handoff.result
-    if component_gap_recovery_handoff.recovered:
+    component_gap_recovery_handoff = None
+    component_gap_recovery_result = None
+    if not searchos_slice_a_active:
+        recovery_policy = resolve_component_gap_recovery_mode_policy(strategy)
+        component_gap_recovery_handoff = execute_component_gap_recovery(
+            inputs=ComponentGapRecoveryPipelineInputs(
+                run_kernel=run_kernel,
+                query_plan_trace=query_authority.to_trace_fragment(),
+                search_judgment_projection=search_judgment_projection,
+                evidence_ledger_projection=evidence_ledger_projection,
+                search_work_projection=run_kernel.state.search_work_plan,
+                query=query,
+                intent=intent,
+                complexity=complexity,
+                search_depth=search_depth,
+                results_per_query=results_per_query,
+                all_passages=all_passages,
+            ),
+            policy=recovery_policy,
+            offline_recovery_adapter=deps.component_gap_recovery_adapter,
+            seen_urls=seen_urls,
+        )
+        component_gap_recovery_result = component_gap_recovery_handoff.result
+    if component_gap_recovery_handoff is not None and component_gap_recovery_handoff.recovered:
         if not component_gap_recovery_handoff.all_passages:
             raise PipelineError(
                 "recovered component-gap material is absent"
@@ -3931,9 +4300,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ordinary_discovery_candidate_packet
         )
     if search_judgment_read_assessment_projection:
-        execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY] = (
-            search_judgment_read_assessment_projection
-        )
+        execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY] = search_judgment_read_assessment_projection
+    if searchos_slice_a_projection:
+        execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
     if final_answer_packet_handoff.author_input_blocked:
         execution_trace.update(
             build_blocked_fap_terminal_trace_fragment(blocked_fap_summary)

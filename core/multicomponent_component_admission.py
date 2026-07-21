@@ -184,8 +184,7 @@ def _typed_lane_custody_gap_exception_authorized(
     ]
     return (
         metadata.get("explicit_factual_component_list") is True
-        and _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
-        is not None
+        and _clean_text(metadata.get("requested_synthesis_directive"), limit=360) is not None
         and 2 <= len(component_refs) <= 5
     )
 
@@ -207,6 +206,7 @@ def stage_multicomponent_component_admission(
     sanitized_content_references: Sequence[Mapping[str, Any]],
     component_coverage_record: Mapping[str, Any] | None,
     specialist_need_handoff: Mapping[str, Any] | None = None,
+    allow_searchos_semantic_requirement_historical_gap_exception: bool = False,
 ) -> dict[str, Any]:
     """Validate owner execution and stage semantic/coverage state atomically."""
 
@@ -391,6 +391,15 @@ def stage_multicomponent_component_admission(
                 request_id=request_id,
                 ignore_satisfied_provider_job_historical_gaps=(
                     _typed_lane_custody_gap_exception_authorized(accepted)
+                    or (
+                        allow_searchos_semantic_requirement_historical_gap_exception
+                        and any(
+                            str(item).startswith("searchos_semantic_requirement:")
+                            for item in _safe_mapping(coverage_payload.get("evidence_ledger_binding")).get(
+                                "source_requirement_ids", ()
+                            )
+                        )
+                    )
                 ),
             )
             coverage_projection = build_component_coverage_reduction_projection(
@@ -536,6 +545,7 @@ def execute_multicomponent_component_admission(
     sanitized_content_references: Sequence[Mapping[str, Any]],
     component_coverage_record: Mapping[str, Any] | None,
     specialist_need_handoff: Mapping[str, Any] | None = None,
+    allow_searchos_semantic_requirement_historical_gap_exception: bool = False,
 ) -> dict[str, Any]:
     """Stage then atomically reduce one component through RunKernel."""
 
@@ -593,6 +603,9 @@ def execute_multicomponent_component_admission(
         sanitized_content_references=sanitized_content_references,
         component_coverage_record=component_coverage_record,
         specialist_need_handoff=specialist_need_handoff,
+        allow_searchos_semantic_requirement_historical_gap_exception=(
+            allow_searchos_semantic_requirement_historical_gap_exception
+        ),
     )
     component_ref = staged["component_admission_ref"]
     prior = _safe_mapping(

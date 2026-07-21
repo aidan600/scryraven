@@ -40,6 +40,43 @@ class PersistenceSideEffectResult:
     sqlite_row_written: bool = False
 
 
+def execute_safe_blocked_terminal_persistence(
+    *,
+    execution_log_path: Path,
+    execution_log_entry: dict[str, Any],
+    run_id: str,
+    session_id: str,
+    latency_seconds: float,
+    strategy: str,
+    execution_trace: dict[str, Any],
+    run_log: Any,
+) -> None:
+    """Persist an already-authorized safe non-Author terminal.
+
+    RunKernel and the installed blocked FinalAnswerPacket adapter own the
+    terminal posture. This helper owns only the existing JSONL lifecycle side
+    effects so an early safe return remains replay-identifiable and does not
+    look like an abandoned run.
+    """
+
+    append_jsonl(
+        execution_log_path,
+        execution_log_entry,
+        logger=run_log,
+    )
+    timing = execution_trace.get("timing")
+    log_run_completed(
+        run_id=run_id,
+        session_id=session_id,
+        phase="pipeline",
+        latency_seconds=latency_seconds,
+        mode=strategy,
+        timing=dict(timing) if isinstance(timing, dict) else None,
+        path=execution_log_path,
+        logger=run_log,
+    )
+
+
 def _append_policy_journal(
     *,
     policy_journal_path: Path,

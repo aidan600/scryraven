@@ -1084,13 +1084,12 @@ def test_every_ordinary_dispatch_family_binds_canonical_result_context() -> None
     assert review_fields["execute_scrutineer_remediation"].default is (execute_scrutineer_remediation_from_scope)
 
 
-def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_packet(
+def test_retired_pre_snapshot_disambiguation_cannot_enter_revision_one_packet(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     store = DiscoveryResultMaterialStore()
     completion_order: list[str] = []
-    later_retry_completed = threading.Event()
     monkeypatch.setattr(
         orchestrator,
         "DiscoveryResultMaterialStore",
@@ -1101,36 +1100,10 @@ def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_pac
         query: str,
         **_kwargs: Any,
     ) -> tuple[list[dict[str, Any]], list[str]]:
-        if "explained overview" in query:
-            completion_order.append("retry-provider-call-ordinal-3")
-            later_retry_completed.set()
-            return [
-                _provider_result(
-                    "https://alpha.example/retry-completed-first",
-                    title="Alpha supporting overview",
-                    credibility=4,
-                    material=(
-                        "Alpha supporting overview material from the authorized "
-                        "disambiguation retry. "
-                    )
-                    * 14,
-                )
-            ], []
-        if "2026 news" in query:
-            assert later_retry_completed.wait(timeout=2)
-            completion_order.append("retry-provider-call-ordinal-2")
-            return [
-                _provider_result(
-                    "https://alpha.example/retry-ranked-first",
-                    title="Alpha official current operating policy",
-                    credibility=10,
-                    material=(
-                        "Alpha current official operating policy remains active "
-                        "under the published rule. "
-                    )
-                    * 14,
-                )
-            ], []
+        if "explained overview" in query or "2026 news" in query:
+            raise AssertionError(
+                "retired pre-snapshot disambiguation must not dispatch"
+            )
         completion_order.append("main-provider-call-ordinal-1")
         return [
             _provider_result(
@@ -1189,20 +1162,12 @@ def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_pac
 
     assert not harness.forbidden_live_calls
     identities = {item.normalized_url: item for item in store.identities()}
+    assert set(identities) == {"https://alpha.example/main-lower-relevance"}
     main_identity = identities["https://alpha.example/main-lower-relevance"]
-    retry_identity = identities["https://alpha.example/retry-ranked-first"]
-    later_retry_identity = identities[
-        "https://alpha.example/retry-completed-first"
-    ]
     assert store.material_for_ref(main_identity.ref()) is not None
-    assert [
-        main_identity.provider_call_ordinal,
-        retry_identity.provider_call_ordinal,
-        later_retry_identity.provider_call_ordinal,
-    ] == [1, 2, 3]
-    assert completion_order.index("retry-provider-call-ordinal-3") < (
-        completion_order.index("retry-provider-call-ordinal-2")
-    )
+    assert main_identity.provider_call_ordinal == 1
+    assert main_identity.query_role != "disambiguation"
+    assert completion_order == ["main-provider-call-ordinal-1"]
 
     trace = outcome.execution_trace
     packet = validate_ordinary_search_result_candidate_packet(
@@ -1218,89 +1183,31 @@ def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_pac
     assert handoff_ref["origin_kind"] == (
         SEARCH_EXECUTOR_HANDOFF_ORIGIN_ORDINARY_QUERY_PROVIDER
     )
-    assert handoff_ref["query_plan_ref"] == dict(retry_identity.query_plan_ref)
+    assert handoff_ref["query_plan_ref"] == dict(main_identity.query_plan_ref)
     assert handoff_ref["selected_query_plan_item_refs"][0] == dict(
-        retry_identity.query_plan_item_ref
+        main_identity.query_plan_item_ref
     )
-    assert retry_identity.query_role == "disambiguation"
-    assert handoff_ref["provider_plan_ref"] == dict(
-        retry_identity.provider_plan_ref
-    )
+    assert handoff_ref["provider_plan_ref"] == dict(main_identity.provider_plan_ref)
     assert handoff_ref["provider_plan_record_refs"][0] == dict(
-        retry_identity.provider_plan_record_ref
+        main_identity.provider_plan_record_ref
     )
-    assert handoff_ref["provider_route_refs"][0] == dict(
-        retry_identity.provider_route_ref
-    )
-    assert handoff_ref["retrieval_action_refs"][0] == dict(
-        retry_identity.retrieval_action_ref
-    )
-    assert record["provider_used"] == retry_identity.provider == "tavily"
-    assert record["provider_call_ordinal"] == (
-        retry_identity.provider_call_ordinal
-    )
-    assert record["provider_result_rank"] == retry_identity.result_rank == 1
-    assert record["source_result_ref"] == retry_identity.ref()
+    assert record["provider_used"] == main_identity.provider == "tavily"
+    assert record["provider_call_ordinal"] == main_identity.provider_call_ordinal
+    assert record["provider_result_rank"] == main_identity.result_rank == 1
+    assert record["source_result_ref"] == main_identity.ref()
     assert record["source_material_ref"] == {
-        "source_material_id": retry_identity.material_ref["material_id"],
-        "source_material_digest": retry_identity.material_ref[
+        "source_material_id": main_identity.material_ref["material_id"],
+        "source_material_digest": main_identity.material_ref[
             "material_digest"
         ],
-        "material_class": retry_identity.material_class,
+        "material_class": main_identity.material_class,
     }
     assert record["selected_candidate_rank"] == 1
-    assert record["normalized_url"] == retry_identity.normalized_url
-    assert record["scoring_provenance"] == {
-        "ranking_method": "existing_discovery_passage_ranking",
-        "relevance_score": record["relevance_score"],
-        "rrf_score": 0.0,
-        "credibility": 10.0,
-        "chunk_digest": record["scoring_provenance"]["chunk_digest"],
-    }
-    assert len(record["scoring_provenance"]["chunk_digest"]) == 64
-    assert record["relevance_score"] > next(
-        item["relevance_score"]
-        for item in packet["candidate_records"]
-        if item["source_result_ref"] == later_retry_identity.ref()
-    )
-
-    qualifying_retry_item = next(
-        item
+    assert record["normalized_url"] == main_identity.normalized_url
+    assert not any(
+        dict(item.get("metadata") or {}).get("authority_source")
+        == "main_retrieval_disambiguation_retry"
         for item in trace["query_plan"]["items"]
-        if item.get("item_id")
-        == retry_identity.query_plan_item_ref["query_plan_item_id"]
-    )
-    assert qualifying_retry_item["status"] == "finalized"
-    assert retry_identity.query_plan_item_ref["query_plan_item_digest"] == (
-        _canonical_digest(
-            {
-                "query_plan_id": trace["query_plan"]["plan_id"],
-                "item": qualifying_retry_item,
-            }
-        )
-    )
-    assert retry_identity.query_digest == hashlib.sha256(
-        qualifying_retry_item["authorized_query"].encode("utf-8")
-    ).hexdigest()
-    assert qualifying_retry_item["admission_reason"] == (
-        "recorded_from_existing_dispatch_authority"
-    )
-    assert qualifying_retry_item["metadata"] == {
-        "authority_source": "main_retrieval_disambiguation_retry",
-        "authority_ref_digest": qualifying_retry_item["metadata"][
-            "authority_ref_digest"
-        ],
-        "query_text_unchanged": True,
-    }
-    assert len(qualifying_retry_item["metadata"]["authority_ref_digest"]) == 64
-    selected_provider_record = next(
-        item
-        for item in trace["provider_plan"]["records"]
-        if item.get("provider_plan_record_ref")
-        == dict(retry_identity.provider_plan_record_ref)
-    )
-    assert selected_provider_record["route_decision_ref"] == dict(
-        retry_identity.provider_route_ref
     )
 
     serialized_packet = json.dumps(packet, sort_keys=True).casefold()
@@ -1320,7 +1227,8 @@ def test_pre_snapshot_disambiguation_result_can_rank_first_into_revision_one_pac
     assert handoff["focused_extract_work_order_created"] is False
     assert handoff["exact_url_cap_charged"] is False
     assert handoff["exact_url_transport_executed"] is False
-    assert handoff["urls_fetched"] == trace["urls_fetched"] == 0
+    assert handoff["urls_fetched"] == 0
+    assert trace["urls_fetched"] == 1
 
 
 def test_pipeline_search_wrapper_rejects_injected_callable_without_lineage_kwargs(
@@ -1391,7 +1299,7 @@ def test_pipeline_search_wrapper_rejects_injected_callable_without_lineage_kwarg
 
 
 @pytest.mark.parametrize("mode", ["Fast", "Balanced", "Deep"])
-def test_unflagged_offline_modes_create_packet_without_transport_and_persist_trace(
+def test_unflagged_offline_modes_create_packet_then_searchos_read_and_persist_trace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     mode: str,
@@ -1465,7 +1373,8 @@ def test_unflagged_offline_modes_create_packet_without_transport_and_persist_tra
     assert handoff["exact_url_transport_executed"] is False
     assert handoff["exact_url_cap_charged"] is False
     assert handoff["urls_fetched"] == 0
-    assert trace["urls_fetched"] == 0
+    assert trace["urls_fetched"] == 1
+    assert trace["searchos_slice_a"]["provider_calls_attempted"] == 1
     assert trace["discover_candidate_urls_admitted"] >= 1
     assert (
         trace.get("ordinary_live_candidate_handoff", {}).get(
@@ -1485,4 +1394,4 @@ def test_unflagged_offline_modes_create_packet_without_transport_and_persist_tra
         == (execution_event["discover_candidate_urls_admitted"])
         == trace["discover_candidate_urls_admitted"]
     )
-    assert sqlite_row["urls_fetched"] == execution_event["urls_fetched"] == 0
+    assert sqlite_row["urls_fetched"] == execution_event["urls_fetched"] == 1

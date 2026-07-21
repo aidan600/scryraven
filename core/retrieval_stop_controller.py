@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from core.query_equivalence import (
+    REDUNDANT_QUERY_JACCARD_THRESHOLD,
+    clean_query_for_equivalence,
+    query_jaccard_similarity,
+)
 from core.run_kernel import (
     RETRIEVAL_STOP_CHECKPOINT_STAGE,
     ActionType,
@@ -20,8 +25,6 @@ from core.run_kernel import (
     RunStageStatus,
     validate_authorized_action,
 )
-
-REDUNDANT_QUERY_JACCARD_THRESHOLD = 0.7
 
 
 class RetrievalStopControllerDecision(str, Enum):
@@ -121,14 +124,7 @@ class RetrievalStopKernelCheckpoint:
 
 
 def _clean_query(query: str) -> str:
-    text = " ".join((query or "").strip().split())
-    if not text:
-        return ""
-    words = text.split(" ")
-    last = words[-1]
-    if len(last) < 3 and last.isalpha() and "." not in last:
-        words = words[:-1]
-    return " ".join(words)[:300]
+    return clean_query_for_equivalence(query)
 
 
 def _copy_string_list(value: Any) -> tuple[str, ...]:
@@ -148,11 +144,7 @@ def _query_jaccard_similarity(
     queries_a: tuple[str, ...],
     queries_b: tuple[str, ...],
 ) -> float:
-    tokens_a = set(" ".join(queries_a).lower().split())
-    tokens_b = set(" ".join(queries_b).lower().split())
-    if not tokens_a or not tokens_b:
-        return 0.0
-    return len(tokens_a & tokens_b) / len(tokens_a | tokens_b)
+    return query_jaccard_similarity(queries_a, queries_b)
 
 
 def build_retrieval_stop_controller_input(

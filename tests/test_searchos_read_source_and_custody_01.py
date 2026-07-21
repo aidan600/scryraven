@@ -22,7 +22,6 @@ from core.run_authority_search_judgment_adapter import (
 from core.run_kernel import RunKernel
 from core.search_judgment_read_assessment_runtime import (
     SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED,
-    SEARCH_JUDGMENT_READ_TRACE_KEY,
     SearchJudgmentReadAssessmentError,
     build_full_search_judgment_containment_projection,
     execute_search_judgment_read_source_and_custody,
@@ -198,6 +197,14 @@ def _acquisition_actions(harness: Any) -> list[dict[str, Any]]:
     ]
 
 
+def _searchos_slots(harness: Any) -> list[dict[str, Any]]:
+    state = _kernel_trace(harness)["searchos_state"]
+    return [
+        state["slots_by_id"][slot_id]
+        for slot_id in state["active_slot_ids"]
+    ]
+
+
 def _difference_paths(left: Any, right: Any, path: str = "root") -> list[str]:
     if isinstance(left, dict) and isinstance(right, dict):
         differences = [
@@ -240,30 +247,21 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
     )
 
     trace = outcome.execution_trace
-    projection = trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
-    assert len(harness.read_assessment_calls) == projection[
-        "policy_admitted_slot_count"
-    ]
+    projection = trace["searchos_slice_a"]
+    slots = _searchos_slots(harness)
+    assert len(harness.read_assessment_calls) == len(slots)
     assert len({item["slot_id"] for item in harness.read_assessment_calls}) == len(
         harness.read_assessment_calls
     )
-    assert projection["logical_assessment_count"] == len(
-        harness.read_assessment_calls
-    )
-    assert projection["no_read_count"] == len(harness.read_assessment_calls)
-    assert projection["request_read_page_count"] == 0
-    assert projection["acquisition_need_proposal_count"] == 0
-    assert projection["canonical_custody_count"] == 0
-    assert projection["legacy_full_search_judgment_flag_consulted"] is False
-    assert projection["deterministic_read_decision_used"] is False
-    assert projection["deterministic_fallback_used"] is False
-    assert _read_actions(harness)[0]["action_type"] == (
-        "search_judgment_read_bindings_derive"
-    )
-    assert all(
-        item["action_type"] == "search_judgment_read_assess"
-        for item in _read_actions(harness)[1:]
-    )
+    assert all(slot["posture"] == "unresolved_handoff" for slot in slots)
+    assert all(slot["latest_reason"] == "offline_no_read" for slot in slots)
+    assert all(slot["read_nomination_count"] == 0 for slot in slots)
+    assert projection["provider_calls_attempted"] == 0
+    assert projection["provider_calls_completed"] == 0
+    assert projection["standalone_read_assessment_invoked"] is False
+    assert projection["ag92b_full_search_judgment_invoked"] is False
+    assert harness.full_search_judgment_inputs == []
+    assert _read_actions(harness) == []
     assert _acquisition_actions(harness) == []
     packet = trace["search_result_candidate_packet"]
     assert packet["packet_revision"] == 1
@@ -276,19 +274,24 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
 
 
 @pytest.mark.parametrize(
-    ("decision", "expected_failure"),
+    ("decision", "expected_failure", "expected_posture"),
     [
-        (None, "model_transport_failed:AssertionError"),
-        ("MALFORMED", "model_output_malformed"),
-        ("WRAPPED_JSON", "model_output_malformed"),
-        ("INVALID_NOMINATION", "invalid_binding_nomination"),
+        ("MODEL_FAILURE", "model_transport_failed:AssertionError", "judgment_failed"),
+        ("MALFORMED", "model_output_malformed", "judgment_failed"),
+        ("WRAPPED_JSON", "model_output_malformed", "judgment_failed"),
+        (
+            "INVALID_NOMINATION",
+            "model_output_invalid:read_nomination_is_outside_current_candidate_window",
+            "stale_or_invalid",
+        ),
     ],
 )
 def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
-    decision: str | None,
+    decision: str,
     expected_failure: str,
+    expected_posture: str,
 ) -> None:
     _install_response_only_discovery(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
@@ -305,24 +308,18 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     )
 
     trace = outcome.execution_trace
-    projection = trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
-    state = _kernel_trace(harness)["search_judgment_read_state"]
-    assessments = list(state["assessment_records_by_slot"].values())
-    assert len(harness.read_assessment_calls) == projection[
-        "policy_admitted_slot_count"
-    ]
-    assert projection["assessment_failure_count"] == len(assessments)
-    assert all(
-        assessment["assessment_failure_code"] == expected_failure
-        for assessment in assessments
-    )
-    assert all(assessment.get("decision") is None for assessment in assessments)
-    assert all(
-        assessment["deterministic_decision_used"] is False
-        and assessment["deterministic_fallback_used"] is False
-        for assessment in assessments
-    )
-    assert projection["acquisition_need_proposal_count"] == 0
+    projection = trace["searchos_slice_a"]
+    state = _kernel_trace(harness)["searchos_state"]
+    slots = _searchos_slots(harness)
+    assert len(harness.read_assessment_calls) == len(slots)
+    assert state["budget"]["failed_logical_judgment_calls"] == len(slots)
+    assert all(slot["posture"] == expected_posture for slot in slots)
+    assert all(slot["latest_reason"] == expected_failure for slot in slots)
+    assert all(slot["custody_refs"] == [] for slot in slots)
+    assert projection["provider_calls_attempted"] == 0
+    assert projection["provider_calls_completed"] == 0
+    assert projection["standalone_read_assessment_invoked"] is False
+    assert projection["ag92b_full_search_judgment_invoked"] is False
     assert _acquisition_actions(harness) == []
 
 
@@ -347,19 +344,15 @@ def test_duplicate_url_contributors_create_distinct_bindings_one_candidate(
     packet = outcome.execution_trace["search_result_candidate_packet"]
     assert packet["candidate_count"] == 1
     assert packet["candidate_records"][0]["contributor_ref_count"] == 2
-    state = _kernel_trace(harness)["search_judgment_read_state"]
-    bindings = state["binding_state"]["bindings"]
-    contributor_ids = {
-        item["contributing_source_result_ref"]["source_result_id"]
-        for item in bindings
-    }
-    assert len(contributor_ids) == 2
-    assert len(bindings) == 4
-    assert all(
-        len(binding_ids) == 2
-        for binding_ids in state["binding_state"]["bindings_by_slot"].values()
-    )
-    assert len(harness.read_assessment_calls) == 2
+    assert harness.searchos_product_result is not None
+    revision_1 = harness.searchos_product_result.revision_1
+    assert revision_1["initial_identity_count"] == 2
+    assert len(revision_1["bounded_candidate_material_refs"]) == 2
+    assert revision_1["selection_facts"]["selected_candidate_count"] == 1
+    slots = _searchos_slots(harness)
+    assert len(slots) == 2
+    assert all(len(slot["candidate_use_option_refs"]) == 1 for slot in slots)
+    assert len(harness.read_assessment_calls) == len(slots)
 
 
 def test_shared_obligation_has_one_canonical_ref_and_two_component_slots(
@@ -385,12 +378,10 @@ def test_shared_obligation_has_one_canonical_ref_and_two_component_slots(
         environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
-    projection = outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
-    assert projection.get("failure_code") is None, projection.get("failure_code")
-    assert projection["status"] == "checkpoint_completed", projection
-    state = _kernel_trace(harness)["search_judgment_read_state"]
+    projection = outcome.execution_trace["searchos_slice_a"]
+    assert projection["owner"] == "RunKernel.SearchOSIterativeJudgment"
+    state = _kernel_trace(harness)["searchos_state"]
     assert state, projection
-    binding_state = state["binding_state"]
     snapshot = harness.run_kernel.acquisition_authority_snapshot()
     assert list(snapshot["source_obligations_by_id"]) == [
         shared_obligation_id
@@ -402,21 +393,17 @@ def test_shared_obligation_has_one_canonical_ref_and_two_component_slots(
         "fixture-component-01",
         "fixture-component-02",
     ]
-    bindings = binding_state["bindings"]
-    assert len(bindings) == 2
-    assert {
-        binding["component_ref"]["component_id"] for binding in bindings
-    } == set(obligation_ref["component_ids"])
-    assert all(
-        binding["source_obligation_ref"] == obligation_ref
-        for binding in bindings
+    slots = _searchos_slots(harness)
+    assert len(slots) == 2
+    assert {slot["component_ref"]["component_id"] for slot in slots} == set(
+        obligation_ref["component_ids"]
     )
-    assert len(binding_state["slot_order"]) == 2
-    assert len(set(binding_state["slot_order"])) == 2
+    assert all(
+        slot["source_obligation_ref"] == obligation_ref for slot in slots
+    )
+    assert len(set(state["active_slot_ids"])) == 2
     assert len(harness.read_assessment_calls) == 2
-    assert outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY][
-        "logical_assessment_count"
-    ] == 2
+    assert state["budget"]["charged_logical_judgment_calls"] == 2
 
 
 def test_shared_obligation_descriptor_conflict_is_typed_before_assessment(
@@ -519,21 +506,18 @@ def test_exactly_eight_active_slots_are_all_assessed_once(
         environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
-    state = _kernel_trace(harness)["search_judgment_read_state"]
-    binding_state = state["binding_state"]
-    assert len(binding_state["slot_order"]) == 8
-    assert binding_state["policy_admitted_slot_ids"] == (
-        binding_state["slot_order"]
-    )
-    assert binding_state["policy_deferred_slot_ids"] == []
+    state = _kernel_trace(harness)["searchos_state"]
+    assert len(state["active_slot_ids"]) == 8
     assert len(harness.read_assessment_calls) == 8
     assert len(
         {call["slot_id"] for call in harness.read_assessment_calls}
     ) == 8
-    projection = outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
-    assert projection["logical_assessment_count"] == 8
-    assert projection["no_read_count"] == 8
-    assert projection["acquisition_need_proposal_count"] == 0
+    projection = outcome.execution_trace["searchos_slice_a"]
+    assert state["budget"]["charged_logical_judgment_calls"] == 8
+    assert set(projection["slot_postures"].values()) == {
+        "unresolved_handoff"
+    }
+    assert projection["provider_calls_attempted"] == 0
 
 
 def test_ninth_active_slot_aborts_ordinary_run_before_any_assessment(
@@ -756,38 +740,32 @@ def test_response_only_read_reaches_main_kernel_canonical_custody(
     )
 
     trace = outcome.execution_trace
-    projection = trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
+    projection = trace["searchos_slice_a"]
     kernel_trace = _kernel_trace(harness)
-    state = kernel_trace["search_judgment_read_state"]
-    registry = state["custody_by_normalized_url"]
-    assert len(harness.read_assessment_calls) == projection[
-        "policy_admitted_slot_count"
-    ]
+    state = kernel_trace["searchos_state"]
+    slots = _searchos_slots(harness)
+    assert len(harness.read_assessment_calls) == len(slots) * 2
     assert len(calls) == 1, json.dumps(
         {
             "projection": projection,
-            "read_state": state,
+            "searchos_state": state,
             "acquisition_actions": _acquisition_actions(harness),
             "acquisition_control": kernel_trace["acquisition_control_state"],
         },
         sort_keys=True,
     )
     assert cap_policy.fetch_read_operations == 1
-    assert projection["request_read_page_count"] == len(
-        harness.read_assessment_calls
+    assert projection["provider_calls_attempted"] == 1
+    assert projection["provider_calls_completed"] == 1
+    assert len(projection["semantic_handoff_refs"]) == len(slots)
+    assert all(len(slot["custody_refs"]) == 1 for slot in slots)
+    assert all(len(slot["semantic_handoff_refs"]) == 1 for slot in slots)
+    custody_refs = [slot["custody_refs"][0] for slot in slots]
+    assert sum(bool(item["same_normalized_url_reused"]) for item in custody_refs) == (
+        len(slots) - 1
     )
-    assert projection["acquisition_need_proposal_count"] == len(
-        harness.read_assessment_calls
-    )
-    assert projection["canonical_custody_count"] == 1
-    assert projection["same_url_custody_reuse_count"] == (
-        len(harness.read_assessment_calls) - 1
-    )
-    assert len(registry) == 1
-    custody = next(iter(registry.values()))
-    assert custody["bounded_content_present"] is True
-    assert custody["semantic_support_created"] is False
-    assert custody["source_obligation_satisfied"] is False
+    assert all(item["bounded_retention"] is True for item in custody_refs)
+    assert all(item["source_obligation_satisfied"] is False for item in custody_refs)
     assert trace["urls_fetched"] == 1
     execution_actions = [
         item
@@ -801,8 +779,7 @@ def test_response_only_read_reaches_main_kernel_canonical_custody(
     ]
     assert len(custody_records) == 1
     record = custody_records[0]
-    requested_url = next(iter(registry))
-    assert record["attempted_url"] == requested_url
+    assert record["attempted_url"] == "https://alpha.example/official-rule"
     assert record["provider_reported_url"] == (
         "https://provider.example/reported-page"
     )
@@ -812,12 +789,9 @@ def test_response_only_read_reaches_main_kernel_canonical_custody(
     )
     assert record["semantic_support_created"] is False
     assert record["source_obligation_satisfied"] is False
-    assert projection["provider_failure_fallback_attempted"] is False
-    assert projection["query_plan_continuation_created"] is False
-    assert projection["citation_created"] is False
-    assert projection["sufficiency_decided"] is False
-    assert projection["final_answer_packet_created"] is False
-    assert projection["author_input_created"] is False
+    assert projection["standalone_read_assessment_invoked"] is False
+    assert projection["ag92b_full_search_judgment_invoked"] is False
+    assert harness.full_search_judgment_inputs == []
 
 
 def test_full_search_judgment_containment_restores_baseline_input_facts() -> None:
@@ -918,7 +892,7 @@ def test_both_full_search_judgment_input_seams_apply_read_containment() -> None:
     assert source.count("build_full_search_judgment_containment_projection(") == 2
 
 
-def test_successful_read_preserves_baseline_full_search_judgment_inputs(
+def test_successful_read_bypasses_retired_full_search_judgment_inputs(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -968,35 +942,17 @@ def test_successful_read_preserves_baseline_full_search_judgment_inputs(
     )
 
     assert len(calls) == 1
-    assert no_read_harness.full_search_judgment_inputs
-    assert read_harness.full_search_judgment_inputs
-    no_read_inputs = no_read_harness.full_search_judgment_inputs[:2]
-    read_candidate_ids = [
-        item.get("candidate_id")
-        for item in read_harness.full_search_judgment_inputs[0][
-            "evidence_ledger_ref"
-        ]["candidate_records"]
-    ]
-    baseline_candidate_ids = [
-        item.get("candidate_id")
-        for item in no_read_inputs[0]["evidence_ledger_ref"]["candidate_records"]
-    ]
-    assert read_candidate_ids == baseline_candidate_ids, read_candidate_ids
-    assert read_harness.full_search_judgment_inputs == no_read_inputs, {
-        "differences": _difference_paths(
-            read_harness.full_search_judgment_inputs,
-            no_read_inputs,
-        )[:30],
-        "read_candidate_ids": read_candidate_ids,
-        "baseline_candidate_ids": baseline_candidate_ids,
-        "registry_candidate_ids": [
-            item.get("candidate_id")
-            for item in _kernel_trace(read_harness)[
-                "search_judgment_read_state"
-            ]["custody_by_normalized_url"].values()
-        ],
-    }
-    assert read_outcome.report == no_read_outcome.report
+    assert no_read_harness.full_search_judgment_inputs == []
+    assert read_harness.full_search_judgment_inputs == []
+    no_read_projection = no_read_outcome.execution_trace["searchos_slice_a"]
+    read_projection = read_outcome.execution_trace["searchos_slice_a"]
+    assert no_read_projection["semantic_handoff_refs"] == []
+    assert read_projection["semantic_handoff_refs"]
+    assert no_read_projection["all_passages_iteration_append_count"] == 0
+    assert read_projection["all_passages_iteration_append_count"] == 0
+    assert no_read_projection["ag92b_full_search_judgment_invoked"] is False
+    assert read_projection["ag92b_full_search_judgment_invoked"] is False
+    assert read_projection["read_custody_is_only_support_proposal_eligible_material"] is True
 
 
 def test_provider_failure_ends_after_one_attempt_without_fallback(
@@ -1035,16 +991,23 @@ def test_provider_failure_ends_after_one_attempt_without_fallback(
         environment_overrides={"LINKUP_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
-    projection = outcome.execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY]
+    projection = outcome.execution_trace["searchos_slice_a"]
     kernel_trace = _kernel_trace(harness)
+    slots = _searchos_slots(harness)
     assert len(calls) == 1
-    assert projection["request_read_page_count"] == 1
-    assert projection["acquisition_need_proposal_count"] == 1
     assert projection["provider_calls_attempted"] == 1
     assert projection["provider_calls_completed"] == 0
-    assert projection["acquisition_failure_count"] == 1
-    assert projection["provider_failure_fallback_attempted"] is False
-    assert projection["canonical_custody_count"] == 0
+    assert sum(slot["read_nomination_count"] for slot in slots) == 1
+    failed_read_slot = next(
+        slot for slot in slots if slot["read_nomination_count"] == 1
+    )
+    assert failed_read_slot["latest_reason"] == (
+        "read_transport_failure:selected_provider_transport_failed"
+    )
+    assert all(slot["custody_refs"] == [] for slot in slots)
+    assert projection["semantic_handoff_refs"] == []
+    assert projection["standalone_read_assessment_invoked"] is False
+    assert projection["ag92b_full_search_judgment_invoked"] is False
     execution_actions = [
         item
         for item in _acquisition_actions(harness)

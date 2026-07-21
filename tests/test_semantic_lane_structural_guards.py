@@ -159,12 +159,21 @@ def test_semantic_skip_reasons_remain_return_only_in_producer_core() -> None:
         SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
         SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
     )
+    allowed_nonproducer_error_codes = {
+        (CORE / "acquisition_control.py", SKIP_REASON_SEARCH_WORK_PLAN_MISSING),
+        (
+            CORE / "search_judgment_read_assessment_runtime.py",
+            SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
+        ),
+    }
     for path in CORE.rglob("*.py"):
         if path == PRODUCER_MODULE:
             continue
         source = _source(path)
         assert "skipped_reason" not in source, str(path)
         for value in skip_reason_values:
+            if (path, value) in allowed_nonproducer_error_codes:
+                continue
             assert value not in source, str(path)
 
 
@@ -172,7 +181,8 @@ def test_orchestrator_semantic_producer_callsites_are_bounded() -> None:
     source = _source(PIPELINE)
     assert "execute_ordinary_semantic_producer_handoff_from_scope(" not in source
     selector = "execute_ordinary_semantic_or_multicomponent_handoff_from_scope("
-    assert source.count(selector) == 3
+    assert source.count(selector) == 4
+    assert "allow_searchos_component_receiver=True" in source
     assert (
         "if not run_kernel.state.initial_answer_contract:\n"
         "            final_top_evidence = list(all_passages)\n"

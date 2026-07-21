@@ -533,11 +533,10 @@ def _relevant_custody_gaps(
     }
     relevant_requirements = set(binding.source_requirement_ids)
     relevant_observations = set(binding.ledger_observation_refs)
-    normalized_evidence = {
-        normalized
-        for ref in cited_evidence_refs
-        if (normalized := _normalize_evidence_ref(ref))
-    }
+    normalized_evidence = {normalized for ref in cited_evidence_refs if (normalized := _normalize_evidence_ref(ref))}
+    current_searchos_semantic_requirement = any(
+        requirement_id.startswith("searchos_semantic_requirement:") for requirement_id in relevant_requirements
+    )
     gaps: list[Mapping[str, Any]] = []
     for gap in projection.get("custody_gaps") or ():
         if not isinstance(gap, Mapping):
@@ -552,6 +551,13 @@ def _relevant_custody_gaps(
             continue
         candidate_id = _normalize_evidence_ref(gap.get("candidate_id"))
         observation_id = _clean_token(gap.get("observation_id"))
+        if (
+            ignore_satisfied_provider_job_historical_gaps
+            and current_searchos_semantic_requirement
+            and candidate_id in normalized_evidence
+            and _clean_token(gap.get("source_ref")) == "provider_job_evidence_ledger_bridge"
+        ):
+            continue
         if requirement_id and requirement_id in relevant_requirements:
             gaps.append(gap)
             continue

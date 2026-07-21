@@ -595,6 +595,15 @@ SEARCH_JUDGMENT_READ_BINDING_STAGE = "search_judgment_read_binding_derivation"
 SEARCH_JUDGMENT_READ_ASSESSMENT_STAGE = "search_judgment_read_assessment"
 SEARCH_JUDGMENT_READ_PROPOSAL_STAGE = "search_judgment_read_proposal_registry"
 SEARCH_JUDGMENT_READ_CUSTODY_STAGE = "search_judgment_read_custody_registry"
+SEARCHOS_INITIALIZATION_STAGE = "searchos_slice_a_initialization"
+SEARCHOS_JUDGMENT_STAGE = "searchos_iterative_judgment"
+SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE = (
+    "searchos_iteration_candidate_admission"
+)
+SEARCHOS_READ_CUSTODY_ADMISSION_STAGE = "searchos_read_custody_admission"
+SEARCHOS_SEMANTIC_HANDOFF_STAGE = "searchos_semantic_evaluation_handoff"
+SEARCHOS_SLICE_A_READINESS_STAGE = "searchos_slice_a_readiness"
+SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE = "searchos_required_needs_block"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -787,6 +796,15 @@ class ActionType(str, Enum):
     SEARCH_JUDGMENT_READ_CUSTODY_RECORD = (
         "search_judgment_read_custody_record"
     )
+    SEARCHOS_INITIALIZE = "searchos_slice_a_initialize"
+    SEARCHOS_JUDGMENT_DECIDE = "searchos_iterative_judgment_decide"
+    SEARCHOS_ITERATION_CANDIDATES_ADMIT = (
+        "searchos_iteration_candidates_admit"
+    )
+    SEARCHOS_READ_CUSTODY_ADMIT = "searchos_read_custody_admit"
+    SEARCHOS_SEMANTIC_HANDOFF_ADMIT = "searchos_semantic_handoff_admit"
+    SEARCHOS_SLICE_A_READINESS_DERIVE = "searchos_slice_a_readiness_derive"
+    SEARCHOS_REQUIRED_NEEDS_BLOCK = "searchos_required_needs_block"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -935,6 +953,15 @@ class ObservationType(str, Enum):
     SEARCH_JUDGMENT_READ_CUSTODY_RECORDED = (
         "search_judgment_read_custody_recorded"
     )
+    SEARCHOS_INITIALIZED = "searchos_slice_a_initialized"
+    SEARCHOS_JUDGMENT_DECIDED = "searchos_iterative_judgment_decided"
+    SEARCHOS_ITERATION_CANDIDATES_ADMITTED = (
+        "searchos_iteration_candidates_admitted"
+    )
+    SEARCHOS_READ_CUSTODY_ADMITTED = "searchos_read_custody_admitted"
+    SEARCHOS_SEMANTIC_HANDOFF_ADMITTED = "searchos_semantic_handoff_admitted"
+    SEARCHOS_SLICE_A_READINESS_DERIVED = "searchos_slice_a_readiness_derived"
+    SEARCHOS_REQUIRED_NEEDS_BLOCKED = "searchos_required_needs_blocked"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -1426,6 +1453,7 @@ class RunState:
     )
     acquisition_control_state: dict[str, Any] = field(default_factory=dict)
     search_judgment_read_state: dict[str, Any] = field(default_factory=dict)
+    searchos_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_state: dict[str, Any] = field(default_factory=dict)
     live_search_validation_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1814,6 +1842,7 @@ class RunState:
             search_judgment_read_state=deepcopy(
                 self.search_judgment_read_state
             ),
+            searchos_state=deepcopy(self.searchos_state),
             live_search_validation_state=deepcopy(
                 self.live_search_validation_state
             ),
@@ -2193,6 +2222,7 @@ class KernelTraceProjection:
     search_executor_handoff_history: Sequence[Mapping[str, Any]]
     acquisition_control_state: Mapping[str, Any]
     search_judgment_read_state: Mapping[str, Any]
+    searchos_state: Mapping[str, Any]
     live_search_validation_state: Mapping[str, Any]
     live_search_validation_projection: Mapping[str, Any]
     live_search_validation_history: Sequence[Mapping[str, Any]]
@@ -2390,6 +2420,7 @@ class KernelTraceProjection:
             "search_judgment_read_state": _safe_mapping(
                 self.search_judgment_read_state
             ),
+            "searchos_state": _safe_mapping(self.searchos_state),
             "live_search_validation_state": _safe_mapping(
                 self.live_search_validation_state
             ),
@@ -2832,6 +2863,23 @@ class RunKernel:
     ) -> AuthorizedAction:
         action_type_value = ActionType(action_type)
         observation_type_value = ObservationType(expected_observation_type)
+        required_needs_block = _safe_mapping(
+            _safe_mapping(self.state.searchos_state).get(
+                "required_needs_block_ref"
+            )
+        )
+        if required_needs_block and action_type_value in {
+            ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
+            ActionType.SUFFICIENCY_READINESS_DECIDE,
+            ActionType.FINAL_ANSWER_PACKET_HARDEN,
+            ActionType.FINAL_ANSWER_PACKET_PREPARE,
+            ActionType.AUTHOR_PROSE_FINALIZE,
+            ActionType.AUTHOR_EXECUTE,
+        }:
+            raise RunKernelTransitionError(
+                "SearchOS Slice A required-needs block keeps Sufficiency, "
+                "FinalAnswerPacket, and Author closed"
+            )
         sequence = self.state.next_action_sequence
         action = AuthorizedAction(
             action_id=f"{self.state.run_id}:action:{sequence}:{action_type_value.value}",
@@ -4299,6 +4347,7 @@ class RunKernel:
         configured_provider: str = "OpenAI",
         specialist_capability_registry: Any | None = None,
         specialist_execution_policy: Any | None = None,
+        allow_single_component_direct_admission: bool = False,
     ) -> dict[str, Any]:
         """Initialize the qualifying lane's RunKernel-owned V2/V3 scheduler."""
 
@@ -4366,16 +4415,30 @@ class RunKernel:
                 )
         directive = _clean_text(requested_synthesis_directive, limit=360)
         metadata = _safe_mapping(contract.get("question_meaning_metadata"))
-        if not directive or directive != _clean_text(
-            metadata.get("requested_synthesis_directive"), limit=360
-        ):
-            raise RunKernelTransitionError(
-                "scheduler synthesis directive is not current contract authority"
-            )
-        specialist_injected = (
-            specialist_capability_registry is not None
-            or specialist_execution_policy is not None
+        searchos_slots = _safe_mapping(
+            _safe_mapping(self.state.searchos_state).get("slots_by_id")
         )
+        component_id = str(component_refs[0].get("component_id") or "") if len(component_refs) == 1 else ""
+        single_component_direct_admission = (
+            allow_single_component_direct_admission
+            and len(component_refs) == 1
+            and directive == "single_component_direct_admission"
+            and any(
+                _safe_mapping(_safe_mapping(slot).get("slot_ref")).get(
+                    "component_id"
+                )
+                == component_id
+                and _safe_mapping(slot).get("posture")
+                == "semantically_handed_off"
+                for slot in searchos_slots.values()
+            )
+        )
+        if not directive or (
+            directive != _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
+            and not single_component_direct_admission
+        ):
+            raise RunKernelTransitionError("scheduler synthesis directive is not current contract authority")
+        specialist_injected = specialist_capability_registry is not None or specialist_execution_policy is not None
         if specialist_injected and not (
             isinstance(specialist_capability_registry, SpecialistCapabilityRegistry)
             and isinstance(specialist_execution_policy, SpecialistExecutionPolicy)
@@ -4403,6 +4466,7 @@ class RunKernel:
             "specialist_scheduler_enabled": specialist_injected,
             "specialist_registry_projection": deepcopy(registry_projection),
             "specialist_execution_policy_projection": deepcopy(policy_projection),
+            "single_component_direct_admission": (single_component_direct_admission),
         }
         action = self.authorize(
             stage=MULTICOMPONENT_SCHEDULER_STAGE,
@@ -8406,6 +8470,309 @@ class RunKernel:
             inputs={"custody_event": dict(event)},
             expected_observation_type=(
                 ObservationType.SEARCH_JUDGMENT_READ_CUSTODY_RECORDED
+            ),
+        )
+
+    def authorize_searchos_initialization(
+        self,
+        *,
+        answer_contract_ref: Mapping[str, Any],
+        policy_snapshot: Mapping[str, Any],
+        active_slots: Sequence[Mapping[str, Any]],
+        initial_candidate_state_ref: Mapping[str, Any],
+        reason: str = "initialize_canonical_searchos_slice_a_state",
+    ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            build_searchos_initial_state,
+        )
+
+        if self.state.searchos_state:
+            raise RunKernelTransitionError("SearchOS Slice A state is already initialized")
+        try:
+            candidate_state = build_searchos_initial_state(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                answer_contract_ref=answer_contract_ref,
+                policy_snapshot=policy_snapshot,
+                active_slots=active_slots,
+                initial_candidate_state_ref=initial_candidate_state_ref,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_INITIALIZATION_STAGE,
+            action_type=ActionType.SEARCHOS_INITIALIZE,
+            reason=reason,
+            inputs={"searchos_state": candidate_state},
+            expected_observation_type=ObservationType.SEARCHOS_INITIALIZED,
+        )
+
+    def reserve_searchos_judgment_round(
+        self, *, slot_ids: Sequence[str]
+    ) -> dict[str, Any]:
+        """Record complete-round reservation before any participating call."""
+
+        from core.searchos_iterative_judgment_runtime import (
+            begin_searchos_judgment_round,
+        )
+
+        if not self.state.searchos_state:
+            raise RunKernelTransitionError("SearchOS judgment requires initialized state")
+        try:
+            state, reservation = begin_searchos_judgment_round(
+                self.state.searchos_state,
+                slot_ids=slot_ids,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.searchos_state = state
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(state)
+        return reservation
+
+    def return_searchos_pre_call_reservation(
+        self,
+        *,
+        reservation_ref: Mapping[str, Any],
+        slot_id: str,
+        reason: str,
+    ) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            return_searchos_pre_call_reservation,
+        )
+
+        try:
+            self.state.searchos_state = return_searchos_pre_call_reservation(
+                self.state.searchos_state,
+                reservation_ref=reservation_ref,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
+            self.state.searchos_state
+        )
+
+    def expose_searchos_candidate_window(self, *, window: Mapping[str, Any]) -> dict[str, Any]:
+        from core.searchos_iterative_judgment_runtime import (
+            record_searchos_candidate_window,
+        )
+
+        try:
+            self.state.searchos_state = record_searchos_candidate_window(
+                self.state.searchos_state,
+                window=window,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections["searchos_candidate_use_window"] = deepcopy(dict(window))
+        return deepcopy(dict(window))
+
+    def mark_searchos_slot_unresolved(self, *, slot_id: str, reason: str) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            mark_searchos_slot_unresolved,
+        )
+
+        try:
+            self.state.searchos_state = mark_searchos_slot_unresolved(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+
+    def mark_searchos_slot_stale_or_invalid(self, *, slot_id: str, reason: str) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            mark_searchos_slot_stale_or_invalid,
+        )
+
+        try:
+            self.state.searchos_state = mark_searchos_slot_stale_or_invalid(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+
+    def mark_searchos_slot_budget_exhausted(self, *, slot_id: str, reason: str) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            mark_searchos_slot_budget_exhausted,
+        )
+
+        try:
+            self.state.searchos_state = mark_searchos_slot_budget_exhausted(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+
+    def authorize_searchos_judgment(
+        self,
+        *,
+        reservation_ref: Mapping[str, Any],
+        slot_id: str,
+        candidate_window: Mapping[str, Any],
+        read_custody_refs: Sequence[Mapping[str, Any]] = (),
+        reason: str = "neutral_model_owned_searchos_judgment",
+    ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            build_searchos_judgment_request_v1,
+            charge_searchos_judgment_call,
+        )
+
+        if not self.state.searchos_state:
+            raise RunKernelTransitionError("SearchOS judgment requires initialized state")
+        try:
+            state, charge = charge_searchos_judgment_call(
+                self.state.searchos_state,
+                reservation_ref=reservation_ref,
+                slot_id=slot_id,
+            )
+            request = build_searchos_judgment_request_v1(
+                state=state,
+                slot_id=slot_id,
+                charge_ref=charge,
+                candidate_window=candidate_window,
+                read_custody_refs=read_custody_refs,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.searchos_state = state
+        return self.authorize(
+            stage=SEARCHOS_JUDGMENT_STAGE,
+            action_type=ActionType.SEARCHOS_JUDGMENT_DECIDE,
+            reason=reason,
+            inputs={
+                "judgment_request": request,
+                "charge_ref": charge,
+            },
+            expected_observation_type=ObservationType.SEARCHOS_JUDGMENT_DECIDED,
+        )
+
+    def authorize_searchos_iteration_candidate_admission(
+        self,
+        *,
+        candidate_set: Mapping[str, Any],
+        reason: str = "admit_append_only_searchos_iteration_candidate_set",
+    ) -> AuthorizedAction:
+        if not self.state.searchos_state:
+            raise RunKernelTransitionError(
+                "iteration candidate admission requires SearchOS state"
+            )
+        return self.authorize(
+            stage=SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_ITERATION_CANDIDATES_ADMIT,
+            reason=reason,
+            inputs={"candidate_set": dict(candidate_set)},
+            expected_observation_type=(
+                ObservationType.SEARCHOS_ITERATION_CANDIDATES_ADMITTED
+            ),
+        )
+
+    def authorize_searchos_read_custody_admission(
+        self,
+        *,
+        custody_material_ref: Mapping[str, Any],
+        reason: str = "admit_post_read_evidence_ledger_custody_for_rejudgment",
+    ) -> AuthorizedAction:
+        if not self.state.searchos_state:
+            raise RunKernelTransitionError("READ custody admission requires SearchOS state")
+        return self.authorize(
+            stage=SEARCHOS_READ_CUSTODY_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_READ_CUSTODY_ADMIT,
+            reason=reason,
+            inputs={"custody_material_ref": dict(custody_material_ref)},
+            expected_observation_type=ObservationType.SEARCHOS_READ_CUSTODY_ADMITTED,
+        )
+
+    def authorize_searchos_semantic_handoff(
+        self,
+        *,
+        slot_id: str,
+        judgment_decision_ref: Mapping[str, Any],
+        read_custody_material_refs: Sequence[Mapping[str, Any]],
+        reason: str = "handoff_read_custody_to_n_component_semantic_receiver",
+    ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            build_searchos_semantic_evaluation_handoff_v1,
+        )
+
+        try:
+            handoff = build_searchos_semantic_evaluation_handoff_v1(
+                state=self.state.searchos_state,
+                slot_id=slot_id,
+                judgment_decision_ref=judgment_decision_ref,
+                read_custody_material_refs=read_custody_material_refs,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_SEMANTIC_HANDOFF_STAGE,
+            action_type=ActionType.SEARCHOS_SEMANTIC_HANDOFF_ADMIT,
+            reason=reason,
+            inputs={"semantic_handoff": handoff},
+            expected_observation_type=(
+                ObservationType.SEARCHOS_SEMANTIC_HANDOFF_ADMITTED
+            ),
+        )
+
+    def authorize_searchos_slice_a_readiness(
+        self,
+        *,
+        semantic_outcomes_by_slot: Mapping[str, Mapping[str, Any]],
+        reason: str = "derive_searchos_slice_a_required_slot_readiness",
+    ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            build_searchos_slice_a_readiness_v1,
+        )
+
+        try:
+            readiness = build_searchos_slice_a_readiness_v1(
+                state=self.state.searchos_state,
+                semantic_outcomes_by_slot=semantic_outcomes_by_slot,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_SLICE_A_READINESS_STAGE,
+            action_type=ActionType.SEARCHOS_SLICE_A_READINESS_DERIVE,
+            reason=reason,
+            inputs={"readiness": readiness},
+            expected_observation_type=(
+                ObservationType.SEARCHOS_SLICE_A_READINESS_DERIVED
+            ),
+        )
+
+    def authorize_searchos_required_needs_block(
+        self,
+        *,
+        reason: str = "block_unresolved_searchos_slice_a_required_needs",
+    ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            build_searchos_required_needs_block,
+        )
+
+        readiness = _safe_mapping(
+            self.state.projections.get(SEARCHOS_SLICE_A_READINESS_STAGE)
+        )
+        try:
+            block = build_searchos_required_needs_block(readiness)
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE,
+            action_type=ActionType.SEARCHOS_REQUIRED_NEEDS_BLOCK,
+            reason=reason,
+            inputs={"block": block},
+            expected_observation_type=(
+                ObservationType.SEARCHOS_REQUIRED_NEEDS_BLOCKED
             ),
         )
 
@@ -16077,6 +16444,172 @@ class RunKernel:
                 deepcopy(revision_projection)
             )
             self.state.projections[action.stage] = deepcopy(revision_projection)
+        elif action.action_type is ActionType.SEARCHOS_INITIALIZE:
+            from core.searchos_iterative_judgment_runtime import (
+                validate_searchos_state,
+            )
+
+            expected = _safe_mapping(action.inputs.get("searchos_state"))
+            observed = _safe_mapping(observation.payload.get("searchos_state"))
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS initialization observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = validate_searchos_state(observed)
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(
+                self.state.searchos_state
+            )
+        elif action.action_type is ActionType.SEARCHOS_JUDGMENT_DECIDE:
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_judgment_failure,
+                reduce_searchos_judgment_decision,
+                validate_searchos_judgment_model_output,
+            )
+
+            request = _safe_mapping(action.inputs.get("judgment_request"))
+            charge_ref = _safe_mapping(action.inputs.get("charge_ref"))
+            try:
+                if observation.status is RunStageStatus.FAILED:
+                    failure_reason = _clean_text(
+                        observation.payload.get("failure_reason"), limit=240
+                    ) or "model_judgment_failed"
+                    self.state.searchos_state = record_searchos_judgment_failure(
+                        self.state.searchos_state,
+                        charge_ref=charge_ref,
+                        reason=failure_reason,
+                    )
+                    projection = {
+                        "schema_version": "searchos_judgment_failure_v1",
+                        "owner": "RunKernel.SearchOSIterativeJudgment",
+                        "judgment_request_ref": {
+                            "judgment_request_id": request.get(
+                                "judgment_request_id"
+                            ),
+                            "judgment_request_digest": request.get(
+                                "judgment_request_digest"
+                            ),
+                        },
+                        "charge_ref": charge_ref,
+                        "failure_reason": failure_reason,
+                        "deterministic_semantic_fallback_invoked": False,
+                    }
+                else:
+                    decision = validate_searchos_judgment_model_output(
+                        request=request,
+                        model_output=_safe_mapping(
+                            observation.payload.get("model_output")
+                        ),
+                    )
+                    self.state.searchos_state = reduce_searchos_judgment_decision(
+                        self.state.searchos_state,
+                        decision=decision,
+                    )
+                    projection = decision
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(projection)
+        elif action.action_type is ActionType.SEARCHOS_ITERATION_CANDIDATES_ADMIT:
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_iteration_candidate_set,
+            )
+
+            expected = _safe_mapping(action.inputs.get("candidate_set"))
+            observed = _safe_mapping(observation.payload.get("candidate_set"))
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS iteration candidate observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = (
+                    record_searchos_iteration_candidate_set(
+                        self.state.searchos_state,
+                        candidate_set=observed,
+                    )
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observed)
+        elif action.action_type is ActionType.SEARCHOS_READ_CUSTODY_ADMIT:
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_read_custody_material,
+            )
+
+            expected = _safe_mapping(action.inputs.get("custody_material_ref"))
+            observed = _safe_mapping(
+                observation.payload.get("custody_material_ref")
+            )
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS READ custody observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = record_searchos_read_custody_material(
+                    self.state.searchos_state,
+                    custody_material_ref=observed,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observed)
+        elif action.action_type is ActionType.SEARCHOS_SEMANTIC_HANDOFF_ADMIT:
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_semantic_handoff,
+            )
+
+            expected = _safe_mapping(action.inputs.get("semantic_handoff"))
+            observed = _safe_mapping(observation.payload.get("semantic_handoff"))
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS semantic handoff observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = record_searchos_semantic_handoff(
+                    self.state.searchos_state,
+                    handoff=observed,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observed)
+        elif action.action_type is ActionType.SEARCHOS_SLICE_A_READINESS_DERIVE:
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_readiness_projection,
+            )
+
+            expected = _safe_mapping(action.inputs.get("readiness"))
+            observed = _safe_mapping(observation.payload.get("readiness"))
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS readiness observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = record_searchos_readiness_projection(
+                    self.state.searchos_state,
+                    readiness=observed,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observed)
+        elif action.action_type is ActionType.SEARCHOS_REQUIRED_NEEDS_BLOCK:
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_required_needs_block,
+            )
+
+            expected = _safe_mapping(action.inputs.get("block"))
+            observed = _safe_mapping(observation.payload.get("block"))
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS required-needs block observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = record_searchos_required_needs_block(
+                    self.state.searchos_state,
+                    block=observed,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observed)
         elif action.action_type is ActionType.SEARCH_JUDGMENT_READ_BINDINGS_DERIVE:
             from core.search_judgment_read_assessment_runtime import (
                 SearchJudgmentReadAssessmentError,
@@ -21660,6 +22193,7 @@ class RunKernel:
                 MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
                 build_synthesis_carry_forward_projection,
                 component_work_graph_v1_from_cross_component_artifact,
+                component_work_graph_v1_from_single_component_admission,
                 component_work_graph_v1_resynthesis_from_cross_component_artifact,
                 component_work_graph_v1_selective_resynthesis_from_cross_artifact,
                 derive_multicomponent_role_call_accounting,
@@ -22033,25 +22567,28 @@ class RunKernel:
                         )
                     component_packets = current_component_packets_for_graph_reproof(
                         component_nodes=expected_component_nodes,
-                        requested_synthesis_directive=str(
-                            graph.get("requested_synthesis_directive") or ""
-                        ),
+                        requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
                     )
-                    structure_graph = (
-                        component_work_graph_v1_from_cross_component_artifact(
+                    if len(expected_component_nodes) == 1:
+                        structure_graph = component_work_graph_v1_from_single_component_admission(
                             run_id=self.state.run_id,
                             request_id=self.state.request_id,
                             accepted_contract_ref=contract_ref,
-                            requested_synthesis_directive=str(
-                                graph.get("requested_synthesis_directive") or ""
-                            ),
+                            requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
+                            component_node=expected_component_nodes[0],
+                        )
+                    else:
+                        structure_graph = component_work_graph_v1_from_cross_component_artifact(
+                            run_id=self.state.run_id,
+                            request_id=self.state.request_id,
+                            accepted_contract_ref=contract_ref,
+                            requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
                             component_nodes=expected_component_nodes,
                             cross_component_artifact=current_cross_artifact,
                             component_analyst_input_packets=component_packets,
                             additional_scrutineer_trigger_reasons=tuple(
                                 reason
-                                for reason in graph.get("scrutineer_trigger_reasons")
-                                or ()
+                                for reason in graph.get("scrutineer_trigger_reasons") or ()
                                 if reason
                                 in {
                                     "deep_mode",
@@ -22059,7 +22596,6 @@ class RunKernel:
                                 }
                             ),
                         )
-                    )
                 except RunKernelTransitionError:
                     raise
                 except (KeyError, ValueError) as exc:
@@ -22077,11 +22613,8 @@ class RunKernel:
                     != accepted_contract.get("accepted_contract_digest")
                     or component_admission.get("accepted_contract_version")
                     != accepted_contract.get("accepted_contract_version")
-                    or any(
-                        contract_ref.get(key) != value
-                        for key, value in expected_contract_fields.items()
-                    )
-                    or not expected_cross_ref
+                    or any(contract_ref.get(key) != value for key, value in expected_contract_fields.items())
+                    or (len(expected_component_nodes) > 1 and not expected_cross_ref)
                     or any(
                         _safe_mapping(node.get("proposal_ref")).get(
                             "cross_component_analyst_ref"
@@ -23189,6 +23722,13 @@ __all__ = [
     "MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
+    "SEARCHOS_INITIALIZATION_STAGE",
+    "SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE",
+    "SEARCHOS_JUDGMENT_STAGE",
+    "SEARCHOS_READ_CUSTODY_ADMISSION_STAGE",
+    "SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE",
+    "SEARCHOS_SEMANTIC_HANDOFF_STAGE",
+    "SEARCHOS_SLICE_A_READINESS_STAGE",
     "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",
     "DPRIME_CITATION_SOURCE_DISPLAY_STAGE",
     "DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE",

@@ -8,18 +8,20 @@ tests/test_ag_sem_07_component_coverage_reduction.py
 # semantic state, ledger-qualified coverage, blockers, and projection integrity.
 tests/test_ag_sem_09_sufficiency_semantic_consumption.py
 
-# Owner: ordinary semantic producer and RunKernel atomic semantic bundle commit.
-# Reason: producer activation, atomicity, preflight gaps, and no orphan state.
+# Owner: direct semantic-producer compatibility and RunKernel atomic bundle.
+# Reason: reducers and isolated compatibility stay guarded after the direct
+# producer is retired as an independent ordinary SearchOS consumer; former
+# forward-product fixture reconstructions are explicit skips.
 tests/test_ag_sem_11_ordinary_semantic_producer_vertical_slice.py
 
 # Owner: semantic validation structure. Reason: consolidated durable guards for
 # atomic authority boundaries, import/callsite limits, and closed runtime surfaces.
 tests/test_semantic_lane_structural_guards.py
 
-# Owner: fixture breadth for ordinary semantic producer. Reason: missing
-# evidence must skip without orphan semantic state; Author/FAP-heavy fixture
-# assertions stay phase_focus or author_lane candidates.
-tests/test_ag_sem_11c_ordinary_semantic_producer_second_fixture.py::test_second_fixture_missing_evidence_skips_without_orphan_semantic_state
+# Owner: SearchOS N-component semantic receiver. Reason: exact READ custody must
+# traverse Component Analyst, component D-prime, and RunKernel admission before
+# a required slot is Slice-A-ready, including N=1.
+tests/test_searchos_slice_a_product_cutover_01.py::test_one_component_read_to_semantic_receiver_is_ready
 
 # Owner: multipart ordinary semantic producer. Reason: component caps must fail
 # closed without semantic state; Author/FAP-heavy multipart assertions stay

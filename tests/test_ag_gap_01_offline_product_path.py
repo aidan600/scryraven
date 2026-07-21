@@ -8,12 +8,11 @@ import pytest
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
 from core.protocols import NullStatusWriter
-from core.query_plan import QUERY_PLAN_TRACE_KEY
+from core.searchos_iterative_judgment_runtime import (
+    SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
+)
 from tests.helpers.offline_ordinary_pipeline import (
-    HANDOFF_PACKET,
-    HANDOFF_SEMANTIC,
     OfflineOrdinaryPipelineHarness,
-    install_handoff_capture,
     offline_balanced_run_config,
     scrub_offline_runtime,
 )
@@ -70,15 +69,11 @@ class _GapHarness(OfflineOrdinaryPipelineHarness):
         ]
 
 
-def test_ag_gap_01_offline_path_records_one_gap_authorized_query_without_execution_change(
+def test_ag_gap_01_offline_path_stops_at_searchos_slice_a_required_needs_block(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = _GapHarness(tmp_path)
-    captured = install_handoff_capture(
-        monkeypatch,
-        capture_stages=(HANDOFF_SEMANTIC, HANDOFF_PACKET),
-    )
 
     outcome = orchestrator.run_pipeline(
         offline_balanced_run_config(
@@ -98,41 +93,17 @@ def test_ag_gap_01_offline_path_records_one_gap_authorized_query_without_executi
     assert harness.forbidden_live_calls == []
     assert harness.author_prompts == []
     assert len(harness.search_calls) == 1
-    assert harness.search_calls[0]["queries"] == [
-        "current official filing fee",
-        "appeal deadline legal rule",
-    ]
-
-    state = captured["run_kernel"].state
-    assert captured["packet_handoff"].author_input_blocked is True
-    assert captured["packet_handoff"].author_payload is None
-    assert state.final_answer_authority_projection["author_payload_ref"]["status"] == (
-        "blocked"
+    trace = outcome.execution_trace or {}
+    searchos = trace["searchos_slice_a"]
+    assert searchos["required_needs_block_ref"]["block_type"] == (
+        SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
     )
-    assert state.search_judgment_projection["owner"] == (
-        "RunKernel.RunAuthoritySearchJudgment"
-    )
-    semantic_gaps = [
-        gap for gap in state.search_judgment_projection["gaps"]
-        if gap.get("semantic_gap_code") == "missing_required_component_coverage"
-    ]
-    assert len(semantic_gaps) == 1
-
-    query_authority = captured["packet_runtime_scope"]["query_authority"]
-    query_plan_trace = query_authority.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
-    consumption = query_plan_trace["search_work_consumption"]
-    assert consumption["version_bound_component_gap_authority_consumed"] is True
-    assert (
-        consumption["version_bound_component_gap_authorized_query"]
-        == "appeal deadline legal rule"
-    )
-    assert consumption["behavior_boundary_flags"][
-        "new_executable_query_text_generated"
-    ] is False
-    assert consumption["behavior_boundary_flags"][
-        "component_gap_authority_changed_retrieval_queries"
-    ] is False
-    assert query_plan_trace["authorized_queries_by_iteration"]["1"] == [
-        "current official filing fee",
-        "appeal deadline legal rule",
-    ]
+    assert searchos["readiness_projection"]["all_required_slots_slice_a_ready"] is False
+    assert searchos["iteration_candidate_set_refs"] == []
+    assert searchos["readiness_projection"]["unresolved_required_slots"]
+    assert searchos["evaluator_invoked_after_first_wave"] is False
+    assert searchos["expander_invoked_after_first_wave"] is False
+    assert searchos["disambiguation_invoked_after_first_wave"] is False
+    assert searchos["weak_corpus_recovery_invoked_after_first_wave"] is False
+    assert searchos["ag92b_full_search_judgment_invoked"] is False
+    assert harness.full_search_judgment_inputs == []
