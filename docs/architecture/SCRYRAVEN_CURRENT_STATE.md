@@ -519,6 +519,11 @@ The exact actions are current-material semantic handoff, candidate READ,
 follow-up query proposal, and unresolved handoff. Model output is strict,
 slot-bound, window-bound, and fail-closed; no deterministic semantic substitute
 or READ-specific parallel manager remains in the ordinary product path.
+RunKernel's authorized judgment request is reference-only. The model receives a
+separate transient validated input containing the accepted component need,
+source-obligation/SearchWorkPlan semantics, bounded directional context, and
+bounded sanitized content from exact current READ packets; none of that
+transient prompt text is retained in canonical state or persistence.
 
 Follow-up query text is admitted unchanged through QueryPlan and ordinary
 DISCOVER routing. Each result wave enters one append-only
@@ -527,9 +532,12 @@ provider/route/action, occurrence, identity-delta, selected-candidate, bounded-
 material, selection, overflow, and zero-useful lineage. Deterministic validation
 proves the initial QueryPlan prefix and exact identity-set growth without
 mutating revision 1 or trusting raw-store-only rows. Candidate-use choices
-aggregate by slot plus normalized URL and use bounded deterministic windows;
-repeated contributors retain lineage without consuming extra window positions
-or physical READs.
+aggregate by slot plus normalized URL with one stable option identity and a
+separate immutable growing lineage snapshot. Exact per-binding candidate-state
+origins never change. Repeated contributors advance the snapshot while the
+stable disposition survives, without consuming extra window positions or
+physical READs. Completed windows advance mechanically; custody is still judged
+when no unread option remains.
 
 All DISCOVER material remains `directional_candidate_context`. It can guide
 retrieval judgment but cannot create readable-source custody, support proposals,
@@ -539,6 +547,11 @@ through RunKernel acquisition, existing routing/adapters, terminal receipt,
 custody authorization, FetchReadContentPacket/SanitizedContentReference, and
 EvidenceLedger. Direct known-URL READ is not installed. Same normalized URL
 reuses custody; a failed transport records one attempt and no fallback.
+Readable source insufficiency is recorded only from an exact post-READ model
+assessment, never from transport, route, authority, stale-lineage, or invalid-
+material failure. Follow-up queries are rejected before DISCOVER when the
+neutral established query-cleaning/token-Jaccard rule finds material
+equivalence; distinct model text remains unchanged.
 
 `searchos_semantic_evaluation_handoff_v1` is the only ordinary SearchOS
 semantic entry. It sends exact READ custody into the existing bounded component

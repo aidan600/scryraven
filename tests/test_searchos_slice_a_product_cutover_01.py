@@ -28,13 +28,94 @@ from core.prompts import DEFAULT_SYSTEM
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
 )
+from core.searchos_slice_a_product_runtime import SEARCHOS_JUDGMENT_SYSTEM_PROMPT
 from tests.helpers.offline_ordinary_pipeline import (
+    OfflineOrdinaryPipelineHarness,
     run_post_retirement_ordinary_pipeline,
 )
 
 
 def _execution_events(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_offline_judgment_fixture_uses_need_and_read_text_not_custody_presence(
+    tmp_path: Path,
+) -> None:
+    harness = OfflineOrdinaryPipelineHarness(
+        tmp_path=tmp_path,
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        raw_author_response="unused",
+    )
+    authorized = {
+        "schema_version": "searchos_judgment_request_v2",
+        "judgment_request_id": "searchos-judgment-request:fixture",
+        "judgment_request_digest": "a" * 64,
+        "slot_ref": {"slot_id": "slot-1", "slot_digest": "b" * 64},
+        "candidate_use_options": [],
+        "read_custody_refs": [
+            {
+                "read_custody_material_id": "searchos-read-custody:fixture",
+                "read_custody_material_digest": "c" * 64,
+            }
+        ],
+        "legal_actions": [
+            "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+            "PROPOSE_FOLLOWUP_QUERY",
+            "HANDOFF_UNRESOLVED",
+        ],
+    }
+    base = {
+        "schema_version": "searchos_judgment_model_input_v1",
+        "authorized_request": authorized,
+        "active_need": {
+            "component": {
+                "user_facing_question": "What is Alpha's current official operating rule?"
+            },
+            "source_obligation": {
+                "kind": "official_current",
+                "strictness": "required",
+            },
+        },
+    }
+    useful = {
+        **base,
+        "read_custody_materials": [
+            {
+                "read_custody_ref": authorized["read_custody_refs"][0],
+                "bounded_text": "Alpha's current official operating rule is Rule 17.",
+            }
+        ],
+    }
+    insufficient = {
+        **base,
+        "read_custody_materials": [
+            {
+                "read_custody_ref": authorized["read_custody_refs"][0],
+                "bounded_text": "This page contains only a general company history.",
+            }
+        ],
+    }
+
+    useful_decision = json.loads(
+        harness.ask_model(
+            json.dumps(useful),
+            SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+        )
+    )
+    insufficient_decision = json.loads(
+        harness.ask_model(
+            json.dumps(insufficient),
+            SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+        )
+    )
+
+    assert useful_decision["action"] == (
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+    )
+    assert insufficient_decision["action"] != useful_decision["action"]
 
 
 def test_one_component_read_to_semantic_receiver_is_ready(
@@ -58,7 +139,6 @@ def test_one_component_read_to_semantic_receiver_is_ready(
     searchos_projection = dict(trace.get("searchos_slice_a") or {})
     readiness = dict(searchos_projection["readiness_projection"])
     outcomes = dict(searchos_projection["semantic_outcomes_by_slot"])
-
     assert readiness["all_required_slots_slice_a_ready"] is True
     assert readiness["unresolved_required_slots"] == []
     assert readiness["required_ready_count"] == readiness["required_slot_count"]
@@ -77,8 +157,106 @@ def test_one_component_read_to_semantic_receiver_is_ready(
     assert harness.search_calls
     assert len(harness.search_calls) == 1
     assert len(harness.read_transport_calls) == 1
+    post_read_calls = [
+        item
+        for item in harness.read_assessment_calls
+        if item["bounded_read_character_count"] > 0
+    ]
+    assert post_read_calls
+    assert all(
+        item["component_question"]
+        == "What is Alpha's current official operating rule?"
+        and item["source_obligation_kind"]
+        in {"official_current", "source_bound_numeric"}
+        and item["source_obligation_strictness"] == "required"
+        and item["search_work_plan_ref"]
+        and item["search_requirement_ref"]
+        and item["answer_contract_ref"]
+        for item in post_read_calls
+    )
     assert harness.full_search_judgment_inputs == []
     assert trace["searchos_slice_a"]["all_passages_iteration_append_count"] == 0
+
+
+def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_url = "https://alpha.example/insufficient"
+    second_url = "https://alpha.example/useful"
+    transient_sentinel = "TRANSIENT_READ_JUDGMENT_SENTINEL_513"
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        evidence_rows=[
+            {
+                "title": "Alpha general history",
+                "url": first_url,
+                "text": "Directional candidate one.",
+            },
+            {
+                "title": "Alpha official rule",
+                "url": second_url,
+                "text": "Directional candidate two.",
+            },
+        ],
+        read_content_by_url={
+            first_url: (
+                transient_sentinel
+                + " This page contains only a general company history."
+            ),
+            second_url: "Alpha's current official operating rule is Rule 17.",
+        },
+    )
+
+    state = harness.run_kernel.state.searchos_state
+    dispositions = [
+        record
+        for slot in state["slots_by_id"].values()
+        for record in dict(slot.get("candidate_option_dispositions") or {}).values()
+    ]
+    assert any(item["disposition"] == "read_insufficient" for item in dispositions)
+    assert all(
+        item.get("reason_code") == "required_information_absent"
+        for item in dispositions
+        if item["disposition"] == "read_insufficient"
+    )
+    assert harness.read_transport_calls == [first_url, second_url]
+    assert any(
+        item["bounded_read_character_count"] > 0
+        for item in harness.read_assessment_calls
+    )
+    assert outcome.execution_trace["searchos_slice_a"]["readiness_projection"][
+        "all_required_slots_slice_a_ready"
+    ] is True
+    assert not any(
+        "transport_failure" in str(slot.get("latest_reason") or "")
+        for slot in state["slots_by_id"].values()
+    )
+
+    durable_surfaces = {
+        "searchos_state": state,
+        "authorized_action_inputs": {
+            action_id: action.inputs
+            for action_id, action in harness.run_kernel.state.issued_actions.items()
+        },
+        "projections": harness.run_kernel.state.projections,
+        "execution_trace": outcome.execution_trace,
+        "execution_jsonl": (tmp_path / "execution.jsonl").read_text(
+            encoding="utf-8"
+        ),
+    }
+    assert transient_sentinel not in json.dumps(
+        durable_surfaces,
+        sort_keys=True,
+        default=str,
+    )
+    assert harness.full_search_judgment_inputs == []
 
 
 def test_required_unresolved_slot_uses_existing_safe_non_author_terminal(

@@ -9,6 +9,11 @@ from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
 from core.acquisition_adapters import AcquisitionTransports
+from core.discovery_source_result import normalize_discovery_result_url
+from core.fetch_read_content_reference import (
+    fetch_read_content_packet_ref_from_packet,
+    validate_fetch_read_content_packet,
+)
 from core.query_plan_runtime_adapter import QueryPlanRuntimeAdapter
 from core.run_kernel import (
     Observation,
@@ -53,8 +58,11 @@ Only read_custody_material may be handed to semantic evaluation.
 Never invent a URL, query, custody ref, component, obligation, or fallback.
 """
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
+SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
+    "searchos_judgment_model_input_v1"
+)
 TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
-    {"read_insufficient", "invalid", "declined"}
+    {"custodied", "read_insufficient", "invalid", "declined"}
 )
 
 
@@ -191,7 +199,16 @@ def execute_searchos_slice_a_iterative_judgment(
                     binding_iteration_refs=binding_iteration_refs,
                     discovery_result_store=discovery_result_store,
                     policy_snapshot=run_kernel.state.searchos_state["policy_snapshot"],
-                    dispositions=dispositions,
+                    dispositions={
+                        **dispositions,
+                        **{
+                            option_id: str(record.get("disposition") or "")
+                            for option_id, record in dict(
+                                slot.get("candidate_option_dispositions") or {}
+                            ).items()
+                            if isinstance(record, Mapping)
+                        },
+                    },
                 )
             except Exception as exc:
                 run_kernel.return_searchos_pre_call_reservation(
@@ -237,8 +254,20 @@ def execute_searchos_slice_a_iterative_judgment(
                 continue
             request = action.inputs["judgment_request"]
             try:
+                model_input = _build_searchos_judgment_model_input(
+                    run_kernel=run_kernel,
+                    authorized_request=request,
+                    slot_id=slot_id,
+                    options=options,
+                    window=window,
+                    bindings=bindings,
+                    binding_candidate_states=binding_candidate_states,
+                    binding_iteration_refs=binding_iteration_refs,
+                    discovery_result_store=discovery_result_store,
+                    packet_by_custody_id=packet_by_custody_id,
+                )
                 raw = _invoke_judgment_model(
-                    request=request,
+                    model_input=model_input,
                     ask_model=ask_model,
                     provider=provider,
                     model=model,
@@ -280,8 +309,36 @@ def execute_searchos_slice_a_iterative_judgment(
                 )
             )
             decision = deepcopy(run_kernel.state.projections["searchos_iterative_judgment"])
+            for assessment in decision.get("read_custody_assessments") or ():
+                custody_id = str(
+                    dict(assessment.get("reviewed_custody_ref") or {}).get(
+                        "read_custody_material_id"
+                    )
+                    or ""
+                )
+                assessed_custody = next(
+                    (
+                        dict(item)
+                        for item in current_slot.get("custody_refs") or ()
+                        if isinstance(item, Mapping)
+                        and item.get("read_custody_material_id") == custody_id
+                    ),
+                    {},
+                )
+                assessed_option_id = str(
+                    dict(assessed_custody.get("candidate_use_option_ref") or {}).get(
+                        "candidate_use_option_id"
+                    )
+                    or ""
+                )
+                if assessed_option_id:
+                    dispositions[assessed_option_id] = "read_insufficient"
             decision_action = SearchOSJudgmentAction(decision["action"])
             if decision_action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
+                if run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                    "posture"
+                ] != SearchOSSlotPosture.AWAITING_READ.value:
+                    continue
                 option_ref = dict(decision["candidate_use_option_ref"])
                 option_id = option_ref["candidate_use_option_id"]
                 if (
@@ -330,7 +387,6 @@ def execute_searchos_slice_a_iterative_judgment(
                         )
                         attempted += max(0, after_attempted - before_attempted)
                         completed += max(0, after_completed - before_completed)
-                        dispositions[option_id] = "read_insufficient"
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
                             reason=_read_failure_reason(exc),
@@ -472,7 +528,7 @@ def execute_searchos_slice_a_iterative_judgment(
                 iteration_sets.append(candidate_set)
                 iteration_ref = deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
                 bindings.extend(wave_bindings)
-                for binding in bindings:
+                for binding in wave_bindings:
                     binding_candidate_states[binding.binding_id] = iteration_ref
                 for binding in wave_bindings:
                     binding_iteration_refs[binding.binding_id] = iteration_ref
@@ -751,7 +807,7 @@ def _prepare_candidate_window(
         and not window["next_window_available"]
     )
     reason = None
-    if exhausted:
+    if exhausted and not slot.get("custody_refs"):
         reason = (
             "candidate_window_budget_exhausted"
             if window["remaining_option_count"] > 0
@@ -791,9 +847,374 @@ def _binding_for_option(
     return binding
 
 
+def _build_searchos_judgment_model_input(
+    *,
+    run_kernel: RunKernel,
+    authorized_request: Mapping[str, Any],
+    slot_id: str,
+    options: Sequence[Mapping[str, Any]],
+    window: Mapping[str, Any],
+    bindings: Sequence[SelectedCandidateMaterialNeedBindingV1],
+    binding_candidate_states: Mapping[str, Mapping[str, Any]],
+    binding_iteration_refs: Mapping[str, Mapping[str, Any]],
+    discovery_result_store: Any,
+    packet_by_custody_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Compose transient need/content input around one authorized ref-only request."""
+
+    request = deepcopy(dict(authorized_request))
+    slot = dict(run_kernel.state.searchos_state["slots_by_id"][slot_id])
+    active_need = _build_active_need_projection(
+        run_kernel=run_kernel,
+        slot=slot,
+    )
+    current_options = {
+        str(item.get("candidate_use_option_id") or ""): dict(item)
+        for item in options
+        if isinstance(item, Mapping)
+    }
+    rows = _candidate_option_inputs(
+        bindings=bindings,
+        slot_ref=dict(slot["slot_ref"]),
+        binding_candidate_states=binding_candidate_states,
+        binding_iteration_refs=binding_iteration_refs,
+        discovery_result_store=discovery_result_store,
+    )
+    directional_by_url: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        url = str(row.get("normalized_url") or "")
+        if url not in directional_by_url:
+            directional_by_url[url] = {
+                "title": _bounded_judgment_text(row.get("title"), 240),
+                "snippet": _bounded_judgment_text(row.get("snippet"), 600),
+            }
+    directional_contexts: list[dict[str, Any]] = []
+    for visible in window.get("model_visible_candidate_use_options") or ():
+        visible_mapping = dict(visible) if isinstance(visible, Mapping) else {}
+        option_ref = dict(visible_mapping.get("candidate_use_option_ref") or {})
+        option_id = str(option_ref.get("candidate_use_option_id") or "")
+        option = current_options.get(option_id)
+        if option is None or candidate_use_option_ref(option) != option_ref:
+            raise SearchOSRuntimeError(
+                "transient candidate direction binds a stale lineage snapshot"
+            )
+        context = directional_by_url.get(str(option.get("normalized_url") or ""), {})
+        directional_contexts.append(
+            {
+                "candidate_use_option_ref": option_ref,
+                "normalized_url": option["normalized_url"],
+                "title": context.get("title"),
+                "snippet": context.get("snippet"),
+                "material_authority": "directional_candidate_context",
+                "support_proposal_eligible": False,
+            }
+        )
+    read_materials = _build_read_custody_judgment_materials(
+        slot=slot,
+        current_options=current_options,
+        packet_by_custody_id=packet_by_custody_id,
+    )
+    if [item["read_custody_ref"] for item in read_materials] != list(
+        request.get("read_custody_refs") or ()
+    ):
+        raise SearchOSRuntimeError(
+            "transient READ material does not match authorized custody order"
+        )
+    core = {
+        "schema_version": SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION,
+        "authorized_request": request,
+        "active_need": active_need,
+        "candidate_directional_contexts": directional_contexts,
+        "read_custody_materials": read_materials,
+        "bounded_transient_input": True,
+        "durable_retention_allowed": False,
+    }
+    return {**core, "model_input_digest": _digest(core)}
+
+
+def _build_active_need_projection(
+    *,
+    run_kernel: RunKernel,
+    slot: Mapping[str, Any],
+) -> dict[str, Any]:
+    slot_ref = dict(slot.get("slot_ref") or {})
+    component_ref = dict(slot.get("component_ref") or {})
+    obligation_ref = dict(slot.get("source_obligation_ref") or {})
+    component_id = str(component_ref.get("component_id") or "")
+    obligation_id = str(obligation_ref.get("source_obligation_id") or "")
+    if (
+        slot_ref.get("component_id") != component_id
+        or slot_ref.get("source_obligation_id") != obligation_id
+    ):
+        raise SearchOSRuntimeError("active slot need lineage is internally stale")
+
+    authority = run_kernel.acquisition_authority_snapshot()
+    if dict(dict(authority.get("components_by_id") or {}).get(component_id) or {}) != component_ref:
+        raise SearchOSRuntimeError("active component ref is stale")
+    if dict(dict(authority.get("source_obligations_by_id") or {}).get(obligation_id) or {}) != obligation_ref:
+        raise SearchOSRuntimeError("active source-obligation ref is stale")
+
+    contract = dict(
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+        or {}
+    )
+    accepted = next(
+        (
+            dict(item)
+            for item in contract.get("accepted_answer_component_refs") or ()
+            if isinstance(item, Mapping) and item.get("component_id") == component_id
+        ),
+        {},
+    )
+    accepted_ref = {
+        "component_id": accepted.get("component_id"),
+        "component_revision": accepted.get("component_revision"),
+        "component_digest": accepted.get("component_digest"),
+    }
+    if accepted_ref != component_ref:
+        raise SearchOSRuntimeError("accepted component digest does not match active slot")
+
+    search_work_plan = dict(run_kernel.state.search_work_plan or {})
+    work_component = next(
+        (
+            dict(item)
+            for item in search_work_plan.get("components") or ()
+            if isinstance(item, Mapping) and item.get("component_id") == component_id
+        ),
+        {},
+    )
+    work_component_ref = dict(
+        dict(work_component.get("metadata") or {}).get("accepted_component_ref")
+        or {}
+    )
+    if {
+        key: work_component_ref.get(key)
+        for key in ("component_id", "component_revision", "component_digest")
+    } != accepted_ref:
+        raise SearchOSRuntimeError("SearchWorkPlan component ref is stale")
+    work_obligation = next(
+        (
+            dict(item)
+            for item in work_component.get("source_obligations") or ()
+            if isinstance(item, Mapping) and item.get("obligation_id") == obligation_id
+        ),
+        {},
+    )
+    if not work_obligation:
+        raise SearchOSRuntimeError("SearchWorkPlan source obligation is stale")
+    requirement_refs = [
+        dict(item)
+        for item in dict(work_component.get("metadata") or {}).get(
+            "search_requirement_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
+        and item.get("component_id") == component_id
+        and obligation_id
+        in set(item.get("source_obligation_candidate_ids") or ())
+    ]
+    if len(requirement_refs) != 1:
+        raise SearchOSRuntimeError(
+            "SearchWorkPlan requirement ref is missing or ambiguous"
+        )
+    metadata = dict(search_work_plan.get("metadata") or {})
+    plan_contract_ref = dict(metadata.get("accepted_contract_ref") or {})
+    contract_digest = str(contract.get("accepted_contract_digest") or "")
+    contract_version = str(contract.get("accepted_contract_version") or "")
+    if (
+        plan_contract_ref.get("contract_digest") != contract_digest
+        or str(plan_contract_ref.get("contract_version") or "")
+        != contract_version
+    ):
+        raise SearchOSRuntimeError("SearchWorkPlan is not bound to the active contract")
+    answer_contract_ref = dict(run_kernel.state.searchos_state["answer_contract_ref"])
+    if (
+        answer_contract_ref.get("answer_contract_digest") != contract_digest
+        or str(answer_contract_ref.get("contract_version") or "")
+        != contract_version
+    ):
+        raise SearchOSRuntimeError("SearchOS AnswerContract ref is stale")
+    search_work_plan_id = str(
+        metadata.get("search_work_plan_id")
+        or metadata.get("construction_id")
+        or ""
+    )
+    if not search_work_plan_id:
+        raise SearchOSRuntimeError("SearchWorkPlan exact identity is missing")
+    search_work_plan_ref = {
+        "search_work_plan_id": search_work_plan_id,
+        "search_work_plan_digest": _digest(search_work_plan),
+    }
+    requirement = requirement_refs[0]
+    requirement_summary = _bounded_judgment_text(
+        requirement.get("requirement_summary"),
+        320,
+    )
+    return {
+        "schema_version": "searchos_active_need_projection_v1",
+        "component": {
+            "component_ref": component_ref,
+            "component_id": component_id,
+            "user_facing_question": _bounded_judgment_text(
+                accepted.get("user_facing_question")
+                or work_component.get("user_facing_subquestion"),
+                500,
+            ),
+            "user_facing_label": _bounded_judgment_text(
+                accepted.get("user_facing_label"),
+                220,
+            ),
+            "acceptance_criteria": [
+                _bounded_judgment_text(item, 300)
+                for item in accepted.get("acceptance_criteria") or ()
+                if _bounded_judgment_text(item, 300)
+            ],
+        },
+        "source_obligation": {
+            "source_obligation_ref": obligation_ref,
+            "obligation_id": obligation_id,
+            "kind": work_obligation.get("kind"),
+            "strictness": work_obligation.get("strictness"),
+            "currentness_requirement": _bounded_judgment_text(
+                work_obligation.get("currentness_requirement")
+                or requirement.get("recency_requirement"),
+                220,
+            ),
+            "satisfaction_rule": _bounded_judgment_text(
+                work_obligation.get("satisfaction_rule") or requirement_summary,
+                320,
+            ),
+            "requirement_summary": requirement_summary,
+            "search_constraint": _bounded_judgment_text(
+                work_obligation.get("search_constraint"),
+                240,
+            ),
+        },
+        "search_work": {
+            "search_work_plan_ref": search_work_plan_ref,
+            "search_requirement_ref": requirement,
+            "answer_contract_ref": answer_contract_ref,
+        },
+        "slot": {
+            "slot_ref": slot_ref,
+            "requirement_posture": slot.get("requirement_posture"),
+        },
+    }
+
+
+def _build_read_custody_judgment_materials(
+    *,
+    slot: Mapping[str, Any],
+    current_options: Mapping[str, Mapping[str, Any]],
+    packet_by_custody_id: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    materials: list[dict[str, Any]] = []
+    slot_ref = dict(slot.get("slot_ref") or {})
+    for raw_custody in slot.get("custody_refs") or ():
+        custody = dict(raw_custody) if isinstance(raw_custody, Mapping) else {}
+        if dict(custody.get("slot_ref") or {}) != slot_ref:
+            raise SearchOSRuntimeError("READ custody slot ref is stale")
+        historical_option_ref = dict(custody.get("candidate_use_option_ref") or {})
+        option_id = str(historical_option_ref.get("candidate_use_option_id") or "")
+        current_option = current_options.get(option_id)
+        if current_option is None:
+            raise SearchOSRuntimeError("READ custody stable option is no longer current")
+        current_option_ref = candidate_use_option_ref(current_option)
+        for key in (
+            "candidate_use_option_id",
+            "candidate_use_option_digest",
+            "normalized_url",
+            "slot_id",
+        ):
+            if historical_option_ref.get(key) != current_option_ref.get(key):
+                raise SearchOSRuntimeError("READ custody stable option identity mismatch")
+        custody_id = str(custody.get("read_custody_material_id") or "")
+        packet = validate_fetch_read_content_packet(
+            packet_by_custody_id.get(custody_id) or {}
+        )
+        packet_ref = fetch_read_content_packet_ref_from_packet(packet)
+        if packet_ref != dict(custody.get("fetch_read_content_packet_ref") or {}):
+            raise SearchOSRuntimeError("READ custody packet ref is stale")
+        ledger_custody_ref = dict(
+            custody.get("evidence_ledger_custody_ref") or {}
+        )
+        reference_id = str(ledger_custody_ref.get("reference_id") or "")
+        references = [
+            dict(item)
+            for item in packet.get("reference_records") or ()
+            if isinstance(item, Mapping) and item.get("reference_id") == reference_id
+        ]
+        if len(references) != 1:
+            raise SearchOSRuntimeError("READ custody packet candidate binding is ambiguous")
+        reference = references[0]
+        url = normalize_discovery_result_url(
+            reference.get("canonical_url")
+            or reference.get("final_url")
+            or reference.get("resolved_url")
+            or reference.get("provider_reported_url")
+            or reference.get("attempted_url")
+        )
+        if url != custody.get("normalized_url") or url != current_option.get(
+            "normalized_url"
+        ):
+            raise SearchOSRuntimeError("READ custody URL lineage mismatch")
+        bounded_text = str(reference.get("bounded_text") or "")
+        bounded_count = int(reference.get("bounded_character_count") or 0)
+        if not bounded_text or bounded_count != len(bounded_text):
+            raise SearchOSRuntimeError("READ custody bounded text is unreadable")
+        if reference.get("excerpt_digest") != _digest(
+            {"bounded_text": bounded_text}
+        ):
+            raise SearchOSRuntimeError("READ custody bounded-text digest mismatch")
+        materials.append(
+            {
+                "schema_version": "searchos_read_custody_judgment_material_v1",
+                "slot_ref": slot_ref,
+                "stable_candidate_use_option_ref": {
+                    key: current_option_ref[key]
+                    for key in (
+                        "candidate_use_option_id",
+                        "candidate_use_option_digest",
+                        "normalized_url",
+                        "slot_id",
+                    )
+                },
+                "current_candidate_lineage_snapshot_ref": dict(
+                    current_option_ref["lineage_snapshot_ref"]
+                ),
+                "read_custody_ref": custody,
+                "fetch_read_content_packet_ref": packet_ref,
+                "evidence_ledger_custody_ref": ledger_custody_ref,
+                "normalized_url": url,
+                "title": _bounded_judgment_text(
+                    reference.get("content_title"),
+                    300,
+                ),
+                "bounded_text": bounded_text,
+                "bounded_text_digest": reference["excerpt_digest"],
+                "bounded_character_count": bounded_count,
+                "readability_posture": "readable",
+                "completeness_posture": "unknown",
+                "truncation_posture": "unknown",
+                "same_normalized_url_reused": bool(
+                    custody.get("same_normalized_url_reused")
+                ),
+            }
+        )
+    return materials
+
+
+def _bounded_judgment_text(value: Any, limit: int) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text[:limit] or None
+
+
 def _invoke_judgment_model(
     *,
-    request: Mapping[str, Any],
+    model_input: Mapping[str, Any],
     ask_model: Callable[..., Any] | None,
     provider: str | None,
     model: str | None,
@@ -804,12 +1225,23 @@ def _invoke_judgment_model(
 ) -> Any:
     if ask_model is None:
         raise SearchOSRuntimeError("model_unavailable")
-    prompt = json.dumps(request, sort_keys=True, ensure_ascii=False)
+    prompt = json.dumps(model_input, sort_keys=True, ensure_ascii=False)
     if measure_context_stage is not None:
+        material_count = sum(
+            int(item.get("bounded_character_count") or 0)
+            for item in model_input.get("read_custody_materials") or ()
+            if isinstance(item, Mapping)
+        )
         measure_context_stage(
             "searchos_iterative_judgment",
-            prompt=prompt,
-            system_prompt=SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+            prompt=json.dumps(
+                {
+                    "model_input_digest": model_input.get("model_input_digest"),
+                    "bounded_character_count": material_count,
+                },
+                sort_keys=True,
+            ),
+            system_prompt=None,
             evidence_texts=[],
         )
     return ask_model(
@@ -864,7 +1296,7 @@ def _read_failure_reason(exc: Exception) -> str:
         token in code.casefold()
         for token in ("unreadable", "empty", "content", "material")
     ):
-        posture = "read_source_insufficient"
+        posture = "read_unusable_or_invalid_material"
     else:
         posture = "read_authority_or_route_blocked"
     return f"{posture}:{code}"[:240]

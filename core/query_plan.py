@@ -15,6 +15,7 @@ from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
 from core.initial_query_allocation_policy import InitialQueryAllocationPolicy
+from core.query_equivalence import queries_materially_equivalent
 from core.retrieval_quality import (
     apply_domain_anchor_to_query,
     approved_entity_aliases,
@@ -716,12 +717,15 @@ class QueryPlan:
         if query != query.strip():
             raise ValueError("SearchOS follow-up query cannot be rewritten at admission")
         if any(
-            str(item.authorized_query or "").strip().casefold()
-            == query.casefold()
+            queries_materially_equivalent(
+                str(item.authorized_query or ""),
+                query,
+            )
             for item in self.items
+            if item.authorized_query
         ):
             raise SearchOSRuntimeError(
-                "SearchOS follow-up query duplicates existing QueryPlan text"
+                "SearchOS follow-up query is materially equivalent to existing QueryPlan text"
             )
         iteration_ordinal = int(iteration)
         if iteration_ordinal < 2:

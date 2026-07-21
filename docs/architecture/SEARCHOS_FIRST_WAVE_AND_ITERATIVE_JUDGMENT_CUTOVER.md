@@ -50,6 +50,14 @@ deterministic semantic fallback. Model failure, invalid nomination, exhausted
 budget, and unresolved handoff remain distinct canonical slot postures and
 cannot claim satisfaction.
 
+RunKernel authorizes and retains only a reference/digest judgment request. A
+separate transient `searchos_judgment_model_input_v1` validates and combines
+that request with the current accepted component question, source-obligation
+semantics, exact SearchWorkPlan requirement, bounded directional candidate
+context, and bounded sanitized text from each exact current READ packet. The
+transient text and prompt are not written to RunKernel state, actions,
+projections, execution traces, or persisted output.
+
 `HANDOFF_UNRESOLVED` is a slot-level open-need record. It is not rewritten as
 `STOP_INSUFFICIENT` and does not authorize recovery or final stopping.
 
@@ -72,6 +80,10 @@ SearchJudgment exact follow-up proposal
 ```
 
 Provider selection, depth, routing, and adapter mechanics remain unchanged.
+QueryPlan compares the exact proposed text with every admitted executable query
+using the neutral pure query-cleaning and token-Jaccard rule shared with the
+established 0.7 redundancy threshold. Equivalent text is rejected before
+DISCOVER; genuinely distinct text is admitted unchanged.
 
 ## Immutable Candidate State And Append-Only Continuity
 
@@ -106,10 +118,12 @@ source-obligation snapshot; URL equality alone cannot reconstruct authority.
 ## Candidate-Use Options And Windows
 
 Model-visible acquisition choices aggregate by current slot plus normalized
-URL. Repeated contributor occurrences remain attached as bounded lineage but do
-not consume extra window positions or READ transports. Each option retains the
-admitted candidate-state, candidate, QueryPlan item, iteration set,
-provider-result occurrence, and source-material refs used to derive it.
+URL. That pair owns a stable option ID/digest. Repeated discoveries create a new
+immutable lineage snapshot without changing the stable option identity or its
+disposition. Each snapshot retains the complete ordered, exact candidate-state
+origin, candidate, QueryPlan item, iteration-set, provider-result occurrence,
+and source-material refs. A binding permanently retains the candidate-state ref
+that admitted it; later waves never rewrite earlier origins.
 
 `searchos_candidate_use_window_v1` exposes at most twelve ordered options and
 records the ordinal, retained and remaining counts, the digest of the full
@@ -117,6 +131,10 @@ eligible set, and whether another window is available. Already custodied,
 read-insufficient, invalid, or declined options may advance the deterministic
 window without a query, provider dispatch, acquisition proposal, or READ-budget
 charge. Exhaustion remains unresolved; it never becomes successful completion.
+When the final window has no unread option but current custody exists,
+SearchJudgment still judges the active need and bounded custody material;
+`REQUEST_READ_PAGE` is omitted while semantic handoff, follow-up query, and
+unresolved handoff remain available.
 
 ## Policy And Judgment Budget
 
@@ -170,6 +188,12 @@ preserving slot-specific SearchOS custody refs. A transport failure records the
 one canonical attempted call, performs no provider fallback, creates no custody,
 and leaves the affected slot unresolved or invalid. Custody is still not
 support: Analyst proposes, D-prime validates, and RunKernel admits.
+
+A readable page becomes `read_insufficient` only through a successful model
+judgment carrying the exact reviewed custody ref and a bounded reason code.
+Transport failure, route/authority block, unreadable material, stale lineage,
+and invalid nomination remain distinct postures and cannot be laundered into
+semantic source insufficiency.
 
 ## One N-Component Semantic Receiver
 

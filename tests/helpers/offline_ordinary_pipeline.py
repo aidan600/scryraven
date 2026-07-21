@@ -173,6 +173,7 @@ class OfflineOrdinaryPipelineHarness:
     read_assessment_decision: str | None = None
     read_assessment_calls: list[dict[str, Any]] = field(default_factory=list)
     read_transport_calls: list[str] = field(default_factory=list)
+    read_content_by_url: Mapping[str, str] | None = None
     run_kernel: Any | None = field(default=None, init=False, repr=False)
     read_candidate_packet: dict[str, Any] | None = field(
         default=None, init=False, repr=False
@@ -201,23 +202,50 @@ class OfflineOrdinaryPipelineHarness:
         self._record_model_call(system_prompt, kwargs)
         if system_prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT:
             payload = json.loads(prompt)
-            options = list(payload.get("candidate_use_options") or [])
-            custody_refs = list(payload.get("read_custody_refs") or [])
+            authorized = dict(payload.get("authorized_request") or payload)
+            options = list(authorized.get("candidate_use_options") or [])
+            custody_refs = list(authorized.get("read_custody_refs") or [])
+            active_need = dict(payload.get("active_need") or {})
+            read_materials = list(payload.get("read_custody_materials") or [])
+            need_component = dict(active_need.get("component") or {})
+            need_obligation = dict(active_need.get("source_obligation") or {})
+            need_search_work = dict(active_need.get("search_work") or {})
             self.read_assessment_calls.append(
                 {
-                    "slot_id": dict(payload.get("slot_ref") or {}).get("slot_id"),
+                    "slot_id": dict(authorized.get("slot_ref") or {}).get("slot_id"),
                     "binding_ids": [
                         dict(item.get("candidate_use_option_ref") or {}).get("candidate_use_option_id")
                         for item in options
                     ],
+                    "active_need_present": bool(active_need),
+                    "component_question": need_component.get(
+                        "user_facing_question"
+                    ),
+                    "source_obligation_kind": need_obligation.get("kind"),
+                    "source_obligation_strictness": need_obligation.get(
+                        "strictness"
+                    ),
+                    "search_work_plan_ref": dict(
+                        need_search_work.get("search_work_plan_ref") or {}
+                    ),
+                    "search_requirement_ref": dict(
+                        need_search_work.get("search_requirement_ref") or {}
+                    ),
+                    "answer_contract_ref": dict(
+                        need_search_work.get("answer_contract_ref") or {}
+                    ),
+                    "bounded_read_character_count": sum(
+                        int(dict(item).get("bounded_character_count") or len(str(dict(item).get("bounded_text") or "")))
+                        for item in read_materials
+                    ),
                     "cost_phase": kwargs.get("cost_phase"),
                 }
             )
             common = {
                 "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": payload["judgment_request_id"],
-                "judgment_request_digest": payload["judgment_request_digest"],
-                "slot_id": dict(payload["slot_ref"])["slot_id"],
+                "judgment_request_id": authorized["judgment_request_id"],
+                "judgment_request_digest": authorized["judgment_request_digest"],
+                "slot_id": dict(authorized["slot_ref"])["slot_id"],
             }
             if self.read_assessment_decision == "MODEL_FAILURE":
                 raise AssertionError("offline SearchOS model transport failure")
@@ -258,6 +286,14 @@ class OfflineOrdinaryPipelineHarness:
                         **common,
                         "action": "HANDOFF_UNRESOLVED",
                         "reason": "offline_no_later_read",
+                        "read_custody_assessments": [
+                            {
+                                "reviewed_custody_ref": item,
+                                "material_disposition": "read_insufficient",
+                                "reason_code": "fixture_declined_later_read",
+                            }
+                            for item in custody_refs
+                        ],
                     }
                 )
             if self.read_assessment_decision == "INVALID_NOMINATION":
@@ -271,12 +307,57 @@ class OfflineOrdinaryPipelineHarness:
                         "reason": "offline_invalid_nomination",
                     }
                 )
-            if custody_refs:
+            need_text = " ".join(
+                str(value or "")
+                for value in (
+                    dict(active_need.get("component") or {}).get(
+                        "user_facing_question"
+                    ),
+                    dict(active_need.get("source_obligation") or {}).get("kind"),
+                    dict(active_need.get("source_obligation") or {}).get(
+                        "requirement_summary"
+                    ),
+                )
+            ).casefold()
+            insufficient_markers = (
+                "does not answer",
+                "general company history",
+                "required information is absent",
+                "unrelated",
+            )
+            useful_materials = [
+                dict(item)
+                for item in read_materials
+                if str(dict(item).get("bounded_text") or "").strip()
+                and not any(
+                    marker
+                    in str(dict(item).get("bounded_text") or "").casefold()
+                    for marker in insufficient_markers
+                )
+            ]
+            useful_read = (
+                bool(read_materials)
+                and bool(active_need)
+                and bool(need_text.strip())
+                and bool(useful_materials)
+            )
+            assessments = [
+                {
+                    "reviewed_custody_ref": item,
+                    "material_disposition": "read_insufficient",
+                    "reason_code": "required_information_absent",
+                }
+                for item in custody_refs
+            ]
+            if custody_refs and useful_read:
                 return json.dumps(
                     {
                         **common,
                         "action": ("HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"),
-                        "read_custody_refs": custody_refs,
+                        "read_custody_refs": [
+                            dict(item.get("read_custody_ref") or {})
+                            for item in useful_materials
+                        ],
                         "reason": "offline_read_material_ready",
                     }
                 )
@@ -293,6 +374,7 @@ class OfflineOrdinaryPipelineHarness:
                         "action": "REQUEST_READ_PAGE",
                         "candidate_use_option_ref": dict(dict(selected_option)["candidate_use_option_ref"]),
                         "reason": "offline_request_page",
+                        "read_custody_assessments": assessments,
                     }
                 )
             return json.dumps(
@@ -300,6 +382,7 @@ class OfflineOrdinaryPipelineHarness:
                     **common,
                     "action": "HANDOFF_UNRESOLVED",
                     "reason": "offline_no_candidates",
+                    "read_custody_assessments": assessments,
                 }
             )
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
@@ -635,7 +718,11 @@ class OfflineOrdinaryPipelineHarness:
                         "url": requested_url,
                         "attempted_url": requested_url,
                         "title": "Offline exact READ source",
-                        "raw_content": ("Offline exact-URL readable source material for " + requested_url),
+                        "raw_content": (
+                            dict(self.read_content_by_url or {}).get(requested_url)
+                            or "Offline exact-URL readable source material for "
+                            + requested_url
+                        ),
                     }
                 ],
                 "failed_results": [],
@@ -815,6 +902,7 @@ def run_post_retirement_ordinary_pipeline(
     deps_overrides: Mapping[str, Any] | None = None,
     environment_overrides: Mapping[str, str] | None = None,
     read_assessment_decision: str | None = None,
+    read_content_by_url: Mapping[str, str] | None = None,
     harness_sink: list[PostRetirementOrdinaryPipelineHarness] | None = None,
 ) -> tuple[Any, PostRetirementOrdinaryPipelineHarness]:
     scrub_offline_runtime(monkeypatch)
@@ -837,6 +925,7 @@ def run_post_retirement_ordinary_pipeline(
         evidence_rows=evidence_rows,
         followup_evidence_rows=followup_evidence_rows,
         install_economist_sentinel=install_economist_sentinel,
+        read_content_by_url=read_content_by_url,
         read_assessment_decision=read_assessment_decision,
     )
     if harness_sink is not None:

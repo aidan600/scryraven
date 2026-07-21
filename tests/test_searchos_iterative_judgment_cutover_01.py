@@ -169,6 +169,95 @@ def test_policy_profiles_and_complete_round_reservation_prevent_starvation() -> 
         begin_searchos_judgment_round(state, slot_ids=["slot-1", "slot-2"])
 
 
+def test_candidate_option_identity_is_stable_while_lineage_snapshot_grows() -> None:
+    state = _state()
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    revision_1 = _candidate(
+        slot_ref=slot_ref,
+        ordinal=1,
+        url="https://example.com/stable",
+    )
+    wave_1 = {
+        **_candidate(
+            slot_ref=slot_ref,
+            ordinal=2,
+            url="https://example.com/stable",
+        ),
+        "candidate_state_ref": _ref("iteration_candidate_set", "wave-1"),
+        "iteration_set_ref": _ref("iteration_candidate_set", "wave-1"),
+    }
+    wave_2 = {
+        **_candidate(
+            slot_ref=slot_ref,
+            ordinal=3,
+            url="https://example.com/stable",
+        ),
+        "candidate_state_ref": _ref("iteration_candidate_set", "wave-2"),
+        "iteration_set_ref": _ref("iteration_candidate_set", "wave-2"),
+    }
+
+    [initial] = build_candidate_use_options_v1([revision_1])
+    [grown] = build_candidate_use_options_v1([revision_1, wave_1, wave_2])
+
+    assert grown["candidate_use_option_id"] == initial["candidate_use_option_id"]
+    assert grown["candidate_use_option_digest"] == initial["candidate_use_option_digest"]
+    assert grown["lineage_snapshot_ref"] != initial["lineage_snapshot_ref"]
+    assert grown["candidate_state_origin_refs"] == [
+        revision_1["candidate_state_ref"],
+        wave_1["candidate_state_ref"],
+        wave_2["candidate_state_ref"],
+    ]
+    initial_window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=[initial],
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+        option_dispositions={initial["candidate_use_option_id"]: "custodied"},
+    )
+    grown_window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=[grown],
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+        option_dispositions={grown["candidate_use_option_id"]: "custodied"},
+    )
+    assert initial_window["model_visible_candidate_use_options"] == []
+    assert grown_window["model_visible_candidate_use_options"] == []
+    assert (
+        grown_window["ordered_candidate_use_option_refs"][0][
+            "lineage_snapshot_ref"
+        ]
+        != initial_window["ordered_candidate_use_option_refs"][0][
+            "lineage_snapshot_ref"
+        ]
+    )
+    recorded = record_searchos_candidate_window(state, window=initial_window)
+    advanced = record_searchos_candidate_window(recorded, window=grown_window)
+    advanced_slot = advanced["slots_by_id"]["slot-1"]
+    assert advanced_slot["candidate_window_count"] == 1
+    assert (
+        advanced_slot["candidate_use_option_refs"]
+        == grown_window["ordered_candidate_use_option_refs"]
+    )
+    advancement = advanced_slot["action_history"][-1]
+    assert advancement["event"] == "candidate_window_snapshot_advanced"
+    assert advancement["candidate_use_window_ref"]["candidate_use_window_id"] == (
+        grown_window["candidate_use_window_id"]
+    )
+    assert advancement["new_query_created"] is False
+    assert advancement["provider_dispatched"] is False
+    assert advancement["acquisition_proposal_created"] is False
+    assert advancement["read_budget_consumed"] is False
+
+
+def test_custodied_is_a_completed_candidate_window_disposition() -> None:
+    from core.searchos_slice_a_product_runtime import (
+        TERMINAL_CANDIDATE_OPTION_DISPOSITIONS,
+    )
+
+    assert "custodied" in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+
+
 def test_model_failure_is_distinct_and_never_gets_a_fallback() -> None:
     state = _state()
     state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
@@ -767,11 +856,76 @@ def test_query_plan_admits_exact_model_followup_without_evaluator_or_expander() 
     assert current.items[-1].metadata["expander_authority_used"] is False
     assert current.to_dict()["items"][: len(plan.items)] == plan.to_dict()["items"]
     duplicate = {**decision, "followup_query": "INITIAL QUERY"}
-    with pytest.raises(SearchOSRuntimeError, match="duplicates existing"):
+    with pytest.raises(SearchOSRuntimeError, match="materially equivalent"):
         plan.admit_searchos_followup_query(
             judgment_decision=duplicate,
             iteration=2,
         )
+
+
+@pytest.mark.parametrize(
+    "prior, proposed",
+    [
+        ("Alpha current official rule", "ALPHA CURRENT OFFICIAL RULE"),
+        ("Alpha current official rule", "Alpha,  current official rule!"),
+        (
+            "Alpha current official operating rule source",
+            "Alpha official current operating rule source",
+        ),
+    ],
+)
+def test_searchos_followup_rejects_materially_equivalent_query_before_discover(
+    prior: str,
+    proposed: str,
+) -> None:
+    plan = QueryPlan(plan_id="query-plan:material-equivalence").append(
+        origin="initial",
+        role=QueryPlanRole.INITIAL,
+        status=QueryPlanStatus.ORDERED,
+        authorized_query=prior,
+        phase="initial",
+        iteration=1,
+        order=1,
+    )
+    decision = {
+        "action": "PROPOSE_FOLLOWUP_QUERY",
+        "followup_query": proposed,
+        "judgment_decision_id": "searchos-decision:equivalent",
+        "judgment_decision_digest": "a" * 64,
+        "slot_ref": {"slot_id": "slot-1", "slot_digest": "b" * 64},
+    }
+
+    with pytest.raises(SearchOSRuntimeError, match="materially equivalent"):
+        plan.admit_searchos_followup_query(
+            judgment_decision=decision,
+            iteration=2,
+        )
+
+
+def test_searchos_followup_admits_genuinely_distinct_query_unchanged() -> None:
+    plan = QueryPlan(plan_id="query-plan:distinct").append(
+        origin="initial",
+        role=QueryPlanRole.INITIAL,
+        status=QueryPlanStatus.ORDERED,
+        authorized_query="Alpha current official operating rule source",
+        phase="initial",
+        iteration=1,
+        order=1,
+    )
+    proposed = "Alpha historical enforcement exceptions court decisions"
+    current, admission = plan.admit_searchos_followup_query(
+        judgment_decision={
+            "action": "PROPOSE_FOLLOWUP_QUERY",
+            "followup_query": proposed,
+            "judgment_decision_id": "searchos-decision:distinct",
+            "judgment_decision_digest": "c" * 64,
+            "slot_ref": {"slot_id": "slot-1", "slot_digest": "d" * 64},
+        },
+        iteration=2,
+    )
+
+    assert current.items[-1].authorized_query == proposed
+    assert admission["exact_query_text_preserved"] is True
 
 
 def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
