@@ -593,6 +593,13 @@ recovery, and AG-92B retain only residual or deferred compatibility surfaces
 outside the forward ordinary SearchOS Slice A path; they have no post-first-wave
 continuation authority there.
 
+The isolated component-gap recovery owner and retained direct semantic
+producer/reducer compatibility seams remain executable for their own fail-closed,
+idempotency, atomicity, contract, custody, and ledger-authority invariants.
+Only fixtures whose success condition requires the retired ordinary forward
+composition remain explicitly skipped; those skips are not counted as current
+product-path proof.
+
 `core.scout` now exposes only fixed inert import compatibility for the retained
 `core.pipeline` re-export and bounded validation composition: `run_scout`
 returns no result and performs no prompt lookup, model call, parsing, or query

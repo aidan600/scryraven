@@ -22,7 +22,10 @@ tests/test_ag_bal_01_component_gap_recovery.py
 # prove exact follow-up QueryPlan continuity and the required-needs safe terminal.
 tests/test_searchos_slice_a_product_cutover_01.py::test_required_unresolved_slot_uses_existing_safe_non_author_terminal
 tests/test_searchos_slice_a_product_cutover_01.py::test_exact_model_followup_is_appended_and_dispatched_through_query_plan
+tests/test_searchos_slice_a_product_cutover_01.py::test_readable_insufficient_read_remains_iterative_and_is_not_retained
 
 # Owner: QueryPlan SearchOS continuation. Reason: exact model-authored text is
-# admitted append-only without evaluator or expander query-writing authority.
+# admitted append-only without evaluator or expander query-writing authority,
+# while the established pure material-equivalence rule blocks redispatch.
 tests/test_searchos_iterative_judgment_cutover_01.py::test_query_plan_admits_exact_model_followup_without_evaluator_or_expander
+tests/test_searchos_iterative_judgment_cutover_01.py::test_searchos_followup_rejects_materially_equivalent_query_before_discover

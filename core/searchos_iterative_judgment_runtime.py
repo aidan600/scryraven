@@ -1662,10 +1662,22 @@ def build_searchos_judgment_request_v1(
     ]
     if custody_refs != list(slot.get("custody_refs") or ()):
         raise SearchOSRuntimeError("judgment READ custody refs are stale")
+    completed_option_ids = {
+        option_id
+        for option_id, raw_record in dict(
+            slot.get("candidate_option_dispositions") or {}
+        ).items()
+        if _mapping(raw_record).get("disposition")
+        in COMPLETED_CANDIDATE_OPTION_DISPOSITIONS
+    }
     visible_options = [
         deepcopy(_mapping(item))
         for item in candidate_window.get("model_visible_candidate_use_options")
         or ()
+        if _first_ref_id(
+            _mapping(_mapping(item).get("candidate_use_option_ref"))
+        )
+        not in completed_option_ids
     ]
     legal_actions = [
         SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY.value,

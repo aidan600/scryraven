@@ -69,6 +69,9 @@ disambiguation retry, weak-corpus recovery, source-class recovery, and AG-92B
 full SearchJudgment cannot propose or dispatch the next query on the forward
 ordinary Slice A path. Their residual code remains compatibility or deferred
 roadmap material, not a co-owner.
+Retained component-gap recovery and direct semantic compatibility invariants are
+tested through their isolated owner seams; retired-forward success fixtures stay
+explicitly skipped and do not count as SearchOS product-path proof.
 
 Post-first-wave query text may be created only by:
 

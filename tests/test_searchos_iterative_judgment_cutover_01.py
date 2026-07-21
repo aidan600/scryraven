@@ -249,6 +249,52 @@ def test_candidate_option_identity_is_stable_while_lineage_snapshot_grows() -> N
     assert advancement["acquisition_proposal_created"] is False
     assert advancement["read_budget_consumed"] is False
 
+    initial_available = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=[initial],
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    grown_available = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=[grown],
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    current = record_searchos_candidate_window(state, window=initial_available)
+    current = record_searchos_candidate_window(current, window=grown_available)
+    current, round_ref = begin_searchos_judgment_round(
+        current,
+        slot_ids=["slot-1"],
+    )
+    current, charge = charge_searchos_judgment_call(
+        current,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    current_request = build_searchos_judgment_request_v1(
+        state=current,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=grown_available,
+        read_custody_refs=[],
+    )
+    with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
+        validate_searchos_judgment_model_output(
+            request=current_request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "judgment_request_id": current_request["judgment_request_id"],
+                "judgment_request_digest": current_request[
+                    "judgment_request_digest"
+                ],
+                "slot_id": "slot-1",
+                "action": "REQUEST_READ_PAGE",
+                "candidate_use_option_ref": candidate_use_option_ref(initial),
+                "reason": "obsolete lineage snapshot",
+            },
+        )
+
 
 def test_custodied_is_a_completed_candidate_window_disposition() -> None:
     from core.searchos_slice_a_product_runtime import (
@@ -364,6 +410,30 @@ def test_candidate_options_aggregate_slot_plus_url_and_windows_are_progressive()
     assert second_window["next_window_available"] is False
     assert second_window["next_window_requires_provider_dispatch"] is False
     assert second_window["next_window_consumes_read_budget"] is False
+    completed_first = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=many,
+        window_ordinal=1,
+        policy_snapshot=policy,
+        option_dispositions={
+            item["candidate_use_option_id"]: "custodied"
+            for item in many[:12]
+        },
+    )
+    progressed = record_searchos_candidate_window(
+        state,
+        window=completed_first,
+    )
+    progressed = record_searchos_candidate_window(
+        progressed,
+        window=second_window,
+    )
+    progression = progressed["slots_by_id"]["slot-1"]["action_history"][-1]
+    assert progression["event"] == "candidate_window_exposed"
+    assert progression["new_query_created"] is False
+    assert progression["provider_dispatched"] is False
+    assert progression["acquisition_proposal_created"] is False
+    assert progression["read_budget_consumed"] is False
     with pytest.raises(SearchOSRuntimeError, match="policy budget exhausted"):
         build_candidate_use_window_v1(
             slot_ref=slot_ref,
@@ -615,6 +685,27 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         charge_ref=charge,
         candidate_window=window,
         read_custody_refs=[custody],
+    )
+    assert request["candidate_use_options"] == []
+    assert "REQUEST_READ_PAGE" not in request["legal_actions"]
+    read_nominations_before = state["slots_by_id"]["slot-1"][
+        "read_nomination_count"
+    ]
+    with pytest.raises(SearchOSRuntimeError, match="not currently authorized"):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "judgment_request_id": request["judgment_request_id"],
+                "judgment_request_digest": request["judgment_request_digest"],
+                "slot_id": "slot-1",
+                "action": "REQUEST_READ_PAGE",
+                "candidate_use_option_ref": candidate_use_option_ref(options[0]),
+                "reason": "repeat an already-custodied option",
+            },
+        )
+    assert state["slots_by_id"]["slot-1"]["read_nomination_count"] == (
+        read_nominations_before
     )
     decision = validate_searchos_judgment_model_output(
         request=request,
