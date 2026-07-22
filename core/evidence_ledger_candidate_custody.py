@@ -276,6 +276,9 @@ def _navigation_observation_from_packet(
     if not isinstance(references, list) or len(references) != 1:
         raise EvidenceLedgerCandidateCustodyError("v2 custody requires one sanitized reference")
     reference = dict(references[0])
+    secondary_source_provenance = dict(
+        reference.get("secondary_source_provenance") or {}
+    )
     packet_ref = fetch_read_content_packet_ref_from_packet(packet)
     candidate_id = (
         f"navigation-physical-source:{packet['physical_identity_digest'][:24]}"
@@ -344,6 +347,18 @@ def _navigation_observation_from_packet(
         "citation_eligible": False,
         "source_obligation_satisfied": False,
     }
+    custody_record.update(
+        {
+            field: secondary_source_provenance[field]
+            for field in (
+                "provider_reported_url",
+                "resolved_url",
+                "final_url",
+                "canonical_url",
+            )
+            if secondary_source_provenance.get(field)
+        }
+    )
     if origin == "navigation_candidate":
         custody_record.update(
             {

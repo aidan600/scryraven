@@ -601,10 +601,18 @@ def test_validated_response_alias_is_secondary_to_attempted_source_identity(
         dict(commit["payload"])["committed_fetch_read_content_packet"]
     )
     reference = dict(committed_packet["reference_records"][0])
+    ledger_record = dict(
+        dict(commit["payload"])["evidence_ledger_observation"][
+            "fetch_read_candidate_custody"
+        ][0]
+    )
     assert committed_packet["durable_source_url"] == destination
     assert reference["secondary_source_provenance"]["final_url"] == (
         final_alias
     )
+    assert ledger_record["attempted_url"] == destination
+    assert ledger_record["durable_source_url"] == destination
+    assert ledger_record["final_url"] == final_alias
     semantic = next(
         item
         for item in harness.searchos_product_result.searchos_semantic_material

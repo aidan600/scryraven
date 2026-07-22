@@ -1314,7 +1314,9 @@ def build_discovery_fetch_read_content_packet_v2(
     retained_count = _bounded_int(retained_character_count)
     if not _is_sha256(retained) or retained_count <= 0 or retained_count > 20_000:
         raise FetchReadContentReferenceError("discovery packet retained material identity invalid")
-    secondary = _validated_navigation_secondary_provenance(attempted, secondary_source_provenance or {})
+    secondary = _validated_discovery_secondary_provenance(
+        secondary_source_provenance or {}
+    )
     shared = {
         "run_id": _required_token(run_id, "discovery packet requires run_id"),
         "request_id": _required_token(request_id, "discovery packet requires request_id"),
@@ -1753,6 +1755,13 @@ def _validate_sanitized_content_reference_v2(
         raise FetchReadContentReferenceError(
             NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
         )
+    secondary = raw.get("secondary_source_provenance")
+    if not isinstance(secondary, Mapping) or dict(secondary) != (
+        _validated_navigation_secondary_provenance(attempted, secondary)
+    ):
+        raise FetchReadContentReferenceError(
+            "navigation secondary source provenance invalid"
+        )
     core = {
         key: _safe_value(item)
         for key, item in raw.items()
@@ -1892,6 +1901,13 @@ def _validate_discovery_sanitized_content_reference_v2(
         or raw.get("physical_identity_digest") != binding["physical_identity_digest"]
     ):
         raise FetchReadContentReferenceError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID)
+    secondary = raw.get("secondary_source_provenance")
+    if not isinstance(secondary, Mapping) or dict(secondary) != (
+        _validated_discovery_secondary_provenance(secondary)
+    ):
+        raise FetchReadContentReferenceError(
+            "discovery secondary source provenance invalid"
+        )
     core = {
         key: _safe_value(item)
         for key, item in raw.items()
@@ -1948,6 +1964,29 @@ def _validated_navigation_secondary_provenance(attempted: Any, values: Mapping[s
         ):
             continue
         accepted[key] = normalized.exact_url
+    return accepted
+
+
+def _validated_discovery_secondary_provenance(
+    values: Mapping[str, str],
+) -> dict[str, str]:
+    """Preserve the supported discovery-origin v1 secondary URL posture."""
+
+    allowed = {
+        "provider_reported_url",
+        "resolved_url",
+        "final_url",
+        "canonical_url",
+    }
+    if set(values).difference(allowed):
+        raise FetchReadContentReferenceError(
+            "discovery secondary provenance fields invalid"
+        )
+    accepted: dict[str, str] = {}
+    for key, value in values.items():
+        cleaned = _clean_url(value)
+        if cleaned:
+            accepted[key] = cleaned
     return accepted
 
 
