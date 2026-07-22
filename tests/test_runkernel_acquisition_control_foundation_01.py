@@ -21,7 +21,7 @@ kept outside RunKernel state.
 Runtime/product path guarded: selected-candidate nontrigger behavior plus the
 RunKernel-owned post-discovery acquisition transitions and mechanical adapter
 seam for an independently established material need.
-Expected cost: 55 synthetic offline cases in under one second locally.
+Expected cost: 63 synthetic offline cases in under one second locally.
 Promotion posture: remain phase_focus until a later convergence phase selects a
 smaller durable sentinel.
 Demotion/retirement condition: replace when an equal-or-stronger ordinary-path
@@ -32,6 +32,7 @@ Why not fast_pr: this is a detailed phase authority matrix, not ordinary PR tax.
 from __future__ import annotations
 
 import ast
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -46,6 +47,8 @@ from core.acquisition_control import (
     AcquisitionControlError,
     AcquisitionExecutionObservationV1,
     AcquisitionNeedProposalV1,
+    AcquisitionNeedProposalV2,
+    AcquisitionWorkOrderV2,
     derive_acquisition_capability_decision,
     initial_acquisition_control_state,
     stable_json_digest,
@@ -73,6 +76,10 @@ from core.run_kernel import (
     ObservationType,
     RunKernel,
     RunKernelTransitionError,
+)
+from core.searchos_navigation_runtime import (
+    SearchOSNavigationDestinationRegistry,
+    SearchOSNavigationExecutionOverlayV1,
 )
 from tests.helpers.offline_ordinary_pipeline import scrub_offline_runtime
 from tests.test_ag_ordinary_live_source_custody_integration_01 import (
@@ -241,7 +248,7 @@ def test_independent_material_need_can_bind_to_selected_url_provenance() -> None
 
 @dataclass(frozen=True)
 class _AdmittedRead:
-    proposal: AcquisitionNeedProposalV1
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2
     decision_result: AcquisitionCapabilityDecisionRuntimeResult
     work_order_result: AcquisitionWorkOrderAdmissionRuntimeResult
 
@@ -249,7 +256,7 @@ class _AdmittedRead:
 def _admit_read(
     kernel: RunKernel,
     *,
-    proposal: AcquisitionNeedProposalV1 | None = None,
+    proposal: AcquisitionNeedProposalV1 | AcquisitionNeedProposalV2 | None = None,
 ) -> _AdmittedRead:
     admitted_proposal = proposal or _proposal(kernel)
     decision_action = kernel.authorize_acquisition_capability_decision(proposal=admitted_proposal)
@@ -297,6 +304,121 @@ def _route_read(
     )
     kernel.reduce(result.observation)
     return result
+
+
+def _navigation_route_fixture(
+    *,
+    availability: Mapping[str, bool] | None = None,
+) -> tuple[
+    RunKernel,
+    _AdmittedRead,
+    AcquisitionRouteRuntimeResult,
+    SearchOSNavigationDestinationRegistry,
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+]:
+    kernel = _kernel()
+    snapshot = kernel.acquisition_authority_snapshot()
+    registry = SearchOSNavigationDestinationRegistry(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+    )
+    binding = registry.register(
+        "https://official.example.test/parent/child"
+    )
+
+    def navigation_ref(kind: str) -> dict[str, str]:
+        return {
+            f"{kind}_id": f"{kind}:offline-overlay-guard",
+            f"{kind}_digest": stable_json_digest(
+                {"kind": kind, "seed": "offline-overlay-guard"}
+            ),
+        }
+
+    edge_ref = navigation_ref("navigation_edge")
+    selection_ref = navigation_ref("navigation_selection")
+    proposal = AcquisitionNeedProposalV2.create(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        producer_surface="SearchOS.SearchJudgment",
+        answer_contract_ref=snapshot["answer_contract_ref"],
+        source_obligation_ref=snapshot["source_obligations_by_id"][
+            OBLIGATION_ID
+        ],
+        component_ref=snapshot["components_by_id"][COMPONENT_ID],
+        navigation_destination_binding_ref=binding,
+        navigation_edge_ref=edge_ref,
+        navigation_selection_ref=selection_ref,
+        navigation_lineage_snapshot_ref=navigation_ref(
+            "navigation_lineage_snapshot"
+        ),
+        representative_contributor_ref=navigation_ref(
+            "navigation_contributor"
+        ),
+        parent_custody_ref=navigation_ref(
+            "searchos_parent_use_custody"
+        ),
+        physical_identity_digest=binding["physical_identity_digest"],
+        full_destination_digest=binding["full_destination_digest"],
+        operation_identity_key=(
+            f"read-navigation:{binding['physical_identity_digest']}"
+        ),
+    )
+    admitted = _admit_read(kernel, proposal=proposal)
+    route = _route_read(
+        kernel,
+        admitted,
+        availability=availability,
+    )
+    return (
+        kernel,
+        admitted,
+        route,
+        registry,
+        binding,
+        edge_ref,
+        selection_ref,
+    )
+
+
+def test_navigation_route_block_and_terminal_receipt_are_url_free() -> None:
+    exact_url = "https://official.example.test/parent/child"
+    kernel, admitted, route, *_ = _navigation_route_fixture(
+        availability={"linkup": False, "tavily": False}
+    )
+    work_order = admitted.work_order_result.work_order
+    assert isinstance(work_order, AcquisitionWorkOrderV2)
+    assert route.route_observation.terminal_status == "blocked"
+    route_action = next(
+        action
+        for action in kernel.state.issued_actions.values()
+        if action.action_type is ActionType.ACQUISITION_ROUTE
+    )
+    terminal_action = kernel.authorize_acquisition_terminal_reduction(
+        route_observation_ref=route.route_observation.ref()
+    )
+    terminal = execute_acquisition_terminal_reduction_action(
+        terminal_action,
+        acquisition_control_state=kernel.state.acquisition_control_state,
+        work_order=work_order,
+        route_observation=route.route_observation,
+    )
+    kernel.reduce(terminal.observation)
+    serialized = json.dumps(
+        {
+            "route_action_inputs": route_action.inputs,
+            "route_observation": route.route_observation.to_dict(),
+            "terminal_action_inputs": terminal_action.inputs,
+            "terminal_receipt": terminal.terminal_receipt.to_dict(),
+            "kernel": kernel.state.to_trace_projection().to_dict(),
+        },
+        sort_keys=True,
+    )
+    assert exact_url not in serialized
+    assert "selected_urls" not in serialized
+    assert "available_urls" not in serialized
+    assert terminal.terminal_receipt.retry_licensed is False
 
 
 def _derive(
@@ -745,6 +867,121 @@ def test_work_order_or_route_without_exact_execution_authorization_cannot_dispat
                 transports=AcquisitionTransports(linkup_fetch=forbidden_transport),
             )
     assert calls == 0
+
+
+@pytest.mark.parametrize(
+    ("invalid_overlay_state", "expected_code"),
+    (
+        ("missing", "navigation_execution_overlay_unavailable"),
+        ("altered", "navigation_execution_overlay_altered"),
+        ("stale", "navigation_execution_overlay_lineage_mismatch"),
+        ("expired", "navigation_execution_overlay_unavailable"),
+        ("consumed", "navigation_execution_overlay_unavailable"),
+        (
+            "mismatched",
+            "authorized_action_navigation_execution_overlay_ref_mismatch",
+        ),
+    ),
+)
+def test_invalid_navigation_overlay_blocks_before_provider_transport(
+    invalid_overlay_state: str,
+    expected_code: str,
+) -> None:
+    (
+        kernel,
+        admitted,
+        route,
+        registry,
+        binding,
+        edge_ref,
+        selection_ref,
+    ) = _navigation_route_fixture()
+    work_order = admitted.work_order_result.work_order
+    assert isinstance(work_order, AcquisitionWorkOrderV2)
+    overlay_route_ref = (
+        {
+            "route_observation_id": "route-observation:stale",
+            "route_observation_digest": "f" * 64,
+        }
+        if invalid_overlay_state == "stale"
+        else route.route_observation.ref()
+    )
+    overlay = SearchOSNavigationExecutionOverlayV1.create(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        destination_binding_ref=binding,
+        navigation_edge_ref=edge_ref,
+        navigation_selection_ref=selection_ref,
+        work_order_ref=work_order.ref(),
+        route_observation_ref=overlay_route_ref,
+        destination_registry=registry,
+    )
+    action = kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.route_observation.ref(),
+        navigation_execution_overlay_ref=overlay.ref(),
+    )
+    supplied_overlay: SearchOSNavigationExecutionOverlayV1 | None = overlay
+    if invalid_overlay_state == "missing":
+        supplied_overlay = None
+    elif invalid_overlay_state == "mismatched":
+        supplied_overlay = SearchOSNavigationExecutionOverlayV1.create(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            destination_binding_ref=binding,
+            navigation_edge_ref=edge_ref,
+            navigation_selection_ref=selection_ref,
+            work_order_ref=work_order.ref(),
+            route_observation_ref=route.route_observation.ref(),
+            destination_registry=registry,
+        )
+    elif invalid_overlay_state == "altered":
+        overlay.exact_execution_url = (
+            "https://official.example.test/altered-destination"
+        )
+    elif invalid_overlay_state == "expired":
+        overlay.expire()
+    elif invalid_overlay_state == "consumed":
+        overlay.consume(
+            execution_action_ref={
+                "action_id": action.action_id,
+                "action_type": action.action_type.value,
+                "stage": action.stage,
+                "sequence": action.sequence,
+            }
+        )
+
+    transport_calls = 0
+    pretransport_calls = 0
+
+    def forbidden_transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal transport_calls
+        transport_calls += 1
+        return {"markdown": "must not be reached"}
+
+    def forbidden_pretransport() -> None:
+        nonlocal pretransport_calls
+        pretransport_calls += 1
+
+    with pytest.raises(AcquisitionControlError, match=expected_code):
+        execute_authorized_acquisition_work_order(
+            action,
+            run_kernel=kernel,
+            work_order=work_order,
+            route_observation=route.route_observation,
+            route_decision=route.route_decision,
+            transports=AcquisitionTransports(
+                linkup_fetch=forbidden_transport
+            ),
+            before_transport=forbidden_pretransport,
+            navigation_execution_overlay=supplied_overlay,
+        )
+    assert transport_calls == 0
+    assert pretransport_calls == 0
+    if supplied_overlay is not None:
+        assert supplied_overlay.exact_execution_url == ""
+    if supplied_overlay is not overlay:
+        overlay.expire()
 
 
 def test_stale_work_order_route_pair_cannot_dispatch() -> None:

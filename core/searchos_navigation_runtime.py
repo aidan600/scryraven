@@ -76,6 +76,10 @@ NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID = (
 NAVIGATION_REDIRECT_CROSS_DOMAIN_BLOCKED = (
     "navigation_redirect_cross_domain_blocked"
 )
+NAVIGATION_REDIRECT_CYCLE = "navigation_redirect_cycle"
+NAVIGATION_EXECUTION_OVERLAY_ALTERED = (
+    "navigation_execution_overlay_altered"
+)
 
 _DESTINATION_BINDING_REF_FIELDS = frozenset(
     {
@@ -411,7 +415,19 @@ class SearchOSNavigationExecutionOverlayV1:
             )
         self.exact_execution_url = normalized.exact_url
         self._nonce = secrets.token_hex(16)
-        safe_core = {
+        safe_core = self._active_integrity_core()
+        self.overlay_digest = _digest(
+            {**safe_core, "exact_execution_url": self.exact_execution_url}
+        )
+        self.overlay_id = (
+            f"navigation-execution-overlay:{self.run_id}:"
+            f"{self.overlay_digest[:24]}"
+        )
+        self._posture = "active"
+        self._consumed_action_ref: dict[str, Any] = {}
+
+    def _active_integrity_core(self) -> dict[str, Any]:
+        return {
             "schema_version": "searchos_navigation_execution_overlay_v1",
             "run_id": self.run_id,
             "request_id": self.request_id,
@@ -425,15 +441,42 @@ class SearchOSNavigationExecutionOverlayV1:
             "nonce_digest": _digest_text(self._nonce),
             "one_shot_posture": "active",
         }
-        self.overlay_digest = _digest(
-            {**safe_core, "exact_execution_url": self.exact_execution_url}
-        )
-        self.overlay_id = (
+
+    def _require_integrity(self) -> None:
+        try:
+            normalized = normalize_navigation_url(self.exact_execution_url)
+            binding = validate_navigation_destination_binding_ref(
+                self.destination_binding_ref
+            )
+            expected_digest = _digest(
+                {
+                    **self._active_integrity_core(),
+                    "exact_execution_url": normalized.exact_url,
+                }
+            )
+        except (SearchOSNavigationError, TypeError, ValueError) as exc:
+            raise SearchOSNavigationError(
+                NAVIGATION_EXECUTION_OVERLAY_ALTERED
+            ) from exc
+        expected_id = (
             f"navigation-execution-overlay:{self.run_id}:"
-            f"{self.overlay_digest[:24]}"
+            f"{expected_digest[:24]}"
         )
-        self._posture = "active"
-        self._consumed_action_ref: dict[str, Any] = {}
+        if (
+            normalized.query_present
+            or normalized.exact_url != self.exact_execution_url
+            or normalized.physical_digest != self.physical_identity_digest
+            or normalized.full_digest != self.full_destination_digest
+            or binding["physical_identity_digest"]
+            != self.physical_identity_digest
+            or binding["full_destination_digest"]
+            != self.full_destination_digest
+            or expected_digest != self.overlay_digest
+            or expected_id != self.overlay_id
+        ):
+            raise SearchOSNavigationError(
+                NAVIGATION_EXECUTION_OVERLAY_ALTERED
+            )
 
     @classmethod
     def create(
@@ -477,6 +520,18 @@ class SearchOSNavigationExecutionOverlayV1:
             raise SearchOSNavigationError(
                 "navigation_execution_overlay_unavailable"
             )
+        if self._consumed_action_ref:
+            raise SearchOSNavigationError(
+                NAVIGATION_EXECUTION_OVERLAY_ALTERED
+            )
+        self._require_integrity()
+
+    def require_consumed(self) -> None:
+        if self._posture != "consumed" or not self._consumed_action_ref:
+            raise SearchOSNavigationError(
+                "navigation_execution_overlay_not_consumed"
+            )
+        self._require_integrity()
 
     def validate_lineage(
         self,
@@ -639,6 +694,7 @@ def validate_navigation_execution_artifact(
     provider_reported_url: str | None,
     retained_digest: str | None,
     retained_character_count: int,
+    ancestor_physical_identity_digests: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Validate the local URL-bearing response and return only safe facts."""
 
@@ -646,10 +702,7 @@ def validate_navigation_execution_artifact(
         raise SearchOSNavigationError(
             "navigation_execution_overlay_unavailable"
         )
-    if overlay._posture != "consumed":
-        raise SearchOSNavigationError(
-            "navigation_execution_overlay_not_consumed"
-        )
+    overlay.require_consumed()
     try:
         attempted = normalize_navigation_url(str(attempted_url or ""))
         requested = normalize_navigation_url(str(requested_url or ""))
@@ -658,6 +711,10 @@ def validate_navigation_execution_artifact(
             NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID
         ) from exc
     expected = normalize_navigation_url(overlay.exact_execution_url)
+    ancestor_digests = {
+        _digest_token(item, "ancestor_physical_identity_digest")
+        for item in ancestor_physical_identity_digests
+    }
     if (
         attempted.exact_url != expected.exact_url
         or requested.exact_url != expected.exact_url
@@ -679,11 +736,22 @@ def validate_navigation_execution_artifact(
         try:
             normalized = normalize_navigation_url(value)
             _validate_origin_transition(expected, normalized)
-        except SearchOSNavigationError:
+            if (
+                label in {"final_url", "resolved_url"}
+                and normalized.physical_digest in ancestor_digests
+            ):
+                raise SearchOSNavigationError(
+                    NAVIGATION_REDIRECT_CYCLE
+                )
+        except SearchOSNavigationError as exc:
             if label in {"final_url", "resolved_url"}:
+                if exc.code == NAVIGATION_REDIRECT_CYCLE:
+                    raise SearchOSNavigationError(
+                        NAVIGATION_REDIRECT_CYCLE
+                    ) from exc
                 raise SearchOSNavigationError(
                     NAVIGATION_REDIRECT_CROSS_DOMAIN_BLOCKED
-                )
+                ) from exc
             secondary[label] = {
                 "exact_retention_eligible": False,
                 "safe_digest": _digest_text(str(value)),

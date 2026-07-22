@@ -908,9 +908,11 @@ def record_searchos_read_custody_material(
         raise SearchOSRuntimeError("SearchOS READ material requires EvidenceLedger custody")
     slot_ref = _required_ref(custody.get("slot_ref"), "slot_ref")
     slot_id = _token(slot_ref.get("slot_id"), "slot_id")
-    is_navigation = custody.get("physical_acquisition_origin") == ("navigation_candidate")
+    is_navigation_use = bool(
+        _optional_ref(custody.get("navigation_use_custody_ref"))
+    )
     option_ref = _optional_ref(custody.get("candidate_use_option_ref"))
-    if is_navigation:
+    if is_navigation_use:
         use_ref = _required_ref(
             custody.get("navigation_use_custody_ref"),
             "navigation_use_custody_ref",

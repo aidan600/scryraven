@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 import core.searchos_slice_a_product_runtime as product_runtime
+from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_control import (
     AcquisitionExecutionObservationV2,
     AcquisitionNeedProposalV1,
@@ -445,6 +446,173 @@ def _navigation_decision_from_prompt(prompt: str) -> tuple[dict[str, object], di
     return authorized, decision
 
 
+def test_navigation_reuses_existing_discovery_custody_without_relabeling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_parent = "https://alpha.example/discovery-parent"
+    existing_destination = "https://alpha.example/existing-discovery"
+    _, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        evidence_rows=[
+            {
+                "title": "Alpha directional parent",
+                "url": first_parent,
+                "text": "Directional parent.",
+            },
+            {
+                "title": "Alpha existing source",
+                "url": existing_destination,
+                "text": "Potential current source.",
+            },
+        ],
+        read_content_by_url={
+            first_parent: (
+                "This page does not answer the question. "
+                "[Current source](/existing-discovery)"
+            ),
+            existing_destination: (
+                "Alpha's current official operating rule is Rule 17."
+            ),
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        raw_author_response=(
+            "Alpha follows Rule 17. "
+            f"[[1]]({existing_destination})"
+        ),
+    )
+
+    assert harness.read_transport_calls == [
+        first_parent,
+        existing_destination,
+    ]
+    assert harness.read_transport_calls.count(existing_destination) == 1
+    navigation_state = harness.run_kernel.state.searchos_navigation_state
+    use_refs = list(navigation_state["use_custody_refs_by_id"].values())
+    assert len(use_refs) == 1
+    use_ref = use_refs[0]
+    assert use_ref["physical_acquisition_origin"] == "discovery_candidate"
+    physical = navigation_state["physical_custody_by_digest"][
+        use_ref["physical_identity_digest"]
+    ]
+    assert physical["physical_acquisition_origin"] == "discovery_candidate"
+    assert physical["durable_source_url"] == existing_destination
+    assert use_ref["fetch_read_content_packet_ref"] == physical[
+        "fetch_read_content_packet_ref"
+    ]
+    assert use_ref["evidence_ledger_custody_ref"] == physical[
+        "evidence_ledger_custody_ref"
+    ]
+    assert navigation_state["logical_edge_charges"] == 1
+    assert navigation_state["logical_read_nomination_charges"] == 1
+    semantic = list(
+        harness.searchos_product_result.searchos_semantic_material
+    )
+    assert semantic
+    assert all(
+        item["physical_acquisition_origin"] == "discovery_candidate"
+        for item in semantic
+        if item["url"] == existing_destination
+    )
+
+
+def test_validated_response_alias_is_secondary_to_attempted_source_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = "https://alpha.example/alias-parent"
+    destination = "https://alpha.example/attempted-destination"
+    final_alias = "https://alpha.example/validated-final-alias"
+    harness_sink = []
+
+    def alias_transport(payload):
+        requested = payload.get("urls")
+        requested_url = (
+            str(requested[0])
+            if isinstance(requested, list)
+            else str(requested or "")
+        )
+        harness_sink[0].read_transport_calls.append(requested_url)
+        if requested_url == parent:
+            content = (
+                "This page does not answer the question. "
+                "[Current source](/attempted-destination)"
+            )
+            final_url = None
+        else:
+            assert requested_url == destination
+            content = "Alpha's current official operating rule is Rule 17."
+            final_url = final_alias
+        result = {
+            "url": requested_url,
+            "attempted_url": requested_url,
+            "raw_content": content,
+        }
+        if final_url:
+            result["final_url"] = final_url
+        return {"results": [result], "failed_results": []}
+
+    _, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        evidence_rows=[
+            {
+                "title": "Alpha directional parent",
+                "url": parent,
+                "text": "Directional parent.",
+            }
+        ],
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        deps_overrides={
+            "searchos_read_acquisition_transports": (
+                AcquisitionTransports(tavily_extract=alias_transport)
+            )
+        },
+        harness_sink=harness_sink,
+    )
+
+    assert harness.read_transport_calls == [parent, destination]
+    navigation_state = harness.run_kernel.state.searchos_navigation_state
+    navigation_physical = next(
+        item
+        for item in navigation_state["physical_custody_by_digest"].values()
+        if item["physical_acquisition_origin"] == "navigation_candidate"
+    )
+    assert navigation_physical["attempted_url"] == destination
+    assert navigation_physical["durable_source_url"] == destination
+    assert navigation_physical[
+        "validated_redirect_alias_full_digests"
+    ] == [_digest(final_alias)]
+    physical_digest = navigation_physical["physical_identity_digest"]
+    assert navigation_state[
+        "validated_redirect_alias_digests_by_physical_digest"
+    ][physical_digest] == [_digest(final_alias)]
+    commit = _navigation_commit_observations(harness)[0]
+    committed_packet = dict(
+        dict(commit["payload"])["committed_fetch_read_content_packet"]
+    )
+    reference = dict(committed_packet["reference_records"][0])
+    assert committed_packet["durable_source_url"] == destination
+    assert reference["secondary_source_provenance"]["final_url"] == (
+        final_alias
+    )
+    semantic = next(
+        item
+        for item in harness.searchos_product_result.searchos_semantic_material
+        if item["url"] == destination
+    )
+    assert semantic["url"] == destination
+
+
 def test_n1_navigation_reuses_one_physical_destination_and_reenters_citation_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -713,6 +881,188 @@ def test_n2_navigation_uses_existing_multicomponent_receiver_with_physical_reuse
     )
 
 
+@pytest.mark.parametrize(
+    ("failure_mode", "expected_failure_code"),
+    (
+        ("transport", "selected_provider_transport_failed"),
+        ("unreadable", "read_material_empty_or_unreadable"),
+        ("cross_host", "navigation_redirect_cross_domain_blocked"),
+        ("redirect_cycle", "navigation_redirect_cycle"),
+    ),
+)
+def test_navigation_destination_failures_create_no_durable_url_or_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+    expected_failure_code: str,
+) -> None:
+    parent = "https://alpha.example/failure-parent"
+    destination = "https://alpha.example/failure-destination"
+    hostile = "https://redirect.example.net/cross-host"
+    harness_sink = []
+
+    def controlled_transport(payload):
+        requested = payload.get("urls")
+        requested_url = (
+            str(requested[0])
+            if isinstance(requested, list)
+            else str(requested or "")
+        )
+        harness_sink[0].read_transport_calls.append(requested_url)
+        if requested_url == parent:
+            return {
+                "results": [
+                    {
+                        "url": parent,
+                        "attempted_url": parent,
+                        "raw_content": (
+                            "This page does not answer the question. "
+                            "[Current rate](/failure-destination)"
+                        ),
+                    }
+                ],
+                "failed_results": [],
+            }
+        assert requested_url == destination
+        if failure_mode == "transport":
+            raise RuntimeError("offline_navigation_transport_failure")
+        result = {
+            "url": destination,
+            "attempted_url": destination,
+            "raw_content": (
+                "" if failure_mode == "unreadable" else "Alpha is 17 units per hour."
+            ),
+        }
+        if failure_mode == "cross_host":
+            result["final_url"] = hostile
+        elif failure_mode == "redirect_cycle":
+            result["final_url"] = parent
+        return {"results": [result], "failed_results": []}
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's operating rate?",
+        core_topic="Alpha operating rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha operating rate"],
+        evidence_rows=[
+            {
+                "title": "Alpha parent",
+                "url": parent,
+                "text": "Directional parent.",
+            }
+        ],
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        deps_overrides={
+            "searchos_read_acquisition_transports": (
+                AcquisitionTransports(
+                    tavily_extract=controlled_transport
+                )
+            )
+        },
+        harness_sink=harness_sink,
+    )
+
+    assert harness.read_transport_calls == [parent, destination]
+    assert harness.read_transport_calls.count(destination) == 1
+    navigation_state = harness.run_kernel.state.searchos_navigation_state
+    assert all(
+        item["physical_acquisition_origin"] == "discovery_candidate"
+        for item in navigation_state["physical_custody_by_digest"].values()
+    )
+    terminal_records = list(
+        navigation_state["terminal_physical_operations_by_key"].values()
+    )
+    assert len(terminal_records) == 1
+    assert terminal_records[0]["failure_code"].endswith(
+        expected_failure_code
+    )
+    assert terminal_records[0]["retry_licensed"] is False
+    assert navigation_state["logical_edge_charges"] == 1
+    assert navigation_state["logical_read_nomination_charges"] == 1
+    assert harness.searchos_product_result.searchos_semantic_material == ()
+    durable = json.dumps(
+        {
+            "kernel": _kernel_trace(harness),
+            "outcome": outcome.execution_trace,
+        },
+        sort_keys=True,
+    )
+    assert destination not in durable
+    assert hostile not in durable
+    assert all(
+        item.get("provider_failure_fallback_attempted") is not True
+        for item in harness.run_kernel.state.acquisition_control_state[
+            "execution_observations_by_id"
+        ].values()
+    )
+
+
+def test_navigation_draft_is_destroyed_when_packet_construction_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = "https://alpha.example/packet-failure-parent"
+    destination = "https://alpha.example/packet-failure-destination"
+    destroyed_drafts: list[bool] = []
+    original_discard = product_runtime.discard_navigation_extraction_draft
+
+    def tracked_discard(draft) -> None:
+        original_discard(draft)
+        destroyed_drafts.append(draft.destroyed)
+
+    def fail_navigation_packet(**_kwargs):
+        raise RuntimeError("injected_navigation_packet_construction_failure")
+
+    monkeypatch.setattr(
+        product_runtime,
+        "discard_navigation_extraction_draft",
+        tracked_discard,
+    )
+    monkeypatch.setattr(
+        product_runtime,
+        "build_navigation_fetch_read_content_packet_v2",
+        fail_navigation_packet,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's operating rate?",
+        core_topic="Alpha operating rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha operating rate"],
+        evidence_rows=[
+            {
+                "title": "Alpha parent",
+                "url": parent,
+                "text": "Directional parent.",
+            }
+        ],
+        read_content_by_url={
+            parent: (
+                "This page does not answer the question. "
+                "[Current rate](/packet-failure-destination)"
+            ),
+            destination: "Alpha is 17 units per hour.",
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+    )
+
+    assert harness.read_transport_calls == [parent, destination]
+    assert destroyed_drafts == [True, True]
+    assert _navigation_commit_observations(harness) == []
+    assert harness.searchos_product_result.searchos_semantic_material == ()
+    serialized = json.dumps(
+        {
+            "kernel": _kernel_trace(harness),
+            "outcome": outcome.execution_trace,
+        },
+        sort_keys=True,
+    )
+    assert destination not in serialized
+
+
 def test_navigation_ledger_failure_rolls_back_without_durable_url_or_retry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -724,10 +1074,47 @@ def test_navigation_ledger_failure_rolls_back_without_durable_url_or_retry(
     def fail_navigation_ledger_admission(**_kwargs):
         raise RuntimeError("injected_navigation_ledger_admission_failure")
 
+    destination_registry_discards: list[bool] = []
+    packet_registry_discards: list[bool] = []
+    destroyed_drafts: list[bool] = []
+    original_discard = product_runtime.discard_navigation_extraction_draft
+
+    def tracked_discard(draft) -> None:
+        original_discard(draft)
+        destroyed_drafts.append(draft.destroyed)
+
+    class TrackingDestinationRegistry(
+        SearchOSNavigationDestinationRegistry
+    ):
+        def discard(self) -> None:
+            super().discard()
+            destination_registry_discards.append(True)
+
+    class TrackingPacketRegistry(SearchOSNavigationPacketCommitRegistry):
+        def discard(self, commit_ref=None) -> None:
+            super().discard(commit_ref)
+            if commit_ref is None:
+                packet_registry_discards.append(True)
+
     monkeypatch.setattr(
         product_runtime,
         "admit_navigation_packet_commit_to_evidence_ledger",
         fail_navigation_ledger_admission,
+    )
+    monkeypatch.setattr(
+        product_runtime,
+        "discard_navigation_extraction_draft",
+        tracked_discard,
+    )
+    monkeypatch.setattr(
+        product_runtime,
+        "SearchOSNavigationDestinationRegistry",
+        TrackingDestinationRegistry,
+    )
+    monkeypatch.setattr(
+        product_runtime,
+        "SearchOSNavigationPacketCommitRegistry",
+        TrackingPacketRegistry,
     )
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
@@ -786,3 +1173,6 @@ def test_navigation_ledger_failure_rolls_back_without_durable_url_or_retry(
     assert navigation_state["logical_edge_charges"] == 1
     assert navigation_state["logical_read_nomination_charges"] == 1
     assert all(destination not in prompt for prompt in harness.searchos_judgment_prompts)
+    assert destination_registry_discards == [True]
+    assert packet_registry_discards == [True]
+    assert destroyed_drafts == [True, True]

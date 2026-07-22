@@ -376,7 +376,7 @@ class SearchOSSliceAProductResult:
 FollowupDiscover = Callable[[str, int, Mapping[str, Any]], Mapping[str, Any]]
 
 
-def execute_searchos_slice_a_iterative_judgment(
+def _execute_searchos_slice_a_iterative_judgment_with_registries(
     *,
     run_kernel: RunKernel,
     candidate_packet: Mapping[str, Any],
@@ -392,6 +392,8 @@ def execute_searchos_slice_a_iterative_judgment(
     available_providers: Mapping[str, object],
     acquisition_transports: AcquisitionTransports | None,
     execute_followup_discover: FollowupDiscover | None,
+    destination_registry: SearchOSNavigationDestinationRegistry,
+    navigation_packet_registry: SearchOSNavigationPacketCommitRegistry,
     before_transport: Callable[[], Any] | None = None,
     measure_context_stage: Callable[..., Any] | None = None,
 ) -> SearchOSSliceAProductResult:
@@ -463,14 +465,6 @@ def execute_searchos_slice_a_iterative_judgment(
     identity_deltas_by_digest: dict[str, Sequence[Mapping[str, Any]]] = {}
     custody_by_url: dict[str, dict[str, Any]] = {}
     packet_by_custody_id: dict[str, Mapping[str, Any]] = {}
-    destination_registry = SearchOSNavigationDestinationRegistry(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-    )
-    navigation_packet_registry = SearchOSNavigationPacketCommitRegistry(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-    )
     parent_use_by_custody_id: dict[str, Mapping[str, Any]] = {}
     physical_packets_by_digest: dict[str, Mapping[str, Any]] = {}
     dispositions: dict[str, str] = {}
@@ -1054,8 +1048,6 @@ def execute_searchos_slice_a_iterative_judgment(
         "provider_calls_attempted": attempted,
         "provider_calls_completed": completed,
     }
-    destination_registry.discard()
-    navigation_packet_registry.discard()
     return SearchOSSliceAProductResult(
         revision_1=revision_1,
         iteration_candidate_sets=tuple(iteration_sets),
@@ -1065,6 +1057,61 @@ def execute_searchos_slice_a_iterative_judgment(
         provider_calls_attempted=attempted,
         provider_calls_completed=completed,
     )
+
+
+def execute_searchos_slice_a_iterative_judgment(
+    *,
+    run_kernel: RunKernel,
+    candidate_packet: Mapping[str, Any],
+    query_authority: QueryPlanRuntimeAdapter,
+    discovery_result_store: Any,
+    profile_name: str,
+    ask_model: Callable[..., Any] | None,
+    provider: str | None,
+    model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    use_reasoning: bool,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    execute_followup_discover: FollowupDiscover | None,
+    before_transport: Callable[[], Any] | None = None,
+    measure_context_stage: Callable[..., Any] | None = None,
+) -> SearchOSSliceAProductResult:
+    """Run Slice A/B and discard every transient URL owner on every exit."""
+
+    destination_registry = SearchOSNavigationDestinationRegistry(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+    )
+    navigation_packet_registry = SearchOSNavigationPacketCommitRegistry(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+    )
+    try:
+        return _execute_searchos_slice_a_iterative_judgment_with_registries(
+            run_kernel=run_kernel,
+            candidate_packet=candidate_packet,
+            query_authority=query_authority,
+            discovery_result_store=discovery_result_store,
+            profile_name=profile_name,
+            ask_model=ask_model,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            use_reasoning=use_reasoning,
+            available_providers=available_providers,
+            acquisition_transports=acquisition_transports,
+            execute_followup_discover=execute_followup_discover,
+            destination_registry=destination_registry,
+            navigation_packet_registry=navigation_packet_registry,
+            before_transport=before_transport,
+            measure_context_stage=measure_context_stage,
+        )
+    finally:
+        destination_registry.discard()
+        navigation_packet_registry.discard()
 
 
 def revision_1_answer_contract_ref(
@@ -1790,7 +1837,12 @@ def _invalid_or_stale_nomination(exc: Exception) -> bool:
 
 def _read_failure_reason(exc: Exception) -> str:
     raw_code = getattr(exc, "code", None)
-    code = str(raw_code) if raw_code else type(exc).__name__
+    if raw_code:
+        code = str(raw_code)
+    elif isinstance(exc, SearchOSRuntimeError) and str(exc).strip():
+        code = str(exc).strip()
+    else:
+        code = type(exc).__name__
     if "transport" in code.casefold():
         posture = "read_transport_failure"
     elif any(

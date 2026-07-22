@@ -361,7 +361,7 @@ def execute_acquisition_route_action(
     )
 
 
-def execute_authorized_acquisition_work_order(
+def _execute_authorized_acquisition_work_order_once(
     action: AuthorizedAction,
     *,
     run_kernel: RunKernel,
@@ -428,7 +428,10 @@ def execute_authorized_acquisition_work_order(
             raise AcquisitionControlError(
                 "navigation_execution_overlay_unavailable"
             )
-        navigation_overlay_ref = navigation_execution_overlay.ref()
+        try:
+            navigation_overlay_ref = navigation_execution_overlay.ref()
+        except SearchOSNavigationError as exc:
+            raise AcquisitionControlError(exc.code) from exc
         _require_action_binding(
             authorized,
             "navigation_execution_overlay_ref",
@@ -539,6 +542,11 @@ def execute_authorized_acquisition_work_order(
                         retained_digest=artifact.retained_digest,
                         retained_character_count=(
                             artifact.retained_character_count
+                        ),
+                        ancestor_physical_identity_digests=(
+                            _navigation_ancestor_physical_digests(
+                                work_order.parent_custody_ref
+                            )
                         ),
                     )
                 )
@@ -663,8 +671,6 @@ def execute_authorized_acquisition_work_order(
                 terminal_status="failed",
                 failure_or_block_code="guarded_execution_failed_closed",
             )
-    if navigation_execution_overlay is not None:
-        navigation_execution_overlay.expire()
     return AuthorizedAcquisitionExecutionRuntimeResult(
         execution_result=execution_result,
         execution_observation=execution_observation,
@@ -675,6 +681,39 @@ def execute_authorized_acquisition_work_order(
         deferred_error=deferred_error,
         navigation_response_validation=navigation_response_validation,
     )
+
+
+def execute_authorized_acquisition_work_order(
+    action: AuthorizedAction,
+    *,
+    run_kernel: RunKernel,
+    work_order: AcquisitionWorkOrderV1 | AcquisitionWorkOrderV2,
+    route_observation: AcquisitionRouteObservationV1,
+    route_decision: ProviderRouteDecision,
+    transports: AcquisitionTransports | None = None,
+    before_transport: Callable[[], None] | None = None,
+    navigation_execution_overlay: SearchOSNavigationExecutionOverlayV1
+    | None = None,
+) -> AuthorizedAcquisitionExecutionRuntimeResult:
+    """Dispatch once and destroy any supplied exact-URL overlay on every exit."""
+
+    try:
+        return _execute_authorized_acquisition_work_order_once(
+            action,
+            run_kernel=run_kernel,
+            work_order=work_order,
+            route_observation=route_observation,
+            route_decision=route_decision,
+            transports=transports,
+            before_transport=before_transport,
+            navigation_execution_overlay=navigation_execution_overlay,
+        )
+    finally:
+        if isinstance(
+            navigation_execution_overlay,
+            SearchOSNavigationExecutionOverlayV1,
+        ):
+            navigation_execution_overlay.expire()
 
 
 def execute_acquisition_terminal_reduction_action(
@@ -1110,6 +1149,23 @@ def _materialize_navigation_acquisition_request(
             work_order.source_obligation_ref.get("source_obligation_id") or ""
         ),
     )
+
+
+def _navigation_ancestor_physical_digests(
+    parent_custody_ref: Mapping[str, Any],
+) -> tuple[str, ...]:
+    parent = dict(parent_custody_ref)
+    values = [
+        str(item)
+        for item in parent.get(
+            "ancestor_physical_identity_digests",
+            (),
+        )
+    ]
+    parent_digest = str(parent.get("physical_identity_digest") or "")
+    if parent_digest:
+        values.append(parent_digest)
+    return tuple(dict.fromkeys(values))
 
 
 def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:

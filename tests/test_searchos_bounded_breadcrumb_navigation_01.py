@@ -305,6 +305,14 @@ def test_query_is_rejected_before_registry_and_never_stripped() -> None:
         match=NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED,
     ):
         registry.register(f"https://example.com/path?token={secret}")
+    ordinary = _draft("[page two](https://example.com/path?page=2)")
+    assert ordinary.occurrences == ()
+    assert ordinary.extraction_counters["rejected_query_occurrences"] == 1
+    with pytest.raises(
+        SearchOSNavigationError,
+        match=NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED,
+    ):
+        registry.register("https://example.com/path?page=2")
 
 
 def test_trailing_slash_is_distinct_physical_identity() -> None:
@@ -325,6 +333,31 @@ def test_exact_parent_custody_join_is_required_and_draft_can_be_destroyed() -> N
     registry = SearchOSNavigationDestinationRegistry(
         run_id="run-1", request_id="request-1"
     )
+    v1_packet = {**packet, "schema_version": "fetch_read_content_packet_v1"}
+    with pytest.raises(
+        SearchOSNavigationError,
+        match="navigation_parent_packet_v2_required",
+    ):
+        build_searchos_navigation_candidate_set_v1(
+            draft=draft,
+            destination_registry=registry,
+            fetch_read_packet=v1_packet,
+            evidence_ledger_custody=ledger,
+            parent_custody_ref=parent,
+            slot_ref=_slot(),
+        )
+    with pytest.raises(
+        SearchOSNavigationError,
+        match="evidence_ledger_custody",
+    ):
+        build_searchos_navigation_candidate_set_v1(
+            draft=draft,
+            destination_registry=registry,
+            fetch_read_packet=packet,
+            evidence_ledger_custody={},
+            parent_custody_ref=parent,
+            slot_ref=_slot(),
+        )
     altered_packet = dict(packet)
     altered_packet["retained_digest"] = _digest("altered")
     with pytest.raises(SearchOSNavigationError, match="retained_digest_mismatch"):
