@@ -16,6 +16,7 @@ from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
     SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION,
     SearchOSJudgmentAction,
+    SearchOSRuntimeError,
     SearchOSSlotPosture,
     begin_searchos_judgment_round,
     build_candidate_use_window_v1,
@@ -27,7 +28,9 @@ from core.searchos_iterative_judgment_runtime import (
     record_searchos_candidate_window,
     reduce_searchos_judgment_decision,
     searchos_policy_profile,
+    searchos_policy_snapshot_ref,
     validate_searchos_judgment_model_output,
+    validate_searchos_state,
 )
 from core.searchos_navigation_runtime import (
     NAVIGATION_BINDING_UNAVAILABLE,
@@ -80,6 +83,63 @@ def _refresh_state(state: dict[str, object]) -> dict[str, object]:
         "state_id": f"searchos-state:{digest[:24]}",
         "state_digest": digest,
         "replay_identity": f"searchos-state:{digest}",
+    }
+
+
+def _refresh_policy(policy: dict[str, object]) -> dict[str, object]:
+    core = {
+        key: deepcopy(value)
+        for key, value in policy.items()
+        if key not in {"policy_snapshot_id", "policy_snapshot_digest", "replay_identity"}
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "policy_snapshot_id": f"searchos-policy:{digest[:24]}",
+        "policy_snapshot_digest": digest,
+        "replay_identity": f"searchos-policy:{digest}",
+    }
+
+
+def _redigest_option(value: dict[str, object]) -> dict[str, object]:
+    identity = {
+        key: deepcopy(value[key])
+        for key in (
+            "schema_version",
+            "owner",
+            "slot_id",
+            "destination_binding_ref",
+            "parent_read_custody_ref",
+            "child_depth",
+            "ancestor_physical_identity_digests",
+            "bounded_relationship_context",
+            "admission_ordinal",
+        )
+    }
+    core = {
+        **identity,
+        "revision": value["revision"],
+        "disposition": value["disposition"],
+        "active_selection_ref": deepcopy(value["active_selection_ref"]),
+    }
+    return {
+        **core,
+        "navigation_option_id": f"searchos-navigation-option:{_digest(identity)[:24]}",
+        "navigation_option_digest": _digest(core),
+    }
+
+
+def _candidate_ref_from_option(value: dict[str, object]) -> dict[str, object]:
+    option_ref = {
+        "navigation_option_id": value["navigation_option_id"],
+        "navigation_option_digest": value["navigation_option_digest"],
+        "revision": value["revision"],
+    }
+    digest = _digest({"navigation_option_ref": option_ref})
+    return {
+        "navigation_candidate_id": f"searchos-navigation-candidate:{digest[:24]}",
+        "navigation_candidate_digest": digest,
+        "navigation_option_ref": option_ref,
     }
 
 
@@ -324,10 +384,20 @@ def test_extraction_is_supported_ordered_bounded_and_query_safe() -> None:
     [
         "https://example.com/private",
         "www.example.com",
+        "example.com.",
+        "(example.com)",
+        "192.168.1.1",
+        "host.example:8443",
         "/private/path",
+        "private/path",
+        "foo\\bar",
+        "./relative",
+        "../relative",
         "next?token=value",
         "person@example.com",
+        "user:password@example.com",  # pragma: allowlist secret
         "api_key=credential",
+        "%2Fprivate%2Fpath",
         "safe\x00control",
     ],
 )
@@ -375,6 +445,71 @@ def test_options_live_under_searchos_and_new_destinations_remain_ephemeral() -> 
     assert "searchos_navigation_state" not in serialized
 
 
+@pytest.mark.parametrize(
+    ("defect", "value"),
+    [
+        ("label", "https://example.com/private"),
+        ("label", "private/path"),
+        ("label", "(example.com)"),
+        ("label", "192.168.1.1"),
+        ("binding_id", "navigation-binding:https://example.com/private"),
+        ("active_extra", "https://example.com/private"),
+        ("selectable_active", "selection"),
+        ("pending_empty", "selection"),
+        ("context_extra", "selection"),
+        ("depth", "selection"),
+        ("cycle", "selection"),
+    ],
+)
+def test_canonical_boundary_redigested_option_replays_fail_closed(defect: str, value: str) -> None:
+    state, _, _ = _admit("[safe label](/child)")
+    raw = deepcopy(next(iter(state["navigation"]["options_by_id"].values())))
+    selection_digest = _digest("canonical-selection")
+    selection_ref = {
+        "navigation_selection_id": f"searchos-navigation-selection:{selection_digest[:24]}",
+        "navigation_selection_digest": selection_digest,
+    }
+    if defect == "label":
+        raw["bounded_relationship_context"]["relationship_label"] = value
+    elif defect == "binding_id":
+        raw["destination_binding_ref"]["destination_binding_id"] = value
+    elif defect == "active_extra":
+        raw["disposition"] = NAVIGATION_PENDING_EXECUTION
+        raw["active_selection_ref"] = {**selection_ref, "destination_url": value}
+    elif defect == "selectable_active":
+        raw["active_selection_ref"] = selection_ref
+    elif defect == "pending_empty":
+        raw["disposition"] = NAVIGATION_PENDING_EXECUTION
+        raw["active_selection_ref"] = {}
+    elif defect == "context_extra":
+        raw["bounded_relationship_context"]["unexpected"] = value
+    elif defect == "depth":
+        raw["bounded_relationship_context"]["child_depth"] = 7
+    else:
+        raw["ancestor_physical_identity_digests"] = [
+            raw["destination_binding_ref"]["physical_identity_digest"]
+        ]
+    with pytest.raises(NavigationRuntimeError):
+        NavigationOption.from_dict(_redigest_option(raw))
+
+
+def test_canonical_boundary_valid_pending_selection_ref_replays() -> None:
+    state, _, _ = _admit("[safe label](/child)")
+    option = NavigationOption.from_dict(next(iter(state["navigation"]["options_by_id"].values())))
+    selection_digest = _digest("canonical-selection")
+    pending = replace(
+        option,
+        disposition=NAVIGATION_PENDING_EXECUTION,
+        active_selection_ref={
+            "navigation_selection_id": f"searchos-navigation-selection:{selection_digest[:24]}",
+            "navigation_selection_digest": selection_digest,
+        },
+    )
+    assert NavigationOption.from_dict(pending.to_dict()) == pending
+    binding_id = pending.destination_binding_ref["destination_binding_id"]
+    assert "run-1" not in binding_id and "request-1" not in binding_id
+
+
 def test_navigation_ineligible_parent_keeps_existing_read_custody_unchanged() -> None:
     state, custody = _state_with_parent(parent_url="https://example.com:444/root")
     original = deepcopy(state)
@@ -393,6 +528,38 @@ def test_navigation_ineligible_parent_keeps_existing_read_custody_unchanged() ->
     assert summary["admitted_option_count"] == 0
     assert summary["rejection_counts"] == {"navigation_nondefault_port_ineligible": 1}
     assert store.committed_count == 0
+
+
+def test_canonical_boundary_ancestor_cycle_is_rejected_before_locator_staging() -> None:
+    state, custody = _state_with_parent(parent_url="https://example.com/b")
+    parent_custody = deepcopy(state["slots_by_id"]["slot-1"]["custody_refs"])
+    ancestor = normalize_navigation_destination("https://example.com/a")
+    store = EphemeralNavigationLocatorStore(run_id="run-1", request_id="request-1")
+    admitted, summary = admit_navigation_options_from_markdown(
+        state,
+        slot_id="slot-1",
+        parent_read_custody_ref=custody,
+        parent_url="https://example.com/b",
+        parent_depth=1,
+        ancestor_physical_identity_digests=(ancestor["physical_identity_digest"],),
+        markdown_text="[ancestor](/a) [lawful sibling](/c)",
+        locator_store=store,
+    )
+    assert summary == {
+        "admitted_option_count": 1,
+        "rejection_counts": {"navigation_ancestor_cycle": 1},
+        "overflow_count": 0,
+    }
+    assert store.staged_count == 0 and store.committed_count == 1
+    [option_value] = admitted["navigation"]["options_by_id"].values()
+    option = NavigationOption.from_dict(option_value)
+    assert option.destination_binding_ref["physical_identity_digest"] != ancestor[
+        "physical_identity_digest"
+    ]
+    assert store.resolve(option.destination_binding_ref) == "https://example.com/c"
+    window = project_navigation_window(admitted, slot_id="slot-1")
+    assert len(window) == 1 and window[0]["relationship_label"] == "lawful sibling"
+    assert admitted["slots_by_id"]["slot-1"]["custody_refs"] == parent_custody
 
 
 def test_navigation_window_is_transient_deterministic_and_advances() -> None:
@@ -422,14 +589,140 @@ def test_policy_snapshots_have_exact_immutable_navigation_leashes(
     profile: str, depth: int, selections: int, edges: int
 ) -> None:
     policy = searchos_policy_profile(profile)
+    assert not hasattr(policy, "navigation_max_depth")
+    closed = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name=profile
+    )
+    assert not {
+        "navigation_max_depth",
+        "navigation_selections_per_slot",
+        "navigation_edges_per_run",
+    }.intersection(closed)
+    snapshot = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name=profile,
+        navigation_runtime_open=True,
+    )
     assert (
-        policy.navigation_max_depth,
-        policy.navigation_selections_per_slot,
-        policy.navigation_edges_per_run,
+        snapshot["navigation_max_depth"],
+        snapshot["navigation_selections_per_slot"],
+        snapshot["navigation_edges_per_run"],
     ) == (depth, selections, edges)
-    snapshot = build_searchos_policy_snapshot(run_id="run-1", request_id="request-1", profile_name=profile)
-    assert snapshot["navigation_runtime_open"] is False
-    assert snapshot["navigation_max_depth"] == depth
+
+
+def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline() -> None:
+    expected_policy = {
+        "schema_version": "searchos_policy_profile_v1",
+        "owner": "RunKernel.SearchOSIterativeJudgment",
+        "profile_name": "Balanced",
+        "maximum_active_slots": 8,
+        "candidate_use_window_size": 12,
+        "minimum_reserved_judgment_calls_per_required_slot": 3,
+        "additional_judgment_call_pool_per_active_slot": 2,
+        "candidate_windows_per_slot": 3,
+        "candidate_waves_per_slot": 3,
+        "read_nominations_per_slot": 3,
+        "followup_query_nominations_per_slot": 2,
+        "navigation_runtime_open": False,
+        "post_analyst_reentry_runtime_open": False,
+        "provisional_maximum_leash": True,
+        "consumption_target": False,
+        "permanently_calibrated": False,
+        "run_id": "run-baseline-identity",
+        "request_id": "request-baseline-identity",
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "prompt_can_override": False,
+        "adapter_can_override": False,
+        "environment_can_override": False,
+        "policy_snapshot_id": "searchos-policy:32f315e7842e95b47b1bc0ef",
+        "policy_snapshot_digest": "32f315e7842e95b47b1bc0efd3f6dd47b608ed58512c3b40ef7cd1c20bf52a59",  # pragma: allowlist secret
+        "replay_identity": "searchos-policy:32f315e7842e95b47b1bc0efd3f6dd47b608ed58512c3b40ef7cd1c20bf52a59",  # pragma: allowlist secret
+    }
+    policy = build_searchos_policy_snapshot(
+        run_id="run-baseline-identity",
+        request_id="request-baseline-identity",
+        profile_name="Balanced",
+    )
+    assert policy == expected_policy
+    assert searchos_policy_snapshot_ref(expected_policy)["policy_snapshot_digest"] == expected_policy[
+        "policy_snapshot_digest"
+    ]
+    state = build_searchos_initial_state(
+        run_id="run-baseline-identity",
+        request_id="request-baseline-identity",
+        answer_contract_ref=_ref("answer_contract", "baseline"),
+        policy_snapshot=policy,
+        active_slots=[
+            {
+                "slot_id": "slot-baseline",
+                "component_ref": _ref("component", "baseline"),
+                "source_obligation_ref": _ref("source_obligation", "baseline"),
+                "requirement_posture": "required",
+            }
+        ],
+        initial_candidate_state_ref=_ref("candidate_state", "baseline"),
+    )
+    assert state["state_digest"] == "2b16a41f9d1b981ce14a46ed28e4964d3ea68ef92a58fb29e3ad28405d88af41"  # pragma: allowlist secret
+    assert state["state_id"] == "searchos-state:2b16a41f9d1b981ce14a46ed"
+    assert state["replay_identity"] == (
+        "searchos-state:2b16a41f9d1b981ce14a46ed28e4964d3ea68ef92a58fb29e3ad28405d88af41"  # pragma: allowlist secret
+    )
+    assert set(state) == {
+        "schema_version",
+        "owner",
+        "run_id",
+        "request_id",
+        "answer_contract_ref",
+        "policy_snapshot_ref",
+        "policy_snapshot",
+        "initial_candidate_state_ref",
+        "current_candidate_state_ref",
+        "iteration_candidate_set_refs",
+        "active_slot_ids",
+        "required_slot_ids",
+        "optional_slot_ids",
+        "slots_by_id",
+        "budget",
+        "semantic_handoff_refs",
+        "readiness_projection_ref",
+        "required_needs_block_ref",
+        "comprehensive_recovery_runtime_open",
+        "known_url_read_runtime_open",
+        "search_attached_content_custody_runtime_open",
+        "whole_run_stopping_runtime_open",
+        "canonical_state",
+        "trace_only",
+        "storage_only",
+        "state_id",
+        "state_digest",
+        "replay_identity",
+    }
+    assert validate_searchos_state(state) == state
+    assert "navigation" not in state
+    assert not any("navigation" in key for key in state["slots_by_id"]["slot-baseline"])
+
+
+def test_canonical_boundary_policy_validator_rejects_partial_or_contradictory_limits() -> None:
+    closed = build_searchos_policy_snapshot(
+        run_id="run-1", request_id="request-1", profile_name="Balanced"
+    )
+    with pytest.raises(SearchOSRuntimeError, match="closed navigation policy"):
+        searchos_policy_snapshot_ref(_refresh_policy({**closed, "navigation_max_depth": 2}))
+    opened = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name="Balanced",
+        navigation_runtime_open=True,
+    )
+    partial = deepcopy(opened)
+    partial.pop("navigation_edges_per_run")
+    with pytest.raises(SearchOSRuntimeError, match="opened navigation policy"):
+        searchos_policy_snapshot_ref(_refresh_policy(partial))
+    with pytest.raises(SearchOSRuntimeError, match="opened navigation policy"):
+        searchos_policy_snapshot_ref(_refresh_policy({**opened, "navigation_max_depth": 99}))
 
 
 def test_navigation_judgment_is_exact_ref_only_and_pending_is_zero_charge() -> None:
@@ -626,7 +919,6 @@ def test_missing_ephemeral_binding_is_recoverable_and_advances_the_window() -> N
     ("exhaustion", "reason"),
     [
         ("depth", "navigation_depth_limit_exhausted"),
-        ("cycle", "navigation_ancestor_cycle"),
         ("selection", "navigation_selection_limit_exhausted"),
         ("edge", "navigation_run_edge_limit_exhausted"),
         ("read", "navigation_read_nomination_limit_exhausted"),
@@ -643,13 +935,14 @@ def test_executor_fails_closed_at_every_policy_and_relationship_boundary(
     option = NavigationOption.from_dict(state["navigation"]["options_by_id"][option_id])
     policy = state["policy_snapshot"]
     if exhaustion == "depth":
-        option = replace(option, child_depth=policy["navigation_max_depth"] + 1)
-    elif exhaustion == "cycle":
         option = replace(
             option,
-            ancestor_physical_identity_digests=(
-                option.destination_binding_ref["physical_identity_digest"],
-            ),
+            child_depth=policy["navigation_max_depth"] + 1,
+            bounded_relationship_context={
+                **option.bounded_relationship_context,
+                "parent_depth": policy["navigation_max_depth"],
+                "child_depth": policy["navigation_max_depth"] + 1,
+            },
         )
     elif exhaustion == "selection":
         slot["navigation_selection_count"] = policy["navigation_selections_per_slot"]
@@ -662,7 +955,7 @@ def test_executor_fails_closed_at_every_policy_and_relationship_boundary(
         slot["read_nomination_count"] = policy["read_nominations_per_slot"]
     else:
         slot["custody_refs"] = []
-    if exhaustion in {"depth", "cycle"}:
+    if exhaustion == "depth":
         option_value = option.to_dict()
         del state["navigation"]["options_by_id"][option_id]
         state["navigation"]["options_by_id"][option_value["navigation_option_id"]] = option_value
@@ -691,6 +984,47 @@ def test_executor_fails_closed_at_every_policy_and_relationship_boundary(
         "navigation_selection_count"
     ]
     assert len(after["navigation"]["edges"]) == before_edges
+
+
+def test_canonical_boundary_executor_rejects_corrupted_cycle_material() -> None:
+    pending, store, decision, candidate = _pending_navigation()
+    kernel = RunKernel.start(run_id="run-1", request_id="request-1")
+    kernel.state.searchos_state = pending
+    action = kernel.authorize_searchos_navigation_selection(
+        judgment_decision_ref=decision,
+        navigation_candidate=candidate,
+    )
+    corrupted = deepcopy(pending)
+    original = deepcopy(next(iter(corrupted["navigation"]["options_by_id"].values())))
+    original["ancestor_physical_identity_digests"] = [
+        original["destination_binding_ref"]["physical_identity_digest"]
+    ]
+    impossible = _redigest_option(original)
+    corrupt_candidate = _candidate_ref_from_option(impossible)
+    corrupted["navigation"]["options_by_id"] = {
+        impossible["navigation_option_id"]: impossible
+    }
+    corrupted["slots_by_id"]["slot-1"]["pending_navigation_candidate_ref"] = corrupt_candidate
+    corrupted = _refresh_state(corrupted)
+    corrupt_action = replace(
+        action,
+        inputs={
+            **action.inputs,
+            "expected_searchos_state_ref": {
+                "state_id": corrupted["state_id"],
+                "state_digest": corrupted["state_digest"],
+            },
+            "navigation_candidate_ref": corrupt_candidate,
+            "navigation_option_ref": corrupt_candidate["navigation_option_ref"],
+        },
+    )
+    observation = execute_navigation_selection(
+        action=corrupt_action,
+        authorized_state_snapshot=corrupted,
+        locator_store=store,
+    )
+    assert observation.payload["outcome"] == NAVIGATION_SELECTION_AUTHORITY_REJECTED
+    assert observation.payload["reason"] == "navigation_option_not_current"
 
 
 def test_revision_binding_and_current_state_tampering_fail_closed() -> None:

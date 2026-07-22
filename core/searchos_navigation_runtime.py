@@ -39,9 +39,11 @@ _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _URL_RE = re.compile(r"(?i)(?:\bhttps?://|\bwww\.)")
 _EMAIL_RE = re.compile(r"(?i)\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
 _HOST_RE = re.compile(
-    r"(?i)(?:^|\s)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
-    r"[a-z]{2,63}(?=$|\s|[/:])"
+    r"(?i)(?<![a-z0-9-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z]{2,63}\.?(?=$|[^a-z0-9-])"
 )
+_IPV4_RE = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
+_BINDING_ID_RE = re.compile(r"navigation-binding:[0-9a-f]{24}:[0-9a-f]{24}")
 _QUERY_RE = re.compile(r"(?:\?|\b[a-zA-Z0-9_-]{1,40}=\S*)")
 _CREDENTIAL_RE = re.compile(
     r"(?i)(?:\b(?:password|passwd|token|secret|api[_-]?key|credential)s?\b|"
@@ -83,7 +85,10 @@ class NavigationOption:
         object.__setattr__(
             self,
             "bounded_relationship_context",
-            _json_mapping(self.bounded_relationship_context),
+            _validate_relationship_context(
+                self.bounded_relationship_context,
+                child_depth=self.child_depth,
+            ),
         )
         if self.disposition not in {
             NAVIGATION_SELECTABLE,
@@ -91,12 +96,30 @@ class NavigationOption:
             NAVIGATION_BINDING_UNAVAILABLE,
         }:
             raise NavigationRuntimeError("navigation_option_disposition_invalid")
-        if self.child_depth <= 0 or self.revision <= 0 or self.admission_ordinal <= 0:
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            for value in (self.child_depth, self.revision, self.admission_ordinal)
+        ):
             raise NavigationRuntimeError("navigation_option_positive_fields_invalid")
+        active = _json_mapping(self.active_selection_ref)
+        if self.disposition == NAVIGATION_PENDING_EXECUTION:
+            if set(active) != {"navigation_selection_id", "navigation_selection_digest"}:
+                raise NavigationRuntimeError("navigation_active_selection_ref_invalid")
+            selection_digest = _digest_token(
+                active.get("navigation_selection_digest"), "navigation_selection_digest"
+            )
+            if active.get("navigation_selection_id") != (
+                f"searchos-navigation-selection:{selection_digest[:24]}"
+            ):
+                raise NavigationRuntimeError("navigation_active_selection_ref_invalid")
+        elif active:
+            raise NavigationRuntimeError("navigation_active_selection_ref_invalid")
+        object.__setattr__(self, "active_selection_ref", active)
         _token(self.slot_id, "slot_id")
         for digest in self.ancestor_physical_identity_digests:
             _digest_token(digest, "ancestor_physical_identity_digest")
-        _ensure_url_free(self.bounded_relationship_context, "relationship_context")
+        if self.destination_binding_ref["physical_identity_digest"] in self.ancestor_physical_identity_digests:
+            raise NavigationRuntimeError("navigation_option_ancestor_cycle")
 
     def to_dict(self) -> dict[str, Any]:
         identity_core = {
@@ -192,7 +215,8 @@ class EphemeralNavigationLocatorStore:
         binding = _binding_ref(
             normalized,
             binding_id=(
-                f"navigation-binding:{self.run_id}:{self.request_id}:{normalized['full_destination_digest'][:24]}"
+                f"navigation-binding:{_digest({'run_id': self.run_id, 'request_id': self.request_id})[:24]}:"
+                f"{normalized['full_destination_digest'][:24]}"
             ),
         )
         binding_id = binding["destination_binding_id"]
@@ -363,6 +387,7 @@ def scrub_navigation_relationship_label(value: str) -> str:
         or bool(_URL_RE.search(compact))
         or bool(_EMAIL_RE.search(compact))
         or bool(_HOST_RE.search(compact))
+        or bool(_IPV4_RE.search(compact))
         or bool(_QUERY_RE.search(compact))
         or bool(_CREDENTIAL_RE.search(compact))
         or _path_like(compact)
@@ -513,6 +538,7 @@ def admit_navigation_options_from_markdown(
         _digest_token(digest, "ancestor_physical_identity_digest")
     if parent_normalized["physical_identity_digest"] not in ancestors:
         ancestors.append(str(parent_normalized["physical_identity_digest"]))
+    blocked_physical = set(ancestors)
     options = _mapping(navigation.get("options_by_id"))
     existing_physical = {
         _mapping(_mapping(item).get("destination_binding_ref")).get("physical_identity_digest")
@@ -524,6 +550,9 @@ def admit_navigation_options_from_markdown(
     try:
         for occurrence in extracted["occurrences"]:
             normalized = _mapping(occurrence["normalized_destination"])
+            if normalized["physical_identity_digest"] in blocked_physical:
+                _increment(extracted["rejection_counts"], "navigation_ancestor_cycle")
+                continue
             if normalized["physical_identity_digest"] in existing_physical:
                 _increment(
                     extracted["rejection_counts"],
@@ -1182,7 +1211,33 @@ def _valid_ascii_hostname(value: str) -> bool:
 
 def _path_like(value: str) -> bool:
     compact = value.strip()
-    return compact.startswith(("/", "\\", "./", "../", "~/")) or bool(re.search(r"(?:^|\s)(?:\.\.?/|/)[^\s]+", compact))
+    return bool(re.search(r"(?i)(?:[/\\]|%2f|%5c)", compact))
+
+
+def _validate_relationship_context(value: Mapping[str, Any], *, child_depth: int) -> dict[str, Any]:
+    safe = _json_mapping(value)
+    if set(safe) != {"parent_depth", "child_depth", "source_link_ordinal", "relationship_label"}:
+        raise NavigationRuntimeError("navigation_relationship_context_invalid")
+    parent = safe.get("parent_depth")
+    child = safe.get("child_depth")
+    ordinal = safe.get("source_link_ordinal")
+    if (
+        not isinstance(parent, int)
+        or isinstance(parent, bool)
+        or not isinstance(child, int)
+        or isinstance(child, bool)
+        or not isinstance(ordinal, int)
+        or isinstance(ordinal, bool)
+        or parent < 0
+        or child != parent + 1
+        or child != child_depth
+        or ordinal <= 0
+    ):
+        raise NavigationRuntimeError("navigation_relationship_context_invalid")
+    label = safe.get("relationship_label")
+    if not isinstance(label, str) or label != scrub_navigation_relationship_label(label):
+        raise NavigationRuntimeError("navigation_relationship_label_not_canonical")
+    return safe
 
 
 def _binding_ref(normalized: Mapping[str, Any], *, binding_id: str) -> dict[str, Any]:
@@ -1224,7 +1279,9 @@ def _validate_binding_ref(value: Mapping[str, Any]) -> dict[str, Any]:
     }
     if safe.get("destination_binding_digest") != _digest(core):
         raise NavigationRuntimeError("navigation_binding_ref_invalid")
-    _token(safe.get("destination_binding_id"), "destination_binding_id")
+    binding_id = _token(safe.get("destination_binding_id"), "destination_binding_id")
+    if not _BINDING_ID_RE.fullmatch(binding_id) or not binding_id.endswith(core["full_destination_digest"][:24]):
+        raise NavigationRuntimeError("navigation_binding_ref_invalid")
     return deepcopy(safe)
 
 

@@ -13,6 +13,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
+from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from core.discovery_source_result import normalize_discovery_result_url
@@ -92,9 +93,6 @@ class SearchOSPolicyProfileV1:
     candidate_waves_per_slot: int
     read_nominations_per_slot: int
     followup_query_nominations_per_slot: int
-    navigation_max_depth: int
-    navigation_selections_per_slot: int
-    navigation_edges_per_run: int
     maximum_active_slots: int = MAXIMUM_ACTIVE_SLOTS
     candidate_use_window_size: int = CANDIDATE_USE_WINDOW_SIZE
     navigation_runtime_open: bool = False
@@ -115,9 +113,6 @@ class SearchOSPolicyProfileV1:
             "candidate_waves_per_slot": self.candidate_waves_per_slot,
             "read_nominations_per_slot": self.read_nominations_per_slot,
             "followup_query_nominations_per_slot": (self.followup_query_nominations_per_slot),
-            "navigation_max_depth": self.navigation_max_depth,
-            "navigation_selections_per_slot": self.navigation_selections_per_slot,
-            "navigation_edges_per_run": self.navigation_edges_per_run,
             "navigation_runtime_open": self.navigation_runtime_open,
             "post_analyst_reentry_runtime_open": (self.post_analyst_reentry_runtime_open),
             "provisional_maximum_leash": True,
@@ -135,9 +130,6 @@ _POLICY_PROFILES = {
         candidate_waves_per_slot=2,
         read_nominations_per_slot=2,
         followup_query_nominations_per_slot=1,
-        navigation_max_depth=1,
-        navigation_selections_per_slot=1,
-        navigation_edges_per_run=8,
     ),
     SearchOSProfileName.BALANCED: SearchOSPolicyProfileV1(
         profile_name=SearchOSProfileName.BALANCED,
@@ -147,9 +139,6 @@ _POLICY_PROFILES = {
         candidate_waves_per_slot=3,
         read_nominations_per_slot=3,
         followup_query_nominations_per_slot=2,
-        navigation_max_depth=2,
-        navigation_selections_per_slot=2,
-        navigation_edges_per_run=16,
     ),
     SearchOSProfileName.DEEP: SearchOSPolicyProfileV1(
         profile_name=SearchOSProfileName.DEEP,
@@ -159,11 +148,26 @@ _POLICY_PROFILES = {
         candidate_waves_per_slot=4,
         read_nominations_per_slot=4,
         followup_query_nominations_per_slot=3,
-        navigation_max_depth=3,
-        navigation_selections_per_slot=3,
-        navigation_edges_per_run=24,
     ),
 }
+
+_NAVIGATION_LIMITS_BY_PROFILE = MappingProxyType({
+    SearchOSProfileName.FAST: MappingProxyType({
+        "navigation_max_depth": 1,
+        "navigation_selections_per_slot": 1,
+        "navigation_edges_per_run": 8,
+    }),
+    SearchOSProfileName.BALANCED: MappingProxyType({
+        "navigation_max_depth": 2,
+        "navigation_selections_per_slot": 2,
+        "navigation_edges_per_run": 16,
+    }),
+    SearchOSProfileName.DEEP: MappingProxyType({
+        "navigation_max_depth": 3,
+        "navigation_selections_per_slot": 3,
+        "navigation_edges_per_run": 24,
+    }),
+})
 
 
 def searchos_policy_profile(
@@ -186,7 +190,6 @@ def build_searchos_policy_snapshot(
     profile = searchos_policy_profile(profile_name)
     core = {
         **profile.to_dict(),
-        "navigation_runtime_open": bool(navigation_runtime_open),
         "run_id": _token(run_id, "run_id"),
         "request_id": _token(request_id, "request_id"),
         "canonical_state": True,
@@ -196,6 +199,11 @@ def build_searchos_policy_snapshot(
         "adapter_can_override": False,
         "environment_can_override": False,
     }
+    if navigation_runtime_open:
+        core.update(
+            navigation_runtime_open=True,
+            **_NAVIGATION_LIMITS_BY_PROFILE[profile.profile_name],
+        )
     digest = _digest(core)
     return {
         **core,
@@ -2181,7 +2189,7 @@ def _readiness_failure_reason(slot: Mapping[str, Any], outcome: Mapping[str, Any
 
 
 def _validated_policy_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
-    return _validated_digest_envelope(
+    safe = _validated_digest_envelope(
         value,
         schema_version=SEARCHOS_POLICY_SCHEMA_VERSION,
         digest_field="policy_snapshot_digest",
@@ -2189,6 +2197,18 @@ def _validated_policy_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
         identity_prefix="searchos-policy",
         label="SearchOS policy",
     )
+    fields = set(next(iter(_NAVIGATION_LIMITS_BY_PROFILE.values())))
+    present = fields.intersection(safe)
+    if safe.get("navigation_runtime_open") is True:
+        try:
+            limits = _NAVIGATION_LIMITS_BY_PROFILE[SearchOSProfileName(str(safe.get("profile_name")))]
+        except (KeyError, ValueError) as exc:
+            raise SearchOSRuntimeError("navigation policy profile is invalid") from exc
+        if present != fields or any(safe.get(key) != value for key, value in limits.items()):
+            raise SearchOSRuntimeError("opened navigation policy limits are invalid")
+    elif safe.get("navigation_runtime_open") is not False or present:
+        raise SearchOSRuntimeError("closed navigation policy contains navigation limits")
+    return safe
 
 
 def _validated_candidate_use_option(value: Mapping[str, Any]) -> dict[str, Any]:
