@@ -280,7 +280,7 @@ def test_origin_port_query_and_effective_base_policy_fail_closed() -> None:
 
 
 def test_query_is_rejected_before_registry_and_never_stripped() -> None:
-    secret = "phase_unique_query_secret_4f57"
+    secret = "phase_unique_query_secret_4f57"  # pragma: allowlist secret
     draft = _draft(f"[secret](https://example.com/path?token={secret})")
     registry = SearchOSNavigationDestinationRegistry(
         run_id="run-1", request_id="request-1"
@@ -768,7 +768,7 @@ def test_eight_required_slots_can_each_represent_depth_two() -> None:
 
 
 def test_canonical_navigation_surfaces_are_url_free_before_custody() -> None:
-    secret_path = "phase_unique_raw_path_96ad"
+    secret_path = "phase_unique_raw_path_96ad"  # pragma: allowlist secret
     raw_href = f"https://example.com/{secret_path}"
     _, _, proposal = _proposal(f"[destination]({raw_href})")
     serialized = json.dumps(proposal, sort_keys=True)

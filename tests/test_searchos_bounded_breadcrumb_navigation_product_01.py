@@ -630,7 +630,7 @@ def test_n1_navigation_reuses_one_physical_destination_and_reenters_citation_pat
         "https://alpha.example/parent-2",
     ]
     destination = "https://alpha.example/current"
-    rejected_query_secret = "PHASE_NAV_QUERY_SECRET_91B7"
+    rejected_query_secret = "PHASE_NAV_QUERY_SECRET_91B7"  # pragma: allowlist secret
     parent_markdown = (
         "This page does not answer the question. "
         "[Current source](/current) "
@@ -1077,7 +1077,9 @@ def test_navigation_ledger_failure_rolls_back_without_durable_url_or_retry(
 ) -> None:
     parent = "https://alpha.example/parent"
     destination = "https://alpha.example/ledger-failure-destination"
-    rejected_query_secret = "PHASE_LEDGER_ROLLBACK_SECRET_27D4"
+    rejected_query_secret = (
+        "PHASE_LEDGER_ROLLBACK_SECRET_27D4"  # pragma: allowlist secret
+    )
 
     def fail_navigation_ledger_admission(**_kwargs):
         raise RuntimeError("injected_navigation_ledger_admission_failure")
