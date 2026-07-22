@@ -26,6 +26,7 @@ from core.acquisition_contracts import (
     AcquisitionRequest,
 )
 from core.acquisition_control import (
+    SEARCHOS_NAVIGATION_ORIGIN,
     AcquisitionCapabilityDecisionObservationV1,
     AcquisitionControlError,
     AcquisitionCustodyAuthorizationV1,
@@ -337,6 +338,7 @@ def execute_authorized_acquisition_work_order(
     route_decision: ProviderRouteDecision,
     transports: AcquisitionTransports | None = None,
     before_transport: Callable[[], None] | None = None,
+    transient_destination_resolver: Callable[[], str] | None = None,
 ) -> AuthorizedAcquisitionExecutionRuntimeResult:
     """Guard and dispatch exactly one current, selected acquisition order."""
 
@@ -384,6 +386,11 @@ def execute_authorized_acquisition_work_order(
         route_observation=route_observation,
         route_decision=route_decision,
     )
+    if (
+        work_order.origin != SEARCHOS_NAVIGATION_ORIGIN
+        and transient_destination_resolver is not None
+    ):
+        raise AcquisitionControlError("candidate_origin_destination_resolver_forbidden")
     request = _materialize_acquisition_request(work_order, route_decision)
     deferred_error: RunCapExceeded | None = None
     execution_result: AcquisitionExecutionResult | None = None
@@ -411,6 +418,21 @@ def execute_authorized_acquisition_work_order(
         claim_execution_authorization()
 
     try:
+        if work_order.origin == SEARCHOS_NAVIGATION_ORIGIN:
+            if transient_destination_resolver is None:
+                raise AcquisitionControlError("navigation_destination_resolver_missing")
+            from core.searchos_navigation_runtime import (
+                validate_navigation_destination_for_binding,
+            )
+
+            request = _materialize_acquisition_request(
+                work_order,
+                route_decision,
+                transient_selected_url=validate_navigation_destination_for_binding(
+                    transient_destination_resolver(),
+                    work_order.destination_binding_ref,
+                ),
+            )
         try:
             execution_result = dispatch_acquisition(
                 request,
@@ -431,7 +453,10 @@ def execute_authorized_acquisition_work_order(
         if not transport_claimed:
             claim_execution_authorization()
         artifact_refs = tuple(
-            _artifact_ref(artifact)
+            _artifact_ref(
+                artifact,
+                omit_locator=work_order.origin == SEARCHOS_NAVIGATION_ORIGIN,
+            )
             for artifact in execution_result.artifacts
         )
         execution_observation = AcquisitionExecutionObservationV1.create(
@@ -456,7 +481,9 @@ def execute_authorized_acquisition_work_order(
         )
     except Exception:
         if not transport_claimed:
-            raise
+            if work_order.origin != SEARCHOS_NAVIGATION_ORIGIN:
+                raise
+            claim_execution_authorization()
         attempted = (
             execution_result.provider_calls_attempted
             if execution_result is not None
@@ -500,6 +527,127 @@ def execute_authorized_acquisition_work_order(
         ),
         deferred_error=deferred_error,
     )
+
+
+def execute_acquisition_work_order_to_terminal(
+    *,
+    run_kernel: RunKernel,
+    proposal: AcquisitionNeedProposalV1,
+    available_providers: Mapping[str, object],
+    transports: AcquisitionTransports | None = None,
+    before_transport: Callable[[], None] | None = None,
+    transient_destination_resolver: Callable[[], str] | None = None,
+) -> dict[str, Any]:
+    """Run the one installed proposal-to-terminal acquisition sequence."""
+
+    capability_action = run_kernel.authorize_acquisition_capability_decision(
+        proposal=proposal
+    )
+    capability_result = execute_acquisition_capability_decision_action(
+        capability_action,
+        proposal=proposal,
+        authority_snapshot=run_kernel.acquisition_authority_snapshot(),
+        acquisition_control_state=run_kernel.state.acquisition_control_state,
+    )
+    run_kernel.reduce(capability_result.observation)
+    decision = capability_result.decision
+    if decision.decision_status != "accepted":
+        return {
+            "status": "capability_blocked",
+            "decision": decision,
+            "failure_code": decision.block_code,
+            "provider_calls_attempted": 0,
+            "provider_calls_completed": 0,
+        }
+    work_action = run_kernel.authorize_acquisition_work_order_admission(
+        capability_decision_ref=decision.ref()
+    )
+    work_result = execute_acquisition_work_order_admission_action(
+        work_action,
+        proposal=proposal,
+        decision=decision,
+        acquisition_control_state=run_kernel.state.acquisition_control_state,
+    )
+    run_kernel.reduce(work_result.observation)
+    work_order = work_result.work_order
+    availability = {
+        "linkup": bool(available_providers.get("linkup")),
+        "tavily": bool(available_providers.get("tavily")),
+    }
+    route_action = run_kernel.authorize_acquisition_route(
+        work_order_ref=work_order.ref(),
+        provider_availability=availability,
+    )
+    route_result = execute_acquisition_route_action(
+        route_action,
+        work_order=work_order,
+        available_providers=availability,
+        acquisition_control_state=run_kernel.state.acquisition_control_state,
+    )
+    run_kernel.reduce(route_result.observation)
+    route = route_result.route_observation
+    if route.terminal_status != "selected":
+        terminal_action = run_kernel.authorize_acquisition_terminal_reduction(
+            route_observation_ref=route.ref()
+        )
+        terminal_result = execute_acquisition_terminal_reduction_action(
+            terminal_action,
+            acquisition_control_state=run_kernel.state.acquisition_control_state,
+            work_order=work_order,
+            route_observation=route,
+        )
+        run_kernel.reduce(terminal_result.observation)
+        return {
+            "status": "route_blocked",
+            "decision": decision,
+            "work_order": work_order,
+            "route_observation": route,
+            "terminal_receipt": terminal_result.terminal_receipt,
+            "failure_code": route.block_code,
+            "provider_calls_attempted": 0,
+            "provider_calls_completed": 0,
+        }
+    execution_action = run_kernel.authorize_acquisition_execution(
+        work_order_ref=work_order.ref(),
+        route_observation_ref=route.ref(),
+    )
+    execution_result = execute_authorized_acquisition_work_order(
+        execution_action,
+        run_kernel=run_kernel,
+        work_order=work_order,
+        route_observation=route,
+        route_decision=route_result.route_decision,
+        transports=transports,
+        before_transport=before_transport,
+        transient_destination_resolver=transient_destination_resolver,
+    )
+    run_kernel.reduce(execution_result.observation)
+    execution_observation = execution_result.execution_observation
+    terminal_action = run_kernel.authorize_acquisition_terminal_reduction(
+        execution_observation_ref=execution_observation.ref()
+    )
+    terminal_result = execute_acquisition_terminal_reduction_action(
+        terminal_action,
+        acquisition_control_state=run_kernel.state.acquisition_control_state,
+        work_order=work_order,
+        route_observation=route,
+        execution_observation=execution_observation,
+    )
+    run_kernel.reduce(terminal_result.observation)
+    execution_result.raise_deferred_error()
+    execution = execution_result.execution_result
+    return {
+        "status": execution_observation.terminal_status,
+        "decision": decision,
+        "work_order": work_order,
+        "route_observation": route,
+        "execution_result": execution,
+        "execution_observation": execution_observation,
+        "terminal_receipt": terminal_result.terminal_receipt,
+        "failure_code": execution.failure_code or execution.block_code,
+        "provider_calls_attempted": execution.provider_calls_attempted,
+        "provider_calls_completed": execution.provider_calls_completed,
+    }
 
 
 def execute_acquisition_terminal_reduction_action(
@@ -832,6 +980,8 @@ def _require_terminal_route_lineage(
 def _materialize_acquisition_request(
     work_order: AcquisitionWorkOrderV1,
     route_decision: ProviderRouteDecision,
+    *,
+    transient_selected_url: str | None = None,
 ) -> AcquisitionRequest:
     bounds = dict(work_order.hard_operation_bounds)
     parent_id = _first_parent_id(work_order.parent_acquisition_job_refs)
@@ -842,7 +992,11 @@ def _materialize_acquisition_request(
         route_decision=route_decision,
         parent_acquisition_job_id=parent_id,
         acquisition_lineage_id=str(work_order.source_obligation_ref.get("source_obligation_digest") or ""),
-        selected_urls=tuple(work_order.selected_urls),
+        selected_urls=(
+            (transient_selected_url,)
+            if transient_selected_url is not None
+            else tuple(work_order.selected_urls)
+        ),
         root_url=work_order.root_url,
         render_javascript=False,
         focus_text=(
@@ -873,7 +1027,11 @@ def _materialize_acquisition_request(
     )
 
 
-def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:
+def _artifact_ref(
+    artifact: AcquisitionArtifact,
+    *,
+    omit_locator: bool = False,
+) -> dict[str, Any]:
     core = {
         "kind": artifact.kind.value,
         "acquisition_job_id": artifact.acquisition_job_id,
@@ -882,10 +1040,16 @@ def _artifact_ref(artifact: AcquisitionArtifact) -> dict[str, Any]:
         "provider_variant": artifact.provider_variant,
         "output_type": artifact.output_type,
         "status": artifact.status,
-        "requested_url": artifact.requested_url,
-        "final_url": artifact.final_url,
-        "canonical_url": artifact.canonical_url,
-        "root_url": artifact.root_url,
+        **(
+            {}
+            if omit_locator
+            else {
+                "requested_url": artifact.requested_url,
+                "final_url": artifact.final_url,
+                "canonical_url": artifact.canonical_url,
+                "root_url": artifact.root_url,
+            }
+        ),
         "retained_digest": artifact.retained_digest,
         "retained_character_count": artifact.retained_character_count,
         "url_count": len(artifact.urls),
@@ -1089,6 +1253,7 @@ __all__ = [
     "execute_acquisition_capability_decision_action",
     "execute_acquisition_custody_authorization_action",
     "execute_acquisition_route_action",
+    "execute_acquisition_work_order_to_terminal",
     "execute_acquisition_terminal_reduction_action",
     "execute_acquisition_work_order_admission_action",
     "execute_authorized_acquisition_work_order",

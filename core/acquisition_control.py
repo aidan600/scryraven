@@ -15,6 +15,9 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from core.routing import AcquisitionCapability, acquisition_routing_policy_ref
+from core.searchos_navigation_runtime import (
+    validate_navigation_destination_binding_ref,
+)
 
 ACQUISITION_NEED_PROPOSAL_SCHEMA_VERSION = "acquisition_need_proposal_v1"
 ACQUISITION_CAPABILITY_DECISION_SCHEMA_VERSION = (
@@ -36,6 +39,7 @@ ACQUISITION_CONTROL_STATE_SCHEMA_VERSION = "runkernel_acquisition_control_state_
 PROPOSER_POSTURE = "nonauthoritative_need_proposal"
 WORK_ORDER_AUTHORITY_POSTURE = "acquisition_execution_only"
 PREMIUM_SEQUENTIAL_ACQUISITION = "PREMIUM_SEQUENTIAL_ACQUISITION"
+SEARCHOS_NAVIGATION_ORIGIN = "searchos_navigation"
 
 READ_MATERIAL_SHAPES = frozenset(
     {"full_page_or_unknown", "ordinary_single_page", "explicit_known_url"}
@@ -66,6 +70,8 @@ _PROPOSAL_FIELDS = frozenset(
         "source_obligation_ref",
         "component_ref",
         "requested_material_shape",
+        "origin",
+        "destination_binding_ref",
         "candidate_ref",
         "available_urls",
         "root_url",
@@ -131,6 +137,8 @@ _WORK_ORDER_FIELDS = frozenset(
         "source_obligation_ref",
         "component_ref",
         "authorized_capability",
+        "origin",
+        "destination_binding_ref",
         "candidate_ref",
         "selected_urls",
         "root_url",
@@ -297,6 +305,8 @@ class AcquisitionNeedProposalV1:
     answer_contract_ref: Mapping[str, Any]
     source_obligation_ref: Mapping[str, Any]
     requested_material_shape: str
+    origin: str | None = None
+    destination_binding_ref: Mapping[str, Any] = field(default_factory=dict)
     candidate_ref: Mapping[str, Any] = field(default_factory=dict)
     component_ref: Mapping[str, Any] = field(default_factory=dict)
     available_urls: tuple[str, ...] = ()
@@ -326,6 +336,8 @@ class AcquisitionNeedProposalV1:
         answer_contract_ref: Mapping[str, Any],
         source_obligation_ref: Mapping[str, Any],
         requested_material_shape: str,
+        origin: str | None = None,
+        destination_binding_ref: Mapping[str, Any] | None = None,
         candidate_ref: Mapping[str, Any] | None = None,
         component_ref: Mapping[str, Any] | None = None,
         available_urls: Sequence[str] = (),
@@ -343,6 +355,18 @@ class AcquisitionNeedProposalV1:
         proposal_reason_code: str = "post_discovery_acquisition_need",
         advisory_proposed_capability: str | None = None,
     ) -> "AcquisitionNeedProposalV1":
+        canonical_candidate_ref = _candidate_ref(candidate_ref)
+        canonical_urls = [
+            _required_url(url, "proposal_url_invalid") for url in available_urls
+        ]
+        origin_fields = _acquisition_origin_fields(
+            origin=origin,
+            destination_binding_ref=destination_binding_ref,
+            candidate_ref=canonical_candidate_ref,
+            available_urls=canonical_urls,
+            root_url=root_url,
+            requested_material_shape=requested_material_shape,
+        )
         core = {
             "schema_version": ACQUISITION_NEED_PROPOSAL_SCHEMA_VERSION,
             "run_id": _required_token(run_id, "proposal_run_id_missing"),
@@ -363,10 +387,9 @@ class AcquisitionNeedProposalV1:
                 "requested_material_shape_missing",
                 limit=100,
             ).casefold(),
-            "candidate_ref": _candidate_ref(candidate_ref),
-            "available_urls": [
-                _required_url(url, "proposal_url_invalid") for url in available_urls
-            ],
+            **origin_fields,
+            "candidate_ref": canonical_candidate_ref,
+            "available_urls": canonical_urls,
             "root_url": (
                 _required_url(root_url, "proposal_root_url_invalid")
                 if root_url
@@ -432,8 +455,8 @@ class AcquisitionNeedProposalV1:
         if raw.get("producer_posture") != PROPOSER_POSTURE:
             raise AcquisitionControlError("proposal_posture_invalid")
         core = {
-            key: _json_clone(raw.get(key))
-            for key in _PROPOSAL_FIELDS
+            key: _json_clone(item)
+            for key, item in raw.items()
             if key not in {"proposal_id", "proposal_digest"}
         }
         expected_digest = stable_json_digest(core)
@@ -453,6 +476,19 @@ class AcquisitionNeedProposalV1:
         if material_shape != material_shape.casefold():
             raise AcquisitionControlError("requested_material_shape_not_canonical")
         _validate_material_shape(material_shape)
+        candidate_ref = _candidate_ref(raw.get("candidate_ref"))
+        available_urls = tuple(
+            _required_url(url, "proposal_url_invalid")
+            for url in _sequence(raw.get("available_urls"))
+        )
+        origin_fields = _acquisition_origin_fields(
+            origin=raw.get("origin"),
+            destination_binding_ref=raw.get("destination_binding_ref"),
+            candidate_ref=candidate_ref,
+            available_urls=available_urls,
+            root_url=raw.get("root_url"),
+            requested_material_shape=material_shape,
+        )
         proposal = cls(
             proposal_id=expected_id,
             proposal_digest=expected_digest,
@@ -469,11 +505,12 @@ class AcquisitionNeedProposalV1:
             ),
             component_ref=_component_ref(raw.get("component_ref")),
             requested_material_shape=material_shape,
-            candidate_ref=_candidate_ref(raw.get("candidate_ref")),
-            available_urls=tuple(
-                _required_url(url, "proposal_url_invalid")
-                for url in _sequence(raw.get("available_urls"))
+            origin=origin_fields.get("origin"),
+            destination_binding_ref=_json_clone(
+                origin_fields.get("destination_binding_ref") or {}
             ),
+            candidate_ref=candidate_ref,
+            available_urls=available_urls,
             root_url=(
                 _required_url(raw.get("root_url"), "proposal_root_url_invalid")
                 if raw.get("root_url")
@@ -513,8 +550,8 @@ class AcquisitionNeedProposalV1:
         )
         canonical_payload = proposal.to_dict()
         canonical_core = {
-            key: _json_clone(canonical_payload.get(key))
-            for key in _PROPOSAL_FIELDS
+            key: _json_clone(item)
+            for key, item in canonical_payload.items()
             if key not in {"proposal_id", "proposal_digest"}
         }
         canonical_digest = stable_json_digest(canonical_core)
@@ -544,6 +581,14 @@ class AcquisitionNeedProposalV1:
                 "source_obligation_ref": self.source_obligation_ref,
                 "component_ref": self.component_ref,
                 "requested_material_shape": self.requested_material_shape,
+                **(
+                    {
+                        "origin": self.origin,
+                        "destination_binding_ref": self.destination_binding_ref,
+                    }
+                    if self.origin is not None
+                    else {}
+                ),
                 "candidate_ref": self.candidate_ref,
                 "available_urls": list(self.available_urls),
                 "root_url": self.root_url,
@@ -834,6 +879,8 @@ class AcquisitionWorkOrderV1:
     parent_acquisition_job_refs: tuple[Mapping[str, Any], ...]
     routing_policy_ref: Mapping[str, Any]
     operation_identity_key: str
+    origin: str | None = None
+    destination_binding_ref: Mapping[str, Any] = field(default_factory=dict)
     duplicate_check: str = "clear"
     exhaustion_check: str = "clear"
     schema_version: str = ACQUISITION_WORK_ORDER_SCHEMA_VERSION
@@ -868,6 +915,25 @@ class AcquisitionWorkOrderV1:
             raise AcquisitionControlError("work_order_duplicate_check_invalid")
         if raw.get("exhaustion_check") != "clear":
             raise AcquisitionControlError("work_order_exhaustion_check_invalid")
+        candidate_ref = _candidate_ref(raw.get("candidate_ref"))
+        selected_urls = tuple(
+            _required_url(url, "work_order_url_invalid")
+            for url in _sequence(raw.get("selected_urls"))
+        )
+        origin_fields = _acquisition_origin_fields(
+            origin=raw.get("origin"),
+            destination_binding_ref=raw.get("destination_binding_ref"),
+            candidate_ref=candidate_ref,
+            available_urls=selected_urls,
+            root_url=raw.get("root_url"),
+            requested_material_shape=(
+                "explicit_known_url"
+                if raw.get("origin") == SEARCHOS_NAVIGATION_ORIGIN
+                else "ordinary_single_page"
+            ),
+        )
+        if origin_fields and raw.get("authorized_capability") != AcquisitionCapability.READ.value:
+            raise AcquisitionControlError("navigation_work_order_capability_invalid")
         return cls(
             work_order_id=expected_id,
             work_order_digest=digest,
@@ -886,11 +952,8 @@ class AcquisitionWorkOrderV1:
                 raw.get("authorized_capability"),
                 "work_order_capability_missing",
             ),
-            candidate_ref=_candidate_ref(raw.get("candidate_ref")),
-            selected_urls=tuple(
-                _required_url(url, "work_order_url_invalid")
-                for url in _sequence(raw.get("selected_urls"))
-            ),
+            candidate_ref=candidate_ref,
+            selected_urls=selected_urls,
             root_url=(
                 _required_url(raw.get("root_url"), "work_order_root_invalid")
                 if raw.get("root_url")
@@ -914,6 +977,10 @@ class AcquisitionWorkOrderV1:
                 "operation_identity_key_missing",
                 limit=180,
             ),
+            origin=origin_fields.get("origin"),
+            destination_binding_ref=_json_clone(
+                origin_fields.get("destination_binding_ref") or {}
+            ),
             duplicate_check=_required_token(
                 raw.get("duplicate_check"), "duplicate_check_missing"
             ),
@@ -936,6 +1003,14 @@ class AcquisitionWorkOrderV1:
                 "source_obligation_ref": self.source_obligation_ref,
                 "component_ref": self.component_ref,
                 "authorized_capability": self.authorized_capability,
+                **(
+                    {
+                        "origin": self.origin,
+                        "destination_binding_ref": self.destination_binding_ref,
+                    }
+                    if self.origin is not None
+                    else {}
+                ),
                 "candidate_ref": self.candidate_ref,
                 "selected_urls": list(self.selected_urls),
                 "root_url": self.root_url,
@@ -2115,6 +2190,16 @@ def build_acquisition_work_order(
         "source_obligation_ref": _json_clone(proposal.source_obligation_ref),
         "component_ref": _json_clone(proposal.component_ref),
         "authorized_capability": decision.derived_capability,
+        **(
+            {
+                "origin": proposal.origin,
+                "destination_binding_ref": _json_clone(
+                    proposal.destination_binding_ref
+                ),
+            }
+            if proposal.origin is not None
+            else {}
+        ),
         "candidate_ref": _json_clone(proposal.candidate_ref),
         "selected_urls": list(proposal.available_urls),
         "root_url": proposal.root_url,
@@ -2323,10 +2408,23 @@ def _derive_capability_from_material(
     )
     explicit_known_url_read = bool(
         shape == "explicit_known_url" and not proposal.candidate_ref
+        and (
+            len(proposal.available_urls) == 1
+            or (
+                proposal.origin == SEARCHOS_NAVIGATION_ORIGIN
+                and bool(proposal.destination_binding_ref)
+            )
+        )
     )
     if (
         shape in READ_MATERIAL_SHAPES
-        and url_count == 1
+        and (
+            url_count == 1
+            or (
+                proposal.origin == SEARCHOS_NAVIGATION_ORIGIN
+                and url_count == 0
+            )
+        )
         and (selected_candidate_read or explicit_known_url_read)
     ):
         return (
@@ -2371,6 +2469,24 @@ def _operation_identity_key(
         "capability": capability,
     }
     if capability == AcquisitionCapability.READ.value:
+        if proposal.origin == SEARCHOS_NAVIGATION_ORIGIN:
+            base.update(
+                {
+                    "origin": SEARCHOS_NAVIGATION_ORIGIN,
+                    "destination_binding_digest": (
+                        proposal.destination_binding_ref.get(
+                            "destination_binding_digest"
+                        )
+                    ),
+                    "physical_identity_digest": (
+                        proposal.destination_binding_ref.get(
+                            "physical_identity_digest"
+                        )
+                    ),
+                }
+            )
+            digest = stable_json_digest(base)
+            return f"{capability.casefold().replace('_', '-')}:{digest}"
         normalized_url = normalize_acquisition_url(
             proposal.available_urls[0]
         )
@@ -2567,6 +2683,33 @@ def _candidate_ref(value: Any) -> dict[str, Any]:
     if ref.get("url") is not None:
         result["url"] = _required_url(ref.get("url"), "candidate_ref_url_invalid")
     return result
+
+
+def _acquisition_origin_fields(
+    *,
+    origin: Any,
+    destination_binding_ref: Any,
+    candidate_ref: Mapping[str, Any],
+    available_urls: Sequence[str],
+    root_url: Any,
+    requested_material_shape: Any,
+) -> dict[str, Any]:
+    origin_token = _optional_token(origin, limit=100)
+    has_binding = bool(destination_binding_ref)
+    if origin_token is None and not has_binding:
+        return {}
+    if origin_token != SEARCHOS_NAVIGATION_ORIGIN or not has_binding:
+        raise AcquisitionControlError("acquisition_origin_branch_incomplete")
+    if candidate_ref or available_urls or root_url:
+        raise AcquisitionControlError("acquisition_origin_branches_mixed")
+    if str(requested_material_shape or "").strip().casefold() != "explicit_known_url":
+        raise AcquisitionControlError("navigation_material_shape_invalid")
+    return {
+        "origin": SEARCHOS_NAVIGATION_ORIGIN,
+        "destination_binding_ref": validate_navigation_destination_binding_ref(
+            destination_binding_ref
+        ),
+    }
 
 
 def _bounded_focus(value: Any) -> dict[str, Any]:
@@ -2982,6 +3125,7 @@ __all__ = [
     "AcquisitionRouteObservationV1",
     "AcquisitionTerminalReceiptV1",
     "AcquisitionWorkOrderV1",
+    "SEARCHOS_NAVIGATION_ORIGIN",
     "build_acquisition_authority_snapshot",
     "build_pre_acquisition_source_obligation_ref",
     "build_acquisition_work_order",

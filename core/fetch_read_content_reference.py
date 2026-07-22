@@ -904,6 +904,121 @@ def build_fetch_read_content_packet_from_candidate_packet(
     ).to_dict()
 
 
+def build_fetch_read_content_packet_from_navigation(
+    *,
+    run_id: str,
+    request_id: str,
+    answer_contract_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    navigation_lineage: Mapping[str, Any],
+    terminal_receipt_ref: Mapping[str, Any],
+    custody_authorization_ref: Mapping[str, Any],
+    sanitized_material: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the navigation-origin branch of the existing FetchRead family."""
+
+    from core.searchos_navigation_runtime import (
+        validate_navigation_destination_for_binding,
+    )
+
+    material = _safe_mapping(sanitized_material)
+    if _fetch_read_status(material.get("fetch_read_status")) != "readable":
+        raise FetchReadContentReferenceError("navigation content is not readable")
+    text_payload = _bounded_text_payload(material)
+    if not text_payload:
+        raise FetchReadContentReferenceError("navigation content is empty")
+    contract = _safe_mapping(answer_contract_ref)
+    lineage = _safe_mapping(navigation_lineage)
+    required_lineage = (
+        "slot_ref",
+        "navigation_option_ref",
+        "navigation_selection_ref",
+        "destination_binding_ref",
+        "parent_read_custody_ref",
+    )
+    if any(not _safe_mapping(lineage.get(key)) for key in required_lineage):
+        raise FetchReadContentReferenceError("navigation lineage is incomplete")
+    attempted_url = validate_navigation_destination_for_binding(
+        material.get("attempted_url"), lineage["destination_binding_ref"]
+    )
+    reference_base = {
+        "schema_version": SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION,
+        "record_kind": FETCH_READ_CONTENT_RECORD_KIND,
+        "record_posture": FETCH_READ_CONTENT_PACKET_POSTURE,
+        "origin": "searchos_navigation",
+        "run_id": _required_token(run_id, "navigation reference requires run_id"),
+        "request_id": _required_token(
+            request_id, "navigation reference requires request_id"
+        ),
+        "current_answer_contract_ref": contract,
+        "current_answer_contract_digest": _required_token(
+            contract.get("contract_digest"),
+            "navigation reference requires contract digest",
+            limit=128,
+        ),
+        "component_ref": _safe_mapping(component_ref),
+        "source_obligation_ref": _safe_mapping(source_obligation_ref),
+        **{key: _safe_mapping(lineage[key]) for key in required_lineage},
+        "terminal_receipt_ref": _safe_mapping(terminal_receipt_ref),
+        "custody_authorization_ref": _safe_mapping(custody_authorization_ref),
+        "fetch_read_status": "readable",
+        "attempted_url": attempted_url,
+        "provider_reported_url": _clean_url(material.get("provider_reported_url")),
+        "resolved_url": _clean_url(material.get("resolved_url")),
+        "final_url": _clean_url(material.get("final_url")),
+        "canonical_url": _clean_url(material.get("canonical_url")),
+        "content_type": _clean_token(material.get("content_type"), limit=160),
+        "retrieved_or_observed_at": _clean_token(
+            material.get("retrieved_or_observed_at"), limit=80
+        ),
+        "content_title": _clean_text(material.get("content_title"), limit=300),
+        **text_payload,
+        **_POSTURE_TRUE_FLAGS,
+        **_CLOSED_FALSE_FLAGS,
+    }
+    reference_digest = _digest_json(_reference_digest_payload(reference_base))
+    reference = {
+        **reference_base,
+        "reference_id": (
+            f"sanitized-content-reference:{request_id}:{reference_digest[:16]}"
+        ),
+        "reference_digest": reference_digest,
+    }
+    packet_base = {
+        "schema_version": FETCH_READ_CONTENT_PACKET_SCHEMA_VERSION,
+        "packet_kind": FETCH_READ_CONTENT_PACKET_KIND,
+        "trace_key": FETCH_READ_CONTENT_PACKET_TRACE_KEY,
+        "owner": FETCH_READ_CONTENT_PACKET_OWNER,
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "packet_posture": FETCH_READ_CONTENT_PACKET_POSTURE,
+        "origin": "searchos_navigation",
+        "run_id": reference_base["run_id"],
+        "request_id": reference_base["request_id"],
+        "current_answer_contract_ref": contract,
+        "current_answer_contract_digest": reference_base[
+            "current_answer_contract_digest"
+        ],
+        "reference_count": 1,
+        "reference_records": [reference],
+        **_POSTURE_TRUE_FLAGS,
+        **_CLOSED_FALSE_FLAGS,
+    }
+    packet_digest = _digest_json(_packet_digest_payload(packet_base))
+    packet_id = f"fetch-read-content-packet:{request_id}:{packet_digest[:16]}"
+    packet = {
+        **packet_base,
+        "packet_id": packet_id,
+        "packet_digest": packet_digest,
+        "reference_records": [
+            {**reference, "packet_id": packet_id, "packet_digest": packet_digest}
+        ],
+    }
+    return validate_fetch_read_content_packet(packet)
+
+
 def reduce_candidate_packet_and_sanitized_reads_to_fetch_read_packet(
     candidate_packet: Mapping[str, Any],
     sanitized_fetch_read_records: Sequence[Mapping[str, Any]],
@@ -959,6 +1074,12 @@ def validate_fetch_read_content_packet(packet: Mapping[str, Any]) -> dict[str, A
         safe.get("request_id"),
         "fetch/read packet requires request_id",
     )
+    if safe.get("origin") == "searchos_navigation":
+        return _validate_navigation_fetch_read_packet(
+            safe,
+            run_id=run_id,
+            request_id=request_id,
+        )
     contract_ref = _safe_mapping(safe.get("current_answer_contract_ref"))
     handoff_ref = _safe_mapping(safe.get("search_executor_handoff_ref"))
     if not contract_ref or not handoff_ref:
@@ -1040,6 +1161,86 @@ def validate_fetch_read_content_packet(packet: Mapping[str, Any]) -> dict[str, A
     if safe.get("packet_id") != expected_packet_id:
         raise FetchReadContentReferenceError("fetch/read packet id mismatch")
     return safe
+
+
+def _validate_navigation_fetch_read_packet(
+    safe: Mapping[str, Any], *, run_id: str, request_id: str
+) -> dict[str, Any]:
+    from core.searchos_navigation_runtime import (
+        validate_navigation_destination_binding_ref,
+        validate_navigation_destination_for_binding,
+    )
+
+    contract = _safe_mapping(safe.get("current_answer_contract_ref"))
+    if safe.get("current_answer_contract_digest") != contract.get(
+        "contract_digest"
+    ):
+        raise FetchReadContentReferenceError("navigation packet contract mismatch")
+    references = _safe_list(safe.get("reference_records"))
+    if safe.get("reference_count") != 1 or len(references) != 1:
+        raise FetchReadContentReferenceError("navigation packet requires one reference")
+    reference = _safe_mapping(references[0])
+    if (
+        reference.get("origin") != "searchos_navigation"
+        or reference.get("schema_version")
+        != SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION
+        or reference.get("record_kind") != FETCH_READ_CONTENT_RECORD_KIND
+        or reference.get("record_posture") != FETCH_READ_CONTENT_PACKET_POSTURE
+        or reference.get("run_id") != run_id
+        or reference.get("request_id") != request_id
+        or _safe_mapping(reference.get("current_answer_contract_ref")) != contract
+    ):
+        raise FetchReadContentReferenceError("navigation reference lineage mismatch")
+    for key in (
+        "component_ref",
+        "source_obligation_ref",
+        "slot_ref",
+        "navigation_option_ref",
+        "navigation_selection_ref",
+        "destination_binding_ref",
+        "parent_read_custody_ref",
+        "terminal_receipt_ref",
+        "custody_authorization_ref",
+    ):
+        if not _safe_mapping(reference.get(key)):
+            raise FetchReadContentReferenceError("navigation reference is incomplete")
+    validate_navigation_destination_binding_ref(
+        reference["destination_binding_ref"]
+    )
+    if reference.get("fetch_read_status") != "readable":
+        raise FetchReadContentReferenceError("navigation reference is not readable")
+    validate_navigation_destination_for_binding(
+        reference.get("attempted_url"),
+        reference["destination_binding_ref"],
+    )
+    _validate_closed_flags(reference, context="navigation content reference")
+    _validate_posture_flags(reference, context="navigation content reference")
+    _validate_bounded_text_digest(reference)
+    declared_reference_digest = _required_token(
+        reference.get("reference_digest"),
+        "navigation reference requires digest",
+        limit=128,
+    )
+    if declared_reference_digest != _digest_json(
+        _reference_digest_payload(reference)
+    ) or reference.get("reference_id") != (
+        f"sanitized-content-reference:{request_id}:{declared_reference_digest[:16]}"
+    ):
+        raise FetchReadContentReferenceError("navigation reference identity mismatch")
+    declared_packet_digest = _required_token(
+        safe.get("packet_digest"),
+        "navigation packet requires digest",
+        limit=128,
+    )
+    if (
+        reference.get("packet_id") != safe.get("packet_id")
+        or reference.get("packet_digest") != declared_packet_digest
+        or declared_packet_digest != _digest_json(_packet_digest_payload(safe))
+        or safe.get("packet_id")
+        != f"fetch-read-content-packet:{request_id}:{declared_packet_digest[:16]}"
+    ):
+        raise FetchReadContentReferenceError("navigation packet identity mismatch")
+    return _safe_mapping(safe)
 
 
 def fetch_read_content_packet_ref_from_packet(
@@ -2103,6 +2304,7 @@ __all__ = [
     "SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION",
     "SanitizedContentReference",
     "build_fetch_read_content_packet_from_candidate_packet",
+    "build_fetch_read_content_packet_from_navigation",
     "build_sanitized_content_reference_from_candidate",
     "fetch_read_content_packet_ref_from_packet",
     "reduce_candidate_packet_and_sanitized_reads_to_fetch_read_packet",
