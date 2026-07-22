@@ -17,7 +17,9 @@ from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 NAVIGATION_OPTION_SCHEMA_VERSION = "searchos_navigation_option_v1"
+NAVIGATION_EDGE_SCHEMA_VERSION = "searchos_navigation_edge_v1"
 NAVIGATION_OWNER = "RunKernel.SearchOSIterativeJudgment"
+NAVIGATION_SELECTION_STAGE = "searchos_navigation_selection"
 NAVIGATION_EXTRACTION_LIMIT = 48
 NAVIGATION_WINDOW_LIMIT = 12
 NAVIGATION_URL_LENGTH_LIMIT = 700
@@ -28,6 +30,10 @@ NAVIGATION_RELATIONSHIP_POSTURE = "outbound_link_from_current_read_custody"
 NAVIGATION_SELECTABLE = "selectable"
 NAVIGATION_PENDING_EXECUTION = "pending_execution"
 NAVIGATION_BINDING_UNAVAILABLE = "binding_unavailable"
+
+NAVIGATION_SELECTION_ADMITTED = "admitted_selection"
+NAVIGATION_SELECTION_AUTHORITY_REJECTED = "rejected_authority_integrity"
+NAVIGATION_SELECTION_UNAVAILABLE = "rejected_navigation_unavailable"
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _URL_RE = re.compile(r"(?i)(?:\bhttps?://|\bwww\.)")
@@ -613,6 +619,457 @@ def project_navigation_window(state: Mapping[str, Any], *, slot_id: str) -> list
     return projected
 
 
+def build_navigation_selection_action_inputs(
+    state: Mapping[str, Any],
+    *,
+    judgment_decision_ref: Mapping[str, Any],
+    navigation_candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Perform only the canonical envelope checks needed for authorization."""
+
+    from core.searchos_iterative_judgment_runtime import (
+        SearchOSSlotPosture,
+        validate_searchos_state,
+    )
+
+    canonical = validate_searchos_state(state)
+    if _mapping(canonical.get("policy_snapshot")).get("navigation_runtime_open") is not True:
+        raise NavigationRuntimeError("navigation_runtime_closed")
+    decision_ref = _compact_ref(judgment_decision_ref, "judgment_decision_ref")
+    candidate_ref = _json_mapping(navigation_candidate)
+    matches = [
+        _mapping(slot)
+        for slot in _mapping(canonical.get("slots_by_id")).values()
+        if _compact_optional_ref(slot.get("pending_navigation_decision_ref"))
+        == decision_ref
+    ]
+    if len(matches) != 1:
+        raise NavigationRuntimeError("navigation_pending_decision_not_current")
+    slot = matches[0]
+    if slot.get("posture") != SearchOSSlotPosture.AWAITING_NAVIGATION_ADMISSION.value:
+        raise NavigationRuntimeError("navigation_pending_posture_not_current")
+    if _mapping(slot.get("pending_navigation_candidate_ref")) != candidate_ref:
+        raise NavigationRuntimeError("navigation_pending_candidate_not_current")
+    option_ref = _mapping(candidate_ref.get("navigation_option_ref"))
+    option_id = _token(option_ref.get("navigation_option_id"), "navigation_option_id")
+    option_value = _mapping(
+        _mapping(_mapping(canonical.get("navigation")).get("options_by_id")).get(
+            option_id
+        )
+    )
+    if not option_value:
+        raise NavigationRuntimeError("navigation_option_not_current")
+    option = NavigationOption.from_dict(option_value)
+    if option.ref() != option_ref or navigation_candidate_ref(option_value) != candidate_ref:
+        raise NavigationRuntimeError("navigation_candidate_not_current")
+    inputs = {
+        "expected_searchos_state_ref": {
+            "state_id": canonical["state_id"],
+            "state_digest": canonical["state_digest"],
+        },
+        "slot_ref": deepcopy(slot["slot_ref"]),
+        "judgment_decision_ref": decision_ref,
+        "navigation_candidate_ref": candidate_ref,
+        "navigation_option_ref": option.ref(),
+        "destination_binding_ref": deepcopy(dict(option.destination_binding_ref)),
+        "parent_read_custody_ref": deepcopy(dict(option.parent_read_custody_ref)),
+        "requested_selection_evaluation_posture": "bounded_navigation_selection_evaluation",
+    }
+    _ensure_url_free(inputs, "navigation_selection_action")
+    return inputs
+
+
+def execute_navigation_selection(
+    *,
+    action: Any,
+    authorized_state_snapshot: Mapping[str, Any],
+    locator_store: EphemeralNavigationLocatorStore,
+) -> Any:
+    """Evaluate one authorized selection without canonical mutation or charge."""
+
+    from core.run_kernel import (
+        ActionType,
+        Observation,
+        ObservationType,
+        RunStageStatus,
+    )
+    from core.searchos_iterative_judgment_runtime import validate_searchos_state
+
+    action.validate(
+        action_type=ActionType.SEARCHOS_NAVIGATION_SELECT,
+        stage=NAVIGATION_SELECTION_STAGE,
+        expected_observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+    )
+    inputs = _mapping(action.inputs)
+    snapshot = validate_searchos_state(authorized_state_snapshot)
+
+    def observed(outcome: str, reason: str) -> Any:
+        payload = {
+            **_selection_observation_base(action, inputs),
+            "outcome": outcome,
+            "reason": reason,
+        }
+        if outcome == NAVIGATION_SELECTION_ADMITTED:
+            selection_ref, edge_ref, _ = _proposed_selection_records(action, inputs)
+            payload["proposed_navigation_selection_ref"] = selection_ref
+            payload["proposed_navigation_edge_ref"] = edge_ref
+        _ensure_url_free(payload, "navigation_selection_observation")
+        return Observation.from_action(
+            action,
+            observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+            status=RunStageStatus.COMPLETED,
+            payload=payload,
+        )
+
+    if set(inputs) != {
+        "expected_searchos_state_ref",
+        "slot_ref",
+        "judgment_decision_ref",
+        "navigation_candidate_ref",
+        "navigation_option_ref",
+        "destination_binding_ref",
+        "parent_read_custody_ref",
+        "requested_selection_evaluation_posture",
+    } or inputs.get("requested_selection_evaluation_posture") != (
+        "bounded_navigation_selection_evaluation"
+    ):
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_action_contract_mismatch",
+        )
+
+    expected_state = _mapping(inputs.get("expected_searchos_state_ref"))
+    if expected_state != {
+        "state_id": snapshot.get("state_id"),
+        "state_digest": snapshot.get("state_digest"),
+    }:
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_state_binding_mismatch",
+        )
+    slot_id = _token(_mapping(inputs.get("slot_ref")).get("slot_id"), "slot_id")
+    slot = _mapping(_mapping(snapshot.get("slots_by_id")).get(slot_id))
+    if not slot or _mapping(slot.get("slot_ref")) != _mapping(inputs.get("slot_ref")):
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_slot_not_current",
+        )
+    if _compact_optional_ref(slot.get("pending_navigation_decision_ref")) != _mapping(
+        inputs.get("judgment_decision_ref")
+    ):
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_pending_decision_mismatch",
+        )
+    if _mapping(slot.get("pending_navigation_candidate_ref")) != _mapping(
+        inputs.get("navigation_candidate_ref")
+    ):
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_pending_candidate_mismatch",
+        )
+    option_ref = _mapping(inputs.get("navigation_option_ref"))
+    option_id = _token(option_ref.get("navigation_option_id"), "navigation_option_id")
+    option_value = _mapping(
+        _mapping(_mapping(snapshot.get("navigation")).get("options_by_id")).get(
+            option_id
+        )
+    )
+    if not option_value:
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_option_not_current",
+        )
+    try:
+        option = NavigationOption.from_dict(option_value)
+    except NavigationRuntimeError:
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_option_not_current",
+        )
+    if option.ref() != option_ref or navigation_candidate_ref(option_value) != _mapping(
+        inputs.get("navigation_candidate_ref")
+    ):
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_option_revision_mismatch",
+        )
+    if option.destination_binding_ref != _mapping(
+        inputs.get("destination_binding_ref")
+    ) or option.parent_read_custody_ref != _mapping(
+        inputs.get("parent_read_custody_ref")
+    ):
+        return observed(
+            NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+            "navigation_action_material_mismatch",
+        )
+    if option.disposition != NAVIGATION_SELECTABLE:
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_option_not_selectable",
+        )
+    current_parent_refs = {
+        tuple(sorted(_compact_ref(item, "parent_read_custody_ref").items()))
+        for item in slot.get("custody_refs") or ()
+    }
+    if tuple(sorted(option.parent_read_custody_ref.items())) not in current_parent_refs:
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_parent_relationship_unavailable",
+        )
+    policy = _mapping(snapshot.get("policy_snapshot"))
+    if option.child_depth > int(policy.get("navigation_max_depth") or 0):
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_depth_limit_exhausted",
+        )
+    if option.destination_binding_ref["physical_identity_digest"] in set(
+        option.ancestor_physical_identity_digests
+    ):
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_ancestor_cycle",
+        )
+    if int(slot.get("navigation_selection_count") or 0) >= int(
+        policy.get("navigation_selections_per_slot") or 0
+    ):
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_selection_limit_exhausted",
+        )
+    if len(_mapping(snapshot.get("navigation")).get("edges") or ()) >= int(
+        policy.get("navigation_edges_per_run") or 0
+    ):
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_run_edge_limit_exhausted",
+        )
+    if int(slot.get("read_nomination_count") or 0) >= int(
+        policy.get("read_nominations_per_slot") or 0
+    ):
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_read_nomination_limit_exhausted",
+        )
+    try:
+        exact = locator_store.resolve(option.destination_binding_ref)
+    except NavigationRuntimeError:
+        exact = None
+    if exact is None:
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_destination_binding_missing",
+        )
+    reproduced = _binding_ref(
+        normalize_navigation_destination(exact),
+        binding_id=option.destination_binding_ref["destination_binding_id"],
+    )
+    if reproduced != option.destination_binding_ref:
+        return observed(
+            NAVIGATION_SELECTION_UNAVAILABLE,
+            "navigation_destination_binding_mismatch",
+        )
+    return observed(NAVIGATION_SELECTION_ADMITTED, "navigation_selection_admitted")
+
+
+def reduce_navigation_selection_observation(
+    state: Mapping[str, Any],
+    *,
+    action: Any,
+    observation: Any,
+) -> dict[str, Any]:
+    """Apply one URL-free selection observation to canonical SearchOS state."""
+
+    from core.run_kernel import ActionType, ObservationType
+    from core.searchos_iterative_judgment_runtime import (
+        SearchOSSlotPosture,
+        validate_searchos_state,
+    )
+
+    action.validate(
+        action_type=ActionType.SEARCHOS_NAVIGATION_SELECT,
+        stage=NAVIGATION_SELECTION_STAGE,
+        expected_observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+    )
+    candidate = validate_searchos_state(state)
+    inputs = _mapping(action.inputs)
+    expected_state = _mapping(inputs.get("expected_searchos_state_ref"))
+    if expected_state != {
+        "state_id": candidate.get("state_id"),
+        "state_digest": candidate.get("state_digest"),
+    }:
+        raise NavigationRuntimeError("navigation_observation_stale")
+    payload = _mapping(observation.payload)
+    base = _selection_observation_base(action, inputs)
+    outcome = _token(payload.get("outcome"), "navigation_selection_outcome")
+    reason = _reason_code(payload.get("reason"))
+    allowed = {*base, "outcome", "reason"}
+    if outcome == NAVIGATION_SELECTION_ADMITTED:
+        allowed.update(
+            {
+                "proposed_navigation_selection_ref",
+                "proposed_navigation_edge_ref",
+            }
+        )
+    if set(payload) != allowed or any(payload.get(key) != value for key, value in base.items()):
+        raise NavigationRuntimeError("navigation_observation_contract_mismatch")
+    if outcome not in {
+        NAVIGATION_SELECTION_ADMITTED,
+        NAVIGATION_SELECTION_AUTHORITY_REJECTED,
+        NAVIGATION_SELECTION_UNAVAILABLE,
+    }:
+        raise NavigationRuntimeError("navigation_selection_outcome_invalid")
+
+    slot_id = _token(_mapping(inputs.get("slot_ref")).get("slot_id"), "slot_id")
+    slots = deepcopy(_mapping(candidate.get("slots_by_id")))
+    slot = _mapping(slots.get(slot_id))
+    option_ref = _mapping(inputs.get("navigation_option_ref"))
+    option_id = _token(option_ref.get("navigation_option_id"), "navigation_option_id")
+    navigation = deepcopy(_mapping(candidate.get("navigation")))
+    options = deepcopy(_mapping(navigation.get("options_by_id")))
+    option = NavigationOption.from_dict(_mapping(options.get(option_id)))
+    if not slot or option.ref() != option_ref:
+        raise NavigationRuntimeError("navigation_reduction_authority_not_current")
+
+    if outcome == NAVIGATION_SELECTION_ADMITTED:
+        selection_ref, edge_ref, edge = _proposed_selection_records(action, inputs)
+        if (
+            _mapping(payload.get("proposed_navigation_selection_ref")) != selection_ref
+            or _mapping(payload.get("proposed_navigation_edge_ref")) != edge_ref
+            or option.disposition != NAVIGATION_SELECTABLE
+        ):
+            raise NavigationRuntimeError("navigation_admission_proposal_mismatch")
+        slot["read_nomination_count"] = int(slot.get("read_nomination_count") or 0) + 1
+        slot["navigation_selection_count"] = int(slot.get("navigation_selection_count") or 0) + 1
+        slot["posture"] = SearchOSSlotPosture.AWAITING_NAVIGATION_EXECUTION.value
+        option = NavigationOption(
+            slot_id=option.slot_id,
+            destination_binding_ref=option.destination_binding_ref,
+            parent_read_custody_ref=option.parent_read_custody_ref,
+            child_depth=option.child_depth,
+            ancestor_physical_identity_digests=option.ancestor_physical_identity_digests,
+            bounded_relationship_context=option.bounded_relationship_context,
+            revision=option.revision + 1,
+            disposition=NAVIGATION_PENDING_EXECUTION,
+            active_selection_ref=selection_ref,
+            admission_ordinal=option.admission_ordinal,
+        )
+        options[option_id] = option.to_dict()
+        edges = list(navigation.get("edges") or ())
+        edges.append(edge)
+        navigation["edges"] = edges
+        slot["latest_reason"] = "navigation_selection_admitted"
+        slot["navigation_availability_reason"] = None
+    elif outcome == NAVIGATION_SELECTION_AUTHORITY_REJECTED:
+        slot["posture"] = SearchOSSlotPosture.STALE_OR_INVALID.value
+        slot["latest_reason"] = reason
+        slot["navigation_availability_reason"] = reason
+    else:
+        slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+        slot["latest_reason"] = reason
+        slot["navigation_availability_reason"] = reason
+        if reason in {
+            "navigation_destination_binding_missing",
+            "navigation_destination_binding_mismatch",
+        }:
+            options[option_id] = NavigationOption(
+                slot_id=option.slot_id,
+                destination_binding_ref=option.destination_binding_ref,
+                parent_read_custody_ref=option.parent_read_custody_ref,
+                child_depth=option.child_depth,
+                ancestor_physical_identity_digests=option.ancestor_physical_identity_digests,
+                bounded_relationship_context=option.bounded_relationship_context,
+                revision=option.revision + 1,
+                disposition=NAVIGATION_BINDING_UNAVAILABLE,
+                active_selection_ref={},
+                admission_ordinal=option.admission_ordinal,
+            ).to_dict()
+    slot["pending_navigation_decision_ref"] = {}
+    slot["pending_navigation_candidate_ref"] = {}
+    slot.setdefault("action_history", []).append(
+        {
+            "navigation_selection_action_id": action.action_id,
+            "outcome": outcome,
+            "posture_after": slot["posture"],
+            "reason": slot["latest_reason"],
+        }
+    )
+    slots[slot_id] = _refresh_navigation_slot(slot)
+    navigation["options_by_id"] = options
+    candidate["slots_by_id"] = slots
+    candidate["navigation"] = navigation
+    return _refresh_searchos_state(candidate)
+
+
+def _selection_observation_base(action: Any, inputs: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "authorized_action_id": _token(action.action_id, "authorized_action_id"),
+        "authorized_action_sequence": int(action.sequence),
+        "expected_searchos_state_ref": deepcopy(
+            _mapping(inputs.get("expected_searchos_state_ref"))
+        ),
+        "slot_ref": deepcopy(_mapping(inputs.get("slot_ref"))),
+        "judgment_decision_ref": deepcopy(
+            _mapping(inputs.get("judgment_decision_ref"))
+        ),
+        "navigation_candidate_ref": deepcopy(
+            _mapping(inputs.get("navigation_candidate_ref"))
+        ),
+        "navigation_option_ref": deepcopy(
+            _mapping(inputs.get("navigation_option_ref"))
+        ),
+        "destination_binding_ref": deepcopy(
+            _mapping(inputs.get("destination_binding_ref"))
+        ),
+        "parent_read_custody_ref": deepcopy(
+            _mapping(inputs.get("parent_read_custody_ref"))
+        ),
+    }
+
+
+def _proposed_selection_records(
+    action: Any, inputs: Mapping[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    selection_core = {
+        "authorized_action_id": _token(action.action_id, "authorized_action_id"),
+        "judgment_decision_ref": deepcopy(
+            _mapping(inputs.get("judgment_decision_ref"))
+        ),
+        "navigation_candidate_ref": deepcopy(
+            _mapping(inputs.get("navigation_candidate_ref"))
+        ),
+        "navigation_option_ref": deepcopy(
+            _mapping(inputs.get("navigation_option_ref"))
+        ),
+    }
+    selection_digest = _digest(selection_core)
+    selection_ref = {
+        "navigation_selection_id": f"searchos-navigation-selection:{selection_digest[:24]}",
+        "navigation_selection_digest": selection_digest,
+    }
+    edge_core = {
+        "schema_version": NAVIGATION_EDGE_SCHEMA_VERSION,
+        "owner": NAVIGATION_OWNER,
+        "navigation_selection_ref": selection_ref,
+        "slot_ref": deepcopy(_mapping(inputs.get("slot_ref"))),
+        "navigation_option_ref": deepcopy(
+            _mapping(inputs.get("navigation_option_ref"))
+        ),
+        "destination_binding_ref": deepcopy(
+            _mapping(inputs.get("destination_binding_ref"))
+        ),
+        "parent_read_custody_ref": deepcopy(
+            _mapping(inputs.get("parent_read_custody_ref"))
+        ),
+    }
+    edge_digest = _digest(edge_core)
+    edge_ref = {
+        "navigation_edge_id": f"searchos-navigation-edge:{edge_digest[:24]}",
+        "navigation_edge_digest": edge_digest,
+    }
+    return selection_ref, edge_ref, {**edge_core, **edge_ref}
+
+
 def _iter_supported_markdown_links(text: str) -> Iterable[tuple[int, str, str]]:
     index = 0
     ordinal = 0
@@ -796,6 +1253,25 @@ def _compact_ref(value: Mapping[str, Any], field: str) -> dict[str, Any]:
     raise NavigationRuntimeError(f"{field}_invalid")
 
 
+def _compact_optional_ref(value: Any) -> dict[str, Any]:
+    safe = _mapping(value)
+    return _compact_ref(safe, "optional_ref") if safe else {}
+
+
+def _reason_code(value: Any) -> str:
+    reason = _token(value, "navigation_reason", maximum=120)
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", reason):
+        raise NavigationRuntimeError("navigation_reason_invalid")
+    return reason
+
+
+def _refresh_navigation_slot(slot: Mapping[str, Any]) -> dict[str, Any]:
+    safe = deepcopy(dict(slot))
+    safe.pop("slot_state_digest", None)
+    safe["slot_state_digest"] = _digest(safe)
+    return safe
+
+
 def _ensure_url_free(value: Any, field: str) -> None:
     forbidden = {"url", "host", "path", "query", "href", "provider", "route"}
     if isinstance(value, Mapping):
@@ -876,21 +1352,29 @@ def _increment(counts: dict[str, int], key: str) -> None:
 __all__ = [
     "EphemeralNavigationLocatorStore",
     "NAVIGATION_BINDING_UNAVAILABLE",
+    "NAVIGATION_EDGE_SCHEMA_VERSION",
     "NAVIGATION_EXTRACTION_LIMIT",
     "NAVIGATION_OPTION_SCHEMA_VERSION",
     "NAVIGATION_PENDING_EXECUTION",
     "NAVIGATION_RELATIONSHIP_POSTURE",
     "NAVIGATION_SELECTABLE",
+    "NAVIGATION_SELECTION_ADMITTED",
+    "NAVIGATION_SELECTION_AUTHORITY_REJECTED",
+    "NAVIGATION_SELECTION_STAGE",
+    "NAVIGATION_SELECTION_UNAVAILABLE",
     "NAVIGATION_WINDOW_LIMIT",
     "NavigationOption",
     "NavigationRuntimeError",
     "admit_navigation_options_from_markdown",
+    "build_navigation_selection_action_inputs",
+    "execute_navigation_selection",
     "extract_bounded_navigation_links",
     "navigation_candidate_ref",
     "navigation_destination_eligibility",
     "navigation_option_ref",
     "normalize_navigation_destination",
     "project_navigation_window",
+    "reduce_navigation_selection_observation",
     "sanitize_navigation_source_text",
     "scrub_navigation_relationship_label",
 ]
