@@ -22,31 +22,24 @@ SEARCHOS_POLICY_SCHEMA_VERSION = "searchos_policy_profile_v1"
 SEARCHOS_STATE_SCHEMA_VERSION = "searchos_iterative_judgment_state_v1"
 SEARCHOS_REVISION_1_CANDIDATE_STATE_SCHEMA_VERSION = "searchos_revision_1_candidate_state_v1"
 
-SEARCHOS_ITERATION_CANDIDATE_SET_SCHEMA_VERSION = (
-    "searchos_iteration_candidate_set_v1"
-)
+SEARCHOS_ITERATION_CANDIDATE_SET_SCHEMA_VERSION = "searchos_iteration_candidate_set_v1"
 SEARCHOS_CANDIDATE_USE_OPTION_SCHEMA_VERSION = "searchos_candidate_use_option_v2"
-SEARCHOS_CANDIDATE_LINEAGE_SNAPSHOT_SCHEMA_VERSION = (
-    "searchos_candidate_lineage_snapshot_v1"
-)
+SEARCHOS_CANDIDATE_LINEAGE_SNAPSHOT_SCHEMA_VERSION = "searchos_candidate_lineage_snapshot_v1"
 SEARCHOS_CANDIDATE_USE_WINDOW_SCHEMA_VERSION = "candidate_use_window_v1"
 SEARCHOS_JUDGMENT_REQUEST_SCHEMA_VERSION = "searchos_judgment_request_v1"
 SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION = "searchos_judgment_decision_v1"
-SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION = (
-    "searchos_semantic_evaluation_handoff_v1"
-)
+SEARCHOS_JUDGMENT_REQUEST_V2_SCHEMA_VERSION = "searchos_judgment_request_v2"
+SEARCHOS_JUDGMENT_DECISION_V2_SCHEMA_VERSION = "searchos_judgment_decision_v2"
+SEARCHOS_READ_CUSTODY_MATERIAL_REF_V2_SCHEMA_VERSION = "searchos_read_custody_material_ref_v2"
+SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION = "searchos_semantic_evaluation_handoff_v1"
 SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION = "searchos_slice_a_readiness_v1"
-SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED = (
-    "SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED"
-)
+SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED = "SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED"
 
 MAXIMUM_ACTIVE_SLOTS = 8
 CANDIDATE_USE_WINDOW_SIZE = 12
 MAX_FOLLOWUP_QUERY_CHARS = 300
 MAX_UNRESOLVED_REASON_CHARS = 240
-COMPLETED_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
-    {"custodied", "read_insufficient", "invalid", "declined"}
-)
+COMPLETED_CANDIDATE_OPTION_DISPOSITIONS = frozenset({"custodied", "read_insufficient", "invalid", "declined"})
 
 
 class SearchOSRuntimeError(ValueError):
@@ -60,10 +53,9 @@ class SearchOSProfileName(str, Enum):
 
 
 class SearchOSJudgmentAction(str, Enum):
-    HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION = (
-        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
-    )
+    HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION = "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
     REQUEST_READ_PAGE = "REQUEST_READ_PAGE"
+    REQUEST_NAVIGATE_BREADCRUMB = "REQUEST_NAVIGATE_BREADCRUMB"
     PROPOSE_FOLLOWUP_QUERY = "PROPOSE_FOLLOWUP_QUERY"
     HANDOFF_UNRESOLVED = "HANDOFF_UNRESOLVED"
 
@@ -183,10 +175,12 @@ def build_searchos_policy_snapshot(
     run_id: str,
     request_id: str,
     profile_name: SearchOSProfileName | str,
+    navigation_runtime_open: bool = False,
 ) -> dict[str, Any]:
     profile = searchos_policy_profile(profile_name)
     core = {
         **profile.to_dict(),
+        "navigation_runtime_open": bool(navigation_runtime_open),
         "run_id": _token(run_id, "run_id"),
         "request_id": _token(request_id, "request_id"),
         "canonical_state": True,
@@ -906,22 +900,24 @@ def record_searchos_read_custody_material(
 
     candidate = _validated_state_copy(state)
     custody = _validated_read_custody_material_ref(custody_material_ref)
-    if custody.get("material_authority") != (
-        SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value
-    ):
+    if custody.get("material_authority") != (SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value):
         raise SearchOSRuntimeError("DISCOVER material cannot register as READ custody")
     if custody.get("readable") is not True or custody.get("stale") is True:
         raise SearchOSRuntimeError("READ custody material is unreadable or stale")
     if not _optional_ref(custody.get("evidence_ledger_custody_ref")):
-        raise SearchOSRuntimeError(
-            "SearchOS READ material requires EvidenceLedger custody"
-        )
-    option_ref = _required_ref(
-        custody.get("candidate_use_option_ref"), "candidate_use_option_ref"
-    )
+        raise SearchOSRuntimeError("SearchOS READ material requires EvidenceLedger custody")
     slot_ref = _required_ref(custody.get("slot_ref"), "slot_ref")
     slot_id = _token(slot_ref.get("slot_id"), "slot_id")
-    if option_ref.get("slot_id") != slot_id:
+    is_navigation = custody.get("physical_acquisition_origin") == ("navigation_candidate")
+    option_ref = _optional_ref(custody.get("candidate_use_option_ref"))
+    if is_navigation:
+        use_ref = _required_ref(
+            custody.get("navigation_use_custody_ref"),
+            "navigation_use_custody_ref",
+        )
+        if _mapping(use_ref.get("slot_ref")) != slot_ref:
+            raise SearchOSRuntimeError("navigation READ custody and slot lineage mismatch")
+    elif not option_ref or option_ref.get("slot_id") != slot_id:
         raise SearchOSRuntimeError("READ custody option and slot lineage mismatch")
     slots = _mutable_mapping(candidate["slots_by_id"])
     if slot_id not in slots or _mapping(slots[slot_id].get("slot_ref")) != slot_ref:
@@ -938,25 +934,23 @@ def record_searchos_read_custody_material(
     elif existing[custody_id] != custody:
         raise SearchOSRuntimeError("READ custody identity collision")
     slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
-    option_id = _first_ref_id(option_ref)
     dispositions = dict(slot.get("candidate_option_dispositions") or {})
-    dispositions[option_id] = {
-        "candidate_use_option_id": option_id,
-        "candidate_use_option_digest": option_ref.get(
-            "candidate_use_option_digest"
-        ),
-        "disposition": "custodied",
-        "read_custody_ref": deepcopy(custody),
-    }
+    if option_ref:
+        option_id = _first_ref_id(option_ref)
+        dispositions[option_id] = {
+            "candidate_use_option_id": option_id,
+            "candidate_use_option_digest": option_ref.get("candidate_use_option_digest"),
+            "disposition": "custodied",
+            "read_custody_ref": deepcopy(custody),
+        }
     slot["candidate_option_dispositions"] = dispositions
     slot["latest_reason"] = "read_custody_admitted_for_rejudgment"
     slot["action_history"].append(
         {
             "event": "read_custody_admitted",
             "read_custody_ref": _compact_ref(custody),
-            "same_normalized_url_reused": bool(
-                custody.get("same_normalized_url_reused")
-            ),
+            "same_normalized_url_reused": bool(custody.get("same_normalized_url_reused")),
+            "physical_custody_reused": bool(custody.get("physical_custody_reused")),
             "support_admitted": False,
         }
     )
@@ -1008,6 +1002,146 @@ def build_searchos_read_custody_material_ref(
         "bounded_retention": True,
         "stale": False,
         "same_normalized_url_reused": bool(same_normalized_url_reused),
+        "component_analyst_proposal_eligible": True,
+        "support_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "read_custody_material_id": f"searchos-read-custody:{digest[:24]}",
+        "read_custody_material_digest": digest,
+        "replay_identity": f"searchos-read-custody:{digest}",
+    }
+
+
+def build_searchos_discovery_read_custody_material_ref_v2(
+    *,
+    slot_ref: Mapping[str, Any],
+    candidate_use_option_ref: Mapping[str, Any],
+    normalized_url: str,
+    fetch_read_content_packet_ref: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+    evidence_ledger_candidate_id: str,
+    sanitized_content_reference_ref: Mapping[str, Any],
+    physical_identity_digest: str,
+    same_normalized_url_reused: bool,
+) -> dict[str, Any]:
+    """Build discovery-origin v2 custody without changing v1 replay."""
+
+    slot = _required_ref(slot_ref, "slot_ref")
+    option = _required_ref(candidate_use_option_ref, "candidate_use_option_ref")
+    url = normalize_discovery_result_url(normalized_url)
+    if option.get("slot_id") != slot.get("slot_id") or option.get("normalized_url") != url:
+        raise SearchOSRuntimeError("discovery v2 READ custody option lineage mismatch")
+    core = {
+        "schema_version": SEARCHOS_READ_CUSTODY_MATERIAL_REF_V2_SCHEMA_VERSION,
+        "owner": SEARCHOS_OWNER,
+        "slot_ref": slot,
+        "candidate_use_option_ref": option,
+        "normalized_url": url,
+        "fetch_read_content_packet_ref": _required_ref(
+            fetch_read_content_packet_ref,
+            "fetch_read_content_packet_ref",
+        ),
+        "evidence_ledger_custody_ref": _required_ref(
+            evidence_ledger_custody_ref,
+            "evidence_ledger_custody_ref",
+        ),
+        "evidence_ledger_candidate_id": _token(evidence_ledger_candidate_id, "evidence_ledger_candidate_id"),
+        "sanitized_content_reference_ref": _required_ref(
+            sanitized_content_reference_ref,
+            "sanitized_content_reference_ref",
+        ),
+        "physical_acquisition_origin": "discovery_candidate",
+        "physical_identity_digest": _digest_token(physical_identity_digest, "physical_identity_digest"),
+        "material_authority": SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value,
+        "readable": True,
+        "bounded_retention": True,
+        "stale": False,
+        "same_normalized_url_reused": bool(same_normalized_url_reused),
+        "physical_custody_reused": bool(same_normalized_url_reused),
+        "component_analyst_proposal_eligible": True,
+        "support_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "read_custody_material_id": f"searchos-read-custody:{digest[:24]}",
+        "read_custody_material_digest": digest,
+        "replay_identity": f"searchos-read-custody:{digest}",
+    }
+
+
+def build_searchos_read_custody_material_ref_v2(
+    *,
+    slot_ref: Mapping[str, Any],
+    navigation_use_custody_ref: Mapping[str, Any],
+    fetch_read_content_packet_ref: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+    evidence_ledger_candidate_id: str,
+    sanitized_content_reference_ref: Mapping[str, Any],
+    physical_custody_reused: bool,
+) -> dict[str, Any]:
+    """Build URL-free SearchJudgment custody for one navigation-edge use."""
+
+    from core.searchos_navigation_runtime import (
+        build_searchos_navigation_use_custody_ref_v2,
+    )
+
+    slot = _required_ref(slot_ref, "slot_ref")
+    use = _required_ref(navigation_use_custody_ref, "navigation_use_custody_ref")
+    expected_use = build_searchos_navigation_use_custody_ref_v2(
+        slot_ref=use.get("slot_ref"),
+        selection_ref=use.get("navigation_selection_ref"),
+        edge_ref=use.get("navigation_edge_ref"),
+        physical_custody_ref=use.get("physical_custody_ref"),
+        fetch_read_content_packet_ref=use.get("fetch_read_content_packet_ref"),
+        evidence_ledger_custody_ref=use.get("evidence_ledger_custody_ref"),
+        destination_binding_ref=use.get("destination_binding_ref"),
+        physical_acquisition_origin=str(use.get("physical_acquisition_origin") or ""),
+        navigation_depth=int(use.get("navigation_depth") or 0),
+        ancestor_physical_identity_digests=(use.get("ancestor_physical_identity_digests") or ()),
+    )
+    if use != expected_use or _mapping(use.get("slot_ref")) != slot:
+        raise SearchOSRuntimeError("navigation READ custody use ref is stale or altered")
+    packet_ref = _required_ref(fetch_read_content_packet_ref, "fetch_read_content_packet_ref")
+    ledger_ref = _required_ref(evidence_ledger_custody_ref, "evidence_ledger_custody_ref")
+    if packet_ref != use.get("fetch_read_content_packet_ref") or ledger_ref != use.get("evidence_ledger_custody_ref"):
+        raise SearchOSRuntimeError("navigation READ custody physical refs are stale")
+    core = {
+        "schema_version": SEARCHOS_READ_CUSTODY_MATERIAL_REF_V2_SCHEMA_VERSION,
+        "owner": SEARCHOS_OWNER,
+        "slot_ref": slot,
+        "navigation_use_custody_ref": use,
+        "fetch_read_content_packet_ref": packet_ref,
+        "evidence_ledger_custody_ref": ledger_ref,
+        "evidence_ledger_candidate_id": _token(evidence_ledger_candidate_id, "evidence_ledger_candidate_id"),
+        "sanitized_content_reference_ref": _required_ref(
+            sanitized_content_reference_ref,
+            "sanitized_content_reference_ref",
+        ),
+        "physical_acquisition_origin": _token(
+            use.get("physical_acquisition_origin"),
+            "physical_acquisition_origin",
+        ),
+        "physical_identity_digest": _digest_token(
+            use.get("physical_identity_digest"),
+            "physical_identity_digest",
+        ),
+        "navigation_selection_ref": _required_ref(
+            use.get("navigation_selection_ref"),
+            "navigation_selection_ref",
+        ),
+        "navigation_edge_ref": _required_ref(use.get("navigation_edge_ref"), "navigation_edge_ref"),
+        "material_authority": SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value,
+        "readable": use.get("bounded_content_present") is True,
+        "bounded_retention": True,
+        "stale": False,
+        "physical_custody_reused": bool(physical_custody_reused),
         "component_analyst_proposal_eligible": True,
         "support_admitted": False,
         "source_obligation_satisfied": False,
@@ -1722,13 +1856,96 @@ def build_searchos_judgment_request_v1(
     }
 
 
+def build_searchos_judgment_request_v2(
+    *,
+    state: Mapping[str, Any],
+    slot_id: str,
+    charge_ref: Mapping[str, Any],
+    candidate_window: Mapping[str, Any],
+    navigation_candidate_window: Mapping[str, Any],
+    read_custody_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Build the explicit navigation-capable SearchJudgment request."""
+
+    from core.searchos_navigation_runtime import (
+        validate_searchos_navigation_candidate_window_v1,
+    )
+
+    v1 = build_searchos_judgment_request_v1(
+        state=state,
+        slot_id=slot_id,
+        charge_ref=charge_ref,
+        candidate_window=candidate_window,
+        read_custody_refs=read_custody_refs,
+    )
+    policy = _mapping(_validated_state_copy(state).get("policy_snapshot"))
+    if policy.get("navigation_runtime_open") is not True:
+        raise SearchOSRuntimeError("navigation judgment requires an open navigation runtime")
+    navigation_window = validate_searchos_navigation_candidate_window_v1(navigation_candidate_window)
+    if navigation_window.get("slot_id") != slot_id:
+        raise SearchOSRuntimeError("navigation judgment window does not bind current slot")
+    legal_actions = list(v1["legal_actions"])
+    navigation_refs = deepcopy(navigation_window.get("navigation_candidate_refs") or [])
+    if navigation_refs:
+        insertion = (
+            1
+            if legal_actions
+            and legal_actions[0] == SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION.value
+            else 0
+        )
+        legal_actions.insert(
+            insertion,
+            SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
+        )
+    request_core = {
+        key: deepcopy(value)
+        for key, value in v1.items()
+        if key
+        not in {
+            "schema_version",
+            "judgment_request_id",
+            "judgment_request_digest",
+            "replay_identity",
+            "legal_actions",
+        }
+    }
+    request_core.update(
+        {
+            "schema_version": SEARCHOS_JUDGMENT_REQUEST_V2_SCHEMA_VERSION,
+            "navigation_candidate_window_ref": {
+                "navigation_candidate_window_id": navigation_window["navigation_candidate_window_id"],
+                "navigation_candidate_window_digest": navigation_window["navigation_candidate_window_digest"],
+                "slot_id": navigation_window["slot_id"],
+            },
+            "navigation_candidate_refs": navigation_refs,
+            "legal_actions": legal_actions,
+            "navigation_options_directional_only": True,
+            "navigation_options_support_bearing": False,
+            "model_authored_destination_allowed": False,
+        }
+    )
+    digest = _digest(request_core)
+    return {
+        **request_core,
+        "judgment_request_id": (f"searchos-judgment-request-v2:{digest[:24]}"),
+        "judgment_request_digest": digest,
+        "replay_identity": f"searchos-judgment-request-v2:{digest}",
+    }
+
+
 def validate_searchos_judgment_model_output(
     *, request: Mapping[str, Any], model_output: Mapping[str, Any]
 ) -> dict[str, Any]:
     """Validate one neutral model-authored action; never synthesize a fallback."""
 
     request_safe = _mapping(request)
-    _require_schema(request_safe, SEARCHOS_JUDGMENT_REQUEST_SCHEMA_VERSION, "judgment request")
+    request_schema = request_safe.get("schema_version")
+    if request_schema not in {
+        SEARCHOS_JUDGMENT_REQUEST_SCHEMA_VERSION,
+        SEARCHOS_JUDGMENT_REQUEST_V2_SCHEMA_VERSION,
+    }:
+        raise SearchOSRuntimeError("judgment request schema version mismatch")
+    navigation_enabled = request_schema == SEARCHOS_JUDGMENT_REQUEST_V2_SCHEMA_VERSION
     output = _mapping(model_output)
     allowed_keys = {
         "schema_version",
@@ -1737,14 +1954,22 @@ def validate_searchos_judgment_model_output(
         "slot_id",
         "action",
         "candidate_use_option_ref",
+        "navigation_candidate_ref",
         "read_custody_refs",
         "followup_query",
         "reason",
         "read_custody_assessments",
     }
+    if not navigation_enabled:
+        allowed_keys.remove("navigation_candidate_ref")
     if set(output) - allowed_keys:
         raise SearchOSRuntimeError("judgment output contains unsupported fields")
-    if output.get("schema_version") != SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION:
+    expected_decision_schema = (
+        SEARCHOS_JUDGMENT_DECISION_V2_SCHEMA_VERSION
+        if navigation_enabled
+        else SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION
+    )
+    if output.get("schema_version") != expected_decision_schema:
         raise SearchOSRuntimeError("judgment output schema version mismatch")
     if output.get("judgment_request_id") != request_safe.get("judgment_request_id") or output.get(
         "judgment_request_digest"
@@ -1760,6 +1985,7 @@ def validate_searchos_judgment_model_output(
     if action.value not in set(request_safe.get("legal_actions") or ()):
         raise SearchOSRuntimeError("judgment action is not currently authorized")
     option_ref = _optional_ref(output.get("candidate_use_option_ref"))
+    navigation_ref = _optional_ref(output.get("navigation_candidate_ref"))
     custody_refs = [_required_ref(item, "read_custody_ref") for item in output.get("read_custody_refs") or ()]
     custody_ids = [_first_ref_id(item) for item in custody_refs]
     if len(custody_ids) != len(set(custody_ids)):
@@ -1770,6 +1996,7 @@ def validate_searchos_judgment_model_output(
         _first_ref_id(_mapping(_mapping(item).get("candidate_use_option_ref"))): item
         for item in request_safe.get("candidate_use_options") or ()
     }
+    visible_navigation = {_first_ref_id(item): item for item in request_safe.get("navigation_candidate_refs") or ()}
     current_custody = {_first_ref_id(item): item for item in request_safe.get("read_custody_refs") or ()}
     assessments: list[dict[str, Any]] = []
     for raw_assessment in output.get("read_custody_assessments") or ():
@@ -1799,49 +2026,68 @@ def validate_searchos_judgment_model_output(
                 "reason_code": reason_code,
             }
         )
-    assessed_ids = [
-        _first_ref_id(item["reviewed_custody_ref"]) for item in assessments
-    ]
+    assessed_ids = [_first_ref_id(item["reviewed_custody_ref"]) for item in assessments]
     if len(assessed_ids) != len(set(assessed_ids)):
         raise SearchOSRuntimeError("READ custody assessment repeats material")
     if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
         option_id = _first_ref_id(option_ref)
         if not option_ref or option_id not in visible_options:
             raise SearchOSRuntimeError("READ nomination is outside current candidate window")
-        if option_ref != _mapping(
-            _mapping(visible_options[option_id]).get("candidate_use_option_ref")
-        ):
+        if option_ref != _mapping(_mapping(visible_options[option_id]).get("candidate_use_option_ref")):
             raise SearchOSRuntimeError("READ nomination ref is stale or altered")
-        if custody_refs or followup_query:
+        if custody_refs or followup_query or navigation_ref:
             raise SearchOSRuntimeError("READ nomination contains incompatible payload")
+    elif action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB:
+        if not navigation_enabled:
+            raise SearchOSRuntimeError("navigation nomination requires judgment request v2")
+        navigation_id = _first_ref_id(navigation_ref)
+        if not navigation_ref or navigation_id not in visible_navigation:
+            raise SearchOSRuntimeError("navigation nomination is outside current navigation window")
+        if navigation_ref != _mapping(visible_navigation[navigation_id]):
+            raise SearchOSRuntimeError("navigation nomination ref is stale or altered")
+        if option_ref or custody_refs or followup_query:
+            raise SearchOSRuntimeError("navigation nomination contains incompatible payload")
     elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
-        if not followup_query or option_ref or custody_refs:
+        if not followup_query or option_ref or navigation_ref or custody_refs:
             raise SearchOSRuntimeError("follow-up nomination payload is invalid")
     elif action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
-        if not custody_refs or option_ref or followup_query or assessments:
+        if not custody_refs or option_ref or navigation_ref or followup_query or assessments:
             raise SearchOSRuntimeError("semantic handoff requires exact READ custody refs")
         for item in custody_refs:
             custody_id = _first_ref_id(item)
-            if custody_id not in current_custody or item != _mapping(
-                current_custody[custody_id]
-            ):
-                raise SearchOSRuntimeError(
-                    "semantic handoff nominated stale or altered READ custody"
-                )
+            if custody_id not in current_custody or item != _mapping(current_custody[custody_id]):
+                raise SearchOSRuntimeError("semantic handoff nominated stale or altered READ custody")
     else:
-        if option_ref or custody_refs or followup_query or not reason:
+        if option_ref or navigation_ref or custody_refs or followup_query or not reason:
             raise SearchOSRuntimeError("unresolved handoff payload is invalid")
-    if current_custody and action is not (
-        SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
-    ):
+    if current_custody and action is not (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
         if set(assessed_ids) != set(current_custody):
-            raise SearchOSRuntimeError(
-                "post-READ action requires exact read_insufficient assessments"
-            )
+            raise SearchOSRuntimeError("post-READ action requires exact read_insufficient assessments")
     elif assessments:
         raise SearchOSRuntimeError("pre-READ action cannot assess custody")
+    if navigation_enabled:
+        exact_fields = {
+            "schema_version",
+            "judgment_request_id",
+            "judgment_request_digest",
+            "slot_id",
+            "action",
+            "reason",
+        }
+        if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
+            exact_fields.add("candidate_use_option_ref")
+        elif action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB:
+            exact_fields.add("navigation_candidate_ref")
+        elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
+            exact_fields.add("followup_query")
+        elif action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
+            exact_fields.add("read_custody_refs")
+        if current_custody and action is not (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
+            exact_fields.add("read_custody_assessments")
+        if set(output) != exact_fields:
+            raise SearchOSRuntimeError("judgment v2 action fields are not exact")
     core = {
-        "schema_version": SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
+        "schema_version": expected_decision_schema,
         "owner": SEARCHOS_OWNER,
         "judgment_request_ref": {
             "judgment_request_id": request_safe["judgment_request_id"],
@@ -1850,9 +2096,15 @@ def validate_searchos_judgment_model_output(
         "slot_ref": deepcopy(request_safe["slot_ref"]),
         "candidate_state_ref": deepcopy(request_safe["candidate_state_ref"]),
         "candidate_window_ref": deepcopy(request_safe["candidate_window_ref"]),
+        **(
+            {"navigation_candidate_window_ref": deepcopy(request_safe["navigation_candidate_window_ref"])}
+            if navigation_enabled
+            else {}
+        ),
         "charge_ref": deepcopy(request_safe["charge_ref"]),
         "action": action.value,
         "candidate_use_option_ref": option_ref,
+        **({"navigation_candidate_ref": navigation_ref} if navigation_enabled else {}),
         "read_custody_refs": custody_refs,
         "followup_query": followup_query,
         "reason": reason,
@@ -1868,21 +2120,19 @@ def validate_searchos_judgment_model_output(
     }
 
 
-def reduce_searchos_judgment_decision(
-    state: Mapping[str, Any], *, decision: Mapping[str, Any]
-) -> dict[str, Any]:
+def reduce_searchos_judgment_decision(state: Mapping[str, Any], *, decision: Mapping[str, Any]) -> dict[str, Any]:
     candidate = _validated_state_copy(state)
     reduced = _mapping(decision)
-    _require_schema(
-        reduced, SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION, "judgment decision"
-    )
+    if reduced.get("schema_version") not in {
+        SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
+        SEARCHOS_JUDGMENT_DECISION_V2_SCHEMA_VERSION,
+    }:
+        raise SearchOSRuntimeError("judgment decision schema version mismatch")
     slot_id = _token(_mapping(reduced.get("slot_ref")).get("slot_id"), "slot_id")
     slots = _mutable_mapping(candidate["slots_by_id"])
     if slot_id not in slots:
         raise SearchOSRuntimeError("judgment decision references inactive slot")
-    if _mapping(reduced.get("candidate_state_ref")) != _mapping(
-        candidate.get("current_candidate_state_ref")
-    ):
+    if _mapping(reduced.get("candidate_state_ref")) != _mapping(candidate.get("current_candidate_state_ref")):
         raise SearchOSRuntimeError("judgment decision candidate state is stale")
     slot = deepcopy(slots[slot_id])
     if slot["posture"] in {
@@ -1895,32 +2145,28 @@ def reduce_searchos_judgment_decision(
         raise SearchOSRuntimeError("judgment decision follows a terminal slot posture")
     action = SearchOSJudgmentAction(reduced["action"])
     dispositions = dict(slot.get("candidate_option_dispositions") or {})
-    admitted_custody = {
-        _first_ref_id(item): item for item in slot.get("custody_refs") or ()
-    }
+    admitted_custody = {_first_ref_id(item): item for item in slot.get("custody_refs") or ()}
     for assessment in reduced.get("read_custody_assessments") or ():
-        custody = admitted_custody.get(
-            _first_ref_id(_mapping(assessment).get("reviewed_custody_ref"))
-        )
+        custody = admitted_custody.get(_first_ref_id(_mapping(assessment).get("reviewed_custody_ref")))
         if custody is None:
             raise SearchOSRuntimeError("judgment assessment custody is no longer admitted")
-        option_ref = _mapping(_mapping(custody).get("candidate_use_option_ref"))
-        option_id = _first_ref_id(option_ref)
-        dispositions[option_id] = {
-            "candidate_use_option_id": option_id,
-            "candidate_use_option_digest": option_ref.get(
-                "candidate_use_option_digest"
-            ),
-            "disposition": "read_insufficient",
-            "read_custody_ref": deepcopy(custody),
-            "reason_code": _mapping(assessment).get("reason_code"),
-        }
+        option_ref = _optional_ref(_mapping(custody).get("candidate_use_option_ref"))
+        if option_ref:
+            option_id = _first_ref_id(option_ref)
+            dispositions[option_id] = {
+                "candidate_use_option_id": option_id,
+                "candidate_use_option_digest": option_ref.get("candidate_use_option_digest"),
+                "disposition": "read_insufficient",
+                "read_custody_ref": deepcopy(custody),
+                "reason_code": _mapping(assessment).get("reason_code"),
+            }
     slot["candidate_option_dispositions"] = dispositions
     policy = _mapping(candidate["policy_snapshot"])
-    if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
-        if int(slot["read_nomination_count"]) >= int(
-            policy["read_nominations_per_slot"]
-        ):
+    if action in {
+        SearchOSJudgmentAction.REQUEST_READ_PAGE,
+        SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB,
+    }:
+        if int(slot["read_nomination_count"]) >= int(policy["read_nominations_per_slot"]):
             return mark_searchos_slot_budget_exhausted(
                 candidate,
                 slot_id=slot_id,
@@ -1928,24 +2174,22 @@ def reduce_searchos_judgment_decision(
             )
         slot["posture"] = SearchOSSlotPosture.AWAITING_READ.value
         slot["read_nomination_count"] = int(slot["read_nomination_count"]) + 1
-        slot["latest_reason"] = "authorized_candidate_read_requested"
+        slot["latest_reason"] = (
+            "authorized_navigation_breadcrumb_read_requested"
+            if action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB
+            else "authorized_candidate_read_requested"
+        )
     elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
-        if int(slot["followup_query_nomination_count"]) >= int(
-            policy["followup_query_nominations_per_slot"]
-        ):
+        if int(slot["followup_query_nomination_count"]) >= int(policy["followup_query_nominations_per_slot"]):
             return mark_searchos_slot_budget_exhausted(
                 candidate,
                 slot_id=slot_id,
                 reason="followup_query_nomination_budget_exhausted",
             )
         slot["posture"] = SearchOSSlotPosture.AWAITING_FOLLOWUP_DISCOVER.value
-        slot["followup_query_nomination_count"] = int(
-            slot["followup_query_nomination_count"]
-        ) + 1
+        slot["followup_query_nomination_count"] = int(slot["followup_query_nomination_count"]) + 1
         slot["latest_reason"] = "exact_followup_query_proposed"
-    elif action is (
-        SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
-    ):
+    elif action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
         slot["posture"] = SearchOSSlotPosture.READY_FOR_SEMANTIC_EVALUATION.value
         slot["latest_reason"] = "read_custody_selected_for_semantic_evaluation"
     else:
@@ -2361,6 +2605,16 @@ def _validated_candidate_use_window(value: Mapping[str, Any]) -> dict[str, Any]:
 def _validated_read_custody_material_ref(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
+    schema_version = _mapping(value).get("schema_version")
+    if schema_version == SEARCHOS_READ_CUSTODY_MATERIAL_REF_V2_SCHEMA_VERSION:
+        return _validated_digest_envelope(
+            value,
+            schema_version=SEARCHOS_READ_CUSTODY_MATERIAL_REF_V2_SCHEMA_VERSION,
+            digest_field="read_custody_material_digest",
+            id_field="read_custody_material_id",
+            identity_prefix="searchos-read-custody",
+            label="SearchOS navigation READ custody material",
+        )
     return _validated_digest_envelope(
         value,
         schema_version="searchos_read_custody_material_ref_v1",
@@ -2581,6 +2835,9 @@ def _require_schema(value: Mapping[str, Any], expected: str, label: str) -> None
 __all__ = [
     "CANDIDATE_USE_WINDOW_SIZE",
     "MAXIMUM_ACTIVE_SLOTS",
+    "SEARCHOS_JUDGMENT_DECISION_V2_SCHEMA_VERSION",
+    "SEARCHOS_JUDGMENT_REQUEST_V2_SCHEMA_VERSION",
+    "SEARCHOS_READ_CUSTODY_MATERIAL_REF_V2_SCHEMA_VERSION",
     "SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED",
     "SearchOSJudgmentAction",
     "SearchOSMaterialAuthority",
@@ -2594,9 +2851,12 @@ __all__ = [
     "build_candidate_use_window_v1",
     "build_searchos_initial_state",
     "build_searchos_iteration_candidate_set_v1",
+    "build_searchos_discovery_read_custody_material_ref_v2",
     "build_searchos_judgment_request_v1",
+    "build_searchos_judgment_request_v2",
     "build_searchos_policy_snapshot",
     "build_searchos_read_custody_material_ref",
+    "build_searchos_read_custody_material_ref_v2",
     "build_searchos_revision_1_candidate_state_v1",
     "build_searchos_required_needs_block",
     "build_searchos_semantic_evaluation_handoff_v1",

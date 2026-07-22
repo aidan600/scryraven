@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
+import core.searchos_slice_a_product_runtime as product_runtime
 from core.acquisition_control import (
     AcquisitionExecutionObservationV2,
     AcquisitionNeedProposalV1,
@@ -27,11 +29,18 @@ from core.fetch_read_content_reference import (
     validate_fetch_read_content_packet,
 )
 from core.routing import acquisition_routing_policy_ref
+from core.searchos_iterative_judgment_runtime import (
+    SearchOSRuntimeError,
+    validate_searchos_judgment_model_output,
+)
 from core.searchos_navigation_runtime import (
     SearchOSNavigationDestinationRegistry,
     SearchOSNavigationError,
     SearchOSNavigationExecutionOverlayV1,
     SearchOSNavigationPacketCommitRegistry,
+)
+from tests.helpers.offline_ordinary_pipeline import (
+    run_post_retirement_ordinary_pipeline,
 )
 
 
@@ -333,6 +342,9 @@ def test_atomic_ledger_commit_is_first_canonical_exact_url() -> None:
     assert custody["physical_acquisition_origin"] == "navigation_candidate"
     reference = packet["reference_records"][0]
     assert reference["durable_source_url"] == values["exact_url"]
+    assert reference["secondary_source_provenance"] == {
+        "final_url": values["exact_url"]
+    }
     assert result.committed_fetch_read_packet == packet
     with pytest.raises(SearchOSNavigationError, match="commit_unavailable"):
         packet_registry.resolve(commit_ref)
@@ -374,3 +386,385 @@ def test_discovery_v1_schema_replay_remains_exact() -> None:
             }
         )
     assert acquisition_routing_policy_ref()["owner"] == "core.routing"
+
+
+def _kernel_trace(harness) -> dict[str, object]:
+    return dict(harness.run_kernel.to_trace_fragment()["run_kernel"])
+
+
+def _navigation_commit_observations(harness) -> list[dict[str, object]]:
+    return [
+        dict(item)
+        for item in _kernel_trace(harness)["observations"]
+        if item.get("stage") == "searchos_navigation_physical_custody"
+        and item.get("status") == "completed"
+    ]
+
+
+def _navigation_decision_from_prompt(prompt: str) -> tuple[dict[str, object], dict[str, object]]:
+    payload = json.loads(prompt)
+    authorized = dict(payload["authorized_request"])
+    contract = dict(payload["decision_contract"])
+    custody_refs = list(authorized.get("read_custody_refs") or ())
+    decision = {
+        "schema_version": contract["decision_schema_version"],
+        "judgment_request_id": authorized["judgment_request_id"],
+        "judgment_request_digest": authorized["judgment_request_digest"],
+        "slot_id": dict(authorized["slot_ref"])["slot_id"],
+        "action": "REQUEST_NAVIGATE_BREADCRUMB",
+        "navigation_candidate_ref": dict(authorized["navigation_candidate_refs"][0]),
+        "reason": "exact current bounded navigation ref selected",
+    }
+    if custody_refs:
+        decision["read_custody_assessments"] = [
+            {
+                "reviewed_custody_ref": dict(item),
+                "material_disposition": "read_insufficient",
+                "reason_code": "required_information_absent",
+            }
+            for item in custody_refs
+        ]
+    return authorized, decision
+
+
+def test_n1_navigation_reuses_one_physical_destination_and_reenters_citation_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parents = [
+        "https://alpha.example/parent-1",
+        "https://alpha.example/parent-2",
+    ]
+    destination = "https://alpha.example/current"
+    rejected_query_secret = "PHASE_NAV_QUERY_SECRET_91B7"
+    parent_markdown = (
+        "This page does not answer the question. "
+        "[Current source](/current) "
+        f"[rejected](/ignored?token={rejected_query_secret})"
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        evidence_rows=[
+            {
+                "title": f"Alpha parent {index}",
+                "url": url,
+                "text": f"Directional parent {index}.",
+            }
+            for index, url in enumerate(parents, 1)
+        ],
+        read_content_by_url={
+            **{url: parent_markdown for url in parents},
+            destination: "Alpha's current official operating rule is Rule 17.",
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        raw_author_response=f"Alpha follows Rule 17. [[1]]({destination})",
+    )
+
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos["readiness_projection"]["all_required_slots_slice_a_ready"] is True
+    assert searchos.get("component_receiver_failure") is None
+    assert all(
+        item["semantic_admission_status"] == "admitted"
+        and item["searchos_handoff_material_consumed"] is True
+        for item in searchos["semantic_outcomes_by_slot"].values()
+    )
+    assert harness.read_transport_calls == [*parents, destination]
+    assert harness.read_transport_calls.count(destination) == 1
+    assert len(harness.search_calls) == 1
+
+    navigation_state = harness.run_kernel.state.searchos_navigation_state
+    assert navigation_state["logical_edge_charges"] == 2
+    assert navigation_state["logical_read_nomination_charges"] == 2
+    use_refs = list(navigation_state["use_custody_refs_by_id"].values())
+    assert len(use_refs) == 2
+    assert len({dict(item["slot_ref"])["slot_id"] for item in use_refs}) == 2
+    assert len({item["physical_identity_digest"] for item in use_refs}) == 1
+    assert len(
+        {
+            json.dumps(item["fetch_read_content_packet_ref"], sort_keys=True)
+            for item in use_refs
+        }
+    ) == 1
+    assert all(item["physical_acquisition_origin"] == "navigation_candidate" for item in use_refs)
+
+    semantic_material = list(harness.searchos_product_result.searchos_semantic_material)
+    assert len(semantic_material) == 2
+    assert all(item["url"] == destination for item in semantic_material)
+    assert all(item["physical_acquisition_origin"] == "navigation_candidate" for item in semantic_material)
+
+    kernel_trace = _kernel_trace(harness)
+    serialized_actions = json.dumps(kernel_trace["actions"], sort_keys=True)
+    assert destination not in serialized_actions
+    destination_observations = [
+        item
+        for item in kernel_trace["observations"]
+        if destination in json.dumps(item, sort_keys=True)
+    ]
+    assert destination_observations
+    assert destination_observations[0]["stage"] == "searchos_navigation_physical_custody"
+    assert destination_observations[0]["observation_type"] == (
+        "acquisition_navigation_physical_custody_committed"
+    )
+    commit_payload = dict(destination_observations[0]["payload"])
+    packet = dict(commit_payload["committed_fetch_read_content_packet"])
+    reference = dict(packet["reference_records"][0])
+    ledger_record = dict(
+        commit_payload["evidence_ledger_observation"]["fetch_read_candidate_custody"][0]
+    )
+    physical_record = dict(commit_payload["navigation_physical_custody_record"])
+    assert packet["attempted_url"] == packet["durable_source_url"] == destination
+    assert reference["attempted_url"] == reference["durable_source_url"] == destination
+    assert ledger_record["attempted_url"] == ledger_record["durable_source_url"] == destination
+    assert physical_record["durable_source_url"] == destination
+    assert all(item["url"] == destination for item in searchos["semantic_material_refs"])
+
+    serialized_kernel = json.dumps(kernel_trace, sort_keys=True)
+    serialized_outcome = json.dumps(outcome.execution_trace, sort_keys=True)
+    assert rejected_query_secret not in serialized_kernel
+    assert rejected_query_secret not in serialized_outcome
+    assert parent_markdown not in serialized_kernel
+    assert "SearchOSNavigationExtractionDraftV1" not in serialized_kernel
+    assert "SearchOSNavigationDestinationRegistry" not in serialized_kernel
+    assert "selected_urls" not in json.dumps(
+        [
+            item
+            for item in kernel_trace["actions"] + kernel_trace["observations"]
+            if "navigation" in str(item.get("stage") or "")
+        ],
+        sort_keys=True,
+    )
+    assert all(destination not in prompt for prompt in harness.searchos_judgment_prompts)
+    assert all(rejected_query_secret not in prompt for prompt in harness.searchos_judgment_prompts)
+    assert rejected_query_secret not in (tmp_path / "execution.jsonl").read_text(encoding="utf-8")
+
+    query_plan = [item.to_dict() for item in harness.read_query_plan.items]
+    assert destination not in json.dumps(query_plan, sort_keys=True)
+    assert all("navigation" not in str(item.get("origin") or "") for item in query_plan)
+    assert destination in json.dumps(outcome.execution_trace["final_answer_packet"], sort_keys=True)
+    assert destination in json.dumps(
+        outcome.execution_trace["citation_source_handoff_contract"],
+        sort_keys=True,
+    )
+
+    navigation_prompts = [
+        prompt
+        for prompt in harness.searchos_judgment_prompts
+        if json.loads(prompt)["authorized_request"].get("navigation_candidate_refs")
+    ]
+    assert navigation_prompts
+    authorized, valid_output = _navigation_decision_from_prompt(navigation_prompts[0])
+    validated = validate_searchos_judgment_model_output(
+        request=authorized,
+        model_output=valid_output,
+    )
+    assert validated["action"] == "REQUEST_NAVIGATE_BREADCRUMB"
+    for forbidden_field in ("url", "provider", "route"):
+        with pytest.raises(SearchOSRuntimeError):
+            validate_searchos_judgment_model_output(
+                request=authorized,
+                model_output={**valid_output, forbidden_field: destination},
+            )
+    stale_output = json.loads(json.dumps(valid_output))
+    stale_output["navigation_candidate_ref"]["navigation_candidate_ref_digest"] = "0" * 64
+    with pytest.raises(SearchOSRuntimeError):
+        validate_searchos_judgment_model_output(
+            request=authorized,
+            model_output=stale_output,
+        )
+
+
+def test_n2_navigation_uses_existing_multicomponent_receiver_with_physical_reuse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parents = [f"https://shared.example/parent-{index}" for index in range(1, 9)]
+    alpha_destination = "https://shared.example/alpha-current"
+    beta_destination = "https://shared.example/beta-current"
+    parent_content = {
+        url: (
+            "This page does not answer the question. "
+            + (
+                "[Current source](/alpha-current)"
+                if index % 2
+                else "[Current source](/beta-current)"
+            )
+        )
+        for index, url in enumerate(parents, 1)
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="Compare Alpha and Beta current official operating rates.",
+        core_topic="Alpha and Beta operating rates",
+        primary_entity="Alpha",
+        query_type="comparison",
+        router_entities=("Alpha", "Beta"),
+        researcher_queries=[
+            "Alpha current official operating rate",
+            "Beta current official operating rate",
+        ],
+        evidence_rows=[
+            {
+                "title": f"Shared parent {index}",
+                "url": url,
+                "text": f"Directional parent {index}.",
+            }
+            for index, url in enumerate(parents, 1)
+        ],
+        read_content_by_url={
+            **parent_content,
+            alpha_destination: "Alpha is 17 units per hour.",
+            beta_destination: "Beta is 19 units per hour.",
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+    )
+
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    readiness = dict(searchos["readiness_projection"])
+    assert readiness["all_required_slots_slice_a_ready"] is True
+    assert readiness["required_ready_count"] == 4
+    assert searchos.get("component_receiver_failure") is None
+    assert all(
+        item["component_analyst_proposal_status"] == "proposed"
+        and item["component_dprime_validation_status"] == "accepted"
+        and item["semantic_admission_status"] == "admitted"
+        and item["searchos_handoff_material_consumed"] is True
+        for item in searchos["semantic_outcomes_by_slot"].values()
+    )
+    component_projection = dict(
+        harness.run_kernel.state.projections["multicomponent_component_admission"]
+    )
+    assert component_projection["component_count"] == 2
+    assert component_projection["admitted_component_count"] == 2
+
+    assert harness.read_transport_calls.count(alpha_destination) == 1
+    assert harness.read_transport_calls.count(beta_destination) == 1
+    assert len(harness.read_transport_calls) == 6
+    assert len(harness.search_calls) == 1
+    navigation_state = harness.run_kernel.state.searchos_navigation_state
+    assert navigation_state["logical_edge_charges"] == 4
+    assert navigation_state["logical_read_nomination_charges"] == 4
+    use_refs = list(navigation_state["use_custody_refs_by_id"].values())
+    assert len(use_refs) == 4
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for item in use_refs:
+        grouped.setdefault(str(item["physical_identity_digest"]), []).append(item)
+    assert sorted(len(items) for items in grouped.values()) == [1, 3]
+    for items in grouped.values():
+        assert len(
+            {
+                json.dumps(item["fetch_read_content_packet_ref"], sort_keys=True)
+                for item in items
+            }
+        ) == 1
+        assert len(
+            {
+                json.dumps(item["evidence_ledger_custody_ref"], sort_keys=True)
+                for item in items
+            }
+        ) == 1
+        assert all(item["physical_acquisition_origin"] == "navigation_candidate" for item in items)
+
+    navigation_physical = [
+        item
+        for item in navigation_state["physical_custody_by_digest"].values()
+        if item["physical_acquisition_origin"] == "navigation_candidate"
+    ]
+    assert len(navigation_physical) == 2
+    semantic = list(harness.searchos_product_result.searchos_semantic_material)
+    assert [item["url"] for item in semantic].count(alpha_destination) == 1
+    assert [item["url"] for item in semantic].count(beta_destination) == 3
+    assert all(item["physical_acquisition_origin"] == "navigation_candidate" for item in semantic)
+    assert harness.forbidden_live_calls == []
+    execution_observations = list(
+        harness.run_kernel.state.acquisition_control_state["execution_observations_by_id"].values()
+    )
+    assert all(
+        item.get("provider_failure_fallback_attempted") is not True
+        for item in execution_observations
+    )
+    assert all(
+        alpha_destination not in prompt and beta_destination not in prompt
+        for prompt in harness.searchos_judgment_prompts
+    )
+
+
+def test_navigation_ledger_failure_rolls_back_without_durable_url_or_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = "https://alpha.example/parent"
+    destination = "https://alpha.example/ledger-failure-destination"
+    rejected_query_secret = "PHASE_LEDGER_ROLLBACK_SECRET_27D4"
+
+    def fail_navigation_ledger_admission(**_kwargs):
+        raise RuntimeError("injected_navigation_ledger_admission_failure")
+
+    monkeypatch.setattr(
+        product_runtime,
+        "admit_navigation_packet_commit_to_evidence_ledger",
+        fail_navigation_ledger_admission,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's operating rate?",
+        core_topic="Alpha operating rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha operating rate"],
+        evidence_rows=[
+            {
+                "title": "Alpha parent",
+                "url": parent,
+                "text": "Directional parent.",
+            }
+        ],
+        read_content_by_url={
+            parent: (
+                "This page does not answer the question. "
+                "[Current rate](/ledger-failure-destination) "
+                f"[rejected](/ignored?token={rejected_query_secret})"
+            ),
+            destination: "Alpha is 17 units per hour.",
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+    )
+
+    assert harness.read_transport_calls == [parent, destination]
+    assert harness.read_transport_calls.count(destination) == 1
+    assert _navigation_commit_observations(harness) == []
+    kernel_trace = _kernel_trace(harness)
+    failed_custody_observations = [
+        item
+        for item in kernel_trace["observations"]
+        if item.get("stage") == "searchos_navigation_physical_custody"
+    ]
+    assert len(failed_custody_observations) == 1
+    assert failed_custody_observations[0]["status"] == "failed"
+    assert failed_custody_observations[0]["payload"] == {
+        "durable_source_commit_boundary": False,
+        "failure_code": "read_authority_or_route_blocked:RuntimeError",
+    }
+    serialized_kernel = json.dumps(kernel_trace, sort_keys=True)
+    assert destination not in serialized_kernel
+    assert rejected_query_secret not in serialized_kernel
+    assert destination not in json.dumps(outcome.execution_trace, sort_keys=True)
+    assert harness.searchos_product_result.searchos_semantic_material == ()
+    navigation_state = harness.run_kernel.state.searchos_navigation_state
+    assert navigation_state["physical_custody_by_digest"]
+    assert all(
+        item["physical_acquisition_origin"] == "discovery_candidate"
+        for item in navigation_state["physical_custody_by_digest"].values()
+    )
+    assert len(navigation_state["terminal_physical_operations_by_key"]) == 1
+    operation_key = next(iter(navigation_state["terminal_physical_operations_by_key"]))
+    assert operation_key.startswith("read-navigation:")
+    assert navigation_state["logical_edge_charges"] == 1
+    assert navigation_state["logical_read_nomination_charges"] == 1
+    assert all(destination not in prompt for prompt in harness.searchos_judgment_prompts)

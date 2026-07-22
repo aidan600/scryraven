@@ -3,7 +3,7 @@
 Proof class: PRODUCT. Validation bucket: phase_focus, with the required-needs
 terminal and exact-follow-up nodes promoted to semantic_search_lane. Surface:
 SearchOS first-wave, READ/semantic custody, N-component admission, and safe
-terminal; navigation and comprehensive recovery remain closed. Runtime path:
+terminal; bounded breadcrumb navigation is open while comprehensive recovery remains closed. Runtime path:
 offline ordinary product pipeline with fake model/provider responses. Expected
 cost: sub-second per node. Promotion posture: durable domain-lane sentinels,
 never fast_pr. Replace or narrow when Slice B or recovery/stopping changes the
@@ -30,6 +30,7 @@ from core.searchos_iterative_judgment_runtime import (
 )
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
+    SEARCHOS_JUDGMENT_DECISION_CONTRACT_V2_SCHEMA_VERSION,
     SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
     build_searchos_judgment_decision_contract_v1,
 )
@@ -302,14 +303,15 @@ def test_one_component_read_to_semantic_receiver_is_ready(
     )
     assert all(
         item["decision_contract_schema_version"]
-        == SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
+            == SEARCHOS_JUDGMENT_DECISION_CONTRACT_V2_SCHEMA_VERSION
         and len(str(item["decision_contract_digest"])) == 64
         and item["decision_contract_actions"]
         == [
             "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
             "HANDOFF_UNRESOLVED",
-            "PROPOSE_FOLLOWUP_QUERY",
-            "REQUEST_READ_PAGE",
+                "PROPOSE_FOLLOWUP_QUERY",
+                "REQUEST_NAVIGATE_BREADCRUMB",
+                "REQUEST_READ_PAGE",
         ]
         for item in harness.read_assessment_calls
     )

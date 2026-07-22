@@ -92,6 +92,21 @@ _DESTINATION_BINDING_REF_FIELDS = frozenset(
     }
 )
 
+_PHYSICAL_SOURCE_BINDING_REF_FIELDS = frozenset(
+    {
+        "physical_source_binding_id",
+        "physical_source_binding_digest",
+        "full_source_digest",
+        "semantic_identity_digest",
+        "physical_identity_digest",
+        "normalized_scheme",
+        "normalized_hostname",
+        "port_posture",
+        "path_digest",
+        "query_present",
+    }
+)
+
 
 class SearchOSNavigationError(ValueError):
     """Fail-closed navigation contract or transition error."""
@@ -779,6 +794,88 @@ def navigation_physical_operation_identity(value: str) -> str:
     return f"read-navigation:{normalize_navigation_url(value).physical_digest}"
 
 
+def build_searchos_physical_source_binding_ref_v2(
+    exact_source_url: str,
+) -> dict[str, Any]:
+    """Project a durable source URL into a non-reconstructable physical ref."""
+
+    normalized = normalize_navigation_url(exact_source_url)
+    core = {
+        "full_source_digest": normalized.full_digest,
+        "semantic_identity_digest": normalized.semantic_digest,
+        "physical_identity_digest": normalized.physical_digest,
+        "normalized_scheme": normalized.scheme,
+        "normalized_hostname": normalized.hostname,
+        "port_posture": normalized.port_posture,
+        "path_digest": _digest_text(normalized.path),
+        "query_present": normalized.query_present,
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "physical_source_binding_id": (f"searchos-physical-source:{digest[:24]}"),
+        "physical_source_binding_digest": digest,
+    }
+
+
+def validate_searchos_physical_source_binding_ref_v2(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    ref = _mapping(value, "physical_source_binding_ref")
+    if set(ref) != _PHYSICAL_SOURCE_BINDING_REF_FIELDS:
+        raise SearchOSNavigationError("physical_source_binding_fields_invalid")
+    if not isinstance(ref.get("query_present"), bool):
+        raise SearchOSNavigationError("physical_source_binding_query_invalid")
+    core = {
+        "full_source_digest": _digest_token(ref.get("full_source_digest"), "full_source_digest"),
+        "semantic_identity_digest": _digest_token(
+            ref.get("semantic_identity_digest"),
+            "semantic_identity_digest",
+        ),
+        "physical_identity_digest": _digest_token(
+            ref.get("physical_identity_digest"),
+            "physical_identity_digest",
+        ),
+        "normalized_scheme": _token(ref.get("normalized_scheme"), "normalized_scheme"),
+        "normalized_hostname": _token(ref.get("normalized_hostname"), "normalized_hostname"),
+        "port_posture": _token(ref.get("port_posture"), "port_posture"),
+        "path_digest": _digest_token(ref.get("path_digest"), "path_digest"),
+        "query_present": ref["query_present"],
+    }
+    digest = _digest(core)
+    if (
+        ref.get("physical_source_binding_digest") != digest
+        or ref.get("physical_source_binding_id") != f"searchos-physical-source:{digest[:24]}"
+    ):
+        raise SearchOSNavigationError("physical_source_binding_identity_mismatch")
+    return deepcopy(ref)
+
+
+def build_searchos_physical_acquisition_ref_v2(
+    *,
+    physical_acquisition_origin: str,
+    acquisition_work_order_ref: Mapping[str, Any],
+    acquisition_artifact_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build one URL-free identity for the completed physical acquisition."""
+
+    origin = _token(physical_acquisition_origin, "physical_acquisition_origin")
+    if origin not in {"discovery_candidate", "navigation_candidate"}:
+        raise SearchOSNavigationError("physical_acquisition_origin_invalid")
+    core = {
+        "schema_version": "searchos_physical_acquisition_ref_v2",
+        "physical_acquisition_origin": origin,
+        "acquisition_work_order_ref": _required_ref(acquisition_work_order_ref, "acquisition_work_order_ref"),
+        "acquisition_artifact_ref": _artifact_ref(acquisition_artifact_ref),
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "physical_acquisition_id": (f"searchos-physical-acquisition:{origin}:{digest[:24]}"),
+        "physical_acquisition_digest": digest,
+    }
+
+
 def validate_navigation_destination_binding_ref(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -956,6 +1053,21 @@ def extract_searchos_navigation_draft_v1(
         extraction_counters=counters,
         overflow_digest=_digest(overflow_tokens),
     )
+
+
+def sanitize_searchos_navigation_source_text_v1(retained_text: str) -> str:
+    """Remove Markdown destination syntax before durable content custody.
+
+    Extraction operates on the exact transient artifact first.  The text that
+    proceeds into FetchRead keeps readable labels and prose, but not raw hrefs,
+    autolink destinations, or the full Markdown representation.
+    """
+
+    if not isinstance(retained_text, str):
+        raise SearchOSNavigationError("navigation_retained_text_missing")
+    if len(retained_text) > NAVIGATION_RETAINED_TEXT_CEILING:
+        raise SearchOSNavigationError("navigation_retained_text_over_limit")
+    return _sanitize_markdown_destinations(retained_text)
 
 
 def discard_navigation_extraction_draft(
@@ -1682,6 +1794,68 @@ def build_searchos_navigation_candidate_window_v1(
     }
 
 
+def validate_searchos_navigation_candidate_ref_v1(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate one exact URL-free model-visible navigation ref."""
+
+    return _validate_navigation_candidate_ref(value)
+
+
+def validate_searchos_navigation_candidate_window_v1(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate one bounded URL-free navigation window envelope."""
+
+    window = _mapping(value, "navigation_candidate_window")
+    required = {
+        "schema_version",
+        "slot_id",
+        "navigation_candidate_refs",
+        "visible_count",
+        "hidden_count",
+        "hidden_digest",
+        "navigation_candidate_window_id",
+        "navigation_candidate_window_digest",
+    }
+    if set(window) != required:
+        raise SearchOSNavigationError("navigation_candidate_window_fields_invalid")
+    if window.get("schema_version") != ("searchos_navigation_candidate_window_v1"):
+        raise SearchOSNavigationError("navigation_candidate_window_schema_invalid")
+    slot_id = _token(window.get("slot_id"), "slot_id")
+    candidates = [
+        _validate_navigation_candidate_ref(item) for item in _sequence(window.get("navigation_candidate_refs"))
+    ]
+    visible_count = _bounded_nonnegative_int(
+        window.get("visible_count"),
+        "navigation_visible_count",
+        maximum=NAVIGATION_MODEL_WINDOW_CEILING,
+    )
+    hidden_count = _bounded_nonnegative_int(
+        window.get("hidden_count"),
+        "navigation_hidden_count",
+        maximum=NAVIGATION_STABLE_OPTION_CEILING,
+    )
+    if visible_count != len(candidates):
+        raise SearchOSNavigationError("navigation_candidate_window_visible_count_mismatch")
+    hidden_digest = _digest_token(window.get("hidden_digest"), "navigation_hidden_digest")
+    core = {
+        "schema_version": "searchos_navigation_candidate_window_v1",
+        "slot_id": slot_id,
+        "navigation_candidate_refs": candidates,
+        "visible_count": visible_count,
+        "hidden_count": hidden_count,
+        "hidden_digest": hidden_digest,
+    }
+    digest = _digest(core)
+    if (
+        window.get("navigation_candidate_window_digest") != digest
+        or window.get("navigation_candidate_window_id") != f"navigation-window:{slot_id}:{digest[:24]}"
+    ):
+        raise SearchOSNavigationError("navigation_candidate_window_identity_mismatch")
+    return deepcopy(window)
+
+
 def admit_searchos_navigation_selection(
     state: Mapping[str, Any],
     *,
@@ -2089,6 +2263,98 @@ def build_searchos_navigation_physical_custody_record_v2(
     }
 
 
+def build_searchos_discovery_physical_custody_record_v2(
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+    destination_binding_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project immutable discovery-origin custody for exact physical reuse."""
+
+    from core.fetch_read_content_reference import (
+        FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION,
+        fetch_read_content_packet_ref_from_packet,
+        validate_fetch_read_content_packet,
+    )
+
+    packet = validate_fetch_read_content_packet(fetch_read_content_packet)
+    if (
+        packet.get("schema_version") != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION
+        or packet.get("physical_acquisition_origin") != "discovery_candidate"
+    ):
+        raise SearchOSNavigationError("discovery_physical_custody_packet_v2_required")
+    binding = validate_navigation_destination_binding_ref(destination_binding_ref)
+    if (
+        packet.get("physical_identity_digest") != binding["physical_identity_digest"]
+        or packet.get("full_destination_digest") != binding["full_destination_digest"]
+        or packet.get("attempted_url") != packet.get("durable_source_url")
+    ):
+        raise SearchOSNavigationError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID)
+    core = {
+        "schema_version": "searchos_discovery_physical_custody_v2",
+        "owner": SEARCHOS_NAVIGATION_OWNER,
+        "run_id": _token(packet.get("run_id"), "run_id"),
+        "request_id": _token(packet.get("request_id"), "request_id"),
+        "physical_acquisition_origin": "discovery_candidate",
+        "operation_identity_key": _token(packet.get("operation_identity_key"), "operation_identity_key"),
+        "physical_identity_digest": binding["physical_identity_digest"],
+        "full_destination_digest": binding["full_destination_digest"],
+        "destination_binding_ref": binding,
+        "physical_acquisition_ref": _required_ref(
+            packet.get("physical_acquisition_ref"),
+            "physical_acquisition_ref",
+        ),
+        "fetch_read_content_packet_ref": (fetch_read_content_packet_ref_from_packet(packet)),
+        "evidence_ledger_custody_ref": _required_ref(
+            evidence_ledger_custody_ref,
+            "evidence_ledger_custody_ref",
+        ),
+        "attempted_url": _token(packet.get("attempted_url"), "attempted_url"),
+        "durable_source_url": _token(packet.get("durable_source_url"), "durable_source_url"),
+        "source_host": _token(packet.get("source_host"), "source_host"),
+        "source_domain": _token(packet.get("source_domain"), "source_domain"),
+        "retained_digest": _digest_token(packet.get("retained_digest"), "retained_digest"),
+        "retained_character_count": _bounded_positive_int(
+            packet.get("retained_character_count"),
+            "retained_character_count",
+        ),
+        "validated_redirect_alias_full_digests": [],
+        "custody_posture": "immutable_physical_custody",
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "navigation_physical_custody_id": (
+            f"searchos-discovery-physical-custody:{binding['physical_identity_digest']}:{digest[:20]}"
+        ),
+        "navigation_physical_custody_digest": digest,
+    }
+
+
+def record_searchos_discovery_physical_custody(
+    state: Mapping[str, Any],
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+    destination_binding_ref: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    current = _validated_retained_state(state)
+    record = build_searchos_discovery_physical_custody_record_v2(
+        fetch_read_content_packet=fetch_read_content_packet,
+        evidence_ledger_custody_ref=evidence_ledger_custody_ref,
+        destination_binding_ref=destination_binding_ref,
+    )
+    if record["run_id"] != current["run_id"] or record["request_id"] != current["request_id"]:
+        raise SearchOSNavigationError("discovery_physical_custody_scope_mismatch")
+    physical_digest = record["physical_identity_digest"]
+    existing = current["physical_custody_by_digest"].get(physical_digest)
+    if existing and existing != record:
+        raise SearchOSNavigationError("navigation_physical_custody_identity_collision")
+    next_state = deepcopy(current)
+    next_state["physical_custody_by_digest"][physical_digest] = record
+    return _validated_retained_state(next_state), deepcopy(record)
+
+
 def searchos_navigation_physical_custody_ref(
     record: Mapping[str, Any],
 ) -> dict[str, str]:
@@ -2323,6 +2589,73 @@ def build_searchos_navigation_use_custody_ref_v2(
     }
 
 
+def build_searchos_parent_use_custody_ref_v2(
+    *,
+    slot_ref: Mapping[str, Any],
+    fetch_read_content_packet_ref: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+    physical_acquisition_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    attempted_source_full_digest: str,
+    physical_identity_digest: str,
+    physical_acquisition_origin: str,
+    navigation_depth: int,
+    ancestor_physical_identity_digests: Sequence[str],
+    navigation_use_custody_ref: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the exact URL-free parent-use join for later extraction."""
+
+    origin = _token(physical_acquisition_origin, "physical_acquisition_origin")
+    if origin not in {"discovery_candidate", "navigation_candidate"}:
+        raise SearchOSNavigationError("physical_acquisition_origin_invalid")
+    use_ref = (
+        _required_ref(navigation_use_custody_ref, "navigation_use_custody_ref") if navigation_use_custody_ref else {}
+    )
+    if origin == "navigation_candidate" and not use_ref:
+        raise SearchOSNavigationError("navigation_parent_use_requires_navigation_use_custody")
+    slot = _required_ref(slot_ref, "slot_ref")
+    if use_ref and _mapping(use_ref.get("slot_ref"), "slot_ref") != slot:
+        raise SearchOSNavigationError("navigation_parent_use_slot_mismatch")
+    packet_ref = _required_ref(fetch_read_content_packet_ref, "fetch_read_content_packet_ref")
+    ledger_ref = _required_ref(evidence_ledger_custody_ref, "evidence_ledger_custody_ref")
+    if use_ref and (
+        use_ref.get("fetch_read_content_packet_ref") != packet_ref
+        or use_ref.get("evidence_ledger_custody_ref") != ledger_ref
+        or use_ref.get("physical_identity_digest") != physical_identity_digest
+    ):
+        raise SearchOSNavigationError("navigation_parent_use_physical_binding_mismatch")
+    depth = _bounded_nonnegative_int(
+        navigation_depth,
+        "navigation_depth",
+        maximum=NAVIGATION_MAX_DEPTH,
+    )
+    core = {
+        "schema_version": "searchos_parent_use_custody_ref_v2",
+        "slot_ref": slot,
+        "fetch_read_content_packet_ref": packet_ref,
+        "evidence_ledger_custody_ref": ledger_ref,
+        "physical_acquisition_ref": _required_ref(physical_acquisition_ref, "physical_acquisition_ref"),
+        "source_obligation_ref": _required_ref(source_obligation_ref, "source_obligation_ref"),
+        "component_ref": _required_ref(component_ref, "component_ref"),
+        "attempted_source_full_digest": _digest_token(attempted_source_full_digest, "attempted_source_full_digest"),
+        "physical_identity_digest": _digest_token(physical_identity_digest, "physical_identity_digest"),
+        "physical_acquisition_origin": origin,
+        "navigation_depth": depth,
+        "ancestor_physical_identity_digests": [
+            _digest_token(item, "ancestor_physical_identity_digest") for item in ancestor_physical_identity_digests
+        ],
+        "navigation_use_custody_ref": use_ref,
+        "bounded_content_present": True,
+    }
+    digest = _digest(core)
+    return {
+        **core,
+        "searchos_parent_use_custody_id": (f"searchos-parent-use-custody:{digest[:24]}"),
+        "searchos_parent_use_custody_digest": digest,
+    }
+
+
 def validate_searchos_navigation_retained_state(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -2383,7 +2716,7 @@ def _validate_navigation_parent_custody_join(
         raise SearchOSNavigationError("navigation_parent_use_attempted_identity_mismatch")
 
 
-def _fetch_packet_ref(packet: Mapping[str, Any]) -> dict[str, str]:
+def _fetch_packet_ref(packet: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "fetch_read_content_packet_id": _token(
             packet.get("fetch_read_content_packet_id"),
@@ -2393,6 +2726,8 @@ def _fetch_packet_ref(packet: Mapping[str, Any]) -> dict[str, str]:
             packet.get("fetch_read_content_packet_digest"),
             "fetch_read_content_packet_digest",
         ),
+        "schema_version": "fetch_read_content_packet_v2",
+        "reference_count": 1,
     }
 
 
@@ -2626,6 +2961,42 @@ def _iter_supported_markdown_links(
                     index = destination_close + 1
                     continue
         index += 1
+
+
+def _sanitize_markdown_destinations(text: str) -> str:
+    output: list[str] = []
+    cursor = 0
+    index = 0
+    length = len(text)
+    while index < length:
+        character = text[index]
+        if character == "<":
+            close = text.find(">", index + 1, min(length, index + 704))
+            if close != -1:
+                target = text[index + 1 : close]
+                if target.startswith(("http://", "https://", "HTTP://", "HTTPS://")):
+                    output.extend((text[cursor:index], "linked page"))
+                    cursor = close + 1
+                    index = cursor
+                    continue
+        image_prefix = character == "!" and index + 1 < length and text[index + 1] == "["
+        label_start = index + 1 if image_prefix else index
+        if text[label_start : label_start + 1] == "[":
+            label_close = _scan_balanced(text, label_start, "[", "]", 512)
+            if label_close is not None and label_close + 1 < length and text[label_close + 1] == "(":
+                destination_close = _scan_balanced(text, label_close + 1, "(", ")", 900)
+                if destination_close is not None:
+                    label = _bounded_relationship_label(text[label_start + 1 : label_close])
+                    replacement = "image" if image_prefix else label
+                    if replacement.startswith(("http://", "https://", "HTTP://", "HTTPS://")):
+                        replacement = "linked page"
+                    output.extend((text[cursor:index], replacement))
+                    cursor = destination_close + 1
+                    index = cursor
+                    continue
+        index += 1
+    output.append(text[cursor:])
+    return "".join(output)
 
 
 def _scan_balanced(

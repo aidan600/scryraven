@@ -44,6 +44,7 @@ from core.searchos_navigation_runtime import (
     normalize_navigation_url,
     record_searchos_navigation_contributor_failure,
     record_searchos_navigation_destination_terminal,
+    sanitize_searchos_navigation_source_text_v1,
     searchos_navigation_physical_custody_ref,
 )
 
@@ -108,12 +109,7 @@ def _join_material(draft, *, slot_id: str = "slot-1"):
         "answer_contract_ref": draft.answer_contract_ref,
         "attempted_source_full_digest": draft.attempted_parent_full_digest,
     }
-    packet_ref = {
-        "fetch_read_content_packet_id": packet["fetch_read_content_packet_id"],
-        "fetch_read_content_packet_digest": packet[
-            "fetch_read_content_packet_digest"
-        ],
-    }
+    packet_ref = fetch_read_content_packet_ref_from_packet(packet)
     ledger = {
         "evidence_ledger_custody_id": "ledger-custody:parent",
         "evidence_ledger_custody_digest": _digest("ledger"),
@@ -213,6 +209,13 @@ def test_bounded_supported_markdown_extraction_and_unsupported_forms() -> None:
     ]
     assert draft.extraction_counters["retained_occurrences"] == 4
     assert all("image" not in item.relationship_label for item in draft.occurrences)
+    sanitized = sanitize_searchos_navigation_source_text_v1(text)
+    assert "https://example.com/a" not in sanitized
+    assert "https://example.com/c" not in sanitized
+    assert "https://example.com/image.png" not in sanitized
+    assert "absolute" in sanitized and "relative" in sanitized
+    assert "linked page" in sanitized
+    assert "naked https://example.com/naked" in sanitized
 
     overflow_text = " ".join(
         f"[item {index}](https://example.com/{index})"
@@ -280,6 +283,9 @@ def test_query_is_rejected_before_registry_and_never_stripped() -> None:
     assert len(registry) == 0
     assert proposal["candidate_contributors"] == []
     assert secret not in json.dumps(proposal, sort_keys=True)
+    assert secret not in sanitize_searchos_navigation_source_text_v1(
+        f"[secret](https://example.com/path?token={secret})"
+    )
     with pytest.raises(
         SearchOSNavigationError,
         match=NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED,

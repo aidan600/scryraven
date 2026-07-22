@@ -25,25 +25,18 @@ from core.searchos_navigation_runtime import (
     SearchOSNavigationError,
     normalize_navigation_url,
     validate_navigation_destination_binding_ref,
+    validate_searchos_physical_source_binding_ref_v2,
 )
 
-FETCH_READ_CONTENT_PACKET_SCHEMA_VERSION = (
-    "fetch_read_content_packet_ag_fetch_read_content_reference_01_v1"
-)
-SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION = (
-    "sanitized_content_reference_ag_fetch_read_content_reference_01_v1"
-)
+FETCH_READ_CONTENT_PACKET_SCHEMA_VERSION = "fetch_read_content_packet_ag_fetch_read_content_reference_01_v1"
+SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION = "sanitized_content_reference_ag_fetch_read_content_reference_01_v1"
 FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION = "fetch_read_content_packet_v2"
-SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION = (
-    "sanitized_content_reference_v2"
-)
+SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION = "sanitized_content_reference_v2"
 FETCH_READ_CONTENT_PACKET_TRACE_KEY = "fetch_read_content_packet"
 FETCH_READ_CONTENT_PACKET_OWNER = "RunKernel.FetchReadContentPacket"
 FETCH_READ_CONTENT_PACKET_KIND = "fetch_read_content_packet"
 FETCH_READ_CONTENT_RECORD_KIND = "sanitized_content_reference"
-FETCH_READ_CONTENT_PACKET_POSTURE = (
-    "bounded_fetch_read_content_identity_handoff_before_evidence_ledger_custody"
-)
+FETCH_READ_CONTENT_PACKET_POSTURE = "bounded_fetch_read_content_identity_handoff_before_evidence_ledger_custody"
 FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS = 2_000
 BOUNDED_TEXT_SELECTION_CONTEXT_POSTURES = frozenset(
     {
@@ -1180,6 +1173,230 @@ _NAVIGATION_FETCH_PACKET_V2_FIELDS = frozenset(
     }
 )
 
+_DISCOVERY_SANITIZED_REFERENCE_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "sanitized_content_reference_id",
+        "sanitized_content_reference_digest",
+        "record_kind",
+        "run_id",
+        "request_id",
+        "physical_acquisition_origin",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "acquisition_work_order_ref",
+        "route_observation_ref",
+        "execution_action_ref",
+        "acquisition_artifact_ref",
+        "physical_acquisition_ref",
+        "physical_source_binding_ref",
+        "discovery_candidate_ref",
+        "search_result_candidate_packet_ref",
+        "operation_identity_key",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "attempted_source_full_digest",
+        "attempted_url",
+        "durable_source_url",
+        "source_host",
+        "source_domain",
+        "provider",
+        "operation",
+        "content_type",
+        "http_status",
+        "content_title",
+        "bounded_text",
+        "bounded_text_digest",
+        "bounded_character_count",
+        "retained_digest",
+        "retained_character_count",
+        "secondary_source_provenance",
+        "fetch_read_status",
+        "lineage_only",
+        "semantic_support_created",
+        "citation_eligible",
+        "source_obligation_satisfied",
+    }
+)
+
+_DISCOVERY_FETCH_PACKET_V2_FIELDS = frozenset(
+    {
+        "schema_version",
+        "fetch_read_content_packet_id",
+        "fetch_read_content_packet_digest",
+        "packet_kind",
+        "owner",
+        "run_id",
+        "request_id",
+        "physical_acquisition_origin",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "acquisition_work_order_ref",
+        "route_observation_ref",
+        "execution_action_ref",
+        "acquisition_artifact_ref",
+        "physical_acquisition_ref",
+        "physical_source_binding_ref",
+        "discovery_candidate_ref",
+        "search_result_candidate_packet_ref",
+        "operation_identity_key",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "attempted_source_full_digest",
+        "attempted_url",
+        "durable_source_url",
+        "source_host",
+        "source_domain",
+        "retained_digest",
+        "retained_character_count",
+        "reference_count",
+        "reference_records",
+        "commit_boundary",
+        "semantic_support_created",
+        "citation_eligible",
+        "source_obligation_satisfied",
+    }
+)
+
+
+def build_discovery_fetch_read_content_packet_v2(
+    *,
+    run_id: str,
+    request_id: str,
+    answer_contract_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    acquisition_work_order_ref: Mapping[str, Any],
+    route_observation_ref: Mapping[str, Any],
+    execution_action_ref: Mapping[str, Any],
+    acquisition_artifact_ref: Mapping[str, Any],
+    physical_acquisition_ref: Mapping[str, Any],
+    physical_source_binding_ref: Mapping[str, Any],
+    discovery_candidate_ref: Mapping[str, Any],
+    search_result_candidate_packet_ref: Mapping[str, Any],
+    operation_identity_key: str,
+    attempted_url: str,
+    durable_source_url: str,
+    provider: str,
+    operation: str,
+    bounded_text: str,
+    retained_digest: str,
+    retained_character_count: int,
+    content_type: str | None = None,
+    http_status: int | None = None,
+    content_title: str | None = None,
+    secondary_source_provenance: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build an opt-in discovery-origin v2 packet with navigation join data."""
+
+    binding = validate_searchos_physical_source_binding_ref_v2(physical_source_binding_ref)
+    try:
+        attempted = normalize_navigation_url(attempted_url)
+        durable = normalize_navigation_url(durable_source_url)
+    except SearchOSNavigationError as exc:
+        raise FetchReadContentReferenceError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID) from exc
+    if (
+        attempted.exact_url != durable.exact_url
+        or attempted.full_digest != binding["full_source_digest"]
+        or attempted.physical_digest != binding["physical_identity_digest"]
+    ):
+        raise FetchReadContentReferenceError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID)
+    text = _clean_text(bounded_text, limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS)
+    if not text:
+        raise FetchReadContentReferenceError("discovery readable packet requires bounded text")
+    retained = _required_token(
+        retained_digest,
+        "discovery packet requires retained_digest",
+        limit=64,
+    )
+    retained_count = _bounded_int(retained_character_count)
+    if not _is_sha256(retained) or retained_count <= 0 or retained_count > 20_000:
+        raise FetchReadContentReferenceError("discovery packet retained material identity invalid")
+    secondary = _validated_navigation_secondary_provenance(attempted, secondary_source_provenance or {})
+    shared = {
+        "run_id": _required_token(run_id, "discovery packet requires run_id"),
+        "request_id": _required_token(request_id, "discovery packet requires request_id"),
+        "physical_acquisition_origin": "discovery_candidate",
+        "answer_contract_ref": _nonempty_safe_ref(answer_contract_ref, "answer_contract_ref"),
+        "source_obligation_ref": _nonempty_safe_ref(source_obligation_ref, "source_obligation_ref"),
+        "component_ref": _nonempty_safe_ref(component_ref, "component_ref"),
+        "acquisition_work_order_ref": _nonempty_safe_ref(acquisition_work_order_ref, "acquisition_work_order_ref"),
+        "route_observation_ref": _nonempty_safe_ref(route_observation_ref, "route_observation_ref"),
+        "execution_action_ref": _nonempty_safe_ref(execution_action_ref, "execution_action_ref"),
+        "acquisition_artifact_ref": _nonempty_safe_ref(acquisition_artifact_ref, "acquisition_artifact_ref"),
+        "physical_acquisition_ref": _nonempty_safe_ref(physical_acquisition_ref, "physical_acquisition_ref"),
+        "physical_source_binding_ref": binding,
+        "discovery_candidate_ref": _nonempty_safe_ref(discovery_candidate_ref, "discovery_candidate_ref"),
+        "search_result_candidate_packet_ref": _nonempty_safe_ref(
+            search_result_candidate_packet_ref,
+            "search_result_candidate_packet_ref",
+        ),
+        "operation_identity_key": _required_token(
+            operation_identity_key,
+            "discovery packet requires operation identity",
+            limit=180,
+        ),
+        "physical_identity_digest": attempted.physical_digest,
+        "full_destination_digest": attempted.full_digest,
+        "attempted_source_full_digest": attempted.full_digest,
+        "attempted_url": attempted.exact_url,
+        "durable_source_url": attempted.exact_url,
+        "source_host": attempted.hostname,
+        "source_domain": attempted.hostname,
+        "retained_digest": retained,
+        "retained_character_count": retained_count,
+    }
+    reference_core = {
+        "schema_version": SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION,
+        "record_kind": "sanitized_content_reference",
+        **shared,
+        "provider": _required_token(provider, "discovery packet requires provider"),
+        "operation": _required_token(operation, "discovery packet requires operation"),
+        "content_type": _clean_token(content_type, limit=160),
+        "http_status": _http_status(http_status),
+        "content_title": _clean_text(content_title, limit=300),
+        "bounded_text": text,
+        "bounded_text_digest": _digest_text(text),
+        "bounded_character_count": len(text),
+        "secondary_source_provenance": secondary,
+        "fetch_read_status": "readable",
+        "lineage_only": True,
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+    reference_digest = _digest_json(reference_core)
+    reference = {
+        **reference_core,
+        "sanitized_content_reference_id": (
+            f"sanitized-content-reference-discovery:{reference_core['request_id']}:{reference_digest[:20]}"
+        ),
+        "sanitized_content_reference_digest": reference_digest,
+    }
+    packet_core = {
+        "schema_version": FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION,
+        "packet_kind": FETCH_READ_CONTENT_PACKET_KIND,
+        "owner": FETCH_READ_CONTENT_PACKET_OWNER,
+        **shared,
+        "reference_count": 1,
+        "reference_records": [reference],
+        "commit_boundary": "local_uncommitted_until_evidence_ledger_admission",
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+    packet_digest = _digest_json(packet_core)
+    packet = {
+        **packet_core,
+        "fetch_read_content_packet_id": (
+            f"fetch-read-content-packet-discovery:{packet_core['request_id']}:{packet_digest[:20]}"
+        ),
+        "fetch_read_content_packet_digest": packet_digest,
+    }
+    return validate_fetch_read_content_packet_v2(packet)
+
 
 def build_navigation_fetch_read_content_packet_v2(
     *,
@@ -1382,26 +1599,18 @@ def validate_fetch_read_content_packet_v2(
     packet: Mapping[str, Any],
 ) -> dict[str, Any]:
     raw = _required_mapping(packet, "navigation fetch/read content packet")
+    if raw.get("physical_acquisition_origin") == "discovery_candidate":
+        return _validate_discovery_fetch_read_content_packet_v2(raw)
     if set(raw) != _NAVIGATION_FETCH_PACKET_V2_FIELDS:
-        raise FetchReadContentReferenceError(
-            "navigation fetch/read packet fields mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation fetch/read packet fields mismatch")
     if raw.get("schema_version") != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION:
-        raise FetchReadContentReferenceError(
-            "navigation fetch/read packet schema mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation fetch/read packet schema mismatch")
     if raw.get("packet_kind") != FETCH_READ_CONTENT_PACKET_KIND or raw.get("owner") != FETCH_READ_CONTENT_PACKET_OWNER:
-        raise FetchReadContentReferenceError(
-            "navigation fetch/read packet owner or kind mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation fetch/read packet owner or kind mismatch")
     if raw.get("physical_acquisition_origin") != "navigation_candidate":
-        raise FetchReadContentReferenceError(
-            "navigation fetch/read packet origin mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation fetch/read packet origin mismatch")
     if raw.get("commit_boundary") != "local_uncommitted_until_evidence_ledger_admission":
-        raise FetchReadContentReferenceError(
-            "navigation fetch/read packet commit boundary mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation fetch/read packet commit boundary mismatch")
     if any(
         raw.get(key) is not False
         for key in (
@@ -1502,22 +1711,16 @@ def _validate_sanitized_content_reference_v2(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
     raw = _required_mapping(value, "navigation sanitized content reference")
+    if raw.get("physical_acquisition_origin") == "discovery_candidate":
+        return _validate_discovery_sanitized_content_reference_v2(raw)
     if set(raw) != _NAVIGATION_SANITIZED_REFERENCE_V2_FIELDS:
-        raise FetchReadContentReferenceError(
-            "navigation sanitized content reference fields mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation sanitized content reference fields mismatch")
     if raw.get("schema_version") != SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION:
-        raise FetchReadContentReferenceError(
-            "navigation sanitized content reference schema mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation sanitized content reference schema mismatch")
     if raw.get("physical_acquisition_origin") != "navigation_candidate":
-        raise FetchReadContentReferenceError(
-            "navigation sanitized content reference origin mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation sanitized content reference origin mismatch")
     if raw.get("fetch_read_status") != "readable" or raw.get("lineage_only") is not True:
-        raise FetchReadContentReferenceError(
-            "navigation sanitized content reference posture mismatch"
-        )
+        raise FetchReadContentReferenceError("navigation sanitized content reference posture mismatch")
     if any(
         raw.get(key) is not False
         for key in (
@@ -1560,19 +1763,155 @@ def _validate_sanitized_content_reference_v2(
         }
     }
     digest = _digest_json(core)
-    expected_id = (
-        f"sanitized-content-reference-navigation:{raw['request_id']}:{digest[:20]}"
-    )
-    if raw.get("sanitized_content_reference_digest") != digest or raw.get("sanitized_content_reference_id") != expected_id:
-        raise FetchReadContentReferenceError(
-            "navigation sanitized content reference identity mismatch"
-        )
+    expected_id = f"sanitized-content-reference-navigation:{raw['request_id']}:{digest[:20]}"
+    if (
+        raw.get("sanitized_content_reference_digest") != digest
+        or raw.get("sanitized_content_reference_id") != expected_id
+    ):
+        raise FetchReadContentReferenceError("navigation sanitized content reference identity mismatch")
     return _safe_mapping(raw)
 
 
-def _validated_navigation_secondary_provenance(
-    attempted: Any, values: Mapping[str, str]
-) -> dict[str, str]:
+def _validate_discovery_fetch_read_content_packet_v2(
+    raw: Mapping[str, Any],
+) -> dict[str, Any]:
+    if set(raw) != _DISCOVERY_FETCH_PACKET_V2_FIELDS:
+        raise FetchReadContentReferenceError("discovery fetch/read packet v2 fields mismatch")
+    if (
+        raw.get("schema_version") != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION
+        or raw.get("packet_kind") != FETCH_READ_CONTENT_PACKET_KIND
+        or raw.get("owner") != FETCH_READ_CONTENT_PACKET_OWNER
+        or raw.get("physical_acquisition_origin") != "discovery_candidate"
+    ):
+        raise FetchReadContentReferenceError("discovery fetch/read packet v2 posture mismatch")
+    if raw.get("commit_boundary") != ("local_uncommitted_until_evidence_ledger_admission") or any(
+        raw.get(key) is not False
+        for key in (
+            "semantic_support_created",
+            "citation_eligible",
+            "source_obligation_satisfied",
+        )
+    ):
+        raise FetchReadContentReferenceError("discovery fetch/read packet v2 authority spoof")
+    binding = validate_searchos_physical_source_binding_ref_v2(raw.get("physical_source_binding_ref"))
+    try:
+        attempted = normalize_navigation_url(str(raw.get("attempted_url") or ""))
+    except SearchOSNavigationError as exc:
+        raise FetchReadContentReferenceError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID) from exc
+    if (
+        raw.get("durable_source_url") != attempted.exact_url
+        or raw.get("physical_identity_digest") != binding["physical_identity_digest"]
+        or raw.get("full_destination_digest") != binding["full_source_digest"]
+        or raw.get("attempted_source_full_digest") != attempted.full_digest
+        or raw.get("source_host") != attempted.hostname
+        or raw.get("source_domain") != attempted.hostname
+    ):
+        raise FetchReadContentReferenceError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID)
+    references = raw.get("reference_records")
+    if raw.get("reference_count") != 1 or not isinstance(references, list) or len(references) != 1:
+        raise FetchReadContentReferenceError("discovery fetch/read packet v2 reference count mismatch")
+    reference = _validate_discovery_sanitized_content_reference_v2(references[0])
+    for key in (
+        "run_id",
+        "request_id",
+        "answer_contract_ref",
+        "source_obligation_ref",
+        "component_ref",
+        "acquisition_work_order_ref",
+        "route_observation_ref",
+        "execution_action_ref",
+        "acquisition_artifact_ref",
+        "physical_acquisition_ref",
+        "physical_source_binding_ref",
+        "discovery_candidate_ref",
+        "search_result_candidate_packet_ref",
+        "operation_identity_key",
+        "physical_identity_digest",
+        "full_destination_digest",
+        "attempted_source_full_digest",
+        "attempted_url",
+        "durable_source_url",
+        "source_host",
+        "source_domain",
+        "retained_digest",
+        "retained_character_count",
+    ):
+        if reference.get(key) != raw.get(key):
+            raise FetchReadContentReferenceError(f"discovery fetch/read reference {key} mismatch")
+    core = {
+        key: _safe_value(value)
+        for key, value in raw.items()
+        if key
+        not in {
+            "fetch_read_content_packet_id",
+            "fetch_read_content_packet_digest",
+        }
+    }
+    digest = _digest_json(core)
+    expected_id = f"fetch-read-content-packet-discovery:{raw['request_id']}:{digest[:20]}"
+    if raw.get("fetch_read_content_packet_digest") != digest or raw.get("fetch_read_content_packet_id") != expected_id:
+        raise FetchReadContentReferenceError("discovery fetch/read packet v2 identity mismatch")
+    return _safe_mapping(raw)
+
+
+def _validate_discovery_sanitized_content_reference_v2(
+    raw: Mapping[str, Any],
+) -> dict[str, Any]:
+    if set(raw) != _DISCOVERY_SANITIZED_REFERENCE_V2_FIELDS:
+        raise FetchReadContentReferenceError("discovery sanitized content reference v2 fields mismatch")
+    if (
+        raw.get("schema_version") != SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION
+        or raw.get("physical_acquisition_origin") != "discovery_candidate"
+        or raw.get("fetch_read_status") != "readable"
+        or raw.get("lineage_only") is not True
+    ):
+        raise FetchReadContentReferenceError("discovery sanitized content reference v2 posture mismatch")
+    if any(
+        raw.get(key) is not False
+        for key in (
+            "semantic_support_created",
+            "citation_eligible",
+            "source_obligation_satisfied",
+        )
+    ):
+        raise FetchReadContentReferenceError("discovery sanitized content reference v2 authority spoof")
+    text = raw.get("bounded_text")
+    if (
+        not isinstance(text, str)
+        or not text
+        or len(text) > FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+        or raw.get("bounded_character_count") != len(text)
+        or raw.get("bounded_text_digest") != _digest_text(text)
+    ):
+        raise FetchReadContentReferenceError("discovery sanitized content reference v2 text invalid")
+    binding = validate_searchos_physical_source_binding_ref_v2(raw.get("physical_source_binding_ref"))
+    attempted = normalize_navigation_url(str(raw.get("attempted_url") or ""))
+    if (
+        raw.get("durable_source_url") != attempted.exact_url
+        or raw.get("full_destination_digest") != binding["full_source_digest"]
+        or raw.get("physical_identity_digest") != binding["physical_identity_digest"]
+    ):
+        raise FetchReadContentReferenceError(NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID)
+    core = {
+        key: _safe_value(item)
+        for key, item in raw.items()
+        if key
+        not in {
+            "sanitized_content_reference_id",
+            "sanitized_content_reference_digest",
+        }
+    }
+    digest = _digest_json(core)
+    expected_id = f"sanitized-content-reference-discovery:{raw['request_id']}:{digest[:20]}"
+    if (
+        raw.get("sanitized_content_reference_digest") != digest
+        or raw.get("sanitized_content_reference_id") != expected_id
+    ):
+        raise FetchReadContentReferenceError("discovery sanitized content reference v2 identity mismatch")
+    return _safe_mapping(raw)
+
+
+def _validated_navigation_secondary_provenance(attempted: Any, values: Mapping[str, str]) -> dict[str, str]:
     allowed = {
         "provider_reported_url",
         "resolved_url",
@@ -2679,6 +3018,7 @@ __all__ = [
     "SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION",
     "SANITIZED_CONTENT_REFERENCE_V2_SCHEMA_VERSION",
     "SanitizedContentReference",
+    "build_discovery_fetch_read_content_packet_v2",
     "build_fetch_read_content_packet_from_candidate_packet",
     "build_navigation_fetch_read_content_packet_v2",
     "build_sanitized_content_reference_from_candidate",

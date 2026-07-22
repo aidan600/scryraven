@@ -139,12 +139,16 @@ def build_evidence_ledger_observation_from_fetch_read_content_packet(
 
     if (
         isinstance(fetch_read_content_packet, Mapping)
-        and fetch_read_content_packet.get("schema_version")
-        == FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION
+        and fetch_read_content_packet.get("schema_version") == FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION
     ):
-        raise EvidenceLedgerCandidateCustodyError(
-            "navigation v2 custody requires a transient packet commit ref"
+        packet = validate_fetch_read_content_packet(fetch_read_content_packet)
+        if packet.get("physical_acquisition_origin") == ("navigation_candidate"):
+            raise EvidenceLedgerCandidateCustodyError("navigation v2 custody requires a transient packet commit ref")
+        observation, _ = _navigation_observation_from_packet(
+            packet,
+            observation_id=observation_id,
         )
+        return observation
 
     _reject_upgrade_claims(
         fetch_read_content_packet,
@@ -264,32 +268,31 @@ def _navigation_observation_from_packet(
     observation_id: str | None,
 ) -> tuple[EvidenceLedgerObservation, dict[str, str]]:
     if packet.get("schema_version") != FETCH_READ_CONTENT_PACKET_V2_SCHEMA_VERSION:
-        raise EvidenceLedgerCandidateCustodyError(
-            "navigation custody requires fetch/read packet v2"
-        )
+        raise EvidenceLedgerCandidateCustodyError("v2 custody requires fetch/read packet v2")
+    origin = str(packet.get("physical_acquisition_origin") or "")
+    if origin not in {"discovery_candidate", "navigation_candidate"}:
+        raise EvidenceLedgerCandidateCustodyError("v2 custody physical acquisition origin invalid")
     references = packet.get("reference_records")
     if not isinstance(references, list) or len(references) != 1:
-        raise EvidenceLedgerCandidateCustodyError(
-            "navigation custody requires one sanitized reference"
-        )
+        raise EvidenceLedgerCandidateCustodyError("v2 custody requires one sanitized reference")
     reference = dict(references[0])
     packet_ref = fetch_read_content_packet_ref_from_packet(packet)
     candidate_id = (
-        "navigation-physical-source:"
-        f"{packet['physical_identity_digest'][:24]}"
+        f"navigation-physical-source:{packet['physical_identity_digest'][:24]}"
+        if origin == "navigation_candidate"
+        else str(
+            dict(packet.get("discovery_candidate_ref") or {}).get("candidate_id")
+            or (f"discovery-physical-source:{packet['physical_identity_digest'][:24]}")
+        )
     )
     custody_core = {
         "fetch_read_content_packet_ref": packet_ref,
         "physical_acquisition_ref": packet["physical_acquisition_ref"],
-        "physical_acquisition_origin": "navigation_candidate",
+        "physical_acquisition_origin": origin,
         "candidate_id": candidate_id,
         "sanitized_content_reference_ref": {
-            "sanitized_content_reference_id": reference[
-                "sanitized_content_reference_id"
-            ],
-            "sanitized_content_reference_digest": reference[
-                "sanitized_content_reference_digest"
-            ],
+            "sanitized_content_reference_id": reference["sanitized_content_reference_id"],
+            "sanitized_content_reference_digest": reference["sanitized_content_reference_digest"],
         },
         "physical_identity_digest": packet["physical_identity_digest"],
         "full_destination_digest": packet["full_destination_digest"],
@@ -298,59 +301,35 @@ def _navigation_observation_from_packet(
     }
     custody_digest = _stable_digest(custody_core)
     custody_ref = {
-        "evidence_ledger_custody_id": (
-            f"evidence-ledger-navigation-custody:{custody_digest[:24]}"
-        ),
+        "evidence_ledger_custody_id": (f"evidence-ledger-{origin}-custody:{custody_digest[:24]}"),
         "evidence_ledger_custody_digest": custody_digest,
     }
     observation_identity = observation_id or (
-        f"{packet['run_id']}:evidence-ledger:navigation-custody:"
-        f"{custody_digest[:20]}"
+        f"{packet['run_id']}:evidence-ledger:{origin}-custody:{custody_digest[:20]}"
     )
     custody_record = {
         "record_kind": "fetch_read_candidate_custody",
         "candidate_id": candidate_id,
         "candidate_digest": packet["full_destination_digest"],
         "reference_id": reference["sanitized_content_reference_id"],
-        "reference_digest": reference[
-            "sanitized_content_reference_digest"
-        ],
+        "reference_digest": reference["sanitized_content_reference_digest"],
         "run_id": packet["run_id"],
         "request_id": packet["request_id"],
         "fetch_read_content_packet_ref": packet_ref,
-        "fetch_read_content_packet_id": packet[
-            "fetch_read_content_packet_id"
-        ],
-        "fetch_read_content_packet_digest": packet[
-            "fetch_read_content_packet_digest"
-        ],
+        "fetch_read_content_packet_id": packet["fetch_read_content_packet_id"],
+        "fetch_read_content_packet_digest": packet["fetch_read_content_packet_digest"],
         "evidence_ledger_custody_ref": custody_ref,
         "physical_acquisition_ref": packet["physical_acquisition_ref"],
-        "physical_acquisition_origin": "navigation_candidate",
-        "navigation_destination_binding_ref": packet[
-            "navigation_destination_binding_ref"
-        ],
-        "navigation_edge_ref": packet["navigation_edge_ref"],
-        "navigation_selection_ref": packet["navigation_selection_ref"],
-        "navigation_lineage_snapshot_ref": packet[
-            "navigation_lineage_snapshot_ref"
-        ],
-        "representative_contributor_ref": packet[
-            "representative_contributor_ref"
-        ],
-        "parent_custody_ref": packet["parent_custody_ref"],
+        "physical_acquisition_origin": origin,
         "operation_identity_key": packet["operation_identity_key"],
         "physical_identity_digest": packet["physical_identity_digest"],
         "full_destination_digest": packet["full_destination_digest"],
-        "attempted_source_full_digest": packet[
-            "attempted_source_full_digest"
-        ],
+        "attempted_source_full_digest": packet["attempted_source_full_digest"],
         "attempted_url": packet["attempted_url"],
         "durable_source_url": packet["durable_source_url"],
         "candidate_url": packet["durable_source_url"],
         "candidate_domain": packet["source_domain"],
-        "candidate_title": reference.get("content_title")
-        or packet["source_domain"],
+        "candidate_title": reference.get("content_title") or packet["source_domain"],
         "fetch_read_status": "readable",
         "disposition": CandidateDisposition.OBSERVED.value,
         "bounded_content_present": True,
@@ -365,11 +344,29 @@ def _navigation_observation_from_packet(
         "citation_eligible": False,
         "source_obligation_satisfied": False,
     }
+    if origin == "navigation_candidate":
+        custody_record.update(
+            {
+                "navigation_destination_binding_ref": packet["navigation_destination_binding_ref"],
+                "navigation_edge_ref": packet["navigation_edge_ref"],
+                "navigation_selection_ref": packet["navigation_selection_ref"],
+                "navigation_lineage_snapshot_ref": packet["navigation_lineage_snapshot_ref"],
+                "representative_contributor_ref": packet["representative_contributor_ref"],
+                "parent_custody_ref": packet["parent_custody_ref"],
+            }
+        )
+    else:
+        custody_record.update(
+            {
+                "physical_source_binding_ref": packet["physical_source_binding_ref"],
+                "discovery_candidate_ref": packet["discovery_candidate_ref"],
+                "search_result_candidate_packet_ref": packet["search_result_candidate_packet_ref"],
+            }
+        )
+    observation_source = f"{origin}_fetch_read_content_packet_candidate_custody"
     payload = {
         "observation_id": observation_identity,
-        "observation_source": (
-            "navigation_fetch_read_content_packet_candidate_custody"
-        ),
+        "observation_source": (observation_source),
         "owner": "RunKernel.EvidenceLedger",
         "fetch_read_content_packet_ref": packet_ref,
         "evidence_ledger_custody_ref": custody_ref,
@@ -398,7 +395,7 @@ def _navigation_observation_from_packet(
     return (
         EvidenceLedgerObservation(
             observation_id=observation_identity,
-            source="navigation_fetch_read_content_packet_candidate_custody",
+            source=observation_source,
             payload=payload,
         ),
         custody_ref,

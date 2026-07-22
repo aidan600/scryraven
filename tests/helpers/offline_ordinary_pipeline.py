@@ -26,7 +26,9 @@ from core.search_judgment_read_assessment_runtime import (
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
+    SEARCHOS_JUDGMENT_DECISION_CONTRACT_V2_SCHEMA_VERSION,
     SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+    SEARCHOS_JUDGMENT_SYSTEM_PROMPT_V2,
 )
 
 OFFLINE_PROVIDER_ENV_KEYS = (
@@ -173,8 +175,19 @@ class OfflineOrdinaryPipelineHarness:
     forbidden_live_calls: list[str] = field(default_factory=list)
     read_assessment_decision: str | None = None
     read_assessment_calls: list[dict[str, Any]] = field(default_factory=list)
+    searchos_judgment_prompts: list[str] = field(default_factory=list)
     read_transport_calls: list[str] = field(default_factory=list)
     read_content_by_url: Mapping[str, str] | None = None
+    navigation_discovery_option_index_by_slot: dict[str, int] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    navigation_selected_parent_urls: set[str] = field(
+        default_factory=set,
+        init=False,
+        repr=False,
+    )
     run_kernel: Any | None = field(default=None, init=False, repr=False)
     read_candidate_packet: dict[str, Any] | None = field(
         default=None, init=False, repr=False
@@ -201,18 +214,26 @@ class OfflineOrdinaryPipelineHarness:
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         self._record_model_call(system_prompt, kwargs)
-        if system_prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT:
+        if system_prompt in {
+            SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+            SEARCHOS_JUDGMENT_SYSTEM_PROMPT_V2,
+        }:
+            self.searchos_judgment_prompts.append(prompt)
             payload = json.loads(prompt)
             authorized = dict(payload.get("authorized_request") or payload)
             decision_contract = dict(payload.get("decision_contract") or {})
-            assert decision_contract.get("schema_version") == (
-                SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
-            )
+            assert decision_contract.get("schema_version") in {
+                SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
+                SEARCHOS_JUDGMENT_DECISION_CONTRACT_V2_SCHEMA_VERSION,
+            }
             assert decision_contract.get("unsupported_fields_forbidden") is True
             decision_actions = dict(decision_contract.get("actions") or {})
             assert decision_actions
             assert set(authorized.get("legal_actions") or ()) <= set(decision_actions)
             options = list(authorized.get("candidate_use_options") or [])
+            navigation_refs = list(
+                authorized.get("navigation_candidate_refs") or []
+            )
             custody_refs = list(authorized.get("read_custody_refs") or [])
             active_need = dict(payload.get("active_need") or {})
             read_materials = list(payload.get("read_custody_materials") or [])
@@ -226,6 +247,11 @@ class OfflineOrdinaryPipelineHarness:
                         dict(item.get("candidate_use_option_ref") or {}).get("candidate_use_option_id")
                         for item in options
                     ],
+                    "binding_urls": [
+                        dict(item.get("candidate_use_option_ref") or {}).get("normalized_url")
+                        for item in options
+                    ],
+                    "navigation_candidate_ref_count": len(navigation_refs),
                     "active_need_present": bool(active_need),
                     "component_question": need_component.get(
                         "user_facing_question"
@@ -403,13 +429,49 @@ class OfflineOrdinaryPipelineHarness:
                     ],
                     reason="offline_read_material_ready",
                 )
-            if options:
-                selected_option = (
-                    options[-1]
-                    if self.read_assessment_decision == "FOLLOWUP_THEN_READ"
-                    and len(self.read_assessment_calls) > 1
-                    else options[0]
+            if (
+                self.read_assessment_decision == "NAVIGATE_WHEN_AVAILABLE"
+                and navigation_refs
+            ):
+                return contract_decision(
+                    "REQUEST_NAVIGATE_BREADCRUMB",
+                    navigation_candidate_ref=dict(navigation_refs[0]),
+                    reason="offline_navigation_candidate_selected",
                 )
+            if options:
+                if self.read_assessment_decision == "NAVIGATE_WHEN_AVAILABLE":
+                    slot_id = str(dict(authorized.get("slot_ref") or {}).get("slot_id") or "")
+                    if slot_id not in self.navigation_discovery_option_index_by_slot:
+                        option_index = next(
+                            (
+                                index
+                                for index, option in enumerate(options)
+                                if str(
+                                    dict(option.get("candidate_use_option_ref") or {}).get(
+                                        "normalized_url"
+                                    )
+                                    or ""
+                                )
+                                not in self.navigation_selected_parent_urls
+                            ),
+                            0,
+                        )
+                        self.navigation_discovery_option_index_by_slot[slot_id] = option_index
+                    option_index = self.navigation_discovery_option_index_by_slot[slot_id]
+                    selected_option = options[option_index]
+                    selected_url = str(
+                        dict(selected_option.get("candidate_use_option_ref") or {}).get("normalized_url")
+                        or ""
+                    )
+                    if selected_url:
+                        self.navigation_selected_parent_urls.add(selected_url)
+                else:
+                    selected_option = (
+                        options[-1]
+                        if self.read_assessment_decision == "FOLLOWUP_THEN_READ"
+                        and len(self.read_assessment_calls) > 1
+                        else options[0]
+                    )
                 return contract_decision(
                     "REQUEST_READ_PAGE",
                     candidate_use_option_ref=dict(

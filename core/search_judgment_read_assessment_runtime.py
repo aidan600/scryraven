@@ -1625,11 +1625,10 @@ def _execute_one_acquisition_to_custody(
     acquisition_transports: AcquisitionTransports | None,
     before_transport: Callable[[], Any] | None,
     register_legacy_event: bool = True,
+    defer_fetch_read_materialization: bool = False,
 ) -> dict[str, Any]:
     snapshot = run_kernel.acquisition_authority_snapshot()
-    capability_action = run_kernel.authorize_acquisition_capability_decision(
-        proposal=proposal
-    )
+    capability_action = run_kernel.authorize_acquisition_capability_decision(proposal=proposal)
     capability_result = execute_acquisition_capability_decision_action(
         capability_action,
         proposal=proposal,
@@ -1728,10 +1727,31 @@ def _execute_one_acquisition_to_custody(
         acquisition_control_state=run_kernel.state.acquisition_control_state,
     )
     run_kernel.reduce(custody_result.observation)
-    run_kernel.require_current_acquisition_custody_authorization(
-        custody_result.custody_authorization.ref()
-    )
+    run_kernel.require_current_acquisition_custody_authorization(custody_result.custody_authorization.ref())
     artifact = execution.artifacts[0]
+    if defer_fetch_read_materialization:
+        artifact_projection = dict(execution_observation.artifact_refs[0])
+        artifact_ref = {
+            "artifact_id": artifact_projection.get("artifact_id"),
+            "artifact_digest": artifact_projection.get("artifact_digest"),
+        }
+        return {
+            "acquisition_artifact": artifact,
+            "acquisition_artifact_ref": artifact_ref,
+            "acquisition_work_order": work_order,
+            "acquisition_work_order_ref": work_order.ref(),
+            "route_observation_ref": route_observation.ref(),
+            "execution_action_ref": {
+                "action_id": execution_action.action_id,
+                "action_type": execution_action.action_type.value,
+                "stage": execution_action.stage,
+                "sequence": execution_action.sequence,
+            },
+            "terminal_receipt_ref": terminal_result.terminal_receipt.ref(),
+            "custody_authorization_ref": (custody_result.custody_authorization.ref()),
+            "provider_calls_attempted": execution.provider_calls_attempted,
+            "provider_calls_completed": execution.provider_calls_completed,
+        }
     material = _sanitized_material_from_artifact(
         artifact=artifact,
         binding=binding,
@@ -1806,6 +1826,35 @@ def execute_searchos_candidate_read_to_custody(
         acquisition_transports=acquisition_transports,
         before_transport=before_transport,
         register_legacy_event=False,
+    )
+
+
+def execute_searchos_candidate_read_for_navigation_v2(
+    *,
+    run_kernel: RunKernel,
+    candidate_packet: Mapping[str, Any],
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    before_transport: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """Return one successful discovery artifact before v2 packet creation."""
+
+    proposal = build_binding_backed_acquisition_need_proposal(
+        run_kernel=run_kernel,
+        binding=binding,
+    )
+    return _execute_one_acquisition_to_custody(
+        run_kernel=run_kernel,
+        candidate_packet=candidate_packet,
+        binding=binding,
+        assessment={},
+        proposal=proposal,
+        available_providers=available_providers,
+        acquisition_transports=acquisition_transports,
+        before_transport=before_transport,
+        register_legacy_event=False,
+        defer_fetch_read_materialization=True,
     )
 
 
@@ -2446,6 +2495,7 @@ __all__ = [
     "execute_search_judgment_read_assessment_action",
     "execute_search_judgment_read_binding_action",
     "execute_search_judgment_read_source_and_custody",
+    "execute_searchos_candidate_read_for_navigation_v2",
     "execute_searchos_candidate_read_to_custody",
     "validate_binding_backed_acquisition_need_proposal",
     "validate_search_judgment_read_assessment_reduction",

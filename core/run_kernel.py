@@ -591,49 +591,32 @@ SCOUT_DISAMBIGUATION_STAGE = SCOUT_DISAMBIGUATION_STAGE_NAME
 SEARCH_PLANNER_REVISION_STAGE = SEARCH_PLANNER_REVISION_STAGE_NAME
 SEARCH_EXECUTOR_HANDOFF_STAGE = SEARCH_EXECUTOR_HANDOFF_STAGE_NAME
 LIVE_SEARCH_VALIDATION_STAGE = LIVE_SEARCH_VALIDATION_STAGE_NAME
-ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE = (
-    "ordinary_discovery_candidate_handoff"
-)
+ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE = "ordinary_discovery_candidate_handoff"
 SEARCH_JUDGMENT_READ_BINDING_STAGE = "search_judgment_read_binding_derivation"
 SEARCH_JUDGMENT_READ_ASSESSMENT_STAGE = "search_judgment_read_assessment"
 SEARCH_JUDGMENT_READ_PROPOSAL_STAGE = "search_judgment_read_proposal_registry"
 SEARCH_JUDGMENT_READ_CUSTODY_STAGE = "search_judgment_read_custody_registry"
 SEARCHOS_INITIALIZATION_STAGE = "searchos_slice_a_initialization"
 SEARCHOS_JUDGMENT_STAGE = "searchos_iterative_judgment"
-SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE = (
-    "searchos_iteration_candidate_admission"
-)
+SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE = "searchos_iteration_candidate_admission"
 SEARCHOS_READ_CUSTODY_ADMISSION_STAGE = "searchos_read_custody_admission"
 SEARCHOS_SEMANTIC_HANDOFF_STAGE = "searchos_semantic_evaluation_handoff"
 SEARCHOS_SLICE_A_READINESS_STAGE = "searchos_slice_a_readiness"
 SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE = "searchos_required_needs_block"
-SEARCHOS_NAVIGATION_CANDIDATE_ADMISSION_STAGE = (
-    "searchos_navigation_candidate_admission"
-)
+SEARCHOS_NAVIGATION_CANDIDATE_ADMISSION_STAGE = "searchos_navigation_candidate_admission"
 SEARCHOS_NAVIGATION_SELECTION_STAGE = "searchos_navigation_selection"
 SEARCHOS_NAVIGATION_TERMINAL_STAGE = "searchos_navigation_terminal"
-SEARCHOS_NAVIGATION_PHYSICAL_CUSTODY_STAGE = (
-    "searchos_navigation_physical_custody"
-)
+SEARCHOS_NAVIGATION_PHYSICAL_CUSTODY_STAGE = "searchos_navigation_physical_custody"
+SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_STAGE = "searchos_discovery_physical_custody"
 SEARCHOS_NAVIGATION_USE_CUSTODY_STAGE = "searchos_navigation_use_custody"
-INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
-    INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
-)
-SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
-    SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
-)
+INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
+SEMANTIC_OBSERVATION_ADMISSION_STAGE = SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
 COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
-RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE = (
-    "component_gap_recovery_semantic_delta_commit"
-)
+RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE = "component_gap_recovery_semantic_delta_commit"
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE = "semantic_producer_bundle_commit"
-MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE = (
-    "multicomponent_missing_component_recovery_authorization"
-)
+MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE = "multicomponent_missing_component_recovery_authorization"
 MULTICOMPONENT_RECOVERY_OUTCOME_STAGE = "multicomponent_recovery_outcome"
-MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE = (
-    "multicomponent_selective_recomputation_closure"
-)
+MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE = "multicomponent_selective_recomputation_closure"
 _MULTICOMPONENT_RECOVERY_OUTCOME_DISPOSITIONS = frozenset(
     {
         "acquired",
@@ -795,97 +778,56 @@ class ActionType(str, Enum):
     SEARCH_PLANNER_REVISE = "search_planner_revise"
     SEARCH_EXECUTOR_HANDOFF = "search_executor_handoff"
     LIVE_SEARCH_VALIDATE = "live_search_validate"
-    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF = (
-        "ordinary_discovery_candidate_handoff"
-    )
-    SEARCH_JUDGMENT_READ_BINDINGS_DERIVE = (
-        "search_judgment_read_bindings_derive"
-    )
+    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF = "ordinary_discovery_candidate_handoff"
+    SEARCH_JUDGMENT_READ_BINDINGS_DERIVE = "search_judgment_read_bindings_derive"
     SEARCH_JUDGMENT_READ_ASSESS = "search_judgment_read_assess"
-    SEARCH_JUDGMENT_READ_PROPOSAL_RECORD = (
-        "search_judgment_read_proposal_record"
-    )
-    SEARCH_JUDGMENT_READ_CUSTODY_RECORD = (
-        "search_judgment_read_custody_record"
-    )
+    SEARCH_JUDGMENT_READ_PROPOSAL_RECORD = "search_judgment_read_proposal_record"
+    SEARCH_JUDGMENT_READ_CUSTODY_RECORD = "search_judgment_read_custody_record"
     SEARCHOS_INITIALIZE = "searchos_slice_a_initialize"
     SEARCHOS_JUDGMENT_DECIDE = "searchos_iterative_judgment_decide"
-    SEARCHOS_ITERATION_CANDIDATES_ADMIT = (
-        "searchos_iteration_candidates_admit"
-    )
+    SEARCHOS_ITERATION_CANDIDATES_ADMIT = "searchos_iteration_candidates_admit"
     SEARCHOS_READ_CUSTODY_ADMIT = "searchos_read_custody_admit"
     SEARCHOS_SEMANTIC_HANDOFF_ADMIT = "searchos_semantic_handoff_admit"
     SEARCHOS_SLICE_A_READINESS_DERIVE = "searchos_slice_a_readiness_derive"
     SEARCHOS_REQUIRED_NEEDS_BLOCK = "searchos_required_needs_block"
-    SEARCHOS_NAVIGATION_CANDIDATES_ADMIT = (
-        "searchos_navigation_candidates_admit"
-    )
+    SEARCHOS_NAVIGATION_CANDIDATES_ADMIT = "searchos_navigation_candidates_admit"
     SEARCHOS_NAVIGATION_SELECT = "searchos_navigation_select"
-    SEARCHOS_NAVIGATION_TERMINAL_RECORD = (
-        "searchos_navigation_terminal_record"
-    )
-    ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMIT = (
-        "acquisition_navigation_physical_custody_commit"
-    )
-    SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT = (
-        "searchos_navigation_use_custody_admit"
-    )
+    SEARCHOS_NAVIGATION_TERMINAL_RECORD = "searchos_navigation_terminal_record"
+    ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMIT = "acquisition_navigation_physical_custody_commit"
+    SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORD = "searchos_discovery_physical_custody_record"
+    SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT = "searchos_navigation_use_custody_admit"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
-    RECOVERED_SEMANTIC_DELTA_COMMIT = (
-        "component_gap_recovery_semantic_delta_commit"
-    )
+    RECOVERED_SEMANTIC_DELTA_COMMIT = "component_gap_recovery_semantic_delta_commit"
     SEMANTIC_PRODUCER_BUNDLE_COMMIT = "semantic_producer_bundle_commit"
-    MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE = (
-        "multicomponent_component_analyst_execute"
-    )
-    MULTICOMPONENT_SCHEDULER_INITIALIZE = (
-        "multicomponent_graph_scheduler_initialize"
-    )
+    MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE = "multicomponent_component_analyst_execute"
+    MULTICOMPONENT_SCHEDULER_INITIALIZE = "multicomponent_graph_scheduler_initialize"
     MULTICOMPONENT_LEASE_GRANT = "multicomponent_semantic_lease_grant"
     MULTICOMPONENT_LEASE_DISPATCH = "multicomponent_semantic_lease_dispatch"
     MULTICOMPONENT_LEASE_CANCEL = "multicomponent_semantic_lease_cancel"
     MULTICOMPONENT_BATCH_GRANT = "multicomponent_semantic_batch_grant"
     MULTICOMPONENT_BATCH_DISPATCH = "multicomponent_semantic_batch_dispatch"
     MULTICOMPONENT_BATCH_CANCEL = "multicomponent_semantic_batch_cancel"
-    MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = (
-        "multicomponent_component_dprime_execute"
-    )
-    MULTICOMPONENT_CROSS_ANALYST_EXECUTE = (
-        "multicomponent_cross_analyst_execute"
-    )
-    MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE = (
-        "multicomponent_synthesis_dprime_execute"
-    )
+    MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = "multicomponent_component_dprime_execute"
+    MULTICOMPONENT_CROSS_ANALYST_EXECUTE = "multicomponent_cross_analyst_execute"
+    MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE = "multicomponent_synthesis_dprime_execute"
     MULTICOMPONENT_SCRUTINEER_EXECUTE = "multicomponent_scrutineer_execute"
     SPECIALIST_PROPOSAL_BIND = "specialist_proposal_bind"
     SPECIALIST_PROPOSAL_DISPOSE = "specialist_proposal_dispose"
     SPECIALIST_CAPABILITY_EXECUTE = "specialist_capability_execute"
     SPECIALIST_VALIDATOR_CONSUME = "specialist_validator_consume"
-    MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE = (
-        "multicomponent_component_admission_reduce"
-    )
+    MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE = "multicomponent_component_admission_reduce"
     MULTICOMPONENT_GRAPH_REDUCE = "multicomponent_graph_reduce"
-    MULTICOMPONENT_RECOVERY_AUTHORIZE = (
-        "multicomponent_missing_component_recovery_authorize"
-    )
-    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE = (
-        "multicomponent_recovery_outcome_reduce"
-    )
+    MULTICOMPONENT_RECOVERY_AUTHORIZE = "multicomponent_missing_component_recovery_authorize"
+    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE = "multicomponent_recovery_outcome_reduce"
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     CONTRACT_AMENDMENT_APPLY = "contract_amendment_apply"
-    DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = (
-        "dprime_current_answer_contract_authority"
-    )
+    DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = "dprime_current_answer_contract_authority"
     DPRIME_SOURCE_OBLIGATION_AUTHORITY = "dprime_source_obligation_authority"
-    DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY = (
-        "dprime_citation_source_handoff_authority"
-    )
+    DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY = "dprime_citation_source_handoff_authority"
     DPRIME_CITATION_SOURCE_DISPLAY = "dprime_citation_source_display"
-    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE = (
-        "single_relation_source_obligation_recovery_authorize"
-    )
+    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE = "single_relation_source_obligation_recovery_authorize"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -965,99 +907,56 @@ class ObservationType(str, Enum):
     SEARCH_PLANNER_REVISED = "search_planner_revised"
     SEARCH_EXECUTOR_HANDOFF_CREATED = "search_executor_handoff_created"
     LIVE_SEARCH_VALIDATED = "live_search_validated"
-    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED = (
-        "ordinary_discovery_candidate_handoff_created"
-    )
-    SEARCH_JUDGMENT_READ_BINDINGS_DERIVED = (
-        "search_judgment_read_bindings_derived"
-    )
+    ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED = "ordinary_discovery_candidate_handoff_created"
+    SEARCH_JUDGMENT_READ_BINDINGS_DERIVED = "search_judgment_read_bindings_derived"
     SEARCH_JUDGMENT_READ_ASSESSED = "search_judgment_read_assessed"
-    SEARCH_JUDGMENT_READ_PROPOSAL_RECORDED = (
-        "search_judgment_read_proposal_recorded"
-    )
-    SEARCH_JUDGMENT_READ_CUSTODY_RECORDED = (
-        "search_judgment_read_custody_recorded"
-    )
+    SEARCH_JUDGMENT_READ_PROPOSAL_RECORDED = "search_judgment_read_proposal_recorded"
+    SEARCH_JUDGMENT_READ_CUSTODY_RECORDED = "search_judgment_read_custody_recorded"
     SEARCHOS_INITIALIZED = "searchos_slice_a_initialized"
     SEARCHOS_JUDGMENT_DECIDED = "searchos_iterative_judgment_decided"
-    SEARCHOS_ITERATION_CANDIDATES_ADMITTED = (
-        "searchos_iteration_candidates_admitted"
-    )
+    SEARCHOS_ITERATION_CANDIDATES_ADMITTED = "searchos_iteration_candidates_admitted"
     SEARCHOS_READ_CUSTODY_ADMITTED = "searchos_read_custody_admitted"
     SEARCHOS_SEMANTIC_HANDOFF_ADMITTED = "searchos_semantic_handoff_admitted"
     SEARCHOS_SLICE_A_READINESS_DERIVED = "searchos_slice_a_readiness_derived"
     SEARCHOS_REQUIRED_NEEDS_BLOCKED = "searchos_required_needs_blocked"
-    SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED = (
-        "searchos_navigation_candidates_admitted"
-    )
+    SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED = "searchos_navigation_candidates_admitted"
     SEARCHOS_NAVIGATION_SELECTED = "searchos_navigation_selected"
-    SEARCHOS_NAVIGATION_TERMINAL_RECORDED = (
-        "searchos_navigation_terminal_recorded"
-    )
-    ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMITTED = (
-        "acquisition_navigation_physical_custody_committed"
-    )
-    SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED = (
-        "searchos_navigation_use_custody_admitted"
-    )
+    SEARCHOS_NAVIGATION_TERMINAL_RECORDED = "searchos_navigation_terminal_recorded"
+    ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMITTED = "acquisition_navigation_physical_custody_committed"
+    SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORDED = "searchos_discovery_physical_custody_recorded"
+    SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED = "searchos_navigation_use_custody_admitted"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
-    RECOVERED_SEMANTIC_DELTA_COMMITTED = (
-        "component_gap_recovery_semantic_delta_committed"
-    )
+    RECOVERED_SEMANTIC_DELTA_COMMITTED = "component_gap_recovery_semantic_delta_committed"
     SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
-    MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED = (
-        "multicomponent_component_analyst_completed"
-    )
-    MULTICOMPONENT_SCHEDULER_INITIALIZED = (
-        "multicomponent_graph_scheduler_initialized"
-    )
+    MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED = "multicomponent_component_analyst_completed"
+    MULTICOMPONENT_SCHEDULER_INITIALIZED = "multicomponent_graph_scheduler_initialized"
     MULTICOMPONENT_LEASE_GRANTED = "multicomponent_semantic_lease_granted"
     MULTICOMPONENT_LEASE_DISPATCHED = "multicomponent_semantic_lease_dispatched"
     MULTICOMPONENT_LEASE_CANCELLED = "multicomponent_semantic_lease_cancelled"
     MULTICOMPONENT_BATCH_GRANTED = "multicomponent_semantic_batch_granted"
     MULTICOMPONENT_BATCH_DISPATCHED = "multicomponent_semantic_batch_dispatched"
     MULTICOMPONENT_BATCH_CANCELLED = "multicomponent_semantic_batch_cancelled"
-    MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = (
-        "multicomponent_component_dprime_completed"
-    )
-    MULTICOMPONENT_CROSS_ANALYST_COMPLETED = (
-        "multicomponent_cross_analyst_completed"
-    )
-    MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED = (
-        "multicomponent_synthesis_dprime_completed"
-    )
+    MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = "multicomponent_component_dprime_completed"
+    MULTICOMPONENT_CROSS_ANALYST_COMPLETED = "multicomponent_cross_analyst_completed"
+    MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED = "multicomponent_synthesis_dprime_completed"
     MULTICOMPONENT_SCRUTINEER_COMPLETED = "multicomponent_scrutineer_completed"
     SPECIALIST_PROPOSAL_BOUND = "specialist_proposal_bound"
     SPECIALIST_PROPOSAL_DISPOSED = "specialist_proposal_disposed"
     SPECIALIST_CAPABILITY_COMPLETED = "specialist_capability_completed"
     SPECIALIST_VALIDATOR_CONSUMED = "specialist_validator_consumed"
-    MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED = (
-        "multicomponent_component_admission_reduced"
-    )
+    MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED = "multicomponent_component_admission_reduced"
     MULTICOMPONENT_GRAPH_REDUCED = "multicomponent_graph_reduced"
-    MULTICOMPONENT_RECOVERY_AUTHORIZED = (
-        "multicomponent_missing_component_recovery_authorized"
-    )
-    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCED = (
-        "multicomponent_recovery_outcome_reduced"
-    )
+    MULTICOMPONENT_RECOVERY_AUTHORIZED = "multicomponent_missing_component_recovery_authorized"
+    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCED = "multicomponent_recovery_outcome_reduced"
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     CONTRACT_AMENDMENT_APPLIED = "contract_amendment_applied"
-    DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED = (
-        "dprime_current_answer_contract_authorized"
-    )
-    DPRIME_SOURCE_OBLIGATION_AUTHORITY_CONSUMED = (
-        "dprime_source_obligation_authority_consumed"
-    )
-    DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_CONSUMED = (
-        "dprime_citation_source_handoff_authority_consumed"
-    )
+    DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED = "dprime_current_answer_contract_authorized"
+    DPRIME_SOURCE_OBLIGATION_AUTHORITY_CONSUMED = "dprime_source_obligation_authority_consumed"
+    DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_CONSUMED = "dprime_citation_source_handoff_authority_consumed"
     DPRIME_CITATION_SOURCE_DISPLAY_CREATED = "dprime_citation_source_display_created"
-    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED = (
-        "single_relation_source_obligation_recovery_authorized"
-    )
+    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED = "single_relation_source_obligation_recovery_authorized"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -7116,25 +7015,23 @@ class RunKernel:
         """Authorize D-prime source-obligation authority after coverage binds."""
 
         if not self.state.component_coverage_projection:
-            raise RunKernelTransitionError(
-                "D-prime source-obligation authority requires bound ComponentCoverage"
-            )
+            raise RunKernelTransitionError("D-prime source-obligation authority requires bound ComponentCoverage")
         if self.state.dprime_source_obligation_authority_projection:
-            raise RunKernelTransitionError(
-                "D-prime source-obligation authority is already consumed"
-            )
+            raise RunKernelTransitionError("D-prime source-obligation authority is already consumed")
         _require_dprime_downstream_closed(
             state=self.state,
             context="D-prime source-obligation authority",
         )
         clean_source_ids = _preserve_text_list(source_obligation_candidate_ids)
         if not clean_source_ids:
-            raise RunKernelTransitionError(
-                "D-prime source-obligation authority requires source ids"
-            )
+            raise RunKernelTransitionError("D-prime source-obligation authority requires source ids")
         coverage = self.state.component_coverage_projection
         expected_pairs = (
-            ("coverage_record_id", coverage_record_id, coverage.get("coverage_record_id")),
+            (
+                "coverage_record_id",
+                coverage_record_id,
+                coverage.get("coverage_record_id"),
+            ),
             (
                 "coverage_record_digest",
                 coverage_record_digest,
@@ -7258,7 +7155,11 @@ class RunKernel:
                 source_obligation_authority_digest,
                 source_authority.get("source_obligation_authority_digest"),
             ),
-            ("coverage_record_id", coverage_record_id, coverage.get("coverage_record_id")),
+            (
+                "coverage_record_id",
+                coverage_record_id,
+                coverage.get("coverage_record_id"),
+            ),
             (
                 "coverage_record_digest",
                 coverage_record_digest,
@@ -7862,18 +7763,17 @@ class RunKernel:
                 },
                 accepted_contract=self.state.initial_answer_contract,
                 admission_history=staged_admission_history,
-                evidence_ledger_projection=(
-                    self.state.evidence_ledger.to_projection().to_dict()
-                ),
+                evidence_ledger_projection=(self.state.evidence_ledger.to_projection().to_dict()),
                 existing_coverage_record_ids=existing_coverage_record_ids,
                 existing_coverage_record_digests=existing_coverage_record_digests,
                 run_id=self.state.run_id,
                 request_id=self.state.request_id,
             )
-            coverage_projection = build_component_coverage_reduction_projection(
-                coverage_state=coverage_state
-            )
-        except (SemanticObservationAdmissionError, ComponentCoverageReductionError) as exc:
+            coverage_projection = build_component_coverage_reduction_projection(coverage_state=coverage_state)
+        except (
+            SemanticObservationAdmissionError,
+            ComponentCoverageReductionError,
+        ) as exc:
             transition_error = RunKernelTransitionError(str(exc))
             self._record_recovered_semantic_delta_commit_failure(
                 action=action,
@@ -8874,14 +8774,48 @@ class RunKernel:
             action_type=ActionType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT,
             reason=reason,
             inputs={"use_custody_ref": dict(use_custody_ref)},
-            expected_observation_type=(
-                ObservationType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED
-            ),
+            expected_observation_type=(ObservationType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED),
         )
 
-    def reserve_searchos_judgment_round(
-        self, *, slot_ids: Sequence[str]
-    ) -> dict[str, Any]:
+    def authorize_searchos_discovery_physical_custody_record(
+        self,
+        *,
+        fetch_read_content_packet: Mapping[str, Any],
+        evidence_ledger_custody_ref: Mapping[str, Any],
+        destination_binding_ref: Mapping[str, Any],
+        reason: str = "record_discovery_origin_physical_custody_for_reuse",
+    ) -> AuthorizedAction:
+        from core.fetch_read_content_reference import (
+            fetch_read_content_packet_ref_from_packet,
+        )
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            build_searchos_discovery_physical_custody_record_v2,
+            searchos_navigation_physical_custody_ref,
+        )
+
+        try:
+            record = build_searchos_discovery_physical_custody_record_v2(
+                fetch_read_content_packet=fetch_read_content_packet,
+                evidence_ledger_custody_ref=evidence_ledger_custody_ref,
+                destination_binding_ref=destination_binding_ref,
+            )
+        except (ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_STAGE,
+            action_type=(ActionType.SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORD),
+            reason=reason,
+            inputs={
+                "fetch_read_content_packet_ref": (fetch_read_content_packet_ref_from_packet(fetch_read_content_packet)),
+                "evidence_ledger_custody_ref": dict(evidence_ledger_custody_ref),
+                "destination_binding_ref": dict(destination_binding_ref),
+                "predicted_physical_custody_ref": (searchos_navigation_physical_custody_ref(record)),
+            },
+            expected_observation_type=(ObservationType.SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORDED),
+        )
+
+    def reserve_searchos_judgment_round(self, *, slot_ids: Sequence[str]) -> dict[str, Any]:
         """Record complete-round reservation before any participating call."""
 
         from core.searchos_iterative_judgment_runtime import (
@@ -8991,11 +8925,13 @@ class RunKernel:
         reservation_ref: Mapping[str, Any],
         slot_id: str,
         candidate_window: Mapping[str, Any],
+        navigation_candidate_window: Mapping[str, Any] | None = None,
         read_custody_refs: Sequence[Mapping[str, Any]] = (),
         reason: str = "neutral_model_owned_searchos_judgment",
     ) -> AuthorizedAction:
         from core.searchos_iterative_judgment_runtime import (
             build_searchos_judgment_request_v1,
+            build_searchos_judgment_request_v2,
             charge_searchos_judgment_call,
         )
 
@@ -9007,13 +8943,23 @@ class RunKernel:
                 reservation_ref=reservation_ref,
                 slot_id=slot_id,
             )
-            request = build_searchos_judgment_request_v1(
-                state=state,
-                slot_id=slot_id,
-                charge_ref=charge,
-                candidate_window=candidate_window,
-                read_custody_refs=read_custody_refs,
-            )
+            if navigation_candidate_window is None:
+                request = build_searchos_judgment_request_v1(
+                    state=state,
+                    slot_id=slot_id,
+                    charge_ref=charge,
+                    candidate_window=candidate_window,
+                    read_custody_refs=read_custody_refs,
+                )
+            else:
+                request = build_searchos_judgment_request_v2(
+                    state=state,
+                    slot_id=slot_id,
+                    charge_ref=charge,
+                    candidate_window=candidate_window,
+                    navigation_candidate_window=(navigation_candidate_window),
+                    read_custody_refs=read_custody_refs,
+                )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         self.state.searchos_state = state
@@ -12740,23 +12686,13 @@ class RunKernel:
                 followup_author_execution_readiness_projection=(
                     self.state.followup_author_execution_readiness_projection
                 ),
-                followup_author_execution_readiness_history=(
-                    self.state.followup_author_execution_readiness_history
-                ),
+                followup_author_execution_readiness_history=(self.state.followup_author_execution_readiness_history),
                 followup_author_gate_state=self.state.followup_author_gate_state,
-                followup_author_gate_projection=(
-                    self.state.followup_author_gate_projection
-                ),
+                followup_author_gate_projection=(self.state.followup_author_gate_projection),
                 followup_author_gate_history=self.state.followup_author_gate_history,
-                followup_author_input_authority_state=(
-                    self.state.followup_author_input_authority_state
-                ),
-                followup_author_input_authority_projection=(
-                    self.state.followup_author_input_authority_projection
-                ),
-                followup_author_input_authority_history=(
-                    self.state.followup_author_input_authority_history
-                ),
+                followup_author_input_authority_state=(self.state.followup_author_input_authority_state),
+                followup_author_input_authority_projection=(self.state.followup_author_input_authority_projection),
+                followup_author_input_authority_history=(self.state.followup_author_input_authority_history),
                 final_answer_packet=packet,
                 final_answer_authority_projection=authority,
             )
@@ -12855,9 +12791,7 @@ class RunKernel:
                 followup_author_input_materialization_history=(
                     self.state.followup_author_input_materialization_history
                 ),
-                followup_author_execution_readiness_state=(
-                    self.state.followup_author_execution_readiness_state
-                ),
+                followup_author_execution_readiness_state=(self.state.followup_author_execution_readiness_state),
                 followup_author_execution_readiness_projection=(
                     self.state.followup_author_execution_readiness_projection
                 ),
@@ -12969,12 +12903,8 @@ class RunKernel:
                 followup_author_execution_activation_projection=(
                     self.state.followup_author_execution_activation_projection
                 ),
-                followup_author_execution_activation_history=(
-                    self.state.followup_author_execution_activation_history
-                ),
-                followup_author_input_materialization_state=(
-                    self.state.followup_author_input_materialization_state
-                ),
+                followup_author_execution_activation_history=(self.state.followup_author_execution_activation_history),
+                followup_author_input_materialization_state=(self.state.followup_author_input_materialization_state),
                 followup_author_input_materialization_projection=(
                     self.state.followup_author_input_materialization_projection
                 ),
@@ -17136,107 +17066,133 @@ class RunKernel:
                 record_searchos_navigation_physical_custody,
             )
 
-            try:
-                if _safe_mapping(
-                    observation.payload.get("packet_commit_ref")
-                ) != _safe_mapping(action.inputs.get("packet_commit_ref")):
-                    raise ValueError(
-                        "navigation_packet_commit_observation_mismatch"
-                    )
-                raw_packet = observation.payload.get(
-                    "committed_fetch_read_content_packet"
-                )
-                if not isinstance(raw_packet, Mapping):
-                    raise ValueError(
-                        "navigation committed packet observation missing"
-                    )
-                packet = validate_fetch_read_content_packet(
-                    dict(raw_packet)
-                )
-                packet_ref = fetch_read_content_packet_ref_from_packet(
-                    packet
+            if observation.status is RunStageStatus.FAILED:
+                failure_code = _clean_text(
+                    observation.payload.get("failure_code"),
+                    limit=160,
                 )
                 if (
-                    packet_ref
-                    != _safe_mapping(
-                        action.inputs.get("fetch_read_content_packet_ref")
-                    )
-                    or packet.get("navigation_selection_ref")
-                    != _safe_mapping(
-                        action.inputs.get("navigation_selection_ref")
-                    )
-                    or packet.get("navigation_edge_ref")
-                    != _safe_mapping(
-                        action.inputs.get("navigation_edge_ref")
-                    )
-                    or packet.get("navigation_destination_binding_ref")
-                    != _safe_mapping(
-                        action.inputs.get("destination_binding_ref")
-                    )
-                    or packet.get("physical_identity_digest")
-                    != action.inputs.get("physical_identity_digest")
-                    or packet.get("operation_identity_key")
-                    != action.inputs.get("operation_identity_key")
+                    not failure_code
+                    or observation.payload.get("durable_source_commit_boundary")
+                    is not False
+                    or set(observation.payload)
+                    != {"failure_code", "durable_source_commit_boundary"}
                 ):
-                    raise ValueError(
-                        "navigation_committed_packet_authority_mismatch"
+                    raise RunKernelTransitionError(
+                        "navigation physical custody failure observation is invalid"
                     )
-                ledger_custody_ref = _safe_mapping(
-                    observation.payload.get(
-                        "evidence_ledger_custody_ref"
-                    )
+                self.state.projections[action.stage] = {
+                    "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                    "canonical_state": True,
+                    "durable_source_commit_boundary": False,
+                    "failure_code": failure_code,
+                }
+            elif observation.status is not RunStageStatus.COMPLETED:
+                raise RunKernelTransitionError(
+                    "navigation physical custody observation status is invalid"
                 )
-                ledger_observation = _acquisition_safe_mapping(
-                    observation.payload.get("evidence_ledger_observation")
-                )
-                validated_ledger_observation = (
-                    validate_navigation_evidence_ledger_observation(
-                        fetch_read_content_packet=packet,
-                        observation=ledger_observation,
-                        evidence_ledger_custody_ref=ledger_custody_ref,
+            else:
+                try:
+                    if _safe_mapping(
+                        observation.payload.get("packet_commit_ref")
+                    ) != _safe_mapping(action.inputs.get("packet_commit_ref")):
+                        raise ValueError(
+                            "navigation_packet_commit_observation_mismatch"
+                        )
+                    raw_packet = observation.payload.get(
+                        "committed_fetch_read_content_packet"
                     )
-                )
-                next_navigation_state, physical_custody = (
-                    record_searchos_navigation_physical_custody(
-                        self.state.searchos_navigation_state,
-                        fetch_read_content_packet=packet,
-                        evidence_ledger_custody_ref=ledger_custody_ref,
+                    if not isinstance(raw_packet, Mapping):
+                        raise ValueError(
+                            "navigation committed packet observation missing"
+                        )
+                    packet = validate_fetch_read_content_packet(
+                        dict(raw_packet)
                     )
-                )
-                if physical_custody != _acquisition_safe_mapping(
-                    observation.payload.get(
-                        "navigation_physical_custody_record"
+                    packet_ref = fetch_read_content_packet_ref_from_packet(
+                        packet
                     )
-                ):
-                    raise ValueError(
-                        "navigation_physical_custody_observation_mismatch"
+                    if (
+                        packet_ref
+                        != _safe_mapping(
+                            action.inputs.get("fetch_read_content_packet_ref")
+                        )
+                        or packet.get("navigation_selection_ref")
+                        != _safe_mapping(
+                            action.inputs.get("navigation_selection_ref")
+                        )
+                        or packet.get("navigation_edge_ref")
+                        != _safe_mapping(
+                            action.inputs.get("navigation_edge_ref")
+                        )
+                        or packet.get("navigation_destination_binding_ref")
+                        != _safe_mapping(
+                            action.inputs.get("destination_binding_ref")
+                        )
+                        or packet.get("physical_identity_digest")
+                        != action.inputs.get("physical_identity_digest")
+                        or packet.get("operation_identity_key")
+                        != action.inputs.get("operation_identity_key")
+                    ):
+                        raise ValueError(
+                            "navigation_committed_packet_authority_mismatch"
+                        )
+                    ledger_custody_ref = _safe_mapping(
+                        observation.payload.get(
+                            "evidence_ledger_custody_ref"
+                        )
                     )
-                use_custody_ref = _acquisition_safe_mapping(
-                    observation.payload.get(
-                        "navigation_use_custody_ref"
+                    ledger_observation = _acquisition_safe_mapping(
+                        observation.payload.get("evidence_ledger_observation")
                     )
-                )
-                next_navigation_state = (
-                    admit_searchos_navigation_use_custody(
-                        next_navigation_state,
-                        use_custody_ref=use_custody_ref,
+                    validated_ledger_observation = (
+                        validate_navigation_evidence_ledger_observation(
+                            fetch_read_content_packet=packet,
+                            observation=ledger_observation,
+                            evidence_ledger_custody_ref=ledger_custody_ref,
+                        )
                     )
-                )
-                next_ledger = deepcopy(self.state.evidence_ledger)
-                next_ledger.reduce_observation(
-                    validated_ledger_observation
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                raise RunKernelTransitionError(str(exc)) from exc
-            self.state.searchos_navigation_state = next_navigation_state
-            self.state.evidence_ledger = next_ledger
-            self.state.projections[action.stage] = {
-                "owner": "RunKernel.SearchOSBreadcrumbNavigation",
-                "canonical_state": True,
-                "navigation_physical_custody_record": physical_custody,
-                "navigation_use_custody_ref": use_custody_ref,
-                "durable_source_commit_boundary": True,
-            }
+                    next_navigation_state, physical_custody = (
+                        record_searchos_navigation_physical_custody(
+                            self.state.searchos_navigation_state,
+                            fetch_read_content_packet=packet,
+                            evidence_ledger_custody_ref=ledger_custody_ref,
+                        )
+                    )
+                    if physical_custody != _acquisition_safe_mapping(
+                        observation.payload.get(
+                            "navigation_physical_custody_record"
+                        )
+                    ):
+                        raise ValueError(
+                            "navigation_physical_custody_observation_mismatch"
+                        )
+                    use_custody_ref = _acquisition_safe_mapping(
+                        observation.payload.get(
+                            "navigation_use_custody_ref"
+                        )
+                    )
+                    next_navigation_state = (
+                        admit_searchos_navigation_use_custody(
+                            next_navigation_state,
+                            use_custody_ref=use_custody_ref,
+                        )
+                    )
+                    next_ledger = deepcopy(self.state.evidence_ledger)
+                    next_ledger.reduce_observation(
+                        validated_ledger_observation
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise RunKernelTransitionError(str(exc)) from exc
+                self.state.searchos_navigation_state = next_navigation_state
+                self.state.evidence_ledger = next_ledger
+                self.state.projections[action.stage] = {
+                    "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                    "canonical_state": True,
+                    "navigation_physical_custody_record": physical_custody,
+                    "navigation_use_custody_ref": use_custody_ref,
+                    "durable_source_commit_boundary": True,
+                }
         elif action.action_type is ActionType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMIT:
             from core.searchos_navigation_runtime import (
                 admit_searchos_navigation_use_custody,
@@ -17266,6 +17222,42 @@ class RunKernel:
                 "canonical_state": True,
                 "navigation_use_custody_ref": observed_use,
                 "physical_provider_operation_reused": True,
+            }
+        elif action.action_type is (ActionType.SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORD):
+            from core.fetch_read_content_reference import (
+                fetch_read_content_packet_ref_from_packet,
+                validate_fetch_read_content_packet,
+            )
+            from core.searchos_navigation_runtime import (
+                record_searchos_discovery_physical_custody,
+                searchos_navigation_physical_custody_ref,
+            )
+
+            try:
+                packet = validate_fetch_read_content_packet(
+                    _acquisition_safe_mapping(observation.payload.get("committed_fetch_read_content_packet"))
+                )
+                if fetch_read_content_packet_ref_from_packet(packet) != (
+                    _safe_mapping(action.inputs.get("fetch_read_content_packet_ref"))
+                ):
+                    raise ValueError("discovery_physical_custody_packet_ref_mismatch")
+                next_navigation_state, record = record_searchos_discovery_physical_custody(
+                    self.state.searchos_navigation_state,
+                    fetch_read_content_packet=packet,
+                    evidence_ledger_custody_ref=_safe_mapping(action.inputs.get("evidence_ledger_custody_ref")),
+                    destination_binding_ref=_safe_mapping(action.inputs.get("destination_binding_ref")),
+                )
+                if searchos_navigation_physical_custody_ref(record) != _safe_mapping(
+                    action.inputs.get("predicted_physical_custody_ref")
+                ) or record != _acquisition_safe_mapping(observation.payload.get("discovery_physical_custody_record")):
+                    raise ValueError("discovery_physical_custody_observation_mismatch")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.searchos_navigation_state = next_navigation_state
+            self.state.projections[action.stage] = {
+                "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                "canonical_state": True,
+                "discovery_physical_custody_record": record,
             }
         elif action.action_type is ActionType.SEARCHOS_JUDGMENT_DECIDE:
             from core.searchos_iterative_judgment_runtime import (
@@ -22933,62 +22925,47 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "multi-component admission aggregate/action is not canonical append-only state"
                 )
-            admission_state = _safe_mapping(
-                observation.payload.get("semantic_observation_admission_state")
-            )
-            admission_projection = _safe_mapping(
-                observation.payload.get("semantic_observation_admission_projection")
-            )
-            coverage_state = _safe_mapping(
-                observation.payload.get("component_coverage_state")
-            )
-            coverage_projection = _safe_mapping(
-                observation.payload.get("component_coverage_projection")
-            )
+            admission_state = _safe_mapping(observation.payload.get("semantic_observation_admission_state"))
+            admission_projection = _safe_mapping(observation.payload.get("semantic_observation_admission_projection"))
+            coverage_state = _safe_mapping(observation.payload.get("component_coverage_state"))
+            coverage_projection = _safe_mapping(observation.payload.get("component_coverage_projection"))
             admitted = component_ref.get("admission_status") in {
                 "admitted",
                 "admitted_with_caveats",
             }
             if admitted and not all(
-                (admission_state, admission_projection, coverage_state, coverage_projection)
+                (
+                    admission_state,
+                    admission_projection,
+                    coverage_state,
+                    coverage_projection,
+                )
             ):
                 raise RunKernelTransitionError(
                     "admitted multi-component state requires semantic and coverage reductions"
                 )
             if not admitted and any(
-                (admission_state, admission_projection, coverage_state, coverage_projection)
+                (
+                    admission_state,
+                    admission_projection,
+                    coverage_state,
+                    coverage_projection,
+                )
             ):
-                raise RunKernelTransitionError(
-                    "blocked multi-component state cannot manufacture canonical semantics"
-                )
+                raise RunKernelTransitionError("blocked multi-component state cannot manufacture canonical semantics")
             if admitted:
-                if (
-                    admission_projection.get("answer_component_id")
-                    != component_ref.get("component_id")
-                    or coverage_projection.get("answer_component_id")
-                    != component_ref.get("component_id")
-                ):
-                    raise RunKernelTransitionError(
-                        "multi-component semantic/coverage component mismatch"
-                    )
+                if admission_projection.get("answer_component_id") != component_ref.get(
+                    "component_id"
+                ) or coverage_projection.get("answer_component_id") != component_ref.get("component_id"):
+                    raise RunKernelTransitionError("multi-component semantic/coverage component mismatch")
                 self.state.semantic_observation_admission_state = admission_state
-                self.state.semantic_observation_admission_projection = (
-                    admission_projection
-                )
-                self.state.semantic_observation_admission_history.append(
-                    deepcopy(admission_projection)
-                )
+                self.state.semantic_observation_admission_projection = admission_projection
+                self.state.semantic_observation_admission_history.append(deepcopy(admission_projection))
                 self.state.component_coverage_state = coverage_state
                 self.state.component_coverage_projection = coverage_projection
-                self.state.component_coverage_history.append(
-                    deepcopy(coverage_projection)
-                )
-                self.state.projections[SEMANTIC_OBSERVATION_ADMISSION_STAGE] = (
-                    deepcopy(admission_projection)
-                )
-                self.state.projections[COMPONENT_COVERAGE_REDUCTION_STAGE] = (
-                    deepcopy(coverage_projection)
-                )
+                self.state.component_coverage_history.append(deepcopy(coverage_projection))
+                self.state.projections[SEMANTIC_OBSERVATION_ADMISSION_STAGE] = deepcopy(admission_projection)
+                self.state.projections[COMPONENT_COVERAGE_REDUCTION_STAGE] = deepcopy(coverage_projection)
             self.state.projections[action.stage] = deepcopy(aggregate)
         elif action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE:
             from core.component_work_graph_v1 import (

@@ -154,13 +154,17 @@ def reduce_fetch_read_content_packet_into_evidence_ledger(
     )
     payload = observation.to_dict()
     fetch_read_custody = payload.get("fetch_read_candidate_custody")
+    packet_id = fetch_read_content_packet.get("packet_id") or (
+        fetch_read_content_packet.get("fetch_read_content_packet_id")
+    )
+    packet_digest = fetch_read_content_packet.get("packet_digest") or (
+        fetch_read_content_packet.get("fetch_read_content_packet_digest")
+    )
     action = run_kernel.authorize_evidence_ledger_reduction(
         inputs={
             "observation_source": payload.get("observation_source"),
-            "fetch_read_content_packet_id": fetch_read_content_packet.get("packet_id"),
-            "fetch_read_content_packet_digest": fetch_read_content_packet.get(
-                "packet_digest"
-            ),
+            "fetch_read_content_packet_id": packet_id,
+            "fetch_read_content_packet_digest": packet_digest,
             "fetch_read_candidate_custody_count": len(
                 fetch_read_custody if isinstance(fetch_read_custody, list) else []
             ),
