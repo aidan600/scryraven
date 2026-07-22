@@ -918,6 +918,10 @@ def build_fetch_read_content_packet_from_navigation(
 ) -> dict[str, Any]:
     """Build the navigation-origin branch of the existing FetchRead family."""
 
+    from core.searchos_navigation_runtime import (
+        validate_navigation_destination_for_binding,
+    )
+
     material = _safe_mapping(sanitized_material)
     if _fetch_read_status(material.get("fetch_read_status")) != "readable":
         raise FetchReadContentReferenceError("navigation content is not readable")
@@ -935,6 +939,9 @@ def build_fetch_read_content_packet_from_navigation(
     )
     if any(not _safe_mapping(lineage.get(key)) for key in required_lineage):
         raise FetchReadContentReferenceError("navigation lineage is incomplete")
+    attempted_url = validate_navigation_destination_for_binding(
+        material.get("attempted_url"), lineage["destination_binding_ref"]
+    )
     reference_base = {
         "schema_version": SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION,
         "record_kind": FETCH_READ_CONTENT_RECORD_KIND,
@@ -956,10 +963,7 @@ def build_fetch_read_content_packet_from_navigation(
         "terminal_receipt_ref": _safe_mapping(terminal_receipt_ref),
         "custody_authorization_ref": _safe_mapping(custody_authorization_ref),
         "fetch_read_status": "readable",
-        "attempted_url": _required_url(
-            material.get("attempted_url"),
-            "navigation reference requires attempted URL",
-        ),
+        "attempted_url": attempted_url,
         "provider_reported_url": _clean_url(material.get("provider_reported_url")),
         "resolved_url": _clean_url(material.get("resolved_url")),
         "final_url": _clean_url(material.get("final_url")),
@@ -1164,6 +1168,7 @@ def _validate_navigation_fetch_read_packet(
 ) -> dict[str, Any]:
     from core.searchos_navigation_runtime import (
         validate_navigation_destination_binding_ref,
+        validate_navigation_destination_for_binding,
     )
 
     contract = _safe_mapping(safe.get("current_answer_contract_ref"))
@@ -1204,9 +1209,9 @@ def _validate_navigation_fetch_read_packet(
     )
     if reference.get("fetch_read_status") != "readable":
         raise FetchReadContentReferenceError("navigation reference is not readable")
-    _required_url(
+    validate_navigation_destination_for_binding(
         reference.get("attempted_url"),
-        "navigation reference requires attempted URL",
+        reference["destination_binding_ref"],
     )
     _validate_closed_flags(reference, context="navigation content reference")
     _validate_posture_flags(reference, context="navigation content reference")

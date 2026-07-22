@@ -386,25 +386,12 @@ def execute_authorized_acquisition_work_order(
         route_observation=route_observation,
         route_decision=route_decision,
     )
-    transient_selected_url: str | None = None
-    if work_order.origin == SEARCHOS_NAVIGATION_ORIGIN:
-        if transient_destination_resolver is None:
-            raise AcquisitionControlError("navigation_destination_resolver_missing")
-        from core.searchos_navigation_runtime import (
-            validate_navigation_destination_for_binding,
-        )
-
-        transient_selected_url = validate_navigation_destination_for_binding(
-            transient_destination_resolver(),
-            work_order.destination_binding_ref,
-        )
-    elif transient_destination_resolver is not None:
+    if (
+        work_order.origin != SEARCHOS_NAVIGATION_ORIGIN
+        and transient_destination_resolver is not None
+    ):
         raise AcquisitionControlError("candidate_origin_destination_resolver_forbidden")
-    request = _materialize_acquisition_request(
-        work_order,
-        route_decision,
-        transient_selected_url=transient_selected_url,
-    )
+    request = _materialize_acquisition_request(work_order, route_decision)
     deferred_error: RunCapExceeded | None = None
     execution_result: AcquisitionExecutionResult | None = None
     transport_claimed = False
@@ -431,6 +418,21 @@ def execute_authorized_acquisition_work_order(
         claim_execution_authorization()
 
     try:
+        if work_order.origin == SEARCHOS_NAVIGATION_ORIGIN:
+            if transient_destination_resolver is None:
+                raise AcquisitionControlError("navigation_destination_resolver_missing")
+            from core.searchos_navigation_runtime import (
+                validate_navigation_destination_for_binding,
+            )
+
+            request = _materialize_acquisition_request(
+                work_order,
+                route_decision,
+                transient_selected_url=validate_navigation_destination_for_binding(
+                    transient_destination_resolver(),
+                    work_order.destination_binding_ref,
+                ),
+            )
         try:
             execution_result = dispatch_acquisition(
                 request,
@@ -479,7 +481,9 @@ def execute_authorized_acquisition_work_order(
         )
     except Exception:
         if not transport_claimed:
-            raise
+            if work_order.origin != SEARCHOS_NAVIGATION_ORIGIN:
+                raise
+            claim_execution_authorization()
         attempted = (
             execution_result.provider_calls_attempted
             if execution_result is not None

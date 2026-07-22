@@ -18,7 +18,12 @@ from core.acquisition_control import (
 from core.authorized_acquisition_runtime import (
     execute_acquisition_work_order_to_terminal,
 )
-from core.run_kernel import RunKernel
+from core.cap_enforcement import RunCapExceeded
+from core.fetch_read_content_reference import (
+    build_fetch_read_content_packet_from_navigation,
+    validate_fetch_read_content_packet,
+)
+from core.run_kernel import RunKernel, RunKernelTransitionError
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
     SearchOSJudgmentAction,
@@ -51,6 +56,7 @@ from core.searchos_navigation_runtime import (
 RUN_ID = "navigation-bridge-run"
 REQUEST_ID = "navigation-bridge-request"
 CHILD_URL = "https://official.example.test/root/child"
+OTHER_URL = "https://official.example.test/root/other"
 
 
 def _digest(value: object) -> str:
@@ -302,6 +308,26 @@ def _proposal(
     )
 
 
+def _ordinary_proposal(kernel: RunKernel) -> AcquisitionNeedProposalV1:
+    snapshot = kernel.acquisition_authority_snapshot()
+    return AcquisitionNeedProposalV1.create(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        producer_surface="tests.ordinary_candidate",
+        answer_contract_ref=snapshot["answer_contract_ref"],
+        source_obligation_ref=snapshot["source_obligations_by_id"]["obligation-1"],
+        component_ref=snapshot["components_by_id"]["component-1"],
+        requested_material_shape="ordinary_single_page",
+        candidate_ref={
+            "candidate_id": "candidate-1",
+            "candidate_digest": "c" * 64,
+            "url": CHILD_URL,
+        },
+        available_urls=(CHILD_URL,),
+        advisory_proposed_capability="READ",
+    )
+
+
 def _lineage(
     kernel: RunKernel,
     option: NavigationOption,
@@ -316,6 +342,28 @@ def _lineage(
         "destination_binding_ref": option.destination_binding_ref,
         "parent_read_custody_ref": parent,
     }
+
+
+def _navigation_packet(*, attempted_url: str = CHILD_URL) -> dict[str, Any]:
+    kernel, _store, option, parent = _selected_navigation()
+    proposal = _proposal(kernel, option, parent)
+    return build_fetch_read_content_packet_from_navigation(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        answer_contract_ref=proposal.answer_contract_ref,
+        component_ref=proposal.component_ref,
+        source_obligation_ref=proposal.source_obligation_ref,
+        navigation_lineage=_lineage(kernel, option, parent),
+        terminal_receipt_ref=_ref("terminal_receipt", "child"),
+        custody_authorization_ref=_ref("custody_authorization", "child"),
+        sanitized_material={
+            "fetch_read_status": "readable",
+            "attempted_url": attempted_url,
+            "bounded_text": "Offline child material.",
+            "bounded_text_sanitized": True,
+            "bounded_text_bounded": True,
+        },
+    )
 
 
 def test_navigation_uses_url_free_v1_chain_and_consume_once_dispatch() -> None:
@@ -446,42 +494,25 @@ def test_mixed_origin_and_locator_scope_mismatch_fail_before_transport() -> None
         calls += 1
         return {"markdown": "must not execute"}
 
-    with pytest.raises(NavigationRuntimeError, match="binding_unavailable"):
-        execute_acquisition_work_order_to_terminal(
-            run_kernel=kernel,
-            proposal=proposal,
-            available_providers={"linkup": True, "tavily": False},
-            transports=AcquisitionTransports(linkup_fetch=forbidden),
-            transient_destination_resolver=(
-                lambda: wrong_scope.consume_once_for_execution(
-                    option.destination_binding_ref
-                )
-            ),
-        )
+    result = execute_acquisition_work_order_to_terminal(
+        run_kernel=kernel,
+        proposal=proposal,
+        available_providers={"linkup": True, "tavily": False},
+        transports=AcquisitionTransports(linkup_fetch=forbidden),
+        transient_destination_resolver=(
+            lambda: wrong_scope.consume_once_for_execution(
+                option.destination_binding_ref
+            )
+        ),
+    )
+    assert result["status"] == "failed"
+    assert result["terminal_receipt"].terminal_status == "failed"
     assert calls == 0
 
 
 def test_ordinary_candidate_v1_serialization_has_no_navigation_fields() -> None:
     kernel = _kernel()
-    snapshot = kernel.acquisition_authority_snapshot()
-    proposal = AcquisitionNeedProposalV1.create(
-        run_id=RUN_ID,
-        request_id=REQUEST_ID,
-        producer_surface="tests.ordinary_candidate",
-        answer_contract_ref=snapshot["answer_contract_ref"],
-        source_obligation_ref=snapshot["source_obligations_by_id"][
-            "obligation-1"
-        ],
-        component_ref=snapshot["components_by_id"]["component-1"],
-        requested_material_shape="ordinary_single_page",
-        candidate_ref={
-            "candidate_id": "candidate-1",
-            "candidate_digest": "c" * 64,
-            "url": CHILD_URL,
-        },
-        available_urls=(CHILD_URL,),
-        advisory_proposed_capability="READ",
-    )
+    proposal = _ordinary_proposal(kernel)
     before = proposal.to_dict()
     round_trip = AcquisitionNeedProposalV1.from_dict(before).to_dict()
     assert round_trip == before
@@ -491,6 +522,160 @@ def test_ordinary_candidate_v1_serialization_has_no_navigation_fields() -> None:
     assert SearchOSSlotPosture.AWAITING_NAVIGATION_EXECUTION.value not in (
         kernel.state.projections
     )
+
+
+def test_navigation_fetchread_rejects_redigested_url_binding_mismatch() -> None:
+    import core.fetch_read_content_reference as fetch_read
+
+    packet = _navigation_packet()
+    reference = packet["reference_records"][0]
+    reference["attempted_url"] = OTHER_URL
+    reference_digest = fetch_read._digest_json(
+        fetch_read._reference_digest_payload(reference)
+    )
+    reference["reference_digest"] = reference_digest
+    reference["reference_id"] = (
+        f"sanitized-content-reference:{REQUEST_ID}:{reference_digest[:16]}"
+    )
+    packet_digest = fetch_read._digest_json(fetch_read._packet_digest_payload(packet))
+    packet["packet_digest"] = packet_digest
+    packet["packet_id"] = f"fetch-read-content-packet:{REQUEST_ID}:{packet_digest[:16]}"
+    reference["packet_id"] = packet["packet_id"]
+    reference["packet_digest"] = packet_digest
+    with pytest.raises(ValueError, match="binding"):
+        validate_fetch_read_content_packet(packet)
+    with pytest.raises(ValueError, match="binding"):
+        _navigation_packet(attempted_url=OTHER_URL)
+
+
+@pytest.mark.parametrize("failure", ["missing_locator", "run_cap"])
+def test_pretransport_navigation_failure_is_terminal_and_nonreplayable(
+    failure: str,
+) -> None:
+    kernel, store, option, parent = _selected_navigation()
+    before = deepcopy(kernel.state.searchos_state)
+    calls = 0
+
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not execute"}
+
+    def cap_failure() -> None:
+        raise RunCapExceeded("fetch_read_operations cap exceeded")
+
+    if failure == "missing_locator":
+        store.consume_once_for_execution(option.destination_binding_ref)
+    result = execute_searchos_navigation_read_to_custody(
+        run_kernel=kernel,
+        locator_store=store,
+        navigation_lineage=_lineage(kernel, option, parent),
+        available_providers={"linkup": True, "tavily": False},
+        acquisition_transports=AcquisitionTransports(linkup_fetch=transport),
+        before_transport=cap_failure if failure == "run_cap" else None,
+    )
+    control = kernel.state.acquisition_control_state
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    current_option = NavigationOption.from_dict(
+        next(iter(kernel.state.searchos_state["navigation"]["options_by_id"].values()))
+    )
+    assert result["provider_calls_attempted"] == calls == 0
+    assert len(control["execution_observations_by_id"]) == 1
+    assert len(control["terminal_receipts_by_operation_key"]) == 1
+    assert control["active_by_source_obligation"] == {}
+    assert len(control["exhausted_operation_keys"]) == 1
+    assert current_option.disposition == NAVIGATION_DESTINATION_FAILED
+    assert slot["posture"] == (
+        SearchOSSlotPosture.BUDGET_EXHAUSTED.value
+        if failure == "run_cap"
+        else SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    )
+    assert slot["custody_refs"] == before["slots_by_id"]["slot-1"]["custody_refs"]
+    assert kernel.state.searchos_state["navigation"]["edges"] == before["navigation"]["edges"]
+    assert kernel.state.searchos_state["budget"] == before["budget"]
+    assert store.committed_count == 0
+    assert kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
+        "custody_record_count"
+    ] == 0
+
+
+def test_ordinary_candidate_run_cap_still_propagates_after_terminal_receipt() -> None:
+    kernel = _kernel()
+    calls = 0
+
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not execute"}
+
+    with pytest.raises(RunCapExceeded, match="fetch_read_operations"):
+        execute_acquisition_work_order_to_terminal(
+            run_kernel=kernel,
+            proposal=_ordinary_proposal(kernel),
+            available_providers={"linkup": True, "tavily": False},
+            transports=AcquisitionTransports(linkup_fetch=transport),
+            before_transport=lambda: (_ for _ in ()).throw(
+                RunCapExceeded("fetch_read_operations cap exceeded")
+            ),
+        )
+    control = kernel.state.acquisition_control_state
+    assert calls == 0 and control["active_by_source_obligation"] == {}
+    assert len(control["terminal_receipts_by_operation_key"]) == 1
+
+
+@pytest.mark.parametrize("failure", ["authorization", "reduction"])
+def test_post_ledger_searchos_failure_preserves_truthful_custody(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel, store, option, parent = _selected_navigation()
+    calls = 0
+    original_reduce = kernel.reduce
+
+    def fail_after_ledger_commit(observation: Any) -> Any:
+        action = kernel.state.issued_actions.get(observation.action_id)
+        if action and failure == "reduction" and action.stage == (
+            "searchos_read_custody_admission"
+        ):
+            raise RunKernelTransitionError("synthetic SearchOS custody rejection")
+        return original_reduce(observation)
+
+    monkeypatch.setattr(kernel, "reduce", fail_after_ledger_commit)
+    if failure == "authorization":
+        monkeypatch.setattr(
+            kernel,
+            "authorize_searchos_read_custody_admission",
+            lambda **_kwargs: (_ for _ in ()).throw(
+                RunKernelTransitionError("synthetic SearchOS custody rejection")
+            ),
+        )
+
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "Offline child material with one bounded fact."}
+
+    with pytest.raises(
+        NavigationRuntimeError,
+        match="navigation_custody_committed_searchos_admission_failed",
+    ):
+        execute_searchos_navigation_read_to_custody(
+            run_kernel=kernel,
+            locator_store=store,
+            navigation_lineage=_lineage(kernel, option, parent),
+            available_providers={"linkup": True, "tavily": False},
+            acquisition_transports=AcquisitionTransports(linkup_fetch=transport),
+        )
+    ledger = kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    current_option = NavigationOption.from_dict(
+        next(iter(kernel.state.searchos_state["navigation"]["options_by_id"].values()))
+    )
+    assert ledger["custody_record_count"] == 1
+    assert ledger["fetch_read_candidate_custody_records"][0]["attempted_url"] == CHILD_URL
+    assert current_option.disposition != NAVIGATION_DESTINATION_FAILED
+    assert slot["posture"] != SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    assert calls == 1 and store.committed_count == 0
 
 
 def test_success_reuses_fetchread_evidenceledger_and_searchos_custody() -> None:
@@ -547,7 +732,8 @@ def test_success_reuses_fetchread_evidenceledger_and_searchos_custody() -> None:
         "unreadable",
         "packet_rejection",
         "custody_rejection",
-        "ledger_rejection",
+        "ledger_authorization_rejection",
+        "ledger_reduction_rejection",
     ],
 )
 def test_destination_failures_reopen_slot_without_retry(
@@ -583,15 +769,19 @@ def test_destination_failures_reopen_slot_without_retry(
                 RuntimeError("custody rejected")
             ),
         )
-    if case == "ledger_rejection":
-        import core.evidence_ledger_lifecycle as ledger_lifecycle
-
+    if case == "ledger_authorization_rejection":
         monkeypatch.setattr(
-            ledger_lifecycle,
-            "reduce_fetch_read_content_packet_into_evidence_ledger",
+            kernel,
+            "authorize_evidence_ledger_reduction",
             lambda **_kwargs: (_ for _ in ()).throw(
                 RuntimeError("ledger rejected")
             ),
+        )
+    if case == "ledger_reduction_rejection":
+        monkeypatch.setattr(
+            type(kernel.state.evidence_ledger),
+            "reduce_observation",
+            lambda *_args: (_ for _ in ()).throw(RuntimeError("ledger rejected")),
         )
     result = execute_searchos_navigation_read_to_custody(
         run_kernel=kernel,
@@ -619,6 +809,9 @@ def test_destination_failures_reopen_slot_without_retry(
     assert after["budget"] == before["budget"]
     assert calls <= 1
     assert store.committed_count == 0
+    assert kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
+        "custody_record_count"
+    ] == 0
 
 
 @pytest.mark.parametrize(
