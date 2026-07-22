@@ -623,6 +623,11 @@ D-prime / RunKernel admission and final-evidence/citation path. Offline N=1 and
 N=2 product fixtures prove that composition; they do not prove live provider or
 model quality.
 
+`FetchReadContentPacket` and `SanitizedContentReference` remain the bounded
+readable-content handoff after `SearchResultCandidatePacket` and before
+EvidenceLedger custody; that handoff is not evidence, is not citation-eligible,
+and does not satisfy source obligations.
+
 The parent iterative-navigation roadmap checkpoint is complete. Comprehensive
 post-Analyst re-entry, gap recovery, and whole-run stopping remain deferred to
 the next checkpoint.
