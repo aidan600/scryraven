@@ -5,7 +5,7 @@ Authority: approved:searchos-iterative-judgment-direction
 Responsibility: canonical forward direction for first-wave cutover, iterative result admission, the single SearchJudgment owner, semantic-evaluation handoff, navigation sequencing, budget/mode policy, and legacy-authority retirement
 Applies to: installed `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01` behavior and later recovery/stopping convergence
 Repository owner: `docs/architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md`
-Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
+Verified-against-runtime: 3c6de1856e2d05e744dd53ee6434bc01ca516837
 Project Source role: durable external context mirror; once the repository copy exists, the repository copy controls on conflict
 Update trigger: maintainer changes the canonical owner, first-wave boundary, action vocabulary, iterative candidate continuity, navigation sequencing, adjustable policy doctrine, or legacy retirement direction
 Non-trigger: implementation detail that preserves the installed owner and authority boundaries
@@ -218,11 +218,14 @@ READ source
 → transient bounded deterministic Markdown extraction
 → exact parent-custody join and candidate admission
 → SearchJudgment copies one current navigation ref
-→ RunKernel admits the edge, lease, and logical charges
+→ bounded pending-navigation posture with zero charge
+→ RunKernel atomically admits the edge, lease, and READ/edge charges
 → core.routing selects one installed READ adapter
 → one-shot transient overlay materializes the exact URL
-→ atomic destination custody
-→ existing SearchJudgment and semantic receiver
+→ destination custody or one-shot destination-scoped terminal
+→ slot returns to active SearchJudgment
+→ optional child expansion cannot reverse successful custody
+→ existing semantic receiver
 ```
 
 The installed first-build boundary is same exact host, queryless HTTP(S), one
@@ -238,9 +241,23 @@ The successful physical-custody observation is the first canonical exact-URL
 commit. Navigation-origin v2 custody sets the normalized attempted destination
 as `durable_source_url`; physical reuse preserves the original immutable packet,
 ledger custody, and discovery/navigation origin while adding a slot-specific
-use ref and consuming the current logical edge and READ nomination. Failure is
-one-shot, URL-free, and terminal for the physical operation. No provider
-fallback or retry is installed.
+use ref. Pre-admission rejection consumes no SearchOS READ, navigation READ,
+edge, lease, or provider work. After atomic admission, destination failure keeps
+the logical charges, terminalizes the physical operation without retry, releases
+the lease, and reopens the slot. Successful custody is canonical before optional
+child expansion; an unavailable expansion records a URL-free posture and leaves
+the source available for semantic handoff. No provider fallback or retry is
+installed.
+
+The installed immutable navigation leashes are provisional and uncalibrated:
+Fast `1/1/8`, Balanced `2/2/16`, and Deep `3/3/24` for maximum depth,
+selections per slot, and edges per run. Exact destinations remain inside a
+proposal-local registry transaction until the canonical admitted prefix is
+known. SearchJudgment sees only exact candidate refs and bounded current
+parent/depth/ordinal/relationship facts; RunKernel retains URL, cycle, depth,
+budget, routing, and execution authority. Bracketed queryless IPv6 literals use
+the same local normalization, registry, overlay, and attempted-identity checks
+as IPv4 and DNS hosts.
 
 The canonical checkpoint was delivered as two internal slices:
 
@@ -356,9 +373,14 @@ Installed:
 ### Installed internal Slice B — bounded breadcrumb navigation
 
 Installed bounded deterministic extraction, exact parent-custody-bound
-navigation refs, current-lineage selection, cycle/depth/breadth and retained-
-capacity controls, a one-shot URL overlay, mandatory separate READ, atomic
-durable-source custody, physical reuse, and existing semantic/citation re-entry.
+navigation refs, pending zero-charge judgment, atomic cross-state selection and
+charging, destination-scoped continuation, custody-before-expansion ordering,
+mode-specific cycle/depth/selection/edge controls, proposal-local registry
+rollback, URL-free relationship context, bracketed IPv6 normalization, a
+one-shot URL overlay, mandatory separate READ, atomic durable-source custody,
+physical reuse, and existing semantic/citation re-entry. The convergence repair
+is `SEARCHOS-NAVIGATION-ADMISSION-AND-CONTINUATION-REPAIR-01` at runtime/test
+checkpoint `3c6de1856e2d05e744dd53ee6434bc01ca516837`.
 
 ### Following roadmap phase
 

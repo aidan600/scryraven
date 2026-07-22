@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
+Verified-against-runtime: 3c6de1856e2d05e744dd53ee6434bc01ca516837
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -86,7 +86,7 @@ configuration.
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection alone remains a nontrigger. SearchJudgment may separately nominate an exact admitted candidate READ or one exact current breadcrumb ref; both reuse the RunKernel controller and one typed Linkup/Tavily READ adapter. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the four base actions. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
-| `SEARCHOS-SLICE-B-NAVIGATION` | `SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01` adds the fifth exact action, `REQUEST_NAVIGATE_BREADCRUMB`, only to the navigation-capable v2 judgment contract. A successful candidate READ may yield bounded deterministic same-host, queryless Markdown breadcrumb refs joined to exact parent custody. The model copies one current ref and cannot author a URL, provider, or route. RunKernel charges one logical edge and READ nomination, `core.routing` selects one existing READ adapter, and the transient one-shot execution overlay alone carries the exact destination before custody. Successful atomic FetchRead v2/EvidenceLedger admission is the first canonical durable URL publication. Physical custody may be reused without changing its discovery/navigation origin while each slot receives a distinct use ref. Navigation-origin material re-enters the existing N-component semantic and citation path; Map, Crawl, Focused Extract, fallback, retry, browser, and live execution remain closed. |
+| `SEARCHOS-SLICE-B-NAVIGATION` | `SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01`, repaired by `SEARCHOS-NAVIGATION-ADMISSION-AND-CONTINUATION-REPAIR-01`, adds the fifth exact action, `REQUEST_NAVIGATE_BREADCRUMB`, only to the navigation-capable v2 judgment contract. Judgment first enters a bounded pending-admission posture with zero retrieval charge. RunKernel then atomically validates the current ref, destination binding, contributor/lineage, lease, custody, depth, selection, edge, and READ limits before charging the SearchOS READ nomination and navigation READ/edge and creating the lease and edge. A rejected admission consumes nothing and reopens judgment; an admitted destination failure is one-shot and destination-terminal but also reopens judgment. Successful FetchRead v2/EvidenceLedger and slot-use custody precede optional child expansion, so depth, parsing, candidate, or registry exhaustion cannot erase usable custody. Fast/Balanced/Deep navigation depth, per-slot selections, and run-edge leashes are `1/1/8`, `2/2/16`, and `3/3/24`. Proposal-local registry transactions publish only the canonical admitted prefix. The model receives URL-free exact relationship facts, while bracketed IPv6 normalization remains a local queryless URL operation. Navigation-origin material re-enters the existing N-component semantic and citation path; Map, Crawl, Focused Extract, fallback, retry, browser, and live execution remain closed. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -602,26 +602,53 @@ transient.
 
 The navigation-capable judgment request/input/decision contract is explicitly
 v2. `REQUEST_NAVIGATE_BREADCRUMB` copies one exact current safe ref; it contains
-no URL and does not create QueryPlan query lineage. RunKernel validates the
-current option, immutable lineage generation, representative contributor,
-lease, cycle/depth posture, and independent retained ceilings. It charges one
-logical edge and one logical READ nomination before a separately governed
-READ. `core.routing` remains the sole provider selector. One nonserializable,
-one-shot execution overlay materializes the exact queryless URL immediately
-before dispatch through the installed READ adapter.
+no URL and does not create QueryPlan query lineage. Judgment records the exact
+decision and candidate in `AWAITING_NAVIGATION_ADMISSION` without consuming a
+SearchOS READ nomination, navigation READ/edge charge, lease, provider call, or
+edge. RunKernel then validates the exact pending authority, current option,
+immutable lineage generation, representative contributor, lease, destination
+binding, parent custody, cycle/depth posture, per-slot selection capacity, run
+edge capacity, and SearchOS READ capacity. Only the successful atomic reducer
+charges all three logical counters, creates the lease and edge, and advances to
+`AWAITING_READ`. A rejected pre-admission attempt consumes nothing, records a
+typed bounded reason, and returns the slot to active judgment. `core.routing`
+remains the sole provider selector. One nonserializable, one-shot execution
+overlay materializes the exact queryless URL immediately before dispatch
+through the installed READ adapter.
 
 Navigation-origin v2 proposal, work-order, route, execution, failure, and
 terminal records remain URL-free. A successful physical-custody observation is
 the first canonical exact-URL boundary: the normalized attempted destination is
 both `attempted_url` and `durable_source_url` in the FetchRead v2 packet,
-EvidenceLedger custody, and immutable physical record. Ledger or validation
-failure publishes no durable URL and cannot retry. Existing physical custody is
-reused without relabeling its discovery/navigation origin; logical edge and READ
+EvidenceLedger custody, and immutable physical record. Route, transport,
+readability, redirect, identity, packet, or pre-publication ledger/custody
+failure is terminal for that destination and retry remains false, but the
+charged slot returns to active SearchJudgment so another retrieval or handoff
+action remains possible. Successful EvidenceLedger, physical, and slot-use
+custody is admitted before optional child expansion. Maximum depth, no links,
+out-of-scope effective base, parsing, registry capacity, candidate capacity, or
+child admission failure records one URL-free expansion posture and cannot
+invalidate or remove the successful source. Existing physical custody is reused
+without relabeling its discovery/navigation origin; logical edge and READ
 charges and slot-specific use refs remain distinct. Navigation-origin semantic
 passages use `durable_source_url` and enter the unchanged component Analyst /
 D-prime / RunKernel admission and final-evidence/citation path. Offline N=1 and
 N=2 product fixtures prove that composition; they do not prove live provider or
 model quality.
+
+The immutable v2 SearchOS policy snapshot installs provisional maximum leashes:
+Fast uses depth/slot-selection/run-edge limits `1/1/8`, Balanced uses `2/2/16`,
+and Deep uses `3/3/24`. These are uncalibrated ceilings, not consumption
+targets. Candidate proposal uses one nonserializable phase-local destination
+registry transaction: exact destinations stay proposal-local until RunKernel
+predicts the canonical deterministic prefix, only that prefix is committed,
+and rollback removes only entries newly inserted by the failed proposal. Model
+input carries exact current parent custody, depths, admission/link ordinals,
+bounded relationship label, and the fixed directional posture, but no locator,
+provider, route, or support claim. Queryless bracketed IPv6 literals are
+canonicalized with standard-library IP parsing and reconstructed with brackets;
+userinfo, zones, malformed or unbracketed literals, nondefault ports, and
+query-bearing navigation remain rejected.
 
 `FetchReadContentPacket` and `SanitizedContentReference` remain the bounded
 readable-content handoff after `SearchResultCandidatePacket` and before

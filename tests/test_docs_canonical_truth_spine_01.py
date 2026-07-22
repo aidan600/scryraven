@@ -80,7 +80,8 @@ QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pr
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
 SEARCHOS_SLICE_A_RUNTIME_SHA = "4431ff46ed1e8367b124f596ccc04e90040217b6"  # pragma: allowlist secret
 SEARCHOS_SLICE_B_RUNTIME_SHA = "aeee93d1056312daa9d845a0d33bb52fc0e45e8e"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = SEARCHOS_SLICE_B_RUNTIME_SHA
+SEARCHOS_NAVIGATION_REPAIR_RUNTIME_SHA = "3c6de1856e2d05e744dd53ee6434bc01ca516837"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = SEARCHOS_NAVIGATION_REPAIR_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
@@ -276,6 +277,11 @@ def test_searchos_iterative_direction_is_routed_linked_and_installed_through_sli
 
     assert SEARCHOS_ITERATIVE_DIRECTION.name in roadmap
     assert "Completed Build: SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01" in roadmap
+    for owner in (SEARCHOS, SEARCHOS_ITERATIVE_DIRECTION):
+        assert (
+            f"Verified-against-runtime: {SEARCHOS_NAVIGATION_REPAIR_RUNTIME_SHA}"
+            in _read(owner)
+        )
     assert "Internal Slice B completes" in roadmap
     assert "The query-strategy, READ/source-custody, and iterative-navigation checkpoints are complete" in roadmap
     assert "Navigation authorizes a separate one-shot READ and creates no QueryPlan query" in roadmap
@@ -579,7 +585,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
         PROVIDER_ROUTING
     )
     for owner in (CURRENT_STATE, ROADMAP):
-        assert f"Verified-against-runtime: {SEARCHOS_SLICE_B_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {CURRENT_STATE_RUNTIME_SHA}" in _read(owner)
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):

@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
+Verified-against-runtime: 3c6de1856e2d05e744dd53ee6434bc01ca516837
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -423,7 +423,7 @@ Slice B build below closes navigation without reopening the other surfaces.
 
 ## Completed Build: SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01
 
-Runtime/test checkpoint `aeee93d1056312daa9d845a0d33bb52fc0e45e8e`
+Runtime/test checkpoint `3c6de1856e2d05e744dd53ee6434bc01ca516837`
 
 Internal Slice B completes
 `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`. A successfully READ
@@ -442,6 +442,20 @@ publication through FetchRead v2 and EvidenceLedger. Physical custody may be
 reused across slot-specific logical uses without changing its original
 discovery/navigation origin. Navigation-origin material then enters the
 existing N-component semantic and citation path.
+
+`SEARCHOS-NAVIGATION-ADMISSION-AND-CONTINUATION-REPAIR-01` converged the
+installed state machine without adding a new architecture surface. Navigation
+judgment now enters an exact zero-charge pending posture; RunKernel atomically
+validates and commits the SearchOS READ nomination, navigation READ/edge, lease,
+and edge. Pre-admission rejection reopens judgment with zero retrieval deltas.
+Post-admission destination failure remains charged and one-shot but is terminal
+only for that destination, allowing another retrieval or handoff. Successful
+custody is admitted before optional child expansion and therefore survives
+depth, parsing, candidate, and registry exhaustion. Immutable provisional
+Fast/Balanced/Deep depth/selection/edge leashes are `1/1/8`, `2/2/16`, and
+`3/3/24`; proposal-local exact-destination transactions commit only the
+canonically admitted prefix. Model relationship facts remain bounded and
+locator-free, and bracketed IPv6 support is local normalization only.
 
 The build installs no QueryPlan navigation query, browser access, direct model
 URL access, Map, Crawl, Focused Extract, fallback, retry, provider Deep/Research,

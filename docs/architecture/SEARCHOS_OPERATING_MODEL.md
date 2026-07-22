@@ -5,7 +5,7 @@ Authority: canonical:searchos-operating-model
 Default-read: no
 Applies-to: SearchOS architecture and SearchOS-facing provider, acquisition, navigation, and recovery work
 Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities
-Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
+Verified-against-runtime: 3c6de1856e2d05e744dd53ee6434bc01ca516837
 
 ## Product Boundary
 
@@ -114,6 +114,20 @@ Search results need not contain a complete page. A successful read that lacks
 the needed information is source insufficiency, not a transport failure: return
 to search, another source, or bounded navigation rather than extracting the
 same page repeatedly.
+
+Installed breadcrumb navigation treats judgment, admission, execution, and
+continuation as one RunKernel-governed state machine. Copying a candidate ref
+creates a zero-charge pending posture; one atomic admission either validates and
+charges the SearchOS READ plus navigation READ/edge with its lease and edge, or
+rejects without retrieval cost and reopens judgment. A charged destination
+failure is one-shot and destination-scoped, never a whole-slot stale result.
+Successful EvidenceLedger and slot-use custody precede optional child expansion,
+so depth, parsing, candidate, or transient-registry exhaustion cannot erase an
+answer-bearing source. Fast/Balanced/Deep use provisional maximum
+depth/selection/edge leashes `1/1/8`, `2/2/16`, and `3/3/24`. Exact destinations
+remain in proposal-local transactions until the admitted deterministic prefix
+is known; model relationship context remains bounded and locator-free. Local
+bracketed IPv6 normalization does not add DNS or network attestation.
 
 [SearchOS Iterative Judgment Direction](SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
 records the approved and installed first-wave, iterative-judgment, and bounded-
