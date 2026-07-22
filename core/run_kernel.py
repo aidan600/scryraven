@@ -597,6 +597,7 @@ SEARCH_JUDGMENT_READ_PROPOSAL_STAGE = "search_judgment_read_proposal_registry"
 SEARCH_JUDGMENT_READ_CUSTODY_STAGE = "search_judgment_read_custody_registry"
 SEARCHOS_INITIALIZATION_STAGE = "searchos_slice_a_initialization"
 SEARCHOS_JUDGMENT_STAGE = "searchos_iterative_judgment"
+SEARCHOS_NAVIGATION_SELECTION_STAGE = "searchos_navigation_selection"
 SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE = (
     "searchos_iteration_candidate_admission"
 )
@@ -798,6 +799,7 @@ class ActionType(str, Enum):
     )
     SEARCHOS_INITIALIZE = "searchos_slice_a_initialize"
     SEARCHOS_JUDGMENT_DECIDE = "searchos_iterative_judgment_decide"
+    SEARCHOS_NAVIGATION_SELECT = "SEARCHOS_NAVIGATION_SELECT"
     SEARCHOS_ITERATION_CANDIDATES_ADMIT = (
         "searchos_iteration_candidates_admit"
     )
@@ -955,6 +957,7 @@ class ObservationType(str, Enum):
     )
     SEARCHOS_INITIALIZED = "searchos_slice_a_initialized"
     SEARCHOS_JUDGMENT_DECIDED = "searchos_iterative_judgment_decided"
+    SEARCHOS_NAVIGATION_SELECTED = "SEARCHOS_NAVIGATION_SELECTED"
     SEARCHOS_ITERATION_CANDIDATES_ADMITTED = (
         "searchos_iteration_candidates_admitted"
     )
@@ -8654,6 +8657,47 @@ class RunKernel:
                 "charge_ref": charge,
             },
             expected_observation_type=ObservationType.SEARCHOS_JUDGMENT_DECIDED,
+        )
+
+    def authorize_searchos_navigation_selection(
+        self,
+        *,
+        judgment_decision_ref: Mapping[str, Any],
+        navigation_candidate: Mapping[str, Any],
+        reason: str = "evaluate_bounded_searchos_navigation_selection",
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            build_navigation_selection_action_inputs,
+        )
+
+        if not self.state.searchos_state:
+            raise RunKernelTransitionError(
+                "navigation selection requires initialized SearchOS state"
+            )
+        current = _safe_mapping(self.state.searchos_state)
+        if (
+            current.get("run_id") != self.state.run_id
+            or current.get("request_id") != self.state.request_id
+        ):
+            raise RunKernelTransitionError(
+                "navigation selection SearchOS scope differs from RunKernel"
+            )
+        try:
+            inputs = build_navigation_selection_action_inputs(
+                self.state.searchos_state,
+                judgment_decision_ref=judgment_decision_ref,
+                navigation_candidate=navigation_candidate,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_SELECTION_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_SELECT,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=(
+                ObservationType.SEARCHOS_NAVIGATION_SELECTED
+            ),
         )
 
     def authorize_searchos_iteration_candidate_admission(
@@ -16511,6 +16555,24 @@ class RunKernel:
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(projection)
+        elif action.action_type is ActionType.SEARCHOS_NAVIGATION_SELECT:
+            from core.searchos_navigation_runtime import (
+                reduce_navigation_selection_observation,
+            )
+
+            try:
+                self.state.searchos_state = (
+                    reduce_navigation_selection_observation(
+                        self.state.searchos_state,
+                        action=action,
+                        observation=observation,
+                    )
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(
+                observation.payload
+            )
         elif action.action_type is ActionType.SEARCHOS_ITERATION_CANDIDATES_ADMIT:
             from core.searchos_iterative_judgment_runtime import (
                 record_searchos_iteration_candidate_set,
@@ -23725,6 +23787,7 @@ __all__ = [
     "SEARCHOS_INITIALIZATION_STAGE",
     "SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE",
     "SEARCHOS_JUDGMENT_STAGE",
+    "SEARCHOS_NAVIGATION_SELECTION_STAGE",
     "SEARCHOS_READ_CUSTODY_ADMISSION_STAGE",
     "SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE",
     "SEARCHOS_SEMANTIC_HANDOFF_STAGE",
