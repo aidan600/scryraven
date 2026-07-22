@@ -429,17 +429,38 @@ class OfflineOrdinaryPipelineHarness:
                     ],
                     reason="offline_read_material_ready",
                 )
-            if (
-                self.read_assessment_decision == "NAVIGATE_WHEN_AVAILABLE"
-                and navigation_refs
-            ):
+            navigation_modes = {
+                "NAVIGATE_WHEN_AVAILABLE",
+                "NAVIGATE_THEN_FOLLOWUP",
+                "NAVIGATE_THEN_UNRESOLVED",
+            }
+            if self.read_assessment_decision in navigation_modes and navigation_refs:
                 return contract_decision(
                     "REQUEST_NAVIGATE_BREADCRUMB",
                     navigation_candidate_ref=dict(navigation_refs[0]),
                     reason="offline_navigation_candidate_selected",
                 )
+            if (
+                self.read_assessment_decision == "NAVIGATE_THEN_FOLLOWUP"
+                and custody_refs
+                and len(self.search_calls) == 1
+            ):
+                return contract_decision(
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    followup_query="Alpha post-navigation failure follow-up",
+                    reason="offline_navigation_failure_followup",
+                )
+            if (
+                self.read_assessment_decision
+                in {"NAVIGATE_THEN_FOLLOWUP", "NAVIGATE_THEN_UNRESOLVED"}
+                and custody_refs
+            ):
+                return contract_decision(
+                    "HANDOFF_UNRESOLVED",
+                    reason="offline_navigation_failure_unresolved",
+                )
             if options:
-                if self.read_assessment_decision == "NAVIGATE_WHEN_AVAILABLE":
+                if self.read_assessment_decision in navigation_modes:
                     slot_id = str(dict(authorized.get("slot_ref") or {}).get("slot_id") or "")
                     if slot_id not in self.navigation_discovery_option_index_by_slot:
                         option_index = next(
@@ -660,9 +681,8 @@ class OfflineOrdinaryPipelineHarness:
             return json.dumps({"is_sufficient": True, "new_queries": []})
         if system_prompt == DEFAULT_SYSTEM["analyst"]:
             return self.analyst_response or (
-                f"Analysis is limited to the retrieved official {self.primary_entity} "
-                "rule."
-            )
+                f"Analysis is limited to the retrieved official {self.primary_entity} rule."
+                )
         if system_prompt == DEFAULT_SYSTEM["synth_evaluator"]:
             return json.dumps({"is_sufficient": True, "supplemental_queries": []})
         if kwargs.get("stream"):
@@ -909,8 +929,7 @@ class PostRetirementOrdinaryPipelineHarness(OfflineOrdinaryPipelineHarness):
                     "title": f"{name} official operating report",
                     "url": f"https://{name.casefold()}.example/report-{index}",
                     "text": (
-                        f"The current official {name} operating rate is "
-                        f"{index + 10} units per hour."
+                        f"The current official {name} operating rate is {index + 10} units per hour."
                     ),
                     "credibility": 4,
                     "source_tier": "official",
@@ -991,8 +1010,7 @@ def run_post_retirement_ordinary_pipeline(
     researcher_queries: Sequence[str] | None = None,
     analyst_response: str = "The retrieved evidence supports a bounded comparison.",
     raw_author_response: str = (
-        "The evidence supports a bounded qualitative comparison. "
-        "[[1]](https://alpha.example/report-1)"
+        "The evidence supports a bounded qualitative comparison. [[1]](https://alpha.example/report-1)"
     ),
     install_economist_sentinel: bool = True,
     current_date: str = "2026-05-06",

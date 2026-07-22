@@ -48,6 +48,7 @@ from core.fetch_read_content_reference import (
     validate_fetch_read_content_packet,
 )
 from core.routing import acquisition_routing_policy_ref
+from core.run_kernel import RunKernel
 from core.searchos_iterative_judgment_runtime import (
     SearchOSRuntimeError,
     validate_searchos_judgment_model_output,
@@ -240,8 +241,7 @@ def test_navigation_execution_observation_is_url_free_v2() -> None:
     artifact_digest = _digest("safe-navigation-artifact")
     artifact_ref = {
         "artifact_id": (
-            "acquisition-artifact-navigation:"
-            f"{work_order.work_order_id}:{artifact_digest[:20]}"
+            f"acquisition-artifact-navigation:{work_order.work_order_id}:{artifact_digest[:20]}"
         ),
         "artifact_digest": artifact_digest,
         "kind": "selected_url_read",
@@ -473,8 +473,7 @@ def test_navigation_reuses_existing_discovery_custody_without_relabeling(
         ],
         read_content_by_url={
             first_parent: (
-                "This page does not answer the question. "
-                "[Current source](/existing-discovery)"
+                "This page does not answer the question. [Current source](/existing-discovery)"
             ),
             existing_destination: (
                 "Alpha's current official operating rule is Rule 17."
@@ -539,10 +538,7 @@ def test_validated_response_alias_is_secondary_to_attempted_source_identity(
         )
         harness_sink[0].read_transport_calls.append(requested_url)
         if requested_url == parent:
-            content = (
-                "This page does not answer the question. "
-                "[Current source](/attempted-destination)"
-            )
+            content = "This page does not answer the question. [Current source](/attempted-destination)"
             final_url = None
         else:
             assert requested_url == destination
@@ -751,6 +747,49 @@ def test_n1_navigation_reuses_one_physical_destination_and_reenters_citation_pat
         if json.loads(prompt)["authorized_request"].get("navigation_candidate_refs")
     ]
     assert navigation_prompts
+    navigation_input = json.loads(navigation_prompts[0])
+    relationship_contexts = navigation_input["navigation_directional_contexts"]
+    assert relationship_contexts
+    relationship = relationship_contexts[0]
+    assert set(relationship) == {
+        "navigation_candidate_ref",
+        "parent_custody_ref",
+        "parent_depth",
+        "child_depth",
+        "parent_custody_admission_ordinal",
+        "source_link_ordinal",
+        "relationship_label",
+        "source_relationship_posture",
+    }
+    assert relationship["source_relationship_posture"] == (
+        "outbound_link_from_current_read_custody"
+    )
+    candidate = relationship["navigation_candidate_ref"]
+    contributor_ref = candidate["representative_contributor_ref"]
+    contributor = navigation_state["contributors_by_id"][
+        contributor_ref["navigation_contributor_id"]
+    ]
+    for field in (
+        "parent_custody_ref",
+        "parent_depth",
+        "child_depth",
+        "parent_custody_admission_ordinal",
+        "source_link_ordinal",
+        "relationship_label",
+    ):
+        assert relationship[field] == contributor[field]
+    serialized_relationship = json.dumps(relationship, sort_keys=True)
+    assert "https://" not in serialized_relationship
+    for forbidden_locator_field in (
+        "destination_binding_ref",
+        "normalized_hostname",
+        "path_digest",
+        "query_present",
+        "provider",
+        "route",
+        "raw_href",
+    ):
+        assert forbidden_locator_field not in serialized_relationship
     authorized, valid_output = _navigation_decision_from_prompt(navigation_prompts[0])
     validated = validate_searchos_judgment_model_output(
         request=authorized,
@@ -770,6 +809,282 @@ def test_n1_navigation_reuses_one_physical_destination_and_reenters_citation_pat
             request=authorized,
             model_output=stale_output,
         )
+
+
+@pytest.mark.parametrize(
+    ("failure_mode", "expected_posture"),
+    (
+        ("no_links", "navigation_no_candidates"),
+        ("extraction", "navigation_expansion_unavailable"),
+        ("candidate_capacity", "navigation_candidate_capacity_exhausted"),
+        ("registry_capacity", "navigation_registry_capacity_exhausted"),
+    ),
+)
+def test_successful_navigation_custody_survives_optional_child_expansion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+    expected_posture: str,
+) -> None:
+    parent = "https://alpha.example/expansion-parent"
+    destination = "https://alpha.example/expansion-destination"
+    child = "https://alpha.example/expansion-child"
+    destination_content = "Alpha's current official rate is 17 units."
+    if failure_mode != "no_links":
+        destination_content += " [Tempting child](/expansion-child)"
+
+    if failure_mode == "extraction":
+        original_extract = product_runtime.extract_searchos_navigation_draft_v1
+        extraction_calls = 0
+
+        def fail_second_extraction(**kwargs):
+            nonlocal extraction_calls
+            extraction_calls += 1
+            if extraction_calls == 2:
+                raise SearchOSNavigationError("navigation_safe_child_extraction_failed")
+            return original_extract(**kwargs)
+
+        monkeypatch.setattr(
+            product_runtime,
+            "extract_searchos_navigation_draft_v1",
+            fail_second_extraction,
+        )
+    elif failure_mode == "candidate_capacity":
+        original_admission = RunKernel.authorize_searchos_navigation_candidate_admission
+        admission_calls = 0
+
+        def fail_second_admission(
+            self,
+            *,
+            candidate_set,
+            reason="admit_parent_custody_bound_navigation_candidates",
+        ):
+            nonlocal admission_calls
+            admission_calls += 1
+            if admission_calls == 2:
+                raise SearchOSNavigationError(
+                    "navigation_candidate_set_capacity_exhausted"
+                )
+            return original_admission(self, candidate_set=candidate_set, reason=reason)
+
+        monkeypatch.setattr(
+            RunKernel,
+            "authorize_searchos_navigation_candidate_admission",
+            fail_second_admission,
+        )
+    elif failure_mode == "registry_capacity":
+
+        class CapacityOneRegistry(SearchOSNavigationDestinationRegistry):
+            def __init__(self, *, run_id: str, request_id: str, **_kwargs) -> None:
+                super().__init__(
+                    run_id=run_id,
+                    request_id=request_id,
+                    capacity=1,
+                )
+
+        monkeypatch.setattr(
+            product_runtime,
+            "SearchOSNavigationDestinationRegistry",
+            CapacityOneRegistry,
+        )
+
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's current official rate?",
+        core_topic="Alpha current official rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official rate"],
+        evidence_rows=[
+            {"title": "Alpha parent", "url": parent, "text": "Directional."}
+        ],
+        read_content_by_url={
+            parent: (
+                "This page does not answer the question. [Current source](/expansion-destination)"
+            ),
+            destination: destination_content,
+            child: "Optional child content.",
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+    )
+
+    navigation = harness.run_kernel.state.searchos_navigation_state
+    assert expected_posture in {
+        item["expansion_posture"]
+        for item in navigation["expansion_outcomes_by_parent_custody_id"].values()
+    }
+    destination_records = [
+        item
+        for item in navigation["physical_custody_by_digest"].values()
+        if item["physical_acquisition_origin"] == "navigation_candidate"
+    ]
+    assert destination_records
+    assert any(
+        item["terminal_disposition"] == "custodied"
+        for item in navigation["terminal_physical_operations_by_key"].values()
+    )
+    assert harness.searchos_product_result.searchos_semantic_material
+    assert all(
+        slot["posture"] != "stale_or_invalid"
+        for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure_mode", "expected_posture"),
+    (
+        ("no_links", "navigation_no_candidates"),
+        (
+            "effective_base",
+            "navigation_effective_base_out_of_scope",
+        ),
+    ),
+)
+def test_discovery_custody_survives_optional_root_expansion_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+    expected_posture: str,
+) -> None:
+    parent = "https://alpha.example/root-source"
+    deps_overrides = None
+    read_content_by_url = {parent: "Alpha's current official rate is 17 units."}
+    if failure_mode == "effective_base":
+
+        def cross_host_metadata_transport(payload):
+            requested = payload.get("urls")
+            requested_url = str(
+                requested[0] if isinstance(requested, list) else requested
+            )
+            assert requested_url == parent
+            return {
+                "results": [
+                    {
+                        "url": parent,
+                        "attempted_url": parent,
+                        "final_url": ("https://redirect.example.net/final-source"),
+                        "raw_content": (
+                            "Alpha's current official rate is 17 units. [Tempting child](/must-not-be-admitted)"
+                        ),
+                    }
+                ],
+                "failed_results": [],
+            }
+
+        deps_overrides = {
+            "searchos_read_acquisition_transports": AcquisitionTransports(
+                tavily_extract=cross_host_metadata_transport
+            )
+        }
+
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's current official rate?",
+        core_topic="Alpha current official rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official rate"],
+        evidence_rows=[{"title": "Alpha root", "url": parent, "text": "Directional."}],
+        read_content_by_url=read_content_by_url,
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        deps_overrides=deps_overrides,
+    )
+
+    navigation = harness.run_kernel.state.searchos_navigation_state
+    assert expected_posture in {
+        item["expansion_posture"]
+        for item in navigation["expansion_outcomes_by_parent_custody_id"].values()
+    }
+    assert harness.searchos_product_result.searchos_semantic_material
+    assert any(
+        slot["custody_refs"]
+        for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+    )
+    assert all(
+        slot["posture"] != "stale_or_invalid"
+        for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "maximum_depth"),
+    (("Fast", 1), ("Balanced", 2), ("Deep", 3)),
+)
+def test_mode_max_depth_page_is_usable_and_suppresses_child_builder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    maximum_depth: int,
+) -> None:
+    parent = "https://alpha.example/depth-parent"
+    depth_urls = {
+        depth: f"https://alpha.example/depth-{depth}"
+        for depth in range(1, maximum_depth + 1)
+    }
+    candidate_builder_calls = 0
+    builder_saw_canonical_custody: list[bool] = []
+    harness_sink = []
+    original_builder = product_runtime.build_searchos_navigation_candidate_set_v1
+
+    def tracked_builder(**kwargs):
+        nonlocal candidate_builder_calls
+        candidate_builder_calls += 1
+        builder_saw_canonical_custody.append(
+            any(
+                slot["custody_refs"]
+                for slot in harness_sink[0]
+                .run_kernel.state.searchos_state["slots_by_id"]
+                .values()
+            )
+        )
+        return original_builder(**kwargs)
+
+    monkeypatch.setattr(
+        product_runtime,
+        "build_searchos_navigation_candidate_set_v1",
+        tracked_builder,
+    )
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode=mode,
+        query="What is Alpha's current official rate?",
+        core_topic="Alpha current official rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official rate"],
+        evidence_rows=[
+            {"title": "Alpha parent", "url": parent, "text": "Directional."}
+        ],
+        read_content_by_url={
+            parent: ("This page does not answer the question. [Depth one](/depth-1)"),
+            **{
+                url: (
+                    (
+                        "Alpha's current official rate is 17 units. [Tempting too-deep link](/must-not-be-built)"
+                    )
+                    if depth == maximum_depth
+                    else (
+                        f"This page does not answer the question. [Depth {depth + 1}](/depth-{depth + 1})"
+                    )
+                )
+                for depth, url in depth_urls.items()
+            },
+        },
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        harness_sink=harness_sink,
+    )
+    assert candidate_builder_calls == maximum_depth
+    assert builder_saw_canonical_custody == [True] * maximum_depth
+    navigation = harness.run_kernel.state.searchos_navigation_state
+    assert any(
+        item["expansion_posture"] == "navigation_depth_exhausted"
+        for item in navigation["expansion_outcomes_by_parent_custody_id"].values()
+    )
+    assert navigation["logical_edge_charges"] == maximum_depth
+    assert "https://alpha.example/must-not-be-built" not in (
+        harness.read_transport_calls
+    )
+    assert harness.searchos_product_result.searchos_semantic_material
 
 
 def test_n2_navigation_uses_existing_multicomponent_receiver_with_physical_reuse(
@@ -924,8 +1239,7 @@ def test_navigation_destination_failures_create_no_durable_url_or_retry(
                         "url": parent,
                         "attempted_url": parent,
                         "raw_content": (
-                            "This page does not answer the question. "
-                            "[Current rate](/failure-destination)"
+                            "This page does not answer the question. [Current rate](/failure-destination)"
                         ),
                     }
                 ],
@@ -1007,6 +1321,208 @@ def test_navigation_destination_failures_create_no_durable_url_or_retry(
     )
 
 
+def test_failed_breadcrumb_reopens_then_second_succeeds_and_reenters_semantics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = "https://alpha.example/continuation-parent"
+    second_parent = "https://alpha.example/continuation-second-parent"
+    destinations = {
+        "https://alpha.example/continuation-a",
+        "https://alpha.example/continuation-b",
+    }
+    harness_sink = []
+    failed_destination: list[str] = []
+
+    def controlled_transport(payload):
+        requested = payload.get("urls")
+        requested_url = str(requested[0] if isinstance(requested, list) else requested)
+        harness_sink[0].read_transport_calls.append(requested_url)
+        if requested_url == parent:
+            return {
+                "results": [
+                    {
+                        "url": parent,
+                        "attempted_url": parent,
+                        "raw_content": (
+                            "This page does not answer the question. "
+                            "[Option A](/continuation-a) "
+                            "[Option B](/continuation-b)"
+                        ),
+                    }
+                ],
+                "failed_results": [],
+            }
+        if requested_url == second_parent:
+            return {
+                "results": [
+                    {
+                        "url": second_parent,
+                        "attempted_url": second_parent,
+                        "raw_content": ("Alpha's current official rate is 17 units."),
+                    }
+                ],
+                "failed_results": [],
+            }
+        assert requested_url in destinations
+        if requested_url.endswith("/continuation-a"):
+            failed_destination.append(requested_url)
+            raise RuntimeError("offline_first_breadcrumb_failure")
+        return {
+            "results": [
+                {
+                    "url": requested_url,
+                    "attempted_url": requested_url,
+                    "raw_content": "Alpha's current official rate is 17 units.",
+                }
+            ],
+            "failed_results": [],
+        }
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Deep",
+        query="What is Alpha's current official rate?",
+        core_topic="Alpha current official rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official rate"],
+        evidence_rows=[
+            {"title": "Alpha parent", "url": parent, "text": "Directional."},
+            {
+                "title": "Alpha second parent",
+                "url": second_parent,
+                "text": "Potential official source.",
+            },
+        ],
+        read_assessment_decision="NAVIGATE_WHEN_AVAILABLE",
+        raw_author_response=(
+            "Alpha's current official rate is 17 units. [[1]](https://alpha.example/continuation-b)"
+        ),
+        deps_overrides={
+            "searchos_read_acquisition_transports": AcquisitionTransports(
+                tavily_extract=controlled_transport
+            )
+        },
+        harness_sink=harness_sink,
+    )
+
+    navigation_calls = [
+        item
+        for item in harness.read_transport_calls
+        if item not in {parent, second_parent}
+    ]
+    assert len(navigation_calls) >= 2
+    assert navigation_calls[0] == failed_destination[0]
+    assert navigation_calls.count(failed_destination[0]) == 1
+    assert any(item != failed_destination[0] for item in navigation_calls)
+    navigation = harness.run_kernel.state.searchos_navigation_state
+    failed_records = [
+        item
+        for item in navigation["terminal_physical_operations_by_key"].values()
+        if item["terminal_disposition"] == "destination_failed"
+    ]
+    assert len(failed_records) == 1
+    assert failed_records[0]["retry_licensed"] is False
+    histories = [
+        event
+        for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+        for event in slot["action_history"]
+    ]
+    failure_index = next(
+        index
+        for index, event in enumerate(histories)
+        if event.get("event") == "navigation_destination_failed_no_retry"
+    )
+    assert any(
+        event.get("event") == "read_custody_admitted"
+        and event.get("physical_custody_reused") in {True, False}
+        for event in histories[failure_index + 1 :]
+    )
+    assert any(
+        item.get("semantic_admission_status") == "admitted"
+        for item in outcome.execution_trace["searchos_slice_a"][
+            "semantic_outcomes_by_slot"
+        ].values()
+    )
+    assert harness.searchos_product_result.searchos_semantic_material
+    assert all(
+        slot["posture"] != "stale_or_invalid"
+        for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+    )
+
+
+@pytest.mark.parametrize(
+    ("decision_mode", "expected_action"),
+    (
+        ("NAVIGATE_THEN_FOLLOWUP", "PROPOSE_FOLLOWUP_QUERY"),
+        ("NAVIGATE_THEN_UNRESOLVED", "HANDOFF_UNRESOLVED"),
+    ),
+)
+def test_failed_breadcrumb_allows_followup_or_unresolved_in_same_slot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    decision_mode: str,
+    expected_action: str,
+) -> None:
+    parent = "https://alpha.example/continuation-parent"
+    destination = "https://alpha.example/continuation-failure"
+
+    def controlled_transport(payload):
+        requested = payload.get("urls")
+        requested_url = str(requested[0] if isinstance(requested, list) else requested)
+        if requested_url == parent:
+            return {
+                "results": [
+                    {
+                        "url": parent,
+                        "attempted_url": parent,
+                        "raw_content": (
+                            "This page does not answer the question. [Current source](/continuation-failure)"
+                        ),
+                    }
+                ],
+                "failed_results": [],
+            }
+        assert requested_url == destination
+        raise RuntimeError("offline_navigation_failure")
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is Alpha's current official rate?",
+        core_topic="Alpha current official rate",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official rate"],
+        evidence_rows=[
+            {"title": "Alpha parent", "url": parent, "text": "Directional."}
+        ],
+        read_content_by_url={
+            parent: (
+                "This page does not answer the question. [Current source](/continuation-failure)"
+            )
+        },
+        read_assessment_decision=decision_mode,
+        deps_overrides={
+            "searchos_read_acquisition_transports": AcquisitionTransports(
+                tavily_extract=controlled_transport
+            )
+        },
+    )
+    del outcome
+    histories = [
+        event
+        for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+        for event in slot["action_history"]
+    ]
+    assert any(event.get("action") == expected_action for event in histories)
+    assert any(
+        event.get("event") == "navigation_destination_failed_no_retry"
+        for event in histories
+    )
+    assert not any(event.get("event") == "stale_or_invalid" for event in histories)
+
+
 def test_navigation_draft_is_destroyed_when_packet_construction_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1049,8 +1565,7 @@ def test_navigation_draft_is_destroyed_when_packet_construction_fails(
         ],
         read_content_by_url={
             parent: (
-                "This page does not answer the question. "
-                "[Current rate](/packet-failure-destination)"
+                "This page does not answer the question. [Current rate](/packet-failure-destination)"
             ),
             destination: "Alpha is 17 units per hour.",
         },

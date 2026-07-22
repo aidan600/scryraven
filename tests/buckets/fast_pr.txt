@@ -21,3 +21,7 @@ tests/test_initial_discovery_selective_fetch_retirement_01.py::test_ordinary_dis
 # Cheap SearchOS navigation privacy sentinel: canonical v2 proposal and work
 # order carry safe binding/edge/selection refs without an exact destination URL.
 tests/test_searchos_bounded_breadcrumb_navigation_product_01.py::test_navigation_v2_proposal_and_work_order_are_url_free
+
+# Cheap SearchOS navigation atomicity sentinel: a missing transient destination
+# binding rejects pending admission without READ, edge, lease, or provider work.
+tests/test_searchos_bounded_breadcrumb_navigation_01.py::test_missing_binding_rejects_pending_navigation_with_zero_deltas

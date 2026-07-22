@@ -72,13 +72,17 @@ from core.searchos_iterative_judgment_runtime import (
     validate_searchos_judgment_model_output,
 )
 from core.searchos_navigation_runtime import (
+    NAVIGATION_CANDIDATE_SET_CAPACITY_EXHAUSTED,
+    NAVIGATION_EFFECTIVE_BASE_OUT_OF_SCOPE,
     SearchOSNavigationDestinationRegistry,
     SearchOSNavigationError,
     SearchOSNavigationExecutionOverlayV1,
     SearchOSNavigationPacketCommitRegistry,
     build_searchos_discovery_physical_custody_record_v2,
+    build_searchos_navigation_candidate_ref_v1,
     build_searchos_navigation_candidate_set_v1,
     build_searchos_navigation_candidate_window_v1,
+    build_searchos_navigation_destination_binding_ref_v1,
     build_searchos_navigation_physical_custody_record_v2,
     build_searchos_navigation_use_custody_ref_v2,
     build_searchos_parent_use_custody_ref_v2,
@@ -143,6 +147,10 @@ normalize, combine, or expose a destination URL, href, path, query, provider,
 route, domain decision, depth decision, budget decision, or physical identity.
 Routing, provider choice, cycles, domains, budgets, custody, leases, and
 physical reuse remain deterministic authorities outside the model.
+navigation_directional_contexts contain only bounded relationship facts from
+the exact current representative contributor. They are directional facts, not
+support. SearchJudgment selects only the exact candidate ref; RunKernel owns
+depth, cycle, budget, URL, routing, and execution validation.
 
 Return exactly one searchos_judgment_decision_v2 object using exactly the
 fields licensed for the selected action by decision_contract. Copy request
@@ -176,8 +184,7 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
             ],
             "forbidden_fields": ["read_custody_refs", "followup_query"],
             "candidate_use_option_ref_rule": (
-                "copy exactly one candidate_use_option_ref from "
-                "authorized_request.candidate_use_options"
+                "copy exactly one candidate_use_option_ref from authorized_request.candidate_use_options"
             ),
             "post_read_assessment_rule": (
                 "each existing READ material was inspected and does not satisfy "
@@ -214,12 +221,10 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
                 "read_custody_assessments",
             ],
             "read_custody_refs_rule": (
-                "copy a nonempty selection of exact refs from "
-                "authorized_request.read_custody_refs"
+                "copy a nonempty selection of exact refs from authorized_request.read_custody_refs"
             ),
             "semantic_handoff_rule": (
-                "material selected for semantic handoff is not simultaneously "
-                "labeled insufficient"
+                "material selected for semantic handoff is not simultaneously labeled insufficient"
             ),
             "read_custody_assessments_mode": "forbidden",
         },
@@ -231,8 +236,7 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
                 "followup_query",
             ],
             "unresolved_rule": (
-                "bounded explanation of an open need; this action is not success "
-                "and is not final whole-run stopping"
+                "bounded explanation of an open need; this action is not success and is not final whole-run stopping"
             ),
             "read_custody_assessments_mode": conditionally_assessed,
         },
@@ -257,8 +261,7 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
         "unsupported_fields_forbidden": True,
         "input_field_roles": {
             "authorized_request": (
-                "sole request identity and legal-action authority; its option "
-                "and custody refs are exact-copy sources"
+                "sole request identity and legal-action authority; its option and custody refs are exact-copy sources"
             ),
             "active_need": (
                 "accepted component question, source-obligation standard, and "
@@ -423,11 +426,15 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
         selected_candidate_refs=_candidate_refs(initial_packet),
         bounded_candidate_material_refs=_material_refs(bindings),
         selection_facts={
-            "selected_candidate_count": len(initial_packet.get("candidate_records") or ()),
+            "selected_candidate_count": len(
+                initial_packet.get("candidate_records") or ()
+            ),
             "first_admitted_discover_wave_count": 1,
         },
         overflow_facts={
-            "selection_overflow_count": int(initial_packet.get("selection_overflow_count") or 0),
+            "selection_overflow_count": int(
+                initial_packet.get("selection_overflow_count") or 0
+            ),
             "contributor_overflow_count": sum(
                 int(item.get("contributor_overflow_count") or 0)
                 for item in initial_packet.get("candidate_records") or ()
@@ -459,7 +466,9 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
     )
 
     packets_by_id = {initial_packet_ref["packet_id"]: initial_packet}
-    binding_candidate_states = {binding.binding_id: revision_ref for binding in bindings}
+    binding_candidate_states = {
+        binding.binding_id: revision_ref for binding in bindings
+    }
     binding_iteration_refs: dict[str, Mapping[str, Any]] = {}
     iteration_sets: list[Mapping[str, Any]] = []
     identity_deltas_by_digest: dict[str, Sequence[Mapping[str, Any]]] = {}
@@ -477,7 +486,8 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
         participating = [
             slot_id
             for slot_id in state["active_slot_ids"]
-            if state["slots_by_id"][slot_id]["posture"] == SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+            if state["slots_by_id"][slot_id]["posture"]
+            == SearchOSSlotPosture.ACTIVE_UNJUDGED.value
         ]
         if not participating:
             break
@@ -614,7 +624,9 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     payload={"model_output": parsed},
                 )
             )
-            decision = deepcopy(run_kernel.state.projections["searchos_iterative_judgment"])
+            decision = deepcopy(
+                run_kernel.state.projections["searchos_iterative_judgment"]
+            )
             for assessment in decision.get("read_custody_assessments") or ():
                 custody_id = str(
                     dict(assessment.get("reviewed_custody_ref") or {}).get(
@@ -641,9 +653,10 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     dispositions[assessed_option_id] = "read_insufficient"
             decision_action = SearchOSJudgmentAction(decision["action"])
             if decision_action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
-                if run_kernel.state.searchos_state["slots_by_id"][slot_id][
-                    "posture"
-                ] != SearchOSSlotPosture.AWAITING_READ.value:
+                if (
+                    run_kernel.state.searchos_state["slots_by_id"][slot_id]["posture"]
+                    != SearchOSSlotPosture.AWAITING_READ.value
+                ):
                     continue
                 option_ref = dict(decision["candidate_use_option_ref"])
                 option_id = option_ref["candidate_use_option_id"]
@@ -675,13 +688,17 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                             reason="candidate_packet_stale",
                         )
                         continue
-                    before_attempted, before_completed = _acquisition_provider_call_totals(run_kernel)
+                    before_attempted, before_completed = (
+                        _acquisition_provider_call_totals(run_kernel)
+                    )
                     try:
                         custody_outcome = _execute_discovery_read_v2_and_navigation(
                             run_kernel=run_kernel,
                             candidate_packet=packet,
                             binding=binding,
-                            slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"],
+                            slot_ref=run_kernel.state.searchos_state["slots_by_id"][
+                                slot_id
+                            ]["slot_ref"],
                             destination_registry=destination_registry,
                             available_providers=available_providers,
                             acquisition_transports=acquisition_transports,
@@ -715,83 +732,104 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     completed += completion_delta
                     custody_by_url[binding.normalized_url] = custody_outcome
                     reused = False
-                if (
-                    custody_outcome["fetch_read_content_packet"].get("physical_acquisition_origin")
-                    == "discovery_candidate"
-                ):
-                    custody_ref = build_searchos_discovery_read_custody_material_ref_v2(
-                        slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"],
-                        candidate_use_option_ref=option_ref,
-                        normalized_url=binding.normalized_url,
-                        fetch_read_content_packet_ref=custody_outcome["fetch_read_content_packet_ref"],
-                        evidence_ledger_custody_ref=custody_outcome["evidence_ledger_custody_ref"],
-                        evidence_ledger_candidate_id=custody_outcome["evidence_ledger_candidate_id"],
-                        sanitized_content_reference_ref=custody_outcome["sanitized_content_reference_ref"],
-                        physical_identity_digest=custody_outcome["physical_identity_digest"],
-                        same_normalized_url_reused=reused,
-                    )
-                else:
-                    custody_ref = build_searchos_read_custody_material_ref(
-                        slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"],
-                        candidate_use_option_ref=option_ref,
-                        custody_record=custody_outcome["custody_record"],
-                        same_normalized_url_reused=reused,
-                    )
-                custody_action = run_kernel.authorize_searchos_read_custody_admission(custody_material_ref=custody_ref)
-                run_kernel.reduce(
-                    Observation.from_action(
-                        custody_action,
-                        observation_type=(ObservationType.SEARCHOS_READ_CUSTODY_ADMITTED),
-                        status=RunStageStatus.COMPLETED,
-                        payload={"custody_material_ref": custody_ref},
-                    )
+                custody_ref = _admit_searchos_custody_before_optional_expansion(
+                    run_kernel=run_kernel,
+                    destination_registry=destination_registry,
+                    slot_id=slot_id,
+                    custody_outcome=custody_outcome,
+                    candidate_use_option_ref=option_ref,
+                    normalized_url=binding.normalized_url,
+                    same_normalized_url_reused=reused,
                 )
                 dispositions[option_id] = "custodied"
-                packet_by_custody_id[custody_ref["read_custody_material_id"]] = custody_outcome[
-                    "fetch_read_content_packet"
-                ]
-                parent_use_by_custody_id[custody_ref["read_custody_material_id"]] = dict(
-                    custody_outcome.get("parent_use_custody_ref") or {}
+                packet_by_custody_id[custody_ref["read_custody_material_id"]] = (
+                    custody_outcome["fetch_read_content_packet"]
+                )
+                parent_use_by_custody_id[custody_ref["read_custody_material_id"]] = (
+                    dict(custody_outcome.get("parent_use_custody_ref") or {})
                 )
                 if custody_outcome.get("physical_custody_record"):
-                    physical_packets_by_digest[custody_outcome["physical_identity_digest"]] = custody_outcome[
-                        "fetch_read_content_packet"
-                    ]
-            elif decision_action is (SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB):
+                    physical_packets_by_digest[
+                        custody_outcome["physical_identity_digest"]
+                    ] = custody_outcome["fetch_read_content_packet"]
+            elif decision_action is (
+                SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB
+            ):
                 if (
                     run_kernel.state.searchos_state["slots_by_id"][slot_id]["posture"]
-                    != SearchOSSlotPosture.AWAITING_READ.value
+                    != SearchOSSlotPosture.AWAITING_NAVIGATION_ADMISSION.value
                 ):
                     continue
                 navigation_candidate_ref = dict(decision["navigation_candidate_ref"])
                 selection: dict[str, Any] = {}
                 edge: dict[str, Any] = {}
-                before_attempted, before_completed = _acquisition_provider_call_totals(run_kernel)
+                before_attempted, before_completed = _acquisition_provider_call_totals(
+                    run_kernel
+                )
                 try:
-                    selection_action = run_kernel.authorize_searchos_navigation_selection(
-                        navigation_candidate_ref=(navigation_candidate_ref),
-                        destination_registry=destination_registry,
+                    selection_action = (
+                        run_kernel.authorize_searchos_navigation_selection(
+                            navigation_candidate_ref=(navigation_candidate_ref),
+                            destination_registry=destination_registry,
+                            judgment_decision_ref=decision,
+                        )
                     )
+                    if (
+                        selection_action.inputs.get("navigation_admission_outcome")
+                        == "rejected"
+                    ):
+                        run_kernel.reduce(
+                            Observation.from_action(
+                                selection_action,
+                                observation_type=(
+                                    ObservationType.SEARCHOS_NAVIGATION_SELECTED
+                                ),
+                                status=RunStageStatus.FAILED,
+                                payload={
+                                    "navigation_admission_outcome": "rejected",
+                                    "failure_code": selection_action.inputs[
+                                        "failure_code"
+                                    ],
+                                },
+                            )
+                        )
+                        continue
                     run_kernel.reduce(
                         Observation.from_action(
                             selection_action,
-                            observation_type=(ObservationType.SEARCHOS_NAVIGATION_SELECTED),
+                            observation_type=(
+                                ObservationType.SEARCHOS_NAVIGATION_SELECTED
+                            ),
                             status=RunStageStatus.COMPLETED,
                             payload={
                                 "navigation_selection_ref": (
-                                    selection_action.inputs["predicted_navigation_selection_ref"]
+                                    selection_action.inputs[
+                                        "predicted_navigation_selection_ref"
+                                    ]
                                 ),
-                                "navigation_edge_ref": (selection_action.inputs["predicted_navigation_edge_ref"]),
+                                "navigation_edge_ref": (
+                                    selection_action.inputs[
+                                        "predicted_navigation_edge_ref"
+                                    ]
+                                ),
                             },
                         )
                     )
-                    selection_ref = dict(selection_action.inputs["predicted_navigation_selection_ref"])
-                    edge_ref = dict(selection_action.inputs["predicted_navigation_edge_ref"])
+                    selection_ref = dict(
+                        selection_action.inputs["predicted_navigation_selection_ref"]
+                    )
+                    edge_ref = dict(
+                        selection_action.inputs["predicted_navigation_edge_ref"]
+                    )
                     navigation_state = run_kernel.state.searchos_navigation_state
                     selection = dict(
-                        navigation_state["selection_leases_by_id"][selection_ref["navigation_selection_id"]]
+                        navigation_state["selection_leases_by_id"][
+                            selection_ref["navigation_selection_id"]
+                        ]
                     )
-                    edge = dict(navigation_state["edges_by_id"][edge_ref["navigation_edge_id"]])
+                    edge = dict(
+                        navigation_state["edges_by_id"][edge_ref["navigation_edge_id"]]
+                    )
                     navigation_outcome = _execute_navigation_read_to_custody(
                         run_kernel=run_kernel,
                         selection=selection,
@@ -804,7 +842,9 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                         before_transport=before_transport,
                     )
                 except Exception as exc:
-                    after_attempted, after_completed = _acquisition_provider_call_totals(run_kernel)
+                    after_attempted, after_completed = (
+                        _acquisition_provider_call_totals(run_kernel)
+                    )
                     attempted += max(0, after_attempted - before_attempted)
                     completed += max(0, after_completed - before_completed)
                     if selection and edge:
@@ -813,7 +853,8 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                                 outcome_scope="destination",
                                 stable_option_ref=selection["stable_option_ref"],
                                 operation_identity_key=(
-                                    "read-navigation:" + str(selection["physical_identity_digest"])
+                                    "read-navigation:"
+                                    + str(selection["physical_identity_digest"])
                                 ),
                                 disposition="destination_failed",
                                 failure_code=_read_failure_reason(exc),
@@ -821,57 +862,64 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                             run_kernel.reduce(
                                 Observation.from_action(
                                     terminal,
-                                    observation_type=(ObservationType.SEARCHOS_NAVIGATION_TERMINAL_RECORDED),
+                                    observation_type=(
+                                        ObservationType.SEARCHOS_NAVIGATION_TERMINAL_RECORDED
+                                    ),
                                     status=RunStageStatus.COMPLETED,
-                                    payload={"navigation_terminal_outcome": dict(terminal.inputs)},
+                                    payload={
+                                        "navigation_terminal_outcome": dict(
+                                            terminal.inputs
+                                        )
+                                    },
                                 )
                             )
                         except Exception:
                             pass
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
-                        slot_id=slot_id,
-                        reason=_read_failure_reason(exc),
-                    )
+                    elif (
+                        run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                            "posture"
+                        ]
+                        == SearchOSSlotPosture.AWAITING_NAVIGATION_ADMISSION.value
+                    ):
+                        run_kernel.mark_searchos_slot_stale_or_invalid(
+                            slot_id=slot_id,
+                            reason=(
+                                "navigation_pending_authority_invalid:"
+                                + type(exc).__name__
+                            ),
+                        )
                     continue
-                after_attempted, after_completed = _acquisition_provider_call_totals(run_kernel)
+                after_attempted, after_completed = _acquisition_provider_call_totals(
+                    run_kernel
+                )
                 attempt_delta = max(0, after_attempted - before_attempted)
                 completion_delta = max(0, after_completed - before_completed)
                 if attempt_delta != int(
                     navigation_outcome.get("provider_calls_attempted") or 0
-                ) or completion_delta != int(navigation_outcome.get("provider_calls_completed") or 0):
-                    raise SearchOSRuntimeError("navigation READ provider-call accounting is stale")
+                ) or completion_delta != int(
+                    navigation_outcome.get("provider_calls_completed") or 0
+                ):
+                    raise SearchOSRuntimeError(
+                        "navigation READ provider-call accounting is stale"
+                    )
                 attempted += attempt_delta
                 completed += completion_delta
-                custody_ref = build_searchos_read_custody_material_ref_v2(
-                    slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"],
-                    navigation_use_custody_ref=navigation_outcome["navigation_use_custody_ref"],
-                    fetch_read_content_packet_ref=(
-                        fetch_read_content_packet_ref_from_packet(navigation_outcome["fetch_read_content_packet"])
-                    ),
-                    evidence_ledger_custody_ref=navigation_outcome["evidence_ledger_custody_ref"],
-                    evidence_ledger_candidate_id=navigation_outcome["evidence_ledger_candidate_id"],
-                    sanitized_content_reference_ref=navigation_outcome["sanitized_content_reference_ref"],
-                    physical_custody_reused=bool(navigation_outcome["physical_custody_reused"]),
+                custody_ref = _admit_searchos_custody_before_optional_expansion(
+                    run_kernel=run_kernel,
+                    destination_registry=destination_registry,
+                    slot_id=slot_id,
+                    custody_outcome=navigation_outcome,
                 )
-                custody_action = run_kernel.authorize_searchos_read_custody_admission(custody_material_ref=custody_ref)
-                run_kernel.reduce(
-                    Observation.from_action(
-                        custody_action,
-                        observation_type=(ObservationType.SEARCHOS_READ_CUSTODY_ADMITTED),
-                        status=RunStageStatus.COMPLETED,
-                        payload={"custody_material_ref": custody_ref},
-                    )
+                packet_by_custody_id[custody_ref["read_custody_material_id"]] = (
+                    navigation_outcome["fetch_read_content_packet"]
                 )
-                packet_by_custody_id[custody_ref["read_custody_material_id"]] = navigation_outcome[
-                    "fetch_read_content_packet"
-                ]
-                parent_use_by_custody_id[custody_ref["read_custody_material_id"]] = dict(
-                    navigation_outcome.get("parent_use_custody_ref") or {}
+                parent_use_by_custody_id[custody_ref["read_custody_material_id"]] = (
+                    dict(navigation_outcome.get("parent_use_custody_ref") or {})
                 )
                 use_ref = navigation_outcome["navigation_use_custody_ref"]
-                physical_packets_by_digest[use_ref["physical_identity_digest"]] = navigation_outcome[
-                    "fetch_read_content_packet"
-                ]
+                physical_packets_by_digest[use_ref["physical_identity_digest"]] = (
+                    navigation_outcome["fetch_read_content_packet"]
+                )
             elif decision_action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
                 if execute_followup_discover is None:
                     run_kernel.mark_searchos_slot_unresolved(
@@ -907,7 +955,9 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     )
                     continue
                 before_identities = list(discovery_result_store.identities())
-                parent_ref = deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
+                parent_ref = deepcopy(
+                    run_kernel.state.searchos_state["current_candidate_state_ref"]
+                )
                 wave = dict(
                     execute_followup_discover(
                         decision["followup_query"],
@@ -916,23 +966,31 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     )
                 )
                 after_identities = list(discovery_result_store.identities())
-                delta_identities = [item.ref() for item in after_identities[len(before_identities) :]]
+                delta_identities = [
+                    item.ref() for item in after_identities[len(before_identities) :]
+                ]
                 delta_ref = _identity_delta_ref(
                     run_id=run_kernel.state.run_id,
                     iteration=iteration,
                     identity_refs=delta_identities,
                 )
-                identity_deltas_by_digest[str(delta_ref["identity_set_delta_digest"])] = delta_identities
+                identity_deltas_by_digest[
+                    str(delta_ref["identity_set_delta_digest"])
+                ] = delta_identities
                 wave_packet = dict(wave.get("candidate_packet") or {})
                 if wave_packet:
-                    wave_packet_ref = search_result_candidate_packet_ref_from_packet(wave_packet)
+                    wave_packet_ref = search_result_candidate_packet_ref_from_packet(
+                        wave_packet
+                    )
                     packets_by_id[wave_packet_ref["packet_id"]] = wave_packet
                     selected_refs = _candidate_refs(wave_packet)
-                    wave_binding_state = derive_selected_candidate_material_need_bindings(
-                        run_kernel=run_kernel,
-                        candidate_packet=wave_packet,
-                        query_plan=query_authority.plan,
-                        discovery_result_store=discovery_result_store,
+                    wave_binding_state = (
+                        derive_selected_candidate_material_need_bindings(
+                            run_kernel=run_kernel,
+                            candidate_packet=wave_packet,
+                            query_plan=query_authority.plan,
+                            discovery_result_store=discovery_result_store,
+                        )
                     )
                     wave_bindings = _bindings_from_state(wave_binding_state)
                     material_refs = _material_refs(wave_bindings)
@@ -945,7 +1003,9 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     request_id=run_kernel.state.request_id,
                     iteration=iteration,
                     parent_candidate_state_ref=parent_ref,
-                    slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"],
+                    slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                        "slot_ref"
+                    ],
                     query_plan_item_ref=query_admission["query_plan_item_ref"],
                     provider_plan_ref=dict(wave["provider_plan_ref"]),
                     route_refs=list(wave.get("route_refs") or ()),
@@ -958,19 +1018,25 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                     overflow_facts=dict(wave.get("overflow_facts") or {}),
                     zero_useful_result=not bool(selected_refs),
                 )
-                candidate_action = run_kernel.authorize_searchos_iteration_candidate_admission(
-                    candidate_set=candidate_set
+                candidate_action = (
+                    run_kernel.authorize_searchos_iteration_candidate_admission(
+                        candidate_set=candidate_set
+                    )
                 )
                 run_kernel.reduce(
                     Observation.from_action(
                         candidate_action,
-                        observation_type=(ObservationType.SEARCHOS_ITERATION_CANDIDATES_ADMITTED),
+                        observation_type=(
+                            ObservationType.SEARCHOS_ITERATION_CANDIDATES_ADMITTED
+                        ),
                         status=RunStageStatus.COMPLETED,
                         payload={"candidate_set": candidate_set},
                     )
                 )
                 iteration_sets.append(candidate_set)
-                iteration_ref = deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
+                iteration_ref = deepcopy(
+                    run_kernel.state.searchos_state["current_candidate_state_ref"]
+                )
                 bindings.extend(wave_bindings)
                 for binding in wave_bindings:
                     binding_candidate_states[binding.binding_id] = iteration_ref
@@ -984,7 +1050,9 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                             + str(wave["followup_failure_reason"])
                         )[:240],
                     )
-            elif decision_action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
+            elif decision_action is (
+                SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
+            ):
                 handoff_action = run_kernel.authorize_searchos_semantic_handoff(
                     slot_id=slot_id,
                     judgment_decision_ref=decision,
@@ -993,12 +1061,20 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
                 run_kernel.reduce(
                     Observation.from_action(
                         handoff_action,
-                        observation_type=(ObservationType.SEARCHOS_SEMANTIC_HANDOFF_ADMITTED),
+                        observation_type=(
+                            ObservationType.SEARCHOS_SEMANTIC_HANDOFF_ADMITTED
+                        ),
                         status=RunStageStatus.COMPLETED,
-                        payload={"semantic_handoff": handoff_action.inputs["semantic_handoff"]},
+                        payload={
+                            "semantic_handoff": handoff_action.inputs[
+                                "semantic_handoff"
+                            ]
+                        },
                     )
                 )
-                semantic_handoffs.append(deepcopy(handoff_action.inputs["semantic_handoff"]))
+                semantic_handoffs.append(
+                    deepcopy(handoff_action.inputs["semantic_handoff"])
+                )
 
     semantic_material = _semantic_passages(
         semantic_handoffs=semantic_handoffs,
@@ -1007,18 +1083,24 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
     append_only_proof = validate_searchos_append_only_lineage(
         revision_1=revision_1,
         initial_query_plan_items=initial_query_items,
-        current_query_plan_items=[item.to_dict() for item in query_authority.plan.items],
+        current_query_plan_items=[
+            item.to_dict() for item in query_authority.plan.items
+        ],
         initial_identity_refs=initial_identities,
         iteration_candidate_sets=iteration_sets,
         identity_deltas_by_digest=identity_deltas_by_digest,
-        current_identity_refs=[item.ref() for item in discovery_result_store.identities()],
+        current_identity_refs=[
+            item.ref() for item in discovery_result_store.identities()
+        ],
     )
     final_state = run_kernel.state.searchos_state
     projection = {
         "schema_version": "searchos_slice_a_product_runtime_v1",
         "owner": "RunKernel.SearchOSIterativeJudgment",
         "revision_1_ref": revision_ref,
-        "iteration_candidate_set_refs": deepcopy(final_state["iteration_candidate_set_refs"]),
+        "iteration_candidate_set_refs": deepcopy(
+            final_state["iteration_candidate_set_refs"]
+        ),
         "append_only_lineage_proof_ref": {
             "lineage_proof_id": append_only_proof["lineage_proof_id"],
             "lineage_proof_digest": append_only_proof["lineage_proof_digest"],
@@ -1034,7 +1116,8 @@ def _execute_searchos_slice_a_iterative_judgment_with_registries(
             for item in semantic_material
         ],
         "slot_postures": {
-            slot_id: final_state["slots_by_id"][slot_id]["posture"] for slot_id in final_state["active_slot_ids"]
+            slot_id: final_state["slots_by_id"][slot_id]["posture"]
+            for slot_id in final_state["active_slot_ids"]
         },
         "directional_candidate_context_support_eligible": False,
         "read_custody_is_only_support_proposal_eligible_material": True,
@@ -1428,13 +1511,55 @@ def _build_searchos_judgment_model_input(
             "navigation_contributor_digest"
         ):
             raise SearchOSRuntimeError("transient navigation direction binds stale contributor")
+        option_ref = dict(candidate.get("stable_option_ref") or {})
+        option = dict(
+            dict(navigation_state.get("options_by_id") or {}).get(
+                option_ref.get("navigation_option_id")
+            )
+            or {}
+        )
+        lineage_ref = dict(candidate.get("navigation_lineage_snapshot_ref") or {})
+        lineage = dict(
+            dict(navigation_state.get("lineages_by_id") or {}).get(
+                lineage_ref.get("navigation_lineage_id")
+            )
+            or {}
+        )
+        option_state = dict(
+            dict(navigation_state.get("option_states_by_id") or {}).get(
+                option_ref.get("navigation_option_id")
+            )
+            or {}
+        )
+        if (
+            not option
+            or not lineage
+            or option_state.get("latest_selectable_lineage_ref") != lineage_ref
+            or option_state.get("representative_contributor_ref") != contributor_ref
+            or build_searchos_navigation_candidate_ref_v1(
+                option_identity=option,
+                lineage_snapshot=lineage,
+                representative_contributor=contributor,
+            )
+            != candidate
+        ):
+            raise SearchOSRuntimeError(
+                "transient navigation direction binds stale lineage"
+            )
         navigation_contexts.append(
             {
                 "navigation_candidate_ref": candidate,
+                "parent_custody_ref": dict(contributor["parent_custody_ref"]),
+                "parent_depth": int(contributor["parent_depth"]),
+                "child_depth": int(contributor["child_depth"]),
+                "parent_custody_admission_ordinal": int(
+                    contributor["parent_custody_admission_ordinal"]
+                ),
+                "source_link_ordinal": int(contributor["source_link_ordinal"]),
                 "relationship_label": _bounded_judgment_text(contributor.get("relationship_label"), 160),
-                "material_authority": "directional_navigation_context",
-                "support_proposal_eligible": False,
-                "separate_read_required": True,
+                "source_relationship_posture": (
+                    "outbound_link_from_current_read_custody"
+                ),
             }
         )
     is_v2 = request.get("schema_version") == (SEARCHOS_JUDGMENT_REQUEST_V2_SCHEMA_VERSION)
@@ -2023,6 +2148,301 @@ def build_searchos_required_needs_blocked_fap_projection(
     }
 
 
+def _record_optional_navigation_expansion(
+    *,
+    run_kernel: RunKernel,
+    draft: Any | None,
+    destination_registry: SearchOSNavigationDestinationRegistry,
+    fetch_read_packet: Mapping[str, Any],
+    evidence_ledger_custody: Mapping[str, Any],
+    parent_custody_ref: Mapping[str, Any],
+    slot_ref: Mapping[str, Any],
+    parent_depth: int,
+    extraction_failure_code: str | None = None,
+) -> str:
+    """Attempt optional child admission without changing successful custody."""
+
+    policy = dict(run_kernel.state.searchos_state["policy_snapshot"])
+    maximum_depth = int(policy["navigation_max_depth"])
+    posture = "navigation_expansion_unavailable"
+    admitted_ref: dict[str, Any] = {}
+    if parent_depth >= maximum_depth:
+        posture = "navigation_depth_exhausted"
+    elif extraction_failure_code:
+        posture = (
+            "navigation_effective_base_out_of_scope"
+            if extraction_failure_code == NAVIGATION_EFFECTIVE_BASE_OUT_OF_SCOPE
+            else "navigation_expansion_unavailable"
+        )
+    elif draft is None:
+        posture = "navigation_expansion_unavailable"
+    elif draft.effective_base_status == NAVIGATION_EFFECTIVE_BASE_OUT_OF_SCOPE:
+        posture = "navigation_effective_base_out_of_scope"
+    elif not draft.occurrences:
+        posture = "navigation_no_candidates"
+    else:
+        transaction = destination_registry.begin_transaction()
+        try:
+            proposal = build_searchos_navigation_candidate_set_v1(
+                draft=draft,
+                destination_registry=transaction,
+                fetch_read_packet=fetch_read_packet,
+                evidence_ledger_custody=evidence_ledger_custody,
+                parent_custody_ref=parent_custody_ref,
+                slot_ref=slot_ref,
+                parent_depth=parent_depth,
+                parent_custody_admission_ordinal=int(
+                    run_kernel.state.searchos_navigation_state["next_admission_ordinal"]
+                ),
+                navigation_max_depth=maximum_depth,
+            )
+            if not proposal.get("candidate_contributors"):
+                posture = "navigation_no_candidates"
+                transaction.rollback()
+            else:
+                preview = run_kernel.preview_searchos_navigation_candidate_admission(
+                    candidate_set=proposal
+                )
+                binding_refs = list(
+                    preview.get("admitted_destination_binding_refs") or ()
+                )
+                if not binding_refs:
+                    posture = "navigation_candidate_capacity_exhausted"
+                    transaction.rollback()
+                else:
+                    transaction.commit_admitted_bindings(binding_refs)
+                    try:
+                        candidate_action = run_kernel.authorize_searchos_navigation_candidate_admission(
+                            candidate_set=proposal
+                        )
+                        if (
+                            candidate_action.inputs[
+                                "predicted_admitted_candidate_set_ref"
+                            ]
+                            != preview["admitted_candidate_set_ref"]
+                            or list(
+                                candidate_action.inputs.get(
+                                    "predicted_admitted_destination_binding_refs"
+                                )
+                                or ()
+                            )
+                            != binding_refs
+                        ):
+                            raise SearchOSRuntimeError(
+                                "navigation candidate admission changed after preview"
+                            )
+                        run_kernel.reduce(
+                            Observation.from_action(
+                                candidate_action,
+                                observation_type=(
+                                    ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED
+                                ),
+                                status=RunStageStatus.COMPLETED,
+                                payload={
+                                    "admitted_navigation_candidate_set_ref": (
+                                        candidate_action.inputs[
+                                            "predicted_admitted_candidate_set_ref"
+                                        ]
+                                    )
+                                },
+                            )
+                        )
+                    except Exception:
+                        transaction.rollback()
+                        raise
+                    transaction.finalize()
+                    admitted_ref = dict(
+                        candidate_action.inputs["predicted_admitted_candidate_set_ref"]
+                    )
+                    posture = "navigation_children_admitted"
+        except Exception as exc:
+            transaction.rollback()
+            code = str(getattr(exc, "code", None) or exc)
+            if code == NAVIGATION_EFFECTIVE_BASE_OUT_OF_SCOPE:
+                posture = "navigation_effective_base_out_of_scope"
+            elif "registry_capacity" in code:
+                posture = "navigation_registry_capacity_exhausted"
+            elif code == NAVIGATION_CANDIDATE_SET_CAPACITY_EXHAUSTED or any(
+                token in code
+                for token in (
+                    "candidate_set_capacity",
+                    "contributor_capacity",
+                    "lineage_capacity",
+                    "stable_options",
+                )
+            ):
+                posture = "navigation_candidate_capacity_exhausted"
+            else:
+                posture = "navigation_expansion_unavailable"
+    run_kernel.record_searchos_navigation_expansion_outcome(
+        parent_custody_ref=parent_custody_ref,
+        expansion_posture=posture,
+        admitted_candidate_set_ref=admitted_ref or None,
+    )
+    return posture
+
+
+def _complete_optional_navigation_expansion_after_custody(
+    *,
+    run_kernel: RunKernel,
+    destination_registry: SearchOSNavigationDestinationRegistry,
+    custody_outcome: dict[str, Any],
+) -> str | None:
+    """Consume one transient draft only after SearchOS custody is canonical."""
+
+    if custody_outcome.pop("_navigation_expansion_pending", False) is not True:
+        existing = custody_outcome.get("navigation_expansion_posture")
+        return str(existing) if existing else None
+    draft = custody_outcome.pop("_navigation_expansion_draft", None)
+    extraction_failure_code = custody_outcome.pop(
+        "_navigation_extraction_failure_code", None
+    )
+    parent_use = dict(custody_outcome.get("parent_use_custody_ref") or {})
+    try:
+        posture = _record_optional_navigation_expansion(
+            run_kernel=run_kernel,
+            draft=draft,
+            destination_registry=destination_registry,
+            fetch_read_packet=dict(custody_outcome["fetch_read_content_packet"]),
+            evidence_ledger_custody={
+                **dict(custody_outcome["evidence_ledger_custody_ref"]),
+                "fetch_read_content_packet_ref": dict(
+                    parent_use["fetch_read_content_packet_ref"]
+                ),
+                "physical_acquisition_ref": dict(
+                    parent_use["physical_acquisition_ref"]
+                ),
+            },
+            parent_custody_ref=parent_use,
+            slot_ref=dict(parent_use["slot_ref"]),
+            parent_depth=int(parent_use["navigation_depth"]),
+            extraction_failure_code=(
+                str(extraction_failure_code) if extraction_failure_code else None
+            ),
+        )
+    except Exception:
+        # Custody is already canonical. Optional expansion cannot reverse it.
+        posture = "navigation_expansion_unavailable"
+        try:
+            run_kernel.record_searchos_navigation_expansion_outcome(
+                parent_custody_ref=parent_use,
+                expansion_posture=posture,
+            )
+        except Exception:
+            pass
+    finally:
+        if draft is not None:
+            discard_navigation_extraction_draft(draft)
+    custody_outcome["navigation_expansion_posture"] = posture
+    return posture
+
+
+def _discard_pending_navigation_expansion(
+    custody_outcome: dict[str, Any],
+) -> None:
+    """Destroy transient extraction authority when custody admission aborts."""
+
+    custody_outcome.pop("_navigation_expansion_pending", None)
+    draft = custody_outcome.pop("_navigation_expansion_draft", None)
+    custody_outcome.pop("_navigation_extraction_failure_code", None)
+    if draft is not None:
+        discard_navigation_extraction_draft(draft)
+
+
+def _admit_searchos_custody_before_optional_expansion(
+    *,
+    run_kernel: RunKernel,
+    destination_registry: SearchOSNavigationDestinationRegistry,
+    slot_id: str,
+    custody_outcome: dict[str, Any],
+    candidate_use_option_ref: Mapping[str, Any] | None = None,
+    normalized_url: str | None = None,
+    same_normalized_url_reused: bool = False,
+) -> dict[str, Any]:
+    """Publish successful READ custody before consuming expansion authority."""
+
+    try:
+        slot_ref = dict(
+            run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"]
+        )
+        if custody_outcome.get("navigation_use_custody_ref"):
+            custody_ref = build_searchos_read_custody_material_ref_v2(
+                slot_ref=slot_ref,
+                navigation_use_custody_ref=custody_outcome[
+                    "navigation_use_custody_ref"
+                ],
+                fetch_read_content_packet_ref=(
+                    fetch_read_content_packet_ref_from_packet(
+                        custody_outcome["fetch_read_content_packet"]
+                    )
+                ),
+                evidence_ledger_custody_ref=custody_outcome[
+                    "evidence_ledger_custody_ref"
+                ],
+                evidence_ledger_candidate_id=custody_outcome[
+                    "evidence_ledger_candidate_id"
+                ],
+                sanitized_content_reference_ref=custody_outcome[
+                    "sanitized_content_reference_ref"
+                ],
+                physical_custody_reused=bool(
+                    custody_outcome["physical_custody_reused"]
+                ),
+            )
+        elif (
+            custody_outcome["fetch_read_content_packet"].get(
+                "physical_acquisition_origin"
+            )
+            == "discovery_candidate"
+        ):
+            custody_ref = build_searchos_discovery_read_custody_material_ref_v2(
+                slot_ref=slot_ref,
+                candidate_use_option_ref=dict(candidate_use_option_ref or {}),
+                normalized_url=str(normalized_url or ""),
+                fetch_read_content_packet_ref=custody_outcome[
+                    "fetch_read_content_packet_ref"
+                ],
+                evidence_ledger_custody_ref=custody_outcome[
+                    "evidence_ledger_custody_ref"
+                ],
+                evidence_ledger_candidate_id=custody_outcome[
+                    "evidence_ledger_candidate_id"
+                ],
+                sanitized_content_reference_ref=custody_outcome[
+                    "sanitized_content_reference_ref"
+                ],
+                physical_identity_digest=custody_outcome["physical_identity_digest"],
+                same_normalized_url_reused=(same_normalized_url_reused),
+            )
+        else:
+            custody_ref = build_searchos_read_custody_material_ref(
+                slot_ref=slot_ref,
+                candidate_use_option_ref=dict(candidate_use_option_ref or {}),
+                custody_record=custody_outcome["custody_record"],
+                same_normalized_url_reused=same_normalized_url_reused,
+            )
+        custody_action = run_kernel.authorize_searchos_read_custody_admission(
+            custody_material_ref=custody_ref
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                custody_action,
+                observation_type=(ObservationType.SEARCHOS_READ_CUSTODY_ADMITTED),
+                status=RunStageStatus.COMPLETED,
+                payload={"custody_material_ref": custody_ref},
+            )
+        )
+    except Exception:
+        _discard_pending_navigation_expansion(custody_outcome)
+        raise
+    _complete_optional_navigation_expansion_after_custody(
+        run_kernel=run_kernel,
+        destination_registry=destination_registry,
+        custody_outcome=custody_outcome,
+    )
+    return custody_ref
+
+
 def _execute_navigation_read_to_custody(
     *,
     run_kernel: RunKernel,
@@ -2041,33 +2461,57 @@ def _execute_navigation_read_to_custody(
     edge_reference = navigation_edge_ref(edge)
     current_navigation = run_kernel.state.searchos_navigation_state
     existing_physical = dict(
-        dict(current_navigation.get("physical_custody_by_digest") or {}).get(physical_digest) or {}
+        dict(current_navigation.get("physical_custody_by_digest") or {}).get(
+            physical_digest
+        )
+        or {}
     )
-    ancestor_digests = list(dict(edge.get("parent_custody_ref") or {}).get("ancestor_physical_identity_digests") or ())
-    parent_physical = str(dict(edge.get("parent_custody_ref") or {}).get("physical_identity_digest") or "")
+    ancestor_digests = list(
+        dict(edge.get("parent_custody_ref") or {}).get(
+            "ancestor_physical_identity_digests"
+        )
+        or ()
+    )
+    parent_physical = str(
+        dict(edge.get("parent_custody_ref") or {}).get("physical_identity_digest") or ""
+    )
     if parent_physical and parent_physical not in ancestor_digests:
         ancestor_digests.append(parent_physical)
     if existing_physical:
         packet = dict(physical_packets_by_digest.get(physical_digest) or {})
         if not packet:
-            raise SearchOSRuntimeError("navigation physical packet is unavailable in current product call")
+            raise SearchOSRuntimeError(
+                "navigation physical packet is unavailable in current product call"
+            )
         use_ref = build_searchos_navigation_use_custody_ref_v2(
             slot_ref=dict(edge["parent_custody_ref"]["slot_ref"]),
             selection_ref=selection_ref,
             edge_ref=edge_reference,
-            physical_custody_ref=(searchos_navigation_physical_custody_ref(existing_physical)),
-            fetch_read_content_packet_ref=existing_physical["fetch_read_content_packet_ref"],
-            evidence_ledger_custody_ref=existing_physical["evidence_ledger_custody_ref"],
+            physical_custody_ref=(
+                searchos_navigation_physical_custody_ref(existing_physical)
+            ),
+            fetch_read_content_packet_ref=existing_physical[
+                "fetch_read_content_packet_ref"
+            ],
+            evidence_ledger_custody_ref=existing_physical[
+                "evidence_ledger_custody_ref"
+            ],
             destination_binding_ref=binding,
-            physical_acquisition_origin=existing_physical["physical_acquisition_origin"],
+            physical_acquisition_origin=existing_physical[
+                "physical_acquisition_origin"
+            ],
             navigation_depth=int(edge["child_depth"]),
             ancestor_physical_identity_digests=ancestor_digests,
         )
-        use_action = run_kernel.authorize_searchos_navigation_use_custody_admission(use_custody_ref=use_ref)
+        use_action = run_kernel.authorize_searchos_navigation_use_custody_admission(
+            use_custody_ref=use_ref
+        )
         run_kernel.reduce(
             Observation.from_action(
                 use_action,
-                observation_type=(ObservationType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED),
+                observation_type=(
+                    ObservationType.SEARCHOS_NAVIGATION_USE_CUSTODY_ADMITTED
+                ),
                 status=RunStageStatus.COMPLETED,
                 payload={"navigation_use_custody_ref": use_ref},
             )
@@ -2076,15 +2520,27 @@ def _execute_navigation_read_to_custody(
         return {
             "fetch_read_content_packet": packet,
             "navigation_use_custody_ref": use_ref,
-            "evidence_ledger_custody_ref": existing_physical["evidence_ledger_custody_ref"],
+            "evidence_ledger_custody_ref": existing_physical[
+                "evidence_ledger_custody_ref"
+            ],
             "evidence_ledger_candidate_id": _evidence_ledger_candidate_id(
-                str(dict(packet.get("discovery_candidate_ref") or {}).get("candidate_id") or "")
-                if existing_physical["physical_acquisition_origin"] == "discovery_candidate"
+                str(
+                    dict(packet.get("discovery_candidate_ref") or {}).get(
+                        "candidate_id"
+                    )
+                    or ""
+                )
+                if existing_physical["physical_acquisition_origin"]
+                == "discovery_candidate"
                 else f"navigation-physical-source:{physical_digest[:24]}"
             ),
             "sanitized_content_reference_ref": {
-                "sanitized_content_reference_id": reference["sanitized_content_reference_id"],
-                "sanitized_content_reference_digest": reference["sanitized_content_reference_digest"],
+                "sanitized_content_reference_id": reference[
+                    "sanitized_content_reference_id"
+                ],
+                "sanitized_content_reference_digest": reference[
+                    "sanitized_content_reference_digest"
+                ],
             },
             "physical_custody_reused": True,
             "parent_use_custody_ref": {},
@@ -2104,15 +2560,21 @@ def _execute_navigation_read_to_custody(
         navigation_destination_binding_ref=binding,
         navigation_edge_ref=edge_reference,
         navigation_selection_ref=selection_ref,
-        navigation_lineage_snapshot_ref=dict(selection["navigation_lineage_snapshot_ref"]),
-        representative_contributor_ref=dict(selection["representative_contributor_ref"]),
+        navigation_lineage_snapshot_ref=dict(
+            selection["navigation_lineage_snapshot_ref"]
+        ),
+        representative_contributor_ref=dict(
+            selection["representative_contributor_ref"]
+        ),
         parent_custody_ref=parent,
         physical_identity_digest=physical_digest,
         full_destination_digest=str(binding["full_destination_digest"]),
         operation_identity_key=f"read-navigation:{physical_digest}",
         requested_bounds={"max_retained_characters": 20_000},
     )
-    capability_action = run_kernel.authorize_acquisition_capability_decision(proposal=proposal)
+    capability_action = run_kernel.authorize_acquisition_capability_decision(
+        proposal=proposal
+    )
     capability_result = execute_acquisition_capability_decision_action(
         capability_action,
         proposal=proposal,
@@ -2122,8 +2584,12 @@ def _execute_navigation_read_to_custody(
     run_kernel.reduce(capability_result.observation)
     decision = capability_result.decision
     if decision.decision_status != "accepted":
-        raise SearchOSRuntimeError(decision.block_code or "navigation_acquisition_capability_blocked")
-    work_action = run_kernel.authorize_acquisition_work_order_admission(capability_decision_ref=decision.ref())
+        raise SearchOSRuntimeError(
+            decision.block_code or "navigation_acquisition_capability_blocked"
+        )
+    work_action = run_kernel.authorize_acquisition_work_order_admission(
+        capability_decision_ref=decision.ref()
+    )
     work_result = execute_acquisition_work_order_admission_action(
         work_action,
         proposal=proposal,
@@ -2159,7 +2625,9 @@ def _execute_navigation_read_to_custody(
             route_observation=route_observation,
         )
         run_kernel.reduce(terminal_result.observation)
-        raise SearchOSRuntimeError(route_observation.block_code or "navigation_acquisition_route_blocked")
+        raise SearchOSRuntimeError(
+            route_observation.block_code or "navigation_acquisition_route_blocked"
+        )
     overlay = SearchOSNavigationExecutionOverlayV1.create(
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
@@ -2201,7 +2669,11 @@ def _execute_navigation_read_to_custody(
     run_kernel.reduce(terminal_result.observation)
     execution_runtime.raise_deferred_error()
     if not execution.succeeded or len(execution.artifacts) != 1:
-        raise SearchOSRuntimeError(execution.failure_code or execution.block_code or "navigation_read_dispatch_failed")
+        raise SearchOSRuntimeError(
+            execution.failure_code
+            or execution.block_code
+            or "navigation_read_dispatch_failed"
+        )
     custody_action = run_kernel.authorize_acquisition_custody_consumption(
         terminal_receipt_ref=terminal_result.terminal_receipt.ref(),
         custody_consumer=SEARCH_JUDGMENT_READ_PRODUCER_SURFACE,
@@ -2215,7 +2687,9 @@ def _execute_navigation_read_to_custody(
         acquisition_control_state=run_kernel.state.acquisition_control_state,
     )
     run_kernel.reduce(custody_result.observation)
-    run_kernel.require_current_acquisition_custody_authorization(custody_result.custody_authorization.ref())
+    run_kernel.require_current_acquisition_custody_authorization(
+        custody_result.custody_authorization.ref()
+    )
     artifact = execution.artifacts[0]
     artifact_projection = dict(execution_observation.artifact_refs[0])
     artifact_ref = {
@@ -2227,22 +2701,27 @@ def _execute_navigation_read_to_custody(
         acquisition_work_order_ref=work_order.ref(),
         acquisition_artifact_ref=artifact_ref,
     )
-    draft = extract_searchos_navigation_draft_v1(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        operation_identity_key=work_order.operation_identity_key,
-        source_obligation_ref=work_order.source_obligation_ref,
-        component_ref=work_order.component_ref,
-        answer_contract_ref=work_order.answer_contract_ref,
-        artifact_ref=artifact_ref,
-        physical_acquisition_ref=physical_ref,
-        retained_text=artifact.retained_text or "",
-        retained_digest=str(artifact.retained_digest or ""),
-        retained_character_count=artifact.retained_character_count,
-        attempted_parent_url=str(artifact.attempted_url or ""),
-        final_url=artifact.final_url,
-        resolved_url=artifact.resolved_url,
-    )
+    draft = None
+    extraction_failure_code: str | None = None
+    try:
+        draft = extract_searchos_navigation_draft_v1(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            operation_identity_key=work_order.operation_identity_key,
+            source_obligation_ref=work_order.source_obligation_ref,
+            component_ref=work_order.component_ref,
+            answer_contract_ref=work_order.answer_contract_ref,
+            artifact_ref=artifact_ref,
+            physical_acquisition_ref=physical_ref,
+            retained_text=artifact.retained_text or "",
+            retained_digest=str(artifact.retained_digest or ""),
+            retained_character_count=artifact.retained_character_count,
+            attempted_parent_url=str(artifact.attempted_url or ""),
+            final_url=artifact.final_url,
+            resolved_url=artifact.resolved_url,
+        )
+    except SearchOSNavigationError as exc:
+        extraction_failure_code = exc.code
     try:
         sanitized_text = sanitize_searchos_navigation_source_text_v1(
             artifact.retained_text or ""
@@ -2294,14 +2773,16 @@ def _execute_navigation_read_to_custody(
         )
         packet_commit_ref = packet_registry.register(packet)
         packet_ref = fetch_read_content_packet_ref_from_packet(packet)
-        commit_action = run_kernel.authorize_searchos_navigation_physical_custody_commit(
-            packet_commit_ref=packet_commit_ref,
-            fetch_read_content_packet_ref=packet_ref,
-            navigation_selection_ref=selection_ref,
-            navigation_edge_ref=edge_reference,
-            destination_binding_ref=binding,
-            physical_identity_digest=physical_digest,
-            operation_identity_key=work_order.operation_identity_key,
+        commit_action = (
+            run_kernel.authorize_searchos_navigation_physical_custody_commit(
+                packet_commit_ref=packet_commit_ref,
+                fetch_read_content_packet_ref=packet_ref,
+                navigation_selection_ref=selection_ref,
+                navigation_edge_ref=edge_reference,
+                destination_binding_ref=binding,
+                physical_identity_digest=physical_digest,
+                operation_identity_key=work_order.operation_identity_key,
+            )
         )
         try:
             ledger_result = admit_navigation_packet_commit_to_evidence_ledger(
@@ -2333,7 +2814,9 @@ def _execute_navigation_read_to_custody(
             slot_ref=dict(parent["slot_ref"]),
             selection_ref=selection_ref,
             edge_ref=edge_reference,
-            physical_custody_ref=(searchos_navigation_physical_custody_ref(physical_record)),
+            physical_custody_ref=(
+                searchos_navigation_physical_custody_ref(physical_record)
+            ),
             fetch_read_content_packet_ref=packet_ref,
             evidence_ledger_custody_ref=ledger_result.evidence_ledger_custody_ref,
             destination_binding_ref=binding,
@@ -2344,23 +2827,24 @@ def _execute_navigation_read_to_custody(
         run_kernel.reduce(
             Observation.from_action(
                 commit_action,
-                observation_type=(ObservationType.ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMITTED),
+                observation_type=(
+                    ObservationType.ACQUISITION_NAVIGATION_PHYSICAL_CUSTODY_COMMITTED
+                ),
                 status=RunStageStatus.COMPLETED,
                 payload={
                     "packet_commit_ref": packet_commit_ref,
                     "committed_fetch_read_content_packet": committed_packet,
-                    "evidence_ledger_observation": (ledger_result.observation.to_dict()),
-                    "evidence_ledger_custody_ref": (ledger_result.evidence_ledger_custody_ref),
+                    "evidence_ledger_observation": (
+                        ledger_result.observation.to_dict()
+                    ),
+                    "evidence_ledger_custody_ref": (
+                        ledger_result.evidence_ledger_custody_ref
+                    ),
                     "navigation_physical_custody_record": physical_record,
                     "navigation_use_custody_ref": use_ref,
                 },
             )
         )
-        ledger_join = {
-            **dict(ledger_result.evidence_ledger_custody_ref),
-            "fetch_read_content_packet_ref": packet_ref,
-            "physical_acquisition_ref": physical_ref,
-        }
         parent_use = build_searchos_parent_use_custody_ref_v2(
             slot_ref=parent["slot_ref"],
             fetch_read_content_packet_ref=packet_ref,
@@ -2368,54 +2852,46 @@ def _execute_navigation_read_to_custody(
             physical_acquisition_ref=physical_ref,
             source_obligation_ref=work_order.source_obligation_ref,
             component_ref=work_order.component_ref,
-            attempted_source_full_digest=committed_packet["attempted_source_full_digest"],
+            attempted_source_full_digest=committed_packet[
+                "attempted_source_full_digest"
+            ],
             physical_identity_digest=physical_digest,
             physical_acquisition_origin="navigation_candidate",
             navigation_depth=int(edge["child_depth"]),
             ancestor_physical_identity_digests=ancestor_digests,
             navigation_use_custody_ref=use_ref,
         )
-        candidate_set = build_searchos_navigation_candidate_set_v1(
-            draft=draft,
-            destination_registry=destination_registry,
-            fetch_read_packet=committed_packet,
-            evidence_ledger_custody=ledger_join,
-            parent_custody_ref=parent_use,
-            slot_ref=parent["slot_ref"],
-            parent_depth=int(edge["child_depth"]),
-        )
-        candidate_action = run_kernel.authorize_searchos_navigation_candidate_admission(candidate_set=candidate_set)
-        run_kernel.reduce(
-            Observation.from_action(
-                candidate_action,
-                observation_type=(ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED),
-                status=RunStageStatus.COMPLETED,
-                payload={
-                    "admitted_navigation_candidate_set_ref": (
-                        candidate_action.inputs["predicted_admitted_candidate_set_ref"]
-                    )
-                },
-            )
-        )
         reference = dict(committed_packet["reference_records"][0])
-        return {
+        outcome = {
             "fetch_read_content_packet": committed_packet,
             "navigation_use_custody_ref": use_ref,
-            "evidence_ledger_custody_ref": dict(ledger_result.evidence_ledger_custody_ref),
+            "evidence_ledger_custody_ref": dict(
+                ledger_result.evidence_ledger_custody_ref
+            ),
             "evidence_ledger_candidate_id": _evidence_ledger_candidate_id(
                 f"navigation-physical-source:{physical_digest[:24]}"
             ),
             "sanitized_content_reference_ref": {
-                "sanitized_content_reference_id": reference["sanitized_content_reference_id"],
-                "sanitized_content_reference_digest": reference["sanitized_content_reference_digest"],
+                "sanitized_content_reference_id": reference[
+                    "sanitized_content_reference_id"
+                ],
+                "sanitized_content_reference_digest": reference[
+                    "sanitized_content_reference_digest"
+                ],
             },
             "physical_custody_reused": False,
             "parent_use_custody_ref": parent_use,
             "provider_calls_attempted": execution.provider_calls_attempted,
             "provider_calls_completed": execution.provider_calls_completed,
+            "_navigation_expansion_pending": True,
+            "_navigation_expansion_draft": draft,
+            "_navigation_extraction_failure_code": (extraction_failure_code),
         }
+        draft = None
+        return outcome
     finally:
-        discard_navigation_extraction_draft(draft)
+        if draft is not None:
+            discard_navigation_extraction_draft(draft)
 
 
 def _execute_discovery_read_v2_and_navigation(
@@ -2443,28 +2919,37 @@ def _execute_discovery_read_v2_and_navigation(
         acquisition_work_order_ref=transport["acquisition_work_order_ref"],
         acquisition_artifact_ref=transport["acquisition_artifact_ref"],
     )
-    draft = extract_searchos_navigation_draft_v1(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        operation_identity_key=(transport["acquisition_work_order"].operation_identity_key),
-        source_obligation_ref=binding.source_obligation_ref,
-        component_ref=binding.component_ref,
-        answer_contract_ref=binding.answer_contract_ref,
-        artifact_ref=transport["acquisition_artifact_ref"],
-        physical_acquisition_ref=physical_ref,
-        retained_text=artifact.retained_text or "",
-        retained_digest=str(artifact.retained_digest or ""),
-        retained_character_count=artifact.retained_character_count,
-        attempted_parent_url=str(artifact.attempted_url or ""),
-        final_url=artifact.final_url,
-        resolved_url=artifact.resolved_url,
-    )
+    draft = None
+    extraction_failure_code: str | None = None
+    try:
+        draft = extract_searchos_navigation_draft_v1(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            operation_identity_key=(
+                transport["acquisition_work_order"].operation_identity_key
+            ),
+            source_obligation_ref=binding.source_obligation_ref,
+            component_ref=binding.component_ref,
+            answer_contract_ref=binding.answer_contract_ref,
+            artifact_ref=transport["acquisition_artifact_ref"],
+            physical_acquisition_ref=physical_ref,
+            retained_text=artifact.retained_text or "",
+            retained_digest=str(artifact.retained_digest or ""),
+            retained_character_count=artifact.retained_character_count,
+            attempted_parent_url=str(artifact.attempted_url or ""),
+            final_url=artifact.final_url,
+            resolved_url=artifact.resolved_url,
+        )
+    except SearchOSNavigationError as exc:
+        extraction_failure_code = exc.code
     try:
         sanitized_text = sanitize_searchos_navigation_source_text_v1(
             artifact.retained_text or ""
         )
         selected = select_bounded_answer_bearing_text(sanitized_text)
-        physical_source_binding = build_searchos_physical_source_binding_ref_v2(str(artifact.attempted_url or ""))
+        physical_source_binding = build_searchos_physical_source_binding_ref_v2(
+            str(artifact.attempted_url or "")
+        )
         secondary = {
             key: str(value)
             for key, value in {
@@ -2489,7 +2974,9 @@ def _execute_discovery_read_v2_and_navigation(
             physical_source_binding_ref=physical_source_binding,
             discovery_candidate_ref=binding.candidate_ref,
             search_result_candidate_packet_ref=binding.candidate_packet_ref,
-            operation_identity_key=(transport["acquisition_work_order"].operation_identity_key),
+            operation_identity_key=(
+                transport["acquisition_work_order"].operation_identity_key
+            ),
             attempted_url=str(artifact.attempted_url or ""),
             durable_source_url=str(artifact.attempted_url or ""),
             provider=artifact.provider,
@@ -2502,20 +2989,19 @@ def _execute_discovery_read_v2_and_navigation(
             content_title=artifact.title,
             secondary_source_provenance=secondary,
         )
-        ledger_observation = build_evidence_ledger_observation_from_fetch_read_content_packet(packet)
+        ledger_observation = (
+            build_evidence_ledger_observation_from_fetch_read_content_packet(packet)
+        )
         ledger_payload = ledger_observation.to_dict()
-        ledger_custody_ref = dict(ledger_payload.get("evidence_ledger_custody_ref") or {})
+        ledger_custody_ref = dict(
+            ledger_payload.get("evidence_ledger_custody_ref") or {}
+        )
         reduce_fetch_read_content_packet_into_evidence_ledger(
             run_kernel=run_kernel,
             fetch_read_content_packet=packet,
             observation_id=ledger_observation.observation_id,
         )
         packet_ref = fetch_read_content_packet_ref_from_packet(packet)
-        ledger_join = {
-            **ledger_custody_ref,
-            "fetch_read_content_packet_ref": packet_ref,
-            "physical_acquisition_ref": physical_ref,
-        }
         parent_use = build_searchos_parent_use_custody_ref_v2(
             slot_ref=slot_ref,
             fetch_read_content_packet_ref=packet_ref,
@@ -2529,31 +3015,13 @@ def _execute_discovery_read_v2_and_navigation(
             navigation_depth=0,
             ancestor_physical_identity_digests=(),
         )
-        candidate_set = build_searchos_navigation_candidate_set_v1(
-            draft=draft,
-            destination_registry=destination_registry,
-            fetch_read_packet=packet,
-            evidence_ledger_custody=ledger_join,
-            parent_custody_ref=parent_use,
-            slot_ref=slot_ref,
-            parent_depth=0,
-        )
-        candidate_action = run_kernel.authorize_searchos_navigation_candidate_admission(candidate_set=candidate_set)
-        run_kernel.reduce(
-            Observation.from_action(
-                candidate_action,
-                observation_type=(ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED),
-                status=RunStageStatus.COMPLETED,
-                payload={
-                    "admitted_navigation_candidate_set_ref": (
-                        candidate_action.inputs["predicted_admitted_candidate_set_ref"]
-                    )
-                },
-            )
-        )
         physical_record: Mapping[str, Any] = {}
         try:
-            destination_binding = destination_registry.register(str(artifact.attempted_url or ""))
+            destination_binding = build_searchos_navigation_destination_binding_ref_v1(
+                str(artifact.attempted_url or ""),
+                run_id=run_kernel.state.run_id,
+                request_id=run_kernel.state.request_id,
+            )
         except SearchOSNavigationError as exc:
             if exc.code != "navigation_query_locator_not_supported":
                 raise
@@ -2563,15 +3031,19 @@ def _execute_discovery_read_v2_and_navigation(
                 evidence_ledger_custody_ref=ledger_custody_ref,
                 destination_binding_ref=destination_binding,
             )
-            physical_action = run_kernel.authorize_searchos_discovery_physical_custody_record(
-                fetch_read_content_packet=packet,
-                evidence_ledger_custody_ref=ledger_custody_ref,
-                destination_binding_ref=destination_binding,
+            physical_action = (
+                run_kernel.authorize_searchos_discovery_physical_custody_record(
+                    fetch_read_content_packet=packet,
+                    evidence_ledger_custody_ref=ledger_custody_ref,
+                    destination_binding_ref=destination_binding,
+                )
             )
             run_kernel.reduce(
                 Observation.from_action(
                     physical_action,
-                    observation_type=(ObservationType.SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORDED),
+                    observation_type=(
+                        ObservationType.SEARCHOS_DISCOVERY_PHYSICAL_CUSTODY_RECORDED
+                    ),
                     status=RunStageStatus.COMPLETED,
                     payload={
                         "committed_fetch_read_content_packet": packet,
@@ -2580,7 +3052,7 @@ def _execute_discovery_read_v2_and_navigation(
                 )
             )
         reference = dict(packet["reference_records"][0])
-        return {
+        outcome = {
             "fetch_read_content_packet": packet,
             "fetch_read_content_packet_ref": packet_ref,
             "evidence_ledger_custody_ref": ledger_custody_ref,
@@ -2588,17 +3060,27 @@ def _execute_discovery_read_v2_and_navigation(
                 dict(packet.get("discovery_candidate_ref") or {}).get("candidate_id")
             ),
             "sanitized_content_reference_ref": {
-                "sanitized_content_reference_id": reference["sanitized_content_reference_id"],
-                "sanitized_content_reference_digest": reference["sanitized_content_reference_digest"],
+                "sanitized_content_reference_id": reference[
+                    "sanitized_content_reference_id"
+                ],
+                "sanitized_content_reference_digest": reference[
+                    "sanitized_content_reference_digest"
+                ],
             },
             "parent_use_custody_ref": parent_use,
             "physical_custody_record": dict(physical_record),
             "physical_identity_digest": packet["physical_identity_digest"],
             "provider_calls_attempted": transport["provider_calls_attempted"],
             "provider_calls_completed": transport["provider_calls_completed"],
+            "_navigation_expansion_pending": True,
+            "_navigation_expansion_draft": draft,
+            "_navigation_extraction_failure_code": (extraction_failure_code),
         }
+        draft = None
+        return outcome
     finally:
-        discard_navigation_extraction_draft(draft)
+        if draft is not None:
+            discard_navigation_extraction_draft(draft)
 
 
 def _semantic_passages(

@@ -688,7 +688,9 @@ FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE = (
     FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE_NAME
 )
 FOLLOWUP_FINAL_EVIDENCE_SELECTION_STAGE = (
+    (
     FOLLOWUP_FINAL_EVIDENCE_SELECTION_STAGE_NAME
+)
 )
 FOLLOWUP_CITATION_ELIGIBILITY_STAGE = FOLLOWUP_CITATION_ELIGIBILITY_STAGE_NAME
 FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE = FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE_NAME
@@ -714,7 +716,9 @@ FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE = (
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE_NAME
 )
 FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE = (
+    (
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE_NAME
+)
 )
 FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE = (
     FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE_NAME
@@ -852,7 +856,9 @@ class ActionType(str, Enum):
     FOLLOWUP_EVIDENCE_INTAKE = "followup_evidence_intake"
     FOLLOWUP_SUFFICIENCY_RECHECK = "followup_sufficiency_recheck"
     FOLLOWUP_FINAL_ANSWER_PACKET_READINESS = (
+        (
         "followup_final_answer_packet_readiness"
+    )
     )
     FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL = (
         "followup_blocked_final_answer_packet_shell"
@@ -864,10 +870,14 @@ class ActionType(str, Enum):
     FOLLOWUP_AUTHOR_INPUT_AUTHORITY = "followup_author_input_authority"
     FOLLOWUP_AUTHOR_EXECUTION_READINESS = "followup_author_execution_readiness"
     FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION = (
+        (
         "followup_author_input_materialization"
     )
+    )
     FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION = (
+        (
         "followup_author_execution_activation"
+    )
     )
     FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST = (
         "followup_author_prompt_assembly_manifest"
@@ -875,14 +885,20 @@ class ActionType(str, Enum):
     FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY = "followup_author_payload_authority"
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION = "followup_author_payload_construction"
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE = (
+        (
         "followup_author_evidence_content_bridge"
+    )
     )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AD = "followup_author_execution_from_ad"
     FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION = (
+        (
         "followup_author_invocation_construction"
     )
+    )
     FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY = (
+        (
         "followup_author_model_request_assembly"
+    )
     )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D = "followup_author_execution_from_af4d"
     FOLLOWUP_AUTHOR_RESPONSE_FINALIZE = "followup_author_response_finalize"
@@ -982,10 +998,14 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_EVIDENCE_INTAKE_OBSERVED = "followup_evidence_intake_observed"
     FOLLOWUP_SUFFICIENCY_RECHECK_OBSERVED = (
+        (
         "followup_sufficiency_recheck_observed"
     )
+    )
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARED = (
+        (
         "followup_final_answer_packet_prepared"
+    )
     )
     FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_PREPARED = (
         "followup_final_answer_packet_readiness_prepared"
@@ -997,13 +1017,17 @@ class ObservationType(str, Enum):
         "followup_final_evidence_selection_prepared"
     )
     FOLLOWUP_CITATION_ELIGIBILITY_PREPARED = (
+        (
         "followup_citation_eligibility_prepared"
+    )
     )
     FOLLOWUP_CITATION_SOURCE_HANDOFF_PREPARED = (
         "followup_citation_source_handoff_prepared"
     )
     FOLLOWUP_CITATION_RENDERING_PREPARED = (
+        (
         "followup_citation_rendering_prepared"
+    )
     )
     FOLLOWUP_AUTHOR_INPUT_AUTHORITY_PREPARED = (
         "followup_author_input_authority_prepared"
@@ -1012,7 +1036,9 @@ class ObservationType(str, Enum):
         "followup_author_execution_readiness_prepared"
     )
     FOLLOWUP_AUTHOR_INPUT_MATERIALIZED = (
+        (
         "followup_author_input_materialized"
+    )
     )
     FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_PREPARED = (
         "followup_author_execution_activation_prepared"
@@ -1024,7 +1050,9 @@ class ObservationType(str, Enum):
         "followup_author_payload_authority_prepared"
     )
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTED = (
+        (
         "followup_author_payload_constructed"
+    )
     )
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGED = (
         "followup_author_evidence_content_bridged"
@@ -1033,21 +1061,31 @@ class ObservationType(str, Enum):
         "followup_author_execution_from_ad_observed"
     )
     FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTED = (
+        (
         "followup_author_invocation_constructed"
     )
+    )
     FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLED = (
+        (
         "followup_author_model_request_assembled"
+    )
     )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_OBSERVED = (
         "followup_author_execution_from_af4d_observed"
     )
     FOLLOWUP_AUTHOR_RESPONSE_FINALIZED = (
+        (
         "followup_author_response_finalized"
+    )
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
+        (
         "followup_author_observation_observed"
     )
+
+
+)
 
 
 class RunStageStatus(str, Enum):
@@ -1243,8 +1281,7 @@ class AuthorizedAction:
         expected_action_type = ActionType(action_type)
         if self.action_type is not expected_action_type:
             raise ValueError(
-                f"authorized action type {self.action_type.value!r} does not match "
-                f"{expected_action_type.value!r}"
+                f"authorized action type {self.action_type.value!r} does not match {expected_action_type.value!r}"
             )
         if self.stage != stage:
             raise ValueError(
@@ -2849,8 +2886,7 @@ class RunKernel:
             ActionType.AUTHOR_EXECUTE,
         }:
             raise RunKernelTransitionError(
-                "SearchOS Slice A required-needs block keeps Sufficiency, "
-                "FinalAnswerPacket, and Author closed"
+                "SearchOS Slice A required-needs block keeps Sufficiency, FinalAnswerPacket, and Author closed"
             )
         sequence = self.state.next_action_sequence
         action = AuthorizedAction(
@@ -3051,8 +3087,7 @@ class RunKernel:
             availability_digest = stable_json_digest(availability_core)
             availability_ref = {
                 "availability_snapshot_id": (
-                    f"provider-availability:{work_order.work_order_id}:"
-                    f"{availability_digest[:20]}"
+                    f"provider-availability:{work_order.work_order_id}:{availability_digest[:20]}"
                 ),
                 "availability_snapshot_digest": availability_digest,
             }
@@ -3143,8 +3178,7 @@ class RunKernel:
             raise RunKernelTransitionError(str(exc)) from exc
         predicted_authorization_ref = {
             "action_id": (
-                f"{self.state.run_id}:action:{self.state.next_action_sequence}:"
-                f"{ActionType.ACQUISITION_EXECUTE.value}"
+                f"{self.state.run_id}:action:{self.state.next_action_sequence}:{ActionType.ACQUISITION_EXECUTE.value}"
             ),
             "action_type": ActionType.ACQUISITION_EXECUTE.value,
             "stage": ACQUISITION_EXECUTION_STAGE,
@@ -3682,8 +3716,7 @@ class RunKernel:
             )
         if len(clean_dimension_ids) > int(max_dimensions_per_component):
             raise RunKernelTransitionError(
-                "Scout disambiguation dimensions exceed the authorized "
-                "per-component dimension budget"
+                "Scout disambiguation dimensions exceed the authorized per-component dimension budget"
             )
         if len(set(clean_dimension_ids)) != len(clean_dimension_ids):
             raise RunKernelTransitionError(
@@ -4252,13 +4285,11 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not _clean_text(parent_question_meaning_record_id, limit=160):
             raise RunKernelTransitionError(
-                "initial answer contract acceptance requires a parent "
-                "QuestionMeaningRecord id binding"
+                "initial answer contract acceptance requires a parent QuestionMeaningRecord id binding"
             )
         if not _clean_text(parent_proposal_digest, limit=128):
             raise RunKernelTransitionError(
-                "initial answer contract acceptance requires a parent proposal "
-                "digest binding"
+                "initial answer contract acceptance requires a parent proposal digest binding"
             )
         merged_inputs = {
             "parent_question_meaning_record_id": parent_question_meaning_record_id,
@@ -4292,8 +4323,7 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
-                "semantic observation admission requires an accepted initial "
-                "answer contract"
+                "semantic observation admission requires an accepted initial answer contract"
             )
         accepted = self.state.initial_answer_contract
         resolved_contract_digest = (
@@ -4517,8 +4547,7 @@ class RunKernel:
             raise RunKernelTransitionError("scheduler has no current ready work")
         action = self.authorize(
             stage=(
-                f"{MULTICOMPONENT_SCHEDULER_STAGE}:grant:"
-                f"{self.state.next_action_sequence}"
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:grant:{self.state.next_action_sequence}"
             ),
             action_type=ActionType.MULTICOMPONENT_LEASE_GRANT,
             reason="ordinary_multicomponent_next_current_work_lease",
@@ -5061,8 +5090,7 @@ class RunKernel:
         batch_work = derive_ready_batch_work(self.state)
         action = self.authorize(
             stage=(
-                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-grant:"
-                f"{self.state.next_action_sequence}"
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-grant:{self.state.next_action_sequence}"
             ),
             action_type=ActionType.MULTICOMPONENT_BATCH_GRANT,
             reason="ordinary_multicomponent_next_current_work_batch",
@@ -5097,8 +5125,7 @@ class RunKernel:
 
         action = self.authorize(
             stage=(
-                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-cancel:"
-                f"{self.state.next_action_sequence}"
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-cancel:{self.state.next_action_sequence}"
             ),
             action_type=ActionType.MULTICOMPONENT_BATCH_CANCEL,
             reason="ordinary_multicomponent_predispatch_batch_return",
@@ -5212,8 +5239,7 @@ class RunKernel:
                 f"specialist_capability:{work.get('logical_evaluation_key')}"
                 if work.get("role") == "specialist_capability"
                 else (
-                    f"multicomponent_role:{work.get('role')}:"
-                    f"{work.get('logical_evaluation_key')}"
+                    f"multicomponent_role:{work.get('role')}:{work.get('logical_evaluation_key')}"
                 )
             ),
         }
@@ -5482,10 +5508,7 @@ class RunKernel:
                 f"{MULTICOMPONENT_SCHEDULER_STAGE}:batch-dispatch:"
                 f"{dispatch_sequence}"
             )
-            dispatch_action_id = (
-                f"{self.state.run_id}:action:{dispatch_sequence}:"
-                f"{ActionType.MULTICOMPONENT_BATCH_DISPATCH.value}"
-            )
+            dispatch_action_id = f"{self.state.run_id}:action:{dispatch_sequence}:{ActionType.MULTICOMPONENT_BATCH_DISPATCH.value}"
             dispatch_action_ref = {
                 "action_id": dispatch_action_id,
                 "stage": dispatch_stage,
@@ -5596,8 +5619,7 @@ class RunKernel:
             )
         dispatch_action = self.authorize(
             stage=(
-                f"{MULTICOMPONENT_SCHEDULER_STAGE}:dispatch:"
-                f"{self.state.next_action_sequence}"
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:dispatch:{self.state.next_action_sequence}"
             ),
             action_type=ActionType.MULTICOMPONENT_LEASE_DISPATCH,
             reason="ordinary_multicomponent_canonical_pretransport_commitment",
@@ -5654,8 +5676,7 @@ class RunKernel:
 
         action = self.authorize(
             stage=(
-                f"{MULTICOMPONENT_SCHEDULER_STAGE}:cancel:"
-                f"{self.state.next_action_sequence}"
+                f"{MULTICOMPONENT_SCHEDULER_STAGE}:cancel:{self.state.next_action_sequence}"
             ),
             action_type=ActionType.MULTICOMPONENT_LEASE_CANCEL,
             reason="ordinary_multicomponent_predispatch_reservation_return",
@@ -5932,8 +5953,7 @@ class RunKernel:
             != expected_contract_amendment_application_ref
         ):
             raise RunKernelTransitionError(
-                "recovery scheduler context refs must match canonical "
-                "RunKernel projections"
+                "recovery scheduler context refs must match canonical RunKernel projections"
             )
         packets = _safe_mapping(context.get("component_analyst_input_packets"))
         recoveries = _safe_mapping(context.get("recovery_bindings"))
@@ -5956,8 +5976,7 @@ class RunKernel:
             ):
                 return
             raise RunKernelTransitionError(
-                "recovery scheduler context rejects changed duplicate "
-                "component registration"
+                "recovery scheduler context rejects changed duplicate component registration"
             )
         packets[component_id] = proposed_packet
         recoveries[component_id] = proposed_recovery
@@ -6950,8 +6969,7 @@ class RunKernel:
             )
         if not self.state.semantic_observation_admission_history:
             raise RunKernelTransitionError(
-                "component coverage reduction requires at least one admitted "
-                "SemanticObservation"
+                "component coverage reduction requires at least one admitted SemanticObservation"
             )
         accepted = self.state.initial_answer_contract
         resolved_contract_digest = (
@@ -7056,8 +7074,7 @@ class RunKernel:
                 )
             if expected and value != expected:
                 raise RunKernelTransitionError(
-                    "D-prime source-obligation authority "
-                    f"{label} does not match bound ComponentCoverage"
+                    f"D-prime source-obligation authority {label} does not match bound ComponentCoverage"
                 )
         for label, value in (
             ("source_obligation_authority_id", source_obligation_authority_id),
@@ -7174,8 +7191,7 @@ class RunKernel:
                 )
             if expected and value != expected:
                 raise RunKernelTransitionError(
-                    "D-prime citation-source handoff "
-                    f"{label} does not match prior authority"
+                    f"D-prime citation-source handoff {label} does not match prior authority"
                 )
         for label, value in (
             ("citation_source_handoff_id", citation_source_handoff_id),
@@ -7355,13 +7371,11 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not _clean_text(parent_question_meaning_record_id, limit=160):
             raise RunKernelTransitionError(
-                "semantic producer bundle commit requires a parent "
-                "QuestionMeaningRecord id binding"
+                "semantic producer bundle commit requires a parent QuestionMeaningRecord id binding"
             )
         if not _clean_text(parent_proposal_digest, limit=128):
             raise RunKernelTransitionError(
-                "semantic producer bundle commit requires a parent proposal "
-                "digest binding"
+                "semantic producer bundle commit requires a parent proposal digest binding"
             )
         if int(component_count or 0) <= 0:
             raise RunKernelTransitionError(
@@ -7406,8 +7420,7 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
-                "recovered semantic delta commit requires an accepted initial "
-                "answer contract"
+                "recovered semantic delta commit requires an accepted initial answer contract"
             )
         accepted = self.state.initial_answer_contract
         resolved_contract_digest = (
@@ -7507,8 +7520,7 @@ class RunKernel:
                 or self.state.component_coverage_history
             ):
                 raise RunKernelTransitionError(
-                    "semantic producer bundle commit requires empty canonical "
-                    "semantic state"
+                    "semantic producer bundle commit requires empty canonical semantic state"
                 )
             staged = stage_semantic_producer_bundle_commit(
                 action_id=action.action_id,
@@ -7535,8 +7547,7 @@ class RunKernel:
             if isinstance(exc, RunKernelTransitionError):
                 raise
             raise RunKernelTransitionError(
-                "semantic producer bundle commit failed before canonical "
-                "semantic state mutation"
+                "semantic producer bundle commit failed before canonical semantic state mutation"
             ) from exc
         observation = Observation.from_action(
             action,
@@ -7705,8 +7716,7 @@ class RunKernel:
                 )
             if not observation_payload or not content_reference_payloads:
                 raise RunKernelTransitionError(
-                    "recovered semantic delta commit requires SemanticObservation "
-                    "and sanitized content references"
+                    "recovered semantic delta commit requires SemanticObservation and sanitized content references"
                 )
             if not coverage_payload:
                 raise RunKernelTransitionError(
@@ -7788,8 +7798,7 @@ class RunKernel:
             if isinstance(exc, RunKernelTransitionError):
                 raise
             raise RunKernelTransitionError(
-                "recovered semantic delta commit failed before canonical "
-                "semantic state mutation"
+                "recovered semantic delta commit failed before canonical semantic state mutation"
             ) from exc
 
         observation = Observation.from_action(
@@ -8026,8 +8035,7 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
-                "contract amendment application requires an accepted "
-                "initial answer contract"
+                "contract amendment application requires an accepted initial answer contract"
             )
         if not self.state.contract_amendment_admission_history:
             raise RunKernelTransitionError(
@@ -8210,8 +8218,7 @@ class RunKernel:
         bridge = dict(bridge_input) if isinstance(bridge_input, Mapping) else {}
         if not bridge:
             raise RunKernelTransitionError(
-                "component-scoped source custody requires an offline "
-                "SearchExecutor bridge projection"
+                "component-scoped source custody requires an offline SearchExecutor bridge projection"
             )
         projection = (
             self.state.evidence_ledger.record_component_scoped_source_custody_from_offline_search_executor_bridge(
@@ -8532,6 +8539,34 @@ class RunKernel:
         candidate_set: Mapping[str, Any],
         reason: str = "admit_parent_custody_bound_navigation_candidates",
     ) -> AuthorizedAction:
+        preview = self.preview_searchos_navigation_candidate_admission(
+            candidate_set=candidate_set
+        )
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_CANDIDATE_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_CANDIDATES_ADMIT,
+            reason=reason,
+            inputs={
+                "candidate_set": dict(candidate_set),
+                "predicted_admitted_candidate_set_ref": preview[
+                    "admitted_candidate_set_ref"
+                ],
+                "predicted_admitted_destination_binding_refs": preview[
+                    "admitted_destination_binding_refs"
+                ],
+            },
+            expected_observation_type=(
+                ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED
+            ),
+        )
+
+    def preview_searchos_navigation_candidate_admission(
+        self,
+        *,
+        candidate_set: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Predict a URL-free canonical prefix without issuing an action."""
+
         from core.searchos_navigation_runtime import (
             SearchOSNavigationError,
             admit_searchos_navigation_candidate_set,
@@ -8559,28 +8594,37 @@ class RunKernel:
                 )
             admitted = predicted["candidate_sets_by_id"][new_ids.pop()]
             admitted_ref = searchos_navigation_candidate_set_ref(admitted)
+            admitted_binding_refs = []
+            for candidate_ref in admitted.get("navigation_candidate_refs", ()):
+                option_ref = dict(candidate_ref.get("stable_option_ref") or {})
+                option = dict(
+                    predicted["options_by_id"].get(
+                        option_ref.get("navigation_option_id")
+                    )
+                    or {}
+                )
+                binding_ref = dict(option.get("destination_binding_ref") or {})
+                if binding_ref and binding_ref not in admitted_binding_refs:
+                    admitted_binding_refs.append(binding_ref)
         except (ValueError, SearchOSNavigationError) as exc:
             raise RunKernelTransitionError(str(exc)) from exc
-        return self.authorize(
-            stage=SEARCHOS_NAVIGATION_CANDIDATE_ADMISSION_STAGE,
-            action_type=ActionType.SEARCHOS_NAVIGATION_CANDIDATES_ADMIT,
-            reason=reason,
-            inputs={
-                "candidate_set": dict(candidate_set),
-                "predicted_admitted_candidate_set_ref": admitted_ref,
-            },
-            expected_observation_type=(
-                ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED
-            ),
-        )
+        return {
+            "admitted_candidate_set_ref": admitted_ref,
+            "admitted_destination_binding_refs": admitted_binding_refs,
+        }
 
     def authorize_searchos_navigation_selection(
         self,
         *,
         navigation_candidate_ref: Mapping[str, Any],
         destination_registry: Any,
+        judgment_decision_ref: Mapping[str, Any] | None = None,
         reason: str = "admit_exact_current_navigation_selection",
     ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            admit_pending_searchos_navigation_selection,
+            validate_pending_searchos_navigation_admission,
+        )
         from core.searchos_navigation_runtime import (
             SearchOSNavigationError,
             admit_searchos_navigation_selection,
@@ -8588,28 +8632,88 @@ class RunKernel:
             navigation_selection_ref,
         )
 
-        if not self.state.searchos_navigation_state:
+        if not self.state.searchos_navigation_state or not self.state.searchos_state:
             raise RunKernelTransitionError(
-                "navigation selection requires initialized state"
+                "navigation selection requires both initialized SearchOS states"
+            )
+        if judgment_decision_ref is None:
+            raise RunKernelTransitionError(
+                "navigation selection requires exact pending judgment decision"
             )
         try:
-            _, selection, edge = admit_searchos_navigation_selection(
+            pending_facts = validate_pending_searchos_navigation_admission(
+                self.state.searchos_state,
+                judgment_decision_ref=judgment_decision_ref,
+                navigation_candidate_ref=navigation_candidate_ref,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        try:
+            if (
+                pending_facts["read_nomination_count_before"]
+                >= pending_facts["read_nominations_per_slot"]
+            ):
+                raise ValueError("navigation_read_nomination_limit_exhausted")
+            if (
+                pending_facts["navigation_selection_count_before"]
+                >= pending_facts["navigation_selections_per_slot"]
+            ):
+                raise ValueError("navigation_selection_limit_exhausted")
+            predicted_navigation, selection, edge = admit_searchos_navigation_selection(
                 self.state.searchos_navigation_state,
                 navigation_candidate_ref=navigation_candidate_ref,
                 destination_registry=destination_registry,
+                navigation_max_depth=pending_facts["navigation_max_depth"],
+                navigation_selections_per_slot=pending_facts[
+                    "navigation_selections_per_slot"
+                ],
+                navigation_edges_per_run=pending_facts["navigation_edges_per_run"],
+                admission_policy_ref=pending_facts["policy_snapshot_ref"],
+                pending_judgment_decision_ref=pending_facts["judgment_decision_ref"],
+            )
+            _validate_searchos_navigation_parent_custody(
+                searchos_state=self.state.searchos_state,
+                slot_id=pending_facts["slot_id"],
+                parent_custody_ref=edge["parent_custody_ref"],
+            )
+            selection_ref = navigation_selection_ref(selection)
+            edge_ref = navigation_edge_ref(edge)
+            admit_pending_searchos_navigation_selection(
+                self.state.searchos_state,
+                pending_facts=pending_facts,
+                navigation_selection_ref=selection_ref,
+                navigation_edge_ref=edge_ref,
             )
         except (ValueError, SearchOSNavigationError) as exc:
-            raise RunKernelTransitionError(str(exc)) from exc
+            failure_code = str(getattr(exc, "code", None) or exc)[:240]
+            return self.authorize(
+                stage=SEARCHOS_NAVIGATION_SELECTION_STAGE,
+                action_type=ActionType.SEARCHOS_NAVIGATION_SELECT,
+                reason="reject_pending_navigation_selection_without_charge",
+                inputs={
+                    "navigation_candidate_ref": dict(navigation_candidate_ref),
+                    "judgment_decision_ref": dict(
+                        pending_facts["judgment_decision_ref"]
+                    ),
+                    "navigation_admission_outcome": "rejected",
+                    "failure_code": failure_code,
+                    "destination_binding_resolution_validated": False,
+                },
+                expected_observation_type=(
+                    ObservationType.SEARCHOS_NAVIGATION_SELECTED
+                ),
+            )
+        del predicted_navigation
         return self.authorize(
             stage=SEARCHOS_NAVIGATION_SELECTION_STAGE,
             action_type=ActionType.SEARCHOS_NAVIGATION_SELECT,
             reason=reason,
             inputs={
                 "navigation_candidate_ref": dict(navigation_candidate_ref),
-                "predicted_navigation_selection_ref": (
-                    navigation_selection_ref(selection)
-                ),
-                "predicted_navigation_edge_ref": navigation_edge_ref(edge),
+                "judgment_decision_ref": dict(pending_facts["judgment_decision_ref"]),
+                "navigation_admission_outcome": "admitted",
+                "predicted_navigation_selection_ref": selection_ref,
+                "predicted_navigation_edge_ref": edge_ref,
                 "destination_binding_resolution_validated": True,
             },
             expected_observation_type=(
@@ -8628,6 +8732,9 @@ class RunKernel:
         failure_code: str,
         reason: str = "record_bounded_navigation_terminal_outcome",
     ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            reopen_searchos_after_navigation_destination_failure,
+        )
         from core.searchos_navigation_runtime import (
             SearchOSNavigationError,
             record_searchos_navigation_contributor_failure,
@@ -8635,6 +8742,8 @@ class RunKernel:
         )
 
         scope = _clean_text(outcome_scope, limit=80)
+        destination_slot_id = ""
+        destination_selection_ref: dict[str, Any] = {}
         try:
             if scope == "contributor":
                 record_searchos_navigation_contributor_failure(
@@ -8648,6 +8757,29 @@ class RunKernel:
                     stable_option_ref=dict(stable_option_ref or {}),
                     operation_identity_key=str(operation_identity_key or ""),
                     disposition=str(disposition or "destination_failed"),
+                    failure_code=failure_code,
+                )
+                option_id = str(
+                    dict(stable_option_ref or {}).get("navigation_option_id") or ""
+                )
+                option = dict(
+                    self.state.searchos_navigation_state["options_by_id"].get(option_id)
+                    or {}
+                )
+                option_state = dict(
+                    self.state.searchos_navigation_state["option_states_by_id"].get(
+                        option_id
+                    )
+                    or {}
+                )
+                destination_slot_id = str(option.get("slot_id") or "")
+                destination_selection_ref = dict(
+                    option_state.get("active_lease_ref") or {}
+                )
+                reopen_searchos_after_navigation_destination_failure(
+                    self.state.searchos_state,
+                    slot_id=destination_slot_id,
+                    navigation_selection_ref=destination_selection_ref,
                     failure_code=failure_code,
                 )
             else:
@@ -8667,11 +8799,45 @@ class RunKernel:
                 "operation_identity_key": operation_identity_key,
                 "disposition": disposition,
                 "failure_code": failure_code,
+                "destination_slot_id": destination_slot_id,
+                "navigation_selection_ref": destination_selection_ref,
             },
             expected_observation_type=(
                 ObservationType.SEARCHOS_NAVIGATION_TERMINAL_RECORDED
             ),
         )
+
+    def record_searchos_navigation_expansion_outcome(
+        self,
+        *,
+        parent_custody_ref: Mapping[str, Any],
+        expansion_posture: str,
+        admitted_candidate_set_ref: Mapping[str, Any] | None = None,
+    ) -> None:
+        from core.searchos_navigation_runtime import (
+            SearchOSNavigationError,
+            record_searchos_navigation_expansion_outcome,
+        )
+
+        try:
+            self.state.searchos_navigation_state = (
+                record_searchos_navigation_expansion_outcome(
+                    self.state.searchos_navigation_state,
+                    parent_custody_ref=parent_custody_ref,
+                    expansion_posture=expansion_posture,
+                    admitted_candidate_set_ref=admitted_candidate_set_ref,
+                )
+            )
+        except (ValueError, SearchOSNavigationError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections["searchos_navigation_optional_expansion"] = {
+            "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+            "canonical_state": True,
+            "expansion_posture": expansion_posture,
+            "parent_custody_ref": dict(parent_custody_ref),
+            "admitted_candidate_set_ref": dict(admitted_candidate_set_ref or {}),
+            "exact_locator_retained": False,
+        }
 
     def authorize_searchos_navigation_physical_custody_commit(
         self,
@@ -8959,6 +9125,11 @@ class RunKernel:
                     candidate_window=candidate_window,
                     navigation_candidate_window=(navigation_candidate_window),
                     read_custody_refs=read_custody_refs,
+                    navigation_logical_edge_charges=int(
+                        self.state.searchos_navigation_state.get(
+                            "logical_edge_charges", 0
+                        )
+                    ),
                 )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
@@ -9241,13 +9412,11 @@ class RunKernel:
     ) -> AuthorizedAction:
         if self.state.followup_author_payload_construction_state:
             raise RunKernelTransitionError(
-                "AG-96I3 Author execution must consume AG-96I3AD Author "
-                "payload envelope in a future execution phase"
+                "AG-96I3 Author execution must consume AG-96I3AD Author payload envelope in a future execution phase"
             )
         if self.state.followup_author_payload_authority_state:
             raise RunKernelTransitionError(
-                "AG-96I3 Author execution must consume AG-96I3AC Author "
-                "payload authority in a future execution phase"
+                "AG-96I3 Author execution must consume AG-96I3AC Author payload authority in a future execution phase"
             )
         if not self.state.final_answer_packet:
             raise RunKernelTransitionError(
@@ -9263,8 +9432,7 @@ class RunKernel:
             )
         if self._ag96i3_author_execution_lane_active():
             raise RunKernelTransitionError(
-                "AG-96I3 Author execution is subordinated to a future "
-                "X-bound activation consumer"
+                "AG-96I3 Author execution is subordinated to a future X-bound activation consumer"
             )
         expected_author_payload_ref_digest = _stable_packet_safe_json_digest(
             payload_ref
@@ -9575,8 +9743,7 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not self.state.followup_authorization_state:
             raise RunKernelTransitionError(
-                "follow-up provider-job execution requires reduced follow-up "
-                "authorization state"
+                "follow-up provider-job execution requires reduced follow-up authorization state"
             )
         candidate = _followup_checked(
             followup_sealed_candidate,
@@ -9777,8 +9944,7 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not self.state.followup_evidence_intake_state:
             raise RunKernelTransitionError(
-                "follow-up sufficiency recheck requires reduced follow-up "
-                "EvidenceLedger intake state"
+                "follow-up sufficiency recheck requires reduced follow-up EvidenceLedger intake state"
             )
         intake_state = self.state.followup_evidence_intake_state
         if intake_state.get("canonical_state") is not True:
@@ -9802,21 +9968,18 @@ class RunKernel:
         ) == AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE:
             if intake_state.get("runtime_evidence_intake_occurred") is not True:
                 raise RunKernelTransitionError(
-                    "AG-96I3M2 sufficiency recheck requires runtime "
-                    "EvidenceLedger intake"
+                    "AG-96I3M2 sufficiency recheck requires runtime EvidenceLedger intake"
                 )
             if intake_state.get("source_obligation_satisfied") not in {
                 True,
                 False,
             }:
                 raise RunKernelTransitionError(
-                    "AG-96I3M2 sufficiency recheck requires explicit source "
-                    "obligation posture"
+                    "AG-96I3M2 sufficiency recheck requires explicit source obligation posture"
                 )
             if intake_state.get("sufficiency_judgment_recheck_deferred") is not True:
                 raise RunKernelTransitionError(
-                    "AG-96I3M2 sufficiency recheck requires deferred "
-                    "SufficiencyJudgment"
+                    "AG-96I3M2 sufficiency recheck requires deferred SufficiencyJudgment"
                 )
             if intake_state.get("citation_eligible") is not False:
                 raise RunKernelTransitionError(
@@ -9915,8 +10078,7 @@ class RunKernel:
     ) -> AuthorizedAction:
         if not self.state.followup_sufficiency_recheck_state:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires reduced "
-                "follow-up sufficiency recheck state"
+                "follow-up FinalAnswerPacket readiness requires reduced follow-up sufficiency recheck state"
             )
         recheck_state = self.state.followup_sufficiency_recheck_state
         if recheck_state.get("canonical_state") is not True:
@@ -9933,8 +10095,7 @@ class RunKernel:
             FOLLOWUP_SUFFICIENCY_RECHECK_MODE
         ):
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires fixture-only "
-                "sufficiency recheck mode"
+                "follow-up FinalAnswerPacket readiness requires fixture-only sufficiency recheck mode"
             )
         if recheck_state.get("evidence_ledger_intake_mode") != (
             AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
@@ -9958,53 +10119,44 @@ class RunKernel:
             )
         if self.state.final_answer_packet:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires canonical "
-                "FinalAnswerPacket unchanged"
+                "follow-up FinalAnswerPacket readiness requires canonical FinalAnswerPacket unchanged"
             )
         if self.state.final_answer_authority_projection:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires final-answer "
-                "authority projection unchanged"
+                "follow-up FinalAnswerPacket readiness requires final-answer authority projection unchanged"
             )
         if self.state.followup_final_answer_packet_readiness_state.get(
             "recheck_id"
         ) == recheck_state.get("recheck_id"):
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness already recorded for "
-                "this recheck"
+                "follow-up FinalAnswerPacket readiness already recorded for this recheck"
             )
         if not self.state.sufficiency_judgment_projection:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires canonical "
-                "SufficiencyJudgment projection"
+                "follow-up FinalAnswerPacket readiness requires canonical SufficiencyJudgment projection"
             )
         sufficiency = self.state.sufficiency_judgment_projection
         if sufficiency.get("owner") != "RunKernel.RunAuthoritySufficiencyJudgment":
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires RunAuthority "
-                "SufficiencyJudgment"
+                "follow-up FinalAnswerPacket readiness requires RunAuthority SufficiencyJudgment"
             )
         if sufficiency.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires canonical "
-                "SufficiencyJudgment"
+                "follow-up FinalAnswerPacket readiness requires canonical SufficiencyJudgment"
             )
         ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
         if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires EvidenceLedger "
-                "projection"
+                "follow-up FinalAnswerPacket readiness requires EvidenceLedger projection"
             )
         if ledger_projection.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires canonical "
-                "EvidenceLedger"
+                "follow-up FinalAnswerPacket readiness requires canonical EvidenceLedger"
             )
         intake_state = self.state.followup_evidence_intake_state
         if intake_state.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket readiness requires canonical "
-                "EvidenceLedger intake state"
+                "follow-up FinalAnswerPacket readiness requires canonical EvidenceLedger intake state"
             )
         canonical_inputs = {
             "run_id": recheck_state.get("run_id"),
@@ -10145,8 +10297,7 @@ class RunKernel:
         ):
             if readiness_state.get(boundary_field) is not False:
                 raise RunKernelTransitionError(
-                    "blocked FinalAnswerPacket shell requires readiness "
-                    f"{boundary_field}=False"
+                    f"blocked FinalAnswerPacket shell requires readiness {boundary_field}=False"
                 )
         if readiness_state.get("author_execution_deferred") is not True:
             raise RunKernelTransitionError(
@@ -10164,13 +10315,11 @@ class RunKernel:
             )
         if self.state.final_answer_packet:
             raise RunKernelTransitionError(
-                "blocked FinalAnswerPacket shell requires no existing canonical "
-                "FinalAnswerPacket"
+                "blocked FinalAnswerPacket shell requires no existing canonical FinalAnswerPacket"
             )
         if self.state.final_answer_authority_projection:
             raise RunKernelTransitionError(
-                "blocked FinalAnswerPacket shell requires final-answer authority "
-                "projection unchanged"
+                "blocked FinalAnswerPacket shell requires final-answer authority projection unchanged"
             )
         recheck_state = self.state.followup_sufficiency_recheck_state
         if recheck_state.get("canonical_state") is not True:
@@ -10404,8 +10553,7 @@ class RunKernel:
             )
         if self.state.final_answer_authority_projection:
             raise RunKernelTransitionError(
-                "final evidence selection requires final-answer authority "
-                "projection unchanged"
+                "final evidence selection requires final-answer authority projection unchanged"
             )
         readiness_state = self.state.followup_final_answer_packet_readiness_state
         if readiness_state.get("owner") != (
@@ -10468,10 +10616,7 @@ class RunKernel:
         readiness_id = readiness_state.get("packet_preparation_readiness_id")
         shell_digest = followup_projection_digest(shell_state)
         readiness_digest = followup_projection_digest(readiness_state)
-        selection_id = (
-            "followup-final-evidence-selection:"
-            f"{readiness_digest[:16]}:{shell_digest[:16]}"
-        )
+        selection_id = f"followup-final-evidence-selection:{readiness_digest[:16]}:{shell_digest[:16]}"
         canonical_inputs = {
             "run_id": shell_state.get("run_id"),
             "checkpoint_id": shell_state.get("checkpoint_id"),
@@ -10761,10 +10906,7 @@ class RunKernel:
             )
         selection_digest = followup_projection_digest(selection_state)
         packet_digest = followup_projection_digest(packet)
-        citation_eligibility_id = (
-            "followup-citation-eligibility:"
-            f"{selection_digest[:16]}:{packet_digest[:16]}"
-        )
+        citation_eligibility_id = f"followup-citation-eligibility:{selection_digest[:16]}:{packet_digest[:16]}"
         canonical_inputs = {
             "run_id": selection_state.get("run_id"),
             "checkpoint_id": selection_state.get("checkpoint_id"),
@@ -11937,51 +12079,42 @@ class RunKernel:
     ) -> AuthorizedAction:
         if self.state.followup_citation_rendering_state:
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
-                "an AG-96I3T1 citation rendering state"
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite an AG-96I3T1 citation rendering state"
             )
         if self.state.followup_citation_source_handoff_state:
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
-                "an AG-96I3R1 citation source handoff"
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite an AG-96I3R1 citation source handoff"
             )
         if self.state.followup_citation_eligibility_state:
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
-                "an AG-96I3Q1 citation-eligible packet"
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite an AG-96I3Q1 citation-eligible packet"
             )
         if self.state.followup_final_evidence_selection_state:
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
-                "an AG-96I3P1 evidence-selected packet"
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite an AG-96I3P1 evidence-selected packet"
             )
         if self.state.followup_blocked_final_answer_packet_shell_state:
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
-                "an AG-96I3O2 blocked packet shell"
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite an AG-96I3O2 blocked packet shell"
             )
         if not self.state.followup_sufficiency_recheck_state:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires reduced "
-                "follow-up sufficiency recheck state"
+                "follow-up FinalAnswerPacket preparation requires reduced follow-up sufficiency recheck state"
             )
         recheck_state = self.state.followup_sufficiency_recheck_state
         if recheck_state.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires canonical "
-                "recheck state"
+                "follow-up FinalAnswerPacket preparation requires canonical recheck state"
             )
         if recheck_state.get("sufficiency_recheck_mode") != (
             FOLLOWUP_SUFFICIENCY_RECHECK_MODE
         ):
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires fixture-only "
-                "sufficiency recheck mode"
+                "follow-up FinalAnswerPacket preparation requires fixture-only sufficiency recheck mode"
             )
         if recheck_state.get("final_answer_packet_deferred") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires recheck packet "
-                "deferral posture"
+                "follow-up FinalAnswerPacket preparation requires recheck packet deferral posture"
             )
         if recheck_state.get("author_activation_allowed") is not False:
             raise RunKernelTransitionError(
@@ -11995,36 +12128,30 @@ class RunKernel:
             )
         if not self.state.sufficiency_judgment_projection:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires canonical "
-                "SufficiencyJudgment projection"
+                "follow-up FinalAnswerPacket preparation requires canonical SufficiencyJudgment projection"
             )
         sufficiency = self.state.sufficiency_judgment_projection
         if sufficiency.get("owner") != "RunKernel.RunAuthoritySufficiencyJudgment":
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires "
-                "RunAuthority SufficiencyJudgment"
+                "follow-up FinalAnswerPacket preparation requires RunAuthority SufficiencyJudgment"
             )
         if sufficiency.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires canonical "
-                "SufficiencyJudgment"
+                "follow-up FinalAnswerPacket preparation requires canonical SufficiencyJudgment"
             )
         ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
         if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires EvidenceLedger "
-                "projection"
+                "follow-up FinalAnswerPacket preparation requires EvidenceLedger projection"
             )
         if ledger_projection.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires canonical "
-                "EvidenceLedger"
+                "follow-up FinalAnswerPacket preparation requires canonical EvidenceLedger"
             )
         intake_state = self.state.followup_evidence_intake_state
         if intake_state.get("canonical_state") is not True:
             raise RunKernelTransitionError(
-                "follow-up FinalAnswerPacket preparation requires canonical "
-                "EvidenceLedger intake state"
+                "follow-up FinalAnswerPacket preparation requires canonical EvidenceLedger intake state"
             )
         canonical_inputs = {
             "run_id": recheck_state.get("run_id"),
@@ -12147,8 +12274,7 @@ class RunKernel:
             )
         if not self.state.final_answer_authority_projection:
             raise RunKernelTransitionError(
-                "follow-up Author gate requires canonical FinalAnswerPacket "
-                "authority projection"
+                "follow-up Author gate requires canonical FinalAnswerPacket authority projection"
             )
         authority = self.state.final_answer_authority_projection
         if authority.get("owner") != "RunKernel.FinalAnswerPacket":
@@ -12308,8 +12434,7 @@ class RunKernel:
             )
         if authority != u1_projection:
             raise RunKernelTransitionError(
-                "V1 Author gate requires final_answer_authority_projection "
-                "equal to U1 projection"
+                "V1 Author gate requires final_answer_authority_projection equal to U1 projection"
             )
         if _safe_mapping(u1_state.get("final_answer_authority_projection")) != (
             u1_projection
@@ -14085,8 +14210,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AF5B Author response finalization"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AF5B Author response finalization"
                 )
             if action.action_type is ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE:
                 raise RunKernelTransitionError(
@@ -14115,8 +14239,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AF5A Author execution from AF4D"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AF5A Author execution from AF4D"
                 )
             if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D:
                 raise RunKernelTransitionError(
@@ -14144,8 +14267,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AF4D Author model request assembly"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AF4D Author model request assembly"
                 )
             if (
                 action.action_type
@@ -14174,8 +14296,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AF4B2 Author evidence-content bridge"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AF4B2 Author evidence-content bridge"
                 )
             if (
                 action.action_type
@@ -14205,8 +14326,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AF4 Author invocation construction"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AF4 Author invocation construction"
                 )
             if (
                 action.action_type
@@ -14235,8 +14355,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AE Author execution from AD"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AE Author execution from AD"
                 )
             if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD:
                 raise RunKernelTransitionError(
@@ -14260,8 +14379,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AD Author payload construction"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AD Author payload construction"
                 )
             if action.action_type is ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION:
                 raise RunKernelTransitionError(
@@ -14284,8 +14402,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3AC Author payload authority"
+                    "stale upstream follow-up action cannot reduce after AG-96I3AC Author payload authority"
                 )
             if action.action_type is ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY:
                 raise RunKernelTransitionError(
@@ -14307,8 +14424,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3Z Author prompt assembly manifest"
+                    "stale upstream follow-up action cannot reduce after AG-96I3Z Author prompt assembly manifest"
                 )
             if (
                 action.action_type
@@ -14332,8 +14448,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3Y Author execution activation"
+                    "stale upstream follow-up action cannot reduce after AG-96I3Y Author execution activation"
                 )
             if (
                 action.action_type
@@ -14356,8 +14471,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3X Author input materialization"
+                    "stale upstream follow-up action cannot reduce after AG-96I3X Author input materialization"
                 )
             if (
                 action.action_type
@@ -14378,8 +14492,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_GATE,
             }:
                 raise RunKernelTransitionError(
-                    "stale upstream follow-up action cannot reduce after "
-                    "AG-96I3W Author execution readiness"
+                    "stale upstream follow-up action cannot reduce after AG-96I3W Author execution readiness"
                 )
             if (
                 action.action_type
@@ -14403,8 +14516,7 @@ class RunKernel:
             }
         ):
             raise RunKernelTransitionError(
-                "stale upstream follow-up action cannot reduce after AG-96I3V1 "
-                "U1-bound Author gate"
+                "stale upstream follow-up action cannot reduce after AG-96I3V1 U1-bound Author gate"
             )
         if (
             self.state.followup_author_gate_state
@@ -14428,8 +14540,7 @@ class RunKernel:
             ActionType.FOLLOWUP_CITATION_RENDERING,
         }:
             raise RunKernelTransitionError(
-                "stale upstream follow-up action cannot reduce after AG-96I3U1 "
-                "author input authority"
+                "stale upstream follow-up action cannot reduce after AG-96I3U1 author input authority"
             )
         if (
             self.state.followup_author_input_authority_state
@@ -14443,32 +14554,28 @@ class RunKernel:
             and self.state.followup_citation_rendering_state
         ):
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot reduce "
-                "after AG-96I3T1 citation rendering"
+                "legacy follow-up FinalAnswerPacket preparation cannot reduce after AG-96I3T1 citation rendering"
             )
         if (
             action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
             and self.state.followup_citation_source_handoff_state
         ):
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot reduce "
-                "after AG-96I3R1 citation source handoff"
+                "legacy follow-up FinalAnswerPacket preparation cannot reduce after AG-96I3R1 citation source handoff"
             )
         if (
             action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
             and self.state.followup_citation_eligibility_state
         ):
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot reduce "
-                "after AG-96I3Q1 citation eligibility"
+                "legacy follow-up FinalAnswerPacket preparation cannot reduce after AG-96I3Q1 citation eligibility"
             )
         if (
             action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
             and self.state.followup_final_evidence_selection_state
         ):
             raise RunKernelTransitionError(
-                "legacy follow-up FinalAnswerPacket preparation cannot reduce "
-                "after AG-96I3P1 final evidence selection"
+                "legacy follow-up FinalAnswerPacket preparation cannot reduce after AG-96I3P1 final evidence selection"
             )
         if (
             action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
@@ -14484,8 +14591,7 @@ class RunKernel:
             and self.state.followup_citation_rendering_state
         ):
             raise RunKernelTransitionError(
-                "stale AG-96I3O2 blocked packet shell cannot reduce after "
-                "AG-96I3T1 citation rendering"
+                "stale AG-96I3O2 blocked packet shell cannot reduce after AG-96I3T1 citation rendering"
             )
         if (
             action.action_type
@@ -14493,8 +14599,7 @@ class RunKernel:
             and self.state.followup_citation_source_handoff_state
         ):
             raise RunKernelTransitionError(
-                "stale AG-96I3O2 blocked packet shell cannot reduce after "
-                "AG-96I3R1 citation source handoff"
+                "stale AG-96I3O2 blocked packet shell cannot reduce after AG-96I3R1 citation source handoff"
             )
         if (
             action.action_type
@@ -14502,8 +14607,7 @@ class RunKernel:
             and self.state.followup_citation_eligibility_state
         ):
             raise RunKernelTransitionError(
-                "stale AG-96I3O2 blocked packet shell cannot reduce after "
-                "AG-96I3Q1 citation eligibility"
+                "stale AG-96I3O2 blocked packet shell cannot reduce after AG-96I3Q1 citation eligibility"
             )
         if (
             action.action_type
@@ -14511,24 +14615,20 @@ class RunKernel:
             and self.state.followup_final_evidence_selection_state
         ):
             raise RunKernelTransitionError(
-                "stale AG-96I3O2 blocked packet shell cannot reduce after "
-                "AG-96I3P1 final evidence selection"
+                "stale AG-96I3O2 blocked packet shell cannot reduce after AG-96I3P1 final evidence selection"
             )
         if action.action_type is ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION:
             if self.state.followup_citation_rendering_state:
                 raise RunKernelTransitionError(
-                    "stale AG-96I3P1 final evidence selection cannot reduce "
-                    "after AG-96I3T1 citation rendering"
+                    "stale AG-96I3P1 final evidence selection cannot reduce after AG-96I3T1 citation rendering"
                 )
             if self.state.followup_citation_source_handoff_state:
                 raise RunKernelTransitionError(
-                    "stale AG-96I3P1 final evidence selection cannot reduce "
-                    "after AG-96I3R1 citation source handoff"
+                    "stale AG-96I3P1 final evidence selection cannot reduce after AG-96I3R1 citation source handoff"
                 )
             if self.state.followup_citation_eligibility_state:
                 raise RunKernelTransitionError(
-                    "stale AG-96I3P1 final evidence selection cannot reduce "
-                    "after AG-96I3Q1 citation eligibility"
+                    "stale AG-96I3P1 final evidence selection cannot reduce after AG-96I3Q1 citation eligibility"
                 )
             if self.state.followup_final_evidence_selection_state:
                 raise RunKernelTransitionError(
@@ -14536,16 +14636,14 @@ class RunKernel:
                 )
             if self.state.final_answer_packet.get("final_evidence_selected") is True:
                 raise RunKernelTransitionError(
-                    "AG-96I3P1 final evidence selection cannot overwrite a "
-                    "selected packet"
+                    "AG-96I3P1 final evidence selection cannot overwrite a selected packet"
                 )
             p1_observed_selection_state = _safe_mapping(
                 observation.payload.get("followup_final_evidence_selection_state")
             )
             if not p1_observed_selection_state:
                 raise RunKernelTransitionError(
-                    "follow-up final evidence selection observation requires "
-                    "followup_final_evidence_selection_state"
+                    "follow-up final evidence selection observation requires followup_final_evidence_selection_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             _followup_checked(
@@ -14581,13 +14679,11 @@ class RunKernel:
         if action.action_type is ActionType.FOLLOWUP_CITATION_ELIGIBILITY:
             if self.state.followup_citation_rendering_state:
                 raise RunKernelTransitionError(
-                    "stale AG-96I3Q1 citation eligibility cannot reduce after "
-                    "AG-96I3T1 citation rendering"
+                    "stale AG-96I3Q1 citation eligibility cannot reduce after AG-96I3T1 citation rendering"
                 )
             if self.state.followup_citation_source_handoff_state:
                 raise RunKernelTransitionError(
-                    "stale AG-96I3Q1 citation eligibility cannot reduce after "
-                    "AG-96I3R1 citation source handoff"
+                    "stale AG-96I3Q1 citation eligibility cannot reduce after AG-96I3R1 citation source handoff"
                 )
             if self.state.followup_citation_eligibility_state:
                 raise RunKernelTransitionError(
@@ -14597,16 +14693,14 @@ class RunKernel:
                 "citation_eligibility_deferred"
             ) is not True:
                 raise RunKernelTransitionError(
-                    "AG-96I3Q1 citation eligibility cannot overwrite a "
-                    "citation-eligible packet"
+                    "AG-96I3Q1 citation eligibility cannot overwrite a citation-eligible packet"
                 )
             q1_observed_citation_state = _safe_mapping(
                 observation.payload.get("followup_citation_eligibility_state")
             )
             if not q1_observed_citation_state:
                 raise RunKernelTransitionError(
-                    "follow-up citation eligibility observation requires "
-                    "followup_citation_eligibility_state"
+                    "follow-up citation eligibility observation requires followup_citation_eligibility_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             _followup_checked(
@@ -14645,8 +14739,7 @@ class RunKernel:
         if action.action_type is ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF:
             if self.state.followup_citation_rendering_state:
                 raise RunKernelTransitionError(
-                    "stale AG-96I3R1 citation source handoff cannot reduce after "
-                    "AG-96I3T1 citation rendering"
+                    "stale AG-96I3R1 citation source handoff cannot reduce after AG-96I3T1 citation rendering"
                 )
             if self.state.followup_citation_source_handoff_state:
                 raise RunKernelTransitionError(
@@ -14657,8 +14750,7 @@ class RunKernel:
             )
             if not r1_observed_handoff_state:
                 raise RunKernelTransitionError(
-                    "follow-up citation source handoff observation requires "
-                    "followup_citation_source_handoff_state"
+                    "follow-up citation source handoff observation requires followup_citation_source_handoff_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             _followup_checked(
@@ -14734,8 +14826,7 @@ class RunKernel:
             )
             if not t1_observed_rendering_state:
                 raise RunKernelTransitionError(
-                    "follow-up citation rendering observation requires "
-                    "followup_citation_rendering_state"
+                    "follow-up citation rendering observation requires followup_citation_rendering_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             _followup_checked(
@@ -14824,8 +14915,7 @@ class RunKernel:
             )
             if not u1_observed_authority_state:
                 raise RunKernelTransitionError(
-                    "follow-up author input authority observation requires "
-                    "followup_author_input_authority_state"
+                    "follow-up author input authority observation requires followup_author_input_authority_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -14977,8 +15067,7 @@ class RunKernel:
             )
             if not w_observed_readiness_state:
                 raise RunKernelTransitionError(
-                    "W Author execution readiness observation requires "
-                    "followup_author_execution_readiness_state"
+                    "W Author execution readiness observation requires followup_author_execution_readiness_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15089,8 +15178,7 @@ class RunKernel:
             )
             if not x_observed_materialization_state:
                 raise RunKernelTransitionError(
-                    "X Author input materialization observation requires "
-                    "followup_author_input_materialization_state"
+                    "X Author input materialization observation requires followup_author_input_materialization_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15227,8 +15315,7 @@ class RunKernel:
             )
             if not y_observed_activation_state:
                 raise RunKernelTransitionError(
-                    "Y Author execution activation observation requires "
-                    "followup_author_execution_activation_state"
+                    "Y Author execution activation observation requires followup_author_execution_activation_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15434,8 +15521,7 @@ class RunKernel:
             )
             if not ac_observed_payload_authority_state:
                 raise RunKernelTransitionError(
-                    "AC Author payload authority observation requires "
-                    "followup_author_payload_authority_state"
+                    "AC Author payload authority observation requires followup_author_payload_authority_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15523,8 +15609,7 @@ class RunKernel:
             )
             if not ad_observed_payload_construction_state:
                 raise RunKernelTransitionError(
-                    "AD Author payload construction observation requires "
-                    "followup_author_payload_construction_state"
+                    "AD Author payload construction observation requires followup_author_payload_construction_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15670,8 +15755,7 @@ class RunKernel:
             )
             if not ae_observed_execution_state:
                 raise RunKernelTransitionError(
-                    "AE Author execution observation requires "
-                    "followup_author_execution_from_ad_state"
+                    "AE Author execution observation requires followup_author_execution_from_ad_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15838,8 +15922,7 @@ class RunKernel:
             )
             if not af5a_observed_execution_state:
                 raise RunKernelTransitionError(
-                    "AF5A Author execution from AF4D observation requires "
-                    "followup_author_execution_from_af4d_state"
+                    "AF5A Author execution from AF4D observation requires followup_author_execution_from_af4d_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -15882,8 +15965,7 @@ class RunKernel:
             )
             if not af5b_observed_finalization_state:
                 raise RunKernelTransitionError(
-                    "AF5B Author response finalization observation requires "
-                    "followup_author_response_finalization_state"
+                    "AF5B Author response finalization observation requires followup_author_response_finalization_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             try:
@@ -16935,13 +17017,130 @@ class RunKernel:
                 ),
             }
         elif action.action_type is ActionType.SEARCHOS_NAVIGATION_SELECT:
+            from core.searchos_iterative_judgment_runtime import (
+                admit_pending_searchos_navigation_selection,
+                reject_pending_searchos_navigation_admission,
+                validate_pending_searchos_navigation_admission,
+            )
             from core.searchos_navigation_runtime import (
+                NAVIGATION_DESTINATION_BINDING_UNAVAILABLE,
                 admit_searchos_navigation_selection,
                 navigation_edge_ref,
                 navigation_selection_ref,
+                record_searchos_navigation_binding_unavailable,
+                record_searchos_navigation_destination_terminal,
             )
 
+            admission_outcome = str(
+                action.inputs.get("navigation_admission_outcome") or ""
+            )
+            if admission_outcome == "rejected":
+                failure_code = _clean_text(action.inputs.get("failure_code"), limit=240)
+                if observation.payload != {
+                    "navigation_admission_outcome": "rejected",
+                    "failure_code": failure_code,
+                }:
+                    raise RunKernelTransitionError(
+                        "navigation rejection observation mismatch"
+                    )
+                try:
+                    next_searchos_state = reject_pending_searchos_navigation_admission(
+                        self.state.searchos_state,
+                        judgment_decision_ref=_safe_mapping(
+                            action.inputs.get("judgment_decision_ref")
+                        ),
+                        navigation_candidate_ref=_safe_mapping(
+                            action.inputs.get("navigation_candidate_ref")
+                        ),
+                        failure_code=failure_code,
+                    )
+                    next_navigation_state = self.state.searchos_navigation_state
+                    if failure_code in {
+                        NAVIGATION_DESTINATION_BINDING_UNAVAILABLE,
+                        "navigation_physical_operation_already_terminal",
+                    }:
+                        candidate_ref = _safe_mapping(
+                            action.inputs.get("navigation_candidate_ref")
+                        )
+                        stable_option_ref = _safe_mapping(
+                            candidate_ref.get("stable_option_ref")
+                        )
+                        option = _safe_mapping(
+                            self.state.searchos_navigation_state["options_by_id"].get(
+                                stable_option_ref.get("navigation_option_id")
+                            )
+                        )
+                        binding_ref = _safe_mapping(
+                            option.get("destination_binding_ref")
+                        )
+                        terminal_record = _safe_mapping(
+                            self.state.searchos_navigation_state[
+                                "terminal_physical_operations_by_key"
+                            ].get(
+                                "read-navigation:"
+                                + str(binding_ref.get("physical_identity_digest") or "")
+                            )
+                        )
+                        if terminal_record:
+                            next_navigation_state = (
+                                record_searchos_navigation_destination_terminal(
+                                    self.state.searchos_navigation_state,
+                                    stable_option_ref=stable_option_ref,
+                                    operation_identity_key=(
+                                        "read-navigation:"
+                                        + str(
+                                            binding_ref.get("physical_identity_digest")
+                                            or ""
+                                        )
+                                    ),
+                                    disposition=str(
+                                        terminal_record.get("terminal_disposition")
+                                        or ""
+                                    ),
+                                    failure_code=str(
+                                        terminal_record.get("failure_code") or ""
+                                    ),
+                                )
+                            )
+                        else:
+                            next_navigation_state = (
+                                record_searchos_navigation_binding_unavailable(
+                                    self.state.searchos_navigation_state,
+                                    stable_option_ref=stable_option_ref,
+                                    failure_code=failure_code,
+                                )
+                            )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise RunKernelTransitionError(str(exc)) from exc
+                self.state.searchos_state = next_searchos_state
+                self.state.searchos_navigation_state = next_navigation_state
+                self.state.projections[action.stage] = {
+                    "owner": "RunKernel.SearchOSBreadcrumbNavigation",
+                    "canonical_state": True,
+                    "navigation_admission_outcome": "rejected",
+                    "failure_code": failure_code,
+                    "logical_edge_charged": False,
+                    "logical_read_nomination_charged": False,
+                    "searchos_read_nomination_charged": False,
+                    "destination_exact_locator_retained": False,
+                }
+                self.state.observations.append(observation)
+                self.state.next_observation_sequence += 1
+                return self.state
+            if admission_outcome != "admitted":
+                raise RunKernelTransitionError(
+                    "navigation admission outcome is invalid"
+                )
             try:
+                pending_facts = validate_pending_searchos_navigation_admission(
+                    self.state.searchos_state,
+                    judgment_decision_ref=_safe_mapping(
+                        action.inputs.get("judgment_decision_ref")
+                    ),
+                    navigation_candidate_ref=_safe_mapping(
+                        action.inputs.get("navigation_candidate_ref")
+                    ),
+                )
                 next_navigation_state, selection, edge = (
                     admit_searchos_navigation_selection(
                         self.state.searchos_navigation_state,
@@ -16954,10 +17153,32 @@ class RunKernel:
                             )
                             is True
                         ),
+                        navigation_max_depth=pending_facts["navigation_max_depth"],
+                        navigation_selections_per_slot=pending_facts[
+                            "navigation_selections_per_slot"
+                        ],
+                        navigation_edges_per_run=pending_facts[
+                            "navigation_edges_per_run"
+                        ],
+                        admission_policy_ref=pending_facts["policy_snapshot_ref"],
+                        pending_judgment_decision_ref=pending_facts[
+                            "judgment_decision_ref"
+                        ],
                     )
                 )
                 selection_ref = navigation_selection_ref(selection)
                 edge_ref = navigation_edge_ref(edge)
+                _validate_searchos_navigation_parent_custody(
+                    searchos_state=self.state.searchos_state,
+                    slot_id=pending_facts["slot_id"],
+                    parent_custody_ref=edge["parent_custody_ref"],
+                )
+                next_searchos_state = admit_pending_searchos_navigation_selection(
+                    self.state.searchos_state,
+                    pending_facts=pending_facts,
+                    navigation_selection_ref=selection_ref,
+                    navigation_edge_ref=edge_ref,
+                )
                 if (
                     selection_ref
                     != _safe_mapping(
@@ -16985,6 +17206,7 @@ class RunKernel:
                     )
             except (KeyError, TypeError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
+            self.state.searchos_state = next_searchos_state
             self.state.searchos_navigation_state = next_navigation_state
             self.state.projections[action.stage] = {
                 "owner": "RunKernel.SearchOSBreadcrumbNavigation",
@@ -16993,9 +17215,13 @@ class RunKernel:
                 "navigation_edge_ref": edge_ref,
                 "logical_edge_charged": True,
                 "logical_read_nomination_charged": True,
+                "searchos_read_nomination_charged": True,
                 "destination_exact_locator_retained": False,
             }
         elif action.action_type is ActionType.SEARCHOS_NAVIGATION_TERMINAL_RECORD:
+            from core.searchos_iterative_judgment_runtime import (
+                reopen_searchos_after_navigation_destination_failure,
+            )
             from core.searchos_navigation_runtime import (
                 record_searchos_navigation_contributor_failure,
                 record_searchos_navigation_destination_terminal,
@@ -17041,6 +17267,16 @@ class RunKernel:
                             ),
                         )
                     )
+                    next_searchos_state = (
+                        reopen_searchos_after_navigation_destination_failure(
+                            self.state.searchos_state,
+                            slot_id=str(action.inputs.get("destination_slot_id") or ""),
+                            navigation_selection_ref=_safe_mapping(
+                                action.inputs.get("navigation_selection_ref")
+                            ),
+                            failure_code=str(action.inputs.get("failure_code") or ""),
+                        )
+                    )
                 else:
                     raise ValueError(
                         "navigation_terminal_outcome_scope_invalid"
@@ -17048,6 +17284,8 @@ class RunKernel:
             except (KeyError, TypeError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.searchos_navigation_state = next_navigation_state
+            if action.inputs.get("outcome_scope") == "destination":
+                self.state.searchos_state = next_searchos_state
             self.state.projections[action.stage] = deepcopy(
                 observed_outcome
             )
@@ -17614,8 +17852,7 @@ class RunKernel:
             )
             if not proposal_payload:
                 raise RunKernelTransitionError(
-                    "initial answer contract acceptance observation requires a "
-                    "question_meaning_record proposal payload"
+                    "initial answer contract acceptance observation requires a question_meaning_record proposal payload"
                 )
             if self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
@@ -17655,8 +17892,7 @@ class RunKernel:
             )
             if not contract_payload:
                 raise RunKernelTransitionError(
-                    "D-prime contract authority observation requires "
-                    "answer_contract_authority payload"
+                    "D-prime contract authority observation requires answer_contract_authority payload"
                 )
             expected_version = _clean_text(
                 action.inputs.get("expected_contract_version"),
@@ -17801,8 +18037,7 @@ class RunKernel:
         elif action.action_type is ActionType.SEMANTIC_OBSERVATION_ADMIT:
             if not self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
-                    "semantic observation admission requires an accepted "
-                    "initial answer contract"
+                    "semantic observation admission requires an accepted initial answer contract"
                 )
             admission_payload = {
                 "semantic_observation": _safe_mapping(
@@ -17857,14 +18092,12 @@ class RunKernel:
         elif action.action_type is ActionType.COMPONENT_COVERAGE_REDUCE:
             if not self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
-                    "component coverage reduction requires an accepted "
-                    "initial answer contract"
+                    "component coverage reduction requires an accepted initial answer contract"
                 )
             reduction_payload = _safe_mapping(observation.payload)
             if not reduction_payload.get("component_coverage_record"):
                 raise RunKernelTransitionError(
-                    "component coverage reduction observation requires a "
-                    "component_coverage_record proposal payload"
+                    "component coverage reduction observation requires a component_coverage_record proposal payload"
                 )
             existing_ids = [
                 _safe_mapping(item).get("coverage_record_id")
@@ -17912,8 +18145,7 @@ class RunKernel:
             )
             if not source_state:
                 raise RunKernelTransitionError(
-                    "D-prime source-obligation authority observation requires "
-                    "authority payload"
+                    "D-prime source-obligation authority observation requires authority payload"
                 )
             if source_state.get("owner") != "RunKernel.DPrimeSourceObligationAuthority":
                 raise RunKernelTransitionError(
@@ -17961,13 +18193,11 @@ class RunKernel:
                 )
             if source_state.get("component_coverage_only_treated_as_pass") is not False:
                 raise RunKernelTransitionError(
-                    "D-prime source-obligation authority cannot treat "
-                    "ComponentCoverage alone as PASS"
+                    "D-prime source-obligation authority cannot treat ComponentCoverage alone as PASS"
                 )
             if source_state.get("retained_ids_alone_are_authority") is not False:
                 raise RunKernelTransitionError(
-                    "D-prime source-obligation authority cannot treat retained "
-                    "ids alone as authority"
+                    "D-prime source-obligation authority cannot treat retained ids alone as authority"
                 )
             _require_false_fields(
                 source_state,
@@ -17990,8 +18220,7 @@ class RunKernel:
             ):
                 if coverage_ref.get(label) != coverage.get(label):
                     raise RunKernelTransitionError(
-                        "D-prime source-obligation authority ComponentCoverage "
-                        f"{label} mismatch"
+                        f"D-prime source-obligation authority ComponentCoverage {label} mismatch"
                     )
             action_source_ids = _preserve_text_list(
                 action.inputs.get("source_obligation_candidate_ids") or []
@@ -18028,8 +18257,7 @@ class RunKernel:
             )
             if not handoff_state:
                 raise RunKernelTransitionError(
-                    "D-prime citation-source handoff observation requires "
-                    "handoff payload"
+                    "D-prime citation-source handoff observation requires handoff payload"
                 )
             if handoff_state.get("owner") != (
                 "RunKernel.DPrimeCitationSourceHandoffAuthority"
@@ -18139,14 +18367,12 @@ class RunKernel:
         elif action.action_type is ActionType.CONTRACT_AMENDMENT_ADMIT:
             if not self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
-                    "contract amendment admission requires an accepted "
-                    "initial answer contract"
+                    "contract amendment admission requires an accepted initial answer contract"
                 )
             admission_payload = _safe_mapping(observation.payload)
             if not admission_payload.get("contract_amendment_record"):
                 raise RunKernelTransitionError(
-                    "contract amendment admission observation requires a "
-                    "contract_amendment_record proposal payload"
+                    "contract amendment admission observation requires a contract_amendment_record proposal payload"
                 )
             existing_ids = [
                 _safe_mapping(item).get("amendment_record_id")
@@ -18225,13 +18451,11 @@ class RunKernel:
         elif action.action_type is ActionType.CONTRACT_AMENDMENT_APPLY:
             if not self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
-                    "contract amendment application requires an accepted "
-                    "initial answer contract"
+                    "contract amendment application requires an accepted initial answer contract"
                 )
             if not self.state.contract_amendment_admission_history:
                 raise RunKernelTransitionError(
-                    "contract amendment application requires a canonical "
-                    "admitted amendment"
+                    "contract amendment application requires a canonical admitted amendment"
                 )
             amendment_record_id = _clean_text(
                 action.inputs.get("amendment_record_id")
@@ -18262,8 +18486,7 @@ class RunKernel:
                     break
             if not admitted_amendment:
                 raise RunKernelTransitionError(
-                    "contract amendment application could not find the "
-                    "canonical admitted amendment"
+                    "contract amendment application could not find the canonical admitted amendment"
                 )
             recovery_authority = (
                 self._require_multicomponent_recovery_amendment_authority(
@@ -18364,8 +18587,7 @@ class RunKernel:
                 )
             if not plan_projection:
                 raise RunKernelTransitionError(
-                    "SearchWorkPlan construction observation requires "
-                    "search_work_plan_projection"
+                    "SearchWorkPlan construction observation requires search_work_plan_projection"
                 )
             validation = _safe_mapping(observation.payload.get("validation"))
             if not validation:
@@ -18618,8 +18840,7 @@ class RunKernel:
             ):
                 if display.get(label) != action.inputs.get(label):
                     raise RunKernelTransitionError(
-                        "D-prime source display "
-                        f"{label} does not match authorized action"
+                        f"D-prime source display {label} does not match authorized action"
                     )
             handoff = self.state.dprime_citation_source_handoff_projection
             if display.get("citation_source_handoff_id") != handoff.get(
@@ -19028,8 +19249,7 @@ class RunKernel:
             )
             if not followup_state:
                 raise RunKernelTransitionError(
-                    "follow-up authorization observation requires "
-                    "followup_authorization_state"
+                    "follow-up authorization observation requires followup_authorization_state"
                 )
             for sealed in followup_state.get("sealed_candidates", []) or []:
                 if not isinstance(sealed, Mapping):
@@ -19140,21 +19360,18 @@ class RunKernel:
             )
             if not observed_execution_state:
                 raise RunKernelTransitionError(
-                    "follow-up provider-job execution observation requires "
-                    "followup_execution_state"
+                    "follow-up provider-job execution observation requires followup_execution_state"
                 )
             if not self.state.followup_authorization_state:
                 raise RunKernelTransitionError(
-                    "follow-up provider-job execution requires existing "
-                    "authorization state"
+                    "follow-up provider-job execution requires existing authorization state"
                 )
             if (
                 observed_execution_state.get("followup_authorization_consumption_id")
                 != self.state.followup_authorization_state.get("consumption_id")
             ):
                 raise RunKernelTransitionError(
-                    "follow-up provider-job execution must reference current "
-                    "authorization state"
+                    "follow-up provider-job execution must reference current authorization state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             _followup_checked(
@@ -19166,8 +19383,7 @@ class RunKernel:
                 observed_execution_state
             ):
                 raise RunKernelTransitionError(
-                    "follow-up provider-job execution observation claims closed "
-                    "answer authority"
+                    "follow-up provider-job execution observation claims closed answer authority"
                 )
             flags = _safe_mapping(
                 observed_execution_state.get("behavior_boundary_flags")
@@ -19188,8 +19404,7 @@ class RunKernel:
             ):
                 if observed_execution_state.get(field_name) is not False:
                     raise RunKernelTransitionError(
-                        "follow-up provider-job execution observation requires "
-                        f"{field_name}=False"
+                        f"follow-up provider-job execution observation requires {field_name}=False"
                     )
             if observed_execution_state.get("live_validation_not_run") is not True:
                 raise RunKernelTransitionError(
@@ -19323,8 +19538,7 @@ class RunKernel:
             )
             if not intake_state:
                 raise RunKernelTransitionError(
-                    "follow-up evidence intake observation requires "
-                    "followup_evidence_intake_state"
+                    "follow-up evidence intake observation requires followup_evidence_intake_state"
                 )
             if not self.state.followup_execution_state:
                 raise RunKernelTransitionError(
@@ -19429,8 +19643,7 @@ class RunKernel:
             )
             if not observed_recheck_state:
                 raise RunKernelTransitionError(
-                    "follow-up sufficiency recheck observation requires "
-                    "followup_sufficiency_recheck_state"
+                    "follow-up sufficiency recheck observation requires followup_sufficiency_recheck_state"
                 )
             if not self.state.followup_evidence_intake_state:
                 raise RunKernelTransitionError(
@@ -19467,8 +19680,7 @@ class RunKernel:
             )
             if not judgment_projection:
                 raise RunKernelTransitionError(
-                    "follow-up sufficiency recheck requires SufficiencyJudgment "
-                    "projection"
+                    "follow-up sufficiency recheck requires SufficiencyJudgment projection"
                 )
             flags = _safe_mapping(recheck_state.get("behavior_boundary_flags"))
             _followup_checked(
@@ -19545,18 +19757,15 @@ class RunKernel:
                 )
             if not self.state.followup_sufficiency_recheck_state:
                 raise RunKernelTransitionError(
-                    "follow-up FinalAnswerPacket readiness requires existing "
-                    "recheck state"
+                    "follow-up FinalAnswerPacket readiness requires existing recheck state"
                 )
             if self.state.final_answer_packet:
                 raise RunKernelTransitionError(
-                    "follow-up FinalAnswerPacket readiness must not follow a "
-                    "canonical FinalAnswerPacket mutation"
+                    "follow-up FinalAnswerPacket readiness must not follow a canonical FinalAnswerPacket mutation"
                 )
             if self.state.final_answer_authority_projection:
                 raise RunKernelTransitionError(
-                    "follow-up FinalAnswerPacket readiness must not follow a "
-                    "final-answer authority projection mutation"
+                    "follow-up FinalAnswerPacket readiness must not follow a final-answer authority projection mutation"
                 )
             action_inputs = _safe_mapping(action.inputs)
             _followup_checked(
@@ -19668,13 +19877,11 @@ class RunKernel:
                 )
             if self.state.final_answer_packet:
                 raise RunKernelTransitionError(
-                    "blocked FinalAnswerPacket shell must not overwrite an "
-                    "existing canonical FinalAnswerPacket"
+                    "blocked FinalAnswerPacket shell must not overwrite an existing canonical FinalAnswerPacket"
                 )
             if self.state.final_answer_authority_projection:
                 raise RunKernelTransitionError(
-                    "blocked FinalAnswerPacket shell must not follow final-answer "
-                    "authority projection mutation"
+                    "blocked FinalAnswerPacket shell must not follow final-answer authority projection mutation"
                 )
             if self.state.followup_blocked_final_answer_packet_shell_state.get(
                 "packet_preparation_readiness_id"
@@ -19790,8 +19997,7 @@ class RunKernel:
                     {},
                 ):
                     raise RunKernelTransitionError(
-                        "blocked FinalAnswerPacket shell must not create "
-                        f"{forbidden_field}"
+                        f"blocked FinalAnswerPacket shell must not create {forbidden_field}"
                     )
             self.state.followup_blocked_final_answer_packet_shell_state = (
                 shell_state
@@ -19818,8 +20024,7 @@ class RunKernel:
             )
             if p1_canonical_record is None:
                 raise RunKernelTransitionError(
-                    "follow-up final evidence selection preflight did not rebuild "
-                    "canonical packet"
+                    "follow-up final evidence selection preflight did not rebuild canonical packet"
                 )
             selection_state = {
                 **p1_canonical_record.to_dict(),
@@ -19894,13 +20099,11 @@ class RunKernel:
             ):
                 if packet_projection.get(empty_field) != []:
                     raise RunKernelTransitionError(
-                        "follow-up final evidence selection must keep "
-                        f"{empty_field} empty"
+                        f"follow-up final evidence selection must keep {empty_field} empty"
                     )
             if packet_projection.get("author_input_refs") != {}:
                 raise RunKernelTransitionError(
-                    "follow-up final evidence selection must keep "
-                    "author_input_refs empty"
+                    "follow-up final evidence selection must keep author_input_refs empty"
                 )
             for forbidden_field in (
                 "citation_eligible_source_ids",
@@ -19915,8 +20118,7 @@ class RunKernel:
                     {},
                 ):
                     raise RunKernelTransitionError(
-                        "follow-up final evidence selection must not create "
-                        f"{forbidden_field}"
+                        f"follow-up final evidence selection must not create {forbidden_field}"
                     )
             for closed_field in (
                 "citations_rendered",
@@ -19935,8 +20137,7 @@ class RunKernel:
             ):
                 if packet_projection.get(closed_field) is not False:
                     raise RunKernelTransitionError(
-                        "follow-up final evidence selection must keep "
-                        f"{closed_field}=False"
+                        f"follow-up final evidence selection must keep {closed_field}=False"
                     )
             if packet_projection.get("author_execution_deferred") is not True:
                 raise RunKernelTransitionError(
@@ -19954,8 +20155,7 @@ class RunKernel:
                 )
             if self.state.final_answer_authority_projection:
                 raise RunKernelTransitionError(
-                    "follow-up final evidence selection cannot follow authority "
-                    "projection mutation"
+                    "follow-up final evidence selection cannot follow authority projection mutation"
                 )
             self.state.followup_final_evidence_selection_state = selection_state
             self.state.final_answer_packet = packet_projection
@@ -19978,8 +20178,7 @@ class RunKernel:
             )
             if q1_canonical_record is None:
                 raise RunKernelTransitionError(
-                    "follow-up citation eligibility preflight did not rebuild "
-                    "canonical packet"
+                    "follow-up citation eligibility preflight did not rebuild canonical packet"
                 )
             citation_state = {
                 **q1_canonical_record.to_dict(),
@@ -20076,8 +20275,7 @@ class RunKernel:
                     {},
                 ):
                     raise RunKernelTransitionError(
-                        "follow-up citation eligibility must not create "
-                        f"{forbidden_field}"
+                        f"follow-up citation eligibility must not create {forbidden_field}"
                     )
             for closed_field in (
                 "citations_rendered",
@@ -20105,8 +20303,7 @@ class RunKernel:
                 )
             if self.state.final_answer_authority_projection:
                 raise RunKernelTransitionError(
-                    "follow-up citation eligibility cannot follow authority "
-                    "projection mutation"
+                    "follow-up citation eligibility cannot follow authority projection mutation"
                 )
             self.state.followup_citation_eligibility_state = citation_state
             self.state.final_answer_packet = packet_projection
@@ -20129,8 +20326,7 @@ class RunKernel:
             )
             if r1_canonical_record is None:
                 raise RunKernelTransitionError(
-                    "follow-up citation source handoff preflight did not rebuild "
-                    "canonical handoff"
+                    "follow-up citation source handoff preflight did not rebuild canonical handoff"
                 )
             handoff_state = {
                 **r1_canonical_record.to_dict(),
@@ -20154,8 +20350,7 @@ class RunKernel:
             ):
                 if flags.get(required_flag) is not True:
                     raise RunKernelTransitionError(
-                        "follow-up citation source handoff must set "
-                        f"{required_flag}=True"
+                        f"follow-up citation source handoff must set {required_flag}=True"
                     )
             if handoff_state.get("owner") != (
                 "RunKernel.FollowupCitationSourceHandoff"
@@ -20190,8 +20385,7 @@ class RunKernel:
                 followup_projection_digest(packet)
             ):
                 raise RunKernelTransitionError(
-                    "follow-up citation source handoff FinalAnswerPacket "
-                    "digest mismatch"
+                    "follow-up citation source handoff FinalAnswerPacket digest mismatch"
                 )
             if handoff_state.get("source_identity_count", 0) <= 0:
                 raise RunKernelTransitionError(
@@ -20213,8 +20407,7 @@ class RunKernel:
                 handoff_state.get("citation_eligible_source_ids") or []
             ):
                 raise RunKernelTransitionError(
-                    "follow-up citation source handoff source IDs must match "
-                    "identity records"
+                    "follow-up citation source handoff source IDs must match identity records"
                 )
             citation_refs = list(
                 handoff_state.get("citation_eligibility_refs") or []
@@ -20225,8 +20418,7 @@ class RunKernel:
                 )
             if self.state.final_answer_authority_projection:
                 raise RunKernelTransitionError(
-                    "follow-up citation source handoff cannot follow authority "
-                    "projection mutation"
+                    "follow-up citation source handoff cannot follow authority projection mutation"
                 )
             if packet.get("author_input_refs") != {}:
                 raise RunKernelTransitionError(
@@ -20235,8 +20427,7 @@ class RunKernel:
                 )
             if packet.get("author_payload_ref") not in (None, False, [], (), {}):
                 raise RunKernelTransitionError(
-                    "follow-up citation source handoff must not create "
-                    "author_payload_ref"
+                    "follow-up citation source handoff must not create author_payload_ref"
                 )
             for closed_field in (
                 "canonical_final_answer_packet_mutated",
@@ -20257,8 +20448,7 @@ class RunKernel:
             ):
                 if handoff_state.get(closed_field) is not False:
                     raise RunKernelTransitionError(
-                        "follow-up citation source handoff must keep "
-                        f"{closed_field}=False"
+                        f"follow-up citation source handoff must keep {closed_field}=False"
                     )
             if handoff_state.get("author_execution_deferred") is not True:
                 raise RunKernelTransitionError(
@@ -20287,8 +20477,7 @@ class RunKernel:
             )
             if t1_canonical_record is None:
                 raise RunKernelTransitionError(
-                    "follow-up citation rendering preflight did not rebuild "
-                    "canonical rendering"
+                    "follow-up citation rendering preflight did not rebuild canonical rendering"
                 )
             rendering_state = {
                 **t1_canonical_record.to_dict(),
@@ -20398,8 +20587,7 @@ class RunKernel:
                 )
             if self.state.final_answer_authority_projection:
                 raise RunKernelTransitionError(
-                    "follow-up citation rendering cannot follow authority "
-                    "projection mutation"
+                    "follow-up citation rendering cannot follow authority projection mutation"
                 )
             if packet.get("author_input_refs") != {}:
                 raise RunKernelTransitionError(
@@ -20477,8 +20665,7 @@ class RunKernel:
             )
             if not observed_packet_state:
                 raise RunKernelTransitionError(
-                    "follow-up FinalAnswerPacket observation requires "
-                    "followup_final_answer_packet_state"
+                    "follow-up FinalAnswerPacket observation requires followup_final_answer_packet_state"
                 )
             if not self.state.followup_sufficiency_recheck_state:
                 raise RunKernelTransitionError(
@@ -20595,8 +20782,7 @@ class RunKernel:
             )
             if not observed_gate_state:
                 raise RunKernelTransitionError(
-                    "follow-up Author gate observation requires "
-                    "followup_author_gate_state"
+                    "follow-up Author gate observation requires followup_author_gate_state"
                 )
             action_inputs = _safe_mapping(action.inputs)
             if action_inputs.get("author_gate_mode") == (
@@ -20946,8 +21132,7 @@ class RunKernel:
             )
             if not observed_author_state:
                 raise RunKernelTransitionError(
-                    "follow-up Author observation requires "
-                    "followup_author_observation_state"
+                    "follow-up Author observation requires followup_author_observation_state"
                 )
             if not self.state.followup_author_gate_state:
                 raise RunKernelTransitionError(
@@ -21358,10 +21543,7 @@ class RunKernel:
                 if ledger_action is not None
                 else {}
             )
-            component_id = (
-                f"component:recovered:"
-                f"{str(authorization.get('proposal_digest') or '')[:16]}"
-            )
+            component_id = f"component:recovered:{str(authorization.get('proposal_digest') or '')[:16]}"
             component_projection = _safe_mapping(
                 self.state.projections.get(
                     MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
@@ -23424,9 +23606,7 @@ class RunKernel:
                 if operation == "synthesis_validation":
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
-                            "multicomponent_role:"
-                            f"{ROLE_SYNTHESIS_DPRIME}:"
-                            f"{role_evaluation_key or synthesis_key}"
+                            f"multicomponent_role:{ROLE_SYNTHESIS_DPRIME}:{role_evaluation_key or synthesis_key}"
                         )
                     )
                     if not role_artifact:
@@ -23454,9 +23634,7 @@ class RunKernel:
                 elif operation == "scrutiny":
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
-                            "multicomponent_role:"
-                            f"{ROLE_SCRUTINEER}:"
-                            f"{role_evaluation_key or 'full-case'}"
+                            f"multicomponent_role:{ROLE_SCRUTINEER}:{role_evaluation_key or 'full-case'}"
                         )
                     )
                     if not role_artifact:
@@ -23727,8 +23905,7 @@ class RunKernel:
                         )
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
-                            "multicomponent_role:"
-                            f"{ROLE_CROSS_COMPONENT_ANALYST}:{evaluation_key}"
+                            f"multicomponent_role:{ROLE_CROSS_COMPONENT_ANALYST}:{evaluation_key}"
                         )
                     )
                     if not role_artifact:
@@ -23784,8 +23961,7 @@ class RunKernel:
                         )
                     role_artifact = _safe_mapping(
                         self.state.projections.get(
-                            "multicomponent_role:"
-                            f"{ROLE_CROSS_COMPONENT_ANALYST}:{evaluation_key}"
+                            f"multicomponent_role:{ROLE_CROSS_COMPONENT_ANALYST}:{evaluation_key}"
                         )
                     )
                     if not role_artifact:
@@ -23873,6 +24049,44 @@ class RunKernel:
 
     def to_trace_fragment(self) -> dict[str, Any]:
         return self.trace_projection().to_trace_fragment()
+
+
+def _validate_searchos_navigation_parent_custody(
+    *,
+    searchos_state: Mapping[str, Any],
+    slot_id: str,
+    parent_custody_ref: Mapping[str, Any],
+) -> None:
+    """Require a candidate parent to match current slot READ custody."""
+
+    slots = _safe_mapping(searchos_state.get("slots_by_id"))
+    slot = _safe_mapping(slots.get(slot_id))
+    parent = _safe_mapping(parent_custody_ref)
+    if not slot or _safe_mapping(parent.get("slot_ref")) != _safe_mapping(
+        slot.get("slot_ref")
+    ):
+        raise ValueError("navigation_parent_custody_slot_not_current")
+    parent_packet_ref = _safe_mapping(parent.get("fetch_read_content_packet_ref"))
+    parent_ledger_ref = _safe_mapping(parent.get("evidence_ledger_custody_ref"))
+    parent_physical_digest = str(parent.get("physical_identity_digest") or "")
+    for raw_custody in slot.get("custody_refs") or ():
+        custody = _safe_mapping(raw_custody)
+        if (
+            _safe_mapping(custody.get("fetch_read_content_packet_ref"))
+            != parent_packet_ref
+            or _safe_mapping(custody.get("evidence_ledger_custody_ref"))
+            != parent_ledger_ref
+        ):
+            continue
+        use_ref = _safe_mapping(custody.get("navigation_use_custody_ref"))
+        custody_physical_digest = str(
+            custody.get("physical_identity_digest")
+            or use_ref.get("physical_identity_digest")
+            or ""
+        )
+        if custody_physical_digest == parent_physical_digest:
+            return
+    raise ValueError("navigation_parent_custody_not_current")
 
 
 def validate_authorized_action(

@@ -9,6 +9,7 @@ raw href, path, query, or reconstructable execution URL.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import secrets
 from copy import deepcopy
@@ -29,20 +30,27 @@ SEARCHOS_NAVIGATION_LINEAGE_SNAPSHOT_SCHEMA_VERSION = (
     "searchos_navigation_lineage_snapshot_v1"
 )
 SEARCHOS_NAVIGATION_OPTION_STATE_SCHEMA_VERSION = (
+    (
+    (
+    (
     "searchos_navigation_option_state_v1"
 )
+)
+)
+)
 SEARCHOS_NAVIGATION_CANDIDATE_REF_SCHEMA_VERSION = (
-    "searchos_navigation_candidate_ref_v1"
+    "searchos_navigation_candidate_ref_v2"
 )
-SEARCHOS_NAVIGATION_SELECTION_SCHEMA_VERSION = (
-    "searchos_navigation_selection_v1"
-)
-SEARCHOS_NAVIGATION_EDGE_SCHEMA_VERSION = "searchos_navigation_edge_v1"
+SEARCHOS_NAVIGATION_SELECTION_SCHEMA_VERSION = "searchos_navigation_selection_v2"
+SEARCHOS_NAVIGATION_EDGE_SCHEMA_VERSION = "searchos_navigation_edge_v2"
 SEARCHOS_NAVIGATION_USE_CUSTODY_REF_SCHEMA_VERSION = (
     "searchos_navigation_use_custody_ref_v2"
 )
-SEARCHOS_NAVIGATION_RETAINED_STATE_SCHEMA_VERSION = (
+SEARCHOS_NAVIGATION_RETAINED_STATE_V1_SCHEMA_VERSION = (
     "searchos_navigation_retained_state_v1"
+)
+SEARCHOS_NAVIGATION_RETAINED_STATE_SCHEMA_VERSION = (
+    "searchos_navigation_retained_state_v2"
 )
 
 NAVIGATION_RETAINED_TEXT_CEILING = 20_000
@@ -56,13 +64,25 @@ NAVIGATION_CANDIDATE_SET_CEILING = 32
 NAVIGATION_DEEP_EDGE_CEILING = 24
 NAVIGATION_REQUIRED_SLOT_RESERVE = 2
 NAVIGATION_URL_LENGTH_CEILING = 700
-NAVIGATION_MAX_DEPTH = 2
+NAVIGATION_MAX_DEPTH = 3
 
 NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED = (
+    (
+    (
+    (
     "navigation_query_locator_not_supported"
 )
+)
+)
+)
 NAVIGATION_EFFECTIVE_BASE_OUT_OF_SCOPE = (
+    (
+    (
+    (
     "navigation_effective_base_out_of_scope"
+)
+)
+)
 )
 NAVIGATION_DESTINATION_BINDING_UNAVAILABLE = (
     "navigation_destination_binding_unavailable"
@@ -74,11 +94,26 @@ NAVIGATION_DURABLE_SOURCE_IDENTITY_INVALID = (
     "navigation_durable_source_identity_invalid"
 )
 NAVIGATION_REDIRECT_CROSS_DOMAIN_BLOCKED = (
+    (
+    (
+    (
     "navigation_redirect_cross_domain_blocked"
+)
+)
+)
 )
 NAVIGATION_REDIRECT_CYCLE = "navigation_redirect_cycle"
 NAVIGATION_EXECUTION_OVERLAY_ALTERED = (
+    (
+    (
+    (
     "navigation_execution_overlay_altered"
+)
+
+)
+
+)
+
 )
 
 _DESTINATION_BINDING_REF_FIELDS = frozenset(
@@ -288,10 +323,7 @@ class SearchOSNavigationDestinationRegistry:
             raise SearchOSNavigationError(
                 NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED
             )
-        binding_id = (
-            "navigation-destination:"
-            f"{self.run_id}:{self.request_id}:{normalized.full_digest[:24]}"
-        )
+        binding_id = f"navigation-destination:{self.run_id}:{self.request_id}:{normalized.full_digest[:24]}"
         prior = self._by_id.get(binding_id)
         if prior is not None and prior != normalized:
             raise SearchOSNavigationError(
@@ -324,6 +356,12 @@ class SearchOSNavigationDestinationRegistry:
         self.resolve(ref)
         return self._by_id[str(ref["destination_binding_id"])]
 
+    def begin_transaction(
+        self,
+    ) -> SearchOSNavigationDestinationRegistryTransaction:
+        self._require_open()
+        return SearchOSNavigationDestinationRegistryTransaction(self)
+
     def discard(self) -> None:
         self._by_id.clear()
         self._closed = True
@@ -338,6 +376,118 @@ class SearchOSNavigationDestinationRegistry:
         if self._closed:
             raise SearchOSNavigationError(
                 NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
+            )
+
+class SearchOSNavigationDestinationRegistryTransaction:
+    """One proposal-local exact-destination transaction.
+
+    Proposal URLs remain here until RunKernel has predicted the canonical
+    deterministic prefix. Only bindings in that prefix may be inserted into
+    the run-local registry, and a failed canonical reduction removes only the
+    entries inserted by this transaction.
+    """
+
+    __slots__ = (
+        "run_id",
+        "request_id",
+        "_registry",
+        "_proposed_by_id",
+        "_committed_new_ids",
+        "_closed",
+    )
+
+    def __init__(self, registry: SearchOSNavigationDestinationRegistry) -> None:
+        if not isinstance(registry, SearchOSNavigationDestinationRegistry):
+            raise SearchOSNavigationError("navigation_destination_registry_required")
+        registry._require_open()
+        self.run_id = registry.run_id
+        self.request_id = registry.request_id
+        self._registry = registry
+        self._proposed_by_id: dict[str, _NormalizedNavigationURL] = {}
+        self._committed_new_ids: set[str] = set()
+        self._closed = False
+
+    def register(self, exact_url: str) -> dict[str, Any]:
+        self._require_open()
+        normalized = normalize_navigation_url(exact_url)
+        if normalized.query_present:
+            raise SearchOSNavigationError(NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED)
+        binding_id = f"navigation-destination:{self.run_id}:{self.request_id}:{normalized.full_digest[:24]}"
+        prior = self._proposed_by_id.get(binding_id)
+        canonical = self._registry._by_id.get(binding_id)
+        if (prior is not None and prior != normalized) or (
+            canonical is not None and canonical != normalized
+        ):
+            raise SearchOSNavigationError(NAVIGATION_DESTINATION_BINDING_UNAVAILABLE)
+        self._proposed_by_id[binding_id] = normalized
+        return _destination_binding_ref(binding_id, normalized)
+
+    def prepare_admitted_bindings(
+        self, binding_refs: Sequence[Mapping[str, Any]]
+    ) -> list[dict[str, Any]]:
+        self._require_open()
+        refs: list[dict[str, Any]] = []
+        new_ids: set[str] = set()
+        for raw_ref in binding_refs:
+            ref = validate_navigation_destination_binding_ref(raw_ref)
+            binding_id = str(ref["destination_binding_id"])
+            normalized = self._registry._by_id.get(binding_id)
+            if normalized is None:
+                normalized = self._proposed_by_id.get(binding_id)
+                if normalized is None:
+                    raise SearchOSNavigationError(
+                        NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
+                    )
+                new_ids.add(binding_id)
+            if _destination_binding_ref(binding_id, normalized) != ref:
+                raise SearchOSNavigationError(
+                    NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
+                )
+            if ref not in refs:
+                refs.append(ref)
+        if len(self._registry._by_id) + len(new_ids) > self._registry.capacity:
+            raise SearchOSNavigationError(
+                "navigation_destination_registry_capacity_exhausted"
+            )
+        return refs
+
+    def commit_admitted_bindings(
+        self, binding_refs: Sequence[Mapping[str, Any]]
+    ) -> None:
+        refs = self.prepare_admitted_bindings(binding_refs)
+        for ref in refs:
+            binding_id = str(ref["destination_binding_id"])
+            if binding_id in self._registry._by_id:
+                continue
+            normalized = self._proposed_by_id[binding_id]
+            self._registry._by_id[binding_id] = normalized
+            self._committed_new_ids.add(binding_id)
+
+    def rollback(self) -> None:
+        if self._closed:
+            return
+        for binding_id in tuple(self._committed_new_ids):
+            normalized = self._proposed_by_id.get(binding_id)
+            if self._registry._by_id.get(binding_id) == normalized:
+                del self._registry._by_id[binding_id]
+        self._committed_new_ids.clear()
+        self._proposed_by_id.clear()
+        self._closed = True
+
+    def finalize(self) -> None:
+        self._proposed_by_id.clear()
+        self._committed_new_ids.clear()
+        self._closed = True
+
+    def __reduce__(self) -> Any:
+        raise TypeError(
+            "navigation destination registry transactions are nonserializable"
+        )
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise SearchOSNavigationError(
+                "navigation_destination_registry_transaction_closed"
             )
 
 
@@ -805,6 +955,17 @@ def normalize_navigation_url(value: str) -> _NormalizedNavigationURL:
     if parsed.username is not None or parsed.password is not None:
         raise SearchOSNavigationError("navigation_destination_userinfo_forbidden")
     hostname = str(parsed.hostname or "").casefold().rstrip(".")
+    is_ipv6 = ":" in hostname
+    if is_ipv6:
+        host_port = parsed.netloc.rsplit("@", 1)[-1]
+        if not host_port.startswith("[") or "]" not in host_port or "%" in hostname:
+            raise SearchOSNavigationError("navigation_destination_hostname_invalid")
+        try:
+            hostname = ipaddress.IPv6Address(hostname).compressed
+        except ValueError as exc:
+            raise SearchOSNavigationError(
+                "navigation_destination_hostname_invalid"
+            ) from exc
     if not hostname or not _is_ascii(hostname):
         raise SearchOSNavigationError("navigation_destination_hostname_invalid")
     if port is not None and port != _default_port(scheme):
@@ -818,9 +979,9 @@ def normalize_navigation_url(value: str) -> _NormalizedNavigationURL:
         else f"implicit_default_{_default_port(scheme)}"
     )
     path = parsed.path or "/"
-    netloc = hostname
+    netloc = f"[{hostname}]" if is_ipv6 else hostname
     if explicit_port:
-        netloc = f"{hostname}:{_default_port(scheme)}"
+        netloc = f"{netloc}:{_default_port(scheme)}"
     exact = urlunsplit((scheme, netloc, path, parsed.query, ""))
     if len(exact) > NAVIGATION_URL_LENGTH_CEILING:
         raise SearchOSNavigationError("navigation_destination_too_long")
@@ -995,6 +1156,25 @@ def validate_navigation_destination_binding_ref(
     return safe
 
 
+def build_searchos_navigation_destination_binding_ref_v1(
+    exact_url: str,
+    *,
+    run_id: str,
+    request_id: str,
+) -> dict[str, Any]:
+    """Build a safe binding ref without retaining the exact destination."""
+
+    normalized = normalize_navigation_url(exact_url)
+    if normalized.query_present:
+        raise SearchOSNavigationError(NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED)
+    binding_id = (
+        "navigation-destination:"
+        f"{_token(run_id, 'run_id')}:{_token(request_id, 'request_id')}:"
+        f"{normalized.full_digest[:24]}"
+    )
+    return _destination_binding_ref(binding_id, normalized)
+
+
 def extract_searchos_navigation_draft_v1(
     *,
     run_id: str,
@@ -1148,13 +1328,17 @@ def discard_navigation_extraction_draft(
 def build_searchos_navigation_candidate_set_v1(
     *,
     draft: SearchOSNavigationExtractionDraftV1,
-    destination_registry: SearchOSNavigationDestinationRegistry,
+    destination_registry: (
+        SearchOSNavigationDestinationRegistry
+        | SearchOSNavigationDestinationRegistryTransaction
+    ),
     fetch_read_packet: Mapping[str, Any],
     evidence_ledger_custody: Mapping[str, Any],
     parent_custody_ref: Mapping[str, Any],
     slot_ref: Mapping[str, Any],
     parent_depth: int = 0,
     parent_custody_admission_ordinal: int = 1,
+    navigation_max_depth: int = NAVIGATION_MAX_DEPTH,
 ) -> dict[str, Any]:
     """Join one live extraction draft to exact parent physical/use custody.
 
@@ -1166,7 +1350,12 @@ def build_searchos_navigation_candidate_set_v1(
     if not isinstance(draft, SearchOSNavigationExtractionDraftV1):
         raise SearchOSNavigationError("navigation_extraction_draft_required")
     draft.require_live()
-    if not isinstance(destination_registry, SearchOSNavigationDestinationRegistry):
+    if not isinstance(destination_registry,
+        (
+            SearchOSNavigationDestinationRegistry,
+            SearchOSNavigationDestinationRegistryTransaction,
+        ),
+    ):
         raise SearchOSNavigationError("navigation_destination_registry_required")
     if (
         destination_registry.run_id != draft.run_id
@@ -1184,11 +1373,16 @@ def build_searchos_navigation_candidate_set_v1(
         parent_custody_ref=parent,
         slot_ref=slot,
     )
+    admitted_max_depth = _bounded_positive_int(
+        navigation_max_depth, "navigation_max_depth"
+    )
+    if admitted_max_depth > NAVIGATION_MAX_DEPTH:
+        raise SearchOSNavigationError("navigation_depth_policy_invalid")
     depth = _bounded_nonnegative_int(
-        parent_depth, "navigation_parent_depth", maximum=NAVIGATION_MAX_DEPTH
+        parent_depth, "navigation_parent_depth", maximum=admitted_max_depth
     )
     child_depth = depth + 1
-    if child_depth > NAVIGATION_MAX_DEPTH:
+    if child_depth > admitted_max_depth:
         raise SearchOSNavigationError("navigation_depth_violation")
     parent_ordinal = _bounded_positive_int(
         parent_custody_admission_ordinal,
@@ -1496,15 +1690,11 @@ def build_searchos_navigation_candidate_ref_v1(
     if contributor["stable_option_ref"] != option_ref:
         raise SearchOSNavigationError("navigation_candidate_contributor_mismatch")
     lineage_ref = searchos_navigation_lineage_snapshot_ref(lineage_snapshot)
-    binding_ref = validate_navigation_destination_binding_ref(
-        option["destination_binding_ref"]
-    )
     core = {
         "schema_version": SEARCHOS_NAVIGATION_CANDIDATE_REF_SCHEMA_VERSION,
         "stable_option_ref": option_ref,
         "navigation_lineage_snapshot_ref": lineage_ref,
         "representative_contributor_ref": navigation_contributor_ref(contributor),
-        "destination_binding_ref": binding_ref,
     }
     digest = _digest(core)
     return {
@@ -1563,12 +1753,16 @@ def build_searchos_navigation_retained_state(
         "candidate_sets_by_id": {},
         "edges_by_id": {},
         "selection_leases_by_id": {},
+        "released_selection_leases_by_id": {},
+        "selection_counts_by_slot": {slot_id: 0 for slot_id in required},
+        "selection_admission_facts_by_id": {},
         "terminal_physical_operations_by_key": {},
         "physical_custody_by_digest": {},
         "use_custody_refs_by_id": {},
         "visited_physical_identity_digests_by_slot": {},
         "validated_redirect_alias_digests_by_physical_digest": {},
         "contributor_failures_by_id": {},
+        "expansion_outcomes_by_parent_custody_id": {},
         "logical_edge_charges": 0,
         "logical_read_nomination_charges": 0,
         "next_admission_ordinal": 1,
@@ -1930,6 +2124,11 @@ def admit_searchos_navigation_selection(
     navigation_candidate_ref: Mapping[str, Any],
     destination_registry: SearchOSNavigationDestinationRegistry | None = None,
     binding_resolution_validated: bool = False,
+    navigation_max_depth: int = NAVIGATION_MAX_DEPTH,
+    navigation_selections_per_slot: int = NAVIGATION_MAX_DEPTH,
+    navigation_edges_per_run: int = NAVIGATION_DEEP_EDGE_CEILING,
+    admission_policy_ref: Mapping[str, Any] | None = None,
+    pending_judgment_decision_ref: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Admit one exact current candidate, immutable lease, and logical edge."""
 
@@ -1958,6 +2157,8 @@ def admit_searchos_navigation_selection(
     )
     if lineage is None or contributor is None:
         raise SearchOSNavigationError("navigation_candidate_hidden_or_stale")
+    if contributor_ref not in option_state.get("feasible_contributor_refs", ()):
+        raise SearchOSNavigationError("navigation_contributor_not_feasible")
     expected = build_searchos_navigation_candidate_ref_v1(
         option_identity=option,
         lineage_snapshot=lineage,
@@ -1965,26 +2166,105 @@ def admit_searchos_navigation_selection(
     )
     if expected != candidate:
         raise SearchOSNavigationError("navigation_candidate_hidden_or_stale")
+    binding_ref = validate_navigation_destination_binding_ref(
+        option["destination_binding_ref"]
+    )
+    if contributor.get("destination_binding_ref") != binding_ref:
+        raise SearchOSNavigationError("navigation_candidate_binding_mismatch")
     if destination_registry is not None:
-        destination_registry.resolve(candidate["destination_binding_ref"])
+        destination_registry.resolve(binding_ref)
     elif binding_resolution_validated is not True:
         raise SearchOSNavigationError(
             NAVIGATION_DESTINATION_BINDING_UNAVAILABLE
         )
+    max_depth = _bounded_positive_int(navigation_max_depth, "navigation_max_depth")
+    selection_limit = _bounded_positive_int(
+        navigation_selections_per_slot,
+        "navigation_selections_per_slot",
+    )
+    edge_limit = _bounded_positive_int(
+        navigation_edges_per_run, "navigation_edges_per_run"
+    )
+    if max_depth > NAVIGATION_MAX_DEPTH or edge_limit > NAVIGATION_DEEP_EDGE_CEILING:
+        raise SearchOSNavigationError("navigation_policy_limit_invalid")
+    child_depth = int(contributor["child_depth"])
+    if child_depth > max_depth:
+        raise SearchOSNavigationError("navigation_depth_limit_exhausted")
+    parent = _mapping(contributor["parent_custody_ref"], "parent_custody_ref")
+    destination_physical_digest = binding_ref["physical_identity_digest"]
+    if destination_physical_digest == parent.get("physical_identity_digest"):
+        raise SearchOSNavigationError("navigation_self_link")
+    if destination_physical_digest in set(
+        parent.get("ancestor_physical_identity_digests") or ()
+    ):
+        raise SearchOSNavigationError("navigation_ancestor_cycle")
+    slot_selection_count = int(
+        _mapping(
+            current.get("selection_counts_by_slot"), "selection_counts_by_slot"
+        ).get(option["slot_id"], 0)
+    )
+    if slot_selection_count >= selection_limit:
+        raise SearchOSNavigationError("navigation_selection_limit_exhausted")
+    if int(current["logical_edge_charges"]) >= edge_limit:
+        raise SearchOSNavigationError("navigation_run_edge_limit_exhausted")
+    operation_key = f"read-navigation:{destination_physical_digest}"
+    terminal_operation = current["terminal_physical_operations_by_key"].get(
+        operation_key
+    )
+    reusable_success = bool(
+        terminal_operation
+        and terminal_operation.get("terminal_disposition") == "custodied"
+        and destination_physical_digest in current["physical_custody_by_digest"]
+    )
+    if terminal_operation and not reusable_success:
+        raise SearchOSNavigationError("navigation_physical_operation_already_terminal")
     if not _capacity_available(current, "deep_edges", option["slot_id"], 1):
         raise SearchOSNavigationError("navigation_deep_edge_capacity_exhausted")
+    policy_ref = (
+        _required_ref(admission_policy_ref, "admission_policy_ref")
+        if admission_policy_ref
+        else {
+            "policy_snapshot_id": "navigation-absolute-safety-policy",
+            "policy_snapshot_digest": _digest(
+                {
+                    "navigation_max_depth": max_depth,
+                    "navigation_selections_per_slot": selection_limit,
+                    "navigation_edges_per_run": edge_limit,
+                }
+            ),
+        }
+    )
+    decision_ref = (
+        _required_ref(
+            pending_judgment_decision_ref,
+            "pending_judgment_decision_ref",
+        )
+        if pending_judgment_decision_ref
+        else {}
+    )
+    limit_facts = {
+        "navigation_max_depth": max_depth,
+        "navigation_selections_per_slot": selection_limit,
+        "navigation_edges_per_run": edge_limit,
+        "slot_selection_count_before": slot_selection_count,
+        "run_edge_count_before": int(current["logical_edge_charges"]),
+        "physical_custody_reuse_available": reusable_success,
+    }
     selection_core = {
         "schema_version": SEARCHOS_NAVIGATION_SELECTION_SCHEMA_VERSION,
         "stable_option_ref": candidate["stable_option_ref"],
         "navigation_lineage_snapshot_ref": lineage_ref,
         "representative_contributor_ref": contributor_ref,
-        "destination_binding_ref": candidate["destination_binding_ref"],
-        "physical_identity_digest": candidate["destination_binding_ref"][
+        "destination_binding_ref": binding_ref,
+        "physical_identity_digest": binding_ref[
             "physical_identity_digest"
         ],
-        "full_destination_digest": candidate["destination_binding_ref"][
+        "full_destination_digest": binding_ref[
             "full_destination_digest"
         ],
+        "pending_judgment_decision_ref": decision_ref,
+        "admission_policy_ref": policy_ref,
+        "admitted_limit_facts": limit_facts,
         "lease_posture": "active_immutable_selection",
     }
     selection_digest = _digest(selection_core)
@@ -2000,8 +2280,10 @@ def admit_searchos_navigation_selection(
         "navigation_lineage_snapshot_ref": lineage_ref,
         "representative_contributor_ref": contributor_ref,
         "parent_custody_ref": contributor["parent_custody_ref"],
-        "destination_binding_ref": candidate["destination_binding_ref"],
+        "destination_binding_ref": binding_ref,
         "child_depth": contributor["child_depth"],
+        "admission_policy_ref": policy_ref,
+        "admitted_limit_facts": limit_facts,
         "edge_posture": "admitted_pending_read",
     }
     edge_digest = _digest(edge_core)
@@ -2027,12 +2309,22 @@ def admit_searchos_navigation_selection(
         }
     )
     updated_state["navigation_option_state_id"] = (
-        f"navigation-option-state:{option_id}:"
-        f"{updated_state['navigation_option_state_digest'][:24]}"
+        f"navigation-option-state:{option_id}:{updated_state['navigation_option_state_digest'][:24]}"
     )
     next_state["option_states_by_id"][option_id] = updated_state
     next_state["logical_edge_charges"] += 1
     next_state["logical_read_nomination_charges"] += 1
+    next_state.setdefault("selection_counts_by_slot", {})[option["slot_id"]] = (
+        slot_selection_count + 1
+    )
+    next_state.setdefault("selection_admission_facts_by_id", {})[
+        selection["navigation_selection_id"]
+    ] = {
+        "navigation_selection_ref": navigation_selection_ref(selection),
+        "pending_judgment_decision_ref": decision_ref,
+        "admission_policy_ref": policy_ref,
+        "admitted_limit_facts": limit_facts,
+    }
     next_state["retained_counts"]["deep_edges"] = len(next_state["edges_by_id"])
     return _validated_retained_state(next_state), selection, edge
 
@@ -2138,7 +2430,8 @@ def record_searchos_navigation_contributor_failure(
     failure_digest = _digest(failure_core)
     next_state["contributor_failures_by_id"][
         f"navigation-contributor-failure:{failure_digest[:24]}"
-    ] = {**failure_core, "failure_digest": failure_digest}
+    ] = {**failure_core, "failure_digest": failure_digest,
+    }
     next_state["option_states_by_id"][option_id] = build_searchos_navigation_option_state_v1(
         stable_option_identity=option,
         lineage_snapshot=lineage,
@@ -2180,17 +2473,32 @@ def record_searchos_navigation_destination_terminal(
     existing_terminal = current["terminal_physical_operations_by_key"].get(
         operation_key
     )
-    if existing_terminal:
+    if (
+        existing_terminal
+        and existing_terminal.get("terminal_disposition") != terminal_disposition
+    ):
         raise SearchOSNavigationError(
             "navigation_physical_operation_already_terminal"
         )
     next_state = deepcopy(current)
-    next_state["terminal_physical_operations_by_key"][operation_key] = {
+    if not existing_terminal:
+        next_state["terminal_physical_operations_by_key"][operation_key] = {
         "stable_option_ref": dict(stable_option_ref),
         "terminal_disposition": terminal_disposition,
         "failure_code": failure_code,
         "retry_licensed": False,
     }
+    else:
+        failure_code = str(existing_terminal.get("failure_code") or failure_code or "")
+    active_lease_ref = deepcopy(option_state.get("active_lease_ref") or {})
+    if active_lease_ref:
+        next_state.setdefault("released_selection_leases_by_id", {})[
+            str(active_lease_ref.get("navigation_selection_id") or "")
+        ] = {
+            "navigation_selection_ref": active_lease_ref,
+            "release_reason": terminal_disposition,
+            "retry_licensed": False,
+        }
     updated = deepcopy(option_state)
     updated["disposition"] = terminal_disposition
     updated["disposition_reason"] = failure_code or terminal_disposition
@@ -2206,10 +2514,104 @@ def record_searchos_navigation_destination_terminal(
     }
     updated["navigation_option_state_digest"] = _digest(updated_core)
     updated["navigation_option_state_id"] = (
-        f"navigation-option-state:{option_id}:"
-        f"{updated['navigation_option_state_digest'][:24]}"
+        f"navigation-option-state:{option_id}:{updated['navigation_option_state_digest'][:24]}"
     )
     next_state["option_states_by_id"][option_id] = updated
+    return _validated_retained_state(next_state)
+
+
+def record_searchos_navigation_binding_unavailable(
+    state: Mapping[str, Any],
+    *,
+    stable_option_ref: Mapping[str, Any],
+    failure_code: str = NAVIGATION_DESTINATION_BINDING_UNAVAILABLE,
+) -> dict[str, Any]:
+    """Terminalize one unexecutable option without inventing an operation."""
+
+    current = _validated_retained_state(state)
+    option_id = _token(
+        stable_option_ref.get("navigation_option_id"),
+        "navigation_option_id",
+    )
+    option = current["options_by_id"].get(option_id)
+    option_state = current["option_states_by_id"].get(option_id)
+    if option is None or option_state is None:
+        raise SearchOSNavigationError("navigation_option_not_current")
+    if searchos_navigation_option_identity_ref(option) != dict(stable_option_ref):
+        raise SearchOSNavigationError("navigation_option_not_current")
+    if option_state.get("active_lease_ref"):
+        raise SearchOSNavigationError("navigation_candidate_active_lease_conflict")
+    updated = deepcopy(option_state)
+    updated["disposition"] = "binding_unavailable"
+    updated["disposition_reason"] = _token(
+        failure_code,
+        "navigation_binding_failure_code",
+        maximum=240,
+    )
+    updated["active_lease_ref"] = {}
+    updated_core = {
+        key: value
+        for key, value in updated.items()
+        if key
+        not in {
+            "navigation_option_state_id",
+            "navigation_option_state_digest",
+        }
+    }
+    updated["navigation_option_state_digest"] = _digest(updated_core)
+    updated["navigation_option_state_id"] = (
+        f"navigation-option-state:{option_id}:{updated['navigation_option_state_digest'][:24]}"
+    )
+    next_state = deepcopy(current)
+    next_state["option_states_by_id"][option_id] = updated
+    return _validated_retained_state(next_state)
+
+
+def record_searchos_navigation_expansion_outcome(
+    state: Mapping[str, Any],
+    *,
+    parent_custody_ref: Mapping[str, Any],
+    expansion_posture: str,
+    admitted_candidate_set_ref: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record one compact URL-free optional child-expansion outcome."""
+
+    current = _validated_retained_state(state)
+    parent = _required_ref(parent_custody_ref, "parent_custody_ref")
+    posture = _token(expansion_posture, "navigation_expansion_posture")
+    allowed = {
+        "navigation_children_admitted",
+        "navigation_depth_exhausted",
+        "navigation_no_candidates",
+        "navigation_effective_base_out_of_scope",
+        "navigation_registry_capacity_exhausted",
+        "navigation_candidate_capacity_exhausted",
+        "navigation_expansion_unavailable",
+    }
+    if posture not in allowed:
+        raise SearchOSNavigationError("navigation_expansion_posture_invalid")
+    parent_id = _token(
+        parent.get("searchos_parent_use_custody_id"),
+        "searchos_parent_use_custody_id",
+    )
+    record = {
+        "parent_custody_ref": parent,
+        "expansion_posture": posture,
+        "admitted_candidate_set_ref": (
+            _required_ref(
+                admitted_candidate_set_ref,
+                "admitted_candidate_set_ref",
+            )
+            if admitted_candidate_set_ref
+            else {}
+        ),
+        "exact_locator_retained": False,
+        "retrieval_charge_consumed": False,
+    }
+    next_state = deepcopy(current)
+    next_state.setdefault("expansion_outcomes_by_parent_custody_id", {})[parent_id] = (
+        record
+    )
     return _validated_retained_state(next_state)
 
 
@@ -2598,7 +3000,9 @@ def admit_searchos_navigation_use_custody(
     if use["physical_identity_digest"] not in visited:
         visited.append(use["physical_identity_digest"])
     next_state["visited_physical_identity_digests_by_slot"][slot_id] = (
+        (
         visited
+    )
     )
     return _validated_retained_state(next_state)
 
@@ -2899,7 +3303,6 @@ def _validate_navigation_candidate_ref(value: Mapping[str, Any]) -> dict[str, An
         "stable_option_ref",
         "navigation_lineage_snapshot_ref",
         "representative_contributor_ref",
-        "destination_binding_ref",
         "navigation_candidate_id",
         "navigation_candidate_digest",
     }
@@ -2920,13 +3323,16 @@ def _validate_navigation_candidate_ref(value: Mapping[str, Any]) -> dict[str, An
     expected_id = f"navigation-candidate:{option_id}:{digest[:24]}"
     if candidate.get("navigation_candidate_digest") != digest or candidate.get("navigation_candidate_id") != expected_id:
         raise SearchOSNavigationError("navigation_candidate_ref_identity_mismatch")
-    validate_navigation_destination_binding_ref(candidate["destination_binding_ref"])
     return deepcopy(candidate)
 
 
 def _validated_retained_state(value: Mapping[str, Any]) -> dict[str, Any]:
     state = _mapping(value, "navigation_retained_state")
-    if state.get("schema_version") != SEARCHOS_NAVIGATION_RETAINED_STATE_SCHEMA_VERSION:
+    schema_version = state.get("schema_version")
+    if schema_version not in {
+        SEARCHOS_NAVIGATION_RETAINED_STATE_V1_SCHEMA_VERSION,
+        SEARCHOS_NAVIGATION_RETAINED_STATE_SCHEMA_VERSION,
+    }:
         raise SearchOSNavigationError("navigation_retained_state_schema_invalid")
     if state.get("owner") != SEARCHOS_NAVIGATION_OWNER:
         raise SearchOSNavigationError("navigation_retained_state_owner_invalid")
@@ -2949,6 +3355,13 @@ def _validated_retained_state(value: Mapping[str, Any]) -> dict[str, Any]:
         "contributor_failures_by_id",
         "overflow_totals",
     )
+    if schema_version == SEARCHOS_NAVIGATION_RETAINED_STATE_SCHEMA_VERSION:
+        required_buckets += (
+            "released_selection_leases_by_id",
+            "selection_counts_by_slot",
+            "selection_admission_facts_by_id",
+            "expansion_outcomes_by_parent_custody_id",
+        )
     if any(not isinstance(state.get(key), Mapping) for key in required_buckets):
         raise SearchOSNavigationError("navigation_retained_state_bucket_invalid")
     actual = {
@@ -2963,6 +3376,21 @@ def _validated_retained_state(value: Mapping[str, Any]) -> dict[str, Any]:
     for key, count in actual.items():
         if count > int(state["ceilings"].get(key, -1)):
             raise SearchOSNavigationError("navigation_retained_capacity_exceeded")
+    if int(state.get("logical_edge_charges") or 0) != len(state["edges_by_id"]) or int(
+        state.get("logical_read_nomination_charges") or 0
+    ) != len(state["edges_by_id"]):
+        raise SearchOSNavigationError("navigation_logical_charge_mismatch")
+    if schema_version == SEARCHOS_NAVIGATION_RETAINED_STATE_SCHEMA_VERSION:
+        if sum(int(item) for item in state["selection_counts_by_slot"].values()) != len(
+            state["edges_by_id"]
+        ):
+            raise SearchOSNavigationError("navigation_selection_count_mismatch")
+        if set(state["selection_admission_facts_by_id"]) != set(
+            state["selection_leases_by_id"]
+        ):
+            raise SearchOSNavigationError(
+                "navigation_selection_admission_facts_mismatch"
+            )
     return deepcopy(state)
 
 

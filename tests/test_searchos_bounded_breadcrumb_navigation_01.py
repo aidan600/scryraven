@@ -34,6 +34,18 @@ from core.run_kernel import (
     RunKernel,
     RunStageStatus,
 )
+from core.searchos_iterative_judgment_runtime import (
+    begin_searchos_judgment_round,
+    build_candidate_use_window_v1,
+    build_searchos_initial_state,
+    build_searchos_judgment_request_v2,
+    build_searchos_policy_snapshot,
+    charge_searchos_judgment_call,
+    record_searchos_candidate_window,
+    reduce_searchos_judgment_decision,
+    searchos_policy_profile,
+    validate_searchos_state,
+)
 from core.searchos_navigation_runtime import (
     NAVIGATION_CANDIDATE_SET_CAPACITY_EXHAUSTED,
     NAVIGATION_DESTINATION_BINDING_UNAVAILABLE,
@@ -43,6 +55,7 @@ from core.searchos_navigation_runtime import (
     NAVIGATION_QUERY_LOCATOR_NOT_SUPPORTED,
     SearchOSNavigationDestinationRegistry,
     SearchOSNavigationError,
+    SearchOSNavigationExecutionOverlayV1,
     SearchOSNavigationPacketCommitRegistry,
     admit_searchos_navigation_candidate_set,
     admit_searchos_navigation_selection,
@@ -60,6 +73,7 @@ from core.searchos_navigation_runtime import (
     record_searchos_navigation_destination_terminal,
     sanitize_searchos_navigation_source_text_v1,
     searchos_navigation_physical_custody_ref,
+    validate_searchos_navigation_retained_state,
 )
 
 
@@ -69,6 +83,12 @@ def _digest_text(value: str) -> str:
 
 def _digest(seed: str) -> str:
     return _digest_text(seed)
+
+
+def _stable_json_digest(value: object) -> str:
+    return sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _ref(kind: str, seed: str) -> dict[str, str]:
@@ -175,6 +195,135 @@ def _proposal(
     return draft, registry, proposal
 
 
+def _prepare_pending_navigation_for_kernel(
+    kernel: RunKernel,
+    *,
+    candidate_ref: dict[str, object],
+    parent_custody_ref: dict[str, object],
+    profile_name: str = "Deep",
+    read_nomination_count: int = 0,
+    navigation_selection_count: int = 0,
+) -> dict[str, object]:
+    candidate_state_ref = _ref("candidate_state", "current")
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name=profile_name,
+        navigation_runtime_open=True,
+    )
+    state = build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract-1"),
+        policy_snapshot=policy,
+        active_slots=[
+            {
+                "slot_id": "slot-1",
+                "component_ref": _ref("component", "component-1"),
+                "source_obligation_ref": _ref("source_obligation", "obligation-1"),
+                "requirement_posture": "required",
+            }
+        ],
+        initial_candidate_state_ref=candidate_state_ref,
+    )
+    slot = state["slots_by_id"]["slot-1"]
+    slot["slot_ref"] = dict(parent_custody_ref["slot_ref"])
+    slot["read_nomination_count"] = read_nomination_count
+    slot["navigation_selection_count"] = navigation_selection_count
+    slot["custody_refs"] = [
+        {
+            "fetch_read_content_packet_ref": dict(
+                parent_custody_ref["fetch_read_content_packet_ref"]
+            ),
+            "evidence_ledger_custody_ref": dict(
+                parent_custody_ref["evidence_ledger_custody_ref"]
+            ),
+            "physical_identity_digest": parent_custody_ref["physical_identity_digest"],
+        }
+    ]
+    slot.pop("slot_state_digest", None)
+    slot["slot_state_digest"] = _stable_json_digest(slot)
+    state_core = {
+        key: value
+        for key, value in state.items()
+        if key not in {"state_id", "state_digest", "replay_identity"}
+    }
+    state_digest = _stable_json_digest(state_core)
+    state = {
+        **state_core,
+        "state_id": f"searchos-state:{state_digest[:24]}",
+        "state_digest": state_digest,
+        "replay_identity": f"searchos-state:{state_digest}",
+    }
+    decision_core = {
+        "schema_version": "searchos_judgment_decision_v2",
+        "slot_ref": dict(slot["slot_ref"]),
+        "candidate_state_ref": candidate_state_ref,
+        "action": "REQUEST_NAVIGATE_BREADCRUMB",
+        "navigation_candidate_ref": dict(candidate_ref),
+        "read_custody_assessments": [],
+    }
+    decision_digest = _stable_json_digest(decision_core)
+    decision = {
+        **decision_core,
+        "judgment_decision_id": f"searchos-decision:{decision_digest[:24]}",
+        "judgment_decision_digest": decision_digest,
+        "replay_identity": f"searchos-decision:{decision_digest}",
+    }
+    kernel.state.searchos_state = reduce_searchos_judgment_decision(
+        state, decision=decision
+    )
+    return decision
+
+
+def _atomic_navigation_kernel(
+    text: str = "[child](/child)",
+    *,
+    parent_depth: int = 0,
+    profile_name: str = "Deep",
+    read_nomination_count: int = 0,
+    navigation_selection_count: int = 0,
+):
+    _, registry, proposal = _proposal(text, parent_depth=parent_depth)
+    kernel = RunKernel.start(run_id="run-1", request_id="request-1")
+    kernel.state.searchos_navigation_state = build_searchos_navigation_retained_state(
+        run_id="run-1",
+        request_id="request-1",
+        required_slot_ids=["slot-1"],
+    )
+    admission = kernel.authorize_searchos_navigation_candidate_admission(
+        candidate_set=proposal
+    )
+    kernel.reduce(
+        Observation.from_action(
+            admission,
+            observation_type=(ObservationType.SEARCHOS_NAVIGATION_CANDIDATES_ADMITTED),
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "admitted_navigation_candidate_set_ref": admission.inputs[
+                    "predicted_admitted_candidate_set_ref"
+                ]
+            },
+        )
+    )
+    candidate = build_searchos_navigation_candidate_window_v1(
+        kernel.state.searchos_navigation_state,
+        slot_id="slot-1",
+    )["navigation_candidate_refs"][0]
+    contributor = kernel.state.searchos_navigation_state["contributors_by_id"][
+        candidate["representative_contributor_ref"]["navigation_contributor_id"]
+    ]
+    decision = _prepare_pending_navigation_for_kernel(
+        kernel,
+        candidate_ref=candidate,
+        parent_custody_ref=contributor["parent_custody_ref"],
+        profile_name=profile_name,
+        read_nomination_count=read_nomination_count,
+        navigation_selection_count=navigation_selection_count,
+    )
+    return kernel, registry, candidate, decision
+
+
 def _same_destination_proposal(
     *,
     registry: SearchOSNavigationDestinationRegistry,
@@ -197,6 +346,85 @@ def _same_destination_proposal(
         slot_ref=_slot(slot_id),
         parent_depth=parent_depth,
         parent_custody_admission_ordinal=ordinal,
+    )
+
+
+def _navigation_judgment_request_at_limits(
+    *,
+    profile_name: str,
+    navigation_selection_count: int,
+    logical_edge_charges: int,
+) -> dict[str, object]:
+    _, _, proposal = _proposal("[child](/child)")
+    navigation_state = admit_searchos_navigation_candidate_set(
+        build_searchos_navigation_retained_state(
+            run_id="run-1",
+            request_id="request-1",
+            required_slot_ids=["slot-1"],
+        ),
+        candidate_set=proposal,
+    )
+    navigation_window = build_searchos_navigation_candidate_window_v1(
+        navigation_state,
+        slot_id="slot-1",
+    )
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name=profile_name,
+        navigation_runtime_open=True,
+    )
+    state = build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract-1"),
+        policy_snapshot=policy,
+        active_slots=[
+            {
+                "slot_id": "slot-1",
+                "component_ref": _ref("component", "component-1"),
+                "source_obligation_ref": _ref("source_obligation", "obligation-1"),
+                "requirement_posture": "required",
+            }
+        ],
+    )
+    slot = state["slots_by_id"]["slot-1"]
+    slot["navigation_selection_count"] = navigation_selection_count
+    slot.pop("slot_state_digest")
+    slot["slot_state_digest"] = _stable_json_digest(slot)
+    state_core = {
+        key: value
+        for key, value in state.items()
+        if key not in {"state_id", "state_digest", "replay_identity"}
+    }
+    state_digest = _stable_json_digest(state_core)
+    state = {
+        **state_core,
+        "state_id": f"searchos-state:{state_digest[:24]}",
+        "state_digest": state_digest,
+        "replay_identity": f"searchos-state:{state_digest}",
+    }
+    candidate_window = build_candidate_use_window_v1(
+        slot_ref=slot["slot_ref"],
+        ordered_options=[],
+        window_ordinal=1,
+        policy_snapshot=policy,
+    )
+    state = record_searchos_candidate_window(state, window=candidate_window)
+    state, reservation = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=reservation,
+        slot_id="slot-1",
+    )
+    return build_searchos_judgment_request_v2(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=candidate_window,
+        navigation_candidate_window=navigation_window,
+        read_custody_refs=[],
+        navigation_logical_edge_charges=logical_edge_charges,
     )
 
 
@@ -419,6 +647,274 @@ def test_registry_is_transient_exact_and_missing_binding_fails_before_edge() -> 
         )
 
 
+def test_pending_navigation_does_not_charge_until_atomic_selection() -> None:
+    kernel, registry, candidate, decision = _atomic_navigation_kernel()
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    navigation = kernel.state.searchos_navigation_state
+    assert slot["posture"] == "awaiting_navigation_admission"
+    assert slot["read_nomination_count"] == 0
+    assert navigation["logical_read_nomination_charges"] == 0
+    assert navigation["logical_edge_charges"] == 0
+    assert navigation["selection_leases_by_id"] == {}
+
+    action = kernel.authorize_searchos_navigation_selection(
+        navigation_candidate_ref=candidate,
+        destination_registry=registry,
+        judgment_decision_ref=decision,
+    )
+    kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "navigation_selection_ref": action.inputs[
+                    "predicted_navigation_selection_ref"
+                ],
+                "navigation_edge_ref": action.inputs["predicted_navigation_edge_ref"],
+            },
+        )
+    )
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    navigation = kernel.state.searchos_navigation_state
+    assert slot["posture"] == "awaiting_read"
+    assert slot["read_nomination_count"] == 1
+    assert slot["navigation_selection_count"] == 1
+    assert slot["pending_navigation_decision_ref"] == {}
+    assert slot["pending_navigation_candidate_ref"] == {}
+    assert navigation["logical_read_nomination_charges"] == 1
+    assert navigation["logical_edge_charges"] == 1
+    assert len(navigation["selection_leases_by_id"]) == 1
+    assert len(navigation["edges_by_id"]) == 1
+
+
+def test_destination_failure_releases_lease_and_reopens_same_slot() -> None:
+    kernel, registry, candidate, decision = _atomic_navigation_kernel()
+    action = kernel.authorize_searchos_navigation_selection(
+        navigation_candidate_ref=candidate,
+        destination_registry=registry,
+        judgment_decision_ref=decision,
+    )
+    kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "navigation_selection_ref": action.inputs[
+                    "predicted_navigation_selection_ref"
+                ],
+                "navigation_edge_ref": action.inputs["predicted_navigation_edge_ref"],
+            },
+        )
+    )
+    navigation = kernel.state.searchos_navigation_state
+    selection_ref = action.inputs["predicted_navigation_selection_ref"]
+    selection = navigation["selection_leases_by_id"][
+        selection_ref["navigation_selection_id"]
+    ]
+    terminal = kernel.authorize_searchos_navigation_terminal_record(
+        outcome_scope="destination",
+        stable_option_ref=selection["stable_option_ref"],
+        operation_identity_key=(
+            "read-navigation:" + selection["physical_identity_digest"]
+        ),
+        disposition="destination_failed",
+        failure_code="navigation_transport_failed_no_retry",
+    )
+    kernel.reduce(
+        Observation.from_action(
+            terminal,
+            observation_type=(ObservationType.SEARCHOS_NAVIGATION_TERMINAL_RECORDED),
+            status=RunStageStatus.COMPLETED,
+            payload={"navigation_terminal_outcome": dict(terminal.inputs)},
+        )
+    )
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    navigation = kernel.state.searchos_navigation_state
+    option = navigation["option_states_by_id"][
+        selection["stable_option_ref"]["navigation_option_id"]
+    ]
+    assert slot["posture"] == "active_unjudged"
+    assert slot["read_nomination_count"] == 1
+    assert navigation["logical_read_nomination_charges"] == 1
+    assert navigation["logical_edge_charges"] == 1
+    assert option["disposition"] == "destination_failed"
+    assert option["active_lease_ref"] == {}
+    assert (
+        selection_ref["navigation_selection_id"]
+        in navigation["released_selection_leases_by_id"]
+    )
+    terminal_record = next(
+        iter(navigation["terminal_physical_operations_by_key"].values())
+    )
+    assert terminal_record["retry_licensed"] is False
+
+
+def test_missing_binding_rejects_pending_navigation_with_zero_deltas() -> None:
+    kernel, registry, candidate, decision = _atomic_navigation_kernel()
+    registry.discard()
+    before_navigation = json.loads(json.dumps(kernel.state.searchos_navigation_state))
+    action = kernel.authorize_searchos_navigation_selection(
+        navigation_candidate_ref=candidate,
+        destination_registry=registry,
+        judgment_decision_ref=decision,
+    )
+    assert action.inputs["navigation_admission_outcome"] == "rejected"
+    kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+            status=RunStageStatus.FAILED,
+            payload={
+                "navigation_admission_outcome": "rejected",
+                "failure_code": action.inputs["failure_code"],
+            },
+        )
+    )
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    navigation = kernel.state.searchos_navigation_state
+    assert slot["posture"] == "active_unjudged"
+    assert slot["read_nomination_count"] == 0
+    assert slot["pending_navigation_decision_ref"] == {}
+    assert slot["pending_navigation_candidate_ref"] == {}
+    assert navigation["logical_read_nomination_charges"] == 0
+    assert navigation["logical_edge_charges"] == 0
+    assert navigation["selection_leases_by_id"] == {}
+    assert navigation["edges_by_id"] == {}
+    assert navigation["terminal_physical_operations_by_key"] == {}
+    assert before_navigation["logical_edge_charges"] == 0
+    option = next(iter(navigation["option_states_by_id"].values()))
+    assert option["disposition"] == "binding_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("profile_name", "parent_depth", "read_count", "selection_count", "reason"),
+    (
+        ("Fast", 1, 0, 0, "navigation_depth_limit_exhausted"),
+        ("Fast", 0, 0, 1, "navigation_selection_limit_exhausted"),
+        ("Fast", 0, 2, 0, "navigation_read_nomination_limit_exhausted"),
+    ),
+)
+def test_policy_rejections_clear_pending_without_charges(
+    profile_name: str,
+    parent_depth: int,
+    read_count: int,
+    selection_count: int,
+    reason: str,
+) -> None:
+    kernel, registry, candidate, decision = _atomic_navigation_kernel(
+        parent_depth=parent_depth,
+        profile_name=profile_name,
+        read_nomination_count=read_count,
+        navigation_selection_count=selection_count,
+    )
+    action = kernel.authorize_searchos_navigation_selection(
+        navigation_candidate_ref=candidate,
+        destination_registry=registry,
+        judgment_decision_ref=decision,
+    )
+    assert action.inputs["navigation_admission_outcome"] == "rejected"
+    assert action.inputs["failure_code"] == reason
+    kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+            status=RunStageStatus.FAILED,
+            payload={
+                "navigation_admission_outcome": "rejected",
+                "failure_code": reason,
+            },
+        )
+    )
+    slot = kernel.state.searchos_state["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "active_unjudged"
+    assert slot["read_nomination_count"] == read_count
+    assert kernel.state.searchos_navigation_state["logical_edge_charges"] == 0
+    assert (
+        kernel.state.searchos_navigation_state["logical_read_nomination_charges"] == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    ("stale_lineage", "stale_representative", "lease_conflict"),
+)
+def test_current_authority_rejections_have_zero_incremental_charges(
+    failure_kind: str,
+) -> None:
+    kernel, registry, candidate, decision = _atomic_navigation_kernel(
+        "[child](/child) [other](/other)"
+    )
+    if failure_kind == "stale_lineage":
+        second_draft = _draft("[same child](/child)")
+        packet, ledger, parent = _join_material(second_draft)
+        parent["searchos_parent_use_custody_id"] = "parent-use:second"
+        parent["searchos_parent_use_custody_digest"] = _digest("parent-use:second")
+        proposal = build_searchos_navigation_candidate_set_v1(
+            draft=second_draft,
+            destination_registry=registry,
+            fetch_read_packet=packet,
+            evidence_ledger_custody=ledger,
+            parent_custody_ref=parent,
+            slot_ref=_slot(),
+            parent_custody_admission_ordinal=2,
+        )
+        kernel.state.searchos_navigation_state = (
+            admit_searchos_navigation_candidate_set(
+                kernel.state.searchos_navigation_state,
+                candidate_set=proposal,
+            )
+        )
+    elif failure_kind == "stale_representative":
+        option_id = candidate["stable_option_ref"]["navigation_option_id"]
+        kernel.state.searchos_navigation_state["option_states_by_id"][option_id][
+            "representative_contributor_ref"
+        ] = _ref("navigation_contributor", "stale")
+    else:
+        kernel.state.searchos_navigation_state, _, _ = (
+            admit_searchos_navigation_selection(
+                kernel.state.searchos_navigation_state,
+                navigation_candidate_ref=candidate,
+                destination_registry=registry,
+            )
+        )
+    before_edge = kernel.state.searchos_navigation_state["logical_edge_charges"]
+    before_read = kernel.state.searchos_navigation_state[
+        "logical_read_nomination_charges"
+    ]
+    action = kernel.authorize_searchos_navigation_selection(
+        navigation_candidate_ref=candidate,
+        destination_registry=registry,
+        judgment_decision_ref=decision,
+    )
+    assert action.inputs["navigation_admission_outcome"] == "rejected"
+    kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.SEARCHOS_NAVIGATION_SELECTED,
+            status=RunStageStatus.FAILED,
+            payload={
+                "navigation_admission_outcome": "rejected",
+                "failure_code": action.inputs["failure_code"],
+            },
+        )
+    )
+    assert kernel.state.searchos_navigation_state["logical_edge_charges"] == before_edge
+    assert (
+        kernel.state.searchos_navigation_state["logical_read_nomination_charges"]
+        == before_read
+    )
+    assert (
+        kernel.state.searchos_state["slots_by_id"]["slot-1"]["read_nomination_count"]
+        == 0
+    )
+    assert (
+        kernel.state.searchos_state["slots_by_id"]["slot-1"]["posture"]
+        == "active_unjudged"
+    )
+
+
 def test_stable_lineage_staleness_contributor_failure_and_terminal_scope() -> None:
     _, registry, first = _proposal("[child](/child)")
     state = build_searchos_navigation_retained_state(
@@ -485,7 +981,7 @@ def test_stable_lineage_staleness_contributor_failure_and_terminal_scope() -> No
         stable_option_ref=current["stable_option_ref"],
         operation_identity_key=(
             "read-navigation:"
-            + current["destination_binding_ref"]["physical_identity_digest"]
+            + selection["physical_identity_digest"]
         ),
         disposition="destination_failed",
         failure_code="navigation_transport_failed_no_retry",
@@ -690,6 +1186,388 @@ def test_candidate_set_and_deep_edge_limit_boundaries() -> None:
         )
 
 
+@pytest.mark.parametrize(("profile_name", "max_depth", "selection_limit", "edge_limit"),
+    (
+        ("Fast", 1, 1, 8),
+        ("Balanced", 2, 2, 16),
+        ("Deep", 3, 3, 24),
+    ),
+)
+def test_mode_specific_navigation_limits_and_boundaries(
+    profile_name: str,
+    max_depth: int,
+    selection_limit: int,
+    edge_limit: int,
+) -> None:
+    profile = searchos_policy_profile(profile_name)
+    assert profile.navigation_max_depth == max_depth
+    assert profile.navigation_selections_per_slot == selection_limit
+    assert profile.navigation_edges_per_run == edge_limit
+
+    draft = _draft("[tempting next link](/next)")
+    packet, ledger, parent = _join_material(draft)
+    registry = SearchOSNavigationDestinationRegistry(
+        run_id="run-1", request_id="request-1"
+    )
+    at_max = build_searchos_navigation_candidate_set_v1
+    with pytest.raises(SearchOSNavigationError, match="depth_violation"):
+        at_max(
+            draft=draft,
+            destination_registry=registry,
+            fetch_read_packet=packet,
+            evidence_ledger_custody=ledger,
+            parent_custody_ref=parent,
+            slot_ref=_slot(),
+            parent_depth=max_depth,
+            navigation_max_depth=max_depth,
+        )
+    allowed = build_searchos_navigation_candidate_set_v1(
+        draft=draft,
+        destination_registry=registry,
+        fetch_read_packet=packet,
+        evidence_ledger_custody=ledger,
+        parent_custody_ref=parent,
+        slot_ref=_slot(),
+        parent_depth=max_depth - 1,
+        navigation_max_depth=max_depth,
+    )
+    assert allowed["candidate_contributors"][0]["child_depth"] == max_depth
+
+    links = " ".join(
+        f"[item {index}](/edge-{index})" for index in range(edge_limit + 1)
+    )
+    _, edge_registry, edge_proposal = _proposal(links)
+    state = build_searchos_navigation_retained_state(
+        run_id="run-1",
+        request_id="request-1",
+        required_slot_ids=[],
+    )
+    state = admit_searchos_navigation_candidate_set(state, candidate_set=edge_proposal)
+    for expected in range(1, edge_limit + 1):
+        candidate = build_searchos_navigation_candidate_window_v1(
+            state, slot_id="slot-1"
+        )["navigation_candidate_refs"][0]
+        state, _, _ = admit_searchos_navigation_selection(
+            state,
+            navigation_candidate_ref=candidate,
+            destination_registry=edge_registry,
+            navigation_max_depth=max_depth,
+            navigation_selections_per_slot=edge_limit + 1,
+            navigation_edges_per_run=edge_limit,
+        )
+        assert state["logical_edge_charges"] == expected
+    next_candidate = build_searchos_navigation_candidate_window_v1(
+        state, slot_id="slot-1"
+    )["navigation_candidate_refs"][0]
+    with pytest.raises(SearchOSNavigationError, match="run_edge_limit"):
+        admit_searchos_navigation_selection(
+            state,
+            navigation_candidate_ref=next_candidate,
+            destination_registry=edge_registry,
+            navigation_max_depth=max_depth,
+            navigation_selections_per_slot=edge_limit + 1,
+            navigation_edges_per_run=edge_limit,
+        )
+    assert state["logical_edge_charges"] == edge_limit
+    assert state["logical_read_nomination_charges"] == edge_limit
+
+    selection_links = " ".join(
+        f"[selection {index}](/selection-{index})"
+        for index in range(selection_limit + 1)
+    )
+    _, selection_registry, selection_proposal = _proposal(selection_links)
+    selection_state = admit_searchos_navigation_candidate_set(
+        build_searchos_navigation_retained_state(
+            run_id="run-1",
+            request_id="request-1",
+            required_slot_ids=[],
+        ),
+        candidate_set=selection_proposal,
+    )
+    assert selection_state["logical_edge_charges"] == 0
+    for expected in range(1, selection_limit + 1):
+        candidate = build_searchos_navigation_candidate_window_v1(
+            selection_state, slot_id="slot-1"
+        )["navigation_candidate_refs"][0]
+        selection_state, _, _ = admit_searchos_navigation_selection(
+            selection_state,
+            navigation_candidate_ref=candidate,
+            destination_registry=selection_registry,
+            navigation_max_depth=max_depth,
+            navigation_selections_per_slot=selection_limit,
+            navigation_edges_per_run=edge_limit,
+        )
+        assert selection_state["logical_edge_charges"] == expected
+    rejected_candidate = build_searchos_navigation_candidate_window_v1(
+        selection_state, slot_id="slot-1"
+    )["navigation_candidate_refs"][0]
+    with pytest.raises(SearchOSNavigationError, match="selection_limit_exhausted"):
+        admit_searchos_navigation_selection(
+            selection_state,
+            navigation_candidate_ref=rejected_candidate,
+            destination_registry=selection_registry,
+            navigation_max_depth=max_depth,
+            navigation_selections_per_slot=selection_limit,
+            navigation_edges_per_run=edge_limit,
+        )
+    assert selection_state["logical_edge_charges"] == selection_limit
+    assert selection_state["logical_read_nomination_charges"] == (selection_limit)
+
+
+@pytest.mark.parametrize(
+    ("profile_name", "selection_limit", "edge_limit"),
+    (("Fast", 1, 8), ("Balanced", 2, 16), ("Deep", 3, 24)),
+)
+def test_navigation_legal_action_is_omitted_at_mode_limits(
+    profile_name: str,
+    selection_limit: int,
+    edge_limit: int,
+) -> None:
+    available = _navigation_judgment_request_at_limits(
+        profile_name=profile_name,
+        navigation_selection_count=selection_limit - 1,
+        logical_edge_charges=edge_limit - 1,
+    )
+    assert available["navigation_availability_reason"] == ("navigation_available")
+    assert "REQUEST_NAVIGATE_BREADCRUMB" in available["legal_actions"]
+
+    for attempted_count in (selection_limit, selection_limit + 1):
+        exhausted = _navigation_judgment_request_at_limits(
+            profile_name=profile_name,
+            navigation_selection_count=attempted_count,
+            logical_edge_charges=edge_limit - 1,
+        )
+        assert exhausted["navigation_availability_reason"] == (
+            "navigation_selection_limit_exhausted"
+        )
+        assert exhausted["navigation_candidate_refs"] == []
+        assert "REQUEST_NAVIGATE_BREADCRUMB" not in exhausted["legal_actions"]
+        assert {
+            "PROPOSE_FOLLOWUP_QUERY",
+            "HANDOFF_UNRESOLVED",
+        }.issubset(exhausted["legal_actions"])
+
+    for attempted_count in (edge_limit, edge_limit + 1):
+        exhausted = _navigation_judgment_request_at_limits(
+            profile_name=profile_name,
+            navigation_selection_count=selection_limit - 1,
+            logical_edge_charges=attempted_count,
+        )
+        assert exhausted["navigation_availability_reason"] == (
+            "navigation_run_edge_limit_exhausted"
+        )
+        assert exhausted["navigation_candidate_refs"] == []
+        assert "REQUEST_NAVIGATE_BREADCRUMB" not in exhausted["legal_actions"]
+        assert {
+            "PROPOSE_FOLLOWUP_QUERY",
+            "HANDOFF_UNRESOLVED",
+        }.issubset(exhausted["legal_actions"])
+
+
+def test_v1_policy_and_navigation_state_replay_remain_parseable() -> None:
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name="Balanced",
+        navigation_runtime_open=True,
+    )
+    v1_policy_core = {
+        key: value
+        for key, value in policy.items()
+        if key
+        not in {
+            "policy_snapshot_id",
+            "policy_snapshot_digest",
+            "replay_identity",
+            "navigation_max_depth",
+            "navigation_selections_per_slot",
+            "navigation_edges_per_run",
+        }
+    }
+    v1_policy_core["schema_version"] = "searchos_policy_profile_v1"
+    v1_policy_digest = _stable_json_digest(v1_policy_core)
+    v1_policy = {
+        **v1_policy_core,
+        "policy_snapshot_id": f"searchos-policy:{v1_policy_digest[:24]}",
+        "policy_snapshot_digest": v1_policy_digest,
+        "replay_identity": f"searchos-policy:{v1_policy_digest}",
+    }
+    v1_state = build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract-1"),
+        policy_snapshot=v1_policy,
+        active_slots=[
+            {
+                "slot_id": "slot-1",
+                "component_ref": _ref("component", "component-1"),
+                "source_obligation_ref": _ref("source_obligation", "obligation-1"),
+                "requirement_posture": "required",
+            }
+        ],
+    )
+    slot = v1_state["slots_by_id"]["slot-1"]
+    for field in (
+        "navigation_selection_count",
+        "pending_navigation_decision_ref",
+        "pending_navigation_candidate_ref",
+        "navigation_availability_reason",
+        "navigation_admission_history",
+    ):
+        slot.pop(field)
+    slot.pop("slot_state_digest")
+    slot["slot_state_digest"] = _stable_json_digest(slot)
+    state_core = {
+        key: value
+        for key, value in v1_state.items()
+        if key not in {"state_id", "state_digest", "replay_identity"}
+    }
+    state_core["schema_version"] = "searchos_iterative_judgment_state_v1"
+    state_digest = _stable_json_digest(state_core)
+    replay_state = {
+        **state_core,
+        "state_id": f"searchos-state:{state_digest[:24]}",
+        "state_digest": state_digest,
+        "replay_identity": f"searchos-state:{state_digest}",
+    }
+    assert validate_searchos_state(replay_state) == replay_state
+
+    navigation_v1 = build_searchos_navigation_retained_state(
+        run_id="run-1",
+        request_id="request-1",
+        required_slot_ids=["slot-1"],
+    )
+    navigation_v1["schema_version"] = "searchos_navigation_retained_state_v1"
+    for field in (
+        "released_selection_leases_by_id",
+        "selection_counts_by_slot",
+        "selection_admission_facts_by_id",
+        "expansion_outcomes_by_parent_custody_id",
+    ):
+        navigation_v1.pop(field)
+    assert validate_searchos_navigation_retained_state(navigation_v1) == (navigation_v1)
+
+
+def test_registry_transaction_commits_only_canonical_prefix_and_rolls_back_new() -> (
+    None
+):
+    draft = _draft("[one](/one) [two](/two)")
+    packet, ledger, parent = _join_material(draft)
+    registry = SearchOSNavigationDestinationRegistry(
+        run_id="run-1", request_id="request-1", capacity=2
+    )
+    transaction = registry.begin_transaction()
+    proposal = build_searchos_navigation_candidate_set_v1(
+        draft=draft,
+        destination_registry=transaction,
+        fetch_read_packet=packet,
+        evidence_ledger_custody=ledger,
+        parent_custody_ref=parent,
+        slot_ref=_slot(),
+    )
+    state = build_searchos_navigation_retained_state(
+        run_id="run-1",
+        request_id="request-1",
+        required_slot_ids=[],
+        ceilings={
+            "stable_options": 1,
+            "contributors": 2,
+            "lineages": 2,
+            "candidate_sets": 2,
+            "deep_edges": 2,
+        },
+    )
+    admitted = admit_searchos_navigation_candidate_set(state, candidate_set=proposal)
+    candidate_set = next(iter(admitted["candidate_sets_by_id"].values()))
+    admitted_bindings = [
+        admitted["options_by_id"][ref["stable_option_ref"]["navigation_option_id"]][
+            "destination_binding_ref"
+        ]
+        for ref in candidate_set["navigation_candidate_refs"]
+    ]
+    assert len(admitted_bindings) == 1
+    transaction.commit_admitted_bindings(admitted_bindings)
+    transaction.finalize()
+    assert len(registry) == 1
+    assert registry.resolve(admitted_bindings[0]).endswith("/one") or registry.resolve(
+        admitted_bindings[0]
+    ).endswith("/two")
+
+    existing_ref = admitted_bindings[0]
+    rollback = registry.begin_transaction()
+    assert rollback.register(registry.resolve(existing_ref)) == existing_ref
+    new_ref = rollback.register("https://example.com/new")
+    rollback.commit_admitted_bindings([existing_ref, new_ref])
+    assert len(registry) == 2
+    rollback.rollback()
+    assert len(registry) == 1
+    assert registry.resolve(existing_ref)
+    with pytest.raises(SearchOSNavigationError, match="binding_unavailable"):
+        registry.resolve(new_ref)
+
+
+def test_registry_transaction_mid_proposal_and_capacity_failure_leave_no_entries() -> (
+    None
+):
+    registry = SearchOSNavigationDestinationRegistry(
+        run_id="run-1", request_id="request-1", capacity=1
+    )
+    transaction = registry.begin_transaction()
+    transaction.register("https://example.com/valid")
+    with pytest.raises(SearchOSNavigationError):
+        transaction.register("https://example.com:444/invalid")
+    transaction.rollback()
+    assert len(registry) == 0
+
+    transaction = registry.begin_transaction()
+    first = transaction.register("https://example.com/first")
+    second = transaction.register("https://example.com/second")
+    with pytest.raises(SearchOSNavigationError, match="capacity_exhausted"):
+        transaction.commit_admitted_bindings([first, second])
+    transaction.rollback()
+    assert len(registry) == 0
+
+
+def test_bracketed_ipv6_normalizes_registers_and_overlays_without_network() -> None:
+    exact = "https://[2001:0db8:0:0::1]:443/path/"
+    normalized = normalize_navigation_url(exact)
+    assert normalized.exact_url == "https://[2001:db8::1]:443/path/"
+    assert normalized.hostname == "2001:db8::1"
+    assert normalized.path == "/path/"
+    assert normalized.port_posture == "explicit_default_443"
+    registry = SearchOSNavigationDestinationRegistry(
+        run_id="run-1", request_id="request-1"
+    )
+    binding = registry.register(exact)
+    assert registry.resolve(binding) == normalized.exact_url
+    overlay = SearchOSNavigationExecutionOverlayV1.create(
+        run_id="run-1",
+        request_id="request-1",
+        destination_binding_ref=binding,
+        navigation_edge_ref=_ref("navigation_edge", "ipv6"),
+        navigation_selection_ref=_ref("navigation_selection", "ipv6"),
+        work_order_ref=_ref("work_order", "ipv6"),
+        route_observation_ref=_ref("route_observation", "ipv6"),
+        destination_registry=registry,
+    )
+    overlay.require_active()
+    assert overlay.exact_execution_url == normalized.exact_url
+    assert normalize_navigation_url("https://127.0.0.1/path").hostname == "127.0.0.1"
+    assert (
+        normalize_navigation_url("https://EXAMPLE.com/path").hostname == "example.com"
+    )
+    for invalid in (
+        "https://2001:db8::1/path",
+        "https://[2001:db8::1%25eth0]/path",
+        "https://[2001:db8::zz]/path",
+        "https://[2001:db8::1]:444/path",
+        "https://user@[2001:db8::1]/path",
+        "https://[2001:db8::1]/path?query=blocked",
+    ):
+        with pytest.raises(SearchOSNavigationError):
+            registry.register(invalid)
+
+
 @pytest.mark.parametrize("contributor_count", [7, 8, 9])
 def test_per_option_contributor_limit_boundaries(
     contributor_count: int,
@@ -814,9 +1692,18 @@ def test_runkernel_owns_candidate_admission_selection_and_logical_charges() -> N
         slot_id="slot-1",
     )
     candidate_ref = window["navigation_candidate_refs"][0]
+    contributor = kernel.state.searchos_navigation_state["contributors_by_id"][
+        candidate_ref["representative_contributor_ref"]["navigation_contributor_id"]
+    ]
+    decision = _prepare_pending_navigation_for_kernel(
+        kernel,
+        candidate_ref=candidate_ref,
+        parent_custody_ref=contributor["parent_custody_ref"],
+    )
     selection = kernel.authorize_searchos_navigation_selection(
         navigation_candidate_ref=candidate_ref,
         destination_registry=registry,
+        judgment_decision_ref=decision,
     )
     assert exact_url not in json.dumps(selection.to_dict(), sort_keys=True)
     kernel.reduce(
@@ -876,9 +1763,18 @@ def test_runkernel_successful_custody_is_first_canonical_exact_url_commit() -> N
         kernel.state.searchos_navigation_state,
         slot_id="slot-1",
     )["navigation_candidate_refs"][0]
+    contributor = kernel.state.searchos_navigation_state["contributors_by_id"][
+        candidate_ref["representative_contributor_ref"]["navigation_contributor_id"]
+    ]
+    decision = _prepare_pending_navigation_for_kernel(
+        kernel,
+        candidate_ref=candidate_ref,
+        parent_custody_ref=contributor["parent_custody_ref"],
+    )
     selection_action = kernel.authorize_searchos_navigation_selection(
         navigation_candidate_ref=candidate_ref,
         destination_registry=registry,
+        judgment_decision_ref=decision,
     )
     kernel.reduce(
         Observation.from_action(

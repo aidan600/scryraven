@@ -18,8 +18,10 @@ from typing import Any, Mapping, Sequence
 from core.discovery_source_result import normalize_discovery_result_url
 
 SEARCHOS_OWNER = "RunKernel.SearchOSIterativeJudgment"
-SEARCHOS_POLICY_SCHEMA_VERSION = "searchos_policy_profile_v1"
-SEARCHOS_STATE_SCHEMA_VERSION = "searchos_iterative_judgment_state_v1"
+SEARCHOS_POLICY_V1_SCHEMA_VERSION = "searchos_policy_profile_v1"
+SEARCHOS_POLICY_SCHEMA_VERSION = "searchos_policy_profile_v2"
+SEARCHOS_STATE_V1_SCHEMA_VERSION = "searchos_iterative_judgment_state_v1"
+SEARCHOS_STATE_SCHEMA_VERSION = "searchos_iterative_judgment_state_v2"
 SEARCHOS_REVISION_1_CANDIDATE_STATE_SCHEMA_VERSION = "searchos_revision_1_candidate_state_v1"
 
 SEARCHOS_ITERATION_CANDIDATE_SET_SCHEMA_VERSION = "searchos_iteration_candidate_set_v1"
@@ -62,6 +64,7 @@ class SearchOSJudgmentAction(str, Enum):
 
 class SearchOSSlotPosture(str, Enum):
     ACTIVE_UNJUDGED = "active_unjudged"
+    AWAITING_NAVIGATION_ADMISSION = "awaiting_navigation_admission"
     AWAITING_READ = "awaiting_read"
     AWAITING_FOLLOWUP_DISCOVER = "awaiting_followup_discover"
     READY_FOR_SEMANTIC_EVALUATION = "ready_for_semantic_evaluation"
@@ -83,7 +86,7 @@ class SearchOSRequirementPosture(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class SearchOSPolicyProfileV1:
+class SearchOSPolicyProfileV2:
     profile_name: SearchOSProfileName
     minimum_reserved_judgment_calls_per_required_slot: int
     additional_judgment_call_pool_per_active_slot: int
@@ -91,6 +94,9 @@ class SearchOSPolicyProfileV1:
     candidate_waves_per_slot: int
     read_nominations_per_slot: int
     followup_query_nominations_per_slot: int
+    navigation_max_depth: int
+    navigation_selections_per_slot: int
+    navigation_edges_per_run: int
     maximum_active_slots: int = MAXIMUM_ACTIVE_SLOTS
     candidate_use_window_size: int = CANDIDATE_USE_WINDOW_SIZE
     navigation_runtime_open: bool = False
@@ -115,6 +121,9 @@ class SearchOSPolicyProfileV1:
             "followup_query_nominations_per_slot": (
                 self.followup_query_nominations_per_slot
             ),
+            "navigation_max_depth": self.navigation_max_depth,
+            "navigation_selections_per_slot": (self.navigation_selections_per_slot),
+            "navigation_edges_per_run": self.navigation_edges_per_run,
             "navigation_runtime_open": self.navigation_runtime_open,
             "post_analyst_reentry_runtime_open": (
                 self.post_analyst_reentry_runtime_open
@@ -126,7 +135,7 @@ class SearchOSPolicyProfileV1:
 
 
 _POLICY_PROFILES = {
-    SearchOSProfileName.FAST: SearchOSPolicyProfileV1(
+    SearchOSProfileName.FAST: SearchOSPolicyProfileV2(
         profile_name=SearchOSProfileName.FAST,
         minimum_reserved_judgment_calls_per_required_slot=2,
         additional_judgment_call_pool_per_active_slot=1,
@@ -134,8 +143,11 @@ _POLICY_PROFILES = {
         candidate_waves_per_slot=2,
         read_nominations_per_slot=2,
         followup_query_nominations_per_slot=1,
+        navigation_max_depth=1,
+        navigation_selections_per_slot=1,
+        navigation_edges_per_run=8,
     ),
-    SearchOSProfileName.BALANCED: SearchOSPolicyProfileV1(
+    SearchOSProfileName.BALANCED: SearchOSPolicyProfileV2(
         profile_name=SearchOSProfileName.BALANCED,
         minimum_reserved_judgment_calls_per_required_slot=3,
         additional_judgment_call_pool_per_active_slot=2,
@@ -143,8 +155,11 @@ _POLICY_PROFILES = {
         candidate_waves_per_slot=3,
         read_nominations_per_slot=3,
         followup_query_nominations_per_slot=2,
+        navigation_max_depth=2,
+        navigation_selections_per_slot=2,
+        navigation_edges_per_run=16,
     ),
-    SearchOSProfileName.DEEP: SearchOSPolicyProfileV1(
+    SearchOSProfileName.DEEP: SearchOSPolicyProfileV2(
         profile_name=SearchOSProfileName.DEEP,
         minimum_reserved_judgment_calls_per_required_slot=4,
         additional_judgment_call_pool_per_active_slot=4,
@@ -152,13 +167,20 @@ _POLICY_PROFILES = {
         candidate_waves_per_slot=4,
         read_nominations_per_slot=4,
         followup_query_nominations_per_slot=3,
+        navigation_max_depth=3,
+        navigation_selections_per_slot=3,
+        navigation_edges_per_run=24,
     ),
 }
+
+# Source compatibility for repository callers that imported the former class
+# name. New snapshots are always explicit v2 envelopes.
+SearchOSPolicyProfileV1 = SearchOSPolicyProfileV2
 
 
 def searchos_policy_profile(
     profile_name: SearchOSProfileName | str,
-) -> SearchOSPolicyProfileV1:
+) -> SearchOSPolicyProfileV2:
     try:
         key = (
             profile_name
@@ -209,7 +231,7 @@ def searchos_policy_snapshot_ref(snapshot: Mapping[str, Any]) -> dict[str, Any]:
             safe.get("policy_snapshot_digest"), "policy_snapshot_digest"
         ),
         "profile_name": _token(safe.get("profile_name"), "profile_name"),
-        "schema_version": SEARCHOS_POLICY_SCHEMA_VERSION,
+        "schema_version": safe["schema_version"],
     }
 
 
@@ -275,6 +297,11 @@ def build_searchos_initial_state(
             "candidate_window_count": 0,
             "candidate_wave_count": 1,
             "read_nomination_count": 0,
+            "navigation_selection_count": 0,
+            "pending_navigation_decision_ref": {},
+            "pending_navigation_candidate_ref": {},
+            "navigation_availability_reason": None,
+            "navigation_admission_history": [],
             "followup_query_nomination_count": 0,
             "satisfaction_claimed": False,
             "coverage_upgrade_claimed": False,
@@ -765,6 +792,9 @@ def mark_searchos_slot_budget_exhausted(
         raise SearchOSRuntimeError("budget exhaustion references inactive slot")
     slot = deepcopy(slots[token])
     slot["posture"] = SearchOSSlotPosture.BUDGET_EXHAUSTED.value
+    if "pending_navigation_decision_ref" in slot:
+        slot["pending_navigation_decision_ref"] = {}
+        slot["pending_navigation_candidate_ref"] = {}
     slot["latest_reason"] = _bounded_reason(reason)
     slot["action_history"].append(
         {
@@ -788,6 +818,9 @@ def mark_searchos_slot_unresolved(
         raise SearchOSRuntimeError("unresolved handoff references inactive slot")
     slot = deepcopy(slots[token])
     slot["posture"] = SearchOSSlotPosture.UNRESOLVED_HANDOFF.value
+    if "pending_navigation_decision_ref" in slot:
+        slot["pending_navigation_decision_ref"] = {}
+        slot["pending_navigation_candidate_ref"] = {}
     slot["latest_reason"] = _bounded_reason(reason)
     slot["action_history"].append(
         {
@@ -811,6 +844,9 @@ def mark_searchos_slot_stale_or_invalid(
         raise SearchOSRuntimeError("stale nomination references inactive slot")
     slot = deepcopy(slots[token])
     slot["posture"] = SearchOSSlotPosture.STALE_OR_INVALID.value
+    if "pending_navigation_decision_ref" in slot:
+        slot["pending_navigation_decision_ref"] = {}
+        slot["pending_navigation_candidate_ref"] = {}
     slot["latest_reason"] = _bounded_reason(reason)
     slot["action_history"].append(
         {
@@ -1866,6 +1902,7 @@ def build_searchos_judgment_request_v2(
     candidate_window: Mapping[str, Any],
     navigation_candidate_window: Mapping[str, Any],
     read_custody_refs: Sequence[Mapping[str, Any]],
+    navigation_logical_edge_charges: int = 0,
 ) -> dict[str, Any]:
     """Build the explicit navigation-capable SearchJudgment request."""
 
@@ -1887,7 +1924,25 @@ def build_searchos_judgment_request_v2(
     if navigation_window.get("slot_id") != slot_id:
         raise SearchOSRuntimeError("navigation judgment window does not bind current slot")
     legal_actions = list(v1["legal_actions"])
-    navigation_refs = deepcopy(navigation_window.get("navigation_candidate_refs") or [])
+    slot = _mapping(_validated_state_copy(state)["slots_by_id"])[slot_id]
+    selection_count = int(slot.get("navigation_selection_count") or 0)
+    selection_limit = int(policy["navigation_selections_per_slot"])
+    edge_count = int(navigation_logical_edge_charges)
+    edge_limit = int(policy["navigation_edges_per_run"])
+    if selection_count >= selection_limit:
+        navigation_availability_reason = "navigation_selection_limit_exhausted"
+    elif edge_count >= edge_limit:
+        navigation_availability_reason = "navigation_run_edge_limit_exhausted"
+    elif int(slot.get("read_nomination_count") or 0) >= int(
+        policy["read_nominations_per_slot"]
+    ):
+        navigation_availability_reason = "navigation_read_nomination_limit_exhausted"
+    else:
+        navigation_availability_reason = "navigation_available"
+    navigation_refs = (
+        deepcopy(navigation_window.get("navigation_candidate_refs") or [])
+        if navigation_availability_reason == "navigation_available"
+        else [])
     if navigation_refs:
         insertion = (
             1
@@ -1924,6 +1979,7 @@ def build_searchos_judgment_request_v2(
             "navigation_options_directional_only": True,
             "navigation_options_support_bearing": False,
             "model_authored_destination_allowed": False,
+            "navigation_availability_reason": navigation_availability_reason,
         }
     )
     digest = _digest(request_core)
@@ -2164,10 +2220,7 @@ def reduce_searchos_judgment_decision(state: Mapping[str, Any], *, decision: Map
             }
     slot["candidate_option_dispositions"] = dispositions
     policy = _mapping(candidate["policy_snapshot"])
-    if action in {
-        SearchOSJudgmentAction.REQUEST_READ_PAGE,
-        SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB,
-    }:
+    if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
         if int(slot["read_nomination_count"]) >= int(policy["read_nominations_per_slot"]):
             return mark_searchos_slot_budget_exhausted(
                 candidate,
@@ -2176,11 +2229,22 @@ def reduce_searchos_judgment_decision(state: Mapping[str, Any], *, decision: Map
             )
         slot["posture"] = SearchOSSlotPosture.AWAITING_READ.value
         slot["read_nomination_count"] = int(slot["read_nomination_count"]) + 1
-        slot["latest_reason"] = (
-            "authorized_navigation_breadcrumb_read_requested"
-            if action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB
-            else "authorized_candidate_read_requested"
+        slot["latest_reason"] = "authorized_candidate_read_requested"
+    elif action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB:
+        if slot.get("pending_navigation_decision_ref") or slot.get(
+            "pending_navigation_candidate_ref"
+        ):
+            raise SearchOSRuntimeError(
+                "navigation judgment conflicts with an existing pending admission"
+            )
+        navigation_ref = _required_ref(
+            reduced.get("navigation_candidate_ref"),
+            "navigation_candidate_ref",
         )
+        slot["posture"] = SearchOSSlotPosture.AWAITING_NAVIGATION_ADMISSION.value
+        slot["pending_navigation_decision_ref"] = _compact_ref(reduced)
+        slot["pending_navigation_candidate_ref"] = navigation_ref
+        slot["latest_reason"] = "navigation_breadcrumb_pending_admission"
     elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
         if int(slot["followup_query_nomination_count"]) >= int(policy["followup_query_nominations_per_slot"]):
             return mark_searchos_slot_budget_exhausted(
@@ -2206,6 +2270,199 @@ def reduce_searchos_judgment_decision(state: Mapping[str, Any], *, decision: Map
         }
     )
     slots[slot_id] = _refresh_slot(slot)
+    candidate["slots_by_id"] = slots
+    return _refresh_state(candidate)
+
+
+def validate_pending_searchos_navigation_admission(
+    state: Mapping[str, Any],
+    *,
+    judgment_decision_ref: Mapping[str, Any],
+    navigation_candidate_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the exact pending slot and return immutable admission facts."""
+
+    canonical = _validated_state_copy(state)
+    decision_ref = _compact_ref(
+        _required_ref(judgment_decision_ref, "judgment_decision_ref")
+    )
+    candidate_ref = _required_ref(navigation_candidate_ref, "navigation_candidate_ref")
+    matching = [
+        deepcopy(_mapping(slot))
+        for slot in _mapping(canonical["slots_by_id"]).values()
+        if _mapping(slot).get("pending_navigation_decision_ref") == decision_ref
+    ]
+    if len(matching) != 1:
+        raise SearchOSRuntimeError("navigation_pending_decision_not_current")
+    slot = matching[0]
+    if slot.get("posture") != (SearchOSSlotPosture.AWAITING_NAVIGATION_ADMISSION.value):
+        raise SearchOSRuntimeError("navigation_pending_posture_not_current")
+    if _mapping(slot.get("pending_navigation_candidate_ref")) != candidate_ref:
+        raise SearchOSRuntimeError("navigation_pending_candidate_not_current")
+    slot_id = _token(slot.get("slot_id"), "slot_id")
+    policy = _mapping(canonical["policy_snapshot"])
+    if policy.get("navigation_runtime_open") is not True:
+        raise SearchOSRuntimeError("navigation_runtime_closed")
+    return {
+        "slot_id": slot_id,
+        "slot_ref": deepcopy(slot["slot_ref"]),
+        "judgment_decision_ref": decision_ref,
+        "navigation_candidate_ref": candidate_ref,
+        "policy_snapshot_ref": deepcopy(canonical["policy_snapshot_ref"]),
+        "read_nominations_per_slot": int(policy["read_nominations_per_slot"]),
+        "navigation_max_depth": int(policy["navigation_max_depth"]),
+        "navigation_selections_per_slot": int(policy["navigation_selections_per_slot"]),
+        "navigation_edges_per_run": int(policy["navigation_edges_per_run"]),
+        "read_nomination_count_before": int(slot["read_nomination_count"]),
+        "navigation_selection_count_before": int(
+            slot.get("navigation_selection_count") or 0
+        ),
+    }
+
+
+def admit_pending_searchos_navigation_selection(
+    state: Mapping[str, Any],
+    *,
+    pending_facts: Mapping[str, Any],
+    navigation_selection_ref: Mapping[str, Any],
+    navigation_edge_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Charge READ and select navigation only after every peer check passed."""
+
+    facts = _mapping(pending_facts)
+    validate_pending_searchos_navigation_admission(
+        state,
+        judgment_decision_ref=_mapping(facts.get("judgment_decision_ref")),
+        navigation_candidate_ref=_mapping(facts.get("navigation_candidate_ref")),
+    )
+    candidate = _validated_state_copy(state)
+    slot_id = _token(facts.get("slot_id"), "slot_id")
+    slots = _mutable_mapping(candidate["slots_by_id"])
+    slot = deepcopy(_mapping(slots[slot_id]))
+    if int(slot.get("read_nomination_count") or 0) >= int(
+        facts["read_nominations_per_slot"]
+    ):
+        raise SearchOSRuntimeError("navigation_read_nomination_limit_exhausted")
+    if int(slot.get("navigation_selection_count") or 0) >= int(
+        facts["navigation_selections_per_slot"]
+    ):
+        raise SearchOSRuntimeError("navigation_selection_limit_exhausted")
+    selection_ref = _required_ref(navigation_selection_ref, "navigation_selection_ref")
+    edge_ref = _required_ref(navigation_edge_ref, "navigation_edge_ref")
+    slot["read_nomination_count"] = int(slot["read_nomination_count"]) + 1
+    slot["navigation_selection_count"] = (
+        int(slot.get("navigation_selection_count") or 0) + 1
+    )
+    slot["posture"] = SearchOSSlotPosture.AWAITING_READ.value
+    slot["pending_navigation_decision_ref"] = {}
+    slot["pending_navigation_candidate_ref"] = {}
+    slot["navigation_availability_reason"] = "navigation_selection_admitted"
+    admission_record = {
+        "outcome": "admitted",
+        "judgment_decision_ref": deepcopy(facts["judgment_decision_ref"]),
+        "navigation_candidate_ref": deepcopy(facts["navigation_candidate_ref"]),
+        "navigation_selection_ref": selection_ref,
+        "navigation_edge_ref": edge_ref,
+        "policy_snapshot_ref": deepcopy(facts["policy_snapshot_ref"]),
+        "limit_facts": {
+            "read_nominations_per_slot": int(facts["read_nominations_per_slot"]),
+            "navigation_max_depth": int(facts["navigation_max_depth"]),
+            "navigation_selections_per_slot": int(
+                facts["navigation_selections_per_slot"]
+            ),
+            "navigation_edges_per_run": int(facts["navigation_edges_per_run"]),
+        },
+    }
+    slot["navigation_admission_history"].append(admission_record)
+    slot["latest_reason"] = "navigation_selection_and_read_atomically_admitted"
+    slot["action_history"].append(
+        {
+            "event": "navigation_selection_admitted",
+            **admission_record,
+            "posture_after": slot["posture"],
+        }
+    )
+    slots[slot_id] = _refresh_slot(slot)
+    candidate["slots_by_id"] = slots
+    return _refresh_state(candidate)
+
+
+def reject_pending_searchos_navigation_admission(
+    state: Mapping[str, Any],
+    *,
+    judgment_decision_ref: Mapping[str, Any],
+    navigation_candidate_ref: Mapping[str, Any],
+    failure_code: str,
+) -> dict[str, Any]:
+    """Clear one rejected pending nomination without consuming retrieval budget."""
+
+    facts = validate_pending_searchos_navigation_admission(
+        state,
+        judgment_decision_ref=judgment_decision_ref,
+        navigation_candidate_ref=navigation_candidate_ref,
+    )
+    candidate = _validated_state_copy(state)
+    slots = _mutable_mapping(candidate["slots_by_id"])
+    slot = deepcopy(_mapping(slots[facts["slot_id"]]))
+    reason = _token(failure_code, "navigation_admission_failure_code")[:240]
+    slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    slot["pending_navigation_decision_ref"] = {}
+    slot["pending_navigation_candidate_ref"] = {}
+    slot["navigation_availability_reason"] = reason
+    rejection = {
+        "outcome": "rejected",
+        "judgment_decision_ref": deepcopy(facts["judgment_decision_ref"]),
+        "navigation_candidate_ref": deepcopy(facts["navigation_candidate_ref"]),
+        "failure_code": reason,
+        "charges_consumed": False,
+    }
+    slot["navigation_admission_history"].append(rejection)
+    slot["latest_reason"] = reason
+    slot["action_history"].append(
+        {
+            "event": "navigation_selection_rejected",
+            **rejection,
+            "posture_after": slot["posture"],
+        }
+    )
+    slots[facts["slot_id"]] = _refresh_slot(slot)
+    candidate["slots_by_id"] = slots
+    return _refresh_state(candidate)
+
+
+def reopen_searchos_after_navigation_destination_failure(
+    state: Mapping[str, Any],
+    *,
+    slot_id: str,
+    navigation_selection_ref: Mapping[str, Any],
+    failure_code: str,
+) -> dict[str, Any]:
+    """Reopen judgment after a charged destination fails without retry."""
+
+    candidate = _validated_state_copy(state)
+    token = _token(slot_id, "slot_id")
+    slots = _mutable_mapping(candidate["slots_by_id"])
+    slot = deepcopy(_mapping(slots.get(token)))
+    if slot.get("posture") != SearchOSSlotPosture.AWAITING_READ.value:
+        raise SearchOSRuntimeError("navigation_destination_failure_posture_invalid")
+    reason = _token(failure_code, "navigation_destination_failure_code")[:240]
+    slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    slot["pending_navigation_decision_ref"] = {}
+    slot["pending_navigation_candidate_ref"] = {}
+    slot["latest_reason"] = reason
+    slot["action_history"].append(
+        {
+            "event": "navigation_destination_failed_no_retry",
+            "navigation_selection_ref": _required_ref(
+                navigation_selection_ref, "navigation_selection_ref"
+            ),
+            "failure_code": reason,
+            "charges_preserved": True,
+            "retry_licensed": False,
+            "posture_after": slot["posture"],
+        }
+    )
+    slots[token] = _refresh_slot(slot)
     candidate["slots_by_id"] = slots
     return _refresh_state(candidate)
 
@@ -2490,9 +2747,16 @@ def _readiness_failure_reason(
 
 
 def _validated_policy_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _mapping(value)
+    schema_version = safe.get("schema_version")
+    if schema_version not in {
+        SEARCHOS_POLICY_V1_SCHEMA_VERSION,
+        SEARCHOS_POLICY_SCHEMA_VERSION,
+    }:
+        raise SearchOSRuntimeError("SearchOS policy schema version mismatch")
     return _validated_digest_envelope(
-        value,
-        schema_version=SEARCHOS_POLICY_SCHEMA_VERSION,
+        safe,
+        schema_version=str(schema_version),
         digest_field="policy_snapshot_digest",
         id_field="policy_snapshot_id",
         identity_prefix="searchos-policy",
@@ -2687,7 +2951,10 @@ def _refresh_state(state: Mapping[str, Any]) -> dict[str, Any]:
 
 def _validated_state_copy(state: Mapping[str, Any]) -> dict[str, Any]:
     safe = _mapping(state)
-    _require_schema(safe, SEARCHOS_STATE_SCHEMA_VERSION, "SearchOS state")
+    if safe.get("schema_version") not in {
+        SEARCHOS_STATE_V1_SCHEMA_VERSION, SEARCHOS_STATE_SCHEMA_VERSION,
+    }:
+        raise SearchOSRuntimeError("SearchOS state schema version mismatch")
     claimed = _digest_token(safe.get("state_digest"), "state_digest")
     core = {
         key: deepcopy(value)
@@ -2844,10 +3111,12 @@ __all__ = [
     "SearchOSJudgmentAction",
     "SearchOSMaterialAuthority",
     "SearchOSPolicyProfileV1",
+    "SearchOSPolicyProfileV2",
     "SearchOSProfileName",
     "SearchOSRequirementPosture",
     "SearchOSRuntimeError",
     "SearchOSSlotPosture",
+    "admit_pending_searchos_navigation_selection",
     "begin_searchos_judgment_round",
     "build_candidate_use_options_v1",
     "build_candidate_use_window_v1",
@@ -2877,6 +3146,8 @@ __all__ = [
     "return_searchos_pre_call_reservation",
     "record_searchos_required_needs_block",
     "record_searchos_semantic_handoff",
+    "reject_pending_searchos_navigation_admission",
+    "reopen_searchos_after_navigation_destination_failure",
     "reduce_searchos_judgment_decision",
     "searchos_iteration_candidate_set_ref",
     "searchos_policy_profile",
@@ -2888,4 +3159,5 @@ __all__ = [
     "validate_searchos_judgment_model_output",
     "validate_searchos_revision_1_candidate_state",
     "validate_searchos_state",
+    "validate_pending_searchos_navigation_admission",
 ]
