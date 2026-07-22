@@ -22,12 +22,8 @@ from core.acquisition_control import (
     stable_json_digest,
 )
 from core.authorized_acquisition_runtime import (
-    execute_acquisition_capability_decision_action,
     execute_acquisition_custody_authorization_action,
-    execute_acquisition_route_action,
-    execute_acquisition_terminal_reduction_action,
-    execute_acquisition_work_order_admission_action,
-    execute_authorized_acquisition_work_order,
+    execute_acquisition_work_order_to_terminal,
 )
 from core.discovery_source_result import (
     DiscoveryResultMaterialStore,
@@ -1626,104 +1622,31 @@ def _execute_one_acquisition_to_custody(
     before_transport: Callable[[], Any] | None,
     register_legacy_event: bool = True,
 ) -> dict[str, Any]:
-    snapshot = run_kernel.acquisition_authority_snapshot()
-    capability_action = run_kernel.authorize_acquisition_capability_decision(
-        proposal=proposal
-    )
-    capability_result = execute_acquisition_capability_decision_action(
-        capability_action,
-        proposal=proposal,
-        authority_snapshot=snapshot,
-        acquisition_control_state=run_kernel.state.acquisition_control_state,
-    )
-    run_kernel.reduce(capability_result.observation)
-    decision = capability_result.decision
-    if decision.decision_status != "accepted":
-        raise SearchJudgmentReadAssessmentError(
-            decision.block_code or "acquisition_capability_blocked"
-        )
-    work_action = run_kernel.authorize_acquisition_work_order_admission(
-        capability_decision_ref=decision.ref()
-    )
-    work_result = execute_acquisition_work_order_admission_action(
-        work_action,
-        proposal=proposal,
-        decision=decision,
-        acquisition_control_state=run_kernel.state.acquisition_control_state,
-    )
-    run_kernel.reduce(work_result.observation)
-    work_order = work_result.work_order
-    availability = {
-        "linkup": bool(available_providers.get("linkup")),
-        "tavily": bool(available_providers.get("tavily")),
-    }
-    route_action = run_kernel.authorize_acquisition_route(
-        work_order_ref=work_order.ref(),
-        provider_availability=availability,
-    )
-    route_result = execute_acquisition_route_action(
-        route_action,
-        work_order=work_order,
-        available_providers=availability,
-        acquisition_control_state=run_kernel.state.acquisition_control_state,
-    )
-    run_kernel.reduce(route_result.observation)
-    route_observation = route_result.route_observation
-    if route_observation.terminal_status != "selected":
-        terminal_action = run_kernel.authorize_acquisition_terminal_reduction(
-            route_observation_ref=route_observation.ref()
-        )
-        terminal_result = execute_acquisition_terminal_reduction_action(
-            terminal_action,
-            acquisition_control_state=run_kernel.state.acquisition_control_state,
-            work_order=work_order,
-            route_observation=route_observation,
-        )
-        run_kernel.reduce(terminal_result.observation)
-        raise SearchJudgmentReadAssessmentError(
-            route_observation.block_code or "acquisition_route_blocked"
-        )
-    execution_action = run_kernel.authorize_acquisition_execution(
-        work_order_ref=work_order.ref(),
-        route_observation_ref=route_observation.ref(),
-    )
-    execution_result = execute_authorized_acquisition_work_order(
-        execution_action,
+    acquisition = execute_acquisition_work_order_to_terminal(
         run_kernel=run_kernel,
-        work_order=work_order,
-        route_observation=route_observation,
-        route_decision=route_result.route_decision,
+        proposal=proposal,
+        available_providers=available_providers,
         transports=acquisition_transports,
         before_transport=before_transport,
     )
-    run_kernel.reduce(execution_result.observation)
-    execution_observation = execution_result.execution_observation
-    execution = execution_result.execution_result
-    terminal_action = run_kernel.authorize_acquisition_terminal_reduction(
-        execution_observation_ref=execution_observation.ref()
-    )
-    terminal_result = execute_acquisition_terminal_reduction_action(
-        terminal_action,
-        acquisition_control_state=run_kernel.state.acquisition_control_state,
-        work_order=work_order,
-        route_observation=route_observation,
-        execution_observation=execution_observation,
-    )
-    run_kernel.reduce(terminal_result.observation)
-    execution_result.raise_deferred_error()
+    execution = acquisition.get("execution_result")
+    if execution is None:
+        raise SearchJudgmentReadAssessmentError(
+            str(acquisition.get("failure_code") or "acquisition_route_blocked")
+        )
     if not execution.succeeded or len(execution.artifacts) != 1:
         raise SearchJudgmentReadAssessmentError(
             execution.failure_code or execution.block_code or "read_dispatch_failed"
         )
     custody_action = run_kernel.authorize_acquisition_custody_consumption(
-        terminal_receipt_ref=terminal_result.terminal_receipt.ref(),
+        terminal_receipt_ref=acquisition["terminal_receipt"].ref(),
         custody_consumer=SEARCH_JUDGMENT_READ_PRODUCER_SURFACE,
     )
     custody_result = execute_acquisition_custody_authorization_action(
         custody_action,
-        work_order=work_order,
-        route_observation=route_observation,
-        terminal_receipt=terminal_result.terminal_receipt,
+        work_order=acquisition["work_order"],
+        route_observation=acquisition["route_observation"],
+        terminal_receipt=acquisition["terminal_receipt"],
         custody_consumer=SEARCH_JUDGMENT_READ_PRODUCER_SURFACE,
         acquisition_control_state=run_kernel.state.acquisition_control_state,
     )
@@ -1755,7 +1678,7 @@ def _execute_one_acquisition_to_custody(
         binding=binding,
         packet=packet,
         ledger_projection=ledger_projection,
-        terminal_receipt_ref=terminal_result.terminal_receipt.ref(),
+        terminal_receipt_ref=acquisition["terminal_receipt"].ref(),
         custody_authorization_ref=custody_result.custody_authorization.ref(),
     )
     if register_legacy_event:

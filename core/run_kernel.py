@@ -16000,14 +16000,27 @@ class RunKernel:
                             "completed_execution_material_invalid"
                         )
                     completed_artifact = observed_execution.artifact_refs[0]
+                    locator_binding_valid = (
+                        completed_artifact.get("requested_url")
+                        in work_order.selected_urls
+                        if work_order.origin is None
+                        else not any(
+                            key in completed_artifact
+                            for key in (
+                                "requested_url",
+                                "final_url",
+                                "canonical_url",
+                                "root_url",
+                            )
+                        )
+                    )
                     if (
                         work_order.authorized_capability
                         != AcquisitionCapability.READ.value
                         or completed_artifact.get("kind")
                         != "selected_url_read_material"
                         or completed_artifact.get("status") != "readable"
-                        or completed_artifact.get("requested_url")
-                        not in work_order.selected_urls
+                        or not locator_binding_valid
                         or len(
                             str(
                                 completed_artifact.get("retained_digest")

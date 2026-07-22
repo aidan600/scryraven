@@ -269,10 +269,18 @@ class EphemeralNavigationLocatorStore:
         return str(normalized["exact_url"])
 
     def consume_once_for_execution(self, binding_ref: Mapping[str, Any]) -> str:
-        """Reserved future seam; destination execution is closed in this phase."""
+        """Return one exact committed destination and retire it atomically."""
 
-        del binding_ref
-        raise NavigationRuntimeError("navigation_execution_not_licensed")
+        self._require_open()
+        binding = _validate_binding_ref(binding_ref)
+        binding_id = binding["destination_binding_id"]
+        entry = self._committed.pop(binding_id, None)
+        if entry is None or entry["binding_ref"] != binding:
+            raise NavigationRuntimeError("navigation_destination_binding_unavailable")
+        normalized = normalize_navigation_destination(entry["exact_url"])
+        if _binding_ref(normalized, binding_id=binding_id) != binding:
+            raise NavigationRuntimeError("navigation_destination_binding_mismatch")
+        return str(normalized["exact_url"])
 
     def discard_all(self) -> None:
         self._staged.clear()
@@ -613,6 +621,168 @@ def navigation_candidate_ref(value: Mapping[str, Any]) -> dict[str, Any]:
         "navigation_candidate_digest": digest,
         "navigation_option_ref": option.ref(),
     }
+
+
+def validate_navigation_destination_binding_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate one URL-free locator binding owned by this module."""
+
+    return _validate_binding_ref(value)
+
+
+def validate_navigation_destination_for_binding(
+    exact_url: str,
+    binding_ref: Mapping[str, Any],
+) -> str:
+    """Validate one transient exact destination against its opaque binding."""
+
+    binding = _validate_binding_ref(binding_ref)
+    normalized = normalize_navigation_destination(exact_url)
+    reproduced = _binding_ref(
+        normalized,
+        binding_id=binding["destination_binding_id"],
+    )
+    if reproduced != binding:
+        raise NavigationRuntimeError("navigation_destination_binding_mismatch")
+    return str(normalized["exact_url"])
+
+
+def build_searchos_navigation_acquisition_need_proposal(
+    *,
+    run_kernel: Any,
+    slot_ref: Mapping[str, Any],
+    navigation_option_ref: Mapping[str, Any],
+    navigation_selection_ref: Mapping[str, Any],
+    destination_binding_ref: Mapping[str, Any],
+    parent_read_custody_ref: Mapping[str, Any],
+) -> Any:
+    """Build the URL-free V1 READ proposal for one exact pending selection."""
+
+    from core.acquisition_control import (
+        SEARCHOS_NAVIGATION_ORIGIN,
+        AcquisitionNeedProposalV1,
+    )
+
+    context = _navigation_execution_context(
+        run_kernel.state.searchos_state,
+        slot_ref=slot_ref,
+        navigation_option_ref=navigation_option_ref,
+        navigation_selection_ref=navigation_selection_ref,
+        destination_binding_ref=destination_binding_ref,
+        parent_read_custody_ref=parent_read_custody_ref,
+    )
+    snapshot = run_kernel.acquisition_authority_snapshot()
+    slot = context["slot"]
+    component = _mapping(slot.get("component_ref"))
+    obligation = _mapping(slot.get("source_obligation_ref"))
+    component_id = _token(component.get("component_id"), "component_id")
+    obligation_id = _token(
+        obligation.get("source_obligation_id"),
+        "source_obligation_id",
+    )
+    searchos_contract = _mapping(context["state"].get("answer_contract_ref"))
+    acquisition_contract = _mapping(snapshot.get("answer_contract_ref"))
+    if (
+        acquisition_contract.get("contract_digest")
+        not in {
+            searchos_contract.get("contract_digest"),
+            searchos_contract.get("answer_contract_digest"),
+        }
+        or _mapping(_mapping(snapshot.get("components_by_id")).get(component_id))
+        != component
+        or _mapping(
+            _mapping(snapshot.get("source_obligations_by_id")).get(obligation_id)
+        )
+        != obligation
+    ):
+        raise NavigationRuntimeError("navigation_acquisition_lineage_stale")
+    return AcquisitionNeedProposalV1.create(
+        run_id=context["state"]["run_id"],
+        request_id=context["state"]["request_id"],
+        producer_surface="core.searchos_navigation_runtime",
+        answer_contract_ref=acquisition_contract,
+        source_obligation_ref=obligation,
+        component_ref=component,
+        requested_material_shape="explicit_known_url",
+        origin=SEARCHOS_NAVIGATION_ORIGIN,
+        destination_binding_ref=context["option"].destination_binding_ref,
+        proposal_reason_code="selected_navigation_destination_read",
+        advisory_proposed_capability="READ",
+    )
+
+
+def _navigation_execution_context(
+    state: Mapping[str, Any],
+    *,
+    slot_ref: Mapping[str, Any],
+    navigation_option_ref: Mapping[str, Any],
+    navigation_selection_ref: Mapping[str, Any],
+    destination_binding_ref: Mapping[str, Any],
+    parent_read_custody_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    from core.searchos_iterative_judgment_runtime import (
+        SearchOSSlotPosture,
+        validate_searchos_state,
+    )
+
+    canonical = validate_searchos_state(state)
+    slot_lineage = _json_mapping(slot_ref)
+    slot_id = _token(slot_lineage.get("slot_id"), "slot_id")
+    slot = _mapping(_mapping(canonical.get("slots_by_id")).get(slot_id))
+    option_lineage = _json_mapping(navigation_option_ref)
+    option_id = _token(
+        option_lineage.get("navigation_option_id"),
+        "navigation_option_id",
+    )
+    option = NavigationOption.from_dict(
+        _mapping(
+            _mapping(_mapping(canonical.get("navigation")).get("options_by_id")).get(
+                option_id
+            )
+        )
+    )
+    selection = _json_mapping(navigation_selection_ref)
+    binding = _validate_binding_ref(destination_binding_ref)
+    parent = _compact_ref(parent_read_custody_ref, "parent_read_custody_ref")
+    if (
+        not slot
+        or _mapping(slot.get("slot_ref")) != slot_lineage
+        or slot.get("posture")
+        != SearchOSSlotPosture.AWAITING_NAVIGATION_EXECUTION.value
+        or option.ref() != option_lineage
+        or option.disposition != NAVIGATION_PENDING_EXECUTION
+        or option.active_selection_ref != selection
+        or option.destination_binding_ref != binding
+        or option.parent_read_custody_ref != parent
+        or option.slot_id != slot_id
+    ):
+        raise NavigationRuntimeError("navigation_execution_lineage_not_current")
+    parent_refs = {
+        tuple(sorted(_compact_ref(item, "parent_read_custody_ref").items()))
+        for item in slot.get("custody_refs") or ()
+    }
+    if tuple(sorted(parent.items())) not in parent_refs:
+        raise NavigationRuntimeError("navigation_parent_custody_not_current")
+    edge_matches = [
+        edge
+        for edge in _mapping(canonical.get("navigation")).get("edges") or ()
+        if _mapping(_mapping(edge).get("navigation_selection_ref")) == selection
+        and _mapping(_mapping(edge).get("navigation_option_ref")).get(
+            "navigation_option_id"
+        )
+        == option_lineage.get("navigation_option_id")
+        and int(
+            _mapping(_mapping(edge).get("navigation_option_ref")).get("revision")
+            or 0
+        )
+        == option.revision - 1
+        and _mapping(_mapping(edge).get("destination_binding_ref")) == binding
+        and _mapping(_mapping(edge).get("parent_read_custody_ref")) == parent
+    ]
+    if len(edge_matches) != 1:
+        raise NavigationRuntimeError("navigation_selected_edge_not_current")
+    return {"state": canonical, "slot": slot, "option": option}
 
 
 def project_navigation_window(state: Mapping[str, Any], *, slot_id: str) -> list[dict[str, Any]]:
@@ -1457,4 +1627,7 @@ __all__ = [
     "reduce_navigation_selection_observation",
     "sanitize_navigation_source_text",
     "scrub_navigation_relationship_label",
+    "build_searchos_navigation_acquisition_need_proposal",
+    "validate_navigation_destination_for_binding",
+    "validate_navigation_destination_binding_ref",
 ]

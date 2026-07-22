@@ -450,8 +450,12 @@ def test_locator_store_is_exact_nonserializable_staged_and_run_bounded() -> None
     second = store.stage(normalize_navigation_destination("https://example.com/discard"))
     store.discard_staged([second])
     assert store.staged_count == 0 and store.committed_count == 1
-    with pytest.raises(NavigationRuntimeError, match="execution_not_licensed"):
+    assert store.consume_once_for_execution(binding) == (
+        "https://example.com/private"
+    )
+    with pytest.raises(NavigationRuntimeError, match="binding_unavailable"):
         store.consume_once_for_execution(binding)
+    assert store.resolve(binding) is None
     store.discard_all()
     assert store.committed_count == 0
     with pytest.raises(NavigationRuntimeError, match="store_closed"):
