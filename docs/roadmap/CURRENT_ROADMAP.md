@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
+Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -423,7 +423,7 @@ Slice B build below closes navigation without reopening the other surfaces.
 
 ## Completed Build: SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01
 
-Runtime/test checkpoint `36ca5f132254fc78c5a57f860c561aaa7d9fd9d6`
+Runtime/test checkpoint `aeee93d1056312daa9d845a0d33bb52fc0e45e8e`
 
 Internal Slice B completes
 `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`. A successfully READ

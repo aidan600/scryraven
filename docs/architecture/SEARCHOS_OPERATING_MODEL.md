@@ -5,7 +5,7 @@ Authority: canonical:searchos-operating-model
 Default-read: no
 Applies-to: SearchOS architecture and SearchOS-facing provider, acquisition, navigation, and recovery work
 Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities
-Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
+Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
 
 ## Product Boundary
 

@@ -5,7 +5,7 @@ Authority: owner-approved provider acquisition target doctrine
 Default-read: no
 Applies-to: provider offerings, installed adapters, current consumers, provider-material authority, and migration dispositions
 Does-not-authorize: further implementation, live calls, new adapters, provider-quality claims, or closed-surface changes
-Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
+Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
 Vendor-documentation-checked: 2026-07-16
 
 ## 1. Outcome and boundary
@@ -48,7 +48,7 @@ This census uses these non-equivalent states:
 | **Ordinary reachable** | A current product execution can reach the callsite when its key, gate, and request conditions are satisfied. |
 | **Ordinary consumed** | A deterministic current PRODUCT requester actually requests and consumes the capability. |
 | **Authority granted** | Returned material is permitted to affect queries, evidence, analysis, or final-answer custody; this is narrower than reachability and is stated per row. |
-| **Installed convergence** | Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea` proves routing, adapters, typed READ control, explicit availability/budget/identity authority, truthful lineage, and escape closure offline. Runtime/test commit `36ca5f132254fc78c5a57f860c561aaa7d9fd9d6` proves ordinary SearchJudgment candidate/navigation READ consumption while preserving selected-candidate presence as a nontrigger. |
+| **Installed convergence** | Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea` proves routing, adapters, typed READ control, explicit availability/budget/identity authority, truthful lineage, and escape closure offline. Runtime/test commit `aeee93d1056312daa9d845a0d33bb52fc0e45e8e` proves ordinary SearchJudgment candidate/navigation READ consumption while preserving selected-candidate presence as a nontrigger. |
 
 `RETAIN`, `REPLACE`, `RETIRE`, and `DEFER_PENDING_PROOF` below are target
 dispositions remain target decisions unless a row explicitly cites the installed
@@ -59,7 +59,7 @@ foundation. **Basis: OWNER_DECISION.**
 Runtime/test commit `193c5caabe1f97da534f0e601d410acb98d3cdea`
 preserves `core.routing` as the sole capability/catalog/selection-policy owner
 and installs the shared bounded acquisition contracts and mechanical adapters.
-Runtime/test commit `36ca5f132254fc78c5a57f860c561aaa7d9fd9d6`
+Runtime/test commit `aeee93d1056312daa9d845a0d33bb52fc0e45e8e`
 adds ordinary candidate/navigation READ consumption without changing that
 provider policy or those adapters.
 Ordinary `run_pipeline()` now consumes one ProviderPlan decision per acquisition
@@ -467,7 +467,7 @@ Completed combined adapter/runtime repair:
 Completed ordinary consumer convergence:
 `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` followed by
 `SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01`, with current runtime/test
-checkpoint `36ca5f132254fc78c5a57f860c561aaa7d9fd9d6`.
+checkpoint `aeee93d1056312daa9d845a0d33bb52fc0e45e8e`.
 
 The old combined final-custody ordering is superseded. [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md) exclusively owns the active SearchOS

@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary DISCOVER routing, SearchOS candidate/navigation READ routing, shared acquisition contracts, ProviderPlan projection, RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
+Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -53,7 +53,7 @@ SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners remain unchanged.
 
 Current runtime/test provenance:
-`36ca5f132254fc78c5a57f860c561aaa7d9fd9d6`.
+`aeee93d1056312daa9d845a0d33bb52fc0e45e8e`.
 The initial-discovery transport retirement remains historically installed at
 `48a309124764d813cf27081bf5871d5a9612db79`.
 The mechanical adapter foundation remains historically installed at

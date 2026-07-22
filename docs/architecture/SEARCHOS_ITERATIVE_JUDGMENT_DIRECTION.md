@@ -5,7 +5,7 @@ Authority: approved:searchos-iterative-judgment-direction
 Responsibility: canonical forward direction for first-wave cutover, iterative result admission, the single SearchJudgment owner, semantic-evaluation handoff, navigation sequencing, budget/mode policy, and legacy-authority retirement
 Applies to: installed `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01` behavior and later recovery/stopping convergence
 Repository owner: `docs/architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md`
-Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
+Verified-against-runtime: aeee93d1056312daa9d845a0d33bb52fc0e45e8e
 Project Source role: durable external context mirror; once the repository copy exists, the repository copy controls on conflict
 Update trigger: maintainer changes the canonical owner, first-wave boundary, action vocabulary, iterative candidate continuity, navigation sequencing, adjustable policy doctrine, or legacy retirement direction
 Non-trigger: implementation detail that preserves the installed owner and authority boundaries
