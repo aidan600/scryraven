@@ -2178,7 +2178,23 @@ def _component_source_custody_record(record: Mapping[str, Any]) -> dict[str, Any
 def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str, Any]:
     candidate_id = _clean_text(record.get("candidate_id"), limit=320)
     reference_id = _clean_text(record.get("reference_id"), limit=320)
-    if not candidate_id or not reference_id:
+    navigation_origin = record.get("origin") == "searchos_navigation"
+    if not reference_id or (not navigation_origin and not candidate_id):
+        return {}
+    if navigation_origin and any(
+        not _safe_mapping(record.get(key))
+        for key in (
+            "component_ref",
+            "source_obligation_ref",
+            "slot_ref",
+            "navigation_option_ref",
+            "navigation_selection_ref",
+            "destination_binding_ref",
+            "parent_read_custody_ref",
+            "terminal_receipt_ref",
+            "custody_authorization_ref",
+        )
+    ):
         return {}
     status = _clean_token(record.get("fetch_read_status"), limit=80)
     if status not in {"readable", "unreadable", "failed", "skipped", "blocked"}:
@@ -2196,6 +2212,7 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
         )
     payload = {
         "record_kind": "fetch_read_candidate_custody",
+        "origin": "searchos_navigation" if navigation_origin else None,
         "candidate_id": candidate_id,
         "candidate_digest": _clean_text(record.get("candidate_digest"), limit=128),
         "search_result_candidate_record_digest": _clean_text(
@@ -2212,6 +2229,29 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
         "current_answer_contract_digest": _clean_text(
             record.get("current_answer_contract_digest"),
             limit=128,
+        ),
+        "component_ref": _safe_mapping(record.get("component_ref")),
+        "source_obligation_ref": _safe_mapping(
+            record.get("source_obligation_ref")
+        ),
+        "slot_ref": _safe_mapping(record.get("slot_ref")),
+        "navigation_option_ref": _safe_mapping(
+            record.get("navigation_option_ref")
+        ),
+        "navigation_selection_ref": _safe_mapping(
+            record.get("navigation_selection_ref")
+        ),
+        "destination_binding_ref": _safe_mapping(
+            record.get("destination_binding_ref")
+        ),
+        "parent_read_custody_ref": _safe_mapping(
+            record.get("parent_read_custody_ref")
+        ),
+        "terminal_receipt_ref": _safe_mapping(
+            record.get("terminal_receipt_ref")
+        ),
+        "custody_authorization_ref": _safe_mapping(
+            record.get("custody_authorization_ref")
         ),
         "search_executor_handoff_ref": _safe_mapping(
             record.get("search_executor_handoff_ref")

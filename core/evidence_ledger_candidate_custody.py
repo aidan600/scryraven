@@ -134,10 +134,14 @@ def build_evidence_ledger_observation_from_fetch_read_content_packet(
         _custody_record_from_reference(reference, packet=packet, packet_ref=packet_ref)
         for reference in packet["reference_records"]
     ]
-    candidates = [
-        _candidate_record_from_reference(reference)
-        for reference in packet["reference_records"]
-    ]
+    candidates = (
+        []
+        if packet.get("origin") == "searchos_navigation"
+        else [
+            _candidate_record_from_reference(reference)
+            for reference in packet["reference_records"]
+        ]
+    )
     payload = {
         "observation_id": observation_id,
         "observation_source": FETCH_READ_CANDIDATE_CUSTODY_OBSERVATION_SOURCE,
@@ -189,6 +193,67 @@ def _custody_record_from_reference(
     packet_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     status = _fetch_read_status(reference)
+    if reference.get("origin") == "searchos_navigation":
+        return _without_empty(
+            {
+                "record_kind": "fetch_read_candidate_custody",
+                "origin": "searchos_navigation",
+                "run_id": reference.get("run_id"),
+                "request_id": reference.get("request_id"),
+                "current_answer_contract_ref": reference.get(
+                    "current_answer_contract_ref"
+                ),
+                "current_answer_contract_digest": reference.get(
+                    "current_answer_contract_digest"
+                ),
+                "component_ref": reference.get("component_ref"),
+                "source_obligation_ref": reference.get("source_obligation_ref"),
+                "slot_ref": reference.get("slot_ref"),
+                "navigation_option_ref": reference.get("navigation_option_ref"),
+                "navigation_selection_ref": reference.get(
+                    "navigation_selection_ref"
+                ),
+                "destination_binding_ref": reference.get(
+                    "destination_binding_ref"
+                ),
+                "parent_read_custody_ref": reference.get(
+                    "parent_read_custody_ref"
+                ),
+                "terminal_receipt_ref": reference.get("terminal_receipt_ref"),
+                "custody_authorization_ref": reference.get(
+                    "custody_authorization_ref"
+                ),
+                "fetch_read_content_packet_ref": packet_ref,
+                "fetch_read_content_packet_id": packet.get("packet_id"),
+                "fetch_read_content_packet_digest": packet.get("packet_digest"),
+                "reference_id": reference.get("reference_id"),
+                "reference_digest": reference.get("reference_digest"),
+                "attempted_url": reference.get("attempted_url"),
+                "provider_reported_url": reference.get("provider_reported_url"),
+                "resolved_url": reference.get("resolved_url"),
+                "final_url": reference.get("final_url"),
+                "canonical_url": reference.get("canonical_url"),
+                "fetch_read_status": status,
+                "disposition": _disposition_for(status),
+                "bounded_content_present": bool(reference.get("excerpt_digest")),
+                "bounded_character_count": _bounded_int(
+                    reference.get("bounded_character_count")
+                ),
+                "excerpt_digest": reference.get("excerpt_digest"),
+                "lineage_only": True,
+                "eligible_for_stronger_obligation": False,
+                "final_evidence_eligible": False,
+                "semantic_support_created": False,
+                "citation_eligible": False,
+                "source_obligation_satisfied": False,
+                "component_coverage_created": False,
+                "sufficiency_decided": False,
+                "final_answer_packet_created": False,
+                "author_input_created": False,
+                "partial_answer_ready": False,
+                "product_correctness_claimed": False,
+            }
+        )
     return _without_empty(
         {
             "record_kind": "fetch_read_candidate_custody",

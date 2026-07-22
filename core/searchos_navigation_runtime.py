@@ -30,6 +30,8 @@ NAVIGATION_RELATIONSHIP_POSTURE = "outbound_link_from_current_read_custody"
 NAVIGATION_SELECTABLE = "selectable"
 NAVIGATION_PENDING_EXECUTION = "pending_execution"
 NAVIGATION_BINDING_UNAVAILABLE = "binding_unavailable"
+NAVIGATION_CUSTODIED = "custodied"
+NAVIGATION_DESTINATION_FAILED = "destination_failed"
 
 NAVIGATION_SELECTION_ADMITTED = "admitted_selection"
 NAVIGATION_SELECTION_AUTHORITY_REJECTED = "rejected_authority_integrity"
@@ -94,6 +96,8 @@ class NavigationOption:
             NAVIGATION_SELECTABLE,
             NAVIGATION_PENDING_EXECUTION,
             NAVIGATION_BINDING_UNAVAILABLE,
+            NAVIGATION_CUSTODIED,
+            NAVIGATION_DESTINATION_FAILED,
         }:
             raise NavigationRuntimeError("navigation_option_disposition_invalid")
         if any(
@@ -782,7 +786,427 @@ def _navigation_execution_context(
     ]
     if len(edge_matches) != 1:
         raise NavigationRuntimeError("navigation_selected_edge_not_current")
-    return {"state": canonical, "slot": slot, "option": option}
+    return {
+        "state": canonical,
+        "slot": slot,
+        "option": option,
+        "lineage": {
+            "slot_ref": slot_lineage,
+            "navigation_option_ref": option_lineage,
+            "navigation_selection_ref": selection,
+            "destination_binding_ref": binding,
+            "parent_read_custody_ref": parent,
+        },
+    }
+
+
+def build_navigation_failure_action_inputs(
+    state: Mapping[str, Any],
+    *,
+    navigation_lineage: Mapping[str, Any],
+    failure_reason: str,
+    terminal_receipt_ref: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    lineage = _json_mapping(navigation_lineage)
+    context = _navigation_execution_context(state, **lineage)
+    result = {
+        **context["lineage"],
+        "failure_reason": _reason_code(failure_reason),
+        "terminal_receipt_ref": _compact_optional_ref(terminal_receipt_ref),
+    }
+    _ensure_url_free(result, "navigation_failure")
+    return result
+
+
+def record_navigation_destination_failure(
+    state: Mapping[str, Any], *, failure_record: Mapping[str, Any]
+) -> dict[str, Any]:
+    record = _json_mapping(failure_record)
+    lineage = {
+        key: _mapping(record.get(key))
+        for key in (
+            "slot_ref",
+            "navigation_option_ref",
+            "navigation_selection_ref",
+            "destination_binding_ref",
+            "parent_read_custody_ref",
+        )
+    }
+    context = _navigation_execution_context(state, **lineage)
+    _reason_code(record.get("failure_reason"))
+    return _finish_navigation_execution(
+        context,
+        disposition=NAVIGATION_DESTINATION_FAILED,
+        reason=str(record["failure_reason"]),
+        material_ref=None,
+    )
+
+
+def build_navigation_read_custody_material_ref(
+    state: Mapping[str, Any],
+    *,
+    navigation_lineage: Mapping[str, Any],
+    fetch_read_content_packet_ref: Mapping[str, Any],
+    evidence_ledger_custody_ref: Mapping[str, Any],
+    terminal_receipt_ref: Mapping[str, Any],
+    custody_authorization_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    lineage = _json_mapping(navigation_lineage)
+    context = _navigation_execution_context(state, **lineage)
+    lineage = context["lineage"]
+    core = {
+        "schema_version": "searchos_read_custody_material_ref_v1",
+        "owner": NAVIGATION_OWNER,
+        "origin": "searchos_navigation",
+        **lineage,
+        "fetch_read_content_packet_ref": _compact_ref(
+            fetch_read_content_packet_ref, "fetch_read_content_packet_ref"
+        ),
+        "evidence_ledger_custody_ref": _compact_ref(
+            evidence_ledger_custody_ref, "evidence_ledger_custody_ref"
+        ),
+        "terminal_receipt_ref": _compact_ref(
+            terminal_receipt_ref, "terminal_receipt_ref"
+        ),
+        "custody_authorization_ref": _compact_ref(
+            custody_authorization_ref, "custody_authorization_ref"
+        ),
+        "material_authority": "read_custody_material",
+        "readable": True,
+        "bounded_retention": True,
+        "stale": False,
+        "component_analyst_proposal_eligible": True,
+        "support_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+    }
+    if context["option"].active_selection_ref != lineage[
+        "navigation_selection_ref"
+    ]:
+        raise NavigationRuntimeError("navigation_custody_selection_stale")
+    digest = _digest(core)
+    return {
+        **core,
+        "read_custody_material_id": f"searchos-read-custody:{digest[:24]}",
+        "read_custody_material_digest": digest,
+        "replay_identity": f"searchos-read-custody:{digest}",
+    }
+
+
+def record_navigation_read_custody_material(
+    state: Mapping[str, Any], *, custody_material_ref: Mapping[str, Any]
+) -> dict[str, Any]:
+    custody = _json_mapping(custody_material_ref)
+    claimed = _digest_token(
+        custody.get("read_custody_material_digest"),
+        "read_custody_material_digest",
+    )
+    core = {
+        key: deepcopy(value)
+        for key, value in custody.items()
+        if key
+        not in {
+            "read_custody_material_id",
+            "read_custody_material_digest",
+            "replay_identity",
+        }
+    }
+    if (
+        custody.get("origin") != "searchos_navigation"
+        or _digest(core) != claimed
+        or custody.get("read_custody_material_id")
+        != f"searchos-read-custody:{claimed[:24]}"
+        or custody.get("readable") is not True
+    ):
+        raise NavigationRuntimeError("navigation_custody_material_invalid")
+    lineage = {
+        key: _mapping(custody.get(key))
+        for key in (
+            "slot_ref",
+            "navigation_option_ref",
+            "navigation_selection_ref",
+            "destination_binding_ref",
+            "parent_read_custody_ref",
+        )
+    }
+    context = _navigation_execution_context(state, **lineage)
+    return _finish_navigation_execution(
+        context,
+        disposition=NAVIGATION_CUSTODIED,
+        reason="navigation_read_custody_admitted_for_rejudgment",
+        material_ref=custody,
+    )
+
+
+def _finish_navigation_execution(
+    context: Mapping[str, Any],
+    *,
+    disposition: str,
+    reason: str,
+    material_ref: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    candidate = deepcopy(_mapping(context["state"]))
+    option = context["option"]
+    slot = deepcopy(_mapping(context["slot"]))
+    if material_ref is not None:
+        slot["custody_refs"].append(deepcopy(dict(material_ref)))
+    slot["posture"] = "active_unjudged"
+    slot["latest_reason"] = reason
+    slot["navigation_availability_reason"] = reason
+    slot["action_history"].append(
+        {
+            "event": disposition,
+            "navigation_selection_ref": deepcopy(option.active_selection_ref),
+            "support_admitted": False,
+        }
+    )
+    updated = NavigationOption(
+        slot_id=option.slot_id,
+        destination_binding_ref=option.destination_binding_ref,
+        parent_read_custody_ref=option.parent_read_custody_ref,
+        child_depth=option.child_depth,
+        ancestor_physical_identity_digests=option.ancestor_physical_identity_digests,
+        bounded_relationship_context=option.bounded_relationship_context,
+        revision=option.revision + 1,
+        disposition=disposition,
+        active_selection_ref={},
+        admission_ordinal=option.admission_ordinal,
+    )
+    candidate["slots_by_id"][option.slot_id] = _refresh_navigation_slot(slot)
+    candidate["navigation"]["options_by_id"][
+        updated.ref()["navigation_option_id"]
+    ] = updated.to_dict()
+    return _refresh_searchos_state(candidate)
+
+
+def execute_searchos_navigation_read_to_custody(
+    *,
+    run_kernel: Any,
+    locator_store: EphemeralNavigationLocatorStore,
+    navigation_lineage: Mapping[str, Any],
+    available_providers: Mapping[str, object],
+    acquisition_transports: Any = None,
+    before_transport: Any = None,
+) -> dict[str, Any]:
+    """Bridge one pending selection through existing acquisition and custody."""
+
+    from core.authorized_acquisition_runtime import (
+        execute_acquisition_custody_authorization_action,
+        execute_acquisition_work_order_to_terminal,
+    )
+    from core.evidence_ledger_lifecycle import (
+        reduce_fetch_read_content_packet_into_evidence_ledger,
+    )
+    from core.fetch_read_content_reference import (
+        build_fetch_read_content_packet_from_navigation,
+        fetch_read_content_packet_ref_from_packet,
+        select_bounded_answer_bearing_text,
+    )
+    from core.run_kernel import Observation, RunStageStatus
+
+    lineage = _json_mapping(navigation_lineage)
+    try:
+        context = _navigation_execution_context(
+            run_kernel.state.searchos_state, **lineage
+        )
+        lineage = context["lineage"]
+        if (
+            locator_store.run_id != context["state"]["run_id"]
+            or locator_store.request_id != context["state"]["request_id"]
+        ):
+            raise NavigationRuntimeError("navigation_locator_scope_mismatch")
+        proposal = build_searchos_navigation_acquisition_need_proposal(
+            run_kernel=run_kernel,
+            **lineage,
+        )
+    except Exception:
+        slot_id = str(_mapping(lineage.get("slot_ref")).get("slot_id") or "")
+        if slot_id:
+            try:
+                run_kernel.mark_searchos_slot_stale_or_invalid(
+                    slot_id=slot_id,
+                    reason="navigation_execution_authority_invalid",
+                )
+            except ValueError:
+                pass
+        return {
+            "status": "failed",
+            "failure_reason": "navigation_execution_authority_invalid",
+            "provider_calls_attempted": 0,
+            "provider_calls_completed": 0,
+        }
+    acquisition = execute_acquisition_work_order_to_terminal(
+        run_kernel=run_kernel,
+        proposal=proposal,
+        available_providers=available_providers,
+        transports=acquisition_transports,
+        before_transport=before_transport,
+        transient_destination_resolver=(
+            lambda: locator_store.consume_once_for_execution(
+                context["option"].destination_binding_ref
+            )
+        ),
+    )
+    terminal = acquisition.get("terminal_receipt")
+    execution = acquisition.get("execution_result")
+    if execution is None or not execution.succeeded or len(execution.artifacts) != 1:
+        if locator_store.resolve(context["option"].destination_binding_ref):
+            locator_store.consume_once_for_execution(
+                context["option"].destination_binding_ref
+            )
+        return _reduce_navigation_failure(
+            run_kernel,
+            lineage=lineage,
+            reason=str(acquisition.get("failure_code") or "navigation_read_failed"),
+            terminal_receipt_ref=terminal.ref() if terminal else None,
+            acquisition=acquisition,
+        )
+    try:
+        custody_action = run_kernel.authorize_acquisition_custody_consumption(
+            terminal_receipt_ref=terminal.ref(),
+            custody_consumer="core.searchos_navigation_runtime",
+        )
+        custody = execute_acquisition_custody_authorization_action(
+            custody_action,
+            work_order=acquisition["work_order"],
+            route_observation=acquisition["route_observation"],
+            terminal_receipt=terminal,
+            custody_consumer="core.searchos_navigation_runtime",
+            acquisition_control_state=run_kernel.state.acquisition_control_state,
+        )
+        run_kernel.reduce(custody.observation)
+        artifact = execution.artifacts[0]
+        selection = select_bounded_answer_bearing_text(
+            artifact.retained_text or ""
+        )
+        packet = build_fetch_read_content_packet_from_navigation(
+            run_id=context["state"]["run_id"],
+            request_id=context["state"]["request_id"],
+            answer_contract_ref=proposal.answer_contract_ref,
+            component_ref=proposal.component_ref,
+            source_obligation_ref=proposal.source_obligation_ref,
+            navigation_lineage=lineage,
+            terminal_receipt_ref=terminal.ref(),
+            custody_authorization_ref=custody.custody_authorization.ref(),
+            sanitized_material={
+                "fetch_read_status": "readable",
+                "attempted_url": artifact.attempted_url,
+                "provider_reported_url": artifact.provider_reported_url,
+                "resolved_url": artifact.resolved_url,
+                "final_url": artifact.final_url,
+                "canonical_url": artifact.canonical_url,
+                "content_type": artifact.content_type,
+                "retrieved_or_observed_at": artifact.observed_at,
+                "content_title": artifact.title,
+                "bounded_text": selection.bounded_text,
+                "bounded_text_sanitized": True,
+                "bounded_text_bounded": True,
+                "bounded_character_count": selection.bounded_text_char_count,
+                "excerpt_digest": selection.bounded_text_digest,
+            },
+        )
+        ledger = reduce_fetch_read_content_packet_into_evidence_ledger(
+            run_kernel=run_kernel,
+            fetch_read_content_packet=packet,
+        )
+        record = next(
+            item
+            for item in ledger["fetch_read_candidate_custody"][
+                "fetch_read_candidate_custody_records"
+            ]
+            if item.get("reference_id")
+            == packet["reference_records"][0]["reference_id"]
+        )
+        material_ref = build_navigation_read_custody_material_ref(
+            run_kernel.state.searchos_state,
+            navigation_lineage=lineage,
+            fetch_read_content_packet_ref=fetch_read_content_packet_ref_from_packet(
+                packet
+            ),
+            evidence_ledger_custody_ref={
+                "reference_id": record["reference_id"],
+                "reference_digest": record["reference_digest"],
+            },
+            terminal_receipt_ref=terminal.ref(),
+            custody_authorization_ref=custody.custody_authorization.ref(),
+        )
+        action = run_kernel.authorize_searchos_read_custody_admission(
+            custody_material_ref=material_ref
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={"custody_material_ref": material_ref},
+            )
+        )
+    except Exception as exc:
+        return _reduce_navigation_failure(
+            run_kernel,
+            lineage=lineage,
+            reason=f"navigation_custody_{type(exc).__name__.casefold()}",
+            terminal_receipt_ref=terminal.ref(),
+            acquisition=acquisition,
+        )
+    return {
+        "status": "custodied",
+        "terminal_receipt_ref": terminal.ref(),
+        "custody_authorization_ref": custody.custody_authorization.ref(),
+        "fetch_read_content_packet_ref": fetch_read_content_packet_ref_from_packet(
+            packet
+        ),
+        "evidence_ledger_custody_ref": material_ref[
+            "evidence_ledger_custody_ref"
+        ],
+        "searchos_read_custody_ref": {
+            "read_custody_material_id": material_ref["read_custody_material_id"],
+            "read_custody_material_digest": material_ref[
+                "read_custody_material_digest"
+            ],
+        },
+        "provider_calls_attempted": acquisition["provider_calls_attempted"],
+        "provider_calls_completed": acquisition["provider_calls_completed"],
+    }
+
+
+def _reduce_navigation_failure(
+    run_kernel: Any,
+    *,
+    lineage: Mapping[str, Any],
+    reason: str,
+    terminal_receipt_ref: Mapping[str, Any] | None,
+    acquisition: Mapping[str, Any],
+) -> dict[str, Any]:
+    from core.run_kernel import Observation, RunStageStatus
+
+    code = re.sub(r"[^a-z0-9_]+", "_", reason.casefold()).strip("_")
+    if not code or not code[0].isalpha():
+        code = f"navigation_failure_{code}"[:120]
+    action = run_kernel.authorize_searchos_navigation_failure(
+        navigation_lineage=lineage,
+        failure_reason=code[:120],
+        terminal_receipt_ref=terminal_receipt_ref,
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload=dict(action.inputs),
+        )
+    )
+    return {
+        "status": "failed",
+        "failure_reason": code[:120],
+        "terminal_receipt_ref": dict(terminal_receipt_ref or {}),
+        "provider_calls_attempted": int(
+            acquisition.get("provider_calls_attempted") or 0
+        ),
+        "provider_calls_completed": int(
+            acquisition.get("provider_calls_completed") or 0
+        ),
+    }
 
 
 def project_navigation_window(state: Mapping[str, Any], *, slot_id: str) -> list[dict[str, Any]]:

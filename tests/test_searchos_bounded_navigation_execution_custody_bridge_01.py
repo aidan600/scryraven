@@ -35,6 +35,8 @@ from core.searchos_iterative_judgment_runtime import (
     validate_searchos_judgment_model_output,
 )
 from core.searchos_navigation_runtime import (
+    NAVIGATION_CUSTODIED,
+    NAVIGATION_DESTINATION_FAILED,
     NAVIGATION_PENDING_EXECUTION,
     EphemeralNavigationLocatorStore,
     NavigationOption,
@@ -42,6 +44,7 @@ from core.searchos_navigation_runtime import (
     admit_navigation_options_from_markdown,
     build_searchos_navigation_acquisition_need_proposal,
     execute_navigation_selection,
+    execute_searchos_navigation_read_to_custody,
     project_navigation_window,
 )
 
@@ -299,6 +302,22 @@ def _proposal(
     )
 
 
+def _lineage(
+    kernel: RunKernel,
+    option: NavigationOption,
+    parent: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "slot_ref": kernel.state.searchos_state["slots_by_id"]["slot-1"][
+            "slot_ref"
+        ],
+        "navigation_option_ref": option.ref(),
+        "navigation_selection_ref": option.active_selection_ref,
+        "destination_binding_ref": option.destination_binding_ref,
+        "parent_read_custody_ref": parent,
+    }
+
+
 def test_navigation_uses_url_free_v1_chain_and_consume_once_dispatch() -> None:
     kernel, store, option, parent = _selected_navigation()
     proposal = _proposal(kernel, option, parent)
@@ -358,6 +377,46 @@ def test_navigation_uses_url_free_v1_chain_and_consume_once_dispatch() -> None:
     assert trace["capability_switch_attempted"] is False
     with pytest.raises(NavigationRuntimeError, match="binding_unavailable"):
         store.consume_once_for_execution(option.destination_binding_ref)
+
+
+def test_reused_execution_authorization_is_zero_additional_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import core.authorized_acquisition_runtime as acquisition_runtime
+
+    kernel, store, option, parent = _selected_navigation()
+    proposal = _proposal(kernel, option, parent)
+    original = acquisition_runtime.execute_authorized_acquisition_work_order
+    captured: dict[str, Any] = {}
+    calls = 0
+
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "Offline child material."}
+
+    def capture(action: Any, **kwargs: Any) -> Any:
+        captured.update(action=action, kwargs=kwargs)
+        return original(action, **kwargs)
+
+    monkeypatch.setattr(
+        acquisition_runtime,
+        "execute_authorized_acquisition_work_order",
+        capture,
+    )
+    execute_acquisition_work_order_to_terminal(
+        run_kernel=kernel,
+        proposal=proposal,
+        available_providers={"linkup": True, "tavily": False},
+        transports=AcquisitionTransports(linkup_fetch=transport),
+        transient_destination_resolver=lambda: store.consume_once_for_execution(
+            option.destination_binding_ref
+        ),
+    )
+    assert calls == 1
+    with pytest.raises(AcquisitionControlError, match="already_reduced"):
+        original(captured["action"], **captured["kwargs"])
+    assert calls == 1
 
 
 def test_mixed_origin_and_locator_scope_mismatch_fail_before_transport() -> None:
@@ -432,3 +491,198 @@ def test_ordinary_candidate_v1_serialization_has_no_navigation_fields() -> None:
     assert SearchOSSlotPosture.AWAITING_NAVIGATION_EXECUTION.value not in (
         kernel.state.projections
     )
+
+
+def test_success_reuses_fetchread_evidenceledger_and_searchos_custody() -> None:
+    kernel, store, option, parent = _selected_navigation()
+    before = deepcopy(kernel.state.searchos_state)
+    result = execute_searchos_navigation_read_to_custody(
+        run_kernel=kernel,
+        locator_store=store,
+        navigation_lineage=_lineage(kernel, option, parent),
+        available_providers={"linkup": True, "tavily": False},
+        acquisition_transports=AcquisitionTransports(
+            linkup_fetch=lambda _payload: {
+                "markdown": "Offline child material with one bounded fact."
+            }
+        ),
+    )
+
+    after = kernel.state.searchos_state
+    before_slot = before["slots_by_id"]["slot-1"]
+    after_slot = after["slots_by_id"]["slot-1"]
+    after_option = NavigationOption.from_dict(
+        next(iter(after["navigation"]["options_by_id"].values()))
+    )
+    assert result["status"] == NAVIGATION_CUSTODIED
+    assert result["provider_calls_attempted"] == 1
+    assert result["provider_calls_completed"] == 1
+    assert after_slot["posture"] == SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    assert after_option.disposition == NAVIGATION_CUSTODIED
+    assert len(after_slot["custody_refs"]) == 2
+    assert parent in after_slot["custody_refs"]
+    assert after_slot["read_nomination_count"] == before_slot["read_nomination_count"]
+    assert after_slot["navigation_selection_count"] == before_slot[
+        "navigation_selection_count"
+    ]
+    assert after["navigation"]["edges"] == before["navigation"]["edges"]
+    assert after["budget"] == before["budget"]
+    assert CHILD_URL not in json.dumps(after_slot["custody_refs"][-1], sort_keys=True)
+    ledger = kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()
+    assert ledger["custody_record_count"] == 1
+    record = ledger["fetch_read_candidate_custody_records"][0]
+    assert record["origin"] == "searchos_navigation"
+    assert "candidate_id" not in record
+    assert record["attempted_url"] == CHILD_URL
+    assert record["semantic_support_created"] is False
+    assert record["citation_eligible"] is False
+    assert store.committed_count == 0
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "route_block",
+        "transport_failure",
+        "unreadable",
+        "packet_rejection",
+        "custody_rejection",
+        "ledger_rejection",
+    ],
+)
+def test_destination_failures_reopen_slot_without_retry(
+    case: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel, store, option, parent = _selected_navigation()
+    before = deepcopy(kernel.state.searchos_state)
+    calls = 0
+
+    def transport(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if case == "transport_failure":
+            raise RuntimeError("offline selected transport failure")
+        return {
+            "markdown": "" if case == "unreadable" else "bounded child fact"
+        }
+
+    if case == "packet_rejection":
+        import core.fetch_read_content_reference as fetch_read
+
+        monkeypatch.setattr(
+            fetch_read,
+            "build_fetch_read_content_packet_from_navigation",
+            lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("packet rejected")),
+        )
+    if case == "custody_rejection":
+        monkeypatch.setattr(
+            kernel,
+            "authorize_acquisition_custody_consumption",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("custody rejected")
+            ),
+        )
+    if case == "ledger_rejection":
+        import core.evidence_ledger_lifecycle as ledger_lifecycle
+
+        monkeypatch.setattr(
+            ledger_lifecycle,
+            "reduce_fetch_read_content_packet_into_evidence_ledger",
+            lambda **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("ledger rejected")
+            ),
+        )
+    result = execute_searchos_navigation_read_to_custody(
+        run_kernel=kernel,
+        locator_store=store,
+        navigation_lineage=_lineage(kernel, option, parent),
+        available_providers={
+            "linkup": case != "route_block",
+            "tavily": False,
+        },
+        acquisition_transports=AcquisitionTransports(linkup_fetch=transport),
+    )
+
+    after = kernel.state.searchos_state
+    after_slot = after["slots_by_id"]["slot-1"]
+    after_option = NavigationOption.from_dict(
+        next(iter(after["navigation"]["options_by_id"].values()))
+    )
+    assert result["status"] == "failed"
+    assert after_slot["posture"] == SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    assert after_option.disposition == NAVIGATION_DESTINATION_FAILED
+    assert after_slot["custody_refs"] == before["slots_by_id"]["slot-1"][
+        "custody_refs"
+    ]
+    assert after["navigation"]["edges"] == before["navigation"]["edges"]
+    assert after["budget"] == before["budget"]
+    assert calls <= 1
+    assert store.committed_count == 0
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "wrong_slot",
+        "stale_revision",
+        "selection",
+        "binding",
+        "parent",
+        "component",
+        "obligation",
+        "contract",
+        "locator_scope",
+    ],
+)
+def test_authority_tampering_is_zero_transport(tamper: str) -> None:
+    kernel, store, option, parent = _selected_navigation()
+    lineage = _lineage(kernel, option, parent)
+    if tamper == "wrong_slot":
+        lineage["slot_ref"] = {**lineage["slot_ref"], "slot_id": "wrong-slot"}
+    elif tamper == "stale_revision":
+        lineage["navigation_option_ref"] = {
+            **lineage["navigation_option_ref"],
+            "revision": 1,
+        }
+    elif tamper == "selection":
+        lineage["navigation_selection_ref"] = _ref("navigation_selection", "wrong")
+    elif tamper == "binding":
+        lineage["destination_binding_ref"] = {
+            **option.destination_binding_ref,
+            "destination_binding_digest": "f" * 64,
+        }
+    elif tamper == "parent":
+        lineage["parent_read_custody_ref"] = _ref("read_custody_material", "wrong")
+    elif tamper == "component":
+        kernel.state.current_answer_contract["accepted_answer_component_refs"][0][
+            "component_digest"
+        ] = "d" * 64
+    elif tamper == "obligation":
+        kernel.state.search_executor_handoff_state[
+            "source_obligation_candidate_refs"
+        ][0]["reason"] = "changed obligation"
+    elif tamper == "contract":
+        kernel.state.current_answer_contract["accepted_contract_digest"] = "e" * 64
+    else:
+        store = EphemeralNavigationLocatorStore(
+            run_id="wrong-run",
+            request_id="wrong-request",
+        )
+    calls = 0
+
+    def forbidden(_payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"markdown": "must not execute"}
+
+    result = execute_searchos_navigation_read_to_custody(
+        run_kernel=kernel,
+        locator_store=store,
+        navigation_lineage=lineage,
+        available_providers={"linkup": True, "tavily": False},
+        acquisition_transports=AcquisitionTransports(linkup_fetch=forbidden),
+    )
+    assert result["status"] == "failed"
+    assert result["provider_calls_attempted"] == 0
+    assert calls == 0

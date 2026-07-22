@@ -598,6 +598,7 @@ SEARCH_JUDGMENT_READ_CUSTODY_STAGE = "search_judgment_read_custody_registry"
 SEARCHOS_INITIALIZATION_STAGE = "searchos_slice_a_initialization"
 SEARCHOS_JUDGMENT_STAGE = "searchos_iterative_judgment"
 SEARCHOS_NAVIGATION_SELECTION_STAGE = "searchos_navigation_selection"
+SEARCHOS_NAVIGATION_FAILURE_STAGE = "searchos_navigation_failure"
 SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE = (
     "searchos_iteration_candidate_admission"
 )
@@ -800,6 +801,7 @@ class ActionType(str, Enum):
     SEARCHOS_INITIALIZE = "searchos_slice_a_initialize"
     SEARCHOS_JUDGMENT_DECIDE = "searchos_iterative_judgment_decide"
     SEARCHOS_NAVIGATION_SELECT = "SEARCHOS_NAVIGATION_SELECT"
+    SEARCHOS_NAVIGATION_FAIL = "searchos_navigation_fail"
     SEARCHOS_ITERATION_CANDIDATES_ADMIT = (
         "searchos_iteration_candidates_admit"
     )
@@ -958,6 +960,7 @@ class ObservationType(str, Enum):
     SEARCHOS_INITIALIZED = "searchos_slice_a_initialized"
     SEARCHOS_JUDGMENT_DECIDED = "searchos_iterative_judgment_decided"
     SEARCHOS_NAVIGATION_SELECTED = "SEARCHOS_NAVIGATION_SELECTED"
+    SEARCHOS_NAVIGATION_FAILED = "searchos_navigation_failed"
     SEARCHOS_ITERATION_CANDIDATES_ADMITTED = (
         "searchos_iteration_candidates_admitted"
     )
@@ -8698,6 +8701,34 @@ class RunKernel:
             expected_observation_type=(
                 ObservationType.SEARCHOS_NAVIGATION_SELECTED
             ),
+        )
+
+    def authorize_searchos_navigation_failure(
+        self,
+        *,
+        navigation_lineage: Mapping[str, Any],
+        failure_reason: str,
+        terminal_receipt_ref: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        from core.searchos_navigation_runtime import (
+            build_navigation_failure_action_inputs,
+        )
+
+        try:
+            inputs = build_navigation_failure_action_inputs(
+                self.state.searchos_state,
+                navigation_lineage=navigation_lineage,
+                failure_reason=failure_reason,
+                terminal_receipt_ref=terminal_receipt_ref,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_NAVIGATION_FAILURE_STAGE,
+            action_type=ActionType.SEARCHOS_NAVIGATION_FAIL,
+            reason="retire_failed_bounded_navigation_destination",
+            inputs=inputs,
+            expected_observation_type=ObservationType.SEARCHOS_NAVIGATION_FAILED,
         )
 
     def authorize_searchos_iteration_candidate_admission(
@@ -16586,6 +16617,23 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 observation.payload
             )
+        elif action.action_type is ActionType.SEARCHOS_NAVIGATION_FAIL:
+            from core.searchos_navigation_runtime import (
+                record_navigation_destination_failure,
+            )
+
+            if _safe_mapping(observation.payload) != _safe_mapping(action.inputs):
+                raise RunKernelTransitionError(
+                    "navigation failure observation differs from authorization"
+                )
+            try:
+                self.state.searchos_state = record_navigation_destination_failure(
+                    self.state.searchos_state,
+                    failure_record=observation.payload,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observation.payload)
         elif action.action_type is ActionType.SEARCHOS_ITERATION_CANDIDATES_ADMIT:
             from core.searchos_iterative_judgment_runtime import (
                 record_searchos_iteration_candidate_set,
@@ -16621,10 +16669,22 @@ class RunKernel:
                     "SearchOS READ custody observation differs from authorization"
                 )
             try:
-                self.state.searchos_state = record_searchos_read_custody_material(
-                    self.state.searchos_state,
-                    custody_material_ref=observed,
-                )
+                if observed.get("origin") == "searchos_navigation":
+                    from core.searchos_navigation_runtime import (
+                        record_navigation_read_custody_material,
+                    )
+
+                    self.state.searchos_state = (
+                        record_navigation_read_custody_material(
+                            self.state.searchos_state,
+                            custody_material_ref=observed,
+                        )
+                    )
+                else:
+                    self.state.searchos_state = record_searchos_read_custody_material(
+                        self.state.searchos_state,
+                        custody_material_ref=observed,
+                    )
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(observed)
