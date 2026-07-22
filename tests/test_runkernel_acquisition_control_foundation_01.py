@@ -1083,7 +1083,7 @@ def test_low_level_dispatch_remains_usable_without_runkernel() -> None:
     assert len(calls) == 1
 
 
-def test_actual_ordinary_selected_candidate_does_not_start_acquisition_control(
+def test_searchos_cutover_keeps_legacy_selected_candidate_path_a_nontrigger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1120,15 +1120,16 @@ def test_actual_ordinary_selected_candidate_does_not_start_acquisition_control(
         cap_policy=cap_policy,
     )
 
-    projection = outcome.execution_trace["ordinary_live_source_custody"]
-    assert projection["failed_closed"] is False, projection
-    assert projection["status"] == "not_needed"
-    assert projection["candidate_selection_creates_material_need"] is False
-    assert projection["acquisition_need_proposal_created"] is False
-    assert projection["acquisition_work_order_created"] is False
-    assert projection["acquisition_route_created"] is False
-    assert projection["exact_url_cap_charged"] is False
-    assert projection["exact_url_transport_attempted"] is False
+    assert "ordinary_live_source_custody" not in outcome.execution_trace
+    searchos = outcome.execution_trace["searchos_slice_a"]
+    assert searchos["provider_calls_attempted"] == 0
+    assert searchos["provider_calls_completed"] == 0
+    assert set(searchos["slot_postures"].values()) == {"stale_or_invalid"}
+    assert all(
+        record["latest_judgment_reason"]
+        == "read_transport_failure:selected_adapter_transport_unavailable"
+        for record in searchos["readiness_projection"]["slot_records"]
+    )
     assert fetcher.calls == []
     assert cap_policy.fetch_read_operations == 0
     assert harness.forbidden_live_calls == []

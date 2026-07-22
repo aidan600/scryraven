@@ -65,19 +65,22 @@ MARKERS = (
     "PROVIDER-CAPABILITY-ROUTING",
     "SEARCHOS-QUERY-CONVERGENCE",
     "SEARCHOS-SLICE-A-CUTOVER",
+    "SEARCHOS-SLICE-B-NAVIGATION",
 )
 QUANT_FINALIZATION_RUNTIME_SHA = "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
 QUANT_LINEAGE_RUNTIME_SHA = "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
 STRUCTURED_ROUTE_RUNTIME_SHA = "e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64"  # pragma: allowlist secret
 SCOUT_RETIREMENT_RUNTIME_SHA = "af87f5387fb5cd11a36c56754ee719400bb1bf0b"  # pragma: allowlist secret
 PROVIDER_ROUTING_RUNTIME_SHA = "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pragma: allowlist secret
+PROVIDER_CENSUS_RUNTIME_SHA = "36ca5f132254fc78c5a57f860c561aaa7d9fd9d6"  # pragma: allowlist secret
 ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
 QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
 SEARCHOS_SLICE_A_RUNTIME_SHA = "4431ff46ed1e8367b124f596ccc04e90040217b6"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = SEARCHOS_SLICE_A_RUNTIME_SHA
+SEARCHOS_SLICE_B_RUNTIME_SHA = "36ca5f132254fc78c5a57f860c561aaa7d9fd9d6"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = SEARCHOS_SLICE_B_RUNTIME_SHA
 ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
@@ -232,7 +235,7 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
         "Read-source material",
         "Navigation material",
         "Linkup Fetch and Tavily Extract are peer implementations",
-        "Adaptive retrieval is approved but uninstalled",
+        "Adaptive provider-failure retrieval is approved but uninstalled",
         "The provider owns DNS",
         "No SearchOS infrastructure may be added merely",
     ):
@@ -245,7 +248,7 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
         assert target.is_file(), target
 
 
-def test_searchos_iterative_direction_is_routed_linked_and_build_closed() -> None:
+def test_searchos_iterative_direction_is_routed_linked_and_installed_through_slice_b() -> None:
     guidance = _collapsed(GUIDANCE)
     operating_model = _collapsed(SEARCHOS)
     roadmap = _collapsed(ROADMAP)
@@ -269,20 +272,21 @@ def test_searchos_iterative_direction_is_routed_linked_and_build_closed() -> Non
     assert "beneath this durable target subsystem doctrine" in operating_model
     assert "does not replace current code, tests" in operating_model
     assert "as installed truth" in operating_model
-    assert "does not authorize BUILD" in operating_model
+    assert "does not authorize later BUILD" in operating_model
 
     assert SEARCHOS_ITERATIVE_DIRECTION.name in roadmap
-    assert "architecture-only first-wave and iterative-judgment convergence" in roadmap
-    assert "internal Slice A (canonical iterative judgment cutover)" in roadmap
-    assert "internal Slice B (bounded breadcrumb navigation)" in roadmap
-    assert "Slice A is installed; Slice B remains pending" in roadmap
-    assert "parent checkpoint is not complete" in roadmap
+    assert "Completed Build: SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01" in roadmap
+    assert "Internal Slice B completes" in roadmap
+    assert "The query-strategy, READ/source-custody, and iterative-navigation checkpoints are complete" in roadmap
+    assert "Navigation authorizes a separate one-shot READ and creates no QueryPlan query" in roadmap
     assert "SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01" in roadmap
 
-    assert "Status: approved architecture direction; BUILD not yet authorized" in direction
-    assert "Does-not-authorize: BUILD" in direction
-    assert "Cursor Build: NOT AUTHORIZED" in direction
-    assert "Codex BUILD brief: NOT AUTHORIZED" in direction
+    assert "Status: installed through internal Slice B" in direction
+    assert "Does-not-authorize: later BUILD" in direction
+    assert "Architecture direction: approved and installed through Slice B" in direction
+    assert "Slice A: installed" in direction
+    assert "Slice B: installed" in direction
+    assert "Later recovery/stopping BUILD: not authorized by this document" in direction
 
     for path in (
         GUIDANCE,
@@ -526,7 +530,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
     for phrase in (
         "Status: current",
         "Default-read: yes",
-        f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}",
+        f"Verified-against-runtime: {SEARCHOS_SLICE_B_RUNTIME_SHA}",
         "`core.routing` is the sole provider-capability policy owner",
         "exactly one selected provider or blocks with zero transport",
         "Fallback candidates remain descriptive",
@@ -571,11 +575,11 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert f"Verified-against-runtime: {READ_SOURCE_CUSTODY_RUNTIME_SHA}" in _read(
         ACQUISITION_CONTROL
     )
-    assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(
+    assert f"Verified-against-runtime: {SEARCHOS_SLICE_B_RUNTIME_SHA}" in _read(
         PROVIDER_ROUTING
     )
     for owner in (CURRENT_STATE, ROADMAP):
-        assert f"Verified-against-runtime: {SEARCHOS_SLICE_A_RUNTIME_SHA}" in _read(owner)
+        assert f"Verified-against-runtime: {SEARCHOS_SLICE_B_RUNTIME_SHA}" in _read(owner)
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
@@ -605,7 +609,11 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert "process_search_queries(search_providers=None)" in routing
     assert "performs zero transport" in routing
-    assert "Provider-failure fallback and bounded navigation are not installed" in current
+    assert (
+        "Candidate READ and bounded breadcrumb navigation reuse this chain; "
+        "provider-failure fallback and retry are not installed"
+        in current
+    )
     assert "ordinary-product consumption of focused extraction" in census
     for phrase in (
         "one boolean provider-availability snapshot",
@@ -709,35 +717,34 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     slice_a_index = roadmap_folded.index(
         "## completed build: searchos-first-wave-and-iterative-judgment-cutover-01"
     )
-    active_index = roadmap_folded.index("## active searchos mvp sequence")
-    navigation_index = roadmap_folded.index(
-        "searchos-iterative-navigation-and-retrieval-judgment-01",
-        active_index,
+    slice_b_index = roadmap_folded.index(
+        "## completed build: searchos-bounded-breadcrumb-navigation-build-01"
     )
+    active_index = roadmap_folded.index("## active searchos mvp sequence")
     recovery_index = roadmap_folded.index(
         "searchos-gap-recovery-and-stop-convergence-01",
-        navigation_index,
+        active_index,
     )
     assert (
         handoff_index
         < query_index
         < read_index
         < slice_a_index
+        < slice_b_index
         < active_index
-        < navigation_index
         < recovery_index
     )
     assert "Query strategy and neutral iterative SearchJudgment are installed" in roadmap
     assert "Map may be inserted later as an optional navigation plugin" in roadmap
     assert "Exact-candidate READ, custody, and governed component semantic handoff are installed" in current
     assert (
-        "Breadcrumb navigation, post-Analyst re-entry, comprehensive gap recovery, "
-        "and final stopping remain later SearchOS work"
+        "Slice B bounded breadcrumb navigation are now converged. Post-Analyst "
+        "re-entry, comprehensive gap recovery, and final stopping remain later SearchOS work"
         in current
     )
 
 
-def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
+def test_searchos_iterative_navigation_parent_is_installed() -> None:
     current = _collapsed(CURRENT_STATE)
     roadmap = _collapsed(ROADMAP)
     brief = _collapsed(QUERY_CONVERGENCE_BRIEF)
@@ -797,8 +804,10 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
-    assert "active work remains within `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`" in roadmap
-    assert "Slice A is installed; Slice B remains pending" in roadmap
+    assert "Completed Build: SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01" in roadmap
+    assert "Internal Slice B completes `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`" in roadmap
+    assert "SEARCHOS-SLICE-B-NAVIGATION" in current
+    assert "The parent iterative-navigation roadmap checkpoint is complete" in current
     assert "Query strategy and neutral iterative SearchJudgment are installed" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
@@ -810,7 +819,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     for phrase in (
         "Status: current decision census",
         "Authority: owner-approved provider acquisition target doctrine",
-        f"Verified-against-runtime: {PROVIDER_ROUTING_RUNTIME_SHA}",
+        f"Verified-against-runtime: {PROVIDER_CENSUS_RUNTIME_SHA}",
         "Vendor-documentation-checked: 2026-07-16",
         "Vendor offered",
         "Adapter installed",

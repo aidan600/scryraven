@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 4431ff46ed1e8367b124f596ccc04e90040217b6
+Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -83,9 +83,10 @@ configuration.
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
-| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
+| `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection alone remains a nontrigger. SearchJudgment may separately nominate an exact admitted candidate READ or one exact current breadcrumb ref; both reuse the RunKernel controller and one typed Linkup/Tavily READ adapter. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
-| `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the closed four-action vocabulary. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
+| `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the four base actions. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
+| `SEARCHOS-SLICE-B-NAVIGATION` | `SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01` adds the fifth exact action, `REQUEST_NAVIGATE_BREADCRUMB`, only to the navigation-capable v2 judgment contract. A successful candidate READ may yield bounded deterministic same-host, queryless Markdown breadcrumb refs joined to exact parent custody. The model copies one current ref and cannot author a URL, provider, or route. RunKernel charges one logical edge and READ nomination, `core.routing` selects one existing READ adapter, and the transient one-shot execution overlay alone carries the exact destination before custody. Successful atomic FetchRead v2/EvidenceLedger admission is the first canonical durable URL publication. Physical custody may be reused without changing its discovery/navigation origin while each slot receives a distinct use ref. Navigation-origin material re-enters the existing N-component semantic and citation path; Map, Crawl, Focused Extract, fallback, retry, browser, and live execution remain closed. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -387,10 +388,11 @@ RunKernel owns post-selection SearchOS state plus proposal admission,
 capability, work order, route, execution, terminal, exhaustion, custody
 authorization, semantic handoff, readiness, and required-needs blocking. The
 guarded executor and Linkup Fetch/Tavily Extract mechanical adapters are reached
-only after a valid model nomination. Provider-failure fallback and bounded
-navigation are not installed. Legacy ordinary-live source-custody and
-main-coverage flags are not consulted, late main coverage cannot reacquire, and
-the retired `AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
+only after a valid model nomination. Candidate READ and bounded breadcrumb
+navigation reuse this chain; provider-failure fallback and retry are not
+installed. Legacy ordinary-live source-custody and main-coverage flags are not
+consulted, late main coverage cannot reacquire, and the retired
+`AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
 
 Historical fetch-callsite dispositions remain exact:
 
@@ -415,8 +417,9 @@ still ends before support authority. Compatibility names such as `proplex`, `pyt
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
 model, search, recon, fetch/read, or retrieval call was made. The initial
 SearchPlanner-to-QueryPlan path and Slice A post-first-wave iterative judgment
-are now converged. Breadcrumb navigation, post-Analyst re-entry, comprehensive
-gap recovery, and final stopping remain later SearchOS work.
+and Slice B bounded breadcrumb navigation are now converged. Post-Analyst
+re-entry, comprehensive gap recovery, and final stopping remain later SearchOS
+work.
 Current priority and checkpoint order belong only to [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
@@ -584,8 +587,45 @@ source-class continuation, and AG-92B do not run after the first wave on this
 forward Slice A path. AG-92B's comprehensive recovery/stopping disposition is
 deferred. The full installed boundary is owned by [SearchOS First-Wave And
 Iterative-Judgment Cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md).
-Slice B breadcrumb navigation remains pending, so the parent roadmap checkpoint
-is not complete.
+
+## Installed SearchOS Slice B Breadcrumb Navigation
+
+`SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01` completes the internal
+Slice B product loop beneath the same SearchJudgment and RunKernel owners. After
+a successful exact candidate READ, a bounded deterministic parser inspects only
+the retained Markdown artifact and supports inline links, balanced
+parenthesized destinations, and HTTP(S) Markdown autolinks. It rejects query-
+bearing, cross-host, downgrade, nondefault-port, unsupported-scheme, malformed,
+and overlong destinations before canonical admission. Raw hrefs, rejected query
+material, the extraction draft, and the run-local destination registry remain
+transient.
+
+The navigation-capable judgment request/input/decision contract is explicitly
+v2. `REQUEST_NAVIGATE_BREADCRUMB` copies one exact current safe ref; it contains
+no URL and does not create QueryPlan query lineage. RunKernel validates the
+current option, immutable lineage generation, representative contributor,
+lease, cycle/depth posture, and independent retained ceilings. It charges one
+logical edge and one logical READ nomination before a separately governed
+READ. `core.routing` remains the sole provider selector. One nonserializable,
+one-shot execution overlay materializes the exact queryless URL immediately
+before dispatch through the installed READ adapter.
+
+Navigation-origin v2 proposal, work-order, route, execution, failure, and
+terminal records remain URL-free. A successful physical-custody observation is
+the first canonical exact-URL boundary: the normalized attempted destination is
+both `attempted_url` and `durable_source_url` in the FetchRead v2 packet,
+EvidenceLedger custody, and immutable physical record. Ledger or validation
+failure publishes no durable URL and cannot retry. Existing physical custody is
+reused without relabeling its discovery/navigation origin; logical edge and READ
+charges and slot-specific use refs remain distinct. Navigation-origin semantic
+passages use `durable_source_url` and enter the unchanged component Analyst /
+D-prime / RunKernel admission and final-evidence/citation path. Offline N=1 and
+N=2 product fixtures prove that composition; they do not prove live provider or
+model quality.
+
+The parent iterative-navigation roadmap checkpoint is complete. Comprehensive
+post-Analyst re-entry, gap recovery, and whole-run stopping remain deferred to
+the next checkpoint.
 
 ## Retired Legacy Semantic Scout And Ordinary Provider Synthesis
 
@@ -653,8 +693,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Map topology selection, Map-to-READ/Focused re-entry, or Crawl page-level
   custody.
 - Provider-failure cross-provider retry.
-- SearchOS Slice B breadcrumb navigation, post-Analyst re-entry, comprehensive
-  gap recovery, and final stopping convergence.
+- SearchOS post-Analyst re-entry, comprehensive gap recovery, and final stopping
+  convergence.
 - DISCOVER-attached readable-source custody or support eligibility.
 - Direct current-need known-URL READ outside admitted candidate state.
 - A browser or general local scraper as an ordinary product path.
@@ -675,6 +715,9 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
   result sets and the preserved ranking mechanics.
 - Live and arbitrary-query quality of the N-component SearchOS semantic handoff
   remains unproved; installed proof is bounded and offline.
+- Live breadcrumb extraction, navigation selection, destination READ, and
+  durable-source/citation quality remain unproved; installed proof is bounded,
+  deterministic, and offline.
 - Focused Extract ordinary product activation remains unproved.
 - Map and Crawl PRODUCT dispatch remain unproved and uninstalled.
 - No model adapter changed and no live provider transport was exercised.

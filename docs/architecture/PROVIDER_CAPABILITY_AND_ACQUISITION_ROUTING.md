@@ -3,9 +3,9 @@
 Status: current
 Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
-Applies-to: current ordinary DISCOVER routing, shared acquisition contracts, ProviderPlan projection, retained RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
+Applies-to: current ordinary DISCOVER routing, SearchOS candidate/navigation READ routing, shared acquisition contracts, ProviderPlan projection, RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -45,13 +45,15 @@ composes one boolean provider-
 availability snapshot from configured credential presence, or from explicitly
 injected offline-test facts, and passes it to ProviderPlan. Callables, transport
 objects, and ordered provider preferences do not establish availability. The
-same snapshot remains available to the retained future READ controller, but
-candidate selection alone creates no proposal and never reaches it. The
+same snapshot feeds the installed SearchOS READ controller, but candidate
+selection alone still creates no proposal and never reaches it. SearchJudgment
+must separately nominate an exact admitted candidate or one exact current
+navigation ref. The
 SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners remain unchanged.
 
 Current runtime/test provenance:
-`6fbca602afac5a00bb6bafa2a6888b6ec31d5065`.
+`36ca5f132254fc78c5a57f860c561aaa7d9fd9d6`.
 The initial-discovery transport retirement remains historically installed at
 `48a309124764d813cf27081bf5871d5a9612db79`.
 The mechanical adapter foundation remains historically installed at
@@ -99,7 +101,7 @@ and consumers, not credential presence or live availability.
 | Capability | Cataloged | Adapter installed | Typed-runtime reachable | Ordinary-product enabled | Ordinary-product reachable | Ordinary-product consumed |
 | --- | --- | --- | --- | --- | --- | --- |
 | `DISCOVER` | yes | yes | yes | yes | yes | yes, through current ProviderPlan, scheduler, dispatch, continuation, supplemental, and recovery consumers |
-| `READ` | yes | yes | yes | no | no ordinary material-need producer | no; selected candidate and URL provenance alone are a nontrigger |
+| `READ` | yes | yes | yes | yes | yes; SearchJudgment may nominate one exact admitted discovery/iteration candidate or one exact current breadcrumb ref | yes, through RunKernel-owned SearchOS acquisition, one selected Linkup Fetch/Tavily Extract adapter, terminal handling, and FetchRead/EvidenceLedger custody |
 | `FOCUSED_EXTRACT` | yes | yes | yes | no | controller recognizes then returns `focused_extract_requester_not_installed` | no |
 | `MAP_SITE` | yes | yes | yes | no | controller recognizes then returns `map_candidate_reentry_not_installed` | no |
 | `CRAWL_SITE` | yes | yes | yes | no | controller recognizes then returns `crawl_page_custody_not_installed` | no |
@@ -111,7 +113,7 @@ Adapter installation or validation-constructed dispatch is not ordinary product
 consumption. No product requester was manufactured for focused extraction, site
 mapping, site crawling, or general Linkup Deep.
 
-## Approved SearchOS Target (Not Installed)
+## Approved SearchOS Target And Installed READ Boundary
 
 [SearchOS Operating Model](SEARCHOS_OPERATING_MODEL.md) owns the target
 architecture. Its minimum shared search-result contract is a title, URL,
@@ -121,18 +123,23 @@ routing nor downstream research authority may assume every search result
 contains a complete page.
 
 In the target vocabulary, Linkup Fetch and Tavily Extract are peer
-implementations of `READ_PAGE`. That equivalence does not change today's
-Linkup-first route policy or activate an ordinary READ consumer. Request-bound
-provenance is sufficient for bounded provider-returned material. A provider-
-reported URL is optional metadata, not proof of DNS, connected address,
-redirect chain, or final/canonical network target.
+implementations of `READ_PAGE`. The ordinary SearchOS consumer now reaches that
+existing route only after one exact RunKernel-admitted candidate READ or
+breadcrumb selection. This did not change Linkup-first route policy, provider
+preference, capability compatibility, fallback, or adapter mechanics.
+Request-bound provenance is sufficient for bounded provider-returned material.
+A provider-reported URL is optional metadata, not proof of DNS, connected
+address, redirect chain, or final/canonical network target.
 
-One alternate or stronger attempt after a typed retrieval-quality failure and
-bounded one-breadcrumb navigation are planned. Provider-failure fallback and
-navigation remain uninstalled. Versioned provider profiles are planned owners
-of volatile capabilities, limits, optional outputs, costs, and availability;
-versioned routing policy is the planned owner of preferences, alternatives,
-attempt limits, mode budgets, and escalation order. Current policy remains the
+Bounded one-breadcrumb navigation is installed as an exact-ref SearchJudgment
+action with a separately governed one-shot READ. Its exact destination remains
+in a transient execution overlay and never enters canonical proposal,
+work-order, route, execution-action, failure-observation, or terminal-receipt
+state before successful custody. Provider-failure fallback and retry remain
+uninstalled. Versioned provider profiles are planned owners of volatile
+capabilities, limits, optional outputs, costs, and availability; versioned
+routing policy is the planned owner of preferences, alternatives, attempt
+limits, mode budgets, and escalation order. Current policy remains the
 code-owned policy described below.
 
 ## Shared Request, Job, And Artifact Contracts
@@ -147,6 +154,15 @@ One `AcquisitionRequest` carries only operation-relevant facts:
 - result, page, depth, per-page, and aggregate limits;
 - candidate, query, acquisition-lineage, and obligation references; and
 - the completed route's explicit Deep authorization when applicable.
+
+Discovery-origin v1 READ retains its exact selected-URL materialization and
+replay shape. Navigation-origin v2 proposal, work-order, route, and execution
+authority carry only safe destination-binding, edge, selection, lineage,
+parent-custody, slot/component/obligation, and physical-identity refs. After
+route selection, a run-local one-shot overlay supplies the exact queryless URL
+directly to the mechanical request materializer immediately before dispatch;
+the URL does not enter `selected_urls` or any canonical navigation action or
+observation before successful custody.
 
 Normalized artifacts distinguish discovery candidates, selected-URL reads,
 focused selected-URL extractions, site topology, bounded page collections,
@@ -186,7 +202,7 @@ Linkup-only remains valid for general/domain-targeted DISCOVER and preferred
 READ when configured. Provider subsets create no fan-out, and domain targeting
 grants no social interpretation or authority.
 
-## Selected-Candidate Nontrigger And Retained READ Route
+## Selected-Candidate Nontrigger And Installed SearchOS READ Route
 
 The ordinary selected-candidate result is:
 
@@ -199,11 +215,12 @@ SearchResultCandidatePacket
 -> no work order, route, cap charge, adapter call, or custody
 ```
 
-If a future canonical surface supplies a separate current material need, the
-retained route is:
+The installed canonical SearchJudgment supplies the separate current material
+need only after it nominates one exact eligible candidate-use ref or one exact
+current navigation ref. The route is:
 
 ```text
-independent material need + selected URL provenance
+SearchJudgment nomination + exact candidate/navigation lineage
 -> exact packet/current-lineage validation
 -> RunKernel capability decision and provider-neutral work order admission
 -> RunKernel route authorization
@@ -214,16 +231,17 @@ independent material need + selected URL provenance
 -> normalized bounded read artifact
 -> RunKernel execution and terminal reduction
 -> RunKernel READ custody authorization
--> existing FetchReadContentPacket
--> existing EvidenceLedger custody reduction
+-> origin-discriminated FetchReadContentPacket v1/v2
+-> EvidenceLedger exact v1/v2 custody reduction
 ```
 
-The source-custody and main-RunKernel coverage flags default to false. Source
-custody returns `not_needed` before provider availability, RunKernel actions,
-cap accounting, or transport when no proposal is supplied. Late main coverage
-consumes prior custody and cannot reacquire. The historical live source-custody
-validation profile is non-executable. This is offline nontrigger proof, not
-default live CLI READ consumption or live validation.
+The older optional source-custody and main-RunKernel coverage compatibility
+flags still default false. That legacy-shaped source-custody path returns
+`not_needed` before provider availability, RunKernel actions, cap accounting,
+or transport when no proposal is supplied; it is not the current forward
+SearchOS owner. The ordinary SearchOS path is unflagged and product-consumed,
+but its current proof is offline. The historical live source-custody validation
+profile remains non-executable, and no live READ or navigation claim is made.
 
 Linkup Fetch is preferred. Tavily Extract is selected only when the explicit
 composition snapshot says Linkup is unavailable before dispatch. Injecting a
@@ -251,10 +269,11 @@ material can succeed with only requested/attempted identity; missing or invalid
 page HTTP status and unreported redirect/canonical lineage remain unknown.
 Explicit provider-reported redirect and canonical facts survive unchanged.
 
-The adapter does not admit evidence. The existing FetchReadContentPacket and
-EvidenceLedger custody reducer continue to decide only their existing bounded
-custody facts; this phase changes no semantic support, citation, source-
-obligation, Sufficiency, FinalAnswerPacket, or Author authority.
+The adapter does not admit evidence. Origin-discriminated
+FetchReadContentPacket v1/v2 and EvidenceLedger custody continue to decide only
+their bounded custody facts. Neither ordinary READ branch changes semantic
+support, citation, source-obligation, Sufficiency, FinalAnswerPacket, or Author
+authority; navigation-origin custody reuses those existing downstream owners.
 
 ## Dormant Typed Capabilities
 

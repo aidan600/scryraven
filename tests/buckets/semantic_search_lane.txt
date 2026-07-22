@@ -29,3 +29,10 @@ tests/test_searchos_slice_a_product_cutover_01.py::test_readable_insufficient_re
 # while the established pure material-equivalence rule blocks redispatch.
 tests/test_searchos_iterative_judgment_cutover_01.py::test_query_plan_admits_exact_model_followup_without_evaluator_or_expander
 tests/test_searchos_iterative_judgment_cutover_01.py::test_searchos_followup_rejects_materially_equivalent_query_before_discover
+
+# Owner: RunKernel SearchOS Slice B. Reason: durable ordinary product sentinels
+# prove exact-ref navigation re-enters the existing semantic/citation path with
+# one physical acquisition across two logical uses, while failed atomic ledger
+# admission publishes no durable URL and cannot retry.
+tests/test_searchos_bounded_breadcrumb_navigation_product_01.py::test_n1_navigation_reuses_one_physical_destination_and_reenters_citation_path
+tests/test_searchos_bounded_breadcrumb_navigation_product_01.py::test_navigation_ledger_failure_rolls_back_without_durable_url_or_retry

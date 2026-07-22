@@ -1,4 +1,18 @@
-"""Offline phase-focus proof for bounded SearchOS breadcrumb contracts."""
+"""Offline phase-focus proof for bounded SearchOS breadcrumb contracts.
+
+Proof class: PRODUCT-supporting structural proof. Validation bucket:
+phase_focus. Surface guarded: deterministic extraction, URL policy, safe refs,
+lineage, failure scope, retained capacity, and RunKernel navigation authority.
+High-custody or closed-this-phase surface: exact pre-custody URLs are transient;
+Map, Crawl, Focused Extract, fallback, retry, browser, and live calls stay
+closed. Runtime/product path guarded: canonical owners below the ordinary
+SearchOS consumer. Expected cost: a bounded deterministic owner matrix in under
+one second locally. Promotion posture: remain phase_focus; ordinary product
+sentinels live in the product test module. Demotion/retirement condition:
+replace only when the same exact contracts move to a successor SearchOS owner.
+Why not fast_pr: this is exhaustive authority and capacity detail, not a cheap
+broad PR sentinel.
+"""
 
 from __future__ import annotations
 

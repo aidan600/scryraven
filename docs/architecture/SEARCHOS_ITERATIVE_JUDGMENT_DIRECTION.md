@@ -1,14 +1,15 @@
 # SearchOS Iterative Judgment Direction
 
-Status: approved architecture direction; BUILD not yet authorized
+Status: installed through internal Slice B; later recovery/stopping remains planned
 Authority: approved:searchos-iterative-judgment-direction
 Responsibility: canonical forward direction for first-wave cutover, iterative result admission, the single SearchJudgment owner, semantic-evaluation handoff, navigation sequencing, budget/mode policy, and legacy-authority retirement
-Applies to: `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01` and its architecture-only convergence record
+Applies to: installed `SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01` behavior and later recovery/stopping convergence
 Repository owner: `docs/architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md`
+Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
 Project Source role: durable external context mirror; once the repository copy exists, the repository copy controls on conflict
 Update trigger: maintainer changes the canonical owner, first-wave boundary, action vocabulary, iterative candidate continuity, navigation sequencing, adjustable policy doctrine, or legacy retirement direction
-Non-trigger: implementation of a subordinate slice that conforms to this direction
-Does-not-authorize: BUILD, live calls, provider/model policy changes, roadmap reordering, or claims that planned behavior is installed
+Non-trigger: implementation detail that preserves the installed owner and authority boundaries
+Does-not-authorize: later BUILD, live calls, provider/model policy changes, roadmap reordering, or claims beyond the installed offline envelope
 
 ## 1. Purpose
 
@@ -88,7 +89,7 @@ Legacy evaluator/expander and deterministic recovery paths must not independentl
 
 ## 4. Canonical iterative action vocabulary
 
-The initial closed action set is:
+The installed base action set is:
 
 ```text
 HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
@@ -96,6 +97,15 @@ REQUEST_READ_PAGE
 PROPOSE_FOLLOWUP_QUERY
 HANDOFF_UNRESOLVED
 ```
+
+The navigation-capable v2 contract adds exactly one fifth action:
+
+```text
+REQUEST_NAVIGATE_BREADCRUMB
+```
+
+The v1 request/input/decision schema remains readable and retains the four base
+actions. It cannot nominate navigation.
 
 ### HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
 
@@ -114,6 +124,19 @@ SearchJudgment does not create support, coverage, satisfaction, citations, Suffi
 ### REQUEST_READ_PAGE
 
 Nominates one exact currently eligible unread binding. The same action covers the first source and later alternative candidates; iteration history distinguishes them.
+
+### REQUEST_NAVIGATE_BREADCRUMB
+
+Copies one exact current safe navigation candidate ref derived from a successful
+READ and exact parent custody. It does not overload `REQUEST_READ_PAGE`, contain
+or author a URL, choose a provider or route, or create QueryPlan lineage. The
+selection admits one source-to-destination edge and authorizes a separate
+governed READ through RunKernel and `core.routing`.
+
+When current READ custody is present, the decision includes the same exhaustive
+`read_insufficient` assessments required by other post-READ actions. Navigation
+options are directional and non-support-bearing until the destination reaches
+custody and the existing semantic receiver.
 
 ### PROPOSE_FOLLOWUP_QUERY
 
@@ -187,35 +210,49 @@ Required invariants:
 
 Navigation is a SearchOS tool, not a separate authority system.
 
-It means selecting one exact outbound URL discovered inside an already read source, then separately reading it.
+Installed Slice B selects one exact safe breadcrumb ref derived from an already
+read source, then separately reads its transiently bound destination.
 
 ```text
 READ source
-→ extract exact outbound breadcrumb candidates
-→ SearchJudgment selects one justified URL
-→ NAVIGATE records the candidate lineage
-→ READ_PAGE fetches the selected URL
+→ transient bounded deterministic Markdown extraction
+→ exact parent-custody join and candidate admission
+→ SearchJudgment copies one current navigation ref
+→ RunKernel admits the edge, lease, and logical charges
+→ core.routing selects one installed READ adapter
+→ one-shot transient overlay materializes the exact URL
+→ atomic destination custody
+→ existing SearchJudgment and semantic receiver
 ```
 
-Navigation requires additional substrate:
+The installed first-build boundary is same exact host, queryless HTTP(S), one
+breadcrumb at a time, and a trailing-slash-preserving physical identity. The
+model never receives or authors the destination URL. Stable option identity,
+immutable contributor-lineage generations, mutable feasibility state,
+cycle/depth controls, independent retained ceilings, and required-slot
+reservations are canonical RunKernel-owned facts. Exact hrefs, the extraction
+draft, destination registry, execution overlay, and pre-custody packet remain
+run-local and nonserializable.
 
-- outbound-link extraction;
-- source-to-link lineage;
-- navigation candidate contract;
-- exact URL selection;
-- visited-set and cycle detection;
-- depth and breadth limits;
-- domain/scope behavior;
-- mandatory separate READ before custody or semantic use.
+The successful physical-custody observation is the first canonical exact-URL
+commit. Navigation-origin v2 custody sets the normalized attempted destination
+as `durable_source_url`; physical reuse preserves the original immutable packet,
+ledger custody, and discovery/navigation origin while adding a slot-specific
+use ref and consuming the current logical edge and READ nomination. Failure is
+one-shot, URL-free, and terminal for the physical operation. No provider
+fallback or retry is installed.
 
-Keep the canonical roadmap checkpoint name, but implement it as two internal slices:
+The canonical checkpoint was delivered as two internal slices:
 
 ```text
 A. first-wave and iterative-retrieval-judgment cutover
 B. bounded breadcrumb navigation
 ```
 
-The roadmap checkpoint is complete only after both unless the maintainer explicitly moves navigation later.
+Both slices are installed through the ordinary product consumer. Map, Crawl,
+Focused Extract, browser execution, direct model URL access, provider Deep or
+Research, comprehensive post-Analyst recovery, and whole-run stopping remain
+outside this checkpoint.
 
 ## 7. Analyst re-entry
 
@@ -274,7 +311,9 @@ Fast, Balanced, and Deep use the same SearchOS vocabulary and authority chain. T
 
 SearchJudgment chooses the provider-neutral operation required by the active need. Routing chooses the provider implementation.
 
-When a trustworthy exact URL is already bound to the active need, SearchOS may authorize direct `READ_PAGE` without first paying for broad SEARCH.
+The installed ordinary product may authorize `READ_PAGE` only from an exact
+admitted discovery/iteration candidate or an exact current breadcrumb ref. A
+general current-need known-URL requester remains uninstalled.
 
 When no exact URL is known:
 
@@ -288,9 +327,9 @@ Provider-specific costs and preferences belong to provider profiles and routing 
 
 ## 10. Delivery sequence
 
-### Architecture-only convergence record
+### Completed architecture-only convergence record
 
-First resolve and document:
+Resolved and documented:
 
 - the neutral canonical SearchJudgment state;
 - first-wave cutover callsite;
@@ -301,9 +340,9 @@ First resolve and document:
 - all hard-limit behavior;
 - provisional policy owner and mode interaction.
 
-### Internal Slice A — iterative judgment cutover
+### Installed internal Slice A — iterative judgment cutover
 
-Install:
+Installed:
 
 - first-wave boundary;
 - one canonical SearchJudgment state;
@@ -314,9 +353,12 @@ Install:
 - evaluator/expander model-authority removal;
 - provisional policy profiles.
 
-### Internal Slice B — bounded breadcrumb navigation
+### Installed internal Slice B — bounded breadcrumb navigation
 
-Install navigation candidates, exact selection, cycle/depth/breadth controls, and mandatory separate READ.
+Installed bounded deterministic extraction, exact parent-custody-bound
+navigation refs, current-lineage selection, cycle/depth/breadth and retained-
+capacity controls, a one-shot URL overlay, mandatory separate READ, atomic
+durable-source custody, physical reuse, and existing semantic/citation re-entry.
 
 ### Following roadmap phase
 
@@ -343,9 +385,12 @@ no live calls without a separate license
 ## 12. Authorization posture
 
 ```text
-Architecture direction: approved
-Cursor Build: NOT AUTHORIZED
-Codex BUILD brief: NOT AUTHORIZED
+Architecture direction: approved and installed through Slice B
+Slice A: installed
+Slice B: installed
+Later recovery/stopping BUILD: not authorized by this document
+Live execution: not authorized
 ```
 
-The next authorized task is the architecture-only convergence record for first-wave cutover and iterative candidate-state continuity.
+Current priority and any later implementation authority are owned by
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md) and an explicit phase brief.

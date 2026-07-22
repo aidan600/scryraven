@@ -5,6 +5,7 @@ Authority: canonical:searchos-operating-model
 Default-read: no
 Applies-to: SearchOS architecture and SearchOS-facing provider, acquisition, navigation, and recovery work
 Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities
+Verified-against-runtime: 36ca5f132254fc78c5a57f860c561aaa7d9fd9d6
 
 ## Product Boundary
 
@@ -95,13 +96,13 @@ is useful optional metadata, not network-path attestation.
 
 ## Iterative SearchOS Loop
 
-The shared target loop is:
+The shared loop is installed through one bounded breadcrumb and separate READ:
 
 ```text
 find candidate
 -> inspect available material
 -> accept if sufficient
-   OR perform a known-URL read
+   OR read one exact admitted candidate
    OR follow one bounded breadcrumb
    OR revise the query
 -> custody
@@ -115,10 +116,10 @@ to search, another source, or bounded navigation rather than extracting the
 same page repeatedly.
 
 [SearchOS Iterative Judgment Direction](SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
-records the approved iterative-judgment convergence direction for the active
-roadmap checkpoint beneath this durable target subsystem doctrine. It does not
-replace current code, tests, or [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
-as installed truth, and it does not authorize BUILD.
+records the approved and installed first-wave, iterative-judgment, and bounded-
+breadcrumb direction beneath this durable target subsystem doctrine. It does
+not replace current code, tests, or [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
+as installed truth, and it does not authorize later BUILD.
 
 ## Query And Primary-Source Strategy
 
@@ -135,9 +136,11 @@ Query design is part of the SearchOS MVP. It should support:
 - nonredundant recovery queries tied to active gaps.
 
 Primary-source pursuit is a query and source-hierarchy strategy, not a provider
-identity shortcut. SearchPlanner, Scout disambiguation, SearchPlannerRevision,
-QueryPlan, and RunAuthority search judgment are existing substrates to converge
-later. Their convergence into this loop is planned, not installed.
+identity shortcut. Initial SearchPlanner acceptance, optional bounded Scout/
+revision handling, QueryPlan, first DISCOVER, neutral SearchJudgment, exact
+candidate READ, sequential follow-up query admission, and one bounded
+breadcrumb are converged in the ordinary product. Comprehensive post-Analyst
+gap recovery and final stopping remain later work.
 
 ## Provider Responsibility Boundary
 
@@ -164,7 +167,7 @@ repeating the rollback mechanics.
 
 ## Adaptive Retrieval Target
 
-Adaptive retrieval is approved but uninstalled:
+Adaptive provider-failure retrieval is approved but uninstalled:
 
 - one provider request per recorded attempt;
 - preserve every attempt;
@@ -173,8 +176,8 @@ Adaptive retrieval is approved but uninstalled:
 - no retry after a usable success merely to compare providers;
 - no repeated extraction when a successfully read page simply lacks the needed
   information; and
-- after source insufficiency, return to search, another source, or bounded
-  navigation.
+- after source insufficiency, return to search, another source, or the installed
+  bounded one-breadcrumb action.
 
 The exact typed failure policy and budgets belong to later implementation
 phases. This target does not activate provider-failure fallback today.

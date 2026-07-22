@@ -1,4 +1,22 @@
-"""Offline ordinary-path proof for SearchOS bounded breadcrumb navigation."""
+"""PRODUCT-PATH-REGRESSION: bounded SearchOS breadcrumb navigation.
+
+Proof class: PRODUCT. Validation bucket: phase_focus, with the N=1 re-entry and
+ledger-rollback nodes promoted to semantic_search_lane; the cheap URL-free v2
+proposal/work-order boundary is promoted to fast_pr. Surface guarded: the
+ordinary SearchJudgment -> governed READ -> custody -> semantic/citation loop,
+including physical reuse and first durable URL publication. High-custody or
+closed-this-phase surface: exact navigation execution authority and durable
+source custody are high-custody; routing policy, Map, Crawl, Focused Extract,
+fallback, retry, browser, and live calls remain closed. Runtime/product path
+guarded: offline ordinary run_pipeline() with fake model/provider responses.
+Expected cost: sub-second owner sentinels and roughly two seconds per ordinary
+product node locally. Promotion posture: one cheap broad fast_pr sentinel and
+two durable semantic-search sentinels; N=2 and detailed custody cases remain
+phase_focus. Demotion/retirement condition: narrow or replace when a successor
+SearchOS recovery/re-entry owner provides equal-or-stronger product proof. Why
+not all fast_pr: the custody, reuse, and rollback matrices are detailed domain
+proof rather than ordinary PR tax.
+"""
 
 from __future__ import annotations
 

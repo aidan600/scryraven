@@ -80,7 +80,7 @@ def _tavily_typed_request(
     )
 
 
-def test_selected_candidate_alone_does_not_reach_existing_read_adapter(
+def test_selected_candidate_alone_does_not_reach_retired_legacy_read_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -96,13 +96,16 @@ def test_selected_candidate_alone_does_not_reach_existing_read_adapter(
         fetcher=fetcher,
     )
 
-    projection = outcome.execution_trace["ordinary_live_source_custody"]
-    assert projection["status"] == "not_needed"
-    assert projection["candidate_packet_present"] is True
-    assert projection["acquisition_need_proposal_created"] is False
-    assert projection["acquisition_work_order_created"] is False
-    assert projection["acquisition_route_created"] is False
-    assert projection["exact_url_transport_attempted"] is False
+    assert "ordinary_live_source_custody" not in outcome.execution_trace
+    searchos = outcome.execution_trace["searchos_slice_a"]
+    assert searchos["provider_calls_attempted"] == 0
+    assert searchos["provider_calls_completed"] == 0
+    assert set(searchos["slot_postures"].values()) == {"stale_or_invalid"}
+    assert all(
+        record["latest_judgment_reason"]
+        == "read_transport_failure:selected_adapter_transport_unavailable"
+        for record in searchos["readiness_projection"]["slot_records"]
+    )
     assert fetcher.calls == []
     assert harness.forbidden_live_calls == []
 

@@ -17,3 +17,7 @@ tests/test_ag96i3af6a_broker_alignment.py::test_af6a_fake_mode_has_sanitized_out
 # only provider HTTP calls remain fixed DISCOVER endpoints and exact-URL
 # dispatch remains behind the RunKernel pre-transport claim.
 tests/test_initial_discovery_selective_fetch_retirement_01.py::test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary
+
+# Cheap SearchOS navigation privacy sentinel: canonical v2 proposal and work
+# order carry safe binding/edge/selection refs without an exact destination URL.
+tests/test_searchos_bounded_breadcrumb_navigation_product_01.py::test_navigation_v2_proposal_and_work_order_are_url_free

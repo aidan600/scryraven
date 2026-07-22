@@ -258,10 +258,10 @@ product outcome. It remains distinguishable from comprehensive recovery,
 Optional slots retain their accepted AnswerContract posture. Missing or
 ambiguous required-versus-optional posture fails closed.
 
-## Closed Work And Nonproofs
+## Slice A Delivery Boundary And Nonproofs
 
-This installed Slice A does not complete the parent iterative-navigation
-checkpoint. The following remain closed:
+At its own runtime checkpoint, Slice A did not complete the parent iterative-
+navigation checkpoint. The following were not installed by Slice A:
 
 - Slice B breadcrumb extraction, selection, cycle control, and navigation;
 - DISCOVER-attached readable-source custody or support eligibility;
@@ -271,6 +271,12 @@ checkpoint. The following remain closed:
 - final whole-run stopping policy and AG-92B recovery/stopping retirement;
 - permanent policy calibration or provider-policy changes;
 - Sufficiency, FinalAnswerPacket, Author, or evidence-meaning redesign.
+
+This is a Slice A boundary record, not the temporal installed-state owner.
+Internal Slice B breadcrumb navigation was subsequently installed by
+`SEARCHOS-BOUNDED-BREADCRUMB-NAVIGATION-BUILD-01`; [ScryRaven Current
+State](SCRYRAVEN_CURRENT_STATE.md) owns that current truth. The other listed
+surfaces remain closed unless the current-state owner says otherwise.
 
 Offline response-only fixtures prove product-path composition and authority
 boundaries. They do not prove live provider/model quality, arbitrary-query
