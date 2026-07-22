@@ -388,6 +388,7 @@ def scrub_navigation_relationship_label(value: str) -> str:
         or bool(_EMAIL_RE.search(compact))
         or bool(_HOST_RE.search(compact))
         or bool(_IPV4_RE.search(compact))
+        or _ipv6_literal_like(compact)
         or bool(_QUERY_RE.search(compact))
         or bool(_CREDENTIAL_RE.search(compact))
         or _path_like(compact)
@@ -1212,6 +1213,28 @@ def _valid_ascii_hostname(value: str) -> bool:
 def _path_like(value: str) -> bool:
     compact = value.strip()
     return bool(re.search(r"(?i)(?:[/\\]|%2f|%5c)", compact))
+
+
+def _ipv6_literal_like(value: str) -> bool:
+    for raw_token in value[:NAVIGATION_LABEL_LENGTH_LIMIT].split():
+        token = raw_token.strip("\"'(),.;!?{}<>")
+        if not token:
+            continue
+        address = token
+        if token.startswith("["):
+            close = token.find("]")
+            if close < 0:
+                continue
+            address = token[1:close]
+            suffix = token[close + 1 :]
+            if suffix and (not suffix.startswith(":") or not suffix[1:].isdigit()):
+                continue
+        try:
+            ipaddress.IPv6Address(address)
+        except ValueError:
+            continue
+        return True
+    return False
 
 
 def _validate_relationship_context(value: Mapping[str, Any], *, child_depth: int) -> dict[str, Any]:

@@ -405,6 +405,36 @@ def test_relationship_labels_use_fixed_fallback_for_locator_like_text(label: str
     assert scrub_navigation_relationship_label(label) == "linked page"
 
 
+@pytest.mark.parametrize(
+    "label",
+    [
+        "2001:db8::1",
+        "[2001:db8::1]",
+        "[2001:db8::1]:443",
+        "2001:0db8:0000:0000:0000:0000:0000:0001",
+        "See [2001:db8::1].",
+        "Destination: [2001:db8::1]:443",
+        "fd00::1",
+        "fe80::1",
+    ],
+)
+def test_ipv6_label_scrubber_uses_fixed_privacy_fallback(label: str) -> None:
+    assert scrub_navigation_relationship_label(label) == "linked page"
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Section 2: Results",
+        "Status: complete",
+        "Ratio 2:1",
+        "Chapter 4: Methods",
+    ],
+)
+def test_ipv6_label_scrubber_preserves_colon_bearing_prose(label: str) -> None:
+    assert scrub_navigation_relationship_label(label) == label
+
+
 def test_locator_store_is_exact_nonserializable_staged_and_run_bounded() -> None:
     store = EphemeralNavigationLocatorStore(run_id="run-1", request_id="request-1")
     normalized = normalize_navigation_destination("https://example.com/private")
@@ -508,6 +538,25 @@ def test_canonical_boundary_valid_pending_selection_ref_replays() -> None:
     assert NavigationOption.from_dict(pending.to_dict()) == pending
     binding_id = pending.destination_binding_ref["destination_binding_id"]
     assert "run-1" not in binding_id and "request-1" not in binding_id
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "2001:db8::1",
+        "[2001:db8::1]",
+        "[2001:db8::1]:443",
+    ],
+)
+def test_ipv6_label_redigested_option_replay_fails_canonical_validation(label: str) -> None:
+    state, _, _ = _admit("[safe label](/child)")
+    raw = deepcopy(next(iter(state["navigation"]["options_by_id"].values())))
+    raw["bounded_relationship_context"]["relationship_label"] = label
+    with pytest.raises(
+        NavigationRuntimeError,
+        match="navigation_relationship_label_not_canonical",
+    ):
+        NavigationOption.from_dict(_redigest_option(raw))
 
 
 def test_navigation_ineligible_parent_keeps_existing_read_custody_unchanged() -> None:
@@ -770,6 +819,97 @@ def test_navigation_judgment_is_exact_ref_only_and_pending_is_zero_charge() -> N
     assert after["navigation_selection_count"] == 0
     assert reduced["navigation"]["edges"] == []
     assert after["pending_navigation_candidate_ref"] == navigation_window[0]["navigation_candidate_ref"]
+
+
+def test_ipv6_label_is_private_across_navigation_foundation_surfaces() -> None:
+    literal = "2001:db8::1"
+    parent_url = "https://[2001:db8::1]/root"
+    exact_destination = "https://[2001:db8::1]/child"
+    forbidden_navigation_values = (literal, exact_destination, "/child")
+    state, summary, store = _admit(
+        "[2001:db8::1](/child)",
+        parent_url=parent_url,
+    )
+    assert summary["admitted_option_count"] == 1
+    option_value = next(iter(state["navigation"]["options_by_id"].values()))
+    option = NavigationOption.from_dict(option_value)
+    context = option.bounded_relationship_context
+    assert context["relationship_label"] == "linked page"
+    assert literal not in json.dumps(context, sort_keys=True)
+    serialized_option = json.dumps(option.to_dict(), sort_keys=True)
+    assert all(value not in serialized_option for value in forbidden_navigation_values)
+    serialized_navigation = json.dumps(state["navigation"], sort_keys=True)
+    assert all(value not in serialized_navigation for value in forbidden_navigation_values)
+
+    state, candidate_window = _record_empty_candidate_window(state)
+    state, reservation = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=reservation,
+        slot_id="slot-1",
+    )
+    navigation_window = project_navigation_window(state, slot_id="slot-1")
+    assert navigation_window[0]["relationship_label"] == "linked page"
+    serialized_window = json.dumps(navigation_window, sort_keys=True)
+    assert all(value not in serialized_window for value in forbidden_navigation_values)
+    custody = state["slots_by_id"]["slot-1"]["custody_refs"][0]
+    request = build_searchos_navigation_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=candidate_window,
+        navigation_window=navigation_window,
+        read_custody_refs=[custody],
+    )
+    assert any(
+        item["normalized_url"] == parent_url
+        for item in request["read_custody_refs"]
+    )
+    serialized_request_navigation = json.dumps(request["navigation_options"], sort_keys=True)
+    assert all(
+        value not in serialized_request_navigation
+        for value in forbidden_navigation_values
+    )
+    decision = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
+            "judgment_request_id": request["judgment_request_id"],
+            "judgment_request_digest": request["judgment_request_digest"],
+            "slot_id": "slot-1",
+            "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
+            "navigation_candidate_ref": navigation_window[0]["navigation_candidate_ref"],
+            "reason": "The current source identifies a bounded next page.",
+            "read_custody_assessments": [
+                {
+                    "reviewed_custody_ref": custody,
+                    "material_disposition": "read_insufficient",
+                    "reason_code": "needed_detail_absent",
+                }
+            ],
+        },
+    )
+    pending = reduce_searchos_judgment_decision(state, decision=decision)
+    kernel = RunKernel.start(run_id="run-1", request_id="request-1")
+    kernel.state.searchos_state = pending
+    action = kernel.authorize_searchos_navigation_selection(
+        judgment_decision_ref=decision,
+        navigation_candidate=navigation_window[0]["navigation_candidate_ref"],
+    )
+    serialized_action = json.dumps(action.to_dict(), sort_keys=True)
+    assert all(value not in serialized_action for value in forbidden_navigation_values)
+    observation = execute_navigation_selection(
+        action=action,
+        authorized_state_snapshot=deepcopy(pending),
+        locator_store=store,
+    )
+    assert observation.payload["outcome"] == NAVIGATION_SELECTION_ADMITTED
+    serialized_observation = json.dumps(observation.to_dict(), sort_keys=True)
+    assert all(
+        value not in serialized_observation
+        for value in forbidden_navigation_values
+    )
+    assert store.resolve(option.destination_binding_ref) == exact_destination
 
 
 def test_closed_slice_a_shape_and_judgment_contract_remain_navigation_free() -> None:
