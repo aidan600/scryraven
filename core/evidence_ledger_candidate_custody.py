@@ -10,6 +10,8 @@ correctness claims.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -130,13 +132,35 @@ def build_evidence_ledger_observation_from_fetch_read_content_packet(
         f"{packet['run_id']}:evidence-ledger:fetch-read-candidate-custody:"
         f"{packet['packet_digest'][:16]}"
     )
+    navigation_origin = packet.get("origin") == "searchos_navigation"
+    canonical_navigation_candidate_id: str | None = None
+    if navigation_origin:
+        references = packet["reference_records"]
+        if len(references) != 1 or references[0].get("origin") != "searchos_navigation":
+            raise EvidenceLedgerCandidateCustodyError(
+                "navigation custody requires one navigation reference"
+            )
+        canonical_navigation_candidate_id = _navigation_candidate_id(
+            reference=references[0],
+            packet=packet,
+        )
     custody_records = [
-        _custody_record_from_reference(reference, packet=packet, packet_ref=packet_ref)
+        _custody_record_from_reference(
+            reference,
+            packet=packet,
+            packet_ref=packet_ref,
+            canonical_navigation_candidate_id=canonical_navigation_candidate_id,
+        )
         for reference in packet["reference_records"]
     ]
     candidates = (
-        []
-        if packet.get("origin") == "searchos_navigation"
+        [
+            _navigation_candidate_record_from_reference(
+                packet["reference_records"][0],
+                candidate_id=canonical_navigation_candidate_id,
+            )
+        ]
+        if navigation_origin
         else [
             _candidate_record_from_reference(reference)
             for reference in packet["reference_records"]
@@ -167,6 +191,56 @@ def build_evidence_ledger_observation_from_fetch_read_content_packet(
     )
 
 
+def _navigation_candidate_id(
+    *,
+    reference: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> str:
+    identity_basis = {
+        "identity_kind": "searchos_navigation_custody_candidate_v1",
+        "navigation_content_reference": {
+            "reference_id": reference["reference_id"],
+            "reference_digest": reference["reference_digest"],
+        },
+        "fetch_read_content_packet": {
+            "packet_id": packet["packet_id"],
+            "packet_digest": packet["packet_digest"],
+        },
+    }
+    encoded = json.dumps(
+        identity_basis,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return f"searchos_custody_candidate:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _navigation_candidate_record_from_reference(
+    reference: Mapping[str, Any],
+    *,
+    candidate_id: str | None,
+) -> dict[str, Any]:
+    if not candidate_id or _fetch_read_status(reference) != "readable":
+        raise EvidenceLedgerCandidateCustodyError(
+            "navigation candidate requires readable canonical custody"
+        )
+    return _without_empty(
+        {
+            "candidate_id": candidate_id,
+            "url": reference.get("attempted_url"),
+            "title": reference.get("content_title"),
+            "readable_status": "readable",
+            "fetchable_status": "fetchable",
+            "record_kind": CandidateCustodyKind.FACT.value,
+            "disposition": CandidateDisposition.OBSERVED.value,
+            "evidence_material_type": "searchos_read_custody",
+            "eligible_for_stronger_obligation": False,
+            "final_evidence_eligible": False,
+        }
+    )
+
+
 def _candidate_record_from_reference(reference: Mapping[str, Any]) -> dict[str, Any]:
     status = _fetch_read_status(reference)
     return _without_empty(
@@ -191,6 +265,7 @@ def _custody_record_from_reference(
     *,
     packet: Mapping[str, Any],
     packet_ref: Mapping[str, Any],
+    canonical_navigation_candidate_id: str | None,
 ) -> dict[str, Any]:
     status = _fetch_read_status(reference)
     if reference.get("origin") == "searchos_navigation":
@@ -226,6 +301,7 @@ def _custody_record_from_reference(
                 "fetch_read_content_packet_ref": packet_ref,
                 "fetch_read_content_packet_id": packet.get("packet_id"),
                 "fetch_read_content_packet_digest": packet.get("packet_digest"),
+                "candidate_id": canonical_navigation_candidate_id,
                 "reference_id": reference.get("reference_id"),
                 "reference_digest": reference.get("reference_digest"),
                 "attempted_url": reference.get("attempted_url"),

@@ -967,12 +967,18 @@ def build_navigation_read_custody_material_ref(
     navigation_lineage: Mapping[str, Any],
     fetch_read_content_packet_ref: Mapping[str, Any],
     evidence_ledger_custody_ref: Mapping[str, Any],
+    confirmed_evidence_ledger_candidate_id: str,
     terminal_receipt_ref: Mapping[str, Any],
     custody_authorization_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     lineage = _json_mapping(navigation_lineage)
     context = _navigation_execution_context(state, **lineage)
     lineage = context["lineage"]
+    candidate_id = str(confirmed_evidence_ledger_candidate_id or "").strip()
+    if not re.fullmatch(r"searchos_custody_candidate:[0-9a-f]{64}", candidate_id):
+        raise NavigationRuntimeError(
+            "navigation_custody_candidate_id_not_canonical"
+        )
     core = {
         "schema_version": "searchos_read_custody_material_ref_v1",
         "owner": NAVIGATION_OWNER,
@@ -984,12 +990,7 @@ def build_navigation_read_custody_material_ref(
         "evidence_ledger_custody_ref": _compact_ref(
             evidence_ledger_custody_ref, "evidence_ledger_custody_ref"
         ),
-        "evidence_ledger_candidate_id": (
-            "candidate:"
-            + context["option"].destination_binding_ref[
-                "full_destination_digest"
-            ][:16]
-        ),
+        "evidence_ledger_candidate_id": candidate_id,
         "terminal_receipt_ref": _compact_ref(terminal_receipt_ref, "terminal_receipt_ref"),
         "custody_authorization_ref": _compact_ref(
             custody_authorization_ref, "custody_authorization_ref"
@@ -1096,6 +1097,59 @@ def _finish_navigation_execution(
         updated.ref()["navigation_option_id"]
     ] = updated.to_dict()
     return _refresh_searchos_state(candidate)
+
+
+def _verified_navigation_ledger_candidate_id(
+    run_kernel: Any,
+    *,
+    candidate_id: str,
+    reference: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> str:
+    candidate_records = [
+        _mapping(item)
+        for item in run_kernel.state.evidence_ledger.to_projection().to_dict().get(
+            "candidate_records", ()
+        )
+        if _mapping(item).get("candidate_id") == candidate_id
+    ]
+    custody_records = [
+        _mapping(item)
+        for item in (
+            run_kernel.state.evidence_ledger
+            .to_fetch_read_candidate_custody_projection()
+            .get("fetch_read_candidate_custody_records", ())
+        )
+        if _mapping(item).get("candidate_id") == candidate_id
+        and _mapping(item).get("reference_id") == reference.get("reference_id")
+        and _mapping(item).get("reference_digest") == reference.get("reference_digest")
+        and _mapping(item).get("fetch_read_content_packet_id") == packet.get("packet_id")
+        and _mapping(item).get("fetch_read_content_packet_digest")
+        == packet.get("packet_digest")
+    ]
+    if (
+        len(candidate_records) != 1
+        or len(custody_records) != 1
+        or candidate_records[0].get("fact_disposition") != "observed"
+        or candidate_records[0].get("readable_status") != "readable"
+        or candidate_records[0].get("fetchable_status") != "fetchable"
+        or candidate_records[0].get("evidence_material_type")
+        != "searchos_read_custody"
+        or candidate_records[0].get("eligible_for_stronger_obligation") is not False
+        or candidate_records[0].get("final_evidence_eligible") is not False
+        or custody_records[0].get("origin") != "searchos_navigation"
+        or custody_records[0].get("fetch_read_status") != "readable"
+        or custody_records[0].get("disposition") != "observed"
+        or custody_records[0].get("lineage_only") is not True
+        or custody_records[0].get("eligible_for_stronger_obligation") is not False
+        or custody_records[0].get("final_evidence_eligible") is not False
+        or custody_records[0].get("semantic_support_created") is not False
+        or custody_records[0].get("citation_eligible") is not False
+    ):
+        raise NavigationRuntimeError(
+            "navigation_custody_candidate_not_canonical"
+        )
+    return candidate_id
 
 
 def execute_searchos_navigation_read_to_custody(
@@ -1231,11 +1285,26 @@ def execute_searchos_navigation_read_to_custody(
         )
         prospective_ledger = build_evidence_ledger_observation_from_fetch_read_content_packet(
             packet).to_dict()
+        candidate_records = prospective_ledger["candidates"]
         custody_records = prospective_ledger["fetch_read_candidate_custody"]
+        if (
+            len(candidate_records) != 1
+            or len(custody_records) != 1
+            or candidate_records[0].get("candidate_id")
+            != custody_records[0].get("candidate_id")
+        ):
+            raise NavigationRuntimeError(
+                "navigation_custody_candidate_observation_mismatch"
+            )
+        canonical_candidate_id = str(candidate_records[0]["candidate_id"])
+        record = custody_records[0]
         deepcopy(run_kernel.state.evidence_ledger).reduce_observation(prospective_ledger)
         ledger_action = run_kernel.authorize_evidence_ledger_reduction(
             inputs={
                 "observation_source": prospective_ledger["observation_source"],
+                "canonical_candidate_id": canonical_candidate_id,
+                "reference_id": record["reference_id"],
+                "reference_digest": record["reference_digest"],
                 "fetch_read_content_packet_id": packet["packet_id"],
                 "fetch_read_content_packet_digest": packet["packet_digest"],
                 "fetch_read_candidate_custody_count": len(custody_records),
@@ -1243,11 +1312,13 @@ def execute_searchos_navigation_read_to_custody(
         )
         ledger_result = execute_evidence_ledger_reduction_action(
             ledger_action, payload=prospective_ledger)
-        record = next(
-            item
-            for item in custody_records
-            if item.get("reference_id")
-            == packet["reference_records"][0]["reference_id"]
+        run_kernel.reduce(ledger_result.observation)
+        ledger_committed = True
+        canonical_candidate_id = _verified_navigation_ledger_candidate_id(
+            run_kernel,
+            candidate_id=canonical_candidate_id,
+            reference=packet["reference_records"][0],
+            packet=packet,
         )
         material_ref = build_navigation_read_custody_material_ref(
             run_kernel.state.searchos_state,
@@ -1255,13 +1326,12 @@ def execute_searchos_navigation_read_to_custody(
             fetch_read_content_packet_ref=fetch_read_content_packet_ref_from_packet(packet),
             evidence_ledger_custody_ref={"reference_id": record["reference_id"],
                                          "reference_digest": record["reference_digest"]},
+            confirmed_evidence_ledger_candidate_id=canonical_candidate_id,
             terminal_receipt_ref=terminal.ref(),
             custody_authorization_ref=custody.custody_authorization.ref(),
         )
         record_navigation_read_custody_material(
             run_kernel.state.searchos_state, custody_material_ref=material_ref)
-        run_kernel.reduce(ledger_result.observation)
-        ledger_committed = True
         action = run_kernel.authorize_searchos_read_custody_admission(custody_material_ref=material_ref)
         run_kernel.reduce(
             Observation.from_action(

@@ -1866,7 +1866,7 @@ def _semantic_passages(
                         navigation_source_facts = {"source_tier": tier}
                 passages.append(
                     {
-                        **({} if navigation_origin else {"candidate_id": source_id}),
+                        "candidate_id": source_id,
                         **navigation_source_facts,
                         "source_id": source_id,
                         "searchos_evidence_ledger_candidate_id": source_id,

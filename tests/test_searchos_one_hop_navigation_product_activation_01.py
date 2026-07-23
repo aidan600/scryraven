@@ -231,6 +231,9 @@ def _install_navigation_model(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
                     "reason": "Read the admitted parent candidate.",
                 }
             elif navigation_materials:
+                self.__dict__["navigation_ledger_at_semantic_handoff"] = (
+                    self.run_kernel.state.evidence_ledger.to_projection().to_dict()
+                )
                 if self.read_assessment_decision == "NAVIGATION_INSUFFICIENT":
                     slot_id = dict(request["slot_ref"])["slot_id"]
                     self.__dict__["dispositions_before_navigation_assessment"] = deepcopy(
@@ -554,9 +557,25 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
     ]["component_admission_refs"][0]
     evidence_ids = {item["evidence_ref_id"] for item in admitted["evidence_refs"]}
     assert admitted["admission_status"] == "admitted"
-    assert material[0]["source_id"] in evidence_ids
-    assert "candidate_id" not in material[0]
+    canonical_candidate_id = material[0]["source_id"]
+    assert material[0]["candidate_id"] == canonical_candidate_id
+    assert material[0]["searchos_evidence_ledger_candidate_id"] == (
+        canonical_candidate_id
+    )
+    assert canonical_candidate_id in evidence_ids
     kernel = harness.run_kernel
+    semantic_admission = kernel.state.semantic_observation_admission_history[-1]
+    assert semantic_admission["evidence_refs"] == [canonical_candidate_id]
+    assert semantic_admission["content_refs"] == [
+        f"content:component-1:{canonical_candidate_id}"
+    ]
+    assert semantic_admission["content_ref_records"][0]["content_ref_id"] == (
+        semantic_admission["content_refs"][0]
+    )
+    coverage = kernel.state.component_coverage_history[-1]
+    assert coverage["content_reference_bindings"][0]["evidence_ref_id"] == (
+        canonical_candidate_id
+    )
     assert kernel.state.initial_answer_contract
     assert kernel.state.current_answer_contract == {}
     before_requirements = {
@@ -576,9 +595,22 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
     assert len(navigation_requirement_ids) == 1
     navigation_requirement_id = next(iter(navigation_requirement_ids))
     assert after_requirements[navigation_requirement_id]["status"] == "satisfied"
-    assert material[0]["source_id"] in after_requirements[navigation_requirement_id][
+    assert canonical_candidate_id in after_requirements[navigation_requirement_id][
         "linked_candidate_ids"
     ]
+    before_candidates = {
+        item["candidate_id"]: item
+        for item in harness.navigation_ledger_at_semantic_handoff[
+            "candidate_records"
+        ]
+    }
+    after_candidates = {
+        item["candidate_id"]: item
+        for item in kernel.navigation_ledger_after_receiver["candidate_records"]
+    }
+    assert before_candidates[canonical_candidate_id]["fact_disposition"] == "observed"
+    assert after_candidates[canonical_candidate_id]["fact_disposition"] == "accepted"
+    assert set(after_candidates) == set(before_candidates)
     sufficiency_requirements = {
         item["requirement_id"]: item
         for item in kernel.navigation_sufficiency_ledger_input["source_requirements"]
@@ -722,6 +754,21 @@ def test_post_ledger_invariant_propagates_and_discards_locator(
         reason: str = "admit_post_read_evidence_ledger_custody_for_rejudgment",
     ) -> Any:
         if custody_material_ref.get("origin") == "searchos_navigation":
+            candidate_id = custody_material_ref["evidence_ledger_candidate_id"]
+            candidates = {
+                item["candidate_id"]
+                for item in self.state.evidence_ledger.to_projection().to_dict()[
+                    "candidate_records"
+                ]
+            }
+            physical = (
+                self.state.evidence_ledger
+                .to_fetch_read_candidate_custody_projection()[
+                    "fetch_read_candidate_custody_records"
+                ]
+            )
+            assert candidate_id in candidates
+            assert [item["candidate_id"] for item in physical] == [candidate_id]
             raise RunKernelTransitionError("synthetic post-ledger SearchOS rejection")
         return original(self, custody_material_ref=custody_material_ref, reason=reason)
 
