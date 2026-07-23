@@ -189,6 +189,7 @@ def _install_navigation_model(
 ) -> dict[str, Any]:
     from core import ordinary_multicomponent_synthesis_runtime as multicomponent
     from core import pipeline_orchestrator as orchestrator
+    from core import searchos_slice_a_product_runtime as product_runtime
 
     capture: dict[str, Any] = {
         "final_material_ledger_projections": [],
@@ -210,7 +211,10 @@ def _install_navigation_model(
         system_prompt: str,
         **kwargs: Any,
     ) -> str:
-        if system_prompt.startswith(SEARCHOS_JUDGMENT_SYSTEM_PROMPT):
+        if system_prompt in {
+            SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+            product_runtime._NAVIGATION_JUDGMENT_SYSTEM_PROMPT,
+        }:
             self._record_model_call(system_prompt, kwargs)
             capture["judgment_system_prompts"].append(system_prompt)
             payload = json.loads(prompt)
@@ -531,7 +535,7 @@ def _run(
     )
 
 
-def _inject_navigation_source_facts(
+def _inject_qualification_source_facts(
     monkeypatch: pytest.MonkeyPatch, **facts: Any
 ) -> None:
     from core import ordinary_multicomponent_synthesis_runtime as multicomponent
@@ -551,7 +555,9 @@ def _inject_navigation_source_facts(
             setattr(canonical_candidate, key, value)
         if facts.get("source_tier") == "secondary":
             canonical_candidate.domain = "secondary.example"
-        canonical_candidate.eligible_for_stronger_obligation = False
+        if "eligible_for_stronger_obligation" not in facts:
+            bindable.candidate_record["eligible_for_stronger_obligation"] = False
+            canonical_candidate.eligible_for_stronger_obligation = False
         lineage["source_facts"] = {
             **dict(lineage.get("source_facts") or {}),
             **facts,
@@ -908,23 +914,59 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
         == "searchos_navigation_judgment_request_v1"
     ]
     assert navigation_rounds
-    from core import searchos_slice_a_product_runtime as product_runtime
-
     for payload, prompt, decision in navigation_rounds:
         request = payload["authorized_request"]
         contract = payload["decision_contract"]
         assert request["navigation_options"]
         assert "url" not in json.dumps(request["navigation_options"]).casefold()
+        expected_actions = {
+            "REQUEST_READ_PAGE",
+            "PROPOSE_FOLLOWUP_QUERY",
+            "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+            "HANDOFF_UNRESOLVED",
+            "REQUEST_NAVIGATE_BREADCRUMB",
+        }
+        assert set(request["legal_actions"]) <= expected_actions
         assert "REQUEST_NAVIGATE_BREADCRUMB" in request["legal_actions"]
+        assert set(contract["actions"]) == expected_actions
         assert contract["decision_schema_version"] == (
             "searchos_navigation_judgment_decision_v1"
         )
         assert decision["schema_version"] == contract["decision_schema_version"]
-        assert prompt == (
-            SEARCHOS_JUDGMENT_SYSTEM_PROMPT
-            + product_runtime._NAVIGATION_JUDGMENT_PROMPT_SUFFIX
-        )
-        assert prompt.count("For a searchos_navigation_judgment_request_v1") == 1
+        normalized_prompt = " ".join(prompt.split())
+        assert prompt != SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+        assert prompt.count("searchos_navigation_judgment_decision_v1") == 1
+        assert (
+            "Return exactly one JSON object matching "
+            "searchos_navigation_judgment_decision_v1."
+        ) in normalized_prompt
+        assert (
+            "Return exactly one JSON object matching "
+            "searchos_judgment_decision_v1."
+        ) not in normalized_prompt
+        assert all(f"- {action}" in prompt for action in expected_actions)
+        assert (
+            "After READ custody exists, REQUEST_READ_PAGE, "
+            "PROPOSE_FOLLOWUP_QUERY, HANDOFF_UNRESOLVED, and "
+            "REQUEST_NAVIGATE_BREADCRUMB must include exactly one "
+            "read_insufficient assessment for every current READ custody ref, "
+            "copied exactly, with the contract's exact assessment fields and "
+            "disposition."
+        ) in normalized_prompt
+        assert (
+            "Never invent or alter a URL, destination binding, authority ref, "
+            "candidate ref, navigation ref, custody ref, component ref, "
+            "source-obligation ref, provider choice, route, request identity, "
+            "disposition, deterministic fallback, or unsupported field."
+        ) in normalized_prompt
+        assert (
+            "REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free "
+            "navigation_candidate_ref"
+        ) in normalized_prompt
+        assert (
+            "Exact navigation destination URLs are intentionally absent from "
+            "the input."
+        ) in normalized_prompt
     assert CHILD_URL not in json.dumps(selection_input, sort_keys=True)
     assert CHILD_URL not in json.dumps(state, sort_keys=True)
 
@@ -974,6 +1016,116 @@ def test_empty_navigation_rounds_use_exact_ordinary_request_and_prompt(
         assert contract == ordinary_contract
         assert "navigation_candidate_ref" not in contract["allowed_output_fields"]
         assert prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+        assert "REQUEST_NAVIGATE_BREADCRUMB" not in prompt
+        assert "searchos_navigation_judgment_decision_v1" not in prompt
+
+
+def test_ordinary_final_evidence_selection_does_not_upgrade_source_strength(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_capture = _install_navigation_model(monkeypatch)
+    _inject_qualification_source_facts(
+        monkeypatch,
+        source_tier="secondary",
+        source_class="reputable_secondary",
+        currentness_signal="current",
+        final_evidence_eligible=True,
+        eligible_for_stronger_obligation=False,
+    )
+    outcome, harness = _run(
+        tmp_path,
+        monkeypatch,
+        parent_markdown=(
+            f"Alpha's launch-color requirement is reported as {LINKED_FACT}."
+        ),
+    )
+    kernel = harness.run_kernel
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    observations, custody = _qualification_records(ledger)
+
+    assert len(observations) == len(custody) == 1
+    candidate_id = custody[0]["candidate_id"]
+    candidate = next(
+        item
+        for item in ledger["candidate_records"]
+        if item["candidate_id"] == candidate_id
+    )
+    requirement = next(
+        item
+        for item in ledger["source_requirements"]
+        if item["requirement_id"] == custody[0]["requirement_id"]
+    )
+    assert all(
+        item["authorized_request"]["schema_version"]
+        == "searchos_judgment_request_v1"
+        and item["decision_contract"]["decision_schema_version"]
+        == "searchos_judgment_decision_v1"
+        for item in harness.navigation_model_inputs
+    )
+    assert candidate["source_tier"] == "secondary"
+    assert candidate["source_class"] == "reputable_secondary"
+    assert candidate["final_evidence_eligible"] is True
+    assert candidate["eligible_for_stronger_obligation"] is False
+    assert requirement["status"] == "unsatisfied"
+    assert kernel.state.semantic_observation_admission_history == []
+    assert kernel.state.component_coverage_history == []
+    assert "multicomponent_component_admission" not in kernel.state.projections
+    assert not kernel.state.sufficiency_judgment_projection.get(
+        "final_answer_allowed", False
+    )
+    assert kernel.state.final_answer_packet == {}
+    assert runtime_capture["final_material_ledger_projections"] == []
+    assert harness.author_prompts == []
+    assert outcome.failure_card
+
+
+@pytest.mark.parametrize("canonical_eligibility", [False, True])
+def test_ordinary_official_current_source_strength_remains_compatible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    canonical_eligibility: bool,
+) -> None:
+    runtime_capture = _install_navigation_model(monkeypatch)
+    _inject_qualification_source_facts(
+        monkeypatch,
+        source_tier="official",
+        source_class="official_current_rules",
+        currentness_signal="current",
+        final_evidence_eligible=False,
+        eligible_for_stronger_obligation=canonical_eligibility,
+    )
+    _outcome, harness = _run(
+        tmp_path,
+        monkeypatch,
+        parent_markdown=(
+            f"Alpha's official requirement is that its launch color is {LINKED_FACT}."
+        ),
+    )
+    kernel = harness.run_kernel
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    observations, custody = _qualification_records(ledger)
+
+    assert len(observations) == len(custody) == 1
+    assert runtime_capture["qualification_dprime"]["semantic_output"][
+        "validation_status"
+    ] == "supported"
+    assert len(runtime_capture["qualification_authorizations"]) == 1
+    candidate_id = custody[0]["candidate_id"]
+    candidate = next(
+        item
+        for item in ledger["candidate_records"]
+        if item["candidate_id"] == candidate_id
+    )
+    requirement = next(
+        item
+        for item in ledger["source_requirements"]
+        if item["requirement_id"] == custody[0]["requirement_id"]
+    )
+    assert candidate["source_tier"] == "official"
+    assert candidate["source_class"] == "official_current_rules"
+    assert candidate["final_evidence_eligible"] is False
+    assert candidate["eligible_for_stronger_obligation"] is True
+    assert requirement["status"] == "satisfied"
 
 
 @pytest.mark.parametrize(
@@ -1063,7 +1215,7 @@ def test_supported_claim_does_not_launder_weak_or_stale_source_authority(
     source_facts: Mapping[str, Any],
 ) -> None:
     runtime_capture = _install_navigation_model(monkeypatch)
-    _inject_navigation_source_facts(monkeypatch, **source_facts)
+    _inject_qualification_source_facts(monkeypatch, **source_facts)
     outcome, harness = _run(tmp_path, monkeypatch)
     kernel = harness.run_kernel
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()

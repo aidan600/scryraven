@@ -706,7 +706,9 @@ def _qualify_searchos_read_material_after_component_dprime(
             source_facts[key] = value if isinstance(value, bool) else True
     if source_facts.get("contextual_only") or source_facts.get("lower_tier"):
         source_facts["eligible_for_stronger_obligation"] = False
-    elif lineage.get("navigation_origin") is not True and candidate.get("final_evidence_eligible") is True:
+    elif candidate.get("eligible_for_stronger_obligation") is True:
+        # Preserve established canonical truth.  Omitting a false/default value
+        # lets EvidenceLedger derive eligibility from the source taxonomy.
         source_facts["eligible_for_stronger_obligation"] = True
 
     payload = {

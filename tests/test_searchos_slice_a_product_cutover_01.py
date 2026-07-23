@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -41,6 +42,43 @@ from tests.helpers.offline_ordinary_pipeline import (
 
 def _execution_events(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _establish_official_current_qualification_truth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    original = multicomponent._qualify_searchos_read_material_after_component_dprime
+
+    def qualify(*args: Any, **kwargs: Any) -> Any:
+        bindable = kwargs["bindable"]
+        facts = {
+            "source_tier": "official",
+            "source_class": "official_current_rules",
+            "currentness_signal": "current",
+            "eligible_for_stronger_obligation": True,
+        }
+        bindable.passage.update(facts)
+        bindable.candidate_record.update(facts)
+        candidate = kwargs["run_kernel"].state.evidence_ledger.candidates[
+            bindable.evidence_ref_id
+        ]
+        for key, value in facts.items():
+            setattr(candidate, key, value)
+        lineage = dict(bindable.passage["searchos_qualification_lineage"])
+        lineage["source_facts"] = {
+            **dict(lineage.get("source_facts") or {}),
+            **facts,
+        }
+        bindable.passage["searchos_qualification_lineage"] = lineage
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        multicomponent,
+        "_qualify_searchos_read_material_after_component_dprime",
+        qualify,
+    )
 
 
 def test_production_judgment_prompt_states_the_strict_validator_contract() -> None:
@@ -248,6 +286,7 @@ def test_one_component_read_to_semantic_receiver_is_ready(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
@@ -321,6 +360,7 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
     first_url = "https://alpha.example/insufficient"
     second_url = "https://alpha.example/useful"
     transient_sentinel = "TRANSIENT_READ_JUDGMENT_SENTINEL_513"
@@ -578,6 +618,7 @@ def test_two_components_use_one_shared_n_component_receiver(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,

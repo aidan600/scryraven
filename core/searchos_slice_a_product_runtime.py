@@ -95,13 +95,48 @@ allowed. Never invent or alter a URL, authority ref, candidate ref, custody
 ref, component ref, source-obligation ref, provider choice, request identity,
 disposition, deterministic fallback, or unsupported field.
 """
-_NAVIGATION_JUDGMENT_PROMPT_SUFFIX = """
-For a searchos_navigation_judgment_request_v1, also inspect
-authorized_request.navigation_options. REQUEST_NAVIGATE_BREADCRUMB copies
-exactly one current navigation_candidate_ref and no other navigation field.
-Return the decision schema named by decision_contract. Never author or alter a
-destination URL, destination binding, provider, route, or alternate ref; exact
-navigation destination URLs are intentionally absent from the input.
+_NAVIGATION_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
+The input is one searchos_judgment_model_input_v1 JSON object containing an
+authorized searchos_navigation_judgment_request_v1. authorized_request is the
+sole legal-action and exact-ref authority. Inspect
+authorized_request.legal_actions, authorized_request.candidate_use_options,
+authorized_request.read_custody_refs, and authorized_request.navigation_options.
+active_need explains the component question, source obligation, and authorized
+search work that the action must advance. candidate_directional_contexts are
+DISCOVER-only hints: they may guide a READ, navigation, or follow-up decision
+but cannot support an answer. read_custody_materials contain the bounded
+readable content that must be judged against active_need; only this material
+may be handed to semantic evaluation. Do not treat custody-ref presence alone
+as readiness. decision_contract is the normative output contract.
+
+Return exactly one JSON object matching
+searchos_navigation_judgment_decision_v1. Always include schema_version,
+judgment_request_id, judgment_request_digest, slot_id, action, and a nonempty
+bounded reason; copy judgment_request_id, judgment_request_digest, and slot_id
+exactly from authorized_request. Choose exactly one action from
+authorized_request.legal_actions:
+- REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
+- PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
+  active_need and inspected material; this is the only action allowed to author
+  a query, and QueryPlan independently validates the exact text.
+- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
+  of exact current read_custody_refs.
+- HANDOFF_UNRESOLVED supplies the shared fields and its reason, plus only the
+  required exact read-custody assessments when current custody exists.
+- REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free
+  navigation_candidate_ref from authorized_request.navigation_options and no
+  other navigation field.
+
+After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
+HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must include exactly one
+read_insufficient assessment for every current READ custody ref, copied
+exactly, with the contract's exact assessment fields and disposition. Semantic
+handoff must not include those assessments. Forbidden fields must be absent,
+and no unsupported fields are allowed. Never invent or alter a URL,
+destination binding, authority ref, candidate ref, navigation ref, custody ref,
+component ref, source-obligation ref, provider choice, route, request identity,
+disposition, deterministic fallback, or unsupported field. Exact navigation
+destination URLs are intentionally absent from the input.
 """
 TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
     {"custodied", "read_insufficient", "invalid", "declined"}
@@ -1573,8 +1608,10 @@ def _invoke_judgment_model(
     navigation_request = dict(model_input.get("authorized_request") or {}).get(
         "schema_version"
     ) == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
-    system_prompt = SEARCHOS_JUDGMENT_SYSTEM_PROMPT + (
-        _NAVIGATION_JUDGMENT_PROMPT_SUFFIX if navigation_request else ""
+    system_prompt = (
+        _NAVIGATION_JUDGMENT_SYSTEM_PROMPT
+        if navigation_request
+        else SEARCHOS_JUDGMENT_SYSTEM_PROMPT
     )
     if measure_context_stage is not None:
         material_count = sum(
@@ -1861,13 +1898,12 @@ def _semantic_passages(
                 )
                 if navigation_origin:
                     url = normalize_discovery_result_url(url)
-                navigation_source_facts: dict[str, str] = {}
-                if navigation_origin:
-                    tier = classify_source(
-                        str(url), str(reference.get("content_title") or "")
-                    )
-                    if tier != "unknown":
-                        navigation_source_facts = {"source_tier": tier}
+                read_source_facts: dict[str, str] = {}
+                tier = classify_source(
+                    str(url), str(reference.get("content_title") or "")
+                )
+                if tier != "unknown":
+                    read_source_facts = {"source_tier": tier}
                 qualification_lineage: dict[str, Any] = {
                     "navigation_origin": navigation_origin,
                     "canonical_candidate_id": source_id,
@@ -1883,7 +1919,7 @@ def _semantic_passages(
                         ("semantic_handoff_id", "semantic_handoff_digest")},
                     "slot_ref": deepcopy(handoff.get("slot_ref")),
                     "source_facts": {
-                        **navigation_source_facts,
+                        **read_source_facts,
                         "evidence_material_type": "searchos_read_custody",
                         "readable_status": "readable", "fetchable_status": "fetchable",
                     },
@@ -1891,7 +1927,7 @@ def _semantic_passages(
                 passages.append(
                     {
                         "candidate_id": source_id,
-                        **navigation_source_facts,
+                        **read_source_facts,
                         "source_id": source_id,
                         "searchos_evidence_ledger_candidate_id": source_id,
                         "url": url,
