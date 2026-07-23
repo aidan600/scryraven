@@ -8626,10 +8626,12 @@ class RunKernel:
         slot_id: str,
         candidate_window: Mapping[str, Any],
         read_custody_refs: Sequence[Mapping[str, Any]] = (),
+        navigation_window: Sequence[Mapping[str, Any]] | None = None,
         reason: str = "neutral_model_owned_searchos_judgment",
     ) -> AuthorizedAction:
         from core.searchos_iterative_judgment_runtime import (
             build_searchos_judgment_request_v1,
+            build_searchos_navigation_judgment_request_v1,
             charge_searchos_judgment_call,
         )
 
@@ -8641,12 +8643,26 @@ class RunKernel:
                 reservation_ref=reservation_ref,
                 slot_id=slot_id,
             )
-            request = build_searchos_judgment_request_v1(
+            request_builder = (
+                build_searchos_navigation_judgment_request_v1
+                if _safe_mapping(state.get("policy_snapshot")).get(
+                    "navigation_runtime_open"
+                )
+                is True
+                and navigation_window is not None
+                else build_searchos_judgment_request_v1
+            )
+            request = request_builder(
                 state=state,
                 slot_id=slot_id,
                 charge_ref=charge,
                 candidate_window=candidate_window,
                 read_custody_refs=read_custody_refs,
+                **(
+                    {"navigation_window": navigation_window}
+                    if request_builder is build_searchos_navigation_judgment_request_v1
+                    else {}
+                ),
             )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc

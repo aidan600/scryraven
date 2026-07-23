@@ -1884,6 +1884,13 @@ def reduce_searchos_judgment_decision(state: Mapping[str, Any], *, decision: Map
         custody = admitted_custody.get(_first_ref_id(_mapping(assessment).get("reviewed_custody_ref")))
         if custody is None:
             raise SearchOSRuntimeError("judgment assessment custody is no longer admitted")
+        if _mapping(custody).get("origin") == "searchos_navigation":
+            from core.searchos_navigation_runtime import (
+                _validate_navigation_custody_lineage_after_admission,
+            )
+
+            _validate_navigation_custody_lineage_after_admission(candidate, custody)
+            continue
         option_ref = _mapping(_mapping(custody).get("candidate_use_option_ref"))
         option_id = _first_ref_id(option_ref)
         dispositions[option_id] = {
