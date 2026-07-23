@@ -309,6 +309,7 @@ def test_one_component_read_to_semantic_receiver_is_ready(
             "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
             "HANDOFF_UNRESOLVED",
             "PROPOSE_FOLLOWUP_QUERY",
+            "REQUEST_NAVIGATE_BREADCRUMB",
             "REQUEST_READ_PAGE",
         ]
         for item in harness.read_assessment_calls

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -201,7 +202,7 @@ class OfflineOrdinaryPipelineHarness:
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         self._record_model_call(system_prompt, kwargs)
-        if system_prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT:
+        if system_prompt.startswith(SEARCHOS_JUDGMENT_SYSTEM_PROMPT):
             payload = json.loads(prompt)
             authorized = dict(payload.get("authorized_request") or payload)
             decision_contract = dict(payload.get("decision_contract") or {})
@@ -975,6 +976,9 @@ def run_post_retirement_ordinary_pipeline(
         harness.read_discovery_result_store = kwargs["discovery_result_store"]
         result = original_read_runtime(**kwargs)
         harness.searchos_product_result = result
+        harness.searchos_semantic_material_before_pipeline_consumption = deepcopy(
+            result.searchos_semantic_material
+        )
         return result
 
     monkeypatch.setattr(
