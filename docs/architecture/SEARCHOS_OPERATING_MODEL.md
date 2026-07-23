@@ -27,7 +27,7 @@ contracts while retaining ScryRaven's own research judgments.
 RunKernel / RunAuthority is the root authority for a run. It accepts and
 administers the AnswerContract, owns canonical run state, authorizes work and
 judgments, reduces observations, enforces budgets, authorizes recovery, and
-owns terminal run posture.
+enforces the terminal posture decided by Sufficiency from canonical facts.
 
 Narrower owners remain subordinate:
 
@@ -38,11 +38,12 @@ Narrower owners remain subordinate:
 - Adapters execute completed routes mechanically.
 - EvidenceLedger owns custody.
 - SemanticObservation and ComponentCoverage own support judgments.
-- Sufficiency produces a readiness judgment consumed by RunKernel.
+- Sufficiency decides whole-run readiness and final posture from canonical
+  facts; RunKernel consumes and enforces that decision.
 - FinalAnswerPacket packages Author-safe material.
 - Author writes prose only.
 
-Sufficiency does not independently own or terminate the run.
+Sufficiency does not independently mutate or terminate run state.
 
 ## Minimum Shared Provider Contract
 
@@ -137,6 +138,27 @@ roadmap checkpoint beneath this durable target subsystem doctrine. It does not
 replace current code, tests, or [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
 as installed truth, and it does not authorize BUILD.
 
+## Planned Post-Analysis Recovery Boundary
+
+Canonical post-analysis SearchOS recovery is not installed. The approved
+direction preserves every terminal slot as immutable and represents an
+admitted recovery cycle with a new, purpose-bound slot revision linked to the
+prior terminal slot.
+
+A whole-run recovery lease will be distinct from local SearchOS action
+reservations and budgets. Prior histories and expenditure remain cumulative.
+QueryPlan retains sole ownership of exact query identity, admission, and
+material query equivalence. SearchOS reports slot and cycle facts, exhaustion,
+blockers, and lawful-novel-work posture; Sufficiency decides the whole-run
+final posture. A terminal SearchOS slot or `HANDOFF_UNRESOLVED` is not by
+itself a whole-run insufficiency decision.
+
+The canonical
+[SearchOS post-analysis recovery and inference direction](SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md)
+owns the detailed authorization basis, internal PR boundaries, inference
+direction, and legacy-retirement sequence. This operating-model summary does
+not install the transition.
+
 ## Query And Primary-Source Strategy
 
 Query design is part of the SearchOS MVP. It should support:
@@ -152,9 +174,10 @@ Query design is part of the SearchOS MVP. It should support:
 - nonredundant recovery queries tied to active gaps.
 
 Primary-source pursuit is a query and source-hierarchy strategy, not a provider
-identity shortcut. SearchPlanner, Scout disambiguation, SearchPlannerRevision,
-QueryPlan, and RunAuthority search judgment are existing substrates to converge
-later. Their convergence into this loop is planned, not installed.
+identity shortcut. The installed initial SearchPlanner-to-QueryPlan path and
+initial and in-loop SearchJudgment reuse those concerns without making provider
+identity an authority shortcut. Legacy Scout disambiguation has no forward
+ordinary SearchOS authority.
 
 ## Provider Responsibility Boundary
 

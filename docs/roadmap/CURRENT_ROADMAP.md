@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 4431ff46ed1e8367b124f596ccc04e90040217b6
+Verified-against-runtime: 323ed6982aa131cda0dfe7c9bded9aad68f327a1
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -442,28 +442,73 @@ the installed acquisition and custody owners.
 ## Active SearchOS MVP Sequence
 
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns the
-target subsystem boundary. The previously active combined
-`EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01` brief was superseded
-before implementation because it separated planner
-disambiguation from query strategy, combined READ and Focused Extract too
-early, and prohibited every failure-time escalation.
+target subsystem boundary. [SearchOS Post-Analysis Recovery And Inference
+Direction](../architecture/SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md)
+owns the detailed authority, internal implementation, inference, and retirement
+doctrine for the next checkpoint.
 
-The query-strategy and READ/source-custody checkpoints are complete. Internal
-Slice A, `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01`, is also
-complete: one RunKernel-owned SearchJudgment now owns forward ordinary
-post-first-wave query, candidate READ, bounded one-hop navigation,
-semantic-handoff, and unresolved-slot decisions. The next active work is
-`SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01`. The completed iterative-
-navigation checkpoint's approved
-[iterative-judgment convergence direction](../architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
-expects the checkpoint to proceed through architecture-only first-wave and
-iterative-judgment convergence, then internal Slice A (canonical iterative
-judgment cutover), then internal Slice B (bounded one-hop breadcrumb
-navigation). Slice A and the one-hop Slice B product boundary are installed.
-This does not claim recursive navigation. The remaining approved sequence is:
+Query strategy, READ/source custody, initial and in-loop SearchJudgment, semantic
+handoff, and bounded one-hop breadcrumb navigation are installed. This does not
+claim canonical post-analysis recovery or recursive navigation.
+
+### NEXT CHECKPOINT
 
 ```text
 SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
+```
+
+This remains one roadmap checkpoint. It contains two ordered internal
+implementation PRs, not two sibling roadmap phases. The checkpoint is complete
+only after both internal PRs land and pass the required offline integration
+proof.
+
+### NEXT BUILD: Internal PR A
+
+Working name:
+
+```text
+SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01
+```
+
+Internal PR A installs existing-component recovery and the Sufficiency stopping
+foundation. It must make canonical SearchOS the sole executable
+existing-component and source-obligation recovery authority on an ordinary
+SearchOS run. Competing executable existing-gap routes are cut off or
+subordinated. It does not open Analyst proposal, ContractAmendment mutation,
+component-graph mutation, Scrutineer behavior, specialist behavior, or general
+inference.
+
+Broad physical deletion of already-forward-dead AG-92B files, inert
+compatibility consumers, direct legacy tests, or historical helpers is not an
+Internal PR A merge gate. Those surfaces remain retirement targets and receive
+no new callers, fallback, or compatibility investment.
+
+### NEAR-TERM DIRECTION: Internal PR B
+
+Working name:
+
+```text
+SEARCHOS-DERIVED-COMPONENT-RECOVERY-AND-AUTHORITY-CONVERGENCE-01
+```
+
+Internal PR B follows and consumes Internal PR A. It connects Analyst-originated
+child proposals to independent ContractAmendment admission/application, exact
+parent/dependency lineage, the child's first canonical SearchOS recovery cycle,
+direct component support, graph reproof, selective resynthesis, and a changed
+final result. It also installs `Fast 0 / Balanced 1 / Deep 2` recovery
+generation depth and replaces the active Scrutineer/deterministic
+derived-component recovery authority. General nonzero inferred support remains
+closed.
+
+The internal PRs must not be combined, and a third implementation PR must not
+be created merely for convenience. Reverting Internal PR B must leave Internal
+PR A useful and intact.
+
+### Remaining Sequence
+
+```text
+Internal PR A
+-> Internal PR B
 -> offline SearchOS integration gate
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
@@ -471,29 +516,30 @@ SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
 -> SearchOS MVP release
 ```
 
-Query strategy and neutral iterative SearchJudgment are installed, and their
-policy remains provisional and subject to later calibration. After exactly one
-first DISCOVER wave, the model may nominate an exact admitted candidate READ,
-propose an exact materially nonredundant follow-up through QueryPlan, select an
-exact URL-free depth-1 breadcrumb, hand READ custody to the N-component semantic
-receiver, or preserve the need as unresolved. Navigation-origin child
-extraction, depth greater than one, and recursive traversal remain uninstalled.
-Comprehensive retry/recovery and final whole-run stopping remain in the later
-gap-recovery-and-stop checkpoint. A usable success is never retried merely to
-compare providers.
+### DEFERRED
 
-The installed Slice A preserves the completed READ checkpoint's direct-opener
-closure and existing `core.routing` Linkup Fetch/Tavily Extract path. It allows
-only exact admitted candidate-use URLs from immutable revision 1 or an admitted
-iteration set, preserves requested-versus-reported/final/canonical provenance,
-reuses same-URL custody, and performs no silent fallback. DISCOVER material
-remains directional and non-support-bearing; only READ custody may enter the
-governed Analyst / D-prime / RunKernel semantic chain. Direct known-URL READ,
-DISCOVER-attached readable-source custody, DNS/network attestation, and
-provider-network-path ownership remain uninstalled.
+- general nonzero inference support;
+- comparative provider/query calibration;
+- permanent mode/provider selection;
+- live shakeout;
+- recursive navigation and other optional product surfaces.
 
-These checkpoint names record sequence only; this roadmap does not create their
-detailed implementation briefs or activate their capabilities.
+### RETIRED AFTER REPLACEMENT
+
+- AG-92B;
+- old component-gap recovery;
+- legacy ordinary source-class recovery execution; and
+- Scrutineer-originated dynamic recovery authority.
+
+Competing executable existing-gap authority must end during Internal PR A.
+Already-forward-dead production and compatibility surfaces may remain
+temporarily when broad deletion would enlarge that product PR without improving
+authority convergence. Active Scrutineer/deterministic derived-component
+authority ends during Internal PR B after replacement product proof. No legacy
+fallback survives canonical activation.
+
+These names record sequence only. This governance documentation is not a
+product checkpoint and activates no capability.
 
 ## Optional And Post-MVP Insertions
 

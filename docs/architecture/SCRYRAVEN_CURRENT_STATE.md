@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 4431ff46ed1e8367b124f596ccc04e90040217b6
+Verified-against-runtime: 323ed6982aa131cda0dfe7c9bded9aad68f327a1
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -86,6 +86,7 @@ configuration.
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the closed four-action vocabulary. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
+| `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -414,10 +415,11 @@ custody, and governed component semantic handoff are installed; custody alone
 still ends before support authority. Compatibility names such as `proplex`, `python -m proplex`,
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
 model, search, recon, fetch/read, or retrieval call was made. The initial
-SearchPlanner-to-QueryPlan path and Slice A post-first-wave iterative judgment
-are now converged. One-hop breadcrumb navigation is installed; post-Analyst
-re-entry, comprehensive gap recovery, final stopping, and recursive navigation
-remain later SearchOS work.
+SearchPlanner-to-QueryPlan path and initial and in-loop SearchOS judgment are
+installed. PR #517 one-hop breadcrumb navigation and its
+qualification/source-truth path are installed. Canonical post-analysis
+recovery cycles, a whole-run recovery lease, recovery-generation-depth policy,
+and recursive navigation are not installed.
 Current priority and checkpoint order belong only to [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
@@ -582,8 +584,10 @@ whole-run stopping.
 
 Evaluator, expander, utilization/disambiguation retry, weak-corpus recovery,
 source-class continuation, and AG-92B do not run after the first wave on this
-forward Slice A path. AG-92B's comprehensive recovery/stopping disposition is
-deferred. The full installed boundary is owned by [SearchOS First-Wave And
+forward Slice A path. AG-92B and older existing-gap routes are forward-dead or
+gated there, although their compatibility, direct-test, state, and helper
+surfaces have not all been physically removed. The full installed boundary is
+owned by [SearchOS First-Wave And
 Iterative-Judgment Cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md).
 The installed one-hop boundary below completes bounded Slice B without
 installing recursive navigation.
@@ -628,6 +632,15 @@ idempotency, atomicity, contract, custody, and ledger-authority invariants.
 Only fixtures whose success condition requires the retired ordinary forward
 composition remain explicitly skipped; those skips are not counted as current
 product-path proof.
+
+Separately, the ordinary bounded multi-component path still has executable
+legacy dynamic derived-component recovery. Scrutineer originates the
+missing-component proposal, deterministic machinery constructs the component
+and ContractAmendment, and a separate recovery planner drives acquisition.
+Its amendment, graph-reentry, and selective-recomputation mechanics remain
+useful, but that Scrutineer/deterministic proposal authority is scheduled for
+replacement by the Analyst-originated path. Canonical post-analysis SearchOS
+recovery remains uninstalled.
 
 `core.scout` now exposes only fixed inert import compatibility for the retained
 `core.pipeline` re-export and bounded validation composition: `run_scout`
@@ -675,8 +688,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
   custody.
 - Provider-failure cross-provider retry.
 - SearchOS recursive breadcrumb navigation, navigation depth greater than one,
-  post-Analyst re-entry, comprehensive gap recovery, and final stopping
-  convergence.
+  canonical post-analysis recovery cycles, a whole-run recovery lease,
+  recovery-generation-depth policy, and final stopping convergence.
 - DISCOVER-attached readable-source custody or support eligibility.
 - Direct current-need known-URL READ outside admitted candidate state.
 - A browser or general local scraper as an ordinary product path.
@@ -738,6 +751,7 @@ and this document does not license changes to that surface.
 - [RunKernel post-discovery acquisition control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) owns post-discovery capability, work-order, route, execution, terminal, and custody authorization.
 - [Provider capability and acquisition routing](PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) owns provider catalog, routing policy, mechanical operation matrix, and provider-material boundaries.
 - [SearchOS operating model](SEARCHOS_OPERATING_MODEL.md) owns target search, source-acquisition, navigation, and recovery architecture.
+- [SearchOS post-analysis recovery and inference direction](SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md) owns the approved existing-gap and derived-component recovery boundaries, stopping convergence, inference direction, and legacy retirement doctrine.
 - [SearchOS first-wave and iterative-judgment cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md) owns the installed Slice A first-wave boundary, candidate continuity, neutral judgment, READ material entry, N-component handoff, and readiness terminal.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
@@ -748,7 +762,11 @@ and this document does not license changes to that surface.
 
 Prioritization and phase selection are owned exclusively by
 [Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not
-installed-state claims.
+installed-state claims. The next build is Internal PR A,
+`SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01`, inside the single
+`SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01` checkpoint. Its detailed
+boundary is owned by the
+[canonical recovery and inference direction](SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md).
 
 ## Historical Provenance
 
