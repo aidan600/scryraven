@@ -6,6 +6,83 @@ Default-read: no
 Applies-to: post-analysis SearchOS recovery, derived-component recovery, stopping convergence, inference direction, and legacy recovery convergence
 Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities
 Verified-against-runtime: 323ed6982aa131cda0dfe7c9bded9aad68f327a1
+Durability: the North Star and authority invariants survive the current checkpoint
+Update-trigger: maintainer changes recovery authority, inference authority, cycle invariants, stopping ownership, or steady-state architecture
+Non-trigger: implementation that conforms to this direction
+Checkpoint-appendix expiry: completion of SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
+
+## Durable North Star
+
+Scrutineer identifies defects and exact unresolved nodes. Analyst owns
+component and inference proposals. Existing independent authorities admit or
+reject those proposals. SearchOS retrieves missing evidentiary premises through
+one canonical recovery-cycle owner. D-prime validates support and inference
+relationships. Existing ContractAmendment and component-graph machinery is
+reused. Recovery cycles are append-only, purpose-bound, novelty-bound, and
+cumulatively budgeted. Sufficiency owns whole-run posture and honest whole-run
+stopping.
+FinalAnswerPacket packages only admitted results. No parallel recovery,
+inference, graph, amendment, query, or stopping authority is created.
+
+The durable architecture has:
+
+```text
+one component graph
+one inference pipeline
+one admission chain
+one SearchJudgment owner
+one whole-run stopping authority
+```
+
+Direct and inferred support remain distinguishable, but they are not separate
+truth systems. Specialists contribute bounded artifacts and verification; they
+do not create specialist-specific truth.
+
+SearchOS retrieves missing premises. It does not search merely because no
+source states a valid derived conclusion verbatim. Fast, Balanced, and Deep may
+differ in bounded recovery generation, semantic inference depth, effort, and
+expenditure. They do not differ in authority, evidence meaning, or canonical
+ownership.
+
+Reuse precedes invention. Authority convergence is distinct from physical
+deletion: canonical activation requires one executable ordinary owner and no
+fallback, while already-unreachable code may be removed when its dependencies,
+validation cost, or fallback risk make deletion causal.
+
+## Post-Checkpoint Steady-State Architecture
+
+After the current checkpoint names are obsolete, existing admitted gaps and
+newly admitted components use the same canonical SearchOS recovery-cycle
+transition. Every recovery cycle is append-only, linked to prior state,
+purpose-bound, novelty-bound, and cumulatively budgeted. A terminal slot is
+never reactivated.
+
+Purpose admission precedes executable query work. QueryPlan retains query
+identity and equivalence. EvidenceLedger retains source truth.
+ComponentCoverage retains component support truth. Analyst proposes derived
+relationships, and D-prime validates exact relationship strength. RunKernel
+admits and administers canonical state. Sufficiency decides the whole-run
+posture. FinalAnswerPacket and Author remain downstream only.
+
+The steady-state gap classifier is:
+
+```text
+missing evidentiary premise
+-> SearchOS recovery is eligible
+
+premises present but inference not admitted
+-> Analyst / D-prime inference evaluation is required
+
+premises and inference admitted
+-> component is supported;
+   do not search merely for a verbatim conclusion
+```
+
+General nonzero inference remains deferred at the current baseline. Any future
+activation must extend the same component fields, graph, admission path, and
+authority chain. Recovery generation depth is distinct from semantic inference
+depth: the former limits generations of newly admitted recovery components;
+the latter records the longest support relationship chain for one component.
 
 ## Status Classification
 
@@ -284,7 +361,20 @@ limited to direct support: allowed support is direct,
 `max_inference_depth` is zero, and actual observation `inference_depth` is
 zero. That is a temporary activation boundary, not permanent architecture.
 
-## 12. PR A Boundary: Parent Checkpoint And Internal Implementation Boundary A
+## Current Checkpoint Implementation Appendix
+
+This appendix governs the current implementation checkpoint. It is not the
+durable identity of the subsystem.
+
+When `SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01` completes, the roadmap
+owns completion history and this appendix must be removed, archived, or reduced
+to a compact installed-state summary.
+
+The Durable North Star, authority doctrine, recovery-cycle invariants,
+inference direction, stopping ownership, and anti-duplication constitution
+remain authoritative after the appendix expires.
+
+### 12. PR A Boundary: Parent Checkpoint And Internal Implementation Boundary A
 
 Parent checkpoint:
 
@@ -329,7 +419,7 @@ compatibility consumer, direct legacy test, or historical helper. Broad dead
 code deletion is not its merge gate. Such surfaces receive no new callers,
 fallbacks, or compatibility investment.
 
-## 13. PR B Boundary: Internal Implementation Boundary B
+### 13. PR B Boundary: Internal Implementation Boundary B
 
 Internal PR B working name:
 
@@ -364,7 +454,7 @@ deletion-focused cleanup is permitted only for remaining dead machinery and is
 outside the parent checkpoint unless needed to eliminate competing executable
 authority.
 
-## 14. Legacy Retirement Sequence
+### 14. Legacy Retirement Sequence
 
 Retirement is triggered by replacement proof, not a date or desired line
 count. Authority convergence and physical deletion are distinct:
@@ -400,7 +490,7 @@ replacement. Some tests and state plumbing may remain until the appropriate
 offline integration proof. No dual execution or fallback survives final
 authority convergence.
 
-## 15. Required Proof Classes
+### 15. Required Proof Classes
 
 The two internal PRs must select concrete checks from these proof classes
 without inventing test filenames in advance:

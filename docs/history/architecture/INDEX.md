@@ -22,7 +22,7 @@ Route here only for provenance. Start with:
 - [Current Roadmap](../../roadmap/CURRENT_ROADMAP.md)
 - [Historical Document Index](../INDEX.md)
 
-D3B architecture moves in this index: 185.
+D3B architecture moves in this index: 186.
 
 ## Moved Files
 
@@ -209,6 +209,7 @@ D3B architecture moves in this index: 185.
 | [CONTROLLER_STATE_REDUCER_EXECUTOR_BUDGET_AG27.md](phases/CONTROLLER_STATE_REDUCER_EXECUTOR_BUDGET_AG27.md) | `docs/architecture/CONTROLLER_STATE_REDUCER_EXECUTOR_BUDGET_AG27.md` | CONTROLLER | Guidance map last-resort provenance only |
 | [DOCUMENTATION_ROLES_AND_CONTROLLER_STATE_AG46C.md](phases/DOCUMENTATION_ROLES_AND_CONTROLLER_STATE_AG46C.md) | `docs/architecture/DOCUMENTATION_ROLES_AND_CONTROLLER_STATE_AG46C.md` | DOCUMENTATION_ROLES | Guidance map last-resort provenance only |
 | [EVIDENCE_INTEGRATION_CHECKPOINT_AG32.md](phases/EVIDENCE_INTEGRATION_CHECKPOINT_AG32.md) | `docs/architecture/EVIDENCE_INTEGRATION_CHECKPOINT_AG32.md` | EVIDENCE_INTEGRATION | Guidance map last-resort provenance only |
+| [SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md](phases/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md) | `docs/architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md` | SEARCHOS | Guidance map last-resort provenance only; superseded by the installed cutover and current recovery/inference direction |
 | [SOURCE_CLASS_CONTROLLER_GATE_AG33.md](phases/SOURCE_CLASS_CONTROLLER_GATE_AG33.md) | `docs/architecture/SOURCE_CLASS_CONTROLLER_GATE_AG33.md` | SOURCE_CLASS | Guidance map last-resort provenance only |
 | [WEAK_CORPUS_ACTIVE_GATE_AG36.md](phases/WEAK_CORPUS_ACTIVE_GATE_AG36.md) | `docs/architecture/WEAK_CORPUS_ACTIVE_GATE_AG36.md` | WEAK_CORPUS | Guidance map last-resort provenance only |
 | [SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md](SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md) | `docs/architecture/historical/SCRYRAVEN_CURRENT_STATE_CONTROLLER_ERA_HISTORICAL.md` | controller-era | `docs/architecture/SCRYRAVEN_CURRENT_STATE.md` |

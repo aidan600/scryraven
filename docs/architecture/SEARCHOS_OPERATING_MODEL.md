@@ -132,11 +132,12 @@ the one-hop MVP. They have no ordinary product caller. If later licensed, they
 must reuse the existing URL-selection, acquisition, and custody owners rather
 than introduce a parallel navigation path.
 
-[SearchOS Iterative Judgment Direction](SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
-records the approved iterative-judgment convergence direction for the active
-roadmap checkpoint beneath this durable target subsystem doctrine. It does not
-replace current code, tests, or [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
-as installed truth, and it does not authorize BUILD.
+[SearchOS First-Wave And Iterative-Judgment
+Cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md) owns the
+installed first-wave boundary, candidate continuity, iterative SearchJudgment,
+candidate READ, semantic handoff, and unresolved-slot terminal. [ScryRaven
+Current State](SCRYRAVEN_CURRENT_STATE.md) owns installed one-hop and current
+product truth.
 
 ## Planned Post-Analysis Recovery Boundary
 
