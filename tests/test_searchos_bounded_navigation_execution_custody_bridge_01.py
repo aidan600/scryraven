@@ -415,6 +415,15 @@ def test_navigation_custody_observation_atomically_owns_canonical_candidate() ->
         "fetch_read_candidate_custody_records"
     ][0]
     assert record["candidate_id"] == physical["candidate_id"] == expected_id
+    before_replay = (
+        deepcopy(projection),
+        deepcopy(ledger.to_fetch_read_candidate_custody_projection()),
+    )
+    ledger.reduce_observation(observation)
+    assert (
+        ledger.to_projection().to_dict(),
+        ledger.to_fetch_read_candidate_custody_projection(),
+    ) == before_replay
 
 
 def test_navigation_uses_url_free_v1_chain_and_consume_once_dispatch() -> None:

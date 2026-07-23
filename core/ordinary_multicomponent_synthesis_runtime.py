@@ -114,6 +114,22 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _matching_records(values: Any, **expected: Any) -> list[dict[str, Any]]:
+    return [dict(raw) for raw in values or () if isinstance(raw, Mapping)
+            and all(raw.get(key) == value for key, value in expected.items())]
+
+
+def _one_record(values: Any, reason: str, **expected: Any) -> dict[str, Any]:
+    records = _matching_records(values, **expected)
+    if len(records) != 1:
+        raise OrdinaryMulticomponentRuntimeError(reason)
+    return records[0]
+
+
+def _candidate_ids(projection: Mapping[str, Any]) -> set[str]:
+    return {str(_safe_mapping(item).get("candidate_id") or "") for item in projection.get("candidate_records") or ()}
+
+
 def execute_multicomponent_role_call(
     *,
     run_kernel: Any,
@@ -470,12 +486,16 @@ def _semantic_material(
         or run_kernel.state.initial_answer_contract
     )
     component_id = str(component_ref["component_id"])
+    evidence_ref_id = _qualify_searchos_read_material_after_component_dprime(
+        run_kernel=run_kernel, component_ref=component_ref, bindable=bindable,
+        dprime_artifact=dprime_artifact,
+    ) or str(bindable.evidence_ref_id)
     content_ref = build_sanitized_content_reference_from_passage(
         passage=bindable.passage,
-        evidence_ref_id=bindable.evidence_ref_id,
+        evidence_ref_id=evidence_ref_id,
         accepted_contract=accepted,
         component_ref=component_ref,
-        content_ref_id=f"content:{component_id}:{bindable.evidence_ref_id}",
+        content_ref_id=f"content:{component_id}:{evidence_ref_id}",
     )
     observation = SemanticObservation(
         observation_id=f"observation:{component_id}:{bindable.evidence_ref_id}",
@@ -491,7 +511,7 @@ def _semantic_material(
         answer_component_id=component_id,
         component_revision=str(component_ref["component_revision"]),
         component_contract_digest=str(component_ref["component_digest"]),
-        evidence_refs=(bindable.evidence_ref_id,),
+        evidence_refs=(evidence_ref_id,),
         content_refs=(content_ref.content_ref_id,),
         support_kind=SupportDirectness.DIRECT,
         directness=SupportDirectness.DIRECT,
@@ -509,12 +529,6 @@ def _semantic_material(
             "direct_semantic_producer_used": False,
         },
     ).require_valid()
-    _qualify_searchos_read_material_after_component_dprime(
-        run_kernel=run_kernel,
-        component_ref=component_ref,
-        bindable=bindable,
-        dprime_artifact=dprime_artifact,
-    )
     coverage = build_component_coverage_proposal(
         accepted_contract=accepted,
         observation=observation,
@@ -535,7 +549,7 @@ def _semantic_material(
         )
         qualified_requirement_ids = source_requirement_ids_for_component_candidate(
             run_kernel.state.evidence_ledger.to_projection().to_dict(),
-            evidence_ref_id=bindable.evidence_ref_id,
+            evidence_ref_id=evidence_ref_id,
             source_obligation_candidate_ids=tuple(obligation_ids),
             ignore_satisfied_provider_job_historical_gaps=True,
         )
@@ -543,7 +557,7 @@ def _semantic_material(
             "component D-prime support could not satisfy canonical coverage for "
             + component_id
             + " (evidence_ref="
-            + str(bindable.evidence_ref_id)
+            + evidence_ref_id
             + ", obligations="
             + ",".join(str(item) for item in obligation_ids)
             + ", qualified_requirements="
@@ -559,7 +573,7 @@ def _qualify_searchos_read_material_after_component_dprime(
     component_ref: Mapping[str, Any],
     bindable: Any,
     dprime_artifact: Mapping[str, Any],
-) -> None:
+) -> str | None:
     """Link one exact READ-custody material only after D-prime support.
 
     Fetch/read custody alone remains non-supporting.  This reducer adds the
@@ -570,10 +584,13 @@ def _qualify_searchos_read_material_after_component_dprime(
     """
 
     passage = _safe_mapping(bindable.passage)
-    slot_ref = _safe_mapping(passage.get("searchos_slot_ref"))
-    handoff_ref = _safe_mapping(passage.get("searchos_semantic_handoff_ref"))
+    lineage = _safe_mapping(passage.get("searchos_qualification_lineage"))
+    slot_ref = _safe_mapping(lineage.get("slot_ref"))
+    handoff_ref = _safe_mapping(lineage.get("semantic_handoff_ref"))
     component_id = str(component_ref.get("component_id") or "")
     if not (
+        lineage
+        and
         passage.get("material_authority") == "read_custody_material"
         and passage.get("_provider") == "searchos_read_custody"
         and _current_searchos_read_handoff_for_component(
@@ -586,34 +603,123 @@ def _qualify_searchos_read_material_after_component_dprime(
         and _safe_mapping(dprime_artifact.get("semantic_output")).get("validation_status")
         in {"supported", "supported_with_caveats"}
     ):
-        return
+        return None
 
     from core.evidence_ledger_runtime import (
         execute_evidence_ledger_reduction_action,
     )
 
+    component_identity = {key: component_ref.get(key) for key in ("component_id", "component_revision", "component_digest")}
+    navigation_ref, packet_ref, custody_ref = (
+        _safe_mapping(lineage.get(key)) for key in ("navigation_content_reference", "fetch_read_content_packet", "read_custody_ref"))
+    evidence_ref_id = str(bindable.evidence_ref_id)
+    dprime_digest = str(dprime_artifact.get("artifact_digest") or "")
+    accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+    accepted_component = _one_record(
+        accepted.get("accepted_answer_component_refs"), "SearchOS qualification component is stale",
+        **component_identity,
+    )
+    component_obligations = {str(_safe_mapping(item).get("candidate_id") or item) for item in accepted_component.get("source_obligation_candidate_ids") or ()}
+    ref_fields = (
+        (navigation_ref, ("reference_id", "reference_digest")), (packet_ref, ("packet_id", "packet_digest")),
+        (custody_ref, ("read_custody_material_id", "read_custody_material_digest")),
+        (handoff_ref, ("semantic_handoff_id", "semantic_handoff_digest")))
+    if (
+        str(slot_ref.get("source_obligation_id") or "") not in component_obligations
+        or lineage.get("canonical_candidate_id") != evidence_ref_id
+        or passage.get("searchos_evidence_ledger_candidate_id") != evidence_ref_id
+        or _safe_mapping(passage.get("searchos_slot_ref")) != slot_ref
+        or _safe_mapping(passage.get("searchos_semantic_handoff_ref")) != handoff_ref
+        or any(not all(ref.get(key) for key in keys) for ref, keys in ref_fields)
+        or len(dprime_digest) != 64 or set(dprime_digest) - set("0123456789abcdef")
+    ):
+        raise OrdinaryMulticomponentRuntimeError("SearchOS qualification lineage is incomplete or stale")
+
     slot_id = str(slot_ref["slot_id"])
     obligation_id = str(slot_ref["source_obligation_id"])
     requirement_id = (
-        "searchos_semantic_requirement:"
-        + obligation_id.split(":", 1)[-1]
-        + ":"
-        + safe_packet_digest({"slot_id": slot_id})[:24]
+        f"searchos_semantic_requirement:{obligation_id.split(':', 1)[-1]}:"
+        + safe_packet_digest({"slot_id": slot_id, "component_id": component_id})[:24]
     )
-    evidence_ref_id = str(bindable.evidence_ref_id)
-    observation_id = (
-        f"{run_kernel.state.run_id}:evidence-ledger:searchos-dprime:"
-        f"{str(dprime_artifact.get('artifact_digest') or '')[:16]}:"
-        f"{safe_packet_digest({'slot_id': slot_id})[:16]}"
+    qualification_basis = {
+        "identity_kind": "searchos_custody_qualification_v1",
+        "run_id": run_kernel.state.run_id,
+        "request_id": run_kernel.state.request_id,
+        "canonical_candidate_id": evidence_ref_id,
+        "navigation_content_reference": navigation_ref,
+        "fetch_read_content_packet": packet_ref,
+        "read_custody_ref": custody_ref,
+        "component_ref": component_identity,
+        "requirement_id": requirement_id,
+        "slot_ref": slot_ref,
+        "semantic_handoff_ref": handoff_ref,
+        "component_dprime_artifact_digest": dprime_digest,
+    }
+    qualification_id = "searchos_custody_qualification:" + safe_packet_digest(qualification_basis)
+    ledger = run_kernel.state.evidence_ledger
+    before_projection = ledger.to_projection().to_dict()
+    before_candidate_ids = _candidate_ids(before_projection)
+    physical = ledger.to_fetch_read_candidate_custody_projection().get("fetch_read_candidate_custody_records")
+    slot = _safe_mapping(_safe_mapping(run_kernel.state.searchos_state.get("slots_by_id")).get(slot_id))
+    current_custody = _one_record(
+        slot.get("custody_refs"), "SearchOS qualification lost current custody",
+        evidence_ledger_candidate_id=evidence_ref_id,
+        read_custody_material_id=custody_ref["read_custody_material_id"],
+        read_custody_material_digest=custody_ref["read_custody_material_digest"],
     )
+    physical_record = _one_record(
+        physical, "SearchOS qualification lost physical custody",
+        reference_id=navigation_ref["reference_id"], reference_digest=navigation_ref["reference_digest"],
+        fetch_read_content_packet_id=packet_ref["packet_id"],
+        fetch_read_content_packet_digest=packet_ref["packet_digest"],
+    )
+    ledger_candidate_id = str(physical_record["candidate_id"])
+    projected_candidate_id = ledger_candidate_id if lineage.get("navigation_origin") is True else evidence_ref_id
+    if (
+        projected_candidate_id not in before_candidate_ids
+        or len(_matching_records(physical, candidate_id=ledger_candidate_id)) != 1
+        or lineage.get("navigation_origin") is True and ledger_candidate_id != evidence_ref_id
+        or any(_safe_mapping(current_custody.get("evidence_ledger_custody_ref")).get(key) != value for key, value in navigation_ref.items())
+        or any(_safe_mapping(current_custody.get("fetch_read_content_packet_ref")).get(key) != value for key, value in packet_ref.items())
+    ):
+        raise OrdinaryMulticomponentRuntimeError("SearchOS qualification lost canonical physical custody")
+
+    candidate = _safe_mapping(bindable.candidate_record)
+    lineage_facts = _safe_mapping(lineage.get("source_facts"))
+    if any(key in passage and passage.get(key) != value for key, value in lineage_facts.items()):
+        raise OrdinaryMulticomponentRuntimeError("SearchOS qualification source facts drifted")
+    fact_passage = {**lineage_facts, **passage}
+    aliases_by_key = {
+        "source_class": ("source_class",), "source_tier": ("source_tier",),
+        "currentness_signal": ("currentness_signal", "currentness"),
+        "evidence_material_type": ("evidence_material_type",), "readable_status": ("readable_status", "readability_status"),
+        "fetchable_status": ("fetchable_status", "fetch_status"),
+    }
+    source_facts = {
+        key: value for key, aliases in aliases_by_key.items()
+        if (value := _structured_evidence_fact(
+            candidate=candidate, passage=fact_passage, candidate_keys=aliases, passage_keys=aliases))
+    }
+    for key in ("contextual_only", "lower_tier"):
+        value = fact_passage.get(key)
+        if isinstance(value, bool) or candidate.get(key) is True:
+            source_facts[key] = value if isinstance(value, bool) else True
+    if source_facts.get("contextual_only") or source_facts.get("lower_tier"):
+        source_facts["eligible_for_stronger_obligation"] = False
+    elif lineage.get("navigation_origin") is not True and candidate.get("final_evidence_eligible") is True:
+        source_facts["eligible_for_stronger_obligation"] = True
+
     payload = {
-        "observation_id": observation_id,
+        "observation_id": qualification_id,
         "observation_source": "searchos_component_dprime_material_qualification",
         "source_requirements": [
             {
                 "requirement_id": requirement_id,
                 "requirement_kind": obligation_id.split(":", 1)[-1],
                 "source_obligation_id": obligation_id,
+                "component_id": component_id,
+                "run_id": run_kernel.state.run_id,
+                "request_id": run_kernel.state.request_id,
                 "origin_ref": ("RunKernel.SearchOSIterativeJudgment:" + str(handoff_ref["semantic_handoff_id"])),
                 "aggregate_counts_insufficient": False,
             }
@@ -621,18 +727,12 @@ def _qualify_searchos_read_material_after_component_dprime(
         "candidates": [
             {
                 "candidate_id": evidence_ref_id,
-                "url": passage.get("url"),
-                "title": passage.get("title"),
+                "requirement_id": requirement_id,
                 "disposition": "accepted",
                 "record_kind": "fact",
                 "linked_requirement_ids": [requirement_id],
                 "link_reason": ("exact_searchos_read_custody_component_dprime_supported"),
-                "readable_status": "readable",
-                "fetchable_status": "fetchable",
-                "eligible_for_stronger_obligation": True,
-                "contextual_only": False,
-                "lower_tier": False,
-                "final_evidence_eligible": True,
+                **source_facts,
             }
         ],
         "requirement_links": [
@@ -647,16 +747,34 @@ def _qualify_searchos_read_material_after_component_dprime(
     action = run_kernel.authorize_evidence_ledger_reduction(
         inputs={
             "observation_source": payload["observation_source"],
-            "searchos_slot_id": slot_id,
-            "searchos_semantic_handoff_id": handoff_ref["semantic_handoff_id"],
-            "component_dprime_artifact_digest": dprime_artifact.get("artifact_digest"),
+            "qualification_id": qualification_id,
+            "qualification_basis": qualification_basis,
         }
     )
-    result = execute_evidence_ledger_reduction_action(
-        action,
-        payload=payload,
-    )
+    result = execute_evidence_ledger_reduction_action(action, payload=payload)
     run_kernel.reduce(result.observation)
+    projection = ledger.to_projection().to_dict()
+    if _candidate_ids(projection) != before_candidate_ids:
+        raise OrdinaryMulticomponentRuntimeError("SearchOS qualification replaced canonical candidate state")
+    _one_record(
+        projection.get("candidate_records"), "SearchOS candidate qualification missing", candidate_id=projected_candidate_id,
+        fact_disposition="accepted", **source_facts,
+    )
+    _one_record(
+        projection.get("custody_records"), "SearchOS qualification custody missing", candidate_id=projected_candidate_id,
+        requirement_id=requirement_id, observation_id=qualification_id, disposition="accepted",
+    )
+    _one_record(
+        projection.get("source_requirements"), "SearchOS requirement missing", requirement_id=requirement_id,
+    )
+    _one_record(
+        projection.get("requirement_links"), "SearchOS qualification link missing", candidate_id=projected_candidate_id,
+        requirement_id=requirement_id, link_status="accepted",
+    )
+    _one_record(
+        projection.get("observation_refs"), "SearchOS qualification observation missing", observation_id=qualification_id,
+    )
+    return evidence_ref_id
 
 
 def _current_searchos_read_handoff_for_component(
@@ -671,6 +789,7 @@ def _current_searchos_read_handoff_for_component(
     slot = _safe_mapping(slots_by_id.get(str(slot_ref.get("slot_id") or "")))
     if (
         not slot
+        or not component_id
         or slot.get("posture") != "semantically_handed_off"
         or _safe_mapping(slot.get("slot_ref")) != slot_ref
         or slot_ref.get("component_id") != component_id
@@ -693,6 +812,7 @@ def _current_searchos_read_handoff_for_component(
     )
     current_custody = any(
         _safe_mapping(item).get("evidence_ledger_candidate_id") == evidence_ref_id
+        and _safe_mapping(_safe_mapping(item).get("slot_ref")) == slot_ref
         and _safe_mapping(item).get("material_authority") == "read_custody_material"
         and _safe_mapping(item).get("readable") is True
         and _safe_mapping(item).get("stale") is False

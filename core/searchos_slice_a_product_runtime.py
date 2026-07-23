@@ -476,7 +476,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                 continue
             run_kernel.expose_searchos_candidate_window(window=window)
             current_slot = run_kernel.state.searchos_state["slots_by_id"][slot_id]
-            navigation_window = navigation_runtime.project_navigation_window(run_kernel.state.searchos_state, slot_id=slot_id)
+            navigation_window = navigation_runtime.project_navigation_window(
+                run_kernel.state.searchos_state, slot_id=slot_id
+            ) or None
             try:
                 action = run_kernel.authorize_searchos_judgment(
                     reservation_ref=reservation,
@@ -1832,10 +1834,12 @@ def _semantic_passages(
             custody_id = str(custody.get("read_custody_material_id") or "")
             packet = packet_by_custody_id.get(custody_id) or {}
             navigation_origin = custody.get("origin") == "searchos_navigation"
+            packet_ref: Mapping[str, Any] = {}
             if navigation_origin:
-                _, navigation_reference = navigation_runtime._navigation_custody_packet_reference(custody, packet)
+                packet_ref, navigation_reference = navigation_runtime._navigation_custody_packet_reference(custody, packet)
                 references: Sequence[Mapping[str, Any]] = (navigation_reference,)
             else:
+                packet_ref = fetch_read_content_packet_ref_from_packet(packet)
                 references = packet.get("reference_records") or ()
             for reference in references:
                 if not isinstance(reference, Mapping):
@@ -1864,6 +1868,26 @@ def _semantic_passages(
                     )
                     if tier != "unknown":
                         navigation_source_facts = {"source_tier": tier}
+                qualification_lineage: dict[str, Any] = {
+                    "navigation_origin": navigation_origin,
+                    "canonical_candidate_id": source_id,
+                    "navigation_content_reference": {
+                        key: reference.get(key) for key in ("reference_id", "reference_digest")},
+                    "fetch_read_content_packet": {
+                        key: packet_ref.get(key) for key in ("packet_id", "packet_digest")},
+                    "read_custody_ref": {
+                        key: custody.get(key) for key in
+                        ("read_custody_material_id", "read_custody_material_digest")},
+                    "semantic_handoff_ref": {
+                        key: handoff.get(key) for key in
+                        ("semantic_handoff_id", "semantic_handoff_digest")},
+                    "slot_ref": deepcopy(handoff.get("slot_ref")),
+                    "source_facts": {
+                        **navigation_source_facts,
+                        "evidence_material_type": "searchos_read_custody",
+                        "readable_status": "readable", "fetchable_status": "fetchable",
+                    },
+                }
                 passages.append(
                     {
                         "candidate_id": source_id,
@@ -1882,6 +1906,7 @@ def _semantic_passages(
                             "semantic_handoff_digest": handoff.get("semantic_handoff_digest"),
                         },
                         "searchos_slot_ref": deepcopy(handoff.get("slot_ref")),
+                        "searchos_qualification_lineage": qualification_lineage,
                         "support_admitted": False,
                     }
                 )
