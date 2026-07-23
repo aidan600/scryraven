@@ -201,7 +201,7 @@ class _OfflineOrdinaryHarness(OfflineOrdinaryPipelineHarness):
             {
                 "source_id": 1,
                 "title": "Example Program official rule",
-                "url": "https://official.example/rule",
+                "url": "https://www.irs.gov/example-program-fictional/rule",
                 "text": (
                     "Example Program official current rule says the program "
                     "uses the current eligibility rule and remains in effect."
@@ -218,7 +218,7 @@ class _OfflineOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 {
                     "source_id": 2,
                     "title": "Example Program implementation memo",
-                    "url": "https://official.example/memo",
+                    "url": "https://www.irs.gov/example-program-fictional/memo",
                     "text": (
                         "Official implementation memo confirms the current rule "
                         "and gives supporting context for Example Program."

@@ -114,6 +114,23 @@ the needed information is source insufficiency, not a transport failure: return
 to search, another source, or bounded navigation rather than extracting the
 same page repeatedly.
 
+## Installed One-Hop Navigation Boundary
+
+The ordinary product now consumes the existing navigation foundation at a
+maximum depth of one. Only a fresh candidate-origin READ may expose bounded,
+safe same-site Markdown links. SearchJudgment sees URL-free navigation refs and
+may copy one exact current ref; the existing navigation selection, acquisition,
+FetchRead, EvidenceLedger, and SearchOS custody owners execute the destination.
+Navigation-origin custody may return to the ordinary judgment and semantic /
+final-answer path, but it is never a link-extraction input.
+
+Recursive navigation, navigation-origin child extraction, depth greater than
+one, navigation-specific physical reuse, cross-slot navigation reuse, and
+recursive-navigation limit calibration are not installed and are not part of
+the one-hop MVP. They have no ordinary product caller. If later licensed, they
+must reuse the existing URL-selection, acquisition, and custody owners rather
+than introduce a parallel navigation path.
+
 [SearchOS Iterative Judgment Direction](SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
 records the approved iterative-judgment convergence direction for the active
 roadmap checkpoint beneath this durable target subsystem doctrine. It does not

@@ -19,6 +19,10 @@ from core.authorized_acquisition_runtime import (
     execute_acquisition_work_order_to_terminal,
 )
 from core.cap_enforcement import RunCapExceeded
+from core.evidence_ledger import EvidenceLedger
+from core.evidence_ledger_candidate_custody import (
+    build_evidence_ledger_observation_from_fetch_read_content_packet,
+)
 from core.fetch_read_content_reference import (
     build_fetch_read_content_packet_from_navigation,
     validate_fetch_read_content_packet,
@@ -359,11 +363,67 @@ def _navigation_packet(*, attempted_url: str = CHILD_URL) -> dict[str, Any]:
         sanitized_material={
             "fetch_read_status": "readable",
             "attempted_url": attempted_url,
+            "content_title": "Official child",
             "bounded_text": "Offline child material.",
             "bounded_text_sanitized": True,
             "bounded_text_bounded": True,
         },
     )
+
+
+def test_navigation_custody_observation_atomically_owns_canonical_candidate() -> None:
+    packet = _navigation_packet()
+    reference = packet["reference_records"][0]
+    observation = build_evidence_ledger_observation_from_fetch_read_content_packet(
+        packet
+    ).to_dict()
+    expected_id = "searchos_custody_candidate:" + _digest(
+        {
+            "identity_kind": "searchos_navigation_custody_candidate_v1",
+            "navigation_content_reference": {
+                "reference_id": reference["reference_id"],
+                "reference_digest": reference["reference_digest"],
+            },
+            "fetch_read_content_packet": {
+                "packet_id": packet["packet_id"],
+                "packet_digest": packet["packet_digest"],
+            },
+        }
+    )
+
+    assert len(observation["candidates"]) == 1
+    assert len(observation["fetch_read_candidate_custody"]) == 1
+    candidate = observation["candidates"][0]
+    custody = observation["fetch_read_candidate_custody"][0]
+    assert candidate["candidate_id"] == custody["candidate_id"] == expected_id
+    assert candidate["url"] == reference["attempted_url"]
+    assert candidate["title"] == reference["content_title"]
+    assert candidate["disposition"] == "observed"
+    assert candidate["evidence_material_type"] == "searchos_read_custody"
+    assert candidate["eligible_for_stronger_obligation"] is False
+    assert candidate["final_evidence_eligible"] is False
+    assert custody["reference_id"] == reference["reference_id"]
+    assert custody["reference_digest"] == reference["reference_digest"]
+    assert custody["fetch_read_content_packet_id"] == packet["packet_id"]
+    assert custody["fetch_read_content_packet_digest"] == packet["packet_digest"]
+    assert custody["lineage_only"] is True
+
+    ledger = EvidenceLedger().reduce_observation(observation)
+    projection = ledger.to_projection().to_dict()
+    record = projection["candidate_records"][0]
+    physical = ledger.to_fetch_read_candidate_custody_projection()[
+        "fetch_read_candidate_custody_records"
+    ][0]
+    assert record["candidate_id"] == physical["candidate_id"] == expected_id
+    before_replay = (
+        deepcopy(projection),
+        deepcopy(ledger.to_fetch_read_candidate_custody_projection()),
+    )
+    ledger.reduce_observation(observation)
+    assert (
+        ledger.to_projection().to_dict(),
+        ledger.to_fetch_read_candidate_custody_projection(),
+    ) == before_replay
 
 
 def test_navigation_uses_url_free_v1_chain_and_consume_once_dispatch() -> None:
@@ -672,7 +732,14 @@ def test_post_ledger_searchos_failure_preserves_truthful_custody(
         next(iter(kernel.state.searchos_state["navigation"]["options_by_id"].values()))
     )
     assert ledger["custody_record_count"] == 1
-    assert ledger["fetch_read_candidate_custody_records"][0]["attempted_url"] == CHILD_URL
+    physical = ledger["fetch_read_candidate_custody_records"][0]
+    assert physical["attempted_url"] == CHILD_URL
+    assert physical["candidate_id"] in {
+        item["candidate_id"]
+        for item in kernel.state.evidence_ledger.to_projection().to_dict()[
+            "candidate_records"
+        ]
+    }
     assert current_option.disposition != NAVIGATION_DESTINATION_FAILED
     assert slot["posture"] != SearchOSSlotPosture.ACTIVE_UNJUDGED.value
     assert calls == 1 and store.committed_count == 0
@@ -717,7 +784,21 @@ def test_success_reuses_fetchread_evidenceledger_and_searchos_custody() -> None:
     assert ledger["custody_record_count"] == 1
     record = ledger["fetch_read_candidate_custody_records"][0]
     assert record["origin"] == "searchos_navigation"
-    assert "candidate_id" not in record
+    canonical_candidate_id = record["candidate_id"]
+    assert canonical_candidate_id.startswith("searchos_custody_candidate:")
+    assert len(canonical_candidate_id.split(":", 1)[1]) == 64
+    assert after_slot["custody_refs"][-1]["evidence_ledger_candidate_id"] == (
+        canonical_candidate_id
+    )
+    candidate = next(
+        item
+        for item in kernel.state.evidence_ledger.to_projection().to_dict()[
+            "candidate_records"
+        ]
+        if item["candidate_id"] == canonical_candidate_id
+    )
+    assert candidate["fact_disposition"] == "observed"
+    assert candidate["evidence_material_type"] == "searchos_read_custody"
     assert record["attempted_url"] == CHILD_URL
     assert record["semantic_support_created"] is False
     assert record["citation_eligible"] is False
@@ -811,6 +892,9 @@ def test_destination_failures_reopen_slot_without_retry(
     assert store.committed_count == 0
     assert kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
         "custody_record_count"
+    ] == 0
+    assert kernel.state.evidence_ledger.to_projection().to_dict()[
+        "candidate_count"
     ] == 0
 
 

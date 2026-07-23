@@ -387,8 +387,8 @@ RunKernel owns post-selection SearchOS state plus proposal admission,
 capability, work order, route, execution, terminal, exhaustion, custody
 authorization, semantic handoff, readiness, and required-needs blocking. The
 guarded executor and Linkup Fetch/Tavily Extract mechanical adapters are reached
-only after a valid model nomination. Provider-failure fallback and bounded
-navigation are not installed. Legacy ordinary-live source-custody and
+only after a valid model nomination. Provider-failure fallback and navigation
+beyond the installed one-hop boundary are not installed. Legacy ordinary-live source-custody and
 main-coverage flags are not consulted, late main coverage cannot reacquire, and
 the retired `AG-LIVE-SOURCE-CUSTODY` profile remains non-executable.
 
@@ -415,8 +415,9 @@ still ends before support authority. Compatibility names such as `proplex`, `pyt
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
 model, search, recon, fetch/read, or retrieval call was made. The initial
 SearchPlanner-to-QueryPlan path and Slice A post-first-wave iterative judgment
-are now converged. Breadcrumb navigation, post-Analyst re-entry, comprehensive
-gap recovery, and final stopping remain later SearchOS work.
+are now converged. One-hop breadcrumb navigation is installed; post-Analyst
+re-entry, comprehensive gap recovery, final stopping, and recursive navigation
+remain later SearchOS work.
 Current priority and checkpoint order belong only to [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
@@ -584,8 +585,28 @@ source-class continuation, and AG-92B do not run after the first wave on this
 forward Slice A path. AG-92B's comprehensive recovery/stopping disposition is
 deferred. The full installed boundary is owned by [SearchOS First-Wave And
 Iterative-Judgment Cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md).
-Slice B breadcrumb navigation remains pending, so the parent roadmap checkpoint
-is not complete.
+The installed one-hop boundary below completes bounded Slice B without
+installing recursive navigation.
+
+## Installed SearchOS One-Hop Breadcrumb Navigation
+
+`SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01` connects ordinary
+candidate-origin READ custody to the existing bounded navigation foundation.
+A fresh candidate READ may expose safe same-site Markdown links as URL-free
+depth-1 navigation refs. SearchJudgment may copy one exact current ref; the
+installed selection reducer, acquisition route, FetchRead, EvidenceLedger, and
+SearchOS custody owners then read the selected destination. Navigation-origin
+custody may re-enter the existing SearchJudgment and component semantic path,
+and the canonical EvidenceLedger projection is refreshed after the selected
+component receiver before Sufficiency, FinalAnswerPacket, and Author consume
+it. Offline product proof reaches a final answer using a fact present only on
+the selected linked page.
+
+Navigation-origin material is never offered for link extraction. Depth greater
+than one, recursive navigation, navigation-specific physical reuse, cross-slot
+navigation reuse, and recursive-navigation limit calibration are not installed,
+are not part of the one-hop MVP, and have no ordinary product caller. Any later
+license must reuse the existing acquisition, custody, and selection owners.
 
 ## Retired Legacy Semantic Scout And Ordinary Provider Synthesis
 
@@ -653,8 +674,9 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Map topology selection, Map-to-READ/Focused re-entry, or Crawl page-level
   custody.
 - Provider-failure cross-provider retry.
-- SearchOS Slice B breadcrumb navigation, post-Analyst re-entry, comprehensive
-  gap recovery, and final stopping convergence.
+- SearchOS recursive breadcrumb navigation, navigation depth greater than one,
+  post-Analyst re-entry, comprehensive gap recovery, and final stopping
+  convergence.
 - DISCOVER-attached readable-source custody or support eligibility.
 - Direct current-need known-URL READ outside admitted candidate state.
 - A browser or general local scraper as an ordinary product path.
@@ -675,6 +697,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
   result sets and the preserved ranking mechanics.
 - Live and arbitrary-query quality of the N-component SearchOS semantic handoff
   remains unproved; installed proof is bounded and offline.
+- Live or arbitrary-query quality of one-hop breadcrumb navigation remains
+  unproved; installed proof is bounded, response-only, and offline.
 - Focused Extract ordinary product activation remains unproved.
 - Map and Crawl PRODUCT dispatch remain unproved and uninstalled.
 - No model adapter changed and no live provider transport was exercised.

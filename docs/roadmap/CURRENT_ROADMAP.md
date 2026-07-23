@@ -418,8 +418,26 @@ Evaluator, expander, disambiguation retry, weak-corpus continuation, and AG-92B
 have no forward post-first-wave authority. Direct known-URL READ,
 DISCOVER-attached readable-source custody, navigation, comprehensive recovery,
 final stopping, permanent policy calibration, and live execution remain closed.
-Slice B is still required before the parent iterative-navigation checkpoint is
-complete.
+The later one-hop product activation below completes bounded Slice B without
+installing recursive navigation.
+
+## Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01
+
+Ordinary fresh candidate-origin READ custody may now expose safe same-site
+depth-1 breadcrumbs. SearchJudgment receives URL-free choices and may select an
+exact installed navigation ref. The selected destination executes through the
+existing navigation reducer, acquisition routing, FetchRead, EvidenceLedger,
+and SearchOS custody owners; navigation-origin custody may re-enter the existing
+judgment, semantic admission, Sufficiency, FinalAnswerPacket, and Author path.
+The final consumer uses the canonical post-component-receiver EvidenceLedger
+projection. Offline response-only product proof reaches a final answer from a
+fact present only on the selected linked page.
+
+Navigation-origin child extraction, depth greater than one, recursive
+navigation, navigation-specific physical reuse, cross-slot navigation reuse,
+and recursive-navigation limit calibration are not installed, are not part of
+the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
+the installed acquisition and custody owners.
 
 ## Active SearchOS MVP Sequence
 
@@ -433,20 +451,19 @@ early, and prohibited every failure-time escalation.
 The query-strategy and READ/source-custody checkpoints are complete. Internal
 Slice A, `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01`, is also
 complete: one RunKernel-owned SearchJudgment now owns forward ordinary
-post-first-wave query, candidate READ, semantic-handoff, and unresolved-slot
-decisions. The active work remains within
-`SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01`. Its approved
+post-first-wave query, candidate READ, bounded one-hop navigation,
+semantic-handoff, and unresolved-slot decisions. The next active work is
+`SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01`. The completed iterative-
+navigation checkpoint's approved
 [iterative-judgment convergence direction](../architecture/SEARCHOS_ITERATIVE_JUDGMENT_DIRECTION.md)
 expects the checkpoint to proceed through architecture-only first-wave and
 iterative-judgment convergence, then internal Slice A (canonical iterative
-judgment cutover), then internal Slice B (bounded breadcrumb navigation). Slice
-A is installed; Slice B remains pending. The parent checkpoint is not complete
-until Slice B lands or a maintainer explicitly moves navigation later. The
-remaining approved sequence is:
+judgment cutover), then internal Slice B (bounded one-hop breadcrumb
+navigation). Slice A and the one-hop Slice B product boundary are installed.
+This does not claim recursive navigation. The remaining approved sequence is:
 
 ```text
-SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01 (Slice B pending)
--> SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
+SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
 -> offline SearchOS integration gate
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
@@ -457,10 +474,10 @@ SEARCHOS-ITERATIVE-NAVIGATION-AND-RETRIEVAL-JUDGMENT-01 (Slice B pending)
 Query strategy and neutral iterative SearchJudgment are installed, and their
 policy remains provisional and subject to later calibration. After exactly one
 first DISCOVER wave, the model may nominate an exact admitted candidate READ,
-propose an exact materially nonredundant follow-up through QueryPlan, hand READ
-custody to the N-component semantic receiver, or preserve the need as
-unresolved. Slice A does not navigate. Bounded breadcrumb extraction,
-selection, cycle/depth control, and separate READ remain Slice B work.
+propose an exact materially nonredundant follow-up through QueryPlan, select an
+exact URL-free depth-1 breadcrumb, hand READ custody to the N-component semantic
+receiver, or preserve the need as unresolved. Navigation-origin child
+extraction, depth greater than one, and recursive traversal remain uninstalled.
 Comprehensive retry/recovery and final whole-run stopping remain in the later
 gap-recovery-and-stop checkpoint. A usable success is never retried merely to
 compare providers.

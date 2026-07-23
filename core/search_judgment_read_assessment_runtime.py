@@ -1694,6 +1694,7 @@ def _execute_one_acquisition_to_custody(
     return {
         "fetch_read_content_packet": packet,
         "custody_record": custody_record,
+        "navigation_source_markdown": artifact.retained_text,
         "provider_calls_attempted": execution.provider_calls_attempted,
         "provider_calls_completed": execution.provider_calls_completed,
     }

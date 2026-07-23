@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -1037,6 +1038,7 @@ def test_recovered_component_uses_typed_analyst_dprime_and_runkernel_admission()
         "canonical_state": True,
     }
     amendment = apply_recovered_component_amendment(run_kernel=kernel)
+    before_receiver_ledger = kernel.state.evidence_ledger.to_projection().to_dict()
 
     def execute_search(*_args, **_kwargs):
         return [
@@ -1157,6 +1159,16 @@ def test_recovered_component_uses_typed_analyst_dprime_and_runkernel_admission()
     assert admitted["dprime_validation_ref"]["role"] == "component_dprime"
     assert len(kernel.state.semantic_observation_admission_history) == 1
     assert len(kernel.state.component_coverage_history) == 1
+    after_receiver_ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    assert kernel.state.current_answer_contract
+    assert after_receiver_ledger != before_receiver_ledger
+    refresh_source = inspect.getsource(orchestrator._run_pipeline_inner)
+    refresh_start = refresh_source.index("if searchos_component_receiver_selected:")
+    refresh_end = refresh_source.index("if searchos_slice_a_active:", refresh_start)
+    refresh_block = refresh_source[refresh_start:refresh_end]
+    assert "current_answer_contract" not in refresh_block
+    assert "run_kernel.state.evidence_ledger.to_projection().to_dict()" in refresh_block
+    assert "final_evidence_handoff = replace(" in refresh_block
 
 
 def test_graph_identity_advances_and_pre_recovery_synthesis_becomes_noncurrent() -> None:

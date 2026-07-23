@@ -1248,7 +1248,9 @@ def test_revision_binding_and_current_state_tampering_fail_closed() -> None:
         )
 
 
-def test_ordinary_slice_a_product_runtime_remains_navigation_closed() -> None:
+def test_ordinary_slice_a_product_runtime_activates_the_installed_one_hop_path() -> None:
     source = Path("core/searchos_slice_a_product_runtime.py").read_text(encoding="utf-8")
-    assert SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value not in source
-    assert SearchOSSlotPosture.AWAITING_NAVIGATION_EXECUTION.value not in source
+    assert SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value in source
+    assert "navigation_runtime_open=True" in source
+    assert "parent_depth=0" in source
+    assert "execute_searchos_navigation_read_to_custody" in source

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
+from core import searchos_navigation_runtime as navigation_runtime
 from core.acquisition_adapters import AcquisitionTransports
 from core.discovery_source_result import normalize_discovery_result_url
 from core.fetch_read_content_reference import (
@@ -33,6 +34,8 @@ from core.searchos_iterative_judgment_runtime import (
     MAX_FOLLOWUP_QUERY_CHARS,
     MAX_UNRESOLVED_REASON_CHARS,
     SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
+    SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
+    SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION,
     SearchOSJudgmentAction,
     SearchOSRuntimeError,
     SearchOSSlotPosture,
@@ -47,6 +50,7 @@ from core.searchos_iterative_judgment_runtime import (
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
 )
+from core.source_classifier import classify_source
 
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
 SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
@@ -91,12 +95,55 @@ allowed. Never invent or alter a URL, authority ref, candidate ref, custody
 ref, component ref, source-obligation ref, provider choice, request identity,
 disposition, deterministic fallback, or unsupported field.
 """
+_NAVIGATION_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
+The input is one searchos_judgment_model_input_v1 JSON object containing an
+authorized searchos_navigation_judgment_request_v1. authorized_request is the
+sole legal-action and exact-ref authority. Inspect
+authorized_request.legal_actions, authorized_request.candidate_use_options,
+authorized_request.read_custody_refs, and authorized_request.navigation_options.
+active_need explains the component question, source obligation, and authorized
+search work that the action must advance. candidate_directional_contexts are
+DISCOVER-only hints: they may guide a READ, navigation, or follow-up decision
+but cannot support an answer. read_custody_materials contain the bounded
+readable content that must be judged against active_need; only this material
+may be handed to semantic evaluation. Do not treat custody-ref presence alone
+as readiness. decision_contract is the normative output contract.
+
+Return exactly one JSON object matching
+searchos_navigation_judgment_decision_v1. Always include schema_version,
+judgment_request_id, judgment_request_digest, slot_id, action, and a nonempty
+bounded reason; copy judgment_request_id, judgment_request_digest, and slot_id
+exactly from authorized_request. Choose exactly one action from
+authorized_request.legal_actions:
+- REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
+- PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
+  active_need and inspected material; this is the only action allowed to author
+  a query, and QueryPlan independently validates the exact text.
+- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
+  of exact current read_custody_refs.
+- HANDOFF_UNRESOLVED supplies the shared fields and its reason, plus only the
+  required exact read-custody assessments when current custody exists.
+- REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free
+  navigation_candidate_ref from authorized_request.navigation_options and no
+  other navigation field.
+
+After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
+HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must include exactly one
+read_insufficient assessment for every current READ custody ref, copied
+exactly, with the contract's exact assessment fields and disposition. Semantic
+handoff must not include those assessments. Forbidden fields must be absent,
+and no unsupported fields are allowed. Never invent or alter a URL,
+destination binding, authority ref, candidate ref, navigation ref, custody ref,
+component ref, source-obligation ref, provider choice, route, request identity,
+disposition, deterministic fallback, or unsupported field. Exact navigation
+destination URLs are intentionally absent from the input.
+"""
 TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
     {"custodied", "read_insufficient", "invalid", "declined"}
 )
 
 
-def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
+def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = False) -> dict[str, Any]:
     """Build the transient machine-readable mirror of the strict validator."""
 
     shared_required_fields = [
@@ -177,10 +224,25 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
             "read_custody_assessments_mode": conditionally_assessed,
         },
     }
+    if navigation_enabled:
+        for contract in actions.values():
+            contract["forbidden_fields"].append("navigation_candidate_ref")
+        actions[SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value] = {
+            "required_fields": [*shared_required_fields, "navigation_candidate_ref"],
+            "forbidden_fields": ["candidate_use_option_ref", "read_custody_refs", "followup_query"],
+            "navigation_candidate_ref_rule": (
+                "copy exactly one navigation_candidate_ref from "
+                "authorized_request.navigation_options"
+            ),
+            "authorship_forbidden": ["urls", "destination_bindings", "providers", "routes", "alternate_refs"],
+            "read_custody_assessments_mode": conditionally_assessed,
+        }
     core = {
         "contract_name": "SearchOSJudgmentDecisionContractV1",
         "schema_version": SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
-        "decision_schema_version": SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
+        "decision_schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION
+        if navigation_enabled
+        else SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
         "shared_required_fields": shared_required_fields,
         "copy_exactly_from_authorized_request": {
             "judgment_request_id": "judgment_request_id",
@@ -190,6 +252,7 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
         "allowed_output_fields": [
             *shared_required_fields,
             "candidate_use_option_ref",
+            *(["navigation_candidate_ref"] if navigation_enabled else []),
             "read_custody_refs",
             "followup_query",
             "read_custody_assessments",
@@ -199,6 +262,7 @@ def build_searchos_judgment_decision_contract_v1() -> dict[str, Any]:
             "authorized_request": (
                 "sole request identity and legal-action authority; its option "
                 "and custody refs are exact-copy sources"
+                + ("; navigation_options are URL-free exact-copy sources" if navigation_enabled else "")
             ),
             "active_need": (
                 "accepted component question, source-obligation standard, and "
@@ -283,6 +347,35 @@ def execute_searchos_slice_a_iterative_judgment(
     before_transport: Callable[[], Any] | None = None,
     measure_context_stage: Callable[..., Any] | None = None,
 ) -> SearchOSSliceAProductResult:
+    locator_store = navigation_runtime.EphemeralNavigationLocatorStore(
+        run_id=run_kernel.state.run_id, request_id=run_kernel.state.request_id
+    )
+    try:
+        return _execute_searchos_slice_a_iterative_judgment(**locals())
+    finally:
+        locator_store.discard_all()
+
+
+def _execute_searchos_slice_a_iterative_judgment(
+    *,
+    locator_store: navigation_runtime.EphemeralNavigationLocatorStore,
+    run_kernel: RunKernel,
+    candidate_packet: Mapping[str, Any],
+    query_authority: QueryPlanRuntimeAdapter,
+    discovery_result_store: Any,
+    profile_name: str,
+    ask_model: Callable[..., Any] | None,
+    provider: str | None,
+    model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    use_reasoning: bool,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    execute_followup_discover: FollowupDiscover | None,
+    before_transport: Callable[[], Any] | None = None,
+    measure_context_stage: Callable[..., Any] | None = None,
+) -> SearchOSSliceAProductResult:
     """Run the canonical post-first-wave Slice A loop under RunKernel."""
 
     initial_packet = dict(candidate_packet)
@@ -327,6 +420,7 @@ def execute_searchos_slice_a_iterative_judgment(
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
         profile_name=_profile_name(profile_name),
+        navigation_runtime_open=True,
     )
     initialize = run_kernel.authorize_searchos_initialization(
         answer_contract_ref=revision_1_answer_contract_ref(initial_packet),
@@ -352,8 +446,7 @@ def execute_searchos_slice_a_iterative_judgment(
     packet_by_custody_id: dict[str, Mapping[str, Any]] = {}
     dispositions: dict[str, str] = {}
     semantic_handoffs: list[Mapping[str, Any]] = []
-    attempted = 0
-    completed = 0
+    provider_calls = [0, 0]
 
     while True:
         state = run_kernel.state.searchos_state
@@ -418,12 +511,16 @@ def execute_searchos_slice_a_iterative_judgment(
                 continue
             run_kernel.expose_searchos_candidate_window(window=window)
             current_slot = run_kernel.state.searchos_state["slots_by_id"][slot_id]
+            navigation_window = navigation_runtime.project_navigation_window(
+                run_kernel.state.searchos_state, slot_id=slot_id
+            ) or None
             try:
                 action = run_kernel.authorize_searchos_judgment(
                     reservation_ref=reservation,
                     slot_id=slot_id,
                     candidate_window=window,
                     read_custody_refs=current_slot["custody_refs"],
+                    navigation_window=navigation_window,
                 )
             except Exception as exc:
                 run_kernel.return_searchos_pre_call_reservation(
@@ -541,6 +638,7 @@ def execute_searchos_slice_a_iterative_judgment(
                     options=options,
                 )
                 prior = custody_by_url.get(binding.normalized_url)
+                navigation_source: Any = None
                 if prior:
                     custody_outcome = prior
                     reused = True
@@ -569,8 +667,8 @@ def execute_searchos_slice_a_iterative_judgment(
                         after_attempted, after_completed = (
                             _acquisition_provider_call_totals(run_kernel)
                         )
-                        attempted += max(0, after_attempted - before_attempted)
-                        completed += max(0, after_completed - before_completed)
+                        provider_calls[0] += max(0, after_attempted - before_attempted)
+                        provider_calls[1] += max(0, after_completed - before_completed)
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
                             reason=_read_failure_reason(exc),
@@ -589,9 +687,12 @@ def execute_searchos_slice_a_iterative_judgment(
                         raise SearchOSRuntimeError(
                             "SearchOS READ provider-call accounting is stale"
                         )
-                    attempted += attempt_delta
-                    completed += completion_delta
-                    custody_by_url[binding.normalized_url] = custody_outcome
+                    provider_calls[0] += attempt_delta
+                    provider_calls[1] += completion_delta
+                    navigation_source = custody_outcome.pop(
+                        "navigation_source_markdown",
+                        None,
+                    )
                     reused = False
                 custody_ref = build_searchos_read_custody_material_ref(
                     slot_ref=run_kernel.state.searchos_state["slots_by_id"][slot_id]["slot_ref"],
@@ -608,10 +709,34 @@ def execute_searchos_slice_a_iterative_judgment(
                         payload={"custody_material_ref": custody_ref},
                     )
                 )
+                if not reused and isinstance(navigation_source, str):
+                    run_kernel.state.searchos_state = navigation_runtime.admit_navigation_options_from_markdown(
+                        run_kernel.state.searchos_state, slot_id=slot_id,
+                        parent_read_custody_ref=custody_ref, parent_url=binding.normalized_url,
+                        parent_depth=0, ancestor_physical_identity_digests=(),
+                        markdown_text=navigation_source, locator_store=locator_store,
+                    )[0]
+                if not reused:
+                    custody_by_url[binding.normalized_url] = custody_outcome
                 dispositions[option_id] = "custodied"
                 packet_by_custody_id[custody_ref["read_custody_material_id"]] = custody_outcome[
                     "fetch_read_content_packet"
                 ]
+            elif decision_action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB:
+                navigation_result = _execute_product_navigation(
+                    run_kernel=run_kernel,
+                    decision=decision,
+                    locator_store=locator_store,
+                    available_providers=available_providers,
+                    acquisition_transports=acquisition_transports,
+                    before_transport=before_transport,
+                    provider_calls=provider_calls,
+                )
+                if navigation_result.get("status") == "custodied":
+                    custody_ref = dict(navigation_result["searchos_read_custody_ref"])
+                    packet_by_custody_id[custody_ref["read_custody_material_id"]] = dict(
+                        navigation_result["fetch_read_content_packet"]
+                    )
             elif decision_action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
                 if execute_followup_discover is None:
                     run_kernel.mark_searchos_slot_unresolved(
@@ -785,8 +910,8 @@ def execute_searchos_slice_a_iterative_judgment(
         "disambiguation_invoked_after_first_wave": False,
         "weak_corpus_recovery_invoked_after_first_wave": False,
         "ag92b_full_search_judgment_invoked": False,
-        "provider_calls_attempted": attempted,
-        "provider_calls_completed": completed,
+        "provider_calls_attempted": provider_calls[0],
+        "provider_calls_completed": provider_calls[1],
     }
     return SearchOSSliceAProductResult(
         revision_1=revision_1,
@@ -794,9 +919,67 @@ def execute_searchos_slice_a_iterative_judgment(
         semantic_handoffs=tuple(semantic_handoffs),
         searchos_semantic_material=tuple(semantic_material),
         projection=projection,
-        provider_calls_attempted=attempted,
-        provider_calls_completed=completed,
+        provider_calls_attempted=provider_calls[0],
+        provider_calls_completed=provider_calls[1],
     )
+
+
+def _execute_product_navigation(
+    *,
+    run_kernel: RunKernel,
+    decision: Mapping[str, Any],
+    locator_store: navigation_runtime.EphemeralNavigationLocatorStore,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    before_transport: Callable[[], Any] | None,
+    provider_calls: list[int],
+) -> dict[str, Any]:
+    action = run_kernel.authorize_searchos_navigation_selection(
+        judgment_decision_ref=_decision_ref(decision),
+        navigation_candidate=dict(decision["navigation_candidate_ref"]),
+    )
+    observation = navigation_runtime.execute_navigation_selection(
+        action=action,
+        authorized_state_snapshot=deepcopy(run_kernel.state.searchos_state),
+        locator_store=locator_store,
+    )
+    run_kernel.reduce(observation)
+    if observation.payload.get("outcome") != "admitted_selection":
+        return {"status": "selection_not_admitted", "provider_calls_attempted": 0,
+                "provider_calls_completed": 0}
+    option_id = dict(action.inputs["navigation_option_ref"])["navigation_option_id"]
+    option = navigation_runtime.NavigationOption.from_dict(
+        dict(run_kernel.state.searchos_state["navigation"]["options_by_id"])[option_id]
+    )
+    lineage = {
+        "slot_ref": dict(action.inputs["slot_ref"]),
+        "navigation_option_ref": option.ref(),
+        "navigation_selection_ref": dict(option.active_selection_ref),
+        "destination_binding_ref": dict(option.destination_binding_ref),
+        "parent_read_custody_ref": dict(option.parent_read_custody_ref),
+    }
+    before = _acquisition_provider_call_totals(run_kernel)
+    result: dict[str, Any] | None = None
+    try:
+        result = navigation_runtime.execute_searchos_navigation_read_to_custody(
+            run_kernel=run_kernel,
+            locator_store=locator_store,
+            navigation_lineage=lineage,
+            available_providers=available_providers,
+            acquisition_transports=acquisition_transports,
+            before_transport=before_transport,
+        )
+    finally:
+        after = _acquisition_provider_call_totals(run_kernel)
+        deltas = [max(0, after[index] - before[index]) for index in (0, 1)]
+        provider_calls[0] += deltas[0]
+        provider_calls[1] += deltas[1]
+        returned = ([int(result.get(name) or 0) for name in
+                     ("provider_calls_attempted", "provider_calls_completed")]
+                    if result else None)
+        if returned is not None and deltas != returned:
+            raise SearchOSRuntimeError("SearchOS navigation provider-call accounting is stale")
+    return result or {}
 
 
 def revision_1_answer_contract_ref(
@@ -1094,6 +1277,7 @@ def _build_searchos_judgment_model_input(
             }
         )
     read_materials = _build_read_custody_judgment_materials(
+        searchos_state=run_kernel.state.searchos_state,
         slot=slot,
         current_options=current_options,
         packet_by_custody_id=packet_by_custody_id,
@@ -1110,7 +1294,10 @@ def _build_searchos_judgment_model_input(
         "active_need": active_need,
         "candidate_directional_contexts": directional_contexts,
         "read_custody_materials": read_materials,
-        "decision_contract": build_searchos_judgment_decision_contract_v1(),
+        "decision_contract": build_searchos_judgment_decision_contract_v1(
+            navigation_enabled=request.get("schema_version")
+            == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
+        ),
         "bounded_transient_input": True,
         "durable_retention_allowed": False,
     }
@@ -1290,6 +1477,7 @@ def _build_active_need_projection(
 
 def _build_read_custody_judgment_materials(
     *,
+    searchos_state: Mapping[str, Any],
     slot: Mapping[str, Any],
     current_options: Mapping[str, Mapping[str, Any]],
     packet_by_custody_id: Mapping[str, Mapping[str, Any]],
@@ -1300,6 +1488,16 @@ def _build_read_custody_judgment_materials(
         custody = dict(raw_custody) if isinstance(raw_custody, Mapping) else {}
         if dict(custody.get("slot_ref") or {}) != slot_ref:
             raise SearchOSRuntimeError("READ custody slot ref is stale")
+        if custody.get("origin") == "searchos_navigation":
+            custody_id = str(custody.get("read_custody_material_id") or "")
+            materials.append(
+                navigation_runtime._build_navigation_custody_judgment_material(
+                    searchos_state,
+                    custody,
+                    packet_by_custody_id.get(custody_id) or {},
+                )
+            )
+            continue
         historical_option_ref = dict(custody.get("candidate_use_option_ref") or {})
         option_id = str(historical_option_ref.get("candidate_use_option_id") or "")
         current_option = current_options.get(option_id)
@@ -1407,6 +1605,14 @@ def _invoke_judgment_model(
     if ask_model is None:
         raise SearchOSRuntimeError("model_unavailable")
     prompt = json.dumps(model_input, sort_keys=True, ensure_ascii=False)
+    navigation_request = dict(model_input.get("authorized_request") or {}).get(
+        "schema_version"
+    ) == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
+    system_prompt = (
+        _NAVIGATION_JUDGMENT_SYSTEM_PROMPT
+        if navigation_request
+        else SEARCHOS_JUDGMENT_SYSTEM_PROMPT
+    )
     if measure_context_stage is not None:
         material_count = sum(
             int(item.get("bounded_character_count") or 0)
@@ -1427,7 +1633,7 @@ def _invoke_judgment_model(
         )
     return ask_model(
         prompt,
-        SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+        system_prompt,
         provider=provider,
         model=model,
         effort="high",
@@ -1664,7 +1870,15 @@ def _semantic_passages(
                 continue
             custody_id = str(custody.get("read_custody_material_id") or "")
             packet = packet_by_custody_id.get(custody_id) or {}
-            for reference in packet.get("reference_records") or ():
+            navigation_origin = custody.get("origin") == "searchos_navigation"
+            packet_ref: Mapping[str, Any] = {}
+            if navigation_origin:
+                packet_ref, navigation_reference = navigation_runtime._navigation_custody_packet_reference(custody, packet)
+                references: Sequence[Mapping[str, Any]] = (navigation_reference,)
+            else:
+                packet_ref = fetch_read_content_packet_ref_from_packet(packet)
+                references = packet.get("reference_records") or ()
+            for reference in references:
                 if not isinstance(reference, Mapping):
                     continue
                 key = (
@@ -1674,16 +1888,49 @@ def _semantic_passages(
                 if key in seen:
                     continue
                 seen.add(key)
+                source_id = custody.get("evidence_ledger_candidate_id")
+                url = (
+                    reference.get("canonical_url")
+                    or reference.get("final_url")
+                    or reference.get("resolved_url")
+                    or reference.get("provider_reported_url")
+                    or reference.get("attempted_url")
+                )
+                if navigation_origin:
+                    url = normalize_discovery_result_url(url)
+                read_source_facts: dict[str, str] = {}
+                tier = classify_source(
+                    str(url), str(reference.get("content_title") or "")
+                )
+                if tier != "unknown":
+                    read_source_facts = {"source_tier": tier}
+                qualification_lineage: dict[str, Any] = {
+                    "navigation_origin": navigation_origin,
+                    "canonical_candidate_id": source_id,
+                    "navigation_content_reference": {
+                        key: reference.get(key) for key in ("reference_id", "reference_digest")},
+                    "fetch_read_content_packet": {
+                        key: packet_ref.get(key) for key in ("packet_id", "packet_digest")},
+                    "read_custody_ref": {
+                        key: custody.get(key) for key in
+                        ("read_custody_material_id", "read_custody_material_digest")},
+                    "semantic_handoff_ref": {
+                        key: handoff.get(key) for key in
+                        ("semantic_handoff_id", "semantic_handoff_digest")},
+                    "slot_ref": deepcopy(handoff.get("slot_ref")),
+                    "source_facts": {
+                        **read_source_facts,
+                        "evidence_material_type": "searchos_read_custody",
+                        "readable_status": "readable", "fetchable_status": "fetchable",
+                    },
+                }
                 passages.append(
                     {
-                        "candidate_id": custody.get("evidence_ledger_candidate_id"),
-                        "source_id": custody.get("evidence_ledger_candidate_id"),
-                        "searchos_evidence_ledger_candidate_id": custody.get("evidence_ledger_candidate_id"),
-                        "url": reference.get("canonical_url")
-                        or reference.get("final_url")
-                        or reference.get("resolved_url")
-                        or reference.get("provider_reported_url")
-                        or reference.get("attempted_url"),
+                        "candidate_id": source_id,
+                        **read_source_facts,
+                        "source_id": source_id,
+                        "searchos_evidence_ledger_candidate_id": source_id,
+                        "url": url,
                         "title": reference.get("content_title") or "Read source",
                         "text": reference.get("bounded_text") or "",
                         "score": 1.0,
@@ -1695,6 +1942,7 @@ def _semantic_passages(
                             "semantic_handoff_digest": handoff.get("semantic_handoff_digest"),
                         },
                         "searchos_slot_ref": deepcopy(handoff.get("slot_ref")),
+                        "searchos_qualification_lineage": qualification_lineage,
                         "support_admitted": False,
                     }
                 )

@@ -12,6 +12,7 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -3416,13 +3417,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         searchos_component_receiver_selected = True
 
     if searchos_component_receiver_selected:
-        if run_kernel.state.current_answer_contract:
-            # Dynamic Graph V1 recovery re-enters the ordinary acquisition
-            # boundary after the legacy retrieval projection was assembled.
-            # Carry its canonical EvidenceLedger reduction into the ordinary
-            # Sufficiency handoff instead of leaving that consumer on the
-            # pre-amendment snapshot.
-            evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+        # The selected component receiver may reduce new canonical evidence
+        # after the earlier final-evidence projection was assembled. Carry the
+        # current EvidenceLedger projection into every downstream consumer.
+        evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+        final_evidence_handoff = replace(
+            final_evidence_handoff,
+            evidence_ledger_projection=evidence_ledger_projection,
+        )
     if searchos_slice_a_active:
         if searchos_slice_a_result is None:
             raise PipelineError(
