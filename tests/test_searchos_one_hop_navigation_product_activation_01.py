@@ -440,10 +440,10 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
         navigation_enabled=True
     )
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "a03ef82d195ddb696a31f8c262060499c0ca38a8ea38449f04e443d426a1d9d6"
+        "a03ef82d195ddb696a31f8c262060499c0ca38a8ea38449f04e443d426a1d9d6"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "92e38d5899702c24bd83f3e144bc2218e43d90a26d9270af306649fb45873e00"
+        "92e38d5899702c24bd83f3e144bc2218e43d90a26d9270af306649fb45873e00"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
