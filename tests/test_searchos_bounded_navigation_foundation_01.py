@@ -664,7 +664,7 @@ def test_policy_snapshots_have_exact_immutable_navigation_leashes(
     ) == (depth, selections, edges)
 
 
-def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline() -> None:
+def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery() -> None:
     expected_policy = {
         "schema_version": "searchos_policy_profile_v1",
         "owner": "RunKernel.SearchOSIterativeJudgment",
@@ -679,6 +679,15 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         "followup_query_nominations_per_slot": 2,
         "navigation_runtime_open": False,
         "post_analyst_reentry_runtime_open": False,
+        "existing_gap_recovery_policy": {
+            "schema_version": "searchos_existing_gap_recovery_policy_v1",
+            "runtime_open": False,
+            "maximum_cycles_per_run": 1,
+            "same_limits_for_all_profiles": True,
+            "required_gaps_prioritized": True,
+            "optional_gap_recovery_authorized": False,
+            "whole_run_lease_required": True,
+        },
         "provisional_maximum_leash": True,
         "consumption_target": False,
         "permanently_calibrated": False,
@@ -690,9 +699,9 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         "prompt_can_override": False,
         "adapter_can_override": False,
         "environment_can_override": False,
-        "policy_snapshot_id": "searchos-policy:32f315e7842e95b47b1bc0ef",
-        "policy_snapshot_digest": "32f315e7842e95b47b1bc0efd3f6dd47b608ed58512c3b40ef7cd1c20bf52a59",  # pragma: allowlist secret
-        "replay_identity": "searchos-policy:32f315e7842e95b47b1bc0efd3f6dd47b608ed58512c3b40ef7cd1c20bf52a59",  # pragma: allowlist secret
+        "policy_snapshot_id": "searchos-policy:93f4f72e7e3b4c9ff873f248",
+        "policy_snapshot_digest": "93f4f72e7e3b4c9ff873f248104f27c0eac1ebf41ea04c2b5ec2cbd218c36d47",  # pragma: allowlist secret
+        "replay_identity": "searchos-policy:93f4f72e7e3b4c9ff873f248104f27c0eac1ebf41ea04c2b5ec2cbd218c36d47",  # pragma: allowlist secret
     }
     policy = build_searchos_policy_snapshot(
         run_id="run-baseline-identity",
@@ -718,10 +727,10 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         ],
         initial_candidate_state_ref=_ref("candidate_state", "baseline"),
     )
-    assert state["state_digest"] == "2b16a41f9d1b981ce14a46ed28e4964d3ea68ef92a58fb29e3ad28405d88af41"  # pragma: allowlist secret
-    assert state["state_id"] == "searchos-state:2b16a41f9d1b981ce14a46ed"
+    assert state["state_digest"] == "be5630dc42b449372d1a0058244e54f9920723a94740c7a2244ab6e7ef5bc114"  # pragma: allowlist secret
+    assert state["state_id"] == "searchos-state:be5630dc42b449372d1a0058"
     assert state["replay_identity"] == (
-        "searchos-state:2b16a41f9d1b981ce14a46ed28e4964d3ea68ef92a58fb29e3ad28405d88af41"  # pragma: allowlist secret
+        "searchos-state:be5630dc42b449372d1a0058244e54f9920723a94740c7a2244ab6e7ef5bc114"  # pragma: allowlist secret
     )
     assert set(state) == {
         "schema_version",
@@ -740,6 +749,13 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         "slots_by_id",
         "budget",
         "semantic_handoff_refs",
+        "existing_gap_recovery_runtime_open",
+        "existing_gap_recovery_purpose_refs",
+        "existing_gap_recovery_lease_refs",
+        "existing_gap_recovery_cycles",
+        "active_existing_gap_recovery_cycle_ref",
+        "existing_gap_recovery_terminal_aggregate",
+        "existing_gap_recovery_terminal_aggregate_ref",
         "readiness_projection_ref",
         "required_needs_block_ref",
         "comprehensive_recovery_runtime_open",

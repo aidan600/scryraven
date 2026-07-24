@@ -9,11 +9,15 @@ chooses between competing outputs.
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock
 from typing import Any, Mapping, Sequence
 
+from core.component_coverage_reduction_runtime import (
+    ledger_qualification_blockers_for_satisfied_coverage,
+)
 from core.component_work_graph_v1 import (
     COMPONENT_WORK_GRAPH_V1_STAGE,
     admit_synthesis_node_via_runkernel,
@@ -465,6 +469,7 @@ def _semantic_material(
     analyst_artifact: Mapping[str, Any],
     dprime_artifact: Mapping[str, Any],
     query: str,
+    searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], dict[str, Any] | None]:
     analyst_output = _safe_mapping(analyst_artifact.get("semantic_output"))
     dprime_output = _safe_mapping(dprime_artifact.get("semantic_output"))
@@ -486,6 +491,8 @@ def _semantic_material(
         or run_kernel.state.initial_answer_contract
     )
     component_id = str(component_ref["component_id"])
+    recovery_cycle_id = str(_safe_mapping(searchos_recovery_cycle_ref).get("cycle_id") or "")
+    recovery_suffix = ":" + recovery_cycle_id if recovery_cycle_id else ""
     evidence_ref_id = _qualify_searchos_read_material_after_component_dprime(
         run_kernel=run_kernel, component_ref=component_ref, bindable=bindable,
         dprime_artifact=dprime_artifact,
@@ -495,10 +502,10 @@ def _semantic_material(
         evidence_ref_id=evidence_ref_id,
         accepted_contract=accepted,
         component_ref=component_ref,
-        content_ref_id=f"content:{component_id}:{evidence_ref_id}",
+        content_ref_id=(f"content:{component_id}:{evidence_ref_id}{recovery_suffix}"),
     )
     observation = SemanticObservation(
-        observation_id=f"observation:{component_id}:{bindable.evidence_ref_id}",
+        observation_id=(f"observation:{component_id}:{bindable.evidence_ref_id}{recovery_suffix}"),
         observation_kind=ObservationKind.SUPPORT,
         question_meaning_record_id=accepted[
             "parent_question_meaning_record_id"
@@ -527,6 +534,7 @@ def _semantic_material(
             "analyst_artifact_digest": analyst_artifact.get("artifact_digest"),
             "dprime_artifact_digest": dprime_artifact.get("artifact_digest"),
             "direct_semantic_producer_used": False,
+            "searchos_recovery_cycle_ref": deepcopy(_safe_mapping(searchos_recovery_cycle_ref)),
         },
     ).require_valid()
     coverage = build_component_coverage_proposal(
@@ -553,6 +561,27 @@ def _semantic_material(
             source_obligation_candidate_ids=tuple(obligation_ids),
             ignore_satisfied_provider_job_historical_gaps=True,
         )
+        qualification_blockers = (
+            ledger_qualification_blockers_for_satisfied_coverage(
+                coverage={
+                    "coverage_state": "satisfied",
+                    "content_reference_bindings": [
+                        {"evidence_ref_id": evidence_ref_id}
+                    ],
+                    "evidence_ledger_binding": {
+                        "source_requirement_ids": list(
+                            qualified_requirement_ids
+                        )
+                    },
+                    "source_obligation_status": "satisfied",
+                },
+                evidence_ledger_projection=(
+                    run_kernel.state.evidence_ledger.to_projection().to_dict()
+                ),
+                accepted_component=component_ref,
+                extra_evidence_refs=(evidence_ref_id,),
+            )
+        )
         raise OrdinaryMulticomponentRuntimeError(
             "component D-prime support could not satisfy canonical coverage for "
             + component_id
@@ -562,6 +591,11 @@ def _semantic_material(
             + ",".join(str(item) for item in obligation_ids)
             + ", qualified_requirements="
             + ",".join(qualified_requirement_ids)
+            + ", qualification_blockers="
+            + ",".join(
+                str(item.get("code") or "unknown")
+                for item in qualification_blockers
+            )
             + ")"
         )
     return observation.to_dict(), [content_ref.to_dict()], coverage.to_dict()
@@ -588,21 +622,30 @@ def _qualify_searchos_read_material_after_component_dprime(
     slot_ref = _safe_mapping(lineage.get("slot_ref"))
     handoff_ref = _safe_mapping(lineage.get("semantic_handoff_ref"))
     component_id = str(component_ref.get("component_id") or "")
+    current_handoff = _current_searchos_read_handoff_for_component(
+        run_kernel=run_kernel,
+        passage=passage,
+        component_id=component_id,
+    )
     if not (
         lineage
         and
         passage.get("material_authority") == "read_custody_material"
         and passage.get("_provider") == "searchos_read_custody"
-        and _current_searchos_read_handoff_for_component(
-            run_kernel=run_kernel,
-            passage=passage,
-            component_id=component_id,
-        )
+        and current_handoff
         and slot_ref.get("source_obligation_id")
         and handoff_ref.get("semantic_handoff_id")
         and _safe_mapping(dprime_artifact.get("semantic_output")).get("validation_status")
         in {"supported", "supported_with_caveats"}
     ):
+        if passage.get("_provider") == "searchos_read_custody":
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS qualification prerequisite failed "
+                f"(lineage={bool(lineage)}, current_handoff={current_handoff}, "
+                f"obligation={bool(slot_ref.get('source_obligation_id'))}, "
+                f"handoff={bool(handoff_ref.get('semantic_handoff_id'))}, "
+                "dprime=" + str(_safe_mapping(dprime_artifact.get("semantic_output")).get("validation_status")) + ")"
+            )
         return None
 
     from core.evidence_ledger_runtime import (
@@ -637,10 +680,27 @@ def _qualify_searchos_read_material_after_component_dprime(
 
     slot_id = str(slot_ref["slot_id"])
     obligation_id = str(slot_ref["source_obligation_id"])
-    requirement_id = (
-        f"searchos_semantic_requirement:{obligation_id.split(':', 1)[-1]}:"
-        + safe_packet_digest({"slot_id": slot_id, "component_id": component_id})[:24]
+    qualification_obligation_ids = (
+        sorted(component_obligations)
+        if slot_ref.get("recovery_cycle_id")
+        else [obligation_id]
     )
+    requirement_ids_by_obligation = {
+        qualified_obligation_id: (
+            "searchos_semantic_requirement:"
+            + qualified_obligation_id.split(":", 1)[-1]
+            + ":"
+            + safe_packet_digest(
+                {
+                    "slot_id": slot_id,
+                    "component_id": component_id,
+                    "source_obligation_id": qualified_obligation_id,
+                }
+            )[:24]
+        )
+        for qualified_obligation_id in qualification_obligation_ids
+    }
+    requirement_ids = list(requirement_ids_by_obligation.values())
     qualification_basis = {
         "identity_kind": "searchos_custody_qualification_v1",
         "run_id": run_kernel.state.run_id,
@@ -650,7 +710,8 @@ def _qualify_searchos_read_material_after_component_dprime(
         "fetch_read_content_packet": packet_ref,
         "read_custody_ref": custody_ref,
         "component_ref": component_identity,
-        "requirement_id": requirement_id,
+        "requirement_id": requirement_ids[0],
+        "requirement_ids_by_obligation": requirement_ids_by_obligation,
         "slot_ref": slot_ref,
         "semantic_handoff_ref": handoff_ref,
         "component_dprime_artifact_digest": dprime_digest,
@@ -710,29 +771,36 @@ def _qualify_searchos_read_material_after_component_dprime(
         # Preserve established canonical truth.  Omitting a false/default value
         # lets EvidenceLedger derive eligibility from the source taxonomy.
         source_facts["eligible_for_stronger_obligation"] = True
+    if slot_ref.get("recovery_cycle_id"):
+        source_facts["final_evidence_eligible"] = True
 
     payload = {
         "observation_id": qualification_id,
         "observation_source": "searchos_component_dprime_material_qualification",
         "source_requirements": [
             {
-                "requirement_id": requirement_id,
-                "requirement_kind": obligation_id.split(":", 1)[-1],
-                "source_obligation_id": obligation_id,
+                "requirement_id": requirement_ids_by_obligation[
+                    qualified_obligation_id
+                ],
+                "requirement_kind": qualified_obligation_id.split(
+                    ":", 1
+                )[-1],
+                "source_obligation_id": qualified_obligation_id,
                 "component_id": component_id,
                 "run_id": run_kernel.state.run_id,
                 "request_id": run_kernel.state.request_id,
                 "origin_ref": ("RunKernel.SearchOSIterativeJudgment:" + str(handoff_ref["semantic_handoff_id"])),
                 "aggregate_counts_insufficient": False,
             }
+            for qualified_obligation_id in qualification_obligation_ids
         ],
         "candidates": [
             {
                 "candidate_id": evidence_ref_id,
-                "requirement_id": requirement_id,
+                "requirement_id": requirement_ids[0],
                 "disposition": "accepted",
                 "record_kind": "fact",
-                "linked_requirement_ids": [requirement_id],
+                "linked_requirement_ids": requirement_ids,
                 "link_reason": ("exact_searchos_read_custody_component_dprime_supported"),
                 **source_facts,
             }
@@ -744,6 +812,7 @@ def _qualify_searchos_read_material_after_component_dprime(
                 "link_reason": ("exact_searchos_read_custody_component_dprime_supported"),
                 "link_status": "accepted",
             }
+            for requirement_id in requirement_ids
         ],
     }
     action = run_kernel.authorize_evidence_ledger_reduction(
@@ -763,16 +832,26 @@ def _qualify_searchos_read_material_after_component_dprime(
         fact_disposition="accepted", **source_facts,
     )
     _one_record(
-        projection.get("custody_records"), "SearchOS qualification custody missing", candidate_id=projected_candidate_id,
-        requirement_id=requirement_id, observation_id=qualification_id, disposition="accepted",
+        projection.get("custody_records"),
+        "SearchOS qualification custody missing",
+        candidate_id=projected_candidate_id,
+        requirement_id=requirement_ids[0],
+        observation_id=qualification_id,
+        disposition="accepted",
     )
-    _one_record(
-        projection.get("source_requirements"), "SearchOS requirement missing", requirement_id=requirement_id,
-    )
-    _one_record(
-        projection.get("requirement_links"), "SearchOS qualification link missing", candidate_id=projected_candidate_id,
-        requirement_id=requirement_id, link_status="accepted",
-    )
+    for requirement_id in requirement_ids:
+        _one_record(
+            projection.get("source_requirements"),
+            "SearchOS requirement missing",
+            requirement_id=requirement_id,
+        )
+        _one_record(
+            projection.get("requirement_links"),
+            "SearchOS qualification link missing",
+            candidate_id=projected_candidate_id,
+            requirement_id=requirement_id,
+            link_status="accepted",
+        )
     _one_record(
         projection.get("observation_refs"), "SearchOS qualification observation missing", observation_id=qualification_id,
     )
@@ -2788,6 +2867,13 @@ def _drive_run_kernel_selected_semantic_work(
                     ]
                     if len(admissions) != 1:
                         raise OrdinaryMulticomponentRuntimeError("N=1 receiver lacks its canonical component admission")
+                    if admissions[0].get("admission_status") not in {
+                        "admitted",
+                        "admitted_with_caveats",
+                    }:
+                        raise _ScheduledSemanticWorkBlocked(
+                            "N=1 existing component completed analysis without admitted support"
+                        )
                     component_node = component_work_node_v1_from_admitted_component(
                         run_id=run_kernel.state.run_id,
                         request_id=run_kernel.state.request_id,
@@ -2971,6 +3057,136 @@ def _execute_selected_lane(
         )
     finally:
         run_kernel.release_multicomponent_scheduler_transient_context()
+
+
+def execute_searchos_same_component_reassessment_from_scope(
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    *,
+    recovery_cycle_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Execute unchanged Component Analyst -> component D-prime for one gap.
+
+    This path is deliberately outside the graph scheduler.  Its authority is
+    the exact active SearchOS recovery lease, and it cannot call Scrutineer,
+    Specialist, cross-component analysis, graph mutation, or contract amendment.
+    """
+
+    from core.multicomponent_role_runtime import role_artifact_ref
+    from core.searchos_existing_gap_recovery_runtime import (
+        recovery_cycle_ref as canonical_recovery_cycle_ref,
+    )
+    from core.searchos_existing_gap_recovery_runtime import (
+        validate_active_searchos_recovery_cycle_ref,
+    )
+
+    cycle = validate_active_searchos_recovery_cycle_ref(
+        run_kernel.state.searchos_state,
+        recovery_cycle_ref,
+    )
+    exact_cycle_ref = canonical_recovery_cycle_ref(cycle)
+    recovery_slot_ref = _safe_mapping(exact_cycle_ref.get("recovery_slot_ref"))
+    component_id = str(recovery_slot_ref.get("component_id") or "")
+    accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+    components = [
+        _safe_mapping(item)
+        for item in accepted.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping) and item.get("component_id") == component_id
+    ]
+    if len(components) != 1:
+        raise OrdinaryMulticomponentRuntimeError("SearchOS recovery lost its existing accepted component")
+    component_ref = components[0]
+    final_top_evidence = [
+        dict(item) for item in runtime_scope.get("final_top_evidence") or () if isinstance(item, Mapping)
+    ]
+    selected = select_bindable_final_passages_for_components(
+        final_top_evidence,
+        run_kernel.state.evidence_ledger.to_projection().to_dict(),
+        [component_ref],
+        component_text_by_id=_accepted_component_text_by_id(accepted),
+    )
+    bindable = selected.get(component_id)
+    passage = _safe_mapping(getattr(bindable, "passage", None) if bindable is not None else None)
+    passage_slot_ref = _safe_mapping(
+        passage.get("searchos_slot_ref") or _safe_mapping(passage.get("searchos_qualification_lineage")).get("slot_ref")
+    )
+    if (
+        bindable is None
+        or passage.get("material_authority") != "read_custody_material"
+        or passage.get("_provider") != "searchos_read_custody"
+        or passage_slot_ref.get("slot_id") != recovery_slot_ref.get("slot_id")
+        or passage_slot_ref.get("recovery_cycle_id") != exact_cycle_ref.get("cycle_id")
+    ):
+        raise OrdinaryMulticomponentRuntimeError(
+            "same-component reassessment requires exact recovery-cycle READ material"
+        )
+    analyst_input = component_analyst_input_packet(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        accepted_contract=accepted,
+        component_ref=component_ref,
+        evidence_input=_evidence_input(bindable),
+    )
+    evaluation_key = f"{component_id}@{exact_cycle_ref['cycle_id']}"
+    role_kwargs = _role_runtime_kwargs(runtime_scope)
+    analyst_artifact = _execute_multicomponent_role_transport(
+        run_kernel=run_kernel,
+        role=ROLE_COMPONENT_ANALYST,
+        input_packet=analyst_input,
+        logical_evaluation_key=evaluation_key,
+        searchos_recovery_cycle_ref=exact_cycle_ref,
+        **role_kwargs,
+    )
+    dprime_input = component_dprime_input_packet(
+        analyst_artifact=analyst_artifact,
+        analyst_input_packet=analyst_input,
+    )
+    dprime_artifact = _execute_multicomponent_role_transport(
+        run_kernel=run_kernel,
+        role=ROLE_COMPONENT_DPRIME,
+        input_packet=dprime_input,
+        logical_evaluation_key=evaluation_key,
+        searchos_recovery_cycle_ref=exact_cycle_ref,
+        **role_kwargs,
+    )
+    observation, content_refs, coverage = _semantic_material(
+        run_kernel=run_kernel,
+        component_ref=component_ref,
+        bindable=bindable,
+        analyst_artifact=analyst_artifact,
+        dprime_artifact=dprime_artifact,
+        query=str(runtime_scope.get("query") or ""),
+        searchos_recovery_cycle_ref=exact_cycle_ref,
+    )
+    admission = execute_multicomponent_component_admission(
+        run_kernel=run_kernel,
+        component_id=component_id,
+        analyst_artifact=analyst_artifact,
+        dprime_artifact=dprime_artifact,
+        analyst_input_packet=analyst_input,
+        semantic_observation=observation,
+        sanitized_content_references=content_refs,
+        component_coverage_record=coverage,
+        allow_searchos_semantic_requirement_historical_gap_exception=True,
+        logical_evaluation_key=evaluation_key,
+        searchos_recovery_cycle_ref=exact_cycle_ref,
+    )
+    return {
+        "schema_version": "searchos_same_component_reassessment_result_v1",
+        "owner": "RunKernel.MulticomponentComponentAdmission",
+        "recovery_cycle_ref": exact_cycle_ref,
+        "component_id": component_id,
+        "logical_evaluation_key": evaluation_key,
+        "component_analyst_proposal_ref": role_artifact_ref(analyst_artifact),
+        "component_dprime_validation_ref": role_artifact_ref(dprime_artifact),
+        "component_admission_ref": admission,
+        "component_analyst_prompt_contract_unchanged": True,
+        "component_dprime_prompt_contract_unchanged": True,
+        "scrutineer_called": False,
+        "specialist_called": False,
+        "derived_component_created": False,
+        "graph_mutated": False,
+    }
 
 
 def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(

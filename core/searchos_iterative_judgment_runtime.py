@@ -186,6 +186,7 @@ def build_searchos_policy_snapshot(
     request_id: str,
     profile_name: SearchOSProfileName | str,
     navigation_runtime_open: bool = False,
+    existing_gap_recovery_runtime_open: bool = False,
 ) -> dict[str, Any]:
     profile = searchos_policy_profile(profile_name)
     core = {
@@ -198,6 +199,15 @@ def build_searchos_policy_snapshot(
         "prompt_can_override": False,
         "adapter_can_override": False,
         "environment_can_override": False,
+        "existing_gap_recovery_policy": {
+            "schema_version": "searchos_existing_gap_recovery_policy_v1",
+            "runtime_open": bool(existing_gap_recovery_runtime_open),
+            "maximum_cycles_per_run": 1,
+            "required_gaps_prioritized": True,
+            "optional_gap_recovery_authorized": False,
+            "same_limits_for_all_profiles": True,
+            "whole_run_lease_required": True,
+        },
     }
     if navigation_runtime_open:
         core.update(
@@ -346,6 +356,18 @@ def build_searchos_initial_state(
         "search_attached_content_custody_runtime_open": False,
         "comprehensive_recovery_runtime_open": False,
         "whole_run_stopping_runtime_open": False,
+        "existing_gap_recovery_runtime_open": (
+            _mapping(policy.get("existing_gap_recovery_policy")).get(
+                "runtime_open"
+            )
+            is True
+        ),
+        "existing_gap_recovery_purpose_refs": [],
+        "existing_gap_recovery_lease_refs": [],
+        "existing_gap_recovery_cycles": [],
+        "active_existing_gap_recovery_cycle_ref": {},
+        "existing_gap_recovery_terminal_aggregate_ref": {},
+        "existing_gap_recovery_terminal_aggregate": {},
     }
     if policy.get("navigation_runtime_open") is True:
         state_core["navigation"] = {"options_by_id": {}, "edges": []}
@@ -2215,6 +2237,20 @@ def _validated_policy_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
             raise SearchOSRuntimeError("opened navigation policy limits are invalid")
     elif safe.get("navigation_runtime_open") is not False or present:
         raise SearchOSRuntimeError("closed navigation policy contains navigation limits")
+    recovery = _mapping(safe.get("existing_gap_recovery_policy"))
+    if (
+        recovery.get("schema_version")
+        != "searchos_existing_gap_recovery_policy_v1"
+        or not isinstance(recovery.get("runtime_open"), bool)
+        or int(recovery.get("maximum_cycles_per_run") or -1) != 1
+        or recovery.get("required_gaps_prioritized") is not True
+        or recovery.get("optional_gap_recovery_authorized") is not False
+        or recovery.get("same_limits_for_all_profiles") is not True
+        or recovery.get("whole_run_lease_required") is not True
+    ):
+        raise SearchOSRuntimeError(
+            "existing-gap recovery policy is invalid or profile-dependent"
+        )
     return safe
 
 

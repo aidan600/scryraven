@@ -334,6 +334,9 @@ class RunSufficiencyJudgmentInput:
         default_factory=dict
     )
     multicomponent_scheduler_state: Mapping[str, Any] = field(default_factory=dict)
+    searchos_existing_gap_recovery_terminal_state: Mapping[str, Any] = field(
+        default_factory=dict
+    )
     run_identity: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
@@ -414,6 +417,9 @@ class RunSufficiencyJudgmentInput:
                 self._multicomponent_recovery_authorization_model_ref()
             ),
             "multicomponent_scheduler_ref": self._multicomponent_scheduler_model_ref(),
+            "searchos_existing_gap_recovery_terminal_ref": (
+                self._searchos_existing_gap_recovery_terminal_model_ref()
+            ),
             "run_ref": {
                 "run_id": clean_token(_safe_mapping(self.run_identity).get("run_id")),
                 "request_id": clean_token(
@@ -437,6 +443,33 @@ class RunSufficiencyJudgmentInput:
             "spent_units": envelope.get("spent_units"),
             "exhausted_required_work_ref": exhausted,
             "failed_required_work_ref": failed,
+        }
+
+    def _searchos_existing_gap_recovery_terminal_model_ref(
+        self,
+    ) -> dict[str, Any]:
+        terminal = _safe_mapping(
+            self.searchos_existing_gap_recovery_terminal_state
+        )
+        return {
+            "schema_version": clean_token(
+                terminal.get("schema_version")
+            ),
+            "owner": clean_token(terminal.get("owner")),
+            "canonical_state": terminal.get("canonical_state") is True,
+            "terminal_aggregate_id": clean_token(
+                terminal.get("terminal_aggregate_id")
+            ),
+            "terminal_aggregate_digest": clean_token(
+                terminal.get("terminal_aggregate_digest")
+            ),
+            "terminal_status": clean_token(
+                terminal.get("terminal_status")
+            ),
+            "coverage_gained": terminal.get("coverage_gained") is True,
+            "gap_remains": terminal.get("gap_remains") is True,
+            "lease_terminal": terminal.get("lease_terminal") is True,
+            "expenditure": _safe_mapping(terminal.get("expenditure")),
         }
 
     def _multicomponent_recovery_model_ref(self) -> dict[str, Any]:

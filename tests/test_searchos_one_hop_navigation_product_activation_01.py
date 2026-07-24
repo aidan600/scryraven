@@ -21,7 +21,6 @@ from typing import Any, Mapping
 import pytest
 
 from core.acquisition_adapters import AcquisitionTransports
-from core.component_work_graph_v1 import ComponentWorkGraphV1Error
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
@@ -1132,7 +1131,7 @@ def test_ordinary_official_current_source_strength_remains_compatible(
     ("analyst_status", "dprime_status"),
     [("unsupported", "supported"), ("supported", "unsupported")],
 )
-def test_component_role_rejection_preserves_custody_without_semantic_authority(
+def test_component_role_rejection_exhausts_recovery_without_semantic_authority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     analyst_status: str,
@@ -1143,13 +1142,7 @@ def test_component_role_rejection_preserves_custody_without_semantic_authority(
         analyst_status=analyst_status,
         dprime_status=dprime_status,
     )
-    harnesses: list[Any] = []
-    with pytest.raises(
-        ComponentWorkGraphV1Error,
-        match="single-component graph requires current admitted component output",
-    ):
-        _run(tmp_path, monkeypatch, harness_sink=harnesses)
-    [harness] = harnesses
+    outcome, harness = _run(tmp_path, monkeypatch)
     kernel = harness.run_kernel
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
     physical = kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
@@ -1195,6 +1188,18 @@ def test_component_role_rejection_preserves_custody_without_semantic_authority(
     assert not kernel.state.sufficiency_judgment_projection.get(
         "final_answer_allowed", False
     )
+    terminal = kernel.state.projections[
+        "searchos_existing_gap_recovery_terminal"
+    ]
+    assert terminal["terminal_status"] == "exhausted_insufficient"
+    assert terminal["coverage_gained"] is False
+    assert terminal["gap_remains"] is True
+    assert terminal["whole_run_lease_status"] == (
+        "settled_exhausted_insufficient"
+    )
+    assert outcome.execution_trace["searchos_slice_a"][
+        "existing_gap_recovery"
+    ]["scrutineer_recovery_input_used"] is False
     assert runtime_capture["final_material_ledger_projections"] == []
     assert harness.author_prompts == []
 

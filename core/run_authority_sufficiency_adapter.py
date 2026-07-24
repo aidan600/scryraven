@@ -270,6 +270,9 @@ def build_sufficiency_judgment_input_from_runtime(
     multicomponent_recovery_state: Mapping[str, Any] | None = None,
     multicomponent_recovery_authorization_state: Mapping[str, Any] | None = None,
     multicomponent_scheduler_state: Mapping[str, Any] | None = None,
+    searchos_existing_gap_recovery_terminal_state: (
+        Mapping[str, Any] | None
+    ) = None,
     run_id: str | None = None,
     request_id: str | None = None,
 ) -> RunSufficiencyJudgmentInput:
@@ -331,6 +334,9 @@ def build_sufficiency_judgment_input_from_runtime(
             multicomponent_recovery_authorization_state
         ),
         multicomponent_scheduler_state=_mapping(multicomponent_scheduler_state),
+        searchos_existing_gap_recovery_terminal_state=_mapping(
+            searchos_existing_gap_recovery_terminal_state
+        ),
         run_identity={"run_id": run_id, "request_id": request_id},
     )
 

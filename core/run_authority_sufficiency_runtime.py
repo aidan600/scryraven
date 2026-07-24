@@ -287,6 +287,11 @@ def execute_sufficiency_judgment_handoff_from_scope(
         multicomponent_scheduler_state=run_kernel.state.projections.get(
             "multicomponent_graph_scheduler"
         ),
+        searchos_existing_gap_recovery_terminal_state=(
+            run_kernel.state.projections.get(
+                "searchos_existing_gap_recovery_terminal"
+            )
+        ),
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
     )

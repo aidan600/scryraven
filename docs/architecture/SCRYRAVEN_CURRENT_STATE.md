@@ -87,6 +87,7 @@ configuration.
 | `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the closed four-action vocabulary. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
 | `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
+| `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, the unchanged same-component Analyst and D-prime, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -189,6 +190,11 @@ retained or exported.
 
 ## Component-Gap Recovery Eligibility And Custody
 
+This section describes the retained non-SearchOS compatibility component-gap
+route. It is not ordinary SearchOS existing-gap authority. On a SearchOS run the
+installed canonical lease described below owns required existing-component and
+source-obligation recovery, and this compatibility route is gated out.
+
 Every supported mode now resolves the recovery-related slice of one shared
 mode-policy envelope. The installed values are temporary compatibility values,
 not permanent mode design: `Balanced` preserves the existing one-cycle,
@@ -215,12 +221,11 @@ recovery supplies none of those authority fields. Sufficiency runs again from
 the current canonical state before FAP can package material, and Author can run
 only from the resulting FAP payload.
 
-The supported ordinary CLI composition still supplies no component-gap recovery
-adapter. It therefore cannot complete this recovery cycle: required missing
-coverage remains fail-closed and a blocked FAP does not call Author. No live
-recovery composition, provider call, generated recovery query, accepted contract
-amendment, permanent Deep recovery behavior, or permanent Fast/Balanced/Deep
-recovery budget profile was installed.
+The supported ordinary CLI composition still supplies no adapter for this
+retained compatibility route. It therefore cannot complete that legacy recovery
+cycle. This does not limit the canonical SearchOS existing-gap lease now
+installed for all three supported profiles. No live recovery composition,
+accepted contract amendment, or derived-component authority is installed here.
 
 ## Retired Legacy Economist Ordinary Execution
 
@@ -417,9 +422,10 @@ still ends before support authority. Compatibility names such as `proplex`, `pyt
 model, search, recon, fetch/read, or retrieval call was made. The initial
 SearchPlanner-to-QueryPlan path and initial and in-loop SearchOS judgment are
 installed. PR #517 one-hop breadcrumb navigation and its
-qualification/source-truth path are installed. Canonical post-analysis
-recovery cycles, a whole-run recovery lease, recovery-generation-depth policy,
-and recursive navigation are not installed.
+qualification/source-truth path are installed. One canonical required
+existing-gap post-analysis cycle and whole-run recovery lease are installed;
+derived-component recovery-generation-depth policy and recursive navigation
+are not installed.
 Current priority and checkpoint order belong only to [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The full contracts are owned by [RunKernel Post-Discovery Acquisition
@@ -591,6 +597,52 @@ owned by [SearchOS First-Wave And
 Iterative-Judgment Cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md).
 The installed one-hop boundary below completes bounded Slice B without
 installing recursive navigation.
+
+## Installed SearchOS Existing-Gap Recovery And Stop Foundation
+
+After the ordinary component receiver has run, RunKernel may derive
+`searchos_existing_gap_basis_v1` only for a current required SearchOS slot whose
+READ material was semantically handed off but whose exact accepted component
+and source obligation remain unsupported or uncovered. The basis binds the
+current SearchOS state, prior terminal slot digest, exact Analyst and component
+D-prime artifacts, current ComponentCoverage facts or an explicit canonical
+absence, and a compact EvidenceLedger snapshot. Optional, satisfied,
+nonterminal, ambiguous, stale, tampered, or role-unproven inputs fail before a
+lease exists.
+
+`searchos_materially_novel_recovery_purpose_v1` defines novelty as a new exact
+obligation-support assessment. Changed wording, prompt content, or physical
+source identity does not establish novelty. The immutable policy admits at most
+one existing-gap recovery cycle across the whole run in Fast, Balanced, and
+Deep. Admission leaves the prior slot byte-identical, appends one new
+cycle-bound slot, extends the cumulative SearchOS budget without resetting
+spent work, and grants one exact lease over existing SearchJudgment, QueryPlan,
+SEARCH, READ/custody, navigation, Component Analyst, component D-prime, and
+ComponentCoverage consumers. Replaying the same admitted purpose returns the
+already-admitted cycle with `work_authorized=false` and no new model, search,
+read, semantic, Sufficiency, packet, or Author work. Conflicting or additional
+purposes fail closed.
+
+The same accepted component is reassessed through the existing Component
+Analyst input packet, exact unchanged Analyst system prompt and schema, the
+existing component D-prime packet, exact unchanged D-prime system prompt and
+schema, and normal RunKernel component admission. It cannot fall through the
+retained Scrutineer-derived recovery path. Scrutineer may still execute its
+ordinary supervisory role elsewhere, but it supplies no input or authority to
+this cycle. No derived component, Specialist, ContractAmendment, graph mutation,
+graph reproof, selective resynthesis, or general inference is available under
+this lease.
+
+The cycle produces one immutable terminal aggregate:
+`recovered` when the exact same-component admission gains coverage, otherwise
+`exhausted_insufficient`. The aggregate records cumulative-delta expenditure,
+closes the lease, and authorizes no further existing-gap recovery. It does not
+decide final sufficiency, FinalAnswerPacket, or Author execution. Ordinary
+RunAuthority Sufficiency consumes the exact terminal state, remains the sole
+final stopping authority, and permits downstream execution only when current
+canonical coverage is sufficient. The retained dynamic derived-component route
+is Boundary B-only and remains statically and at runtime outside this
+same-component path.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 

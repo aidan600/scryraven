@@ -169,6 +169,7 @@ from core.ordinary_live_source_custody_runtime import (
 from core.ordinary_multicomponent_synthesis_runtime import (
     OrdinaryMulticomponentRuntimeError,
     execute_ordinary_semantic_or_multicomponent_handoff_from_scope,
+    execute_searchos_same_component_reassessment_from_scope,
     ordinary_multicomponent_path_selected,
 )
 from core.persistence_side_effects import (
@@ -297,10 +298,16 @@ from core.search_planner_runtime import contract_ref_from_contract
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
 )
+from core.searchos_existing_gap_recovery_runtime import (
+    SearchOSExistingGapRecoveryError,
+    build_searchos_existing_gap_basis,
+    build_searchos_materially_novel_recovery_purpose,
+)
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_SLICE_A_TRACE_KEY,
     build_searchos_required_needs_blocked_fap_projection,
     build_searchos_semantic_outcomes_by_slot,
+    execute_searchos_existing_gap_recovery_cycle,
     execute_searchos_slice_a_iterative_judgment,
 )
 from core.source_class_recovery import (
@@ -3409,6 +3416,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 searchos_slice_a_projection["component_receiver_failure"] = (
                     type(exc).__name__
                 )
+                searchos_slice_a_projection[
+                    "component_receiver_failure_reason"
+                ] = str(exc)[:240]
     elif ordinary_multicomponent_path_selected(run_kernel):
         execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             run_kernel,
@@ -3458,6 +3468,327 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "readiness_projection_digest": searchos_readiness_projection.get("readiness_projection_digest"),
         }
         searchos_slice_a_projection["readiness_projection"] = dict(searchos_readiness_projection)
+        if not searchos_readiness_projection.get(
+            "all_required_slots_slice_a_ready"
+        ):
+            recovery_trace: dict[str, Any] = {
+                "attempted": False,
+                "eligible_required_gap_found": False,
+                "optional_gap_recovery_deferred": True,
+                "derived_component_recovery_invoked": False,
+                "scrutineer_recovery_input_used": False,
+            }
+            recovery_basis: dict[str, Any] | None = None
+            component_admission_projection = dict(
+                run_kernel.state.projections.get(
+                    "multicomponent_component_admission"
+                )
+                or {}
+            )
+            for unresolved in (
+                searchos_readiness_projection.get(
+                    "unresolved_required_slots"
+                )
+                or ()
+            ):
+                unresolved_slot_id = str(
+                    dict(unresolved.get("slot_ref") or {}).get("slot_id")
+                    or ""
+                )
+                try:
+                    recovery_basis = build_searchos_existing_gap_basis(
+                        state=run_kernel.state.searchos_state,
+                        slot_id=unresolved_slot_id,
+                        component_admission_projection=(
+                            component_admission_projection
+                        ),
+                        component_coverage_history=(
+                            run_kernel.state.component_coverage_history
+                        ),
+                        evidence_ledger_projection=(
+                            run_kernel.state.evidence_ledger.to_projection().to_dict()
+                        ),
+                    )
+                except SearchOSExistingGapRecoveryError:
+                    continue
+                break
+            if recovery_basis is not None:
+                recovery_trace["eligible_required_gap_found"] = True
+                recovery_purpose = (
+                    build_searchos_materially_novel_recovery_purpose(
+                        recovery_basis
+                    )
+                )
+                recovery_admission_action = (
+                    run_kernel.authorize_searchos_existing_gap_recovery_admission(
+                        gap_basis=recovery_basis,
+                        recovery_purpose=recovery_purpose,
+                    )
+                )
+                run_kernel.reduce(
+                    Observation.from_action(
+                        recovery_admission_action,
+                        observation_type=(
+                            ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED
+                        ),
+                        status=RunStageStatus.COMPLETED,
+                        payload=recovery_admission_action.inputs[
+                            "recovery_admission_observation"
+                        ],
+                    )
+                )
+                recovery_admission = dict(
+                    run_kernel.state.projections[
+                        "searchos_existing_gap_recovery_admission"
+                    ]
+                )
+                recovery_trace["admission_status"] = recovery_admission[
+                    "status"
+                ]
+                recovery_trace["cycle_ref"] = dict(
+                    recovery_admission["cycle_ref"]
+                )
+                recovery_trace["attempted"] = (
+                    recovery_admission.get("work_authorized") is True
+                )
+                recovery_component_admission: dict[str, Any] | None = None
+                recovery_failure_reason: str | None = None
+                if recovery_admission.get("work_authorized") is True:
+                    recovery_result = (
+                        execute_searchos_existing_gap_recovery_cycle(
+                            prior_result=searchos_slice_a_result,
+                            recovery_cycle_ref=recovery_admission[
+                                "cycle_ref"
+                            ],
+                            run_kernel=run_kernel,
+                            candidate_packet=(
+                                ordinary_discovery_candidate_packet
+                            ),
+                            query_authority=query_authority,
+                            discovery_result_store=discovery_result_store,
+                            profile_name=strategy,
+                            ask_model=_cap_model_phase(
+                                _ask(
+                                    phase=(
+                                        "searchos_existing_gap_recovery_"
+                                        "judgment"
+                                    )
+                                ),
+                                "search_judgment",
+                            ),
+                            provider=smart_provider,
+                            model=smart_model,
+                            base_url=local_url,
+                            api_key=or_api_key,
+                            use_reasoning=use_reasoning,
+                            available_providers=(
+                                provider_availability_snapshot
+                                .to_capability_available_keys()
+                            ),
+                            acquisition_transports=(
+                                deps.searchos_read_acquisition_transports
+                            ),
+                            execute_followup_discover=(
+                                _execute_searchos_followup_discover
+                            ),
+                            before_transport=(
+                                cap_policy.mark_fetch_read_operation
+                                if cap_policy is not None
+                                else None
+                            ),
+                            measure_context_stage=_measure_context_stage,
+                        )
+                    )
+                    urls_fetched += recovery_result.provider_calls_completed
+                    recovery_slot_id = str(
+                        dict(
+                            recovery_admission.get("recovery_slot_ref")
+                            or {}
+                        ).get("slot_id")
+                        or ""
+                    )
+                    recovery_material = [
+                        dict(item)
+                        for item in (
+                            recovery_result.searchos_semantic_material
+                        )
+                        if dict(
+                            item.get("searchos_slot_ref")
+                            or item.get("slot_ref")
+                            or {}
+                        ).get("slot_id")
+                        == recovery_slot_id
+                    ]
+                    if recovery_material:
+                        try:
+                            reassessment_scope = {
+                                **locals(),
+                                "final_top_evidence": recovery_material,
+                            }
+                            reassessment = (
+                                execute_searchos_same_component_reassessment_from_scope(
+                                    run_kernel,
+                                    reassessment_scope,
+                                    recovery_cycle_ref=recovery_admission[
+                                        "cycle_ref"
+                                    ],
+                                )
+                            )
+                            recovery_component_admission = dict(
+                                reassessment["component_admission_ref"]
+                            )
+                            recovery_trace[
+                                "same_component_reassessment"
+                            ] = reassessment
+                        except Exception as exc:
+                            recovery_failure_reason = (
+                                "same_component_reassessment_failed:"
+                                + type(exc).__name__
+                            )
+                    else:
+                        recovery_slot = dict(
+                            dict(
+                                run_kernel.state.searchos_state.get(
+                                    "slots_by_id"
+                                )
+                                or {}
+                            ).get(recovery_slot_id)
+                            or {}
+                        )
+                        recovery_failure_reason = str(
+                            recovery_slot.get("latest_reason")
+                            or "recovery_cycle_produced_no_semantic_handoff"
+                        )
+                    terminal_action = (
+                        run_kernel.authorize_searchos_existing_gap_recovery_terminal(
+                            recovery_cycle_ref=recovery_admission[
+                                "cycle_ref"
+                            ],
+                            component_admission_ref=(
+                                recovery_component_admission
+                            ),
+                            failure_reason=recovery_failure_reason,
+                        )
+                    )
+                    run_kernel.reduce(
+                        Observation.from_action(
+                            terminal_action,
+                            observation_type=(
+                                ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCED
+                            ),
+                            status=RunStageStatus.COMPLETED,
+                            payload=terminal_action.inputs[
+                                "recovery_terminal_observation"
+                            ],
+                        )
+                    )
+                    recovery_trace["terminal_aggregate"] = dict(
+                        run_kernel.state.projections[
+                            "searchos_existing_gap_recovery_terminal"
+                        ]
+                    )
+                    searchos_slice_a_result = recovery_result
+                    searchos_slice_a_projection.update(
+                        dict(recovery_result.projection)
+                    )
+                    all_passages = list(
+                        recovery_result.searchos_semantic_material
+                    )
+                    final_top_evidence = list(all_passages)
+                    final_evidence_handoff = (
+                        build_final_evidence_runtime_handoff_from_scope(
+                            locals(),
+                            filter_top_evidence=deps.filter_top_evidence,
+                            is_plausible_domain=(
+                                deps.is_plausible_domain
+                            ),
+                            recovered_evidence_visibility=(
+                                apply_controller_recovered_evidence_visibility
+                            ),
+                        )
+                    )
+                    final_evidence_bundle = (
+                        final_evidence_handoff.bundle
+                    )
+                    unique_source_urls = (
+                        final_evidence_handoff.unique_source_urls
+                    )
+                    ordered_sources = final_evidence_handoff.ordered_sources
+                    evidence_ledger_projection = (
+                        final_evidence_handoff.evidence_ledger_projection
+                    )
+                    evidence_block = final_evidence_handoff.evidence_block
+                    cached_prefix = final_evidence_handoff.cached_prefix
+                    semantic_outcomes_by_slot = (
+                        build_searchos_semantic_outcomes_by_slot(
+                            searchos_state=(
+                                run_kernel.state.searchos_state
+                            ),
+                            semantic_handoffs=(
+                                recovery_result.semantic_handoffs
+                            ),
+                            searchos_semantic_material=(
+                                recovery_result.searchos_semantic_material
+                            ),
+                            component_admission_projection=dict(
+                                run_kernel.state.projections.get(
+                                    "multicomponent_component_admission"
+                                )
+                                or {}
+                            ),
+                        )
+                    )
+                    refreshed_readiness_action = (
+                        run_kernel.authorize_searchos_slice_a_readiness(
+                            semantic_outcomes_by_slot=(
+                                semantic_outcomes_by_slot
+                            )
+                        )
+                    )
+                    run_kernel.reduce(
+                        Observation.from_action(
+                            refreshed_readiness_action,
+                            observation_type=(
+                                ObservationType.SEARCHOS_SLICE_A_READINESS_DERIVED
+                            ),
+                            status=RunStageStatus.COMPLETED,
+                            payload={
+                                "readiness": (
+                                    refreshed_readiness_action.inputs[
+                                        "readiness"
+                                    ]
+                                )
+                            },
+                        )
+                    )
+                    searchos_readiness_projection = dict(
+                        run_kernel.state.projections[
+                            "searchos_slice_a_readiness"
+                        ]
+                    )
+                    searchos_slice_a_projection[
+                        "semantic_outcomes_by_slot"
+                    ] = semantic_outcomes_by_slot
+                    searchos_slice_a_projection[
+                        "readiness_projection"
+                    ] = dict(searchos_readiness_projection)
+                    searchos_slice_a_projection[
+                        "readiness_projection_ref"
+                    ] = {
+                        "readiness_projection_id": (
+                            searchos_readiness_projection.get(
+                                "readiness_projection_id"
+                            )
+                        ),
+                        "readiness_projection_digest": (
+                            searchos_readiness_projection.get(
+                                "readiness_projection_digest"
+                            )
+                        ),
+                    }
+            searchos_slice_a_projection[
+                "existing_gap_recovery"
+            ] = recovery_trace
         if not searchos_readiness_projection.get("all_required_slots_slice_a_ready"):
             block_action = run_kernel.authorize_searchos_required_needs_block()
             run_kernel.reduce(

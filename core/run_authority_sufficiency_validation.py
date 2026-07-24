@@ -107,6 +107,39 @@ def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _scheduler_block_matches_recovered_component(
+    scheduler: Mapping[str, Any],
+    recovery_terminal: Mapping[str, Any],
+) -> bool:
+    component_id = clean_token(
+        _mapping(recovery_terminal.get("recovery_slot_ref")).get("component_id")
+    )
+    status = clean_token(scheduler.get("status"))
+    if not component_id:
+        return False
+    if status == "blocked_exhausted":
+        failed_work = _mapping(scheduler.get("exhausted_required_work_ref"))
+    elif status == "blocked_required_work_failed":
+        failed_ref = _mapping(scheduler.get("failed_required_work_ref"))
+        matching_work = [
+            _mapping(_mapping(lease).get("work"))
+            for lease in _list(scheduler.get("lease_history"))
+            if _mapping(_mapping(lease).get("work")).get("work_id")
+            == failed_ref.get("work_id")
+            and _mapping(_mapping(lease).get("work")).get("work_digest")
+            == failed_ref.get("work_digest")
+        ]
+        if len(matching_work) != 1:
+            return False
+        failed_work = matching_work[0]
+    else:
+        return False
+    return bool(
+        failed_work.get("target_kind") == "component"
+        and failed_work.get("component_id") == component_id
+    )
+
+
 def _string_list(value: Any) -> list[str]:
     out: list[str] = []
     for item in _list(value):
@@ -1516,6 +1549,28 @@ def build_deterministic_sufficiency_judgment(
     )
     semantic_state = _mapping(judgment_input.semantic_state_facts)
     scheduler_required_work_blocked = False
+    searchos_existing_gap_recovered = False
+    searchos_recovery_terminal = _mapping(
+        judgment_input.searchos_existing_gap_recovery_terminal_state
+    )
+    if searchos_recovery_terminal:
+        from core.searchos_existing_gap_recovery_runtime import (
+            validate_searchos_recovery_terminal_aggregate,
+        )
+
+        terminal = validate_searchos_recovery_terminal_aggregate(
+            searchos_recovery_terminal
+        )
+        run_identity = _mapping(judgment_input.run_identity)
+        searchos_existing_gap_recovered = bool(
+            terminal.get("run_id") == run_identity.get("run_id")
+            and terminal.get("request_id")
+            == run_identity.get("request_id")
+            and terminal.get("terminal_status") == "recovered"
+            and terminal.get("coverage_gained") is True
+            and terminal.get("gap_remains") is False
+            and terminal.get("lease_terminal") is True
+        )
     scheduler_state = _mapping(judgment_input.multicomponent_scheduler_state)
     if scheduler_state:
         from core.multicomponent_graph_scheduling import validate_scheduler_state
@@ -1525,6 +1580,11 @@ def build_deterministic_sufficiency_judgment(
             "blocked_exhausted",
             "blocked_required_work_failed",
         }
+        if searchos_existing_gap_recovered and _scheduler_block_matches_recovered_component(
+            canonical_scheduler,
+            terminal,
+        ):
+            scheduler_required_work_blocked = False
     multicomponent_consumption = build_multicomponent_graph_consumption(
         judgment_input.multicomponent_graph_state,
         current_contract_version=semantic_state.get("accepted_contract_version"),
