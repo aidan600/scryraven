@@ -157,18 +157,28 @@ def _searchos_obligation_assessment(
     source_obligation_id: str,
     source_obligation_ref: Mapping[str, Any],
     current_requirement_ids: set[str],
+    current_coverage_refs: Sequence[Mapping[str, Any]],
+    source_obligation_coverage_refs: Sequence[Mapping[str, Any]],
 ) -> SufficiencyRequirementAssessment:
-    requirements = [
+    all_requirements = [
         _mapping(item)
         for item in _list(ledger.get("source_requirements"))
         if isinstance(item, Mapping)
-        and clean_token(item.get("source_obligation_id"))
+    ]
+    requirements = [
+        item
+        for item in all_requirements
+        if clean_token(item.get("source_obligation_id"))
         == source_obligation_id
-        and (
-            _evidence_ledger_identity(item.get("component_id"))
-            == _evidence_ledger_identity(component_id)
-            or clean_token(item.get("requirement_id"))
-            in current_requirement_ids
+        and _requirement_has_current_component_ownership(
+            requirement=item,
+            all_requirements=all_requirements,
+            assessed_component_id=component_id,
+            current_requirement_ids=current_requirement_ids,
+            current_coverage_refs=current_coverage_refs,
+            source_obligation_coverage_refs=(
+                source_obligation_coverage_refs
+            ),
         )
     ]
     links = [
@@ -257,6 +267,68 @@ def _searchos_obligation_assessment(
         reason=reason,
         satisfied_candidate_ids=satisfied_candidate_ids,
     )
+
+
+def _requirement_has_current_component_ownership(
+    *,
+    requirement: Mapping[str, Any],
+    all_requirements: Sequence[Mapping[str, Any]],
+    assessed_component_id: str,
+    current_requirement_ids: set[str],
+    current_coverage_refs: Sequence[Mapping[str, Any]],
+    source_obligation_coverage_refs: Sequence[Mapping[str, Any]],
+) -> bool:
+    requirement_id = clean_token(requirement.get("requirement_id"))
+    if not requirement_id or requirement_id not in current_requirement_ids:
+        return False
+    matching_requirement_records = [
+        item
+        for item in all_requirements
+        if clean_token(item.get("requirement_id")) == requirement_id
+    ]
+    if len(matching_requirement_records) != 1:
+        return False
+    requirement_component_id = clean_token(
+        requirement.get("component_id")
+    )
+    assessed_identity = _evidence_ledger_identity(
+        assessed_component_id
+    )
+    if requirement_component_id:
+        return (
+            _evidence_ledger_identity(requirement_component_id)
+            == assessed_identity
+        )
+    matching_ownership_joins = [
+        _mapping(item)
+        for item in source_obligation_coverage_refs
+        if isinstance(item, Mapping)
+        and clean_token(item.get("requirement_id")) == requirement_id
+    ]
+    if len(matching_ownership_joins) != 1:
+        return False
+    ownership_join = matching_ownership_joins[0]
+    if (
+        _evidence_ledger_identity(
+            ownership_join.get("answer_component_id")
+        )
+        != assessed_identity
+    ):
+        return False
+    matching_current_coverage_refs = [
+        _mapping(item)
+        for item in current_coverage_refs
+        if isinstance(item, Mapping)
+        and clean_token(item.get("coverage_record_id"))
+        == clean_token(ownership_join.get("coverage_record_id"))
+        and clean_token(item.get("coverage_record_digest"))
+        == clean_token(ownership_join.get("coverage_record_digest"))
+        and _evidence_ledger_identity(
+            item.get("answer_component_id")
+        )
+        == assessed_identity
+    ]
+    return len(matching_current_coverage_refs) == 1
 
 
 def _searchos_recovery_terminal_consumption(
@@ -431,6 +503,24 @@ def _searchos_recovery_terminal_consumption(
             source_obligation_id=obligation_id,
             source_obligation_ref=obligation_ref,
             current_requirement_ids=source_requirement_ids,
+            current_coverage_refs=[
+                _mapping(item)
+                for item in _list(
+                    semantic_ref_projection.get(
+                        "coverage_record_refs"
+                    )
+                )
+                if isinstance(item, Mapping)
+            ],
+            source_obligation_coverage_refs=[
+                _mapping(item)
+                for item in _list(
+                    semantic_ref_projection.get(
+                        "source_obligation_coverage_refs"
+                    )
+                )
+                if isinstance(item, Mapping)
+            ],
         )
         for obligation_id, obligation_ref in sorted(
             required_obligations.items()
@@ -2193,6 +2283,10 @@ def build_deterministic_sufficiency_judgment(
             for item in terminal_assessment_payloads
         )
     )
+    if searchos_recovery_terminal_consumption:
+        searchos_recovery_terminal_consumption[
+            "terminal_component_ready"
+        ] = terminal_component_ready
     terminal_component_id = _evidence_ledger_identity(
         _mapping(
             searchos_recovery_terminal_consumption.get("component_ref")

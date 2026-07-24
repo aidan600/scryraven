@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,6 +12,7 @@ import pytest
 import core.ordinary_multicomponent_synthesis_runtime as multicomponent_runtime
 import core.pipeline_orchestrator as pipeline_orchestrator
 import core.run_authority_sufficiency_adapter as sufficiency_adapter
+import core.run_authority_sufficiency_validation as sufficiency_validation
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
@@ -188,6 +190,180 @@ def _capture_sufficiency_inputs(
         wrapped,
     )
     return captured
+
+
+def _install_foreign_shared_obligation_at_sufficiency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[Any], dict[str, str]]:
+    captured: list[Any] = []
+    ownership_refs: dict[str, str] = {}
+    original = (
+        sufficiency_adapter.build_sufficiency_judgment_input_from_runtime
+    )
+
+    def wrapped(**kwargs: Any) -> Any:
+        judgment_input = original(**kwargs)
+        terminal = dict(
+            judgment_input.searchos_existing_gap_recovery_terminal_state
+            or {}
+        )
+        if not terminal:
+            captured.append(judgment_input)
+            return judgment_input
+        component_b_id = str(
+            dict(terminal.get("component_ref") or {}).get(
+                "component_id"
+            )
+            or ""
+        )
+        target_obligation_id = str(
+            dict(terminal.get("source_obligation_ref") or {}).get(
+                "source_obligation_id"
+            )
+            or ""
+        )
+        searchos_state = dict(judgment_input.searchos_state)
+        required_slot_ids = set(
+            searchos_state.get("required_slot_ids") or ()
+        )
+        component_b_obligation_ids = {
+            str(
+                dict(slot.get("slot_ref") or {}).get(
+                    "source_obligation_id"
+                )
+                or ""
+            )
+            for slot_id, slot in dict(
+                searchos_state.get("slots_by_id") or {}
+            ).items()
+            if isinstance(slot, Mapping)
+            and slot_id in required_slot_ids
+            and str(
+                dict(slot.get("slot_ref") or {}).get("component_id")
+                or ""
+            )
+            == component_b_id
+        }
+        sibling_obligation_ids = (
+            component_b_obligation_ids - {target_obligation_id, ""}
+        )
+        assert len(sibling_obligation_ids) == 1
+        shared_obligation_id = next(iter(sibling_obligation_ids))
+        component_a_id = "component:foreign-owner-a"
+        requirement_a_id = (
+            "requirement:foreign-owner-a:official-current"
+        )
+        candidate_a_id = "candidate:foreign-owner-a:official-current"
+        coverage_a_id = "coverage:foreign-owner-a:official-current"
+        coverage_a_digest = "a" * 64
+        ledger = deepcopy(
+            dict(judgment_input.evidence_ledger_projection)
+        )
+        ledger.setdefault("source_requirements", []).append(
+            {
+                "requirement_id": requirement_a_id,
+                "requirement_kind": "official_current",
+                "component_id": component_a_id,
+                "source_obligation_id": shared_obligation_id,
+                "status": "satisfied",
+                "linked_candidate_ids": [candidate_a_id],
+            }
+        )
+        ledger.setdefault("requirement_links", []).append(
+            {
+                "requirement_id": requirement_a_id,
+                "candidate_id": candidate_a_id,
+                "link_status": "accepted",
+                "link_reason": "foreign_component_a_exact_link",
+            }
+        )
+        ledger.setdefault("candidate_records", []).append(
+            {
+                "candidate_id": candidate_a_id,
+                "fact_disposition": "accepted",
+            }
+        )
+        semantic_state = deepcopy(
+            dict(judgment_input.semantic_state_facts)
+        )
+        semantic_refs = semantic_state.setdefault(
+            "semantic_ref_projection", {}
+        )
+        semantic_refs.setdefault("source_obligation_refs", []).append(
+            requirement_a_id
+        )
+        semantic_refs.setdefault("coverage_record_refs", []).append(
+            {
+                "coverage_record_id": coverage_a_id,
+                "coverage_record_digest": coverage_a_digest,
+                "answer_component_id": component_a_id,
+            }
+        )
+        semantic_refs.setdefault(
+            "source_obligation_coverage_refs", []
+        ).append(
+            {
+                "requirement_id": requirement_a_id,
+                "coverage_record_id": coverage_a_id,
+                "coverage_record_digest": coverage_a_digest,
+                "answer_component_id": component_a_id,
+            }
+        )
+        ownership_refs.update(
+            {
+                "component_a_id": component_a_id,
+                "component_b_id": component_b_id,
+                "shared_obligation_id": shared_obligation_id,
+                "target_obligation_id": target_obligation_id,
+                "requirement_a_id": requirement_a_id,
+                "candidate_a_id": candidate_a_id,
+                "coverage_a_id": coverage_a_id,
+            }
+        )
+        mutated = replace(
+            judgment_input,
+            evidence_ledger_projection=ledger,
+            semantic_state_facts=semantic_state,
+        )
+        captured.append(mutated)
+        return mutated
+
+    monkeypatch.setattr(
+        sufficiency_adapter,
+        "build_sufficiency_judgment_input_from_runtime",
+        wrapped,
+    )
+    return captured, ownership_refs
+
+
+def _direct_component_ownership_assessment(
+    *,
+    requirements: list[dict[str, Any]],
+    links: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    current_requirement_ids: set[str],
+    current_coverage_refs: list[dict[str, Any]],
+    source_obligation_coverage_refs: list[dict[str, Any]],
+) -> Any:
+    return sufficiency_validation._searchos_obligation_assessment(
+        ledger={
+            "source_requirements": requirements,
+            "requirement_links": links,
+            "candidate_records": candidates,
+        },
+        component_id="component:b",
+        source_obligation_id="obligation:official_current",
+        source_obligation_ref={
+            "source_obligation_id": "obligation:official_current",
+            "kind": "official_current",
+            "required_source_class": "primary_source_documents",
+        },
+        current_requirement_ids=current_requirement_ids,
+        current_coverage_refs=current_coverage_refs,
+        source_obligation_coverage_refs=(
+            source_obligation_coverage_refs
+        ),
+    )
 
 
 def _forbid_post_terminal_blocked_adapter(
@@ -836,6 +1012,332 @@ def test_two_obligation_recovery_credits_only_the_exact_target(
         assert harness.author_prompts
     else:
         assert not harness.author_prompts
+
+
+def test_two_component_shared_obligation_preserves_component_ownership(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sufficiency_inputs, ownership_refs = (
+        _install_foreign_shared_obligation_at_sufficiency(monkeypatch)
+    )
+    _forbid_post_terminal_blocked_adapter(monkeypatch)
+    _install_initially_unsupported_component(
+        monkeypatch,
+        remain_unsupported=False,
+        recovered_claim=(
+            "Alpha's current official operating protocol is Raven."
+        ),
+    )
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating protocol?",
+        core_topic="Alpha current official operating protocol",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating protocol"],
+        evidence_rows=_initial_incomplete_evidence_rows(),
+        followup_evidence_rows=_recovered_official_evidence_rows(),
+        read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
+        read_content_by_url={
+            "https://alpha.gov/operating-overview": (
+                "Alpha publishes an official operating rule, but this "
+                "overview omits the name of its current operating protocol."
+            ),
+            "https://alpha.gov/operating-protocol": (
+                "Alpha's current official operating protocol is Raven."
+            ),
+        },
+        raw_author_response=(
+            "Alpha's current official operating protocol is Raven. "
+            "[[1]](https://alpha.gov/operating-protocol)"
+        ),
+    )
+
+    kernel = harness.run_kernel
+    assert kernel is not None
+    assert sufficiency_inputs and ownership_refs
+    judgment_input = sufficiency_inputs[-1]
+    ledger = dict(judgment_input.evidence_ledger_projection)
+    foreign_requirement = next(
+        item
+        for item in ledger["source_requirements"]
+        if item.get("requirement_id")
+        == ownership_refs["requirement_a_id"]
+    )
+    assert foreign_requirement["component_id"] == ownership_refs[
+        "component_a_id"
+    ]
+    assert (
+        foreign_requirement["source_obligation_id"]
+        == ownership_refs["shared_obligation_id"]
+    )
+    assert any(
+        item.get("requirement_id")
+        == ownership_refs["requirement_a_id"]
+        and item.get("candidate_id")
+        == ownership_refs["candidate_a_id"]
+        for item in ledger["requirement_links"]
+    )
+    semantic_refs = dict(
+        judgment_input.semantic_state_facts[
+            "semantic_ref_projection"
+        ]
+    )
+    assert any(
+        item.get("coverage_record_id")
+        == ownership_refs["coverage_a_id"]
+        and item.get("answer_component_id")
+        == ownership_refs["component_a_id"]
+        for item in semantic_refs["coverage_record_refs"]
+    )
+
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assessments = {
+        item["source_obligation_id"]: item
+        for item in consumption[
+            "required_source_obligation_assessments"
+        ]
+    }
+    shared_assessment = assessments[
+        ownership_refs["shared_obligation_id"]
+    ]
+    target_assessment = assessments[
+        ownership_refs["target_obligation_id"]
+    ]
+    assert shared_assessment["status"] == "missing"
+    assert target_assessment["status"] == "satisfied"
+    assert ownership_refs["candidate_a_id"] not in {
+        candidate_id
+        for assessment in assessments.values()
+        for candidate_id in assessment.get(
+            "satisfied_candidate_ids", []
+        )
+    }
+    assert consumption["terminal_component_ready"] is False
+    assert sufficiency["decision"] not in {
+        "ready_direct",
+        "ready_with_caveats",
+    }
+    serialized_consumption = json.dumps(
+        consumption,
+        sort_keys=True,
+    )
+    for foreign_ref in (
+        ownership_refs["component_a_id"],
+        ownership_refs["requirement_a_id"],
+        ownership_refs["candidate_a_id"],
+        ownership_refs["coverage_a_id"],
+    ):
+        assert foreign_ref not in serialized_consumption
+    fap_executed = bool(
+        kernel.state.final_answer_packet
+        or kernel.state.final_answer_packet_history
+    )
+    assert not fap_executed or (
+        sufficiency["final_answer_allowed"]
+        and sufficiency["final_answer_posture"] == "partial_answer"
+    )
+    if sufficiency["final_answer_allowed"]:
+        assert sufficiency["final_answer_posture"] == "partial_answer"
+        assert harness.author_prompts
+    else:
+        assert not harness.author_prompts
+
+
+def test_foreign_component_same_obligation_id_cannot_satisfy_component_b() -> None:
+    assessment = _direct_component_ownership_assessment(
+        requirements=[
+            {
+                "requirement_id": "requirement:b:official-current",
+                "requirement_kind": "official_current",
+                "component_id": "component:b",
+                "source_obligation_id": "obligation:official_current",
+                "status": "missing",
+            },
+            {
+                "requirement_id": "requirement:a:official-current",
+                "requirement_kind": "official_current",
+                "component_id": "component:a",
+                "source_obligation_id": "obligation:official_current",
+                "status": "satisfied",
+            },
+        ],
+        links=[
+            {
+                "requirement_id": "requirement:a:official-current",
+                "candidate_id": "candidate:a:official-current",
+                "link_status": "accepted",
+            }
+        ],
+        candidates=[
+            {
+                "candidate_id": "candidate:a:official-current",
+                "fact_disposition": "accepted",
+            }
+        ],
+        current_requirement_ids={
+            "requirement:a:official-current",
+            "requirement:b:official-current",
+        },
+        current_coverage_refs=[],
+        source_obligation_coverage_refs=[],
+    )
+
+    assert assessment.component_id == "component:b"
+    assert assessment.status == "missing"
+    assert assessment.satisfied_candidate_ids == ()
+
+
+def test_foreign_component_same_requirement_id_is_ambiguous_and_fails_closed() -> None:
+    assessment = _direct_component_ownership_assessment(
+        requirements=[
+            {
+                "requirement_id": "requirement:shared-id",
+                "requirement_kind": "official_current",
+                "component_id": "component:b",
+                "source_obligation_id": "obligation:official_current",
+                "status": "missing",
+            },
+            {
+                "requirement_id": "requirement:shared-id",
+                "requirement_kind": "official_current",
+                "component_id": "component:a",
+                "source_obligation_id": "obligation:official_current",
+                "status": "satisfied",
+            },
+        ],
+        links=[
+            {
+                "requirement_id": "requirement:shared-id",
+                "candidate_id": "candidate:a:shared-id",
+                "link_status": "accepted",
+            }
+        ],
+        candidates=[
+            {
+                "candidate_id": "candidate:a:shared-id",
+                "fact_disposition": "accepted",
+            }
+        ],
+        current_requirement_ids={"requirement:shared-id"},
+        current_coverage_refs=[],
+        source_obligation_coverage_refs=[],
+    )
+
+    assert assessment.component_id == "component:b"
+    assert assessment.status == "missing"
+    assert assessment.satisfied_candidate_ids == ()
+
+
+@pytest.mark.parametrize(
+    ("join_case", "expected_status"),
+    [
+        ("missing", "missing"),
+        ("stale", "missing"),
+        ("foreign_component", "missing"),
+        ("duplicated", "missing"),
+        ("exact_current", "satisfied"),
+    ],
+)
+def test_unscoped_requirement_requires_one_exact_current_component_coverage_join(
+    join_case: str,
+    expected_status: str,
+) -> None:
+    requirement_id = "requirement:unscoped:official-current"
+    coverage_b = {
+        "coverage_record_id": "coverage:b:current",
+        "coverage_record_digest": "b" * 64,
+        "answer_component_id": "component:b",
+    }
+    exact_join = {
+        "requirement_id": requirement_id,
+        **coverage_b,
+    }
+    if join_case == "missing":
+        current_coverage_refs: list[dict[str, Any]] = [coverage_b]
+        ownership_joins: list[dict[str, Any]] = []
+    elif join_case == "stale":
+        current_coverage_refs = [coverage_b]
+        ownership_joins = [
+            {
+                "requirement_id": requirement_id,
+                "coverage_record_id": "coverage:b:stale",
+                "coverage_record_digest": "c" * 64,
+                "answer_component_id": "component:b",
+            }
+        ]
+    elif join_case == "foreign_component":
+        coverage_a = {
+            "coverage_record_id": "coverage:a:current",
+            "coverage_record_digest": "a" * 64,
+            "answer_component_id": "component:a",
+        }
+        current_coverage_refs = [coverage_a]
+        ownership_joins = [
+            {
+                "requirement_id": requirement_id,
+                **coverage_a,
+            }
+        ]
+    elif join_case == "duplicated":
+        current_coverage_refs = [coverage_b]
+        ownership_joins = [
+            exact_join,
+            {
+                "requirement_id": requirement_id,
+                "coverage_record_id": "coverage:b:other",
+                "coverage_record_digest": "d" * 64,
+                "answer_component_id": "component:b",
+            },
+        ]
+    else:
+        current_coverage_refs = [coverage_b]
+        ownership_joins = [exact_join]
+
+    assessment = _direct_component_ownership_assessment(
+        requirements=[
+            {
+                "requirement_id": requirement_id,
+                "requirement_kind": "official_current",
+                "component_id": "",
+                "source_obligation_id": "obligation:official_current",
+                "status": "satisfied",
+            }
+        ],
+        links=[
+            {
+                "requirement_id": requirement_id,
+                "candidate_id": "candidate:unscoped:official-current",
+                "link_status": "accepted",
+            }
+        ],
+        candidates=[
+            {
+                "candidate_id": (
+                    "candidate:unscoped:official-current"
+                ),
+                "fact_disposition": "accepted",
+            }
+        ],
+        current_requirement_ids={requirement_id},
+        current_coverage_refs=current_coverage_refs,
+        source_obligation_coverage_refs=ownership_joins,
+    )
+
+    assert assessment.component_id == "component:b"
+    assert assessment.status == expected_status
+    if expected_status == "satisfied":
+        assert assessment.requirement_id == requirement_id
+        assert assessment.satisfied_candidate_ids == (
+            "candidate:unscoped:official-current",
+        )
+    else:
+        assert assessment.satisfied_candidate_ids == ()
 
 
 def test_two_obligation_recovery_completes_with_prior_sibling_lineage(
