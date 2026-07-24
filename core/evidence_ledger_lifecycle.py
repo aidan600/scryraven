@@ -145,6 +145,7 @@ def reduce_fetch_read_content_packet_into_evidence_ledger(
     run_kernel: RunKernel,
     fetch_read_content_packet: Mapping[str, Any],
     observation_id: str | None = None,
+    linked_requirement_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Reduce fetch/read candidate-content custody through EvidenceLedger."""
 
@@ -153,6 +154,16 @@ def reduce_fetch_read_content_packet_into_evidence_ledger(
         observation_id=observation_id,
     )
     payload = observation.to_dict()
+    exact_requirement_ids = [
+        str(item) for item in linked_requirement_ids if str(item)
+    ]
+    if exact_requirement_ids:
+        for candidate in payload.get("candidates") or ():
+            if not isinstance(candidate, dict):
+                continue
+            candidate["requirement_id"] = exact_requirement_ids[0]
+            candidate["linked_requirement_ids"] = exact_requirement_ids
+            candidate["link_reason"] = "exact_searchos_read_custody_slot_binding"
     fetch_read_custody = payload.get("fetch_read_candidate_custody")
     action = run_kernel.authorize_evidence_ledger_reduction(
         inputs={

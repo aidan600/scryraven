@@ -167,6 +167,17 @@ def _matching_admissions(
     ]
 
 
+def _evidence_ledger_identity(value: Any) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .casefold()
+        .replace("-", "_")
+        .replace(":", "_")
+        .replace(" ", "_")
+    )
+
+
 def build_searchos_existing_gap_basis(
     *,
     state: Mapping[str, Any],
@@ -224,8 +235,8 @@ def build_searchos_existing_gap_basis(
         raise SearchOSExistingGapRecoveryError("existing-gap basis lacks exact same-component role provenance")
     coverage_records = _coverage_records_for_component(component_coverage_history, component_id)
     if coverage_records and not all(
-        record.get("record_id")
-        and record.get("record_digest")
+        record.get("coverage_record_id")
+        and record.get("coverage_record_digest")
         and record.get("coverage_state")
         and isinstance(record.get("evidence_ledger_binding"), Mapping)
         for record in coverage_records
@@ -249,7 +260,8 @@ def build_searchos_existing_gap_basis(
         for item in evidence_ledger_projection.get("source_requirements") or ()
         if isinstance(item, Mapping)
         and item.get("source_obligation_id") == obligation_id
-        and item.get("component_id") == component_id
+        and _evidence_ledger_identity(item.get("component_id"))
+        == _evidence_ledger_identity(component_id)
     ]
     exact_requirement_ids = sorted(
         str(item["requirement_id"])
@@ -660,6 +672,10 @@ def admit_searchos_existing_gap_recovery_cycle(
         "prior_terminal_slot_state_digest": prior_slot["slot_state_digest"],
         "answer_contract_ref": deepcopy(basis["answer_contract_ref"]),
         "policy_snapshot_ref": deepcopy(basis["policy_snapshot_ref"]),
+        "component_ref": deepcopy(basis["component_ref"]),
+        "source_obligation_ref": deepcopy(
+            basis["source_obligation_ref"]
+        ),
         "cumulative_history_baseline": {
             **deepcopy(basis["prior_attempt_history_ref"]),
             "active_slot_count": len(canonical["active_slot_ids"]),
@@ -740,6 +756,13 @@ def recovery_cycle_ref(cycle: Mapping[str, Any]) -> dict[str, Any]:
         "cycle_record_id": safe["cycle_record_id"],
         "cycle_digest": safe["cycle_digest"],
         "cycle_ordinal": safe["cycle_ordinal"],
+        "component_ref": deepcopy(safe["component_ref"]),
+        "source_obligation_ref": deepcopy(
+            safe["source_obligation_ref"]
+        ),
+        "prior_terminal_slot_ref": deepcopy(
+            safe["prior_terminal_slot_ref"]
+        ),
         "recovery_slot_ref": deepcopy(safe["recovery_slot_ref"]),
         "recovery_purpose_ref": deepcopy(safe["recovery_purpose_ref"]),
         "recovery_lease_ref": deepcopy(safe["recovery_lease_ref"]),
@@ -834,6 +857,10 @@ def finalize_searchos_existing_gap_recovery_cycle(
         "recovery_purpose_ref": deepcopy(cycle["recovery_purpose_ref"]),
         "recovery_lease_ref": deepcopy(cycle["recovery_lease_ref"]),
         "recovery_slot_ref": deepcopy(slot_ref),
+        "component_ref": deepcopy(slot["component_ref"]),
+        "source_obligation_ref": deepcopy(
+            slot["source_obligation_ref"]
+        ),
         "terminal_status": terminal_status,
         "terminal_reason": reason,
         "whole_run_lease_status": (
@@ -862,6 +889,9 @@ def finalize_searchos_existing_gap_recovery_cycle(
         "novelty_exhausted": True,
         "lawful_materially_novel_recovery_purpose_remains": False,
         "component_admission_ref": (_compact_ref(admission) if admission else {}),
+        "component_coverage_ref": deepcopy(
+            _mapping(admission.get("component_coverage_ref"))
+        ),
         "expenditure": {
             "logical_judgment_calls": int(budget["charged_logical_judgment_calls"])
             - int(baseline["charged_logical_judgment_calls"]),
@@ -932,7 +962,10 @@ def validate_searchos_recovery_terminal_aggregate(
     )
     cycle_ref = _mapping(safe.get("cycle_ref"))
     slot_ref = _mapping(safe.get("recovery_slot_ref"))
+    component_ref = _mapping(safe.get("component_ref"))
+    source_obligation_ref = _mapping(safe.get("source_obligation_ref"))
     admission_ref = _mapping(safe.get("component_admission_ref"))
+    coverage_ref = _mapping(safe.get("component_coverage_ref"))
     terminal_status = safe.get("terminal_status")
     recovered = terminal_status == "recovered"
     exhausted = terminal_status == "exhausted_insufficient"
@@ -950,12 +983,26 @@ def validate_searchos_recovery_terminal_aggregate(
         or safe.get("owner") != SEARCHOS_OWNER
         or not (recovered or exhausted)
         or _mapping(cycle_ref.get("recovery_slot_ref")) != slot_ref
+        or _mapping(cycle_ref.get("component_ref")) != component_ref
+        or _mapping(cycle_ref.get("source_obligation_ref"))
+        != source_obligation_ref
+        or cycle_ref.get("cycle_id")
+        != slot_ref.get("recovery_cycle_id")
         or _mapping(cycle_ref.get("recovery_purpose_ref"))
         != _mapping(safe.get("recovery_purpose_ref"))
         or _mapping(cycle_ref.get("recovery_lease_ref"))
         != _mapping(safe.get("recovery_lease_ref"))
         or not slot_ref.get("component_id")
         or not slot_ref.get("source_obligation_id")
+        or component_ref.get("component_id")
+        != slot_ref.get("component_id")
+        or not component_ref.get("component_revision")
+        or not component_ref.get("component_digest")
+        or (
+            source_obligation_ref.get("source_obligation_id")
+            or source_obligation_ref.get("candidate_id")
+        )
+        != slot_ref.get("source_obligation_id")
         or safe.get("whole_run_lease_status")
         not in {
             "settled_recovered",
@@ -998,6 +1045,14 @@ def validate_searchos_recovery_terminal_aggregate(
                 or admission_ref.get("admission_status")
                 not in {"admitted", "admitted_with_caveats"}
                 or admission_ref.get("component_id") != slot_ref.get("component_id")
+                or admission_ref.get("component_revision")
+                != component_ref.get("component_revision")
+                or admission_ref.get("component_digest")
+                != component_ref.get("component_digest")
+                or coverage_ref.get("coverage_state")
+                != "satisfied"
+                or not coverage_ref.get("coverage_record_id")
+                or not coverage_ref.get("coverage_record_digest")
             )
         )
         or (
@@ -1013,6 +1068,7 @@ def validate_searchos_recovery_terminal_aggregate(
                 != safe.get("terminal_reason")
                 or admission_ref.get("admission_status")
                 in {"admitted", "admitted_with_caveats"}
+                or coverage_ref
             )
         )
     ):

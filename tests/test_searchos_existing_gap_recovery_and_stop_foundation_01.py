@@ -4,19 +4,25 @@ import inspect
 import json
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 
 import core.ordinary_multicomponent_synthesis_runtime as multicomponent_runtime
 import core.pipeline_orchestrator as pipeline_orchestrator
+import core.run_authority_sufficiency_adapter as sufficiency_adapter
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
     ROLE_SCRUTINEER,
     ROLE_SYSTEM_PROMPTS,
 )
-from core.run_kernel import Observation, ObservationType, RunStageStatus
+from core.run_kernel import (
+    Observation,
+    ObservationType,
+    RunKernel,
+    RunStageStatus,
+)
 from core.searchos_existing_gap_recovery_runtime import (
     MAXIMUM_EXISTING_GAP_RECOVERY_CYCLES,
     SearchOSExistingGapRecoveryError,
@@ -91,6 +97,117 @@ def _recovered_official_evidence_rows() -> list[dict[str, Any]]:
             "disposition": "accepted",
         }
     ]
+
+
+def _recovered_numeric_evidence_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "title": "Alpha official operating rate details",
+            "url": "https://alpha.gov/operating-rate-details",
+            "text": (
+                "Alpha's current official operating rate is 14 units per hour."
+            ),
+            "credibility": 4,
+            "source_tier": "official",
+            "source_class": "sourced_numeric_values",
+            "currentness_signal": "current",
+            "evidence_material_type": "structured_numeric",
+            "readable_status": "readable",
+            "disposition": "accepted",
+        }
+    ]
+
+
+def _initial_incomplete_canonical_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "title": "Alpha canonical API documentation",
+            "url": "https://docs.alpha.example/api",
+            "text": (
+                "Alpha's canonical API documentation lists the endpoint, "
+                "but omits its current response name."
+            ),
+            "credibility": 4,
+            "source_tier": "canonical",
+            "source_class": "primary_source_documents",
+            "currentness_signal": "current",
+            "readable_status": "readable",
+            "disposition": "accepted",
+        },
+        {
+            "title": "Alpha API overview",
+            "url": "https://example.test/alpha-api-overview",
+            "text": (
+                "A secondary overview confirms that Alpha publishes an API, "
+                "without stating the current canonical response name."
+            ),
+            "credibility": 3,
+            "source_tier": "secondary",
+            "source_class": "reputable_secondary",
+            "currentness_signal": "current",
+            "readable_status": "readable",
+            "disposition": "accepted",
+        },
+    ]
+
+
+def _recovered_canonical_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "title": "Alpha canonical Raven endpoint documentation",
+            "url": "https://docs.alpha.example/api/raven",
+            "text": (
+                "Alpha's current canonical API response name is Raven."
+            ),
+            "credibility": 4,
+            "source_tier": "canonical",
+            "source_class": "primary_source_documents",
+            "currentness_signal": "current",
+            "readable_status": "readable",
+            "disposition": "accepted",
+        }
+    ]
+
+
+def _capture_sufficiency_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[Any]:
+    captured: list[Any] = []
+    original = (
+        sufficiency_adapter.build_sufficiency_judgment_input_from_runtime
+    )
+
+    def wrapped(**kwargs: Any) -> Any:
+        judgment_input = original(**kwargs)
+        captured.append(judgment_input)
+        return judgment_input
+
+    monkeypatch.setattr(
+        sufficiency_adapter,
+        "build_sufficiency_judgment_input_from_runtime",
+        wrapped,
+    )
+    return captured
+
+
+def _forbid_post_terminal_blocked_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError(
+            "post-terminal SearchOS blocked-FAP bypass was invoked"
+        )
+
+    monkeypatch.setattr(
+        RunKernel,
+        "authorize_searchos_required_needs_block",
+        forbidden,
+    )
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "build_searchos_required_needs_blocked_fap_projection",
+        forbidden,
+    )
 
 
 def _install_initially_unsupported_component(
@@ -237,6 +354,9 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
+    captured_gap = _capture_first_gap_basis(monkeypatch)
+    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
+
     def forbidden_dynamic_recovery(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("retained Scrutineer-derived recovery path was invoked")
 
@@ -300,32 +420,38 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         monkeypatch,
         remain_unsupported=False,
         recovered_claim=(
-            "Alpha's current official operating protocol is Raven."
+            "Alpha's current canonical API response name is Raven."
         ),
     )
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
         mode=mode,
-        query="What is Alpha's current official operating protocol?",
-        core_topic="Alpha current official operating protocol",
+        query=(
+            "What do Alpha's current API docs say about the Raven endpoint?"
+        ),
+        core_topic="Alpha current API documentation",
         primary_entity="Alpha",
-        researcher_queries=["Alpha current official operating protocol"],
-        evidence_rows=_initial_incomplete_evidence_rows(),
-        followup_evidence_rows=_recovered_official_evidence_rows(),
+        researcher_queries=["Alpha current API documentation"],
+        evidence_rows=_initial_incomplete_canonical_rows(),
+        followup_evidence_rows=_recovered_canonical_rows(),
         read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
         read_content_by_url={
-            "https://alpha.gov/operating-overview": (
-                "Alpha publishes an official operating rule, but this overview "
-                "omits the name of its current operating protocol."
+            "https://docs.alpha.example/api": (
+                "Alpha's canonical API documentation lists the endpoint, "
+                "but omits its current response name."
             ),
-            "https://alpha.gov/operating-protocol": (
-                "Alpha's current official operating protocol is Raven."
+            "https://docs.alpha.example/api/raven": (
+                "Alpha's current canonical API response name is Raven."
+            ),
+            "https://example.test/alpha-api-overview": (
+                "A secondary overview confirms that Alpha publishes an API, "
+                "without stating the current canonical response name."
             ),
         },
         raw_author_response=(
-            "Alpha's current official operating protocol is Raven. "
-            "[[1]](https://alpha.gov/operating-protocol)"
+            "Alpha's current canonical API response name is Raven. "
+            "[[1]](https://docs.alpha.example/api/raven)"
         ),
     )
 
@@ -364,8 +490,8 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         recovery_results[0].searchos_semantic_material,
         sort_keys=True,
     )
-    assert "protocol is Raven" not in initial_material
-    assert "protocol is Raven" in recovered_material
+    assert "response name is Raven" not in initial_material
+    assert "response name is Raven" in recovered_material
     assert any(
         item.get("recovery_cycle_id")
         for item in harness.read_assessment_calls
@@ -404,16 +530,70 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         item.get("final_evidence_eligible") is True
         for item in recovered_candidates
     )
+    target_obligation_id = terminal["source_obligation_ref"][
+        "source_obligation_id"
+    ]
+    target_requirement_ids = kernel.state.component_coverage_history[-1][
+        "evidence_ledger_binding"
+    ]["source_requirement_ids"]
+    assert len(target_requirement_ids) == 1
+    target_requirement = next(
+        item
+        for item in current_ledger["source_requirements"]
+        if item.get("requirement_id") == target_requirement_ids[0]
+    )
+    target_links = [
+        item
+        for item in current_ledger["requirement_links"]
+        if item.get("requirement_id") == target_requirement_ids[0]
+    ]
+    cycle = kernel.state.searchos_state[
+        "existing_gap_recovery_cycles"
+    ][0]
+    purpose = build_searchos_materially_novel_recovery_purpose(
+        captured_gap["basis"]
+    )
+    _preview_state, preview_admission = (
+        admit_searchos_existing_gap_recovery_cycle(
+            state=captured_gap["state"],
+            gap_basis=captured_gap["basis"],
+            recovery_purpose=purpose,
+        )
+    )
+    assert {
+        captured_gap["basis"]["source_obligation_ref"][
+            "source_obligation_id"
+        ],
+        purpose["source_obligation_ref"]["source_obligation_id"],
+        cycle["source_obligation_ref"]["source_obligation_id"],
+        cycle["recovery_slot_ref"]["source_obligation_id"],
+        target_requirement["source_obligation_id"],
+        terminal["source_obligation_ref"]["source_obligation_id"],
+        terminal["recovery_slot_ref"]["source_obligation_id"],
+    } == {target_obligation_id}
+    assert preview_admission["lease"]["source_obligation_ref"][
+        "source_obligation_id"
+    ] == target_obligation_id
+    assert {
+        item["requirement_id"] for item in target_links
+    } == set(target_requirement_ids)
     assert len(
-        kernel.state.component_coverage_history[-1][
-            "evidence_ledger_binding"
-        ]["source_requirement_ids"]
-    ) >= 2
+        [
+            item
+            for item in target_links
+            if item["candidate_id"] in recovered_evidence_ids
+        ]
+    ) == 1
+    assert (
+        terminal["component_coverage_ref"]["coverage_record_digest"]
+        == recovered_coverage_ref["coverage_record_digest"]
+    )
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]) == 2
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]) == 2
     assert ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER] not in role_system_prompts
     assert not harness.full_search_judgment_inputs
-    assert kernel.state.sufficiency_judgment_projection, (
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    assert sufficiency, (
         outcome.report,
         {
             key: outcome.execution_trace["searchos_slice_a"]
@@ -427,16 +607,537 @@ def test_product_existing_gap_recovers_through_same_component_roles(
             )
         },
     )
-    assert "protocol is Raven" in outcome.report
+    assert sufficiency["decision"] == "ready_direct", json.dumps({
+        "missing": [
+            {
+                key: item.get(key)
+                for key in (
+                    "requirement_id",
+                    "requirement_kind",
+                    "component_id",
+                    "source_obligation_id",
+                    "status",
+                    "reason",
+                )
+            }
+            for item in sufficiency["missing_required_obligations"]
+        ],
+        "partial": sufficiency["partial_obligations"],
+        "readiness_reasons": sufficiency["readiness_reasons"],
+        "rationale": sufficiency["rationale"],
+        "terminal_assessments": sufficiency[
+            "searchos_existing_gap_recovery_terminal_consumption"
+        ]["required_source_obligation_assessments"],
+    }, sort_keys=True)
+    assert sufficiency["final_answer_posture"] == "direct_answer"
+    assert sufficiency["contract_fulfilled"] is True
+    assert sufficiency["required_obligations_satisfied"] is True
+    assert sufficiency["final_answer_allowed"] is True
+    assert sufficiency_inputs
+    terminal_input = sufficiency_inputs[-1]
+    assert (
+        terminal_input.searchos_existing_gap_recovery_terminal_state
+        == terminal
+    )
+    terminal_consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assert terminal_consumption["terminal_status"] == "recovered"
+    assert (
+        terminal_consumption["source_obligation_ref"][
+            "source_obligation_id"
+        ]
+        == target_obligation_id
+    )
+    assert terminal_consumption["target_requirement_ids"] == (
+        target_requirement_ids
+    )
+    assert "response name is Raven" in outcome.report
     assert harness.author_prompts
     assert "Raven" in harness.author_prompts[-1]
     assert "could not produce a supported answer" not in outcome.report
 
 
-def test_product_existing_gap_exhaustion_blocks_author(
+def test_two_obligation_recovery_credits_only_the_exact_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
+    _install_initially_unsupported_component(
+        monkeypatch,
+        remain_unsupported=False,
+        recovered_claim=(
+            "Alpha's current official operating protocol is Raven."
+        ),
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating protocol?",
+        core_topic="Alpha current official operating protocol",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating protocol"],
+        evidence_rows=_initial_incomplete_evidence_rows(),
+        followup_evidence_rows=_recovered_official_evidence_rows(),
+        read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
+        read_content_by_url={
+            "https://alpha.gov/operating-overview": (
+                "Alpha publishes an official operating rule, but this overview "
+                "omits the name of its current operating protocol."
+            ),
+            "https://alpha.gov/operating-protocol": (
+                "Alpha's current official operating protocol is Raven."
+            ),
+        },
+        raw_author_response=(
+            "Alpha's current official operating protocol is Raven. "
+            "[[1]](https://alpha.gov/operating-protocol)"
+        ),
+    )
+
+    kernel = harness.run_kernel
+    assert kernel is not None
+    terminal = kernel.state.projections[
+        "searchos_existing_gap_recovery_terminal"
+    ]
+    assert terminal["terminal_status"] == "recovered", terminal
+    target_obligation_id = terminal["source_obligation_ref"][
+        "source_obligation_id"
+    ]
+    component_ref = terminal["component_ref"]
+    component_obligation_ids = set(
+        next(
+            item
+            for item in kernel.state.initial_answer_contract[
+                "accepted_answer_component_refs"
+            ]
+            if item["component_id"] == component_ref["component_id"]
+        )["source_obligation_candidate_ids"]
+    )
+    assert len(component_obligation_ids) == 2
+    sibling_obligation_id = next(
+        item
+        for item in component_obligation_ids
+        if item != target_obligation_id
+    )
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    coverage = kernel.state.component_coverage_history[-1]
+    target_requirement_ids = coverage["evidence_ledger_binding"][
+        "source_requirement_ids"
+    ]
+    assert target_requirement_ids
+    target_requirements = [
+        item
+        for item in ledger["source_requirements"]
+        if item.get("requirement_id") in target_requirement_ids
+    ]
+    assert {
+        item.get("source_obligation_id")
+        for item in target_requirements
+    } == {target_obligation_id}
+    recovered_candidate_ids = {
+        item["evidence_ref_id"]
+        for item in kernel.state.projections[
+            "multicomponent_component_admission"
+        ]["component_admission_refs"][-1]["evidence_refs"]
+    }
+    novel_ids = set(
+        outcome.execution_trace["searchos_slice_a"][
+            "existing_gap_recovery"
+        ].get("materially_novel_recovery_evidence_ids") or ()
+    )
+    assert recovered_candidate_ids == novel_ids, {
+        "recovered": recovered_candidate_ids,
+        "novel": novel_ids,
+        "reassessment": outcome.execution_trace["searchos_slice_a"][
+            "existing_gap_recovery"
+        ].get("same_component_reassessment"),
+    }
+    recovered_links = [
+        item
+        for item in ledger["requirement_links"]
+        if item.get("candidate_id") in recovered_candidate_ids
+        and item.get("requirement_id") in target_requirement_ids
+    ]
+    assert len(recovered_links) == len(target_requirement_ids)
+    assert not [
+        item
+        for item in ledger["source_requirements"]
+        if item.get("source_obligation_id") == sibling_obligation_id
+        and item.get("requirement_id") in target_requirement_ids
+    ]
+    assert not [
+        item
+        for item in ledger["requirement_links"]
+        if item.get("candidate_id") in recovered_candidate_ids
+        and any(
+            requirement.get("requirement_id")
+            == item.get("requirement_id")
+            and requirement.get("source_obligation_id")
+            == sibling_obligation_id
+            for requirement in ledger["source_requirements"]
+        )
+    ]
+    semantic_outcomes = outcome.execution_trace["searchos_slice_a"][
+        "semantic_outcomes_by_slot"
+    ]
+    target_original_slot = next(
+        slot_id
+        for slot_id, slot in kernel.state.searchos_state[
+            "slots_by_id"
+        ].items()
+        if slot["slot_ref"].get("source_obligation_id")
+        == target_obligation_id
+        and not slot["slot_ref"].get("recovery_cycle_id")
+    )
+    sibling_slot = next(
+        slot_id
+        for slot_id, slot in kernel.state.searchos_state[
+            "slots_by_id"
+        ].items()
+        if slot["slot_ref"].get("source_obligation_id")
+        == sibling_obligation_id
+    )
+    assert semantic_outcomes[target_original_slot][
+        "searchos_handoff_material_consumed"
+    ] is True
+    assert semantic_outcomes[sibling_slot][
+        "searchos_handoff_material_consumed"
+    ] is False
+    readiness = outcome.execution_trace["searchos_slice_a"][
+        "readiness_projection"
+    ]
+    sibling_readiness = next(
+        item
+        for item in readiness["slot_records"]
+        if item["slot_ref"]["slot_id"] == sibling_slot
+    )
+    assert sibling_readiness["slice_a_ready"] is False
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    assert sufficiency["decision"] != "satisfied"
+    assert sufficiency["final_answer_posture"] != "satisfied"
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assessments = {
+        item["source_obligation_id"]: item
+        for item in consumption[
+            "required_source_obligation_assessments"
+        ]
+    }
+    assert assessments[target_obligation_id]["status"] == "satisfied"
+    assert assessments[sibling_obligation_id]["status"] != "satisfied"
+    assert sufficiency_inputs[-1].to_model_payload()[
+        "searchos_existing_gap_recovery_terminal_ref"
+    ]["terminal_aggregate_id"] == terminal["terminal_aggregate_id"]
+    if sufficiency["final_answer_allowed"]:
+        assert sufficiency["final_answer_posture"] == "partial_answer"
+        assert harness.author_prompts
+    else:
+        assert not harness.author_prompts
+
+
+def test_two_obligation_recovery_completes_with_prior_sibling_lineage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_gap = _capture_first_gap_basis(monkeypatch)
+    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
+    original_ask_model = PostRetirementOrdinaryPipelineHarness.ask_model
+    analyst_calls = 0
+
+    def scripted_model(
+        self: PostRetirementOrdinaryPipelineHarness,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        nonlocal analyst_calls
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+            analyst_calls += 1
+            self._record_model_call(system_prompt, kwargs)
+            return json.dumps(
+                {
+                    "claim_text": (
+                        "Alpha's current official operating rule is "
+                        "canonically published."
+                        if analyst_calls == 1
+                        else (
+                            "Alpha's current official operating rate is "
+                            "14 units per hour."
+                        )
+                    ),
+                    "support_status": "supported",
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            )
+        return original_ask_model(
+            self,
+            prompt,
+            system_prompt,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(
+        PostRetirementOrdinaryPipelineHarness,
+        "ask_model",
+        scripted_model,
+    )
+    original_outcomes = (
+        pipeline_orchestrator.build_searchos_semantic_outcomes_by_slot
+    )
+
+    def keep_numeric_obligation_unresolved_until_recovery(
+        **kwargs: Any,
+    ) -> dict[str, dict[str, Any]]:
+        outcomes = original_outcomes(**kwargs)
+        admissions = list(
+            dict(kwargs["component_admission_projection"]).get(
+                "component_admission_refs"
+            )
+            or ()
+        )
+        if not any(
+            dict(item).get("searchos_recovery_cycle_ref")
+            for item in admissions
+            if isinstance(item, Mapping)
+        ):
+            for slot_id, outcome in outcomes.items():
+                if slot_id.endswith("obligation:source_bound_numeric"):
+                    outcome.update(
+                        {
+                            "component_analyst_proposal_ref": {},
+                            "component_analyst_proposal_status": (
+                                "not_proposed"
+                            ),
+                            "component_dprime_validation_ref": {},
+                            "component_dprime_validation_status": (
+                                "not_accepted"
+                            ),
+                            "semantic_admission_outcome_ref": {},
+                            "semantic_admission_status": "not_admitted",
+                            "searchos_handoff_material_consumed": False,
+                        }
+                    )
+        return outcomes
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "build_searchos_semantic_outcomes_by_slot",
+        keep_numeric_obligation_unresolved_until_recovery,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating protocol?",
+        core_topic="Alpha current official operating protocol",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating protocol"],
+        evidence_rows=_official_evidence_rows(),
+        followup_evidence_rows=_recovered_numeric_evidence_rows(),
+        read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
+        read_content_by_url={
+            "https://alpha.gov/operating-rule": (
+                "Alpha's current official operating rule is canonically "
+                "published."
+            ),
+            "https://alpha.gov/operating-rate-details": (
+                "Alpha's current official operating rate is 14 units per hour."
+            ),
+        },
+        raw_author_response=(
+            "Alpha's current official operating rule is canonically published. "
+            "[[1]](https://alpha.gov/operating-rule)"
+        ),
+    )
+
+    kernel = harness.run_kernel
+    assert kernel is not None
+    assert "searchos_existing_gap_recovery_terminal" in kernel.state.projections, {
+        slot_id: {
+            "posture": slot.get("posture"),
+            "latest_reason": slot.get("latest_reason"),
+        }
+        for slot_id, slot in kernel.state.searchos_state.get(
+            "slots_by_id", {}
+        ).items()
+    }
+    terminal = kernel.state.projections[
+        "searchos_existing_gap_recovery_terminal"
+    ]
+    assert terminal["terminal_status"] == "recovered", (
+        terminal["terminal_reason"],
+        terminal["terminal_blocker"],
+        outcome.execution_trace["searchos_slice_a"][
+            "existing_gap_recovery"
+        ],
+    )
+    target_obligation_id = terminal["source_obligation_ref"][
+        "source_obligation_id"
+    ]
+    assert target_obligation_id == "obligation:source_bound_numeric"
+    component_obligation_ids = set(
+        next(
+            item
+            for item in kernel.state.initial_answer_contract[
+                "accepted_answer_component_refs"
+            ]
+            if item["component_id"]
+            == terminal["component_ref"]["component_id"]
+        )["source_obligation_candidate_ids"]
+    )
+    assert len(component_obligation_ids) == 2
+    sibling_obligation_id = next(
+        item
+        for item in component_obligation_ids
+        if item != target_obligation_id
+    )
+    prior_ledger = captured_gap["evidence_ledger_projection"]
+    prior_sibling_requirements = [
+        deepcopy(item)
+        for item in prior_ledger["source_requirements"]
+        if item.get("source_obligation_id") == sibling_obligation_id
+        and item.get("status") == "satisfied"
+    ]
+    assert prior_sibling_requirements
+    prior_sibling_ids = {
+        item["requirement_id"] for item in prior_sibling_requirements
+    }
+    prior_sibling_links = [
+        deepcopy(item)
+        for item in prior_ledger["requirement_links"]
+        if item.get("requirement_id") in prior_sibling_ids
+    ]
+    assert prior_sibling_links
+    prior_coverage = deepcopy(
+        captured_gap["component_coverage_history"][-1]
+    )
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    current_sibling_requirements = [
+        item
+        for item in ledger["source_requirements"]
+        if item.get("requirement_id") in prior_sibling_ids
+    ]
+    assert [
+        {
+            key: value
+            for key, value in item.items()
+            if key != "linked_candidate_ids"
+        }
+        for item in current_sibling_requirements
+    ] == [
+        {
+            key: value
+            for key, value in item.items()
+            if key != "linked_candidate_ids"
+        }
+        for item in prior_sibling_requirements
+    ]
+    assert [
+        item
+        for item in ledger["requirement_links"]
+        if item.get("requirement_id") in prior_sibling_ids
+    ] == prior_sibling_links
+    assert kernel.state.component_coverage_history[0] == prior_coverage
+    terminal_coverage_ref = terminal["component_coverage_ref"]
+    assert terminal_coverage_ref.get("coverage_record_id"), (
+        terminal_coverage_ref
+    )
+    matching_terminal_coverage = [
+        item
+        for item in kernel.state.component_coverage_history
+        if item.get("coverage_record_id")
+        == terminal_coverage_ref["coverage_record_id"]
+        and item.get("coverage_record_digest")
+        == terminal_coverage_ref["coverage_record_digest"]
+    ]
+    assert len(matching_terminal_coverage) == 1, {
+        "terminal_coverage_ref": terminal_coverage_ref,
+        "coverage_history_refs": [
+            {
+                "coverage_record_id": item.get("coverage_record_id"),
+                "coverage_record_digest": item.get(
+                    "coverage_record_digest"
+                ),
+            }
+            for item in kernel.state.component_coverage_history
+        ],
+    }
+    coverage = matching_terminal_coverage[0]
+    target_requirement_ids = coverage["evidence_ledger_binding"][
+        "source_requirement_ids"
+    ]
+    recovered_candidate_ids = {
+        item["evidence_ref_id"]
+        for item in kernel.state.projections[
+            "multicomponent_component_admission"
+        ]["component_admission_refs"][-1]["evidence_refs"]
+    }
+    assert len(target_requirement_ids) == 1, {
+        "target_obligation_id": target_obligation_id,
+        "target_requirement_ids": target_requirement_ids,
+        "recovered_candidate_ids": recovered_candidate_ids,
+        "recovered_candidate_links": [
+            item
+            for item in ledger["requirement_links"]
+            if item.get("candidate_id") in recovered_candidate_ids
+        ],
+        "novel_ids": outcome.execution_trace["searchos_slice_a"][
+            "existing_gap_recovery"
+        ].get("materially_novel_recovery_evidence_ids"),
+        "reassessment_evidence_refs": outcome.execution_trace[
+            "searchos_slice_a"
+        ]["existing_gap_recovery"].get(
+            "same_component_reassessment", {}
+        ).get("component_admission_ref", {}).get("evidence_refs"),
+    }
+    assert not prior_sibling_ids.intersection(target_requirement_ids)
+    assert not [
+        item
+        for item in ledger["requirement_links"]
+        if item.get("requirement_id") in prior_sibling_ids
+        and item.get("candidate_id") in recovered_candidate_ids
+    ]
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assessments = {
+        item["source_obligation_id"]: item
+        for item in consumption[
+            "required_source_obligation_assessments"
+        ]
+    }
+    assert assessments[target_obligation_id]["status"] == "satisfied"
+    assert assessments[sibling_obligation_id]["status"] == "satisfied"
+    assert sufficiency["decision"] == "ready_direct", (
+        sufficiency.get("required_obligations_satisfied"),
+        sufficiency.get("missing_obligations"),
+        sufficiency.get("partial_obligations"),
+        sufficiency.get("readiness_reasons"),
+    )
+    assert sufficiency["final_answer_posture"] == "direct_answer"
+    assert sufficiency["contract_fulfilled"] is True
+    assert sufficiency["required_obligations_satisfied"] is True
+    assert sufficiency["final_answer_allowed"] is True
+    assert sufficiency_inputs[-1].to_model_payload()[
+        "searchos_existing_gap_recovery_terminal_ref"
+    ]["terminal_aggregate_id"] == terminal["terminal_aggregate_id"]
+    assert harness.author_prompts
+    assert "canonically published" in outcome.report
+
+
+def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
+    _forbid_post_terminal_blocked_adapter(monkeypatch)
     _install_initially_unsupported_component(
         monkeypatch,
         remain_unsupported=True,
@@ -492,10 +1193,34 @@ def test_product_existing_gap_exhaustion_blocks_author(
     }
     assert not kernel.state.component_coverage_history
     assert not kernel.state.semantic_observation_admission_history
+    assert sufficiency_inputs
+    terminal_input = sufficiency_inputs[-1]
+    assert (
+        terminal_input.searchos_existing_gap_recovery_terminal_state
+        == terminal
+    )
+    assert terminal_input.to_model_payload()[
+        "searchos_existing_gap_recovery_terminal_ref"
+    ]["terminal_status"] == "exhausted_insufficient"
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    assert sufficiency["final_answer_posture"] in {
+        "partial_answer",
+        "insufficient",
+        "blocked",
+    }
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assert consumption["terminal_status"] == "exhausted_insufficient"
+    assert consumption["target_source_truth_status"] != "satisfied"
     assert trace["existing_gap_recovery"]["derived_component_recovery_invoked"] is False
     assert trace["existing_gap_recovery"]["scrutineer_recovery_input_used"] is False
-    assert "could not produce a supported answer" in outcome.report
-    assert not harness.author_prompts
+    if sufficiency["final_answer_allowed"]:
+        assert sufficiency["final_answer_posture"] == "partial_answer"
+        assert harness.author_prompts
+        assert "could not produce a supported answer" not in outcome.report
+    else:
+        assert not harness.author_prompts
 
 
 def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
@@ -568,7 +1293,24 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
     before_sufficiency = deepcopy(
         kernel.state.sufficiency_judgment_projection
     )
+    before_ledger = deepcopy(
+        kernel.state.evidence_ledger.to_projection().to_dict()
+    )
+    before_search_calls = len(harness.search_calls)
+    before_read_calls = len(harness.read_transport_calls)
+    before_read_assessments = len(harness.read_assessment_calls)
     before_model_calls = len(harness.model_calls)
+    before_admission = deepcopy(
+        kernel.state.projections["multicomponent_component_admission"]
+    )
+    before_semantic_admission_count = len(
+        kernel.state.semantic_observation_admission_history
+    )
+    before_coverage = deepcopy(kernel.state.component_coverage_history)
+    before_sufficiency_count = len(
+        kernel.state.sufficiency_judgment_history
+    )
+    before_fap = deepcopy(kernel.state.final_answer_packet_history)
     before_author_calls = len(harness.author_prompts)
     replay_action = (
         kernel.authorize_searchos_existing_gap_recovery_admission(
@@ -593,7 +1335,26 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
         "searchos_existing_gap_recovery_admission"
     ]["work_authorized"] is False
     assert kernel.state.sufficiency_judgment_projection == before_sufficiency
+    assert (
+        kernel.state.evidence_ledger.to_projection().to_dict()
+        == before_ledger
+    )
+    assert len(harness.search_calls) == before_search_calls
+    assert len(harness.read_transport_calls) == before_read_calls
+    assert len(harness.read_assessment_calls) == before_read_assessments
     assert len(harness.model_calls) == before_model_calls
+    assert (
+        kernel.state.projections["multicomponent_component_admission"]
+        == before_admission
+    )
+    assert len(
+        kernel.state.semantic_observation_admission_history
+    ) == before_semantic_admission_count
+    assert kernel.state.component_coverage_history == before_coverage
+    assert len(
+        kernel.state.sufficiency_judgment_history
+    ) == before_sufficiency_count
+    assert kernel.state.final_answer_packet_history == before_fap
     assert len(harness.author_prompts) == before_author_calls
 
     alternate_gap_kind = (
@@ -759,8 +1520,8 @@ def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
     satisfied_projection["component_admission_refs"][-1]["admission_status"] = "admitted"
     satisfied_coverage = [
         {
-            "record_id": "coverage:component_1",
-            "record_digest": "a" * 64,
+            "coverage_record_id": "coverage:component_1",
+            "coverage_record_digest": "a" * 64,
             "answer_component_id": basis["prior_terminal_slot_ref"]["component_id"],
             "coverage_state": "satisfied",
             "evidence_ledger_binding": {"source_requirement_ids": ["requirement:official_current"]},
@@ -874,6 +1635,8 @@ def test_recovery_model_failure_exhausts_without_author_or_role_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _capture_first_gap_basis(monkeypatch)
+    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
+    _forbid_post_terminal_blocked_adapter(monkeypatch)
     _install_initially_unsupported_component(
         monkeypatch,
         remain_unsupported=False,
@@ -916,6 +1679,25 @@ def test_recovery_model_failure_exhausts_without_author_or_role_fallback(
         "provider_or_acquisition"
     )
     assert "model" in terminal["terminal_blocker"]["reason_code"]
+    assert sufficiency_inputs
+    assert (
+        sufficiency_inputs[-1]
+        .searchos_existing_gap_recovery_terminal_state
+        == terminal
+    )
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    assert sufficiency["final_answer_posture"] == "blocked"
+    assert sufficiency["final_answer_allowed"] is False
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assert consumption["terminal_blocker"] == terminal[
+        "terminal_blocker"
+    ]
+    assert any(
+        "provider_or_acquisition" in reason
+        for reason in sufficiency["readiness_reasons"]
+    )
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]) == 1
     assert ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER] not in role_system_prompts
     assert not harness.author_prompts

@@ -2080,6 +2080,12 @@ def build_searchos_slice_a_readiness_v1(
         slot = deepcopy(_mapping(canonical["slots_by_id"])[slot_id])
         outcome = _mapping(semantic_outcomes_by_slot.get(slot_id))
         required = slot["requirement_posture"] == SearchOSRequirementPosture.REQUIRED.value
+        recovery_cycle_ref = _optional_ref(
+            outcome.get("searchos_recovery_cycle_ref")
+        )
+        recovery_evidence_ref = _optional_ref(
+            outcome.get("searchos_recovery_evidence_ref")
+        )
         exact_chain = all(
             (
                 _optional_ref(outcome.get("semantic_handoff_ref")),
@@ -2109,6 +2115,8 @@ def build_searchos_slice_a_readiness_v1(
             "component_analyst_proposal_ref": _optional_ref(outcome.get("component_analyst_proposal_ref")),
             "component_dprime_validation_ref": _optional_ref(outcome.get("component_dprime_validation_ref")),
             "semantic_admission_outcome_ref": _optional_ref(outcome.get("semantic_admission_outcome_ref")),
+            "searchos_recovery_cycle_ref": recovery_cycle_ref,
+            "searchos_recovery_evidence_ref": recovery_evidence_ref,
             "slice_a_ready": ready,
             "unresolved_reason": reason,
             "satisfaction_claimed_by_readiness": False,

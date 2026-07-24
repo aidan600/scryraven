@@ -834,6 +834,18 @@ class EvidenceLedger:
             )
             self.requirements[requirement_id] = requirement
         else:
+            incoming_kind = _requirement_kind(record)
+            if (
+                requirement.requirement_kind in {"general", "unknown"}
+                and incoming_kind not in {"general", "unknown"}
+            ):
+                requirement.requirement_kind = incoming_kind
+            if not requirement.origin_ref:
+                requirement.origin_ref = _clean_text(
+                    record.get("origin_ref")
+                    or record.get("answer_contract_ref")
+                    or record.get("source_obligation_ref")
+                )
             for field_name in (
                 "component_id",
                 "source_obligation_id",
@@ -861,6 +873,14 @@ class EvidenceLedger:
                 requirement.required_evidence_material_type = _clean_token(
                     record.get("required_evidence_material_type")
                     or record.get("required_material_type")
+                )
+            if not requirement.required_source_tier:
+                requirement.required_source_tier = _clean_token(
+                    record.get("required_source_tier")
+                )
+            if not requirement.required_currentness:
+                requirement.required_currentness = _clean_token(
+                    record.get("required_currentness")
                 )
             requirement.aggregate_counts_insufficient = (
                 requirement.aggregate_counts_insufficient
@@ -955,7 +975,10 @@ class EvidenceLedger:
                 or "candidate_observation_link",
                 status=disposition.value,
             )
-        if not requirement_ids:
+        candidate_already_has_requirement_lineage = any(
+            link.candidate_id == candidate_id for link in self.links
+        )
+        if not requirement_ids and not candidate_already_has_requirement_lineage:
             for requirement in self.requirements.values():
                 if _candidate_satisfies_requirement(candidate, requirement):
                     self._link_candidate(
@@ -1001,10 +1024,16 @@ class EvidenceLedger:
             self.requirements[requirement_id] = requirement
         if candidate_id not in requirement.linked_candidate_ids:
             requirement.linked_candidate_ids.append(candidate_id)
-        if not any(
-            link.requirement_id == requirement_id and link.candidate_id == candidate_id
-            for link in self.links
-        ):
+        existing_link_index = next(
+            (
+                index
+                for index, link in enumerate(self.links)
+                if link.requirement_id == requirement_id
+                and link.candidate_id == candidate_id
+            ),
+            None,
+        )
+        if existing_link_index is None:
             self.links.append(
                 SourceObligationLink(
                     requirement_id=requirement_id,
@@ -1012,6 +1041,16 @@ class EvidenceLedger:
                     link_reason=reason,
                     link_status=status,
                 )
+            )
+        elif status in {"accepted", "partially_accepted"} and (
+            self.links[existing_link_index].link_status
+            not in {"accepted", "partially_accepted"}
+        ):
+            self.links[existing_link_index] = SourceObligationLink(
+                requirement_id=requirement_id,
+                candidate_id=candidate_id,
+                link_reason=reason,
+                link_status=status,
             )
 
     def _admit_aggregate_counts(self, value: Any) -> None:

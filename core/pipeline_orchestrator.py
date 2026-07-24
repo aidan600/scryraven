@@ -302,6 +302,7 @@ from core.searchos_existing_gap_recovery_runtime import (
     SearchOSExistingGapRecoveryError,
     build_searchos_existing_gap_basis,
     build_searchos_materially_novel_recovery_purpose,
+    validate_searchos_recovery_terminal_aggregate,
 )
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_SLICE_A_TRACE_KEY,
@@ -3607,6 +3608,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         ).get("slot_id")
                         or ""
                     )
+                    prior_searchos_evidence_ids = {
+                        str(
+                            item.get(
+                                "searchos_evidence_ledger_candidate_id"
+                            )
+                            or item.get("source_id")
+                            or ""
+                        )
+                        for item in (
+                            searchos_slice_a_result.searchos_semantic_material
+                        )
+                        if isinstance(item, Mapping)
+                    }
                     recovery_material = [
                         dict(item)
                         for item in (
@@ -3618,6 +3632,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             or {}
                         ).get("slot_id")
                         == recovery_slot_id
+                        and str(
+                            item.get(
+                                "searchos_evidence_ledger_candidate_id"
+                            )
+                            or item.get("source_id")
+                            or ""
+                        )
+                        not in prior_searchos_evidence_ids
+                    ]
+                    recovery_trace[
+                        "materially_novel_recovery_evidence_ids"
+                    ] = [
+                        str(
+                            item.get(
+                                "searchos_evidence_ledger_candidate_id"
+                            )
+                            or item.get("source_id")
+                            or ""
+                        )
+                        for item in recovery_material
                     ]
                     if recovery_material:
                         try:
@@ -3789,7 +3823,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             searchos_slice_a_projection[
                 "existing_gap_recovery"
             ] = recovery_trace
-        if not searchos_readiness_projection.get("all_required_slots_slice_a_ready"):
+        searchos_recovery_terminal = dict(
+            run_kernel.state.projections.get(
+                "searchos_existing_gap_recovery_terminal"
+            )
+            or {}
+        )
+        if searchos_recovery_terminal:
+            validate_searchos_recovery_terminal_aggregate(
+                searchos_recovery_terminal
+            )
+        if (
+            not searchos_readiness_projection.get(
+                "all_required_slots_slice_a_ready"
+            )
+            and not searchos_recovery_terminal
+        ):
             block_action = run_kernel.authorize_searchos_required_needs_block()
             run_kernel.reduce(
                 Observation.from_action(

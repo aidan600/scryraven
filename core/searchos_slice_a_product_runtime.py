@@ -1981,36 +1981,60 @@ def build_searchos_semantic_outcomes_by_slot(
                 for admission in reversed(component_admissions)
                 if _recovery_admission_matches_slot(
                     admission=admission,
-                    slot_ref=slot_ref,
+                    slot=slot,
                 )
             ),
             {},
         )
         if recovery_admission:
             admission = recovery_admission
+            recovery_cycle_ref = dict(
+                admission.get("searchos_recovery_cycle_ref") or {}
+            )
+            recovery_slot_ref = dict(
+                recovery_cycle_ref.get("recovery_slot_ref") or {}
+            )
             recovery_slot_id = str(
-                dict(
-                    dict(
-                        admission.get("searchos_recovery_cycle_ref") or {}
-                    ).get("recovery_slot_ref")
-                    or {}
-                ).get("slot_id")
+                recovery_slot_ref.get("slot_id")
                 or ""
             )
             handoff = handoffs.get(recovery_slot_id, handoff)
+            material_slot_id = recovery_slot_id
         else:
-            admission = (
-                component_admissions[-1] if component_admissions else {}
+            admission = next(
+                (
+                    candidate
+                    for candidate in reversed(component_admissions)
+                    if _ordinary_admission_matches_slot(
+                        admission=candidate,
+                        slot=slot,
+                    )
+                ),
+                {},
             )
+            recovery_cycle_ref = {}
+            recovery_slot_ref = {}
+            material_slot_id = str(slot_id)
         evidence_ids = {
             str(item.get("evidence_ref_id") or "")
             for item in admission.get("evidence_refs") or ()
             if isinstance(item, Mapping)
         }
-        material_consumed = bool(
-            material_source_ids_by_slot.get(str(slot_id), set())
+        consumed_evidence_ids = (
+            material_source_ids_by_slot.get(material_slot_id, set())
             & evidence_ids
-        ) or bool(recovery_admission)
+        )
+        material_consumed = bool(consumed_evidence_ids)
+        recovery_evidence_ref = next(
+            (
+                dict(item)
+                for item in admission.get("evidence_refs") or ()
+                if isinstance(item, Mapping)
+                and str(item.get("evidence_ref_id") or "")
+                in consumed_evidence_ids
+            ),
+            {},
+        )
         admitted = bool(
             admission.get("admission_status") in {"admitted", "admitted_with_caveats"} and material_consumed and handoff
         )
@@ -2045,27 +2069,92 @@ def build_searchos_semantic_outcomes_by_slot(
             "semantic_admission_status": "admitted" if admitted else "not_admitted",
             "material_authority": "read_custody_material",
             "searchos_handoff_material_consumed": material_consumed,
+            "searchos_recovery_cycle_ref": (
+                recovery_cycle_ref
+                if recovery_admission and material_consumed
+                else {}
+            ),
+            "searchos_recovery_evidence_ref": (
+                recovery_evidence_ref
+                if recovery_admission and material_consumed
+                else {}
+            ),
         }
     return outcomes
+
+
+def _ordinary_admission_matches_slot(
+    *,
+    admission: Mapping[str, Any],
+    slot: Mapping[str, Any],
+) -> bool:
+    component_ref = dict(slot.get("component_ref") or {})
+    return bool(
+        not dict(admission.get("searchos_recovery_cycle_ref") or {})
+        and admission.get("component_id") == component_ref.get("component_id")
+        and admission.get("component_revision")
+        == component_ref.get("component_revision")
+        and admission.get("component_digest")
+        == component_ref.get("component_digest")
+    )
 
 
 def _recovery_admission_matches_slot(
     *,
     admission: Mapping[str, Any],
-    slot_ref: Mapping[str, Any],
+    slot: Mapping[str, Any],
 ) -> bool:
+    slot_ref = dict(slot.get("slot_ref") or {})
+    component_ref = dict(slot.get("component_ref") or {})
+    source_obligation_ref = dict(
+        slot.get("source_obligation_ref") or {}
+    )
     cycle_ref = dict(admission.get("searchos_recovery_cycle_ref") or {})
+    cycle_component_ref = dict(cycle_ref.get("component_ref") or {})
+    cycle_source_obligation_ref = dict(
+        cycle_ref.get("source_obligation_ref") or {}
+    )
+    prior_slot_ref = dict(
+        cycle_ref.get("prior_terminal_slot_ref") or {}
+    )
     recovery_slot_ref = dict(cycle_ref.get("recovery_slot_ref") or {})
+    exact_target_slot = (
+        slot_ref == prior_slot_ref
+        or slot_ref == recovery_slot_ref
+    )
     return bool(
         admission.get("admission_status")
         in {"admitted", "admitted_with_caveats"}
+        and admission.get("same_component_reassessment") is True
         and dict(admission.get("component_coverage_ref") or {}).get(
             "coverage_state"
         )
         == "satisfied"
         and cycle_ref
+        and cycle_ref.get("cycle_id")
+        == recovery_slot_ref.get("recovery_cycle_id")
+        and exact_target_slot
         and recovery_slot_ref.get("component_id")
         == slot_ref.get("component_id")
+        and recovery_slot_ref.get("source_obligation_id")
+        == slot_ref.get("source_obligation_id")
+        and cycle_component_ref == component_ref
+        and admission.get("component_id")
+        == component_ref.get("component_id")
+        and admission.get("component_revision")
+        == component_ref.get("component_revision")
+        and admission.get("component_digest")
+        == component_ref.get("component_digest")
+        and (
+            cycle_source_obligation_ref.get("source_obligation_id")
+            or cycle_source_obligation_ref.get("candidate_id")
+        )
+        == (
+            source_obligation_ref.get("source_obligation_id")
+            or source_obligation_ref.get("candidate_id")
+        )
+        == slot_ref.get("source_obligation_id")
+        and bool(admission.get("evidence_refs"))
     )
 
 

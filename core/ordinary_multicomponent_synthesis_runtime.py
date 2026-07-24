@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from threading import Lock
 from typing import Any, Mapping, Sequence
@@ -549,6 +549,19 @@ def _semantic_material(
         query=query,
         ignore_satisfied_provider_job_historical_gaps=True,
     )
+    if coverage is not None and recovery_cycle_id:
+        coverage = replace(
+            coverage,
+            record_id=(
+                f"coverage:{component_id}:searchos-recovery:{recovery_cycle_id}"
+            ),
+            metadata={
+                **dict(coverage.metadata),
+                "searchos_recovery_cycle_ref": deepcopy(
+                    _safe_mapping(searchos_recovery_cycle_ref)
+                ),
+            },
+        ).require_valid()
     if coverage is None:
         obligation_ids = list(
             component_ref.get("source_obligation_candidate_ids")
@@ -680,11 +693,7 @@ def _qualify_searchos_read_material_after_component_dprime(
 
     slot_id = str(slot_ref["slot_id"])
     obligation_id = str(slot_ref["source_obligation_id"])
-    qualification_obligation_ids = (
-        sorted(component_obligations)
-        if slot_ref.get("recovery_cycle_id")
-        else [obligation_id]
-    )
+    qualification_obligation_ids = [obligation_id]
     requirement_ids_by_obligation = {
         qualified_obligation_id: (
             "searchos_semantic_requirement:"

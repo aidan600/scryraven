@@ -107,7 +107,17 @@ def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _scheduler_block_matches_recovered_component(
+def _evidence_ledger_identity(value: Any) -> str:
+    token = clean_token(value) or ""
+    return (
+        token.casefold()
+        .replace("-", "_")
+        .replace(":", "_")
+        .replace(" ", "_")
+    )
+
+
+def _scheduler_block_matches_recovery_terminal_component(
     scheduler: Mapping[str, Any],
     recovery_terminal: Mapping[str, Any],
 ) -> bool:
@@ -138,6 +148,403 @@ def _scheduler_block_matches_recovered_component(
         failed_work.get("target_kind") == "component"
         and failed_work.get("component_id") == component_id
     )
+
+
+def _searchos_obligation_assessment(
+    *,
+    ledger: Mapping[str, Any],
+    component_id: str,
+    source_obligation_id: str,
+    source_obligation_ref: Mapping[str, Any],
+    current_requirement_ids: set[str],
+) -> SufficiencyRequirementAssessment:
+    requirements = [
+        _mapping(item)
+        for item in _list(ledger.get("source_requirements"))
+        if isinstance(item, Mapping)
+        and clean_token(item.get("source_obligation_id"))
+        == source_obligation_id
+        and (
+            _evidence_ledger_identity(item.get("component_id"))
+            == _evidence_ledger_identity(component_id)
+            or clean_token(item.get("requirement_id"))
+            in current_requirement_ids
+        )
+    ]
+    links = [
+        _mapping(item)
+        for item in _list(ledger.get("requirement_links"))
+        if isinstance(item, Mapping)
+        and clean_token(item.get("link_status")) == "accepted"
+    ]
+    accepted_candidates = {
+        clean_token(item.get("candidate_id"))
+        for item in _list(ledger.get("candidate_records"))
+        if isinstance(item, Mapping)
+        and clean_token(
+            item.get("fact_disposition")
+            or item.get("disposition")
+        )
+        in {"accepted", "partially_accepted"}
+        and clean_token(item.get("candidate_id"))
+    }
+    satisfied_rows: list[tuple[dict[str, Any], tuple[str, ...]]] = []
+    partial_rows: list[tuple[dict[str, Any], tuple[str, ...]]] = []
+    for requirement in requirements:
+        requirement_id = clean_token(requirement.get("requirement_id"))
+        linked_candidate_ids = tuple(
+            dict.fromkeys(
+                clean_token(link.get("candidate_id"))
+                for link in links
+                if clean_token(link.get("requirement_id"))
+                == requirement_id
+                and clean_token(link.get("candidate_id"))
+                in accepted_candidates
+            )
+        )
+        if (
+            clean_token(requirement.get("status")) == "satisfied"
+            and linked_candidate_ids
+            and requirement_id in current_requirement_ids
+        ):
+            satisfied_rows.append((requirement, linked_candidate_ids))
+        elif (
+            clean_token(requirement.get("status"))
+            == "partially_satisfied"
+            and linked_candidate_ids
+            and requirement_id in current_requirement_ids
+        ):
+            partial_rows.append((requirement, linked_candidate_ids))
+    selected_row: dict[str, Any] = {}
+    satisfied_candidate_ids: tuple[str, ...] = ()
+    if satisfied_rows:
+        selected_row, satisfied_candidate_ids = satisfied_rows[-1]
+        status = "satisfied"
+        reason = "exact_searchos_source_obligation_satisfied"
+    elif partial_rows:
+        selected_row, satisfied_candidate_ids = partial_rows[-1]
+        status = "partial"
+        reason = "exact_searchos_source_obligation_partially_satisfied"
+    else:
+        status = "missing"
+        reason = (
+            "exact_searchos_source_obligation_has_no_current_accepted_link"
+            if requirements
+            else "exact_searchos_source_obligation_unresolved"
+        )
+    requirement_kind = clean_token(
+        selected_row.get("requirement_kind")
+        or source_obligation_ref.get("kind")
+        or source_obligation_ref.get("obligation_kind")
+    ) or source_obligation_id.split(":", 1)[-1]
+    requirement_id = clean_token(selected_row.get("requirement_id")) or (
+        "searchos-source-obligation:"
+        + component_id
+        + ":"
+        + source_obligation_id
+    )
+    metadata = _mapping(source_obligation_ref.get("metadata"))
+    return SufficiencyRequirementAssessment(
+        requirement_id=requirement_id,
+        requirement_kind=requirement_kind,
+        required_source_class=clean_token(
+            source_obligation_ref.get("required_source_class")
+            or metadata.get("required_source_class")
+        ),
+        component_id=component_id,
+        source_obligation_id=source_obligation_id,
+        status=status,
+        reason=reason,
+        satisfied_candidate_ids=satisfied_candidate_ids,
+    )
+
+
+def _searchos_recovery_terminal_consumption(
+    *,
+    judgment_input: RunSufficiencyJudgmentInput,
+    terminal: Mapping[str, Any],
+) -> dict[str, Any]:
+    from core.searchos_existing_gap_recovery_runtime import (
+        validate_searchos_recovery_terminal_aggregate,
+    )
+    from core.searchos_iterative_judgment_runtime import (
+        validate_searchos_state,
+    )
+
+    canonical_terminal = validate_searchos_recovery_terminal_aggregate(
+        terminal
+    )
+    searchos_state = validate_searchos_state(
+        judgment_input.searchos_state
+    )
+    run_identity = _mapping(judgment_input.run_identity)
+    if (
+        canonical_terminal.get("run_id")
+        != run_identity.get("run_id")
+        or canonical_terminal.get("request_id")
+        != run_identity.get("request_id")
+        or searchos_state.get("run_id")
+        != run_identity.get("run_id")
+        or searchos_state.get("request_id")
+        != run_identity.get("request_id")
+        or _mapping(
+            searchos_state.get(
+                "existing_gap_recovery_terminal_aggregate"
+            )
+        )
+        != canonical_terminal
+    ):
+        raise ValueError(
+            "SearchOS recovery terminal does not match current run state"
+        )
+    terminal_ref = _mapping(
+        searchos_state.get(
+            "existing_gap_recovery_terminal_aggregate_ref"
+        )
+    )
+    if (
+        terminal_ref.get("terminal_aggregate_id")
+        != canonical_terminal.get("terminal_aggregate_id")
+        or terminal_ref.get("terminal_aggregate_digest")
+        != canonical_terminal.get("terminal_aggregate_digest")
+    ):
+        raise ValueError(
+            "SearchOS recovery terminal reference is not current"
+        )
+    cycle_ref = _mapping(canonical_terminal.get("cycle_ref"))
+    recovery_slot_ref = _mapping(
+        canonical_terminal.get("recovery_slot_ref")
+    )
+    recovery_slot = _mapping(
+        _mapping(searchos_state.get("slots_by_id")).get(
+            recovery_slot_ref.get("slot_id")
+        )
+    )
+    terminal_cycles = [
+        _mapping(item)
+        for item in _list(
+            searchos_state.get("existing_gap_recovery_cycles")
+        )
+        if isinstance(item, Mapping)
+        and item.get("cycle_id") == cycle_ref.get("cycle_id")
+    ]
+    if (
+        len(terminal_cycles) != 1
+        or terminal_cycles[0].get("status")
+        != canonical_terminal.get("terminal_status")
+        or _mapping(
+            terminal_cycles[0].get("terminal_aggregate_ref")
+        )
+        != terminal_ref
+        or _mapping(terminal_cycles[0].get("recovery_slot_ref"))
+        != recovery_slot_ref
+        or _mapping(recovery_slot.get("slot_ref"))
+        != recovery_slot_ref
+        or _mapping(recovery_slot.get("component_ref"))
+        != _mapping(canonical_terminal.get("component_ref"))
+        or _mapping(recovery_slot.get("source_obligation_ref"))
+        != _mapping(
+            canonical_terminal.get("source_obligation_ref")
+        )
+    ):
+        raise ValueError(
+            "SearchOS recovery terminal cycle or slot lineage is stale"
+        )
+    semantic_state = _mapping(judgment_input.semantic_state_facts)
+    state_contract_ref = _mapping(
+        searchos_state.get("answer_contract_ref")
+    )
+    if (
+        state_contract_ref.get("contract_version")
+        != semantic_state.get("accepted_contract_version")
+        or state_contract_ref.get("answer_contract_digest")
+        != semantic_state.get("accepted_contract_digest")
+    ):
+        raise ValueError(
+            "SearchOS recovery terminal contract lineage is stale"
+        )
+    component_ref = _mapping(canonical_terminal.get("component_ref"))
+    component_id = clean_token(component_ref.get("component_id"))
+    source_obligation_ref = _mapping(
+        canonical_terminal.get("source_obligation_ref")
+    )
+    source_obligation_id = clean_token(
+        source_obligation_ref.get("source_obligation_id")
+        or source_obligation_ref.get("candidate_id")
+    )
+    accepted_components = [
+        _mapping(item)
+        for item in _list(
+            semantic_state.get("accepted_required_component_refs")
+        )
+        if isinstance(item, Mapping)
+        and clean_token(item.get("answer_component_id"))
+        == component_id
+    ]
+    if (
+        len(accepted_components) != 1
+        or accepted_components[0].get("component_revision")
+        != component_ref.get("component_revision")
+        or accepted_components[0].get("component_digest")
+        != component_ref.get("component_digest")
+        or source_obligation_id
+        not in set(
+            _string_list(
+                accepted_components[0].get(
+                    "source_obligation_candidate_ids"
+                )
+            )
+        )
+    ):
+        raise ValueError(
+            "SearchOS recovery terminal component or obligation is not current"
+        )
+    ledger = _mapping(judgment_input.evidence_ledger_projection)
+    required_obligations: dict[str, dict[str, Any]] = {}
+    for slot_id in _list(searchos_state.get("required_slot_ids")):
+        slot = _mapping(
+            _mapping(searchos_state.get("slots_by_id")).get(slot_id)
+        )
+        slot_ref = _mapping(slot.get("slot_ref"))
+        if slot_ref.get("component_id") != component_id:
+            continue
+        obligation_id = clean_token(
+            slot_ref.get("source_obligation_id")
+        )
+        if obligation_id:
+            required_obligations.setdefault(
+                obligation_id,
+                _mapping(slot.get("source_obligation_ref")),
+            )
+    semantic_ref_projection = _mapping(
+        semantic_state.get("semantic_ref_projection")
+    )
+    source_requirement_ids = set(
+        _string_list(
+            semantic_ref_projection.get("source_obligation_refs")
+        )
+    )
+    assessments = [
+        _searchos_obligation_assessment(
+            ledger=ledger,
+            component_id=component_id or "",
+            source_obligation_id=obligation_id,
+            source_obligation_ref=obligation_ref,
+            current_requirement_ids=source_requirement_ids,
+        )
+        for obligation_id, obligation_ref in sorted(
+            required_obligations.items()
+        )
+    ]
+    target_assessments = [
+        item
+        for item in assessments
+        if item.source_obligation_id == source_obligation_id
+    ]
+    if len(target_assessments) != 1:
+        raise ValueError(
+            "SearchOS recovery terminal target obligation is not current"
+        )
+    target_assessment = target_assessments[0]
+    coverage_ref = _mapping(
+        canonical_terminal.get("component_coverage_ref")
+    )
+    coverage_refs = [
+        _mapping(item)
+        for item in _list(
+            semantic_ref_projection.get("coverage_record_refs")
+        )
+        if isinstance(item, Mapping)
+        and clean_token(item.get("answer_component_id"))
+        == component_id
+    ]
+    source_obligation_coverage_refs = [
+        _mapping(item)
+        for item in _list(
+            semantic_ref_projection.get(
+                "source_obligation_coverage_refs"
+            )
+        )
+        if isinstance(item, Mapping)
+        and _evidence_ledger_identity(
+            item.get("answer_component_id")
+        )
+        == _evidence_ledger_identity(component_id)
+    ]
+    target_requirement_ids = [
+        item.requirement_id
+        for item in target_assessments
+        if item.status == "satisfied"
+    ]
+    recovered = (
+        canonical_terminal.get("terminal_status") == "recovered"
+    )
+    if recovered and (
+        target_assessment.status != "satisfied"
+        or not target_requirement_ids
+        or not set(target_requirement_ids) <= source_requirement_ids
+        or not any(
+            ref.get("coverage_record_id")
+            == coverage_ref.get("coverage_record_id")
+            and ref.get("coverage_record_digest")
+            == coverage_ref.get("coverage_record_digest")
+            for ref in coverage_refs
+        )
+        or not any(
+            ref.get("requirement_id") in target_requirement_ids
+            and ref.get("coverage_record_id")
+            == coverage_ref.get("coverage_record_id")
+            and ref.get("coverage_record_digest")
+            == coverage_ref.get("coverage_record_digest")
+            for ref in source_obligation_coverage_refs
+        )
+    ):
+        raise ValueError(
+            "recovered SearchOS terminal lacks exact current coverage "
+            f"(target_status={target_assessment.status}, "
+            f"target_requirement_ids={target_requirement_ids}, "
+            f"semantic_requirement_ids={sorted(source_requirement_ids)}, "
+            f"target_source_obligation_id={source_obligation_id}, "
+            f"coverage_ref={coverage_ref}, "
+            f"coverage_refs={coverage_refs}, "
+            "source_obligation_coverage_refs="
+            f"{source_obligation_coverage_refs})"
+        )
+    if (
+        canonical_terminal.get("terminal_status")
+        == "exhausted_insufficient"
+        and target_assessment.status == "satisfied"
+    ):
+        raise ValueError(
+            "exhausted SearchOS terminal conflicts with current source truth"
+        )
+    blocker = _mapping(canonical_terminal.get("terminal_blocker"))
+    return {
+        "schema_version": (
+            "run_sufficiency_searchos_recovery_terminal_consumption_v1"
+        ),
+        "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "canonical_state": True,
+        "terminal_aggregate_id": canonical_terminal.get(
+            "terminal_aggregate_id"
+        ),
+        "terminal_aggregate_digest": canonical_terminal.get(
+            "terminal_aggregate_digest"
+        ),
+        "terminal_status": canonical_terminal.get("terminal_status"),
+        "component_ref": component_ref,
+        "source_obligation_ref": source_obligation_ref,
+        "cycle_id": cycle_ref.get("cycle_id"),
+        "cycle_digest": cycle_ref.get("cycle_digest"),
+        "recovery_slot_ref": recovery_slot_ref,
+        "component_coverage_ref": coverage_ref,
+        "terminal_blocker": blocker,
+        "target_source_truth_status": target_assessment.status,
+        "target_requirement_ids": target_requirement_ids,
+        "required_source_obligation_assessments": [
+            item.to_dict() for item in assessments
+        ],
+    }
 
 
 def _string_list(value: Any) -> list[str]:
@@ -742,6 +1149,10 @@ def _component_readiness_assessments(
     authoritative_ready_component_ids: frozenset[str] = frozenset(),
 ) -> tuple[tuple[SufficiencyRequirementAssessment, ...], dict[str, Any]]:
     components = _mapping_tuple(projection.get("components"))
+    authoritative_ready_identities = {
+        _evidence_ledger_identity(item)
+        for item in authoritative_ready_component_ids
+    }
     assessments: list[SufficiencyRequirementAssessment] = []
     summary_components: list[dict[str, Any]] = []
     for component in components:
@@ -757,7 +1168,10 @@ def _component_readiness_assessments(
         readiness_status, assessment_status, reason, readiness_blockers = (
             _component_readiness_status(component)
         )
-        if component_id in authoritative_ready_component_ids:
+        if (
+            _evidence_ledger_identity(component_id)
+            in authoritative_ready_identities
+        ):
             readiness_status = "satisfied_component"
             assessment_status = "satisfied"
             reason = "current_ready_component_work_graph_v1"
@@ -846,14 +1260,18 @@ def _component_readiness_assessments(
         "user_facing_partial_answer_enabled": False,
         "final_answer_allowed": False if unready_count else None,
         "author_payload_ready": False if unready_count else None,
-        "readiness_reasons": [
-            "component_readiness_not_satisfied",
-            *[
-                reason
-                for component in summary_components
-                for reason in component.get("blocker_reasons", [])
-            ],
-        ][:80],
+        "readiness_reasons": (
+            [
+                "component_readiness_not_satisfied",
+                *[
+                    reason
+                    for component in summary_components
+                    for reason in component.get("blocker_reasons", [])
+                ],
+            ][:80]
+            if unready_count
+            else []
+        ),
     }
     return tuple(assessments), summary
 
@@ -1275,6 +1693,13 @@ def _decision_and_posture(
             "source_bound_numeric_value_remains_unknown",
         )
     if recovery_exhausted and (missing or partial):
+        if final_evidence_count > 0 and _partial_allowed(contract):
+            return (
+                RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED,
+                SufficiencyPosture.PARTIAL_ANSWER,
+                True,
+                "recovery_exhausted_with_policy_authorized_partial_answer",
+            )
         return (
             RunSufficiencyDecision.RECOVERY_REQUIRED_BUT_EXHAUSTED,
             SufficiencyPosture.INSUFFICIENT_ANSWER,
@@ -1549,28 +1974,18 @@ def build_deterministic_sufficiency_judgment(
     )
     semantic_state = _mapping(judgment_input.semantic_state_facts)
     scheduler_required_work_blocked = False
-    searchos_existing_gap_recovered = False
+    searchos_recovery_terminal_consumption: dict[str, Any] = {}
     searchos_recovery_terminal = _mapping(
         judgment_input.searchos_existing_gap_recovery_terminal_state
     )
     if searchos_recovery_terminal:
-        from core.searchos_existing_gap_recovery_runtime import (
-            validate_searchos_recovery_terminal_aggregate,
+        searchos_recovery_terminal_consumption = (
+            _searchos_recovery_terminal_consumption(
+                judgment_input=judgment_input,
+                terminal=searchos_recovery_terminal,
+            )
         )
-
-        terminal = validate_searchos_recovery_terminal_aggregate(
-            searchos_recovery_terminal
-        )
-        run_identity = _mapping(judgment_input.run_identity)
-        searchos_existing_gap_recovered = bool(
-            terminal.get("run_id") == run_identity.get("run_id")
-            and terminal.get("request_id")
-            == run_identity.get("request_id")
-            and terminal.get("terminal_status") == "recovered"
-            and terminal.get("coverage_gained") is True
-            and terminal.get("gap_remains") is False
-            and terminal.get("lease_terminal") is True
-        )
+        terminal = searchos_recovery_terminal
     scheduler_state = _mapping(judgment_input.multicomponent_scheduler_state)
     if scheduler_state:
         from core.multicomponent_graph_scheduling import validate_scheduler_state
@@ -1580,9 +1995,12 @@ def build_deterministic_sufficiency_judgment(
             "blocked_exhausted",
             "blocked_required_work_failed",
         }
-        if searchos_existing_gap_recovered and _scheduler_block_matches_recovered_component(
-            canonical_scheduler,
-            terminal,
+        if (
+            searchos_recovery_terminal_consumption
+            and _scheduler_block_matches_recovery_terminal_component(
+                canonical_scheduler,
+                terminal,
+            )
         ):
             scheduler_required_work_blocked = False
     multicomponent_consumption = build_multicomponent_graph_consumption(
@@ -1670,6 +2088,50 @@ def build_deterministic_sufficiency_judgment(
             )
         )
 
+    for payload in searchos_recovery_terminal_consumption.get(
+        "required_source_obligation_assessments",
+        (),
+    ):
+        if not isinstance(payload, Mapping):
+            continue
+        assessment = SufficiencyRequirementAssessment.from_mapping(
+            payload
+        )
+        assessment_family = _kind_family(assessment.to_dict())
+        for collection in (missing, partial, satisfied):
+            collection[:] = [
+                item
+                for item in collection
+                if not (
+                    (
+                        _evidence_ledger_identity(item.component_id)
+                        == _evidence_ledger_identity(
+                            assessment.component_id
+                        )
+                        and _evidence_ledger_identity(
+                            item.source_obligation_id
+                        )
+                        == _evidence_ledger_identity(
+                            assessment.source_obligation_id
+                        )
+                    )
+                    or (
+                        not item.component_id
+                        and not item.source_obligation_id
+                        and assessment_family
+                        in set(_KIND_FAMILIES.values())
+                        and _kind_family(item.to_dict())
+                        == assessment_family
+                    )
+                )
+            ]
+        if assessment.status == "satisfied":
+            satisfied.append(assessment)
+        elif assessment.status == "partial":
+            partial.append(assessment)
+        else:
+            missing.append(assessment)
+
     for semantic_missing in semantic_overlay.missing_assessments:
         assessment = _semantic_assessment(semantic_missing)
         if not any(
@@ -1677,7 +2139,26 @@ def build_deterministic_sufficiency_judgment(
         ):
             missing.append(assessment)
 
+    terminal_satisfied_families = {
+        _kind_family(_mapping(item))
+        for item in searchos_recovery_terminal_consumption.get(
+            "required_source_obligation_assessments",
+            (),
+        )
+        if isinstance(item, Mapping)
+        and item.get("status") == "satisfied"
+        and _kind_family(_mapping(item))
+        in set(_KIND_FAMILIES.values())
+    }
     for item in _answer_contract_missing(answer_contract):
+        if item.required_source_class and not any(
+            clean_token(requirement.get("required_source_class"))
+            == clean_token(item.required_source_class)
+            for requirement in required_contract_requirements
+        ):
+            continue
+        if _kind_family(item.to_dict()) in terminal_satisfied_families:
+            continue
         if _answer_contract_assessment_exactly_reconciled(
             item,
             contract_requirements=required_contract_requirements,
@@ -1694,9 +2175,42 @@ def build_deterministic_sufficiency_judgment(
             else:
                 missing.append(item)
 
+    terminal_assessment_payloads = [
+        _mapping(item)
+        for item in _list(
+            searchos_recovery_terminal_consumption.get(
+                "required_source_obligation_assessments"
+            )
+        )
+        if isinstance(item, Mapping)
+    ]
+    terminal_component_ready = bool(
+        searchos_recovery_terminal_consumption.get("terminal_status")
+        == "recovered"
+        and terminal_assessment_payloads
+        and all(
+            item.get("status") == "satisfied"
+            for item in terminal_assessment_payloads
+        )
+    )
+    terminal_component_id = _evidence_ledger_identity(
+        _mapping(
+            searchos_recovery_terminal_consumption.get("component_ref")
+        ).get("component_id")
+    )
     component_assessments, component_readiness = _component_readiness_assessments(
         _mapping(judgment_input.component_readiness_projection),
-        authoritative_ready_component_ids=graph_ready_component_ids,
+        authoritative_ready_component_ids=frozenset(
+            {
+                *graph_ready_component_ids,
+                *(
+                    (terminal_component_id,)
+                    if terminal_component_ready
+                    and terminal_component_id
+                    else ()
+                ),
+            }
+        ),
     )
     for item in component_assessments:
         if item.status == "satisfied":
@@ -1745,6 +2259,11 @@ def build_deterministic_sufficiency_judgment(
     failure_reason = _failure_card_reason(weak_facts)
     search_insufficient = _search_stopped_insufficient(search)
     recovery_exhausted = _recovery_exhausted(search, budget)
+    if (
+        searchos_recovery_terminal_consumption.get("terminal_status")
+        == "exhausted_insufficient"
+    ):
+        recovery_exhausted = True
     search_satisfied = _search_stopped_satisfied(search)
     final_evidence_count = _int_value(final_evidence.get("final_evidence_count"))
     if final_evidence_count <= 0:
@@ -1872,9 +2391,41 @@ def build_deterministic_sufficiency_judgment(
             multicomponent_consumption["admitted_synthesis_entries"] = []
             multicomponent_consumption["admitted_synthesis_entry_count"] = 0
             if ordinary_ready_for_synthesis:
-                decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
-                posture = SufficiencyPosture.PARTIAL_ANSWER
-                rationale = "multicomponent_independent_direct_output_only"
+                terminal_direct_component_ready = bool(
+                    terminal_component_ready
+                    and graph_ready
+                    and terminal_component_id
+                    and all(
+                        _evidence_ledger_identity(
+                            item.get("component_id")
+                        )
+                        == terminal_component_id
+                        for item in direct_entries
+                    )
+                )
+                if terminal_direct_component_ready:
+                    if multicomponent_consumption.get(
+                        "mandatory_caveats"
+                    ):
+                        decision = RunSufficiencyDecision.READY_WITH_CAVEATS
+                        posture = SufficiencyPosture.ANSWER_WITH_CAVEATS
+                        rationale = (
+                            "searchos_recovered_component_ready_with_caveats"
+                        )
+                    else:
+                        decision = RunSufficiencyDecision.READY_DIRECT
+                        posture = SufficiencyPosture.DIRECT_ANSWER
+                        rationale = (
+                            "searchos_recovered_component_ready_direct"
+                        )
+                else:
+                    decision = (
+                        RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+                    )
+                    posture = SufficiencyPosture.PARTIAL_ANSWER
+                    rationale = (
+                        "multicomponent_independent_direct_output_only"
+                    )
             if synthesis_entries:
                 multicomponent_consumption["limitations"] = list(
                     dict.fromkeys(
@@ -1901,6 +2452,41 @@ def build_deterministic_sufficiency_judgment(
             multicomponent_consumption["admitted_synthesis_entries"] = []
             multicomponent_consumption["admitted_synthesis_entry_count"] = 0
             multicomponent_consumption["scheduler_required_work_blocked"] = True
+    searchos_terminal_blocker_class = clean_token(
+        _mapping(
+            searchos_recovery_terminal_consumption.get(
+                "terminal_blocker"
+            )
+        ).get("blocker_class")
+    )
+    if (
+        searchos_recovery_terminal_consumption.get("terminal_status")
+        == "exhausted_insufficient"
+        and searchos_terminal_blocker_class
+        in {"provider_or_acquisition", "validation"}
+    ):
+        decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+        posture = SufficiencyPosture.BLOCKED
+        final_allowed = False
+        rationale = (
+            "searchos_recovery_terminal_"
+            + searchos_terminal_blocker_class
+            + "_blocked"
+        )
+        if multicomponent_consumption:
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption[
+                "direct_component_entry_count"
+            ] = 0
+            multicomponent_consumption[
+                "admitted_synthesis_entries"
+            ] = []
+            multicomponent_consumption[
+                "admitted_synthesis_entry_count"
+            ] = 0
+            multicomponent_consumption[
+                "searchos_recovery_terminal_blocked"
+            ] = True
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,
@@ -1920,6 +2506,26 @@ def build_deterministic_sufficiency_judgment(
                 *(
                     ("multicomponent_scheduler_required_work_blocked",)
                     if scheduler_required_work_blocked
+                    else ()
+                ),
+                *(
+                    (
+                        "searchos_existing_gap_recovery_terminal_"
+                        + str(
+                            searchos_recovery_terminal_consumption.get(
+                                "terminal_status"
+                            )
+                        ),
+                    )
+                    if searchos_recovery_terminal_consumption
+                    else ()
+                ),
+                *(
+                    (
+                        "searchos_existing_gap_recovery_blocker_"
+                        + searchos_terminal_blocker_class,
+                    )
+                    if searchos_terminal_blocker_class
                     else ()
                 ),
                 *(
@@ -1995,6 +2601,16 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
         )
+    if searchos_recovery_terminal_consumption:
+        prohibited = tuple(
+            dict.fromkeys(
+                (
+                    *prohibited,
+                    "do_not_expand_recovered_evidence_to_sibling_obligations",
+                    "do_not_bypass_sufficiency_after_searchos_recovery_terminal",
+                )
+            )
+        )
     required_satisfied = not missing and not any(
         item.status == "partial" and item.requirement_kind != "reputable_secondary"
         for item in partial
@@ -2036,6 +2652,9 @@ def build_deterministic_sufficiency_judgment(
         semantic_consumption=semantic_consumption,
         component_readiness=component_readiness,
         multicomponent_graph_consumption=multicomponent_consumption,
+        searchos_existing_gap_recovery_terminal_consumption=(
+            searchos_recovery_terminal_consumption
+        ),
     )
     final_packet_inputs = dict(judgment.final_packet_inputs)
     existing_flags = _mapping(final_packet_inputs.get("behavior_boundary_flags"))
@@ -2403,7 +3022,10 @@ def preserve_multicomponent_sufficiency_authority(
 ) -> RunSufficiencyJudgment:
     """Prevent model adaptation from dropping canonical Graph V1 readiness."""
 
-    if not deterministic_judgment.multicomponent_graph_consumption:
+    if (
+        not deterministic_judgment.multicomponent_graph_consumption
+        and not deterministic_judgment.searchos_existing_gap_recovery_terminal_consumption
+    ):
         return committed
     return replace(
         committed,
@@ -2443,6 +3065,9 @@ def preserve_multicomponent_sufficiency_authority(
         component_readiness=deterministic_judgment.component_readiness,
         multicomponent_graph_consumption=(
             deterministic_judgment.multicomponent_graph_consumption
+        ),
+        searchos_existing_gap_recovery_terminal_consumption=(
+            deterministic_judgment.searchos_existing_gap_recovery_terminal_consumption
         ),
     )
 

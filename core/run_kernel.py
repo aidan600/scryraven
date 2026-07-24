@@ -24165,6 +24165,12 @@ def _canonical_sufficiency_judgment_projection(
             "multicomponent_graph_consumption",
             {},
         ),
+        "searchos_existing_gap_recovery_terminal_consumption": (
+            judgment_projection.get(
+                "searchos_existing_gap_recovery_terminal_consumption",
+                {},
+            )
+        ),
         "final_packet_inputs": judgment_projection.get("final_packet_inputs", {}),
         "rationale": judgment_projection.get("rationale"),
         "validation_status": validation_mapping.get("status")

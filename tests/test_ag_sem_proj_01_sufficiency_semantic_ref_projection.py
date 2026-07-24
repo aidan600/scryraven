@@ -51,6 +51,8 @@ def _canonical_coverage(**overrides: Any) -> dict[str, Any]:
         "storage_only": False,
         "coverage_record_id": COVERAGE_RECORD_ID,
         "coverage_record_digest": COVERAGE_RECORD_DIGEST,
+        "accepted_contract_version": "1.0",
+        "accepted_contract_digest": "a" * 64,
         "answer_component_id": COMPONENT_ID,
         "component_revision": "1",
         "component_digest": COMPONENT_DIGEST,

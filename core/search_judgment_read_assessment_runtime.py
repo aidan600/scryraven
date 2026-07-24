@@ -1666,6 +1666,57 @@ def _execute_one_acquisition_to_custody(
             selected_candidate_ids=[str(binding.candidate_ref["candidate_id"])],
         )
     )
+    component_id = str(binding.component_ref.get("component_id") or "")
+    source_obligation_id = str(
+        binding.source_obligation_ref.get("source_obligation_id") or ""
+    )
+    component_identity = component_id.replace("-", "_")
+    exact_requirement_ids = [
+        str(item["requirement_id"])
+        for item in run_kernel.state.evidence_ledger.to_projection().to_dict().get(
+            "source_requirements"
+        )
+        or ()
+        if isinstance(item, Mapping)
+        and str(item.get("component_id") or "").replace("-", "_")
+        == component_identity
+        and item.get("source_obligation_id") == source_obligation_id
+        and item.get("requirement_id")
+    ]
+    recovery_cycle_ref = _mapping(
+        run_kernel.state.searchos_state.get(
+            "active_existing_gap_recovery_cycle_ref"
+        )
+    )
+    recovery_slot_ref = _mapping(
+        recovery_cycle_ref.get("recovery_slot_ref")
+    )
+    if (
+        recovery_cycle_ref
+        and str(recovery_slot_ref.get("component_id") or "").replace(
+            "-", "_"
+        )
+        == component_identity
+        and recovery_slot_ref.get("source_obligation_id")
+        == source_obligation_id
+    ):
+        semantic_requirement_id = (
+            "searchos_semantic_requirement:"
+            + source_obligation_id.split(":", 1)[-1]
+            + ":"
+            + stable_json_digest(
+                {
+                    "slot_id": recovery_slot_ref.get("slot_id"),
+                    "component_id": component_id,
+                    "source_obligation_id": source_obligation_id,
+                }
+            )[:24]
+        )
+        exact_requirement_ids = list(
+            dict.fromkeys(
+                [*exact_requirement_ids, semantic_requirement_id]
+            )
+        )
     ledger_projection = reduce_fetch_read_content_packet_into_evidence_ledger(
         run_kernel=run_kernel,
         fetch_read_content_packet=packet,
@@ -1673,6 +1724,7 @@ def _execute_one_acquisition_to_custody(
             f"{binding.run_id}:evidence-ledger:searchos-read-custody:"
             f"{packet['packet_digest'][:16]}"
         ),
+        linked_requirement_ids=exact_requirement_ids,
     )
     custody_record = _canonical_custody_record(
         binding=binding,
