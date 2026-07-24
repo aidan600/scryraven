@@ -1090,6 +1090,29 @@ def _answer_contract_assessment_exactly_reconciled(
     return True
 
 
+def _terminal_assessment_exactly_reconciles(
+    existing: SufficiencyRequirementAssessment,
+    terminal: SufficiencyRequirementAssessment,
+) -> bool:
+    """Replace only the terminal obligation's exact owned or unscoped identity."""
+
+    exact_component_obligation = bool(
+        _evidence_ledger_identity(existing.component_id)
+        and _evidence_ledger_identity(existing.component_id)
+        == _evidence_ledger_identity(terminal.component_id)
+        and _evidence_ledger_identity(existing.source_obligation_id)
+        and _evidence_ledger_identity(existing.source_obligation_id)
+        == _evidence_ledger_identity(terminal.source_obligation_id)
+    )
+    exact_unscoped_requirement = bool(
+        not existing.component_id
+        and not existing.source_obligation_id
+        and terminal.status == "satisfied"
+        and existing.requirement_id == terminal.requirement_id
+    )
+    return exact_component_obligation or exact_unscoped_requirement
+
+
 def _mapping_tuple(value: Any) -> tuple[Mapping[str, Any], ...]:
     return tuple(item for item in _list(value) if isinstance(item, Mapping))
 
@@ -2187,32 +2210,13 @@ def build_deterministic_sufficiency_judgment(
         assessment = SufficiencyRequirementAssessment.from_mapping(
             payload
         )
-        assessment_family = _kind_family(assessment.to_dict())
         for collection in (missing, partial, satisfied):
             collection[:] = [
                 item
                 for item in collection
-                if not (
-                    (
-                        _evidence_ledger_identity(item.component_id)
-                        == _evidence_ledger_identity(
-                            assessment.component_id
-                        )
-                        and _evidence_ledger_identity(
-                            item.source_obligation_id
-                        )
-                        == _evidence_ledger_identity(
-                            assessment.source_obligation_id
-                        )
-                    )
-                    or (
-                        not item.component_id
-                        and not item.source_obligation_id
-                        and assessment_family
-                        in set(_KIND_FAMILIES.values())
-                        and _kind_family(item.to_dict())
-                        == assessment_family
-                    )
+                if not _terminal_assessment_exactly_reconciles(
+                    item,
+                    assessment,
                 )
             ]
         if assessment.status == "satisfied":
@@ -2229,26 +2233,7 @@ def build_deterministic_sufficiency_judgment(
         ):
             missing.append(assessment)
 
-    terminal_satisfied_families = {
-        _kind_family(_mapping(item))
-        for item in searchos_recovery_terminal_consumption.get(
-            "required_source_obligation_assessments",
-            (),
-        )
-        if isinstance(item, Mapping)
-        and item.get("status") == "satisfied"
-        and _kind_family(_mapping(item))
-        in set(_KIND_FAMILIES.values())
-    }
     for item in _answer_contract_missing(answer_contract):
-        if item.required_source_class and not any(
-            clean_token(requirement.get("required_source_class"))
-            == clean_token(item.required_source_class)
-            for requirement in required_contract_requirements
-        ):
-            continue
-        if _kind_family(item.to_dict()) in terminal_satisfied_families:
-            continue
         if _answer_contract_assessment_exactly_reconciled(
             item,
             contract_requirements=required_contract_requirements,

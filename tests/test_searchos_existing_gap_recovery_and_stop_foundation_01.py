@@ -336,6 +336,210 @@ def _install_foreign_shared_obligation_at_sufficiency(
     return captured, ownership_refs
 
 
+def _install_missing_same_family_component_at_sufficiency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[Any], dict[str, str]]:
+    captured: list[Any] = []
+    ownership_refs = {
+        "component_a_id": "component:answer-contract-owner-a",
+        "requirement_a_id": (
+            "requirement:answer-contract-owner-a:official-current"
+        ),
+        "obligation_a_id": (
+            "obligation:answer-contract-owner-a:official-current"
+        ),
+        "source_class": "official_current_rules",
+    }
+    original = (
+        sufficiency_adapter.build_sufficiency_judgment_input_from_runtime
+    )
+
+    def wrapped(**kwargs: Any) -> Any:
+        judgment_input = original(**kwargs)
+        terminal = dict(
+            judgment_input.searchos_existing_gap_recovery_terminal_state
+            or {}
+        )
+        if not terminal:
+            captured.append(judgment_input)
+            return judgment_input
+        component_b_id = str(
+            dict(terminal.get("component_ref") or {}).get(
+                "component_id"
+            )
+            or ""
+        )
+        target_obligation_id = str(
+            dict(terminal.get("source_obligation_ref") or {}).get(
+                "source_obligation_id"
+            )
+            or ""
+        )
+        searchos_state = dict(judgment_input.searchos_state)
+        required_slot_ids = set(
+            searchos_state.get("required_slot_ids") or ()
+        )
+        component_b_sibling_obligation_refs = [
+            dict(slot.get("source_obligation_ref") or {})
+            for slot_id, slot in dict(
+                searchos_state.get("slots_by_id") or {}
+            ).items()
+            if isinstance(slot, Mapping)
+            and slot_id in required_slot_ids
+            and str(
+                dict(slot.get("slot_ref") or {}).get("component_id")
+                or ""
+            )
+            == component_b_id
+            and str(
+                dict(slot.get("slot_ref") or {}).get(
+                    "source_obligation_id"
+                )
+                or ""
+            )
+            != target_obligation_id
+        ]
+        assert len(component_b_sibling_obligation_refs) == 1
+        sibling_obligation_ref = component_b_sibling_obligation_refs[0]
+        sibling_obligation_id = str(
+            sibling_obligation_ref.get("source_obligation_id") or ""
+        )
+        sibling_requirement_id = (
+            "requirement:answer-contract-owner-b:sibling"
+        )
+        sibling_candidate_id = (
+            "candidate:answer-contract-owner-b:sibling"
+        )
+        sibling_coverage_id = "coverage:answer-contract-owner-b:sibling"
+        sibling_coverage_digest = "b" * 64
+        contract = deepcopy(dict(judgment_input.contract_projection))
+        contract.setdefault("source_requirements", []).append(
+            {
+                "requirement_id": ownership_refs["requirement_a_id"],
+                "requirement_kind": "official_current",
+                "required_source_class": ownership_refs["source_class"],
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "strictness": "required",
+                "component_id": ownership_refs["component_a_id"],
+                "source_obligation_id": ownership_refs[
+                    "obligation_a_id"
+                ],
+            }
+        )
+        ledger = deepcopy(
+            dict(judgment_input.evidence_ledger_projection)
+        )
+        ledger.setdefault("source_requirements", []).append(
+            {
+                "requirement_id": ownership_refs["requirement_a_id"],
+                "requirement_kind": "official_current",
+                "required_source_class": ownership_refs["source_class"],
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "component_id": ownership_refs["component_a_id"],
+                "source_obligation_id": ownership_refs[
+                    "obligation_a_id"
+                ],
+                "status": "unsatisfied",
+                "reason": "component_a_exact_source_obligation_missing",
+            }
+        )
+        ledger["source_requirements"].append(
+            {
+                "requirement_id": sibling_requirement_id,
+                "requirement_kind": (
+                    sibling_obligation_ref.get("kind")
+                    or sibling_obligation_ref.get("obligation_kind")
+                    or "general"
+                ),
+                "component_id": component_b_id,
+                "source_obligation_id": sibling_obligation_id,
+                "status": "satisfied",
+                "linked_candidate_ids": [sibling_candidate_id],
+            }
+        )
+        ledger.setdefault("requirement_links", []).append(
+            {
+                "requirement_id": sibling_requirement_id,
+                "candidate_id": sibling_candidate_id,
+                "link_status": "accepted",
+                "link_reason": "component_b_exact_sibling_support",
+            }
+        )
+        ledger.setdefault("candidate_records", []).append(
+            {
+                "candidate_id": sibling_candidate_id,
+                "fact_disposition": "accepted",
+            }
+        )
+        semantic_state = deepcopy(
+            dict(judgment_input.semantic_state_facts)
+        )
+        semantic_refs = semantic_state.setdefault(
+            "semantic_ref_projection", {}
+        )
+        semantic_refs.setdefault("source_obligation_refs", []).append(
+            sibling_requirement_id
+        )
+        semantic_refs.setdefault("coverage_record_refs", []).append(
+            {
+                "coverage_record_id": sibling_coverage_id,
+                "coverage_record_digest": sibling_coverage_digest,
+                "answer_component_id": component_b_id,
+            }
+        )
+        semantic_refs.setdefault(
+            "source_obligation_coverage_refs", []
+        ).append(
+            {
+                "requirement_id": sibling_requirement_id,
+                "coverage_record_id": sibling_coverage_id,
+                "coverage_record_digest": sibling_coverage_digest,
+                "answer_component_id": component_b_id,
+            }
+        )
+        answer_contract = deepcopy(
+            dict(judgment_input.answer_contract_projection)
+        )
+        unfulfilled_source_classes = list(
+            answer_contract.get("unfulfilled_source_classes") or ()
+        )
+        if (
+            ownership_refs["source_class"]
+            not in unfulfilled_source_classes
+        ):
+            unfulfilled_source_classes.append(
+                ownership_refs["source_class"]
+            )
+        answer_contract[
+            "unfulfilled_source_classes"
+        ] = unfulfilled_source_classes
+        mutated = replace(
+            judgment_input,
+            contract_projection=contract,
+            evidence_ledger_projection=ledger,
+            answer_contract_projection=answer_contract,
+            semantic_state_facts=semantic_state,
+        )
+        ownership_refs.update(
+            {
+                "component_b_id": component_b_id,
+                "target_obligation_id": target_obligation_id,
+                "sibling_obligation_id": sibling_obligation_id,
+            }
+        )
+        captured.append(mutated)
+        return mutated
+
+    monkeypatch.setattr(
+        sufficiency_adapter,
+        "build_sufficiency_judgment_input_from_runtime",
+        wrapped,
+    )
+    return captured, ownership_refs
+
+
 def _direct_component_ownership_assessment(
     *,
     requirements: list[dict[str, Any]],
@@ -783,32 +987,20 @@ def test_product_existing_gap_recovers_through_same_component_roles(
             )
         },
     )
-    assert sufficiency["decision"] == "ready_direct", json.dumps({
-        "missing": [
-            {
-                key: item.get(key)
-                for key in (
-                    "requirement_id",
-                    "requirement_kind",
-                    "component_id",
-                    "source_obligation_id",
-                    "status",
-                    "reason",
-                )
-            }
-            for item in sufficiency["missing_required_obligations"]
-        ],
-        "partial": sufficiency["partial_obligations"],
-        "readiness_reasons": sufficiency["readiness_reasons"],
-        "rationale": sufficiency["rationale"],
-        "terminal_assessments": sufficiency[
-            "searchos_existing_gap_recovery_terminal_consumption"
-        ]["required_source_obligation_assessments"],
-    }, sort_keys=True)
-    assert sufficiency["final_answer_posture"] == "direct_answer"
-    assert sufficiency["contract_fulfilled"] is True
-    assert sufficiency["required_obligations_satisfied"] is True
+    assert sufficiency["decision"] == "partial_answer_authorized"
+    assert sufficiency["final_answer_posture"] == "partial_answer"
+    assert sufficiency["contract_fulfilled"] is False
+    assert sufficiency["required_obligations_satisfied"] is False
     assert sufficiency["final_answer_allowed"] is True
+    missing_by_id = {
+        item["requirement_id"]: item
+        for item in sufficiency["missing_required_obligations"]
+    }
+    assert set(missing_by_id) >= {
+        "run-contract:canonical_docs",
+        "answer-contract:primary_source_documents",
+        "answer-contract:reputable_secondary",
+    }
     assert sufficiency_inputs
     terminal_input = sufficiency_inputs[-1]
     assert (
@@ -827,6 +1019,13 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     )
     assert terminal_consumption["target_requirement_ids"] == (
         target_requirement_ids
+    )
+    assert terminal_consumption["terminal_component_ready"] is True
+    assert all(
+        item["status"] == "satisfied"
+        for item in terminal_consumption[
+            "required_source_obligation_assessments"
+        ]
     )
     assert "response name is Raven" in outcome.report
     assert harness.author_prompts
@@ -1147,6 +1346,250 @@ def test_two_component_shared_obligation_preserves_component_ownership(
         assert harness.author_prompts
     else:
         assert not harness.author_prompts
+
+
+def test_unscoped_different_id_survives_same_family_terminal_recovery() -> None:
+    existing = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id="run-contract:canonical_docs",
+        requirement_kind="canonical_docs",
+        required_source_class="primary_source_documents",
+        status="missing",
+    )
+    terminal = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id=(
+            "searchos_semantic_requirement:canonical_documentation:terminal"
+        ),
+        requirement_kind="canonical_documentation",
+        required_source_class="primary_source_documents",
+        component_id="component:b",
+        source_obligation_id="obligation:canonical_documentation",
+        status="satisfied",
+    )
+
+    assert not sufficiency_validation._terminal_assessment_exactly_reconciles(
+        existing,
+        terminal,
+    )
+
+
+def test_exact_unscoped_id_reconciles_once_and_only_once() -> None:
+    exact = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id="requirement:exact-terminal-id",
+        requirement_kind="canonical_docs",
+        required_source_class="primary_source_documents",
+        status="missing",
+    )
+    same_family_sibling = (
+        sufficiency_validation.SufficiencyRequirementAssessment(
+            requirement_id="requirement:different-id",
+            requirement_kind="canonical_documentation",
+            required_source_class="primary_source_documents",
+            status="missing",
+        )
+    )
+    terminal = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id="requirement:exact-terminal-id",
+        requirement_kind="canonical_documentation",
+        required_source_class="primary_source_documents",
+        component_id="component:b",
+        source_obligation_id="obligation:canonical_documentation",
+        status="satisfied",
+    )
+
+    reconciled = [
+        item
+        for item in (exact, same_family_sibling)
+        if sufficiency_validation._terminal_assessment_exactly_reconciles(
+            item,
+            terminal,
+        )
+    ]
+    assert reconciled == [exact]
+
+
+def test_answer_contract_summary_requires_every_exact_requirement() -> None:
+    assessment = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id="answer-contract:primary_source_documents",
+        requirement_kind="answer_contract_source_class",
+        required_source_class="primary_source_documents",
+        status="missing",
+    )
+    contract_requirements = [
+        {
+            "requirement_id": "requirement:component-a:primary",
+            "required_source_class": "primary_source_documents",
+            "component_id": "component:a",
+            "source_obligation_id": "obligation:a:primary",
+        },
+        {
+            "requirement_id": "requirement:component-b:primary",
+            "required_source_class": "primary_source_documents",
+            "component_id": "component:b",
+            "source_obligation_id": "obligation:b:primary",
+        },
+    ]
+    one_missing = [
+        {
+            **contract_requirements[0],
+            "status": "missing",
+        },
+        {
+            **contract_requirements[1],
+            "status": "satisfied",
+        },
+    ]
+    independently_satisfied = [
+        {
+            **requirement,
+            "status": "satisfied",
+        }
+        for requirement in contract_requirements
+    ]
+
+    assert not (
+        sufficiency_validation
+        ._answer_contract_assessment_exactly_reconciled(
+            assessment,
+            contract_requirements=contract_requirements,
+            ledger_requirements=one_missing,
+        )
+    )
+    assert sufficiency_validation._answer_contract_assessment_exactly_reconciled(
+        assessment,
+        contract_requirements=contract_requirements,
+        ledger_requirements=independently_satisfied,
+    )
+
+
+def test_two_component_same_family_missing_owner_survives_terminal_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sufficiency_inputs, ownership_refs = (
+        _install_missing_same_family_component_at_sufficiency(
+            monkeypatch
+        )
+    )
+    _forbid_post_terminal_blocked_adapter(monkeypatch)
+    _install_initially_unsupported_component(
+        monkeypatch,
+        remain_unsupported=False,
+        recovered_claim=(
+            "Alpha's current official operating protocol is Raven."
+        ),
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating protocol?",
+        core_topic="Alpha current official operating protocol",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating protocol"],
+        evidence_rows=_initial_incomplete_evidence_rows(),
+        followup_evidence_rows=_recovered_official_evidence_rows(),
+        read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
+        read_content_by_url={
+            "https://alpha.gov/operating-overview": (
+                "Alpha publishes an official operating rule, but this "
+                "overview omits the name of its current operating protocol."
+            ),
+            "https://alpha.gov/operating-protocol": (
+                "Alpha's current official operating protocol is Raven."
+            ),
+        },
+        raw_author_response=(
+            "Alpha's current official operating protocol is Raven. "
+            "[[1]](https://alpha.gov/operating-protocol)"
+        ),
+    )
+
+    kernel = harness.run_kernel
+    assert kernel is not None
+    terminal = kernel.state.projections[
+        "searchos_existing_gap_recovery_terminal"
+    ]
+    assert terminal["terminal_status"] == "recovered"
+    assert sufficiency_inputs
+    final_input = sufficiency_inputs[-1]
+    assert any(
+        item.get("requirement_id")
+        == ownership_refs["requirement_a_id"]
+        and item.get("component_id")
+        == ownership_refs["component_a_id"]
+        for item in final_input.contract_projection[
+            "source_requirements"
+        ]
+    )
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    missing_by_id = {
+        item["requirement_id"]: item
+        for item in sufficiency["missing_required_obligations"]
+    }
+    missing_a = missing_by_id[ownership_refs["requirement_a_id"]]
+    assert sufficiency_validation._evidence_ledger_identity(
+        missing_a["component_id"]
+    ) == sufficiency_validation._evidence_ledger_identity(
+        ownership_refs["component_a_id"]
+    )
+    assert sufficiency_validation._evidence_ledger_identity(
+        missing_a["source_obligation_id"]
+    ) == sufficiency_validation._evidence_ledger_identity(
+        ownership_refs["obligation_a_id"]
+    )
+    answer_contract_missing = missing_by_id[
+        "answer-contract:official_current_rules"
+    ]
+    assert (
+        answer_contract_missing["required_source_class"]
+        == ownership_refs["source_class"]
+    )
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    target_assessments = consumption[
+        "required_source_obligation_assessments"
+    ]
+    assert target_assessments
+    assert all(
+        item["status"] == "satisfied"
+        and sufficiency_validation._evidence_ledger_identity(
+            item["component_id"]
+        )
+        == sufficiency_validation._evidence_ledger_identity(
+            terminal["component_ref"]["component_id"]
+        )
+        for item in target_assessments
+    )
+    target_assessment = next(
+        item
+        for item in target_assessments
+        if sufficiency_validation._evidence_ledger_identity(
+            item["source_obligation_id"]
+        )
+        == sufficiency_validation._evidence_ledger_identity(
+            ownership_refs["target_obligation_id"]
+        )
+    )
+    assert (
+        sufficiency_validation._kind_family(target_assessment)
+        == "official_current"
+    )
+    assert (
+        sufficiency_validation._kind_family(missing_a)
+        == "official_current"
+    )
+    assert consumption["terminal_component_ready"] is True
+    assert sufficiency["decision"] not in {
+        "ready_direct",
+        "ready_with_caveats",
+    }
+    assert sufficiency["required_obligations_satisfied"] is False
+    assert sufficiency["contract_fulfilled"] is False
+    assert sufficiency["final_answer_allowed"] is True
+    assert sufficiency["final_answer_posture"] == "partial_answer"
+    assert harness.author_prompts
+    assert "Raven" in outcome.report
 
 
 def test_foreign_component_same_obligation_id_cannot_satisfy_component_b() -> None:
@@ -1617,16 +2060,15 @@ def test_two_obligation_recovery_completes_with_prior_sibling_lineage(
     }
     assert assessments[target_obligation_id]["status"] == "satisfied"
     assert assessments[sibling_obligation_id]["status"] == "satisfied"
-    assert sufficiency["decision"] == "ready_direct", (
-        sufficiency.get("required_obligations_satisfied"),
-        sufficiency.get("missing_obligations"),
-        sufficiency.get("partial_obligations"),
-        sufficiency.get("readiness_reasons"),
-    )
-    assert sufficiency["final_answer_posture"] == "direct_answer"
-    assert sufficiency["contract_fulfilled"] is True
-    assert sufficiency["required_obligations_satisfied"] is True
+    assert sufficiency["decision"] not in {
+        "ready_direct",
+        "ready_with_caveats",
+    }
+    assert sufficiency["final_answer_posture"] == "partial_answer"
+    assert sufficiency["contract_fulfilled"] is False
+    assert sufficiency["required_obligations_satisfied"] is False
     assert sufficiency["final_answer_allowed"] is True
+    assert consumption["terminal_component_ready"] is True
     assert sufficiency_inputs[-1].to_model_payload()[
         "searchos_existing_gap_recovery_terminal_ref"
     ]["terminal_aggregate_id"] == terminal["terminal_aggregate_id"]
