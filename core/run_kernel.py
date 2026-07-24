@@ -2884,17 +2884,35 @@ class RunKernel:
                 "required_needs_block_ref"
             )
         )
-        if required_needs_block and action_type_value in {
-            ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
-            ActionType.SUFFICIENCY_READINESS_DECIDE,
-            ActionType.FINAL_ANSWER_PACKET_HARDEN,
-            ActionType.FINAL_ANSWER_PACKET_PREPARE,
-            ActionType.AUTHOR_PROSE_FINALIZE,
-            ActionType.AUTHOR_EXECUTE,
-        }:
+        sufficiency = _safe_mapping(
+            self.state.sufficiency_judgment_projection
+        )
+        if (
+            required_needs_block
+            and action_type_value
+            in {
+                ActionType.FINAL_ANSWER_PACKET_HARDEN,
+                ActionType.FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.AUTHOR_PROSE_FINALIZE,
+                ActionType.AUTHOR_EXECUTE,
+            }
+            and not sufficiency
+        ):
             raise RunKernelTransitionError(
-                "SearchOS Slice A required-needs block keeps Sufficiency, "
-                "FinalAnswerPacket, and Author closed"
+                "SearchOS subordinate blocker requires Sufficiency "
+                "adjudication before FinalAnswerPacket or Author"
+            )
+        if (
+            required_needs_block
+            and action_type_value
+            in {
+                ActionType.AUTHOR_PROSE_FINALIZE,
+                ActionType.AUTHOR_EXECUTE,
+            }
+            and sufficiency.get("final_answer_allowed") is not True
+        ):
+            raise RunKernelTransitionError(
+                "Sufficiency does not permit Author execution"
             )
         sequence = self.state.next_action_sequence
         action = AuthorizedAction(
@@ -8632,7 +8650,7 @@ class RunKernel:
         *,
         gap_basis: Mapping[str, Any],
         recovery_purpose: Mapping[str, Any],
-    ) -> AuthorizedAction:
+    ) -> AuthorizedAction | dict[str, Any]:
         """Authorize the exact replay-safe whole-run recovery-cycle admission."""
 
         from core.searchos_existing_gap_recovery_runtime import (
@@ -8649,6 +8667,11 @@ class RunKernel:
             )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
+        if admission.get("exact_replay") is True:
+            # Exact replay resolves before generic authorization so the
+            # complete RunState, including action/observation counters and
+            # projections, remains byte-for-byte unchanged.
+            return deepcopy(admission)
         return self.authorize(
             stage=SEARCHOS_EXISTING_GAP_RECOVERY_ADMISSION_STAGE,
             action_type=ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT,
@@ -9027,6 +9050,7 @@ class RunKernel:
         self,
         *,
         reason: str = "block_unresolved_searchos_slice_a_required_needs",
+        blocker_facts: Sequence[Mapping[str, Any]] = (),
     ) -> AuthorizedAction:
         from core.searchos_iterative_judgment_runtime import (
             build_searchos_required_needs_block,
@@ -9036,7 +9060,10 @@ class RunKernel:
             self.state.projections.get(SEARCHOS_SLICE_A_READINESS_STAGE)
         )
         try:
-            block = build_searchos_required_needs_block(readiness)
+            block = build_searchos_required_needs_block(
+                readiness,
+                blocker_facts=blocker_facts,
+            )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         return self.authorize(

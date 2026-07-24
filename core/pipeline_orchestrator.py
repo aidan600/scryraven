@@ -174,7 +174,6 @@ from core.ordinary_multicomponent_synthesis_runtime import (
 )
 from core.persistence_side_effects import (
     execute_persistence_side_effects,
-    execute_safe_blocked_terminal_persistence,
 )
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
@@ -306,7 +305,6 @@ from core.searchos_existing_gap_recovery_runtime import (
 )
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_SLICE_A_TRACE_KEY,
-    build_searchos_required_needs_blocked_fap_projection,
     build_searchos_semantic_outcomes_by_slot,
     execute_searchos_existing_gap_recovery_cycle,
     execute_searchos_slice_a_iterative_judgment,
@@ -3478,6 +3476,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "optional_gap_recovery_deferred": True,
                 "derived_component_recovery_invoked": False,
                 "scrutineer_recovery_input_used": False,
+                "gap_basis_rejections": [],
             }
             recovery_basis: dict[str, Any] | None = None
             component_admission_projection = dict(
@@ -3510,7 +3509,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             run_kernel.state.evidence_ledger.to_projection().to_dict()
                         ),
                     )
-                except SearchOSExistingGapRecoveryError:
+                except SearchOSExistingGapRecoveryError as exc:
+                    recovery_trace["gap_basis_rejections"].append(
+                        {
+                            "slot_id": unresolved_slot_id,
+                            "blocker_class": "gap_basis_rejection",
+                            "reason_code": str(exc)[:240],
+                        }
+                    )
                     continue
                 break
             if recovery_basis is not None:
@@ -3520,29 +3526,37 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         recovery_basis
                     )
                 )
-                recovery_admission_action = (
+                recovery_admission_result = (
                     run_kernel.authorize_searchos_existing_gap_recovery_admission(
                         gap_basis=recovery_basis,
                         recovery_purpose=recovery_purpose,
                     )
                 )
-                run_kernel.reduce(
-                    Observation.from_action(
-                        recovery_admission_action,
-                        observation_type=(
-                            ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED
-                        ),
-                        status=RunStageStatus.COMPLETED,
-                        payload=recovery_admission_action.inputs[
-                            "recovery_admission_observation"
-                        ],
+                if isinstance(recovery_admission_result, Mapping):
+                    recovery_admission = dict(
+                        recovery_admission_result
                     )
-                )
-                recovery_admission = dict(
-                    run_kernel.state.projections[
-                        "searchos_existing_gap_recovery_admission"
-                    ]
-                )
+                else:
+                    recovery_admission_action = (
+                        recovery_admission_result
+                    )
+                    run_kernel.reduce(
+                        Observation.from_action(
+                            recovery_admission_action,
+                            observation_type=(
+                                ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED
+                            ),
+                            status=RunStageStatus.COMPLETED,
+                            payload=recovery_admission_action.inputs[
+                                "recovery_admission_observation"
+                            ],
+                        )
+                    )
+                    recovery_admission = dict(
+                        run_kernel.state.projections[
+                            "searchos_existing_gap_recovery_admission"
+                        ]
+                    )
                 recovery_trace["admission_status"] = recovery_admission[
                     "status"
                 ]
@@ -3839,7 +3853,84 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
             and not searchos_recovery_terminal
         ):
-            block_action = run_kernel.authorize_searchos_required_needs_block()
+            recovery_block_facts = dict(
+                searchos_slice_a_projection.get(
+                    "existing_gap_recovery"
+                )
+                or {}
+            )
+            subordinate_blocker_facts = list(
+                recovery_block_facts.get("gap_basis_rejections")
+                or ()
+            )
+            for unresolved in (
+                searchos_readiness_projection.get(
+                    "unresolved_required_slots"
+                )
+                or ()
+            ):
+                unresolved_mapping = dict(unresolved or {})
+                posture = str(
+                    unresolved_mapping.get(
+                        "latest_judgment_posture"
+                    )
+                    or ""
+                )
+                if posture in {"judgment_failed", "stale_or_invalid"}:
+                    subordinate_blocker_facts.append(
+                        {
+                            "blocker_class": "validation_failure",
+                            "reason_code": (
+                                unresolved_mapping.get("reason")
+                                or posture
+                            ),
+                            "slot_id": dict(
+                                unresolved_mapping.get("slot_ref")
+                                or {}
+                            ).get("slot_id"),
+                        }
+                    )
+                elif posture == "budget_exhausted":
+                    subordinate_blocker_facts.append(
+                        {
+                            "blocker_class": "recovery_policy_closed",
+                            "reason_code": "judgment_budget_exhausted",
+                            "slot_id": dict(
+                                unresolved_mapping.get("slot_ref")
+                                or {}
+                            ).get("slot_id"),
+                        }
+                    )
+            if searchos_slice_a_projection.get(
+                "component_receiver_failure"
+            ):
+                subordinate_blocker_facts.append(
+                    {
+                        "blocker_class": "component_receiver_failure",
+                        "reason_code": searchos_slice_a_projection.get(
+                            "component_receiver_failure_reason"
+                        )
+                        or "component_receiver_failure",
+                        "slot_id": "",
+                    }
+                )
+            if not recovery_block_facts.get(
+                "eligible_required_gap_found"
+            ):
+                subordinate_blocker_facts.append(
+                    {
+                        "blocker_class": "recovery_ineligible",
+                        "reason_code": (
+                            "no_lawful_materially_novel_recovery_purpose"
+                        ),
+                        "slot_id": "",
+                    }
+                )
+            block_action = (
+                run_kernel.authorize_searchos_required_needs_block(
+                    blocker_facts=subordinate_blocker_facts
+                )
+            )
             run_kernel.reduce(
                 Observation.from_action(
                     block_action,
@@ -3854,117 +3945,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "block_digest": required_needs_block.get("block_digest"),
                 "block_type": required_needs_block.get("block_type"),
             }
-            blocked_fap_projection = build_searchos_required_needs_blocked_fap_projection(
-                required_needs_block=required_needs_block,
-                readiness_projection=searchos_readiness_projection,
-            )
-            blocked_fap_summary = build_safe_blocked_fap_summary(blocked_fap_projection)
-            report = build_blocked_fap_terminal_report(blocked_fap_summary)
-            execution_trace = run_kernel.to_trace_fragment()
-            execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
-            execution_trace["provider_plan"] = provider_plan.to_trace()
-            execution_trace.update(query_authority.to_trace_fragment())
-            blocked_discovery_telemetry = discovery_result_store.telemetry()
-            blocked_discovery_telemetry.update(
-                {
-                    "candidate_packets_created": int(bool(ordinary_discovery_candidate_packet)),
-                    "selected_candidates_handed_off": int(
-                        ordinary_discovery_candidate_handoff_projection.get("selected_candidate_count", 0)
-                    ),
-                }
-            )
-            execution_trace["discovery_result_telemetry"] = blocked_discovery_telemetry
-            if ordinary_discovery_candidate_handoff_projection:
-                execution_trace[ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY] = (
-                    ordinary_discovery_candidate_handoff_projection
-                )
-            if ordinary_discovery_candidate_packet:
-                execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = ordinary_discovery_candidate_packet
-            execution_trace.update(build_blocked_fap_terminal_trace_fragment(blocked_fap_summary))
-            latency_seconds = round(time.time() - pipeline_start_time, 2)
-            cost_snapshot = accumulator.snapshot()
-            failure_card_payload = {
-                "show": True,
-                "reason": "searchos_slice_a_required_needs_unresolved",
-                "corpus_state": corpus_state,
-            }
-            pipeline_config = {
-                "intent": intent,
-                "complexity": complexity,
-                "search_depth": search_depth,
-                "mode": strategy,
-            }
-            new_session = {
-                "id": session_id,
-                "run_id": run_id,
-                "title": session_title,
-                "timestamp": current_date,
-                "query": query,
-                "core_topic": core_topic,
-                "report": report,
-                "top_passages": list(all_passages),
-                "chat_messages": [],
-                "seen_urls": list(seen_urls),
-                "collected_images": list(collected_images),
-                "last_report_mode": strategy,
-                "pipeline_config": pipeline_config,
-                "run_history": list(prior_run_history),
-                "failure_card": failure_card_payload,
-            }
-            execute_safe_blocked_terminal_persistence(
-                execution_log_path=execution_log_path,
-                execution_log_entry={
-                    "event": "execution",
-                    "timestamp": current_date,
-                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                    "run_id": run_id,
-                    "session_id": session_id,
-                    "query": query[:100],
-                    "intent": intent,
-                    "query_type": query_type,
-                    "primary_entity": (primary_entity or "")[:200],
-                    "entities": [str(entity)[:200] for entity in entities_list],
-                    "corpus_state": corpus_state,
-                    "complexity": complexity,
-                    "mode": strategy,
-                    "latency_seconds": latency_seconds,
-                    "output_word_count": len(report.split()),
-                    "final_output_preview": report[:300],
-                    "cost": cost_snapshot,
-                    "failure_card": failure_card_payload,
-                    "terminal_kind": "safe_blocked_non_author",
-                    "execution_trace": execution_trace,
-                    **current_code_version_metadata(),
-                },
-                run_id=run_id,
-                session_id=session_id,
-                latency_seconds=latency_seconds,
-                strategy=strategy,
-                execution_trace=execution_trace,
-                run_log=run_log,
-            )
-            status.update("SearchOS required material remains unresolved.")
-            return RunOutcome(
-                session_id=session_id,
-                run_id=run_id,
-                session_title=session_title,
-                query=query,
-                core_topic=core_topic,
-                report=report,
-                top_passages=list(all_passages),
-                seen_urls=list(seen_urls),
-                collected_images=list(collected_images),
-                execution_trace=execution_trace,
-                failure_card=failure_card_payload,
-                new_session=new_session,
-                cost_snapshot=cost_snapshot,
-                latency_seconds=latency_seconds,
-                intent=intent,
-                complexity=complexity,
-                corpus_state=corpus_state,
-                pipeline_config=pipeline_config,
-                author_streamed=False,
-            )
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
     _record_analyst_model_call = analyst_runtime_stage.build_analyst_model_call_recorder(

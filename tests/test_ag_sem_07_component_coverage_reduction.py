@@ -752,6 +752,10 @@ def _official_requirement() -> dict[str, object]:
     return {
         "requirement_id": OFFICIAL_REQUIREMENT_ID,
         "requirement_kind": "official_current",
+        "component_id": COMPONENT_ID,
+        "source_obligation_id": OFFICIAL_REQUIREMENT_ID,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
         "required_source_class": "official_current_rules",
         "required_source_tier": "official",
         "required_currentness": "current",

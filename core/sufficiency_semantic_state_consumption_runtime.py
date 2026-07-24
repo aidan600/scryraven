@@ -380,6 +380,16 @@ def _build_semantic_ref_projection(
                 "coverage_record_id": coverage_record_id,
                 "coverage_record_digest": coverage_record_digest,
                 "answer_component_id": component_id,
+                "component_revision": coverage.get(
+                    "component_revision"
+                ),
+                "component_digest": coverage.get("component_digest"),
+                "accepted_contract_version": coverage.get(
+                    "accepted_contract_version"
+                ),
+                "accepted_contract_digest": coverage.get(
+                    "accepted_contract_digest"
+                ),
             },
         )
 
@@ -425,6 +435,9 @@ def _build_semantic_ref_projection(
                 )
 
         ledger_binding = _mapping(coverage.get("evidence_ledger_binding"))
+        coverage_source_obligation_ids = _token_list(
+            coverage.get("source_obligation_ids")
+        )
         for requirement_id in _token_list(ledger_binding.get("source_requirement_ids")):
             _append_unique_token(source_obligation_refs, requirement_id)
             _append_unique_mapping(
@@ -434,6 +447,9 @@ def _build_semantic_ref_projection(
                     "coverage_record_id": coverage_record_id,
                     "coverage_record_digest": coverage_record_digest,
                     "answer_component_id": component_id,
+                    "source_obligation_ids": (
+                        coverage_source_obligation_ids
+                    ),
                 },
             )
 
@@ -465,8 +481,33 @@ def _build_semantic_ref_projection(
                 historical.get("coverage_record_digest"),
                 limit=128,
             )
+            _append_unique_mapping(
+                coverage_record_refs,
+                {
+                    "coverage_record_id": historical_record_id,
+                    "coverage_record_digest": (
+                        historical_record_digest
+                    ),
+                    "answer_component_id": component_id,
+                    "component_revision": historical.get(
+                        "component_revision"
+                    ),
+                    "component_digest": historical.get(
+                        "component_digest"
+                    ),
+                    "accepted_contract_version": historical.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": historical.get(
+                        "accepted_contract_digest"
+                    ),
+                },
+            )
             historical_binding = _mapping(
                 historical.get("evidence_ledger_binding")
+            )
+            historical_source_obligation_ids = _token_list(
+                historical.get("source_obligation_ids")
             )
             for requirement_id in _token_list(
                 historical_binding.get("source_requirement_ids")
@@ -484,6 +525,9 @@ def _build_semantic_ref_projection(
                             historical_record_digest
                         ),
                         "answer_component_id": component_id,
+                        "source_obligation_ids": (
+                            historical_source_obligation_ids
+                        ),
                     },
                 )
 
@@ -607,6 +651,9 @@ def _safe_semantic_ref_projection(value: Any) -> dict[str, Any]:
                     "coverage_record_id": coverage_record_id,
                     "coverage_record_digest": coverage_record_digest,
                     "answer_component_id": answer_component_id,
+                    "source_obligation_ids": _token_list(
+                        ref.get("source_obligation_ids")
+                    ),
                 }
             )
     if source_obligation_coverage_refs:

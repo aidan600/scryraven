@@ -119,6 +119,8 @@ def _compact_ref(value: Mapping[str, Any]) -> dict[str, Any]:
             "component_id",
             "component_revision",
             "source_obligation_id",
+            "accepted_contract_version",
+            "answer_contract_ref",
             "slot_id",
             "requirement_posture",
             "admission_status",
@@ -178,6 +180,71 @@ def _evidence_ledger_identity(value: Any) -> str:
     )
 
 
+def _unique_tokens(value: Any) -> list[str]:
+    tokens = [
+        str(item or "").strip()
+        for item in value or ()
+        if str(item or "").strip()
+    ]
+    return tokens if len(tokens) == len(set(tokens)) else []
+
+
+def _exact_recovery_coverage_chain(
+    *,
+    coverage_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    answer_contract_ref: Mapping[str, Any],
+    source_obligation_id: str,
+    consumed_candidate_ids: Sequence[str],
+) -> bool:
+    coverage = _mapping(coverage_ref)
+    requirement_ids = _unique_tokens(
+        coverage.get("source_requirement_ids")
+    )
+    obligation_ids = _unique_tokens(
+        coverage.get("source_obligation_ids")
+    )
+    coverage_candidate_ids = _unique_tokens(
+        coverage.get("candidate_ids")
+    )
+    consumed_ids = _unique_tokens(consumed_candidate_ids)
+    owned_links = [
+        _mapping(item)
+        for item in coverage.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
+    ]
+    return bool(
+        coverage.get("coverage_state") == "satisfied"
+        and coverage.get("coverage_record_id")
+        and coverage.get("coverage_record_digest")
+        and coverage.get("answer_component_id")
+        == component_ref.get("component_id")
+        and coverage.get("component_revision")
+        == component_ref.get("component_revision")
+        and coverage.get("component_digest")
+        == component_ref.get("component_digest")
+        and coverage.get("accepted_contract_version")
+        == answer_contract_ref.get("contract_version")
+        and coverage.get("accepted_contract_digest")
+        == answer_contract_ref.get("answer_contract_digest")
+        and obligation_ids == [source_obligation_id]
+        and len(requirement_ids) == 1
+        and len(coverage_candidate_ids) == 1
+        and consumed_ids == coverage_candidate_ids
+        and len(owned_links) == 1
+        and owned_links[0].get("requirement_id")
+        == requirement_ids[0]
+        and owned_links[0].get("source_obligation_id")
+        == source_obligation_id
+        and owned_links[0].get("candidate_id")
+        == coverage_candidate_ids[0]
+        and owned_links[0].get("link_status") == "accepted"
+    )
+
+
 def build_searchos_existing_gap_basis(
     *,
     state: Mapping[str, Any],
@@ -233,18 +300,43 @@ def build_searchos_existing_gap_basis(
         and _mapping(latest_admission.get("dprime_validation_ref"))
     ):
         raise SearchOSExistingGapRecoveryError("existing-gap basis lacks exact same-component role provenance")
-    coverage_records = _coverage_records_for_component(component_coverage_history, component_id)
-    if coverage_records and not all(
+    coverage_records = _coverage_records_for_component(
+        component_coverage_history, component_id
+    )
+    current_target_coverage_records = [
+        record
+        for record in coverage_records
+        if record.get("canonical_state") is True
+        and record.get("stale") is False
+        and record.get("accepted_contract_version")
+        == answer_contract_ref.get("contract_version")
+        and record.get("accepted_contract_digest")
+        == answer_contract_ref.get("answer_contract_digest")
+        and record.get("component_revision")
+        == component_ref.get("component_revision")
+        and record.get("component_digest")
+        == component_ref.get("component_digest")
+        and obligation_id
+        in {
+            str(item)
+            for item in record.get("source_obligation_ids") or ()
+        }
+    ]
+    if len(current_target_coverage_records) > 1:
+        raise SearchOSExistingGapRecoveryError(
+            "existing-gap basis rejects competing current target coverage"
+        )
+    if current_target_coverage_records and not all(
         record.get("coverage_record_id")
         and record.get("coverage_record_digest")
         and record.get("coverage_state")
         and isinstance(record.get("evidence_ledger_binding"), Mapping)
-        for record in coverage_records
+        for record in current_target_coverage_records
     ):
         raise SearchOSExistingGapRecoveryError("existing-gap basis rejects ambiguous component coverage")
     coverage_requirement_ids = {
         str(requirement_id)
-        for record in coverage_records
+        for record in current_target_coverage_records
         for requirement_id in _mapping(
             record.get("evidence_ledger_binding")
         ).get("source_requirement_ids", ())
@@ -263,6 +355,15 @@ def build_searchos_existing_gap_basis(
         and _evidence_ledger_identity(item.get("component_id"))
         == _evidence_ledger_identity(component_id)
     ]
+    ledger_requirement_ids = [
+        str(item.get("requirement_id") or "")
+        for item in ledger_requirements
+        if item.get("requirement_id")
+    ]
+    if len(ledger_requirement_ids) != len(set(ledger_requirement_ids)):
+        raise SearchOSExistingGapRecoveryError(
+            "existing-gap basis rejects ambiguous exact requirements"
+        )
     exact_requirement_ids = sorted(
         str(item["requirement_id"])
         for item in ledger_requirements
@@ -274,11 +375,15 @@ def build_searchos_existing_gap_basis(
     coverage_basis = (
         {
             "basis_kind": "current_component_coverage",
-            "current_coverage_ref": _compact_ref(coverage_records[-1]),
-            "component_coverage_history_digest": _digest(coverage_records),
-            "component_coverage_record_count": len(coverage_records),
+            "current_coverage_ref": _compact_ref(
+                current_target_coverage_records[0]
+            ),
+            "component_coverage_history_digest": _digest(
+                current_target_coverage_records
+            ),
+            "component_coverage_record_count": 1,
         }
-        if coverage_records
+        if current_target_coverage_records
         else {
             "basis_kind": "explicit_canonical_absence",
             "component_id": component_id,
@@ -756,6 +861,9 @@ def recovery_cycle_ref(cycle: Mapping[str, Any]) -> dict[str, Any]:
         "cycle_record_id": safe["cycle_record_id"],
         "cycle_digest": safe["cycle_digest"],
         "cycle_ordinal": safe["cycle_ordinal"],
+        "answer_contract_ref": deepcopy(
+            safe["answer_contract_ref"]
+        ),
         "component_ref": deepcopy(safe["component_ref"]),
         "source_obligation_ref": deepcopy(
             safe["source_obligation_ref"]
@@ -804,17 +912,62 @@ def finalize_searchos_existing_gap_recovery_cycle(
     slot_ref = _mapping(cycle["recovery_slot_ref"])
     slot = _mapping(_mapping(canonical["slots_by_id"]).get(slot_ref["slot_id"]))
     admission = _mapping(component_admission_ref)
+    coverage_ref = _mapping(admission.get("component_coverage_ref"))
+    admission_candidate_ids = _unique_tokens(
+        [
+            _mapping(item).get("evidence_ref_id")
+            for item in admission.get("evidence_refs") or ()
+            if isinstance(item, Mapping)
+        ]
+    )
+    admission_claimed = admission.get("admission_status") in {
+        "admitted",
+        "admitted_with_caveats",
+    }
     admitted = (
-        admission.get("admission_status") in {"admitted", "admitted_with_caveats"}
+        admission_claimed
         and admission.get("component_id") == slot_ref.get("component_id")
         and _mapping(admission.get("searchos_recovery_cycle_ref")).get("cycle_digest") == cycle["cycle_digest"]
+        and admission.get("component_revision")
+        == _mapping(slot.get("component_ref")).get(
+            "component_revision"
+        )
+        and admission.get("component_digest")
+        == _mapping(slot.get("component_ref")).get("component_digest")
+        and admission.get("accepted_contract_version")
+        == _mapping(cycle.get("answer_contract_ref")).get(
+            "contract_version"
+        )
+        and admission.get("accepted_contract_digest")
+        == _mapping(cycle.get("answer_contract_ref")).get(
+            "answer_contract_digest"
+        )
+        and _exact_recovery_coverage_chain(
+            coverage_ref=coverage_ref,
+            component_ref=_mapping(slot.get("component_ref")),
+            answer_contract_ref=_mapping(
+                cycle.get("answer_contract_ref")
+            ),
+            source_obligation_id=str(
+                slot_ref.get("source_obligation_id") or ""
+            ),
+            consumed_candidate_ids=admission_candidate_ids,
+        )
     )
     terminal_status = "recovered" if admitted else "exhausted_insufficient"
     reason = (
         None
         if admitted
         else _token(
-            failure_reason or slot.get("latest_reason") or "same_component_reassessment_not_admitted",
+            failure_reason
+            or (
+                "same_component_reassessment_failed:"
+                "exact_ownership_chain_invalid"
+                if admission_claimed
+                else None
+            )
+            or slot.get("latest_reason")
+            or "same_component_reassessment_not_admitted",
             "terminal failure reason",
             limit=240,
         )
@@ -858,6 +1011,9 @@ def finalize_searchos_existing_gap_recovery_cycle(
         "recovery_lease_ref": deepcopy(cycle["recovery_lease_ref"]),
         "recovery_slot_ref": deepcopy(slot_ref),
         "component_ref": deepcopy(slot["component_ref"]),
+        "answer_contract_ref": deepcopy(
+            cycle["answer_contract_ref"]
+        ),
         "source_obligation_ref": deepcopy(
             slot["source_obligation_ref"]
         ),
@@ -888,9 +1044,14 @@ def finalize_searchos_existing_gap_recovery_cycle(
         ),
         "novelty_exhausted": True,
         "lawful_materially_novel_recovery_purpose_remains": False,
-        "component_admission_ref": (_compact_ref(admission) if admission else {}),
-        "component_coverage_ref": deepcopy(
-            _mapping(admission.get("component_coverage_ref"))
+        "component_admission_ref": (
+            _compact_ref(admission) if admitted else {}
+        ),
+        "component_coverage_ref": (
+            deepcopy(coverage_ref) if admitted else {}
+        ),
+        "consumed_candidate_ids": (
+            admission_candidate_ids if admitted else []
         ),
         "expenditure": {
             "logical_judgment_calls": int(budget["charged_logical_judgment_calls"])
@@ -966,6 +1127,10 @@ def validate_searchos_recovery_terminal_aggregate(
     source_obligation_ref = _mapping(safe.get("source_obligation_ref"))
     admission_ref = _mapping(safe.get("component_admission_ref"))
     coverage_ref = _mapping(safe.get("component_coverage_ref"))
+    answer_contract_ref = _mapping(safe.get("answer_contract_ref"))
+    consumed_candidate_ids = _unique_tokens(
+        safe.get("consumed_candidate_ids")
+    )
     terminal_status = safe.get("terminal_status")
     recovered = terminal_status == "recovered"
     exhausted = terminal_status == "exhausted_insufficient"
@@ -986,6 +1151,8 @@ def validate_searchos_recovery_terminal_aggregate(
         or _mapping(cycle_ref.get("component_ref")) != component_ref
         or _mapping(cycle_ref.get("source_obligation_ref"))
         != source_obligation_ref
+        or _mapping(cycle_ref.get("answer_contract_ref"))
+        != answer_contract_ref
         or cycle_ref.get("cycle_id")
         != slot_ref.get("recovery_cycle_id")
         or _mapping(cycle_ref.get("recovery_purpose_ref"))
@@ -1049,10 +1216,25 @@ def validate_searchos_recovery_terminal_aggregate(
                 != component_ref.get("component_revision")
                 or admission_ref.get("component_digest")
                 != component_ref.get("component_digest")
+                or admission_ref.get("accepted_contract_version")
+                != answer_contract_ref.get("contract_version")
+                or admission_ref.get("accepted_contract_digest")
+                != answer_contract_ref.get(
+                    "answer_contract_digest"
+                )
                 or coverage_ref.get("coverage_state")
                 != "satisfied"
                 or not coverage_ref.get("coverage_record_id")
                 or not coverage_ref.get("coverage_record_digest")
+                or not _exact_recovery_coverage_chain(
+                    coverage_ref=coverage_ref,
+                    component_ref=component_ref,
+                    answer_contract_ref=answer_contract_ref,
+                    source_obligation_id=str(
+                        slot_ref.get("source_obligation_id") or ""
+                    ),
+                    consumed_candidate_ids=consumed_candidate_ids,
+                )
             )
         )
         or (
@@ -1069,6 +1251,7 @@ def validate_searchos_recovery_terminal_aggregate(
                 or admission_ref.get("admission_status")
                 in {"admitted", "admitted_with_caveats"}
                 or coverage_ref
+                or consumed_candidate_ids
             )
         )
     ):

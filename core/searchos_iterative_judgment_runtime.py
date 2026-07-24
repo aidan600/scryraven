@@ -349,6 +349,7 @@ def build_searchos_initial_state(
         "semantic_handoff_refs": [],
         "readiness_projection_ref": {},
         "required_needs_block_ref": {},
+        "required_needs_block": {},
         "canonical_state": True,
         "trace_only": False,
         "storage_only": False,
@@ -1036,17 +1037,31 @@ def record_searchos_required_needs_block(state: Mapping[str, Any], *, block: Map
             "read_authorized",
             "retry_authorized",
             "recovery_authorized",
-            "successful_sufficiency_allowed",
-            "final_answer_packet_allowed",
-            "author_execution_allowed",
         )
     ):
         raise SearchOSRuntimeError("required-needs block broadens closed authority")
+    if (
+        safe.get("semantic_receiver_ready") is not False
+        or safe.get("sufficiency_adjudication_required") is not True
+        or safe.get("subordinate_to_sufficiency") is not True
+        or any(
+            field in safe
+            for field in (
+                "successful_sufficiency_allowed",
+                "final_answer_packet_allowed",
+                "author_execution_allowed",
+            )
+        )
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block must remain subordinate to Sufficiency"
+        )
     candidate["required_needs_block_ref"] = {
         "block_id": safe["block_id"],
         "block_digest": claimed,
         "block_type": safe["block_type"],
     }
+    candidate["required_needs_block"] = deepcopy(safe)
     return _refresh_state(candidate)
 
 
@@ -2144,9 +2159,8 @@ def build_searchos_slice_a_readiness_v1(
         "required_ready_count": len(canonical["required_slot_ids"]) - len(unresolved),
         "unresolved_required_slots": unresolved,
         "all_required_slots_slice_a_ready": not unresolved,
-        "successful_sufficiency_allowed": not unresolved,
-        "final_answer_packet_allowed": not unresolved,
-        "author_execution_allowed": not unresolved,
+        "semantic_receiver_ready": not unresolved,
+        "sufficiency_adjudication_required": True,
         "comprehensive_recovery_authorized": False,
         "whole_run_stop_decided": False,
         "stop_insufficient_emitted": False,
@@ -2163,6 +2177,8 @@ def build_searchos_slice_a_readiness_v1(
 
 def build_searchos_required_needs_block(
     readiness: Mapping[str, Any],
+    *,
+    blocker_facts: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     safe = _mapping(readiness)
     _require_schema(safe, SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION, "Slice A readiness")
@@ -2180,18 +2196,34 @@ def build_searchos_required_needs_block(
             "readiness_projection_digest": safe.get("readiness_projection_digest"),
         },
         "unresolved_required_slots": unresolved,
+        "blocker_facts": [
+            {
+                "blocker_class": str(
+                    item.get("blocker_class") or "recovery_ineligible"
+                )[:80],
+                "reason_code": str(
+                    item.get("reason_code") or "required_need_unresolved"
+                )[:240],
+                "slot_id": (
+                    str(item.get("slot_id"))[:200]
+                    if item.get("slot_id")
+                    else None
+                ),
+            }
+            for item in blocker_facts
+            if isinstance(item, Mapping)
+        ],
         "query_authorized": False,
         "read_authorized": False,
         "retry_authorized": False,
         "recovery_authorized": False,
         "deterministic_semantic_fallback_invoked": False,
-        "successful_sufficiency_allowed": False,
-        "final_answer_packet_allowed": False,
-        "author_execution_allowed": False,
+        "semantic_receiver_ready": False,
+        "sufficiency_adjudication_required": True,
         "satisfaction_or_coverage_upgrade_created": False,
         "stop_insufficient_emitted": False,
         "final_whole_run_stopping_decided": False,
-        "safe_blocked_non_author_terminal_required": True,
+        "subordinate_to_sufficiency": True,
         "canonical_state": True,
     }
     digest = _digest(core)

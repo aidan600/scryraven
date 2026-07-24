@@ -1423,6 +1423,26 @@ def build_evidence_ledger_observation_from_run_contract(
                     requirement_kind or "general",
                 ),
                 "origin_ref": f"RunKernel.RunAuthorityContract:{contract_id}",
+                "component_id": requirement.get("component_id"),
+                "source_obligation_id": (
+                    requirement.get("source_obligation_id")
+                    or requirement.get("obligation_id")
+                ),
+                "run_id": requirement.get("run_id") or projection.get("run_id"),
+                "request_id": (
+                    requirement.get("request_id")
+                    or projection.get("request_id")
+                ),
+                "answer_contract_version": (
+                    requirement.get("answer_contract_version")
+                    or projection.get("accepted_contract_version")
+                    or projection.get("contract_version")
+                ),
+                "answer_contract_digest": (
+                    requirement.get("answer_contract_digest")
+                    or projection.get("accepted_contract_digest")
+                    or projection.get("contract_digest")
+                ),
                 "required_source_class": source_class,
                 "required_source_tier": requirement.get("required_source_tier"),
                 "required_currentness": requirement.get("required_currentness"),

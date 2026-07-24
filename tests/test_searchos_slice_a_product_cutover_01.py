@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+import core.pipeline_orchestrator as pipeline_orchestrator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
@@ -26,6 +27,7 @@ from core.multicomponent_role_runtime import (
     ROLE_SYSTEM_PROMPTS,
 )
 from core.prompts import DEFAULT_SYSTEM
+from core.run_kernel import ActionType
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
 )
@@ -282,7 +284,7 @@ def test_offline_judgment_fixture_uses_need_and_read_text_not_custody_presence(
     assert insufficient_decision["action"] != useful_decision["action"]
 
 
-def test_one_component_read_to_semantic_receiver_is_ready(
+def test_one_component_read_credits_only_exact_owned_obligation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -304,17 +306,54 @@ def test_one_component_read_to_semantic_receiver_is_ready(
     searchos_projection = dict(trace.get("searchos_slice_a") or {})
     readiness = dict(searchos_projection["readiness_projection"])
     outcomes = dict(searchos_projection["semantic_outcomes_by_slot"])
-    assert readiness["all_required_slots_slice_a_ready"] is True
-    assert readiness["unresolved_required_slots"] == []
-    assert readiness["required_ready_count"] == readiness["required_slot_count"]
-    assert "required_needs_block_ref" not in searchos_projection
+    coverage_ref = harness.run_kernel.state.projections[
+        "multicomponent_component_admission"
+    ]["component_admission_refs"][-1]["component_coverage_ref"]
+    terminal_slot = next(
+        item
+        for item in harness.run_kernel.state.searchos_state[
+            "slots_by_id"
+        ].values()
+        if item["slot_ref"]["slot_id"] in outcomes
+    )
+    assert coverage_ref["coverage_state"] == "satisfied"
+    assert coverage_ref["answer_component_id"] == terminal_slot[
+        "component_ref"
+    ]["component_id"]
+    assert coverage_ref["component_revision"] == terminal_slot[
+        "component_ref"
+    ]["component_revision"]
+    assert coverage_ref["component_digest"] == terminal_slot[
+        "component_ref"
+    ]["component_digest"]
+    assert coverage_ref["source_obligation_ids"] == [
+        terminal_slot["slot_ref"]["source_obligation_id"]
+    ]
+    assert coverage_ref["source_requirement_ids"]
+    assert coverage_ref["candidate_ids"]
+    assert coverage_ref["owned_requirement_candidate_refs"]
+    assert readiness["all_required_slots_slice_a_ready"] is False
+    assert readiness["required_ready_count"] == 1
+    assert readiness["required_slot_count"] > (
+        readiness["required_ready_count"]
+    )
+    assert searchos_projection["existing_gap_recovery"][
+        "terminal_aggregate"
+    ]["terminal_status"] == "exhausted_insufficient"
     assert searchos_projection.get("component_receiver_failure") is None
+    exact_ready_outcomes = [
+        item
+        for item in outcomes.values()
+        if item["semantic_admission_status"] == "admitted"
+    ]
+    assert len(exact_ready_outcomes) == 1
+    assert exact_ready_outcomes[0][
+        "searchos_handoff_material_consumed"
+    ] is True
     assert all(
-        outcome["component_analyst_proposal_status"] == "proposed"
-        and outcome["component_dprime_validation_status"] == "accepted"
-        and outcome["semantic_admission_status"] == "admitted"
-        and outcome["searchos_handoff_material_consumed"] is True
-        for outcome in outcomes.values()
+        item["semantic_admission_status"] == "not_admitted"
+        for item in outcomes.values()
+        if item not in exact_ready_outcomes
     )
     # Slice-A-ready permits the unchanged downstream answer lifecycle to
     # continue; it does not override that lifecycle's independent FAP policy.
@@ -419,9 +458,13 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
         item["bounded_read_character_count"] > 0
         for item in harness.read_assessment_calls
     )
-    assert outcome.execution_trace["searchos_slice_a"]["readiness_projection"][
+    exact_readiness = outcome.execution_trace["searchos_slice_a"][
+        "readiness_projection"
+    ]
+    assert exact_readiness[
         "all_required_slots_slice_a_ready"
-    ] is True
+    ] is False
+    assert exact_readiness["required_ready_count"] == 1
     assert not any(
         "transport_failure" in str(slot.get("latest_reason") or "")
         for slot in state["slots_by_id"].values()
@@ -453,7 +496,7 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
     assert harness.full_search_judgment_inputs == []
 
 
-def test_required_unresolved_slot_uses_existing_safe_non_author_terminal(
+def test_required_unresolved_slot_reaches_sufficiency_owned_blocked_fap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -485,7 +528,32 @@ def test_required_unresolved_slot_uses_existing_safe_non_author_terminal(
     assert summary["blocked_before_author_input"] is True
     assert terminal["author_called"] is False
     assert terminal["author_payload_derived"] is False
-    assert "final_answer_packet" not in trace
+    assert "final_answer_packet" in trace
+    assert harness.run_kernel.state.sufficiency_judgment_history
+    assert (
+        harness.run_kernel.state.sufficiency_judgment_history[-1][
+            "final_answer_allowed"
+        ]
+        is False
+    )
+    subordinate_block = harness.run_kernel.state.projections[
+        "searchos_required_needs_block"
+    ]
+    assert subordinate_block["sufficiency_adjudication_required"] is True
+    assert subordinate_block["subordinate_to_sufficiency"] is True
+    assert {
+        item["blocker_class"]
+        for item in subordinate_block["blocker_facts"]
+    } == {"gap_basis_rejection", "recovery_ineligible"}
+    assert "final_answer_packet_allowed" not in subordinate_block
+    assert "author_execution_allowed" not in subordinate_block
+    action_types = [
+        action.action_type
+        for action in harness.run_kernel.state.issued_actions.values()
+    ]
+    assert action_types.index(
+        ActionType.SUFFICIENCY_JUDGMENT_DECIDE
+    ) < action_types.index(ActionType.FINAL_ANSWER_PACKET_PREPARE)
     assert harness.author_prompts == []
     assert harness.read_transport_calls == []
     assert len(harness.search_calls) == 1
@@ -499,10 +567,78 @@ def test_required_unresolved_slot_uses_existing_safe_non_author_terminal(
     [completed_event] = [event for event in events if event.get("event") == "run_completed"]
     persisted_trace = dict(execution_event["execution_trace"])
     persisted_searchos = dict(persisted_trace["searchos_slice_a"])
-    assert execution_event["terminal_kind"] == "safe_blocked_non_author"
+    assert "terminal_kind" not in execution_event
     assert persisted_searchos["readiness_projection_ref"] == (searchos["readiness_projection_ref"])
     assert persisted_searchos["required_needs_block_ref"] == (searchos["required_needs_block_ref"])
     assert completed_event["run_id"] == outcome.run_id
+
+
+def test_component_receiver_and_gap_basis_failures_reach_sufficiency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+
+    def fail_component_receiver(*_args: Any, **_kwargs: Any) -> None:
+        raise pipeline_orchestrator.OrdinaryMulticomponentRuntimeError(
+            "forced component receiver validation failure"
+        )
+
+    def reject_gap_basis(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise pipeline_orchestrator.SearchOSExistingGapRecoveryError(
+            "forced exact gap-basis rejection"
+        )
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_ordinary_semantic_or_multicomponent_handoff_from_scope",
+        fail_component_receiver,
+    )
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "build_searchos_existing_gap_basis",
+        reject_gap_basis,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+    )
+
+    block = harness.run_kernel.state.projections[
+        "searchos_required_needs_block"
+    ]
+    blocker_classes = {
+        item["blocker_class"]
+        for item in block["blocker_facts"]
+    }
+    assert blocker_classes == {
+        "component_receiver_failure",
+        "gap_basis_rejection",
+        "recovery_ineligible",
+    }
+    assert harness.run_kernel.state.sufficiency_judgment_history
+    assert (
+        harness.run_kernel.state.sufficiency_judgment_history[-1][
+            "final_answer_allowed"
+        ]
+        is False
+    )
+    action_types = [
+        action.action_type
+        for action in harness.run_kernel.state.issued_actions.values()
+    ]
+    assert action_types.index(
+        ActionType.SUFFICIENCY_JUDGMENT_DECIDE
+    ) < action_types.index(ActionType.FINAL_ANSWER_PACKET_PREPARE)
+    assert harness.author_prompts == []
+    assert outcome.execution_trace["blocked_fap_terminal"][
+        "author_called"
+    ] is False
 
 
 @pytest.mark.parametrize(
@@ -538,6 +674,19 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     )
     assert searchos["required_needs_block_ref"]["block_type"] == (SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED)
     assert trace["blocked_fap_terminal"]["author_called"] is False
+    assert "validation_failure" in {
+        item["blocker_class"]
+        for item in harness.run_kernel.state.projections[
+            "searchos_required_needs_block"
+        ]["blocker_facts"]
+    }
+    assert harness.run_kernel.state.sufficiency_judgment_history
+    assert (
+        harness.run_kernel.state.sufficiency_judgment_history[-1][
+            "final_answer_allowed"
+        ]
+        is False
+    )
     assert harness.read_transport_calls == []
     assert len(harness.search_calls) == 1
     assert harness.full_search_judgment_inputs == []
@@ -636,17 +785,11 @@ def test_two_components_use_one_shared_n_component_receiver(
 
     searchos = dict(outcome.execution_trace["searchos_slice_a"])
     readiness = dict(searchos["readiness_projection"])
-    assert readiness["all_required_slots_slice_a_ready"] is True, {
-        "unresolved": [
-            {
-                "slot_id": dict(item["slot_ref"])["slot_id"],
-                "reason": item["reason"],
-                "posture": item["latest_judgment_posture"],
-            }
-            for item in readiness["unresolved_required_slots"]
-        ],
-        "receiver_failure": searchos.get("component_receiver_failure"),
-    }
+    assert readiness["all_required_slots_slice_a_ready"] is False
+    assert readiness["required_ready_count"] == 2
+    assert readiness["required_slot_count"] > (
+        readiness["required_ready_count"]
+    )
     assert harness.run_kernel is not None
     admissions = dict(harness.run_kernel.state.projections["multicomponent_component_admission"])[
         "component_admission_refs"

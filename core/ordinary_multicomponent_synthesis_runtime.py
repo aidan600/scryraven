@@ -571,6 +571,7 @@ def _semantic_material(
         qualified_requirement_ids = source_requirement_ids_for_component_candidate(
             run_kernel.state.evidence_ledger.to_projection().to_dict(),
             evidence_ref_id=evidence_ref_id,
+            component_id=component_id,
             source_obligation_candidate_ids=tuple(obligation_ids),
             ignore_satisfied_provider_job_historical_gaps=True,
         )
@@ -3007,6 +3008,7 @@ def _execute_selected_lane(
             and not source_requirement_ids_for_component_candidate(
                 run_kernel.state.evidence_ledger.to_projection().to_dict(),
                 evidence_ref_id=selected[component_id].evidence_ref_id,
+                component_id=component_id,
                 source_obligation_candidate_ids=tuple(
                     component_ref.get("source_obligation_candidate_ids")
                     or component_ref.get("source_obligation_candidate_refs")

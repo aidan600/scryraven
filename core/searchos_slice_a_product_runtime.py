@@ -2025,6 +2025,19 @@ def build_searchos_semantic_outcomes_by_slot(
             & evidence_ids
         )
         material_consumed = bool(consumed_evidence_ids)
+        coverage_ref = dict(
+            admission.get("component_coverage_ref") or {}
+        )
+        exact_coverage_chain = _coverage_ref_matches_slot(
+            admission=admission,
+            slot=slot,
+        ) and _coverage_ref_matches_contract_and_candidates(
+            coverage_ref=coverage_ref,
+            answer_contract_ref=dict(
+                searchos_state.get("answer_contract_ref") or {}
+            ),
+            consumed_candidate_ids=consumed_evidence_ids,
+        )
         recovery_evidence_ref = next(
             (
                 dict(item)
@@ -2036,7 +2049,11 @@ def build_searchos_semantic_outcomes_by_slot(
             {},
         )
         admitted = bool(
-            admission.get("admission_status") in {"admitted", "admitted_with_caveats"} and material_consumed and handoff
+            admission.get("admission_status")
+            in {"admitted", "admitted_with_caveats"}
+            and material_consumed
+            and handoff
+            and exact_coverage_chain
         )
         outcomes[str(slot_id)] = {
             "semantic_handoff_ref": (
@@ -2062,6 +2079,16 @@ def build_searchos_semantic_outcomes_by_slot(
                     "component_revision": admission.get("component_revision"),
                     "component_digest": admission.get("component_digest"),
                     "admission_status": admission.get("admission_status"),
+                    "component_coverage_ref": deepcopy(coverage_ref),
+                    "source_requirement_ids": list(
+                        coverage_ref.get("source_requirement_ids") or ()
+                    ),
+                    "source_obligation_id": dict(
+                        slot.get("slot_ref") or {}
+                    ).get("source_obligation_id"),
+                    "consumed_candidate_ids": sorted(
+                        consumed_evidence_ids
+                    ),
                 }
                 if admitted
                 else {}
@@ -2096,6 +2123,102 @@ def _ordinary_admission_matches_slot(
         == component_ref.get("component_revision")
         and admission.get("component_digest")
         == component_ref.get("component_digest")
+        and _coverage_ref_matches_slot(
+            admission=admission,
+            slot=slot,
+        )
+    )
+
+
+def _unique_tokens(value: Any) -> list[str]:
+    tokens = [
+        str(item or "").strip()
+        for item in value or ()
+        if str(item or "").strip()
+    ]
+    return tokens if len(tokens) == len(set(tokens)) else []
+
+
+def _coverage_ref_matches_slot(
+    *,
+    admission: Mapping[str, Any],
+    slot: Mapping[str, Any],
+) -> bool:
+    slot_ref = dict(slot.get("slot_ref") or {})
+    component_ref = dict(slot.get("component_ref") or {})
+    coverage_ref = dict(
+        admission.get("component_coverage_ref") or {}
+    )
+    target_obligation_id = str(
+        slot_ref.get("source_obligation_id") or ""
+    )
+    source_obligation_ids = _unique_tokens(
+        coverage_ref.get("source_obligation_ids")
+    )
+    source_requirement_ids = _unique_tokens(
+        coverage_ref.get("source_requirement_ids")
+    )
+    owned_links = [
+        dict(item)
+        for item in coverage_ref.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
+    ]
+    return bool(
+        coverage_ref.get("coverage_state") == "satisfied"
+        and coverage_ref.get("coverage_record_id")
+        and coverage_ref.get("coverage_record_digest")
+        and coverage_ref.get("answer_component_id")
+        == component_ref.get("component_id")
+        == slot_ref.get("component_id")
+        and coverage_ref.get("component_revision")
+        == component_ref.get("component_revision")
+        and coverage_ref.get("component_digest")
+        == component_ref.get("component_digest")
+        and source_obligation_ids == [target_obligation_id]
+        and source_requirement_ids
+        and len(owned_links) == len(source_requirement_ids)
+        and {
+            str(item.get("requirement_id") or "")
+            for item in owned_links
+        }
+        == set(source_requirement_ids)
+        and all(
+            item.get("source_obligation_id")
+            == target_obligation_id
+            and item.get("link_status") == "accepted"
+            and item.get("candidate_id")
+            in set(_unique_tokens(coverage_ref.get("candidate_ids")))
+            for item in owned_links
+        )
+    )
+
+
+def _coverage_ref_matches_contract_and_candidates(
+    *,
+    coverage_ref: Mapping[str, Any],
+    answer_contract_ref: Mapping[str, Any],
+    consumed_candidate_ids: set[str],
+) -> bool:
+    candidate_ids = set(_unique_tokens(coverage_ref.get("candidate_ids")))
+    owned_candidate_ids = {
+        str(item.get("candidate_id") or "")
+        for item in coverage_ref.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
+    }
+    return bool(
+        coverage_ref.get("accepted_contract_version")
+        == answer_contract_ref.get("contract_version")
+        and coverage_ref.get("accepted_contract_digest")
+        == answer_contract_ref.get("answer_contract_digest")
+        and consumed_candidate_ids
+        and consumed_candidate_ids <= candidate_ids
+        and consumed_candidate_ids <= owned_candidate_ids
     )
 
 
@@ -2126,10 +2249,10 @@ def _recovery_admission_matches_slot(
         admission.get("admission_status")
         in {"admitted", "admitted_with_caveats"}
         and admission.get("same_component_reassessment") is True
-        and dict(admission.get("component_coverage_ref") or {}).get(
-            "coverage_state"
+        and _coverage_ref_matches_slot(
+            admission=admission,
+            slot=slot,
         )
-        == "satisfied"
         and cycle_ref
         and cycle_ref.get("cycle_id")
         == recovery_slot_ref.get("recovery_cycle_id")

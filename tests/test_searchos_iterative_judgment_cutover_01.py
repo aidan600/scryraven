@@ -978,7 +978,10 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         },
     )
     assert readiness["all_required_slots_slice_a_ready"] is True
-    assert readiness["successful_sufficiency_allowed"] is True
+    assert readiness["semantic_receiver_ready"] is True
+    assert readiness["sufficiency_adjudication_required"] is True
+    assert "final_answer_packet_allowed" not in readiness
+    assert "author_execution_allowed" not in readiness
 
     exact_outcome = {
         "semantic_handoff_ref": handoff,
@@ -1028,9 +1031,11 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
     )
     block = build_searchos_required_needs_block(blocked)
     assert block["block_type"] == SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
-    assert block["successful_sufficiency_allowed"] is False
-    assert block["final_answer_packet_allowed"] is False
-    assert block["author_execution_allowed"] is False
+    assert block["semantic_receiver_ready"] is False
+    assert block["sufficiency_adjudication_required"] is True
+    assert block["subordinate_to_sufficiency"] is True
+    assert "final_answer_packet_allowed" not in block
+    assert "author_execution_allowed" not in block
     assert block["query_authorized"] is False
     assert block["read_authorized"] is False
     assert block["recovery_authorized"] is False
@@ -1139,7 +1144,9 @@ def test_required_terminal_postures_share_block_family_with_distinct_reasons() -
         )
         block = build_searchos_required_needs_block(readiness)
         assert block["block_type"] == SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
-        assert block["author_execution_allowed"] is False
+        assert block["sufficiency_adjudication_required"] is True
+        assert block["subordinate_to_sufficiency"] is True
+        assert "author_execution_allowed" not in block
         block_ids.add(block["block_id"])
     assert len(block_ids) == 4
 
@@ -1311,7 +1318,17 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
             payload={"readiness": readiness_action.inputs["readiness"]},
         )
     )
-    block_action = kernel.authorize_searchos_required_needs_block()
+    block_action = kernel.authorize_searchos_required_needs_block(
+        blocker_facts=[
+            {
+                "blocker_class": "recovery_ineligible",
+                "reason_code": (
+                    "no_lawful_materially_novel_recovery_purpose"
+                ),
+                "slot_id": "slot-1",
+            }
+        ]
+    )
     kernel.reduce(
         Observation.from_action(
             block_action,
@@ -1323,7 +1340,33 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
     assert kernel.state.searchos_state["required_needs_block_ref"]["block_type"] == (
         SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
     )
-    with pytest.raises(RunKernelTransitionError, match="keeps Sufficiency"):
+    assert kernel.state.projections[
+        "searchos_required_needs_block"
+    ]["blocker_facts"] == [
+        {
+            "blocker_class": "recovery_ineligible",
+            "reason_code": (
+                "no_lawful_materially_novel_recovery_purpose"
+            ),
+            "slot_id": "slot-1",
+        }
+    ]
+    sufficiency_action = kernel.authorize(
+        stage="sufficiency_must_remain_reachable",
+        action_type=ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
+        reason="subordinate SearchOS facts require Sufficiency",
+        inputs={},
+        expected_observation_type=(
+            ObservationType.SUFFICIENCY_JUDGMENT_DECIDED
+        ),
+    )
+    assert sufficiency_action.action_type is (
+        ActionType.SUFFICIENCY_JUDGMENT_DECIDE
+    )
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="requires Sufficiency adjudication",
+    ):
         kernel.authorize(
             stage="forbidden_author",
             action_type=ActionType.AUTHOR_EXECUTE,

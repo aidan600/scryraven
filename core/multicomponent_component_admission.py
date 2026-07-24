@@ -515,6 +515,47 @@ def stage_multicomponent_component_admission(
                         "coverage_record_digest"
                     ),
                     "coverage_state": coverage_projection.get("coverage_state"),
+                    "answer_component_id": coverage_projection.get(
+                        "answer_component_id"
+                    ),
+                    "component_revision": coverage_projection.get(
+                        "component_revision"
+                    ),
+                    "component_digest": coverage_projection.get(
+                        "component_digest"
+                    ),
+                    "accepted_contract_version": coverage_projection.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": coverage_projection.get(
+                        "accepted_contract_digest"
+                    ),
+                    "source_requirement_ids": list(
+                        dict(
+                            coverage_projection.get(
+                                "evidence_ledger_binding"
+                            )
+                            or {}
+                        ).get("source_requirement_ids")
+                        or ()
+                    ),
+                    "source_obligation_ids": list(
+                        coverage_projection.get(
+                            "source_obligation_ids"
+                        )
+                        or ()
+                    ),
+                    "candidate_ids": list(
+                        coverage_projection.get("candidate_ids") or ()
+                    ),
+                    "owned_requirement_candidate_refs": [
+                        dict(item)
+                        for item in coverage_projection.get(
+                            "owned_requirement_candidate_refs"
+                        )
+                        or ()
+                        if isinstance(item, Mapping)
+                    ],
                 }
                 if coverage_projection
                 else {}

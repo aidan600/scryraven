@@ -291,23 +291,38 @@ def _requirement_has_current_component_ownership(
     requirement_component_id = clean_token(
         requirement.get("component_id")
     )
+    requirement_source_obligation_id = _evidence_ledger_identity(
+        requirement.get("source_obligation_id")
+    )
     assessed_identity = _evidence_ledger_identity(
         assessed_component_id
     )
-    if requirement_component_id:
-        return (
-            _evidence_ledger_identity(requirement_component_id)
-            == assessed_identity
-        )
-    matching_ownership_joins = [
+    if (
+        requirement_component_id
+        and _evidence_ledger_identity(requirement_component_id)
+        != assessed_identity
+    ):
+        return False
+    requirement_ownership_joins = [
         _mapping(item)
         for item in source_obligation_coverage_refs
         if isinstance(item, Mapping)
         and clean_token(item.get("requirement_id")) == requirement_id
     ]
-    if len(matching_ownership_joins) != 1:
+    if len(requirement_ownership_joins) != 1:
         return False
-    ownership_join = matching_ownership_joins[0]
+    ownership_join = requirement_ownership_joins[0]
+    if (
+        requirement_source_obligation_id
+        and requirement_source_obligation_id
+        not in {
+            _evidence_ledger_identity(value)
+            for value in _list(
+                ownership_join.get("source_obligation_ids")
+            )
+        }
+    ):
+        return False
     if (
         _evidence_ledger_identity(
             ownership_join.get("answer_component_id")
@@ -786,6 +801,23 @@ def _required_contract_requirements(
                 ),
                 "provider_job_id": clean_token(item.get("provider_job_id")),
                 "origin_ref": clean_token(item.get("origin_ref")),
+                "run_id": clean_token(
+                    item.get("run_id") or projection.get("run_id")
+                ),
+                "request_id": clean_token(
+                    item.get("request_id")
+                    or projection.get("request_id")
+                ),
+                "answer_contract_version": clean_token(
+                    item.get("answer_contract_version")
+                    or projection.get("accepted_contract_version")
+                    or projection.get("contract_version")
+                ),
+                "answer_contract_digest": clean_token(
+                    item.get("answer_contract_digest")
+                    or projection.get("accepted_contract_digest")
+                    or projection.get("contract_digest")
+                ),
             }
         )
     return requirements
@@ -832,6 +864,75 @@ def _exact_requirement_match(
     req_id = _req_key(requirement.get("requirement_id"))
     ledger_id = _req_key(ledger_requirement.get("requirement_id"))
     return bool(req_id and ledger_id and req_id == ledger_id)
+
+
+def _exact_owned_requirement_match(
+    requirement: Mapping[str, Any],
+    ledger_requirement: Mapping[str, Any],
+) -> bool:
+    """Match one authoritative requirement without compatibility broadening."""
+
+    if not _exact_requirement_match(requirement, ledger_requirement):
+        return False
+    for key in ("component_id", "source_obligation_id"):
+        required = _evidence_ledger_identity(requirement.get(key))
+        observed = _evidence_ledger_identity(ledger_requirement.get(key))
+        if required:
+            if observed != required:
+                return False
+        elif observed:
+            # An unscoped compatibility requirement is not authority for a
+            # scoped owner merely because the requirement IDs happen to match.
+            return False
+    for key in (
+        "provider_job_id",
+        "run_id",
+        "request_id",
+        "answer_contract_version",
+        "answer_contract_digest",
+    ):
+        required = _req_key(requirement.get(key))
+        if required and _req_key(ledger_requirement.get(key)) != required:
+            return False
+    return True
+
+
+def _find_unique_exact_owned_ledger_requirement(
+    requirement: Mapping[str, Any],
+    *,
+    contract_requirements: Sequence[Mapping[str, Any]],
+    ledger_requirements: Sequence[Mapping[str, Any]],
+    consumed_ledger_indexes: set[int] | None = None,
+) -> dict[str, Any]:
+    """Return exactly one independently owned ledger row or fail closed."""
+
+    requirement_id = _req_key(requirement.get("requirement_id"))
+    if not requirement_id:
+        return {}
+    if (
+        sum(
+            1
+            for item in contract_requirements
+            if _req_key(item.get("requirement_id")) == requirement_id
+        )
+        != 1
+    ):
+        return {}
+    id_matches = [
+        (index, item)
+        for index, item in enumerate(ledger_requirements)
+        if _req_key(item.get("requirement_id")) == requirement_id
+    ]
+    if len(id_matches) != 1:
+        return {}
+    ledger_index, ledger_requirement = id_matches[0]
+    if consumed_ledger_indexes is not None and ledger_index in consumed_ledger_indexes:
+        return {}
+    if not _exact_owned_requirement_match(requirement, ledger_requirement):
+        return {}
+    if consumed_ledger_indexes is not None:
+        consumed_ledger_indexes.add(ledger_index)
+    return dict(ledger_requirement)
 
 
 def _compatible_kind_and_class(
@@ -1077,13 +1178,16 @@ def _answer_contract_assessment_exactly_reconciled(
     ]
     if not exact_contract_requirements:
         return False
+    consumed_ledger_indexes: set[int] = set()
     for requirement in exact_contract_requirements:
-        ledger_requirement = _find_ledger_requirement(
+        ledger_requirement = _find_unique_exact_owned_ledger_requirement(
             requirement,
-            ledger_requirements,
+            contract_requirements=contract_requirements,
+            ledger_requirements=ledger_requirements,
+            consumed_ledger_indexes=consumed_ledger_indexes,
         )
         if (
-            not _exact_requirement_match(requirement, ledger_requirement)
+            not ledger_requirement
             or clean_token(ledger_requirement.get("status")) != "satisfied"
         ):
             return False
@@ -2141,10 +2245,13 @@ def build_deterministic_sufficiency_judgment(
     missing: list[SufficiencyRequirementAssessment] = []
     partial: list[SufficiencyRequirementAssessment] = []
     satisfied: list[SufficiencyRequirementAssessment] = []
+    consumed_required_ledger_indexes: set[int] = set()
     for requirement in required_contract_requirements:
-        ledger_requirement = _find_ledger_requirement(
+        ledger_requirement = _find_unique_exact_owned_ledger_requirement(
             requirement,
-            ledger_requirements,
+            contract_requirements=required_contract_requirements,
+            ledger_requirements=ledger_requirements,
+            consumed_ledger_indexes=consumed_required_ledger_indexes,
         )
         status = clean_token(ledger_requirement.get("status"))
         if status == "satisfied":

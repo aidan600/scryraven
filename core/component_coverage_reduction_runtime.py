@@ -149,6 +149,9 @@ _LEDGER_BAD_CURRENTNESS = frozenset(
         "stale",
     }
 )
+_IMPLICIT_COMPATIBILITY_LINK_REASON = (
+    "selected_candidate_matches_existing_requirement"
+)
 _LEDGER_STRONG_REQUIREMENT_KINDS = frozenset(
     {
         "canonical",
@@ -621,18 +624,18 @@ def _coverage_evidence_refs(
 def _ledger_indexes(
     projection: Mapping[str, Any],
 ) -> tuple[
-    dict[str, Mapping[str, Any]],
     dict[str, list[Mapping[str, Any]]],
-    dict[str, Mapping[str, Any]],
-    dict[str, set[str]],
+    dict[str, list[Mapping[str, Any]]],
+    dict[str, list[Mapping[str, Any]]],
+    dict[str, list[Mapping[str, Any]]],
 ]:
-    candidates: dict[str, Mapping[str, Any]] = {}
+    candidates: dict[str, list[Mapping[str, Any]]] = {}
     for record in _sequence_items(projection.get("candidate_records")):
         if not isinstance(record, Mapping):
             continue
         candidate_id = _normalize_evidence_ref(record.get("candidate_id"))
         if candidate_id:
-            candidates[candidate_id] = record
+            candidates.setdefault(candidate_id, []).append(record)
 
     custody_records: dict[str, list[Mapping[str, Any]]] = {}
     for record in _sequence_items(projection.get("custody_records")):
@@ -642,27 +645,48 @@ def _ledger_indexes(
         if candidate_id:
             custody_records.setdefault(candidate_id, []).append(record)
 
-    requirements: dict[str, Mapping[str, Any]] = {}
-    requirement_links: dict[str, set[str]] = {}
+    requirements: dict[str, list[Mapping[str, Any]]] = {}
     for record in _sequence_items(projection.get("source_requirements")):
         if not isinstance(record, Mapping):
             continue
         requirement_id = _normalized_ledger_ref(record.get("requirement_id"))
         if not requirement_id:
             continue
-        requirements[requirement_id] = record
-        for candidate_id in _text_list(record.get("linked_candidate_ids"), limit=200):
-            normalized = _normalize_evidence_ref(candidate_id)
-            if normalized:
-                requirement_links.setdefault(requirement_id, set()).add(normalized)
+        requirements.setdefault(requirement_id, []).append(record)
+    requirement_links: dict[str, list[Mapping[str, Any]]] = {}
     for link in _sequence_items(projection.get("requirement_links")):
         if not isinstance(link, Mapping):
             continue
         requirement_id = _normalized_ledger_ref(link.get("requirement_id"))
-        candidate_id = _normalize_evidence_ref(link.get("candidate_id"))
-        if requirement_id and candidate_id:
-            requirement_links.setdefault(requirement_id, set()).add(candidate_id)
+        if requirement_id:
+            requirement_links.setdefault(requirement_id, []).append(link)
     return candidates, custody_records, requirements, requirement_links
+
+
+def _owned_identity(value: Any) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .casefold()
+        .replace("-", "_")
+        .replace(":", "_")
+        .replace(" ", "_")
+    )
+
+
+def _accepted_component_source_obligation_ids(
+    accepted_component: Mapping[str, Any] | None,
+) -> set[str]:
+    component = _safe_mapping(accepted_component)
+    return {
+        identity
+        for item in (
+            component.get("source_obligation_candidate_ids")
+            or component.get("source_obligation_candidate_refs")
+            or ()
+        )
+        if (identity := _owned_identity(item))
+    }
 
 
 def _ledger_requirement_is_strong(requirement: Mapping[str, Any]) -> bool:
@@ -824,6 +848,14 @@ def ledger_qualification_blockers_for_satisfied_coverage(
     candidates, custody_records, requirements, requirement_links = _ledger_indexes(
         projection
     )
+    coverage_component_id = _owned_identity(
+        coverage.get("answer_component_id")
+        or _safe_mapping(accepted_component).get("component_id")
+    )
+    accepted_obligation_ids = _accepted_component_source_obligation_ids(
+        accepted_component
+    )
+    exact_owned_obligation_ids: set[str] = set()
     normalized_evidence_refs = [
         normalized
         for ref in evidence_refs
@@ -831,15 +863,23 @@ def ledger_qualification_blockers_for_satisfied_coverage(
     ]
 
     for evidence_ref, normalized_ref in zip(evidence_refs, normalized_evidence_refs, strict=False):
-        candidate = candidates.get(normalized_ref)
-        if candidate is None:
+        candidate_rows = candidates.get(normalized_ref, [])
+        if len(candidate_rows) != 1:
             _append_ledger_blocker(
                 blockers,
-                code="ledger_candidate_missing",
-                reason="coverage-bound evidence ref is absent from current EvidenceLedger candidates",
+                code=(
+                    "ledger_candidate_missing"
+                    if not candidate_rows
+                    else "ledger_candidate_ambiguous"
+                ),
+                reason=(
+                    "coverage-bound evidence ref must identify exactly one "
+                    "current EvidenceLedger candidate"
+                ),
                 evidence_ref_id=evidence_ref,
             )
             continue
+        candidate = candidate_rows[0]
 
         disposition = _normalized_status(candidate.get("fact_disposition"))
         if disposition in _LEDGER_REJECTED_OR_UNAVAILABLE_DISPOSITIONS:
@@ -896,16 +936,24 @@ def ledger_qualification_blockers_for_satisfied_coverage(
             )
 
         for requirement_id in relevant_requirement_ids:
-            requirement = requirements.get(requirement_id)
-            if requirement is None:
+            requirement_rows = requirements.get(requirement_id, [])
+            if len(requirement_rows) != 1:
                 _append_ledger_blocker(
                     blockers,
-                    code="ledger_source_requirement_missing",
-                    reason="coverage-bound source requirement is absent from current EvidenceLedger facts",
+                    code=(
+                        "ledger_source_requirement_missing"
+                        if not requirement_rows
+                        else "ledger_source_requirement_ambiguous"
+                    ),
+                    reason=(
+                        "coverage-bound source requirement must identify exactly "
+                        "one current EvidenceLedger row"
+                    ),
                     evidence_ref_id=evidence_ref,
                     requirement_id=requirement_id,
                 )
                 continue
+            requirement = requirement_rows[0]
             requirement_status = _normalized_status(requirement.get("status"))
             if requirement_status != "satisfied":
                 _append_ledger_blocker(
@@ -915,15 +963,112 @@ def ledger_qualification_blockers_for_satisfied_coverage(
                     evidence_ref_id=evidence_ref,
                     requirement_id=requirement_id,
                 )
-            linked_candidates = requirement_links.get(requirement_id, set())
-            if normalized_ref not in linked_candidates:
+            exact_links = [
+                link
+                for link in requirement_links.get(requirement_id, [])
+                if _normalize_evidence_ref(link.get("candidate_id"))
+                == normalized_ref
+            ]
+            if (
+                len(exact_links) != 1
+                or _normalized_status(exact_links[0].get("link_status"))
+                != "accepted"
+                or (
+                    _normalized_status(
+                        exact_links[0].get("link_reason")
+                    )
+                    == _IMPLICIT_COMPATIBILITY_LINK_REASON
+                )
+            ):
                 _append_ledger_blocker(
                     blockers,
-                    code="ledger_candidate_not_linked_to_requirement",
-                    reason="coverage-bound evidence is not linked to the relevant source requirement",
+                    code="ledger_candidate_exact_accepted_link_missing",
+                    reason=(
+                        "coverage-bound evidence requires one exact accepted "
+                        "link to the owned source requirement"
+                    ),
                     evidence_ref_id=evidence_ref,
                     requirement_id=requirement_id,
                 )
+            requirement_component_id = _owned_identity(
+                requirement.get("component_id")
+            )
+            requirement_obligation_id = _owned_identity(
+                requirement.get("source_obligation_id")
+            )
+            if (
+                not coverage_component_id
+                or requirement_component_id != coverage_component_id
+            ):
+                _append_ledger_blocker(
+                    blockers,
+                    code="ledger_source_requirement_foreign_component",
+                    reason=(
+                        "coverage-bound source requirement owner does not match "
+                        "the coverage component"
+                    ),
+                    evidence_ref_id=evidence_ref,
+                    requirement_id=requirement_id,
+                )
+            if (
+                not requirement_obligation_id
+                or (
+                    accepted_obligation_ids
+                    and requirement_obligation_id not in accepted_obligation_ids
+                )
+            ):
+                _append_ledger_blocker(
+                    blockers,
+                    code="ledger_source_requirement_foreign_obligation",
+                    reason=(
+                        "coverage-bound source requirement does not own an exact "
+                        "accepted component obligation"
+                    ),
+                    evidence_ref_id=evidence_ref,
+                    requirement_id=requirement_id,
+                )
+            else:
+                exact_owned_obligation_ids.add(requirement_obligation_id)
+            lineage_checks = (
+                ("run_id", coverage.get("run_id")),
+                ("request_id", coverage.get("request_id")),
+                (
+                    "answer_contract_version",
+                    coverage.get("accepted_contract_version"),
+                ),
+                (
+                    "answer_contract_digest",
+                    coverage.get("accepted_contract_digest"),
+                ),
+            )
+            for key, expected in lineage_checks:
+                observed = _clean_token(requirement.get(key), limit=200)
+                expected_token = _clean_token(expected, limit=200)
+                comparable_observed = (
+                    _owned_identity(observed)
+                    if key in {"run_id", "request_id"}
+                    else observed
+                )
+                comparable_expected = (
+                    _owned_identity(expected_token)
+                    if key in {"run_id", "request_id"}
+                    else expected_token
+                )
+                if (
+                    observed
+                    and expected_token
+                    and comparable_observed != comparable_expected
+                ):
+                    _append_ledger_blocker(
+                        blockers,
+                        code=f"ledger_source_requirement_stale_{key}",
+                        reason=(
+                            "coverage-bound source requirement lineage does not "
+                            f"match current coverage {key}"
+                        ),
+                        evidence_ref_id=evidence_ref,
+                        requirement_id=requirement_id,
+                    )
             if _ledger_requirement_is_strong(requirement):
                 if _ledger_bool(candidate.get("contextual_only")) or _ledger_bool(
                     candidate.get("lower_tier")
@@ -962,6 +1107,26 @@ def ledger_qualification_blockers_for_satisfied_coverage(
                         evidence_ref_id=evidence_ref,
                         requirement_id=requirement_id,
                     )
+    declared_obligation_ids = {
+        identity
+        for item in _text_list(
+            coverage.get("source_obligation_ids"),
+            limit=200,
+        )
+        if (identity := _owned_identity(item))
+    }
+    if (
+        declared_obligation_ids
+        and declared_obligation_ids != exact_owned_obligation_ids
+    ):
+        _append_ledger_blocker(
+            blockers,
+            code="coverage_source_obligation_lineage_mismatch",
+            reason=(
+                "declared coverage source obligations do not equal the exact "
+                "owned EvidenceLedger requirements"
+            ),
+        )
     return blockers
 
 
@@ -1080,6 +1245,11 @@ def _coverage_reduction_digest_payload(state_core: Mapping[str, Any]) -> dict[st
         "support_posture": state_core.get("support_posture"),
         "derived_support_status": state_core.get("derived_support_status"),
         "source_obligation_status": state_core.get("source_obligation_status"),
+        "source_obligation_ids": state_core.get("source_obligation_ids"),
+        "candidate_ids": state_core.get("candidate_ids"),
+        "owned_requirement_candidate_refs": state_core.get(
+            "owned_requirement_candidate_refs"
+        ),
         "content_availability_status": state_core.get("content_availability_status"),
         "evidence_custody_status": state_core.get("evidence_custody_status"),
         "version_validity": state_core.get("version_validity"),
@@ -1428,6 +1598,55 @@ def build_component_coverage_reduction_state(
         raise ComponentCoverageReductionError("component coverage record digest is already reduced")
 
     record_safe = record.to_dict(include_validation=False)
+    exact_source_obligation_ids: list[str] = []
+    exact_requirement_candidate_refs: list[dict[str, str]] = []
+    bound_requirement_ids = set(
+        record.evidence_ledger_binding.source_requirement_ids
+    )
+    cited_candidate_ids = list(dict.fromkeys(cited_evidence_refs))
+    for item in _sequence_items(
+        _safe_mapping(evidence_ledger_projection).get(
+            "source_requirements"
+        )
+    ):
+        if not isinstance(item, Mapping):
+            continue
+        if _clean_token(item.get("requirement_id")) not in bound_requirement_ids:
+            continue
+        source_obligation_id = _clean_token(
+            item.get("source_obligation_id")
+        )
+        if (
+            source_obligation_id
+            and source_obligation_id not in exact_source_obligation_ids
+        ):
+            exact_source_obligation_ids.append(source_obligation_id)
+        requirement_id = _clean_token(item.get("requirement_id"))
+        for link in _sequence_items(
+            _safe_mapping(evidence_ledger_projection).get(
+                "requirement_links"
+            )
+        ):
+            if not isinstance(link, Mapping):
+                continue
+            candidate_id = _clean_token(link.get("candidate_id"))
+            if (
+                _clean_token(link.get("requirement_id"))
+                == requirement_id
+                and candidate_id in cited_candidate_ids
+                and _normalized_status(link.get("link_status"))
+                == "accepted"
+            ):
+                exact_requirement_candidate_refs.append(
+                    {
+                        "requirement_id": requirement_id or "",
+                        "source_obligation_id": (
+                            source_obligation_id or ""
+                        ),
+                        "candidate_id": candidate_id or "",
+                        "link_status": "accepted",
+                    }
+                )
     lineage = {
         "created_by": COMPONENT_COVERAGE_REDUCTION_OWNER,
         "created_from": [
@@ -1461,6 +1680,11 @@ def build_component_coverage_reduction_state(
         "support_posture": record_safe.get("support_posture"),
         "derived_support_status": record_safe.get("derived_support_status"),
         "source_obligation_status": record_safe.get("source_obligation_status"),
+        "source_obligation_ids": exact_source_obligation_ids,
+        "candidate_ids": cited_candidate_ids,
+        "owned_requirement_candidate_refs": (
+            exact_requirement_candidate_refs
+        ),
         "content_availability_status": record_safe.get("content_availability_status"),
         "evidence_custody_status": record_safe.get("evidence_custody_status"),
         "version_validity": record_safe.get("version_validity"),
@@ -1524,6 +1748,17 @@ def build_component_coverage_reduction_projection(
         "support_posture": coverage_state.get("support_posture"),
         "derived_support_status": coverage_state.get("derived_support_status"),
         "source_obligation_status": coverage_state.get("source_obligation_status"),
+        "source_obligation_ids": list(
+            coverage_state.get("source_obligation_ids", [])
+        ),
+        "candidate_ids": list(coverage_state.get("candidate_ids", [])),
+        "owned_requirement_candidate_refs": [
+            dict(item)
+            for item in coverage_state.get(
+                "owned_requirement_candidate_refs", []
+            )
+            if isinstance(item, Mapping)
+        ],
         "content_availability_status": coverage_state.get("content_availability_status"),
         "evidence_custody_status": coverage_state.get("evidence_custody_status"),
         "version_validity": coverage_state.get("version_validity"),

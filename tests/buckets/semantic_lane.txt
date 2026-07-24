@@ -21,7 +21,7 @@ tests/test_semantic_lane_structural_guards.py
 # Owner: SearchOS N-component semantic receiver. Reason: exact READ custody must
 # traverse Component Analyst, component D-prime, and RunKernel admission before
 # a required slot is Slice-A-ready, including N=1.
-tests/test_searchos_slice_a_product_cutover_01.py::test_one_component_read_to_semantic_receiver_is_ready
+tests/test_searchos_slice_a_product_cutover_01.py::test_one_component_read_credits_only_exact_owned_obligation
 
 # Owner: multipart ordinary semantic producer. Reason: component caps must fail
 # closed without semantic state; Author/FAP-heavy multipart assertions stay
