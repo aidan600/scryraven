@@ -2137,137 +2137,6 @@ def _semantic_readiness_reasons(overlay: SemanticSufficiencyOverlay) -> tuple[st
     return tuple(dict.fromkeys(reason for reason in reasons if reason))
 
 
-def _canonical_recovery_outcome_is_current(
-    *,
-    outcome: Mapping[str, Any],
-    authorization: Mapping[str, Any],
-    graph: Mapping[str, Any],
-    semantic_state: Mapping[str, Any],
-    run_identity: Mapping[str, Any],
-) -> bool:
-    if (
-        outcome.get("owner")
-        != "RunKernel.MulticomponentRecoveryOutcome"
-        or outcome.get("canonical_state") is not True
-        or outcome.get("trace_only") is not False
-        or outcome.get("final_answer_authority") is not True
-        or outcome.get("direct_semantic_producer_used") is not False
-        or outcome.get("runtime_parallelism") is not False
-        or outcome.get("pre_recovery_synthesis_suppressed") is not True
-        or outcome.get("run_id") != run_identity.get("run_id")
-        or outcome.get("request_id") != run_identity.get("request_id")
-    ):
-        return False
-    declared_digest = clean_token(outcome.get("outcome_digest"))
-    if not declared_digest or declared_digest != safe_packet_digest(
-        {
-            key: value
-            for key, value in outcome.items()
-            if key != "outcome_digest"
-        }
-    ):
-        return False
-    if (
-        authorization.get("owner")
-        != "RunKernel.MulticomponentRecoveryAuthorization"
-        or authorization.get("canonical_state") is not True
-        or outcome.get("run_id") != authorization.get("run_id")
-        or outcome.get("request_id") != authorization.get("request_id")
-        or outcome.get("recovery_authorization_id")
-        != authorization.get("authorization_id")
-        or outcome.get("recovery_authorization_digest")
-        != authorization.get("authorization_digest")
-        or outcome.get("proposal_id") != authorization.get("proposal_id")
-        or outcome.get("proposal_digest")
-        != authorization.get("proposal_digest")
-        or outcome.get("scrutineer_artifact_id")
-        != authorization.get("scrutineer_artifact_id")
-        or outcome.get("scrutineer_artifact_digest")
-        != authorization.get("scrutineer_artifact_digest")
-    ):
-        return False
-    if (
-        outcome.get("current_answer_contract_version")
-        != semantic_state.get("accepted_contract_version")
-        or outcome.get("current_answer_contract_digest")
-        != semantic_state.get("accepted_contract_digest")
-        or outcome.get("graph_id") != graph.get("graph_id")
-        or outcome.get("graph_revision") != graph.get("graph_revision")
-        or outcome.get("graph_digest") != graph.get("graph_digest")
-    ):
-        return False
-    graph_contract = _mapping(graph.get("accepted_contract_ref"))
-    if (
-        outcome.get("graph_answer_contract_version")
-        != graph_contract.get("accepted_contract_version")
-        or outcome.get("graph_answer_contract_digest")
-        != graph_contract.get("accepted_contract_digest")
-    ):
-        return False
-    providers = _string_list(outcome.get("observed_provider_identities"))
-    if any(
-        provider not in {"tavily", "linkup", "exa"}
-        for provider in providers
-    ):
-        return False
-    attempts = _int_value(outcome.get("ordinary_acquisition_attempt_count"))
-    disposition = clean_token(outcome.get("recovery_disposition"))
-    if disposition == "blocked_requires_user_confirmation":
-        return attempts == 0 and not providers
-    if attempts != 1 or not providers:
-        return False
-    if disposition == "acquired":
-        closure_ref = _mapping(outcome.get("selective_closure_ref"))
-        graph_closure_ref = _mapping(graph.get("selective_closure_ref"))
-        if (
-            _int_value(outcome.get("selective_recomputation_rounds")) != 1
-            or _int_value(outcome.get("whole_graph_resynthesis_rounds")) != 0
-            or _int_value(outcome.get("affected_synthesis_count"))
-            != _int_value(graph.get("affected_synthesis_count"))
-            or _int_value(outcome.get("preserved_synthesis_count"))
-            != _int_value(graph.get("preserved_synthesis_count"))
-            or _int_value(outcome.get("recomputed_synthesis_count"))
-            != _int_value(graph.get("recomputed_synthesis_count"))
-            or _int_value(outcome.get("carry_forward_count"))
-            != _int_value(graph.get("carry_forward_count"))
-            or closure_ref != graph_closure_ref
-            or _mapping(outcome.get("fresh_full_case_scrutineer_ref"))
-            != _mapping(graph.get("scrutineer_ref"))
-            or _mapping(outcome.get("logical_role_accounting"))
-            != _mapping(graph.get("logical_accounting"))
-            or _mapping(outcome.get("physical_role_call_accounting"))
-            != _mapping(graph.get("physical_call_accounting"))
-        ):
-            return False
-        outcome_fresh = {
-            clean_token(item.get("synthesis_key")): _mapping(item)
-            for item in _mapping_tuple(
-                outcome.get("fresh_affected_synthesis_refs")
-            )
-        }
-        current_fresh = {
-            clean_token(item.get("synthesis_key")): _mapping(item)
-            for item in _mapping_tuple(graph.get("synthesis_nodes"))
-            if _mapping(item.get("superseded_node_ref"))
-        }
-        if (
-            len(current_fresh)
-            != _int_value(graph.get("affected_synthesis_count"))
-            or set(outcome_fresh) != set(current_fresh)
-        ):
-            return False
-        for key, node in current_fresh.items():
-            ref = outcome_fresh.get(key, {})
-            if (
-                ref.get("node_id") != node.get("node_id")
-                or ref.get("node_revision") != node.get("node_revision")
-                or ref.get("node_digest") != node.get("node_digest")
-                or ref.get("status") != "admitted"
-                or ref.get("current") is not True
-                or ref.get("stale") is not False
-            ):
-                return False
-    return True
 
 
 def build_deterministic_sufficiency_judgment(
@@ -2343,18 +2212,48 @@ def build_deterministic_sufficiency_judgment(
         current_contract_digest=semantic_state.get("accepted_contract_digest"),
     )
     graph_ready_component_ids = frozenset(
-        clean_token(item.get("component_id"))
-        for item in _mapping_tuple(
-            _mapping(judgment_input.multicomponent_graph_state).get(
-                "component_nodes"
-            )
-        )
-        if multicomponent_consumption.get("graph_ready_for_synthesis") is True
-        and item.get("current") is True
-        and item.get("stale") is not True
-        and clean_token(item.get("admission_status"))
-        in {"admitted", "admitted_with_caveats"}
-        and clean_token(item.get("component_id"))
+        {
+            *{
+                clean_token(item.get("component_id"))
+                for item in _mapping_tuple(
+                    _mapping(
+                        judgment_input.multicomponent_graph_state
+                    ).get("component_nodes")
+                )
+                if multicomponent_consumption.get(
+                    "graph_ready_for_synthesis"
+                )
+                is True
+                and item.get("current") is True
+                and item.get("stale") is not True
+                and clean_token(item.get("admission_status"))
+                in {"admitted", "admitted_with_caveats"}
+                and clean_token(item.get("component_id"))
+            },
+            *{
+                clean_token(item.get("component_id"))
+                for item in [
+                    *_mapping_tuple(
+                        multicomponent_consumption.get(
+                            "answer_target_fulfillments"
+                        )
+                    ),
+                    *_mapping_tuple(
+                        multicomponent_consumption.get(
+                            "supporting_premise_readiness"
+                        )
+                    ),
+                ]
+                if multicomponent_consumption.get(
+                    "graph_ready_for_synthesis"
+                )
+                is True
+                and item.get("fulfillment_status")
+                in {"fulfilled_direct", "fulfilled_inferred"}
+                and clean_token(item.get("component_id"))
+            },
+        }
+        - {None}
     )
 
     ledger_requirements = _ledger_requirements(ledger)
@@ -2597,58 +2496,6 @@ def build_deterministic_sufficiency_judgment(
         posture = SufficiencyPosture.BLOCKED
         final_allowed = False
         rationale = "component_readiness_not_satisfied"
-    recovery_state = _mapping(judgment_input.multicomponent_recovery_state)
-    recovery_authorization = _mapping(
-        judgment_input.multicomponent_recovery_authorization_state
-    )
-    recovery_outcome_current = _canonical_recovery_outcome_is_current(
-        outcome=recovery_state,
-        authorization=recovery_authorization,
-        graph=_mapping(judgment_input.multicomponent_graph_state),
-        semantic_state=semantic_state,
-        run_identity=_mapping(judgment_input.run_identity),
-    )
-    terminal_recovery_partial = (
-        recovery_outcome_current
-        and clean_token(recovery_state.get("recovery_disposition"))
-        in {
-            "blocked_no_candidates",
-            "blocked_no_readable_evidence",
-            "blocked_component_admission",
-            "blocked_resynthesis",
-        }
-        and _int_value(recovery_state.get("ordinary_acquisition_attempt_count"))
-        == 1
-        and recovery_state.get("direct_semantic_producer_used") is False
-        and _partial_allowed(contract)
-        and bool(
-            multicomponent_consumption.get("direct_component_entries")
-        )
-        and (
-            multicomponent_consumption.get("graph_contract_current") is False
-            or multicomponent_consumption.get("graph_ready_for_synthesis") is not True
-        )
-    )
-    if terminal_recovery_partial:
-        # The one authorized recovery attempt is exhausted. Preserve only the
-        # pre-existing direct component findings through ordinary partial
-        # finalization; prior-contract synthesis remains suppressed.
-        decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
-        posture = SufficiencyPosture.PARTIAL_ANSWER
-        final_allowed = True
-        rationale = "multicomponent_recovery_terminal_blocker_partial_output"
-        multicomponent_consumption["limitations"] = list(
-            dict.fromkeys(
-                [
-                    *multicomponent_consumption.get("limitations", ()),
-                    clean_text(
-                        recovery_state.get("bounded_blocker_reason"),
-                        limit=260,
-                    )
-                    or "The one authorized missing-component recovery attempt failed.",
-                ]
-            )
-        )
     if multicomponent_consumption:
         ordinary_ready_with_caveats = (
             decision is RunSufficiencyDecision.READY_WITH_CAVEATS
@@ -2670,7 +2517,55 @@ def build_deterministic_sufficiency_judgment(
         graph_ready = (
             multicomponent_consumption.get("graph_ready_for_synthesis") is True
         )
-        if synthesis_entries and ordinary_ready_for_synthesis:
+        query_targets_fulfilled = (
+            multicomponent_consumption.get(
+                "all_required_answer_targets_fulfilled"
+            )
+            is True
+        )
+        sufficient_with_inference = (
+            multicomponent_consumption.get(
+                "sufficient_with_admitted_inference"
+            )
+            is True
+        )
+        query_centered_target_count = int(
+            multicomponent_consumption.get(
+                "required_answer_target_count"
+            )
+            or 0
+        )
+        if (
+            query_centered_target_count
+            and graph_ready
+            and query_targets_fulfilled
+            and sufficient_with_inference
+        ):
+            decision = (
+                RunSufficiencyDecision.READY_WITH_ADMITTED_INFERENCE
+            )
+            posture = (
+                SufficiencyPosture.SUFFICIENT_WITH_ADMITTED_INFERENCE
+            )
+            final_allowed = True
+            rationale = (
+                "all_required_answer_targets_fulfilled_with_admitted_inference"
+            )
+        elif (
+            query_centered_target_count
+            and not query_targets_fulfilled
+        ):
+            decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+            posture = SufficiencyPosture.BLOCKED
+            final_allowed = False
+            rationale = "required_answer_target_unfulfilled"
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption["direct_component_entry_count"] = 0
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption[
+                "admitted_synthesis_entry_count"
+            ] = 0
+        elif synthesis_entries and ordinary_ready_for_synthesis:
             if not graph_ready:
                 decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
                 posture = SufficiencyPosture.PARTIAL_ANSWER
@@ -2912,6 +2807,18 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
         )
+        if multicomponent_consumption.get(
+            "sufficient_with_admitted_inference"
+        ):
+            mandatory = tuple(
+                dict.fromkeys(
+                    (
+                        *mandatory,
+                        "admitted_inference_must_be_explained_from_its_exact_premises",
+                        "inferred_conclusion_must_not_be_presented_as_directly_sourced",
+                    )
+                )
+            )
     prohibited = _prohibited_upgrades(
         contract=contract,
         missing=missing,
@@ -2935,6 +2842,18 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
         )
+        if multicomponent_consumption.get(
+            "sufficient_with_admitted_inference"
+        ):
+            prohibited = tuple(
+                dict.fromkeys(
+                    (
+                        *prohibited,
+                        "do_not_launder_admitted_inference_as_direct_source_claim",
+                        "do_not_invent_or_strengthen_inference_premises_or_relationships",
+                    )
+                )
+            )
     if component_readiness.get("component_readiness_blocked"):
         prohibited = tuple(
             dict.fromkeys(
@@ -3056,6 +2975,21 @@ def build_deterministic_sufficiency_judgment(
                     )
                 ),
                 "admitted_synthesis_entries": fap_synthesis_entries,
+                "answer_target_fulfillments": list(
+                    multicomponent_consumption.get(
+                        "answer_target_fulfillments", ()
+                    )
+                ),
+                "supporting_premise_readiness": list(
+                    multicomponent_consumption.get(
+                        "supporting_premise_readiness", ()
+                    )
+                ),
+                "sufficient_with_admitted_inference": bool(
+                    multicomponent_consumption.get(
+                        "sufficient_with_admitted_inference"
+                    )
+                ),
                 "multicomponent_limitations": fap_limitations,
             }
         )

@@ -354,6 +354,12 @@ def _parse_role_output(
         parsed = dict(parsed_value)
     ordinary_output = dict(parsed)
     ordinary_output.pop("specialist_need_proposal", None)
+    # Query-resolution candidates must copy exact immutable contract, graph,
+    # component, and node refs from the role input.  Their dedicated
+    # normalizer validates and sanitizes that proposal-only namespace below;
+    # the ordinary semantic-output authority guard must not misclassify those
+    # copied digests as model-created repository authority.
+    ordinary_output.pop("query_resolution_proposals", None)
     reject_model_authority_claims(ordinary_output)
     return parsed
 
@@ -1132,9 +1138,13 @@ def execute_multicomponent_role_call(
         MULTICOMPONENT_SCHEDULER_STAGE,
     )
 
-    scheduler_active = bool(
+    scheduler_projection = _safe_mapping(
         run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    ) and not bool(searchos_recovery_cycle_ref)
+    )
+    scheduler_active = (
+        scheduler_projection.get("status") == "active"
+        and not bool(searchos_recovery_cycle_ref)
+    )
     recovery_active = bool(searchos_recovery_cycle_ref)
     if searchos_recovery_cycle_ref:
         if lease_id:
@@ -1280,6 +1290,14 @@ def execute_multicomponent_role_call(
             "output_schema_variant",
         ):
             artifact_core[key] = _json_safe(action.inputs.get(key))
+    elif normalized_role == ROLE_CROSS_COMPONENT_ANALYST:
+        artifact_core["accepted_contract_ref"] = _json_safe(
+            safe_input.get("accepted_contract_ref")
+            or safe_input.get("current_contract_ref")
+        )
+        artifact_core["graph_ref"] = _json_safe(
+            safe_input.get("graph_ref")
+        )
     if schema_variant:
         artifact_core["output_schema_variant"] = schema_variant
     artifact = {**artifact_core, "artifact_digest": _digest(artifact_core)}

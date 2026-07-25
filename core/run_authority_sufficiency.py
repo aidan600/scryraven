@@ -61,6 +61,7 @@ class SufficiencyJudgmentMode(str, Enum):
 
 class RunSufficiencyDecision(str, Enum):
     READY_DIRECT = "ready_direct"
+    READY_WITH_ADMITTED_INFERENCE = "ready_with_admitted_inference"
     READY_WITH_CAVEATS = "ready_with_caveats"
     PARTIAL_ANSWER_AUTHORIZED = "partial_answer_authorized"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
@@ -74,6 +75,9 @@ class RunSufficiencyDecision(str, Enum):
 
 class SufficiencyPosture(str, Enum):
     DIRECT_ANSWER = "direct_answer"
+    SUFFICIENT_WITH_ADMITTED_INFERENCE = (
+        "sufficient_with_admitted_inference"
+    )
     ANSWER_WITH_CAVEATS = "answer_with_caveats"
     PARTIAL_ANSWER = "partial_answer"
     INSUFFICIENT_ANSWER = "insufficient_answer"
@@ -329,10 +333,6 @@ class RunSufficiencyJudgmentInput:
     semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
     component_readiness_projection: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_state: Mapping[str, Any] = field(default_factory=dict)
-    multicomponent_recovery_state: Mapping[str, Any] = field(default_factory=dict)
-    multicomponent_recovery_authorization_state: Mapping[str, Any] = field(
-        default_factory=dict
-    )
     multicomponent_scheduler_state: Mapping[str, Any] = field(default_factory=dict)
     searchos_existing_gap_recovery_terminal_state: Mapping[str, Any] = field(
         default_factory=dict
@@ -416,10 +416,6 @@ class RunSufficiencyJudgmentInput:
             "semantic_state_ref": self._semantic_state_model_ref(),
             "component_readiness_ref": self._component_readiness_model_ref(),
             "multicomponent_graph_ref": self._multicomponent_graph_model_ref(),
-            "multicomponent_recovery_ref": self._multicomponent_recovery_model_ref(),
-            "multicomponent_recovery_authorization_ref": (
-                self._multicomponent_recovery_authorization_model_ref()
-            ),
             "multicomponent_scheduler_ref": self._multicomponent_scheduler_model_ref(),
             "searchos_existing_gap_recovery_terminal_ref": (
                 self._searchos_existing_gap_recovery_terminal_model_ref()
@@ -542,52 +538,6 @@ class RunSufficiencyJudgmentInput:
                     )
                 ),
             },
-        }
-
-    def _multicomponent_recovery_model_ref(self) -> dict[str, Any]:
-        recovery = _safe_mapping(self.multicomponent_recovery_state)
-        return {
-            "schema_version": clean_token(recovery.get("schema_version")),
-            "owner": clean_token(recovery.get("owner")),
-            "canonical_state": recovery.get("canonical_state") is True,
-            "trace_only": recovery.get("trace_only") is True,
-            "recovery_disposition": clean_token(
-                recovery.get("recovery_disposition")
-            ),
-            "recovered_component_id": clean_token(
-                recovery.get("recovered_component_id")
-            ),
-            "ordinary_acquisition_attempt_count": recovery.get(
-                "ordinary_acquisition_attempt_count"
-            ),
-            "direct_semantic_producer_used": recovery.get(
-                "direct_semantic_producer_used"
-            ),
-            "bounded_blocker_reason": clean_text(
-                recovery.get("bounded_blocker_reason"), limit=260
-            ),
-            "outcome_digest": clean_token(recovery.get("outcome_digest")),
-        }
-
-    def _multicomponent_recovery_authorization_model_ref(
-        self,
-    ) -> dict[str, Any]:
-        authorization = _safe_mapping(
-            self.multicomponent_recovery_authorization_state
-        )
-        return {
-            "owner": clean_token(authorization.get("owner")),
-            "canonical_state": authorization.get("canonical_state") is True,
-            "authorization_id": clean_token(
-                authorization.get("authorization_id")
-            ),
-            "authorization_digest": clean_token(
-                authorization.get("authorization_digest")
-            ),
-            "proposal_id": clean_token(authorization.get("proposal_id")),
-            "proposal_digest": clean_token(
-                authorization.get("proposal_digest")
-            ),
         }
 
     def _multicomponent_graph_model_ref(self) -> dict[str, Any]:
@@ -903,7 +853,13 @@ class RunSufficiencyJudgment:
 
     def _default_final_packet_inputs(self) -> dict[str, Any]:
         claim_postures: list[str] = []
-        if self.decision is RunSufficiencyDecision.INFERENCE_ONLY_WITH_LABELING:
+        if self.decision in {
+            RunSufficiencyDecision.INFERENCE_ONLY_WITH_LABELING,
+            RunSufficiencyDecision.READY_WITH_ADMITTED_INFERENCE,
+        } or (
+            self.final_answer_posture
+            is SufficiencyPosture.SUFFICIENT_WITH_ADMITTED_INFERENCE
+        ):
             claim_postures.append("inferred_from_sourced_premises")
         elif self.final_answer_posture is SufficiencyPosture.DIRECT_ANSWER:
             claim_postures.append("directly_sourced")

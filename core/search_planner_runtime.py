@@ -328,7 +328,32 @@ class DeterministicSearchPlannerAdapter:
         requirements: list[dict[str, Any]] = []
         for rank, candidate in enumerate(assessment.component_candidates, start=1):
             component_id = candidate.component_id
-            obligation_ids = list(localized_obligation_ids.get(component_id, ()))
+            obligation_ids = list(
+                localized_obligation_ids.get(component_id, ())
+            )[:1]
+            if not obligation_ids:
+                fallback_obligation_id = (
+                    f"obligation:{component_id}:direct-source"
+                )
+                obligation_ids = [fallback_obligation_id]
+                source_kind_by_id[fallback_obligation_id] = (
+                    "primary_source_documents"
+                )
+                source_candidates.append(
+                    {
+                        "candidate_id": fallback_obligation_id,
+                        "obligation_kind": "primary_source_documents",
+                        "component_candidate_ids": [component_id],
+                        "strictness": "required",
+                        "metadata": {
+                            "provider_name_neutral": True,
+                            "component_binding_posture": (
+                                "deterministic_component_local_reproof"
+                            ),
+                            "deterministic_fallback_obligation": True,
+                        },
+                    }
+                )
             subquestion = candidate.user_facing_subquestion
             strategy = _deterministic_primary_query_strategy(
                 component_id=component_id,
@@ -1399,9 +1424,17 @@ def initial_query_strategies_from_planner_state(
         component
         for component in accepted_components
         if _clean_token(component.get("requirement_posture")) == "required"
+        and "direct"
+        in {
+            _clean_token(item)
+            for item in component.get("allowed_support_kinds") or ()
+        }
     ]
     if not required_components:
-        raise SearchPlannerRuntimeError("initial query strategy requires at least one accepted required component")
+        raise SearchPlannerRuntimeError(
+            "initial query strategy requires at least one direct-capable "
+            "accepted required component"
+        )
 
     strategies: list[dict[str, Any]] = []
     seen_strategy_ids: set[str] = set()

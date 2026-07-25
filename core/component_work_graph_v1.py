@@ -225,12 +225,141 @@ def _bounded_semantic_role_input_from_node(node: Mapping[str, Any]) -> dict[str,
     return projection
 
 
+def _accepted_component_catalog(
+    *,
+    component_nodes: Sequence[Mapping[str, Any]],
+    accepted_component_refs: Sequence[Mapping[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    catalog = [
+        _safe_mapping(item)
+        for item in (
+            accepted_component_refs
+            if accepted_component_refs is not None
+            else (
+                _safe_mapping(node).get("accepted_component_ref")
+                for node in component_nodes
+            )
+        )
+        if isinstance(item, Mapping) and _safe_mapping(item)
+    ]
+    ids = [str(item.get("component_id") or "") for item in catalog]
+    if (
+        not catalog
+        or any(not component_id for component_id in ids)
+        or len(ids) != len(set(ids))
+        or len(catalog) > MAX_COMPONENT_NODES
+    ):
+        raise ComponentWorkGraphV1Error(
+            "Graph V1 requires a unique accepted component catalog"
+        )
+    node_by_component = {
+        str(_safe_mapping(node).get("component_id") or ""): _safe_mapping(node)
+        for node in component_nodes
+    }
+    catalog_by_id = {
+        str(item.get("component_id") or ""): item for item in catalog
+    }
+    for component_id, node in node_by_component.items():
+        accepted = catalog_by_id.get(component_id)
+        if (
+            accepted is None
+            or accepted.get("component_revision")
+            != node.get("component_revision")
+            or accepted.get("component_digest") != node.get("component_digest")
+        ):
+            raise ComponentWorkGraphV1Error(
+                "Graph V1 direct node is not bound to its accepted component"
+            )
+    return catalog
+
+
+def _proposal_ref(value: Mapping[str, Any]) -> dict[str, Any]:
+    proposal = _safe_mapping(value)
+    return {
+        "proposal_id": proposal.get("proposal_id"),
+        "proposal_digest": proposal.get("proposal_digest"),
+        "stable_replay_key": proposal.get("stable_replay_key"),
+        "classification": proposal.get("classification"),
+        "role_artifact_ref": _safe_mapping(proposal.get("role_artifact_ref")),
+    }
+
+
+def _initial_inferred_resolution_by_target(
+    *,
+    proposals: Sequence[Mapping[str, Any]],
+    cross_artifact: Mapping[str, Any],
+    accepted_contract_ref: Mapping[str, Any],
+    accepted_component_catalog: Sequence[Mapping[str, Any]],
+    expected_parent_graph_ref: Mapping[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Validate inference candidates authored in the graph-structure Cross pass."""
+
+    from core.analyst_query_resolution_proposal import (
+        CLASS_INFERRED_CONCLUSION,
+        validate_bound_analyst_query_resolution_proposal,
+    )
+
+    cross_ref = role_artifact_ref(cross_artifact)
+    target_catalog = {
+        str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(item)
+        for item in accepted_component_catalog
+    }
+    by_local_target: dict[str, dict[str, Any]] = {}
+    stable_keys: set[str] = set()
+    for raw in proposals:
+        proposal = validate_bound_analyst_query_resolution_proposal(raw)
+        if proposal.get("classification") != CLASS_INFERRED_CONCLUSION:
+            continue
+        artifact_ref = _safe_mapping(proposal.get("role_artifact_ref"))
+        expected_graph = _safe_mapping(expected_parent_graph_ref)
+        recorded_graph = _safe_mapping(proposal.get("parent_graph_ref"))
+        if (
+            artifact_ref.get("artifact_id") != cross_ref.get("artifact_id")
+            or artifact_ref.get("artifact_digest")
+            != cross_ref.get("artifact_digest")
+            or proposal.get("parent_contract_ref")
+            != _safe_mapping(accepted_contract_ref)
+            or recorded_graph != expected_graph
+            or proposal.get("parent_graph_explicitly_absent")
+            is not (not bool(expected_graph))
+        ):
+            raise ComponentWorkGraphV1Error(
+                "inferred proposal is not bound to the graph-structure Cross input"
+            )
+        stable_key = str(proposal.get("stable_replay_key") or "")
+        local_target = str(proposal.get("local_target_key") or "")
+        if (
+            not stable_key
+            or stable_key in stable_keys
+            or not local_target
+            or local_target in by_local_target
+        ):
+            raise ComponentWorkGraphV1Error(
+                "Graph V1 inferred proposal identity is duplicated or ambiguous"
+            )
+        target_ref = _safe_mapping(
+            _safe_mapping(proposal.get("variant_payload")).get(
+                "answer_target_ref"
+            )
+        )
+        target_id = str(target_ref.get("component_id") or "")
+        if not target_id or target_catalog.get(target_id) != target_ref:
+            raise ComponentWorkGraphV1Error(
+                "inferred proposal answer target is not an exact accepted component ref"
+            )
+        stable_keys.add(stable_key)
+        by_local_target[local_target] = proposal
+    return by_local_target
+
+
 def cross_component_input_packet(
     *,
     component_nodes: Sequence[Mapping[str, Any]],
     accepted_contract_ref: Mapping[str, Any],
     requested_synthesis_directive: str,
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
+    requested_mode: str | None = None,
 ) -> dict[str, Any]:
     from core.quantitative_specialist_product_activation import (
         QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
@@ -238,9 +367,30 @@ def cross_component_input_packet(
         build_synthesis_quantitative_source_catalog,
     )
 
+    from core.semantic_contract_foundation import inference_depth_ceiling_for_mode
+
+    component_catalog = [
+        _safe_mapping(item)
+        for item in (
+            accepted_component_refs
+            if accepted_component_refs is not None
+            else (
+                _safe_mapping(node).get("accepted_component_ref")
+                for node in component_nodes
+            )
+        )
+        if isinstance(item, Mapping) and _safe_mapping(item)
+    ]
+    normalized_mode = (_clean_text(requested_mode, limit=40) or "Balanced")
     packet = {
         "supported_query_class": SUPPORTED_QUERY_CLASS,
         "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
+        "accepted_component_refs": component_catalog,
+        "semantic_inference_profile": {
+            "requested_mode": normalized_mode,
+            "profile_ceiling": inference_depth_ceiling_for_mode(normalized_mode),
+            "graph_hard_ceiling": MAX_SYNTHESIS_DEPTH,
+        },
         "requested_synthesis_directive": _clean_text(
             requested_synthesis_directive, limit=360
         ),
@@ -396,63 +546,101 @@ def derive_selective_recomputation_closure(
 
     source = validate_component_work_graph_v1(graph)
     authorization = _safe_mapping(recovery_authorization_ref)
+    amendment_application_ref = _safe_mapping(
+        contract_amendment_application_ref
+    )
     if (
         authorization.get("owner")
-        != "RunKernel.MulticomponentRecoveryAuthorization"
+        != "RunKernel.ContractAmendmentGraphTransition"
         or authorization.get("canonical_state") is not True
         or authorization.get("run_id") != source.get("run_id")
         or authorization.get("request_id") != source.get("request_id")
         or authorization.get("graph_id") != source.get("graph_id")
         or authorization.get("graph_revision") != source.get("graph_revision")
         or authorization.get("graph_digest") != source.get("graph_digest")
-        or authorization.get("target_kind") != "synthesis"
+        or authorization.get("target_kind")
+        not in {"synthesis", "synthesis_set"}
+        or authorization.get("application_digest")
+        != amendment_application_ref.get("application_digest")
     ):
         raise ComponentWorkGraphV1Error(
             "selective closure requires the authorization-bound source graph"
         )
-    resolved_target = _safe_mapping(authorization.get("resolved_target"))
     synthesis_by_id = {
         item["node_id"]: item for item in source["synthesis_nodes"]
     }
     synthesis_by_key = {
         item["synthesis_key"]: item for item in source["synthesis_nodes"]
     }
-    target = synthesis_by_id.get(resolved_target.get("node_id"))
-    resolved_matches_active = target is not None and all(
-        resolved_target.get(key) == _node_ref(target).get(key)
-        for key in (
-            "node_kind",
-            "node_id",
-            "node_revision",
-            "node_digest",
-            "synthesis_key",
-            "status",
-            "current",
-            "stale",
+    resolved_targets = [
+        _safe_mapping(item)
+        for item in authorization.get("resolved_targets") or ()
+        if isinstance(item, Mapping)
+    ]
+    if not resolved_targets and authorization.get("resolved_target"):
+        resolved_targets = [
+            _safe_mapping(authorization.get("resolved_target"))
+        ]
+    targets: list[dict[str, Any]] = []
+    for resolved_target in resolved_targets:
+        target = synthesis_by_id.get(resolved_target.get("node_id"))
+        resolved_matches_active = target is not None and all(
+            resolved_target.get(key) == _node_ref(target).get(key)
+            for key in (
+                "node_kind",
+                "node_id",
+                "node_revision",
+                "node_digest",
+                "synthesis_key",
+                "status",
+                "current",
+                "stale",
+            )
         )
+        if not resolved_matches_active:
+            raise ComponentWorkGraphV1Error(
+                "selective closure amendment target is not exact current synthesis"
+            )
+        targets.append(target)
+    expected_target_component_ids = sorted(
+        {
+            str(item.get("answer_target_component_id") or "")
+            for item in targets
+            if item.get("answer_target_component_id")
+        }
     )
-    resolved_matches_challenge = target is not None and any(
-        challenge.get("target_kind") == authorization.get("target_kind")
-        and challenge.get("target_key") == authorization.get("target_key")
-        and _safe_mapping(challenge.get("resolved_target")) == resolved_target
-        and resolved_target.get("node_id") == target.get("node_id")
-        and resolved_target.get("synthesis_key") == target.get("synthesis_key")
-        for challenge in source.get("challenge_refs") or ()
-        if isinstance(challenge, Mapping)
+    authorized_target_component_ids = sorted(
+        str(item)
+        for item in authorization.get("target_component_ids") or ()
     )
-    if not (resolved_matches_active or resolved_matches_challenge):
+    proposal_local_target_key = str(
+        authorization.get("proposal_local_target_key") or ""
+    )
+    locally_bound_single_target = (
+        len(targets) == 1
+        and not expected_target_component_ids
+        and len(authorized_target_component_ids) == 1
+        and proposal_local_target_key
+        == str(targets[0].get("synthesis_key") or "")
+    )
+    if not targets or (
+        expected_target_component_ids != authorized_target_component_ids
+        and not locally_bound_single_target
+    ):
         raise ComponentWorkGraphV1Error(
-            "selective closure recovery target is not the exact current synthesis"
+            "selective closure amendment targets do not match current synthesis targets"
         )
 
-    direct_key = str(target["synthesis_key"])
+    direct_keys = {
+        str(target["synthesis_key"]) for target in targets
+    }
     downstream_by_id: dict[str, list[str]] = {}
     for edge in source["edges"]:
         downstream_by_id.setdefault(str(edge["from_node_id"]), []).append(
             str(edge["to_node_id"])
         )
-    affected_ids = {str(target["node_id"])}
-    pending = [str(target["node_id"])]
+    affected_ids = {str(target["node_id"]) for target in targets}
+    pending = sorted(affected_ids)
     while pending:
         upstream_id = pending.pop(0)
         for downstream_id in downstream_by_id.get(upstream_id, ()):
@@ -464,7 +652,7 @@ def derive_selective_recomputation_closure(
         for key in source["synthesis_topological_order"]
         if synthesis_by_key[key]["node_id"] in affected_ids
     ]
-    transitive_keys = [key for key in affected_order if key != direct_key]
+    transitive_keys = [key for key in affected_order if key not in direct_keys]
     unaffected_keys = [
         key
         for key in source["synthesis_topological_order"]
@@ -472,7 +660,6 @@ def derive_selective_recomputation_closure(
     ]
     contract_ref = _safe_mapping(current_contract_ref)
     amendment_admission_ref = _safe_mapping(contract_amendment_admission_ref)
-    amendment_application_ref = _safe_mapping(contract_amendment_application_ref)
     component_admission_ref = _safe_mapping(recovered_component_admission_ref)
     if (
         not contract_ref.get("accepted_contract_version")
@@ -500,12 +687,16 @@ def derive_selective_recomputation_closure(
             "authorization_id": authorization.get("authorization_id"),
             "authorization_digest": authorization.get("authorization_digest"),
         },
-        "resolved_target": resolved_target,
+        "resolved_targets": resolved_targets,
         "current_contract_ref": contract_ref,
         "contract_amendment_admission_ref": amendment_admission_ref,
         "contract_amendment_application_ref": amendment_application_ref,
         "recovered_component_admission_ref": component_admission_ref,
-        "directly_affected_synthesis_keys": [direct_key],
+        "directly_affected_synthesis_keys": [
+            key
+            for key in source["synthesis_topological_order"]
+            if key in direct_keys
+        ],
         "transitively_affected_synthesis_keys": transitive_keys,
         "affected_synthesis_keys": affected_order,
         "unaffected_active_synthesis_keys": unaffected_keys,
@@ -660,6 +851,10 @@ def selective_cross_component_input_packet(
             "request_id": current["request_id"],
         },
         "current_contract_ref": _safe_mapping(current["accepted_contract_ref"]),
+        "accepted_component_refs": [
+            _safe_mapping(item)
+            for item in current.get("accepted_component_refs") or ()
+        ],
         "closure_ref": {
             "closure_id": canonical_closure["closure_id"],
             "closure_digest": canonical_closure["closure_digest"],
@@ -898,6 +1093,10 @@ def component_work_graph_v1_from_cross_component_artifact(
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
     transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
+    accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
+    requested_mode: str | None = None,
+    inferred_resolution_proposals: Sequence[Mapping[str, Any]] = (),
+    inferred_proposal_parent_graph_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     components = [validate_component_work_node_v1(item) for item in component_nodes]
     if not MIN_COMPONENT_NODES <= len(components) <= MAX_COMPONENT_NODES:
@@ -981,6 +1180,8 @@ def component_work_graph_v1_from_cross_component_artifact(
             component_nodes=components,
             accepted_contract_ref=accepted_contract_ref,
             requested_synthesis_directive=requested_synthesis_directive,
+            accepted_component_refs=accepted_component_refs,
+            requested_mode=requested_mode,
         )
         if any(
             supplied_cross_input.get(key) != value
@@ -1066,6 +1267,8 @@ def component_work_graph_v1_from_cross_component_artifact(
                 accepted_contract_ref=accepted_contract_ref,
                 requested_synthesis_directive=requested_synthesis_directive,
                 component_analyst_input_packets=validated_component_packets,
+                accepted_component_refs=accepted_component_refs,
+                requested_mode=requested_mode,
             )
             if supplied_cross_input != independently_rebuilt_cross_input:
                 raise ComponentWorkGraphV1Error(
@@ -1082,6 +1285,8 @@ def component_work_graph_v1_from_cross_component_artifact(
             accepted_contract_ref=accepted_contract_ref,
             requested_synthesis_directive=requested_synthesis_directive,
             component_analyst_input_packets=validated_component_packets,
+            accepted_component_refs=accepted_component_refs,
+            requested_mode=requested_mode,
         )
     input_binding_matches = cross["input_packet_digest"] == safe_packet_digest(
         expected_cross_input
@@ -1091,6 +1296,29 @@ def component_work_graph_v1_from_cross_component_artifact(
             "Cross-Component Analyst input binding mismatch"
         )
 
+    packet_catalog = [
+        _safe_mapping(item)
+        for item in expected_cross_input.get("accepted_component_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    accepted_catalog = _accepted_component_catalog(
+        component_nodes=components,
+        accepted_component_refs=(
+            accepted_component_refs
+            if accepted_component_refs is not None
+            else packet_catalog
+        ),
+    )
+    inference_profile = _safe_mapping(
+        expected_cross_input.get("semantic_inference_profile")
+    )
+    inferred_by_target = _initial_inferred_resolution_by_target(
+        proposals=inferred_resolution_proposals,
+        cross_artifact=cross,
+        accepted_contract_ref=accepted_contract_ref,
+        accepted_component_catalog=accepted_catalog,
+        expected_parent_graph_ref=inferred_proposal_parent_graph_ref,
+    )
     proposals = list(cross["semantic_output"]["synthesis_proposals"])
     if len(proposals) > MAX_SYNTHESIS_NODES:
         raise ComponentWorkGraphV1Error("Graph V1 synthesis width exceeded")
@@ -1138,6 +1366,152 @@ def component_work_graph_v1_from_cross_component_artifact(
                 item for item in synthesis_nodes if item["synthesis_key"] == upstream_key
             )
             input_refs.append(_node_ref(upstream))
+        inferred_resolution = inferred_by_target.get(str(key))
+        inferred_fields: dict[str, Any] = {}
+        if inferred_resolution:
+            variant = _safe_mapping(
+                inferred_resolution.get("variant_payload")
+            )
+            expected_premise_refs = [
+                _node_ref(
+                    next(
+                        item
+                        for item in [*components, *synthesis_nodes]
+                        if item.get("node_id") == ref.get("node_id")
+                    )
+                )
+                for ref in input_refs
+            ]
+            proposed_premise_refs = [
+                _safe_mapping(item)
+                for item in variant.get("current_admitted_premise_node_refs")
+                or ()
+            ]
+            if (
+                len(proposed_premise_refs) != len(expected_premise_refs)
+                or {
+                    _digest(item) for item in proposed_premise_refs
+                }
+                != {_digest(item) for item in expected_premise_refs}
+                or any(
+                    ref.get("current") is not True
+                    or ref.get("stale") is True
+                    or ref.get("status")
+                    not in {
+                        "admitted",
+                        "admitted_with_caveats",
+                    }
+                    for ref in expected_premise_refs
+                )
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "inferred proposal requires the exact current admitted premise-node refs"
+                )
+            target_ref = _safe_mapping(variant.get("answer_target_ref"))
+            target_support = list(
+                target_ref.get("allowed_support_kinds") or ()
+            )
+            semantic_depth = 1 + max(
+                (
+                    int(item.get("semantic_inference_depth") or 0)
+                    for item in [*components, *synthesis_nodes]
+                    if item.get("node_id")
+                    in {ref.get("node_id") for ref in input_refs}
+                ),
+                default=0,
+            )
+            if (
+                "inferred" not in target_support
+                or variant.get("support_kind") != "inferred"
+                or variant.get("proposed_conclusion")
+                != proposal.get("claim_text")
+                or variant.get("relationship_type")
+                != proposal.get("relationship_type")
+                or int(
+                    variant.get("proposed_semantic_inference_depth") or 0
+                )
+                != semantic_depth
+                or semantic_depth
+                > int(target_ref.get("max_inference_depth") or 0)
+                or semantic_depth
+                > int(inference_profile.get("profile_ceiling") or 0)
+                or semantic_depth > MAX_SYNTHESIS_DEPTH
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "inferred proposal violates target, relationship, or depth authority"
+                )
+            premise_component_ids = {
+                str(ref.get("component_id") or "")
+                for ref in expected_premise_refs
+                if ref.get("node_kind") == "component"
+            }
+            for ref in expected_premise_refs:
+                if ref.get("node_kind") != "synthesis":
+                    continue
+                prior = next(
+                    (
+                        item
+                        for item in synthesis_nodes
+                        if item.get("node_id") == ref.get("node_id")
+                    ),
+                    {},
+                )
+                prior_target_id = str(
+                    _safe_mapping(prior).get(
+                        "answer_target_component_id"
+                    )
+                    or ""
+                )
+                if prior_target_id:
+                    premise_component_ids.add(prior_target_id)
+            if premise_component_ids != set(
+                target_ref.get("dependency_component_ids") or ()
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "inferred proposal premises do not match target dependencies"
+                )
+            inferred_fields = {
+                "support_kind": "inferred",
+                "semantic_inference_depth": semantic_depth,
+                "answer_target_component_id": target_ref.get(
+                    "component_id"
+                ),
+                "answer_target_ref": target_ref,
+                "premise_node_refs": expected_premise_refs,
+                "premise_component_coverage_refs": [
+                    _safe_mapping(item.get("component_coverage_ref"))
+                    for item in components
+                    if item.get("node_id")
+                    in {ref.get("node_id") for ref in input_refs}
+                    and _safe_mapping(item.get("component_coverage_ref"))
+                ],
+                "premise_citation_refs": [
+                    _safe_mapping(ref)
+                    for item in components
+                    if item.get("node_id")
+                    in {ref.get("node_id") for ref in input_refs}
+                    for ref in item.get("evidence_refs") or ()
+                    if isinstance(ref, Mapping)
+                ],
+                "query_resolution_proposal_ref": _proposal_ref(
+                    inferred_resolution
+                ),
+                "query_resolution_proposal": inferred_resolution,
+                "query_resolution_proposal_parent_graph_ref": _safe_mapping(
+                    inferred_resolution.get("parent_graph_ref")
+                ),
+                "inference_assumptions": list(
+                    variant.get("assumptions") or ()
+                ),
+                "inference_caveats": list(variant.get("caveats") or ()),
+                "inference_prohibited_upgrades": list(
+                    variant.get("prohibited_upgrades") or ()
+                ),
+                "inferred_relationship_admission_ref": {},
+                "target_fulfillment_status": (
+                    "pending_relationship_admission"
+                ),
+            }
         proposal_core = {
             "synthesis_key": key,
             "claim_text": proposal["claim_text"],
@@ -1182,6 +1556,7 @@ def component_work_graph_v1_from_cross_component_artifact(
             "dprime_validation_ref": {},
             "scrutineer_ref": {},
             "runkernel_admission_ref": {},
+            **inferred_fields,
         }
         node["node_digest"] = _digest(
             {item_key: item_value for item_key, item_value in node.items() if item_key != "node_digest"}
@@ -1259,6 +1634,8 @@ def component_work_graph_v1_from_cross_component_artifact(
         "run_id": run_id,
         "request_id": request_id,
         "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
+        "accepted_component_refs": accepted_catalog,
+        "semantic_inference_profile": inference_profile,
         "requested_synthesis_directive": _clean_text(
             requested_synthesis_directive, limit=360
         ),
@@ -1285,6 +1662,7 @@ def component_work_graph_v1_from_cross_component_artifact(
         "physical_call_accounting": {},
         "automatic_recovery_rounds": 0,
         "graph_amendment_rounds": 0,
+        "inferred_relationship_admission_history": [],
         "runtime_parallelism": False,
         "scheduler_created": False,
         "budget_lease_created": False,
@@ -1310,6 +1688,12 @@ def component_work_graph_v1_from_single_component_admission(
     """
 
     component = validate_component_work_node_v1(component_node)
+    from core.semantic_contract_foundation import inference_depth_ceiling_for_mode
+
+    accepted_catalog = _accepted_component_catalog(
+        component_nodes=[component],
+        accepted_component_refs=None,
+    )
     if component.get("run_id") != run_id or component.get("request_id") != request_id:
         raise ComponentWorkGraphV1Error("single-component graph cross-run binding")
     if component.get("direct_output_eligible") is not True:
@@ -1334,6 +1718,12 @@ def component_work_graph_v1_from_single_component_admission(
         "run_id": run_id,
         "request_id": request_id,
         "accepted_contract_ref": _safe_mapping(accepted_contract_ref),
+        "accepted_component_refs": accepted_catalog,
+        "semantic_inference_profile": {
+            "requested_mode": "Balanced",
+            "profile_ceiling": inference_depth_ceiling_for_mode("Balanced"),
+            "graph_hard_ceiling": MAX_SYNTHESIS_DEPTH,
+        },
         "requested_synthesis_directive": _clean_text(requested_synthesis_directive, limit=360),
         "dependency_posture": "single_component_direct_admission",
         "component_nodes": [component],
@@ -1354,6 +1744,7 @@ def component_work_graph_v1_from_single_component_admission(
         "physical_call_accounting": {},
         "automatic_recovery_rounds": 0,
         "graph_amendment_rounds": 0,
+        "inferred_relationship_admission_history": [],
         "runtime_parallelism": False,
         "scheduler_created": False,
         "budget_lease_created": False,
@@ -1493,6 +1884,7 @@ def graph_with_selective_invalidation(
     contract_amendment_admission_ref: Mapping[str, Any],
     amendment_application_ref: Mapping[str, Any],
     carry_forward_action_ref: Mapping[str, Any],
+    accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Atomically stale the affected closure and carry independent synthesis."""
 
@@ -1637,6 +2029,17 @@ def graph_with_selective_invalidation(
 
     current["component_nodes"].append(node)
     current["accepted_contract_ref"] = contract_ref
+    current["accepted_component_refs"] = _accepted_component_catalog(
+        component_nodes=current["component_nodes"],
+        accepted_component_refs=(
+            accepted_component_refs
+            if accepted_component_refs is not None
+            else [
+                *list(current.get("accepted_component_refs") or ()),
+                _safe_mapping(node.get("accepted_component_ref")),
+            ]
+        ),
+    )
     current["synthesis_nodes"] = carried_nodes
     current["edges"] = active_edges
     current["synthesis_topological_order"] = unaffected_keys
@@ -1794,6 +2197,7 @@ def reduce_selective_invalidation_via_runkernel(
     recovery_authorization_ref: Mapping[str, Any],
     contract_amendment_admission_ref: Mapping[str, Any],
     amendment_application_ref: Mapping[str, Any],
+    accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Submit the selective transition while RunKernel rederives every field."""
 
@@ -1816,6 +2220,7 @@ def reduce_selective_invalidation_via_runkernel(
         contract_amendment_admission_ref=contract_amendment_admission_ref,
         amendment_application_ref=amendment_application_ref,
         carry_forward_action_ref=action_ref,
+        accepted_component_refs=accepted_component_refs,
     )
     canonical = runkernel_canonical_graph(candidate, action_ref=action_ref)
     run_kernel.reduce(
@@ -2116,6 +2521,9 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
     transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
+    accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
+    requested_mode: str | None = None,
+    inferred_resolution_proposals: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Install one complete fresh synthesis structure on an amended graph."""
 
@@ -2155,6 +2563,14 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
             *additional_scrutineer_trigger_reasons,
             "post_recovery_fresh_resynthesis",
         ),
+        accepted_component_refs=accepted_component_refs,
+        requested_mode=requested_mode,
+        inferred_resolution_proposals=inferred_resolution_proposals,
+        inferred_proposal_parent_graph_ref={
+            "graph_id": current.get("graph_id"),
+            "graph_revision": current.get("graph_revision"),
+            "graph_digest": current.get("graph_digest"),
+        },
     )
     fresh.update(
         {
@@ -2172,6 +2588,24 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
             ),
             "stale_scrutineer_history": list(
                 current.get("stale_scrutineer_history") or ()
+            ),
+            "inferred_relationship_admission_history": [
+                *list(
+                    current.get(
+                        "inferred_relationship_admission_history"
+                    )
+                    or ()
+                ),
+                *list(
+                    fresh.get(
+                        "inferred_relationship_admission_history"
+                    )
+                    or ()
+                ),
+            ],
+            "inferred_resolution_binding_history": list(
+                current.get("inferred_resolution_binding_history")
+                or ()
             ),
             "automatic_recovery_rounds": 1,
             "graph_amendment_rounds": 1,
@@ -2285,6 +2719,306 @@ def graph_with_synthesis_validation(
     _refresh_node_digest(node)
     node["dprime_validated_node_revision"] = node["node_revision"]
     node["dprime_validated_node_digest"] = node["node_digest"]
+    return _next_revision(current)
+
+
+def graph_with_inferred_resolution_proposal(
+    graph: Mapping[str, Any],
+    *,
+    synthesis_key: str,
+    proposal: Mapping[str, Any],
+    action_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind one current Analyst inference proposal to an existing Graph V1 node.
+
+    This is the post-structure path needed when an admitted inferred premise is
+    reused by a later depth-two target.  It creates no SearchOS work and grants
+    no relationship support until fresh synthesis D-prime validation and the
+    ordinary synthesis-admission transition both complete.
+    """
+
+    from core.analyst_query_resolution_proposal import (
+        CLASS_INFERRED_CONCLUSION,
+        validate_bound_analyst_query_resolution_proposal,
+    )
+
+    current = validate_component_work_graph_v1(graph)
+    bound = validate_bound_analyst_query_resolution_proposal(proposal)
+    proposal_ref = _proposal_ref(bound)
+    for prior in current.get(
+        "inferred_relationship_admission_history"
+    ) or ():
+        prior_ref = _safe_mapping(
+            _safe_mapping(prior).get(
+                "query_resolution_proposal_ref"
+            )
+        )
+        if (
+            prior_ref.get("stable_replay_key")
+            != proposal_ref.get("stable_replay_key")
+        ):
+            continue
+        if (
+            prior_ref.get("proposal_digest")
+            != proposal_ref.get("proposal_digest")
+        ):
+            raise ComponentWorkGraphV1Error(
+                "inferred relationship proposal replay identity conflict"
+            )
+        return current
+    node = _synthesis_node(current, synthesis_key)
+    current_graph_ref = {
+        "graph_id": current.get("graph_id"),
+        "graph_revision": current.get("graph_revision"),
+        "graph_digest": current.get("graph_digest"),
+    }
+    recorded_parent_graph_ref = _safe_mapping(
+        bound.get("parent_graph_ref")
+    )
+    transition_parent_graph_ref = {
+        "graph_id": current.get("graph_id"),
+        "graph_revision": int(current.get("graph_revision") or 0) - 1,
+        "graph_digest": current.get("previous_graph_digest"),
+        "run_id": current.get("run_id"),
+        "request_id": current.get("request_id"),
+    }
+    node_cross_ref = _safe_mapping(
+        _safe_mapping(node.get("proposal_ref")).get(
+            "cross_component_analyst_ref"
+        )
+    )
+    proposal_artifact_ref = _safe_mapping(bound.get("role_artifact_ref"))
+    current_parent = recorded_parent_graph_ref == current_graph_ref
+    selective_structure_parent = (
+        int(current.get("selective_recomputation_rounds") or 0) == 1
+        and recorded_parent_graph_ref == transition_parent_graph_ref
+        and node_cross_ref.get("artifact_id")
+        == proposal_artifact_ref.get("artifact_id")
+        and node_cross_ref.get("artifact_digest")
+        == proposal_artifact_ref.get("artifact_digest")
+    )
+    if (
+        bound.get("classification") != CLASS_INFERRED_CONCLUSION
+        or bound.get("parent_contract_ref")
+        != _safe_mapping(current.get("accepted_contract_ref"))
+        or not (current_parent or selective_structure_parent)
+        or bound.get("parent_graph_explicitly_absent") is not False
+    ):
+        raise ComponentWorkGraphV1Error(
+            "stale or foreign inferred relationship proposal"
+        )
+    variant = _safe_mapping(bound.get("variant_payload"))
+    if variant.get("local_target_key") != synthesis_key:
+        raise ComponentWorkGraphV1Error(
+            "inferred proposal local target does not match synthesis node"
+        )
+    exact_input_refs = list(node.get("input_node_refs") or ())
+    proposed_premise_refs = [
+        _safe_mapping(item)
+        for item in variant.get("current_admitted_premise_node_refs")
+        or ()
+    ]
+    all_nodes = {
+        item["node_id"]: item
+        for item in [
+            *current["component_nodes"],
+            *current["synthesis_nodes"],
+        ]
+    }
+    input_nodes = [
+        all_nodes.get(str(_safe_mapping(ref).get("node_id") or ""))
+        for ref in exact_input_refs
+    ]
+    if (
+        len(proposed_premise_refs) != len(exact_input_refs)
+        or {_digest(item) for item in proposed_premise_refs}
+        != {_digest(_safe_mapping(item)) for item in exact_input_refs}
+        or any(
+            item is None
+            or item.get("current") is not True
+            or item.get("stale") is True
+            or (
+                item.get("status") or item.get("admission_status")
+            )
+            not in {"admitted", "admitted_with_caveats"}
+            for item in input_nodes
+        )
+    ):
+        raise ComponentWorkGraphV1Error(
+            "inferred proposal requires exact current admitted premises"
+        )
+    target_ref = _safe_mapping(variant.get("answer_target_ref"))
+    accepted_by_id = {
+        str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(
+            item
+        )
+        for item in current.get("accepted_component_refs") or ()
+    }
+    target_id = str(target_ref.get("component_id") or "")
+    semantic_depth = 1 + max(
+        int(_safe_mapping(item).get("semantic_inference_depth") or 0)
+        for item in input_nodes
+        if isinstance(item, Mapping)
+    )
+    profile_ceiling = int(
+        _safe_mapping(current.get("semantic_inference_profile")).get(
+            "profile_ceiling"
+        )
+        or MAX_SYNTHESIS_DEPTH
+    )
+    premise_component_ids: set[str] = set()
+    for item in input_nodes:
+        premise = _safe_mapping(item)
+        component_id = str(premise.get("component_id") or "")
+        if component_id:
+            premise_component_ids.add(component_id)
+            continue
+        mapped_target_id = str(
+            premise.get("answer_target_component_id") or ""
+        )
+        if mapped_target_id:
+            premise_component_ids.add(mapped_target_id)
+    if (
+        not target_id
+        or accepted_by_id.get(target_id) != target_ref
+        or "inferred"
+        not in list(target_ref.get("allowed_support_kinds") or ())
+        or variant.get("support_kind") != "inferred"
+        or variant.get("proposed_conclusion") != node.get("claim_text")
+        or variant.get("relationship_type")
+        != node.get("relationship_type")
+        or int(
+            variant.get("proposed_semantic_inference_depth") or 0
+        )
+        != semantic_depth
+        or semantic_depth
+        > int(target_ref.get("max_inference_depth") or 0)
+        or semantic_depth > profile_ceiling
+        or semantic_depth > MAX_SYNTHESIS_DEPTH
+        or premise_component_ids
+        != set(target_ref.get("dependency_component_ids") or ())
+    ):
+        raise ComponentWorkGraphV1Error(
+            "inferred proposal violates target, relationship, dependency, or depth authority"
+        )
+    prior_node_ref = _node_ref(node)
+    node.update(
+        {
+            "support_kind": "inferred",
+            "semantic_inference_depth": semantic_depth,
+            "answer_target_component_id": target_id,
+            "answer_target_ref": target_ref,
+            "premise_node_refs": exact_input_refs,
+            "premise_component_coverage_refs": list(
+                {
+                    _digest(ref): ref
+                    for ref in [
+                        *[
+                            _safe_mapping(
+                                _safe_mapping(item).get(
+                                    "component_coverage_ref"
+                                )
+                            )
+                            for item in input_nodes
+                            if _safe_mapping(
+                                _safe_mapping(item).get(
+                                    "component_coverage_ref"
+                                )
+                            )
+                        ],
+                        *[
+                            _safe_mapping(ref)
+                            for item in input_nodes
+                            for ref in _safe_mapping(item).get(
+                                "premise_component_coverage_refs"
+                            )
+                            or ()
+                            if isinstance(ref, Mapping)
+                            and _safe_mapping(ref)
+                        ],
+                    ]
+                }.values()
+            ),
+            "premise_citation_refs": list(
+                {
+                    _digest(ref): ref
+                    for ref in [
+                        *[
+                            _safe_mapping(ref)
+                            for item in input_nodes
+                            for ref in _safe_mapping(item).get(
+                                "evidence_refs"
+                            )
+                            or ()
+                            if isinstance(ref, Mapping)
+                            and _safe_mapping(ref)
+                        ],
+                        *[
+                            _safe_mapping(ref)
+                            for item in input_nodes
+                            for ref in _safe_mapping(item).get(
+                                "premise_citation_refs"
+                            )
+                            or ()
+                            if isinstance(ref, Mapping)
+                            and _safe_mapping(ref)
+                        ],
+                    ]
+                }.values()
+            ),
+            "query_resolution_proposal_ref": proposal_ref,
+            "query_resolution_proposal": bound,
+            "query_resolution_proposal_parent_graph_ref": (
+                recorded_parent_graph_ref
+            ),
+            "inference_assumptions": list(
+                variant.get("assumptions") or ()
+            ),
+            "inference_caveats": list(variant.get("caveats") or ()),
+            "inference_prohibited_upgrades": list(
+                variant.get("prohibited_upgrades") or ()
+            ),
+            "inferred_relationship_admission_ref": {},
+            "target_fulfillment_status": (
+                "pending_relationship_admission"
+            ),
+            "status": "proposed",
+            "current": True,
+            "stale": False,
+        }
+    )
+    _clear_synthesis_validation_and_admission(node)
+    _refresh_node_digest(node)
+    dependent_ids = {
+        candidate["node_id"]
+        for candidate in current["synthesis_nodes"]
+        if candidate.get("node_id") != node.get("node_id")
+        and any(
+            _safe_mapping(ref).get("node_id")
+            == prior_node_ref.get("node_id")
+            for ref in candidate.get("input_node_refs") or ()
+        )
+    }
+    if dependent_ids:
+        _invalidate_synthesis_closure(
+            current,
+            initial_node_ids=dependent_ids,
+            initial_status="blocked_dependency",
+        )
+    current["inferred_resolution_binding_history"] = [
+        *list(
+            current.get("inferred_resolution_binding_history") or ()
+        ),
+        {
+            "query_resolution_proposal_ref": proposal_ref,
+            "source_graph_ref": recorded_parent_graph_ref,
+            "prior_node_ref": prior_node_ref,
+            "bound_node_ref": _node_ref(node),
+            "runkernel_action_ref": _safe_mapping(action_ref),
+        },
+    ]
+    current["graph_output_suppressed"] = True
+    current["graph_status"] = GRAPH_STATUS_SYNTHESIS_VALIDATION_REQUIRED
     return _next_revision(current)
 
 
@@ -2520,6 +3254,111 @@ def graph_with_synthesis_admission(
     validated_digest = node["dprime_validated_node_digest"]
     node["status"] = "admitted"
     node["runkernel_admission_ref"] = _safe_mapping(action_ref)
+    proposal = _safe_mapping(node.get("query_resolution_proposal"))
+    if proposal:
+        proposal_ref = _safe_mapping(
+            node.get("query_resolution_proposal_ref")
+        )
+        history = [
+            _safe_mapping(item)
+            for item in current.get(
+                "inferred_relationship_admission_history"
+            )
+            or ()
+            if isinstance(item, Mapping)
+        ]
+        for prior in history:
+            prior_proposal = _safe_mapping(
+                prior.get("query_resolution_proposal_ref")
+            )
+            if (
+                prior_proposal.get("stable_replay_key")
+                == proposal_ref.get("stable_replay_key")
+            ):
+                if (
+                    prior_proposal.get("proposal_digest")
+                    != proposal_ref.get("proposal_digest")
+                ):
+                    raise ComponentWorkGraphV1Error(
+                        "inferred relationship proposal replay identity conflict"
+                    )
+                raise ComponentWorkGraphV1Error(
+                    "inferred relationship exact replay must be resolved before graph mutation"
+                )
+        relation_core = {
+            "schema_version": "graph_v1_inferred_relationship_admission_v1",
+            "owner": "RunKernel.ComponentWorkGraphV1",
+            "canonical_state": True,
+            "run_id": current.get("run_id"),
+            "request_id": current.get("request_id"),
+            "source_graph_ref": {
+                "graph_id": current.get("graph_id"),
+                "graph_revision": current.get("graph_revision"),
+                "graph_digest": current.get("graph_digest"),
+            },
+            "answer_target_ref": _safe_mapping(
+                node.get("answer_target_ref")
+            ),
+            "premise_node_refs": list(
+                node.get("premise_node_refs") or ()
+            ),
+            "premise_component_coverage_refs": list(
+                node.get("premise_component_coverage_refs") or ()
+            ),
+            "premise_citation_refs": list(
+                node.get("premise_citation_refs") or ()
+            ),
+            "relationship_type": node.get("relationship_type"),
+            "proposed_conclusion": node.get("claim_text"),
+            "semantic_inference_depth": int(
+                node.get("semantic_inference_depth") or 0
+            ),
+            "query_resolution_proposal_ref": proposal_ref,
+            "synthesis_dprime_validation_ref": _safe_mapping(
+                node.get("dprime_validation_ref")
+            ),
+            "runkernel_graph_admission_action_ref": _safe_mapping(
+                action_ref
+            ),
+            "assumptions": list(
+                node.get("inference_assumptions") or ()
+            ),
+            "caveats": list(node.get("inference_caveats") or ()),
+            "prohibited_upgrades": list(
+                node.get("inference_prohibited_upgrades") or ()
+            ),
+            "support_kind": "inferred",
+            "target_local_semantic_observation_created": False,
+            "target_local_component_coverage_created": False,
+        }
+        relation_digest = _digest(relation_core)
+        relation = {
+            **relation_core,
+            "relationship_admission_id": (
+                f"graph-inferred-relationship:{relation_digest[:24]}"
+            ),
+            "relationship_admission_digest": relation_digest,
+        }
+        node["inferred_relationship_admission_ref"] = {
+            "relationship_admission_id": relation[
+                "relationship_admission_id"
+            ],
+            "relationship_admission_digest": relation[
+                "relationship_admission_digest"
+            ],
+            "answer_target_component_id": node.get(
+                "answer_target_component_id"
+            ),
+            "semantic_inference_depth": relation[
+                "semantic_inference_depth"
+            ],
+            "support_kind": "inferred",
+        }
+        node["target_fulfillment_status"] = "admitted_inferred"
+        current["inferred_relationship_admission_history"] = [
+            *history,
+            relation,
+        ]
     _refresh_node_digest(node)
     # Preserve the exact validated revision/digest proof on the admitted node.
     node["dprime_validated_node_revision"] = validated_revision
@@ -2706,6 +3545,7 @@ def expected_graph_after_transition(
         "selective_invalidation",
         "selective_resynthesis_structure",
         "specialist_remediation",
+        "inferred_resolution_binding",
     }:
         if not isinstance(transition_graph, Mapping):
             raise ComponentWorkGraphV1Error(
@@ -2902,6 +3742,60 @@ def admit_synthesis_node_via_runkernel(
             run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
         )
     )
+    node = _synthesis_node(current, synthesis_key)
+    proposal = _safe_mapping(node.get("query_resolution_proposal"))
+    if proposal:
+        proposal_ref = _safe_mapping(
+            node.get("query_resolution_proposal_ref")
+        )
+        for prior in current.get(
+            "inferred_relationship_admission_history"
+        ) or ():
+            prior_ref = _safe_mapping(
+                _safe_mapping(prior).get(
+                    "query_resolution_proposal_ref"
+                )
+            )
+            if (
+                prior_ref.get("stable_replay_key")
+                != proposal_ref.get("stable_replay_key")
+            ):
+                continue
+            if (
+                prior_ref.get("proposal_digest")
+                != proposal_ref.get("proposal_digest")
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "inferred relationship proposal replay identity conflict"
+                )
+            return deepcopy(current)
+        if proposal.get("parent_contract_ref") != _safe_mapping(
+            current.get("accepted_contract_ref")
+        ):
+            raise ComponentWorkGraphV1Error(
+                "stale inferred relationship proposal parent contract"
+            )
+        parent_graph_ref = _safe_mapping(
+            proposal.get("parent_graph_ref")
+        )
+        if parent_graph_ref:
+            current_ref = {
+                "graph_id": current.get("graph_id"),
+                "graph_revision": current.get("graph_revision"),
+                "graph_digest": current.get("graph_digest"),
+            }
+            bound_parent_ref = _safe_mapping(
+                node.get(
+                    "query_resolution_proposal_parent_graph_ref"
+                )
+            )
+            if (
+                parent_graph_ref != current_ref
+                and parent_graph_ref != bound_parent_ref
+            ):
+                raise ComponentWorkGraphV1Error(
+                    "stale inferred relationship proposal parent graph"
+                )
     action = run_kernel.authorize_multicomponent_graph_reduction(
         operation="synthesis_admission",
         prior_graph_digest=current["graph_digest"],
@@ -2941,6 +3835,141 @@ def admit_synthesis_node_via_runkernel(
     return deepcopy(canonical)
 
 
+def bind_inferred_resolution_proposal_via_runkernel(
+    *,
+    run_kernel: Any,
+    synthesis_key: str,
+    proposal: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Replay-safely bind a fresh Analyst inference to current Graph V1."""
+
+    from core.analyst_query_resolution_proposal import (
+        validate_bound_analyst_query_resolution_proposal,
+    )
+    from core.run_kernel import Observation, RunStageStatus
+
+    current = validate_component_work_graph_v1(
+        _safe_mapping(
+            run_kernel.state.projections.get(
+                COMPONENT_WORK_GRAPH_V1_STAGE
+            )
+        )
+    )
+    bound = validate_bound_analyst_query_resolution_proposal(proposal)
+    proposal_ref = _proposal_ref(bound)
+    prior_refs = [
+        _safe_mapping(
+            _safe_mapping(item).get(
+                "query_resolution_proposal_ref"
+            )
+        )
+        for item in [
+            *list(
+                current.get(
+                    "inferred_resolution_binding_history"
+                )
+                or ()
+            ),
+            *list(
+                current.get(
+                    "inferred_relationship_admission_history"
+                )
+                or ()
+            ),
+        ]
+        if isinstance(item, Mapping)
+    ]
+    for prior_ref in prior_refs:
+        if (
+            prior_ref.get("stable_replay_key")
+            != proposal_ref.get("stable_replay_key")
+        ):
+            continue
+        if (
+            prior_ref.get("proposal_digest")
+            != proposal_ref.get("proposal_digest")
+        ):
+            raise ComponentWorkGraphV1Error(
+                "inferred relationship proposal replay identity conflict"
+            )
+        return deepcopy(current)
+    current_graph_ref = {
+        "graph_id": current.get("graph_id"),
+        "graph_revision": current.get("graph_revision"),
+        "graph_digest": current.get("graph_digest"),
+    }
+    recorded_parent_graph_ref = _safe_mapping(
+        bound.get("parent_graph_ref")
+    )
+    node = _synthesis_node(current, synthesis_key)
+    transition_parent_graph_ref = {
+        "graph_id": current.get("graph_id"),
+        "graph_revision": int(current.get("graph_revision") or 0) - 1,
+        "graph_digest": current.get("previous_graph_digest"),
+        "run_id": current.get("run_id"),
+        "request_id": current.get("request_id"),
+    }
+    node_cross_ref = _safe_mapping(
+        _safe_mapping(node.get("proposal_ref")).get(
+            "cross_component_analyst_ref"
+        )
+    )
+    proposal_artifact_ref = _safe_mapping(bound.get("role_artifact_ref"))
+    parent_graph_is_current = recorded_parent_graph_ref == current_graph_ref
+    parent_graph_is_selective_structure_input = (
+        int(current.get("selective_recomputation_rounds") or 0) == 1
+        and recorded_parent_graph_ref == transition_parent_graph_ref
+        and node_cross_ref.get("artifact_id")
+        == proposal_artifact_ref.get("artifact_id")
+        and node_cross_ref.get("artifact_digest")
+        == proposal_artifact_ref.get("artifact_digest")
+    )
+    if (
+        bound.get("parent_contract_ref")
+        != _safe_mapping(current.get("accepted_contract_ref"))
+        or not (
+            parent_graph_is_current
+            or parent_graph_is_selective_structure_input
+        )
+    ):
+        raise ComponentWorkGraphV1Error(
+            "stale inferred relationship proposal"
+        )
+    action = run_kernel.authorize_multicomponent_graph_reduction(
+        operation="inferred_resolution_binding",
+        prior_graph_digest=current["graph_digest"],
+        synthesis_key=synthesis_key,
+        inferred_resolution_proposal=bound,
+    )
+    action_ref = {
+        "action_id": action.action_id,
+        "action_type": action.action_type.value,
+        "stage": action.stage,
+        "sequence": action.sequence,
+        "operation": "inferred_resolution_binding",
+        "synthesis_key": synthesis_key,
+    }
+    candidate = graph_with_inferred_resolution_proposal(
+        current,
+        synthesis_key=synthesis_key,
+        proposal=bound,
+        action_ref=action_ref,
+    )
+    canonical = runkernel_canonical_graph(
+        candidate,
+        action_ref=action_ref,
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={"component_work_graph_v1": canonical},
+        )
+    )
+    return deepcopy(canonical)
+
+
 def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]:
     graph = _json_safe(value)
     if not isinstance(graph, dict):
@@ -2958,6 +3987,54 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
     if not MIN_COMPONENT_NODES <= len(components) <= MAX_COMPONENT_NODES:
         raise ComponentWorkGraphV1Error("Graph V1 component count invalid")
     synthesis_nodes = [_validate_synthesis_node(item, graph=graph) for item in graph.get("synthesis_nodes") or ()]
+    accepted_catalog = _accepted_component_catalog(
+        component_nodes=components,
+        accepted_component_refs=[
+            _safe_mapping(item)
+            for item in graph.get("accepted_component_refs") or ()
+            if isinstance(item, Mapping)
+        ]
+        or None,
+    )
+    target_by_id = {
+        str(item.get("component_id") or ""): item
+        for item in accepted_catalog
+    }
+    inference_profile = _safe_mapping(
+        graph.get("semantic_inference_profile")
+    )
+    profile_ceiling = int(
+        inference_profile.get("profile_ceiling") or MAX_SYNTHESIS_DEPTH
+    )
+    inferred_target_ids: list[str] = []
+    for node in synthesis_nodes:
+        if node.get("support_kind") != "inferred":
+            continue
+        target_ref = _safe_mapping(node.get("answer_target_ref"))
+        target_id = str(node.get("answer_target_component_id") or "")
+        if (
+            not target_id
+            or target_by_id.get(target_id) != target_ref
+            or "inferred"
+            not in list(target_ref.get("allowed_support_kinds") or ())
+            or int(node.get("semantic_inference_depth") or 0) < 1
+            or int(node.get("semantic_inference_depth") or 0)
+            > int(target_ref.get("max_inference_depth") or 0)
+            or int(node.get("semantic_inference_depth") or 0)
+            > profile_ceiling
+            or int(node.get("semantic_inference_depth") or 0)
+            > MAX_SYNTHESIS_DEPTH
+            or _safe_mapping(node.get("semantic_observation_ref"))
+            or _safe_mapping(node.get("component_coverage_ref"))
+        ):
+            raise ComponentWorkGraphV1Error(
+                "Graph V1 inferred target authority is invalid"
+            )
+        inferred_target_ids.append(target_id)
+    if len(inferred_target_ids) != len(set(inferred_target_ids)):
+        raise ComponentWorkGraphV1Error(
+            "Graph V1 cannot carry competing inferred fulfillments for one target"
+        )
     single_component_direct = bool(
         len(components) == 1
         and not synthesis_nodes
@@ -3041,6 +4118,67 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
             graph.get("graph_revision") or 0
         ):
             raise ComponentWorkGraphV1Error("Graph V1 challenge revision binding invalid")
+    relationship_history = [
+        _safe_mapping(item)
+        for item in graph.get("inferred_relationship_admission_history")
+        or ()
+        if isinstance(item, Mapping)
+    ]
+    relation_ids: set[str] = set()
+    stable_replay_keys: set[str] = set()
+    for relation in relationship_history:
+        relation_id = str(relation.get("relationship_admission_id") or "")
+        declared_digest = relation.get("relationship_admission_digest")
+        core = {
+            key: value
+            for key, value in relation.items()
+            if key
+            not in {
+                "relationship_admission_id",
+                "relationship_admission_digest",
+            }
+        }
+        replay_key = str(
+            _safe_mapping(
+                relation.get("query_resolution_proposal_ref")
+            ).get("stable_replay_key")
+            or ""
+        )
+        if (
+            not relation_id
+            or not declared_digest
+            or declared_digest != _digest(core)
+            or relation_id
+            != f"graph-inferred-relationship:{str(declared_digest)[:24]}"
+            or relation_id in relation_ids
+            or not replay_key
+            or replay_key in stable_replay_keys
+            or relation.get("owner") != COMPONENT_WORK_GRAPH_V1_OWNER
+            or relation.get("canonical_state") is not True
+            or relation.get("run_id") != graph.get("run_id")
+            or relation.get("request_id") != graph.get("request_id")
+            or relation.get("support_kind") != "inferred"
+            or relation.get("target_local_semantic_observation_created")
+            is not False
+            or relation.get("target_local_component_coverage_created")
+            is not False
+        ):
+            raise ComponentWorkGraphV1Error(
+                "Graph V1 inferred relationship admission history is invalid"
+            )
+        relation_ids.add(relation_id)
+        stable_replay_keys.add(replay_key)
+    active_relation_ids = {
+        _safe_mapping(
+            node.get("inferred_relationship_admission_ref")
+        ).get("relationship_admission_id")
+        for node in synthesis_nodes
+        if _safe_mapping(node.get("inferred_relationship_admission_ref"))
+    }
+    if not active_relation_ids.issubset(relation_ids):
+        raise ComponentWorkGraphV1Error(
+            "Graph V1 inferred node lacks its append-only admission record"
+        )
     if amended_awaiting_resynthesis or (
         selective_awaiting_resynthesis and not synthesis_nodes
     ):
@@ -3084,6 +4222,14 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         )
         if int(node.get("synthesis_depth") or 0) != computed_depth:
             raise ComponentWorkGraphV1Error("Graph V1 synthesis depth mismatch")
+        if (
+            node.get("support_kind") == "inferred"
+            and int(node.get("semantic_inference_depth") or 0)
+            != computed_depth
+        ):
+            raise ComponentWorkGraphV1Error(
+                "Graph V1 semantic inference depth mismatch"
+            )
         computed_depths[key] = computed_depth
         seen_synthesis.add(key)
     if int(graph.get("maximum_synthesis_depth") or 0) != max(
@@ -3115,6 +4261,7 @@ def validate_component_work_graph_v1(value: Mapping[str, Any]) -> dict[str, Any]
         )
     graph["component_nodes"] = components
     graph["synthesis_nodes"] = synthesis_nodes
+    graph["accepted_component_refs"] = accepted_catalog
     return graph
 
 
@@ -3184,6 +4331,65 @@ def _validate_synthesis_node(
         node.get("runkernel_admission_ref")
     ):
         raise ComponentWorkGraphV1Error("admitted synthesis lacks RunKernel ref")
+    if node.get("support_kind") == "inferred":
+        from core.analyst_query_resolution_proposal import (
+            validate_bound_analyst_query_resolution_proposal,
+        )
+
+        relation_ref = _safe_mapping(
+            node.get("inferred_relationship_admission_ref")
+        )
+        proposal_ref = _safe_mapping(
+            node.get("query_resolution_proposal_ref")
+        )
+        proposal = _safe_mapping(node.get("query_resolution_proposal"))
+        premise_refs = [
+            _safe_mapping(item)
+            for item in node.get("premise_node_refs") or ()
+            if isinstance(item, Mapping)
+        ]
+        if (
+            not proposal_ref
+            or not proposal
+            or not premise_refs
+            or node.get("target_fulfillment_status")
+            not in {
+                "pending_relationship_admission",
+                "admitted_inferred",
+            }
+        ):
+            raise ComponentWorkGraphV1Error(
+                "inferred synthesis lacks exact proposal and premise lineage"
+            )
+        validate_bound_analyst_query_resolution_proposal(proposal)
+        if (
+            proposal_ref != _proposal_ref(proposal)
+            or len(premise_refs)
+            != len(node.get("input_node_refs") or ())
+            or {_digest(item) for item in premise_refs}
+            != {
+                _digest(_safe_mapping(item))
+                for item in node.get("input_node_refs") or ()
+            }
+        ):
+            raise ComponentWorkGraphV1Error(
+                "inferred synthesis proposal or premise binding mismatch"
+            )
+        admitted = node.get("status") == "admitted"
+        if admitted != bool(relation_ref) or admitted != (
+            node.get("target_fulfillment_status") == "admitted_inferred"
+        ):
+            raise ComponentWorkGraphV1Error(
+                "inferred synthesis relationship admission posture mismatch"
+            )
+    elif (
+        node.get("semantic_inference_depth") not in {None, 0}
+        or node.get("answer_target_component_id")
+        or _safe_mapping(node.get("inferred_relationship_admission_ref"))
+    ):
+        raise ComponentWorkGraphV1Error(
+            "ordinary synthesis cannot impersonate target-mapped inference"
+        )
     if not is_carried and node.get("status") in {"validated", "admitted"} and not _safe_mapping(
         node.get("dprime_validation_ref")
     ):
@@ -3313,6 +4519,11 @@ def _clear_synthesis_validation_and_admission(node: dict[str, Any]) -> None:
     node.pop("dprime_validated_node_revision", None)
     node.pop("dprime_validated_node_digest", None)
     node["runkernel_admission_ref"] = {}
+    if node.get("support_kind") == "inferred":
+        node["inferred_relationship_admission_ref"] = {}
+        node["target_fulfillment_status"] = (
+            "pending_relationship_admission"
+        )
 
 
 def _invalidate_challenged_dependents(graph: dict[str, Any]) -> None:
@@ -3360,6 +4571,7 @@ __all__ = [
     "MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE",
     "ComponentWorkGraphV1Error",
     "admit_synthesis_node_via_runkernel",
+    "bind_inferred_resolution_proposal_via_runkernel",
     "build_synthesis_carry_forward_projection",
     "component_work_graph_v1_from_cross_component_artifact",
     "component_work_graph_v1_from_single_component_admission",
@@ -3376,6 +4588,7 @@ __all__ = [
     "graph_with_selective_invalidation",
     "graph_with_scrutineer",
     "graph_with_synthesis_admission",
+    "graph_with_inferred_resolution_proposal",
     "graph_with_synthesis_validation",
     "runkernel_canonical_graph",
     "reduce_component_work_graph_v1",

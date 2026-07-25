@@ -931,6 +931,7 @@ def build_contract_amendment_v2_from_analyst_proposal(
                 "metadata": {
                     **dict(component_kwargs.get("metadata") or {}),
                     "searched_premise": True,
+                    "source_obligation_specification": dict(source_spec),
                     "recovery_generation_parent_ref": generation_parent_ref,
                     "recovery_generation_depth": generation_depth,
                 },
@@ -1044,6 +1045,7 @@ def build_contract_amendment_v2_from_analyst_proposal(
         "proposal_digest": bound["proposal_digest"],
         "stable_replay_key": bound["stable_replay_key"],
         "classification": bound["classification"],
+        "local_target_key": bound["local_target_key"],
     }
     record_identity = {
         "proposal_ref": proposal_ref,

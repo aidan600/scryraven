@@ -24,8 +24,6 @@ from core.run_authority_sufficiency_validation import (
 )
 from core.run_kernel import (
     ANSWER_CONTRACT_AUTHORITY_MAP_STAGE,
-    MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
-    MULTICOMPONENT_RECOVERY_OUTCOME_STAGE,
     SUFFICIENCY_JUDGMENT_STAGE,
     ActionType,
     AuthorizedAction,
@@ -275,14 +273,6 @@ def execute_sufficiency_judgment_handoff_from_scope(
         ),
         multicomponent_graph_state=run_kernel.state.projections.get(
             "multicomponent_component_work_graph_v1"
-        ),
-        multicomponent_recovery_state=run_kernel.state.projections.get(
-            MULTICOMPONENT_RECOVERY_OUTCOME_STAGE
-        ),
-        multicomponent_recovery_authorization_state=(
-            run_kernel.state.projections.get(
-                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-            )
         ),
         multicomponent_scheduler_state=run_kernel.state.projections.get(
             "multicomponent_graph_scheduler"

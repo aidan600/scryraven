@@ -1031,6 +1031,37 @@ class FinalAnswerPacket:
                 and not dict(entry.get("dprime_validation_ref") or {})
                 and not dict(entry.get("runkernel_admission_ref") or {})
             )
+            inferred_authority = bool(
+                entry.get("support_kind") == "inferred"
+                and entry.get("target_fulfillment_status")
+                == "admitted_inferred"
+                and dict(entry.get("answer_target_ref") or {})
+                and entry.get("answer_target_component_id")
+                == dict(entry.get("answer_target_ref") or {}).get(
+                    "component_id"
+                )
+                and entry.get("semantic_inference_depth") in {1, 2}
+                and entry.get("premise_node_refs")
+                and entry.get("premise_component_coverage_refs")
+                and dict(
+                    entry.get(
+                        "inferred_relationship_admission_ref"
+                    )
+                    or {}
+                )
+                and not dict(
+                    entry.get(
+                        "target_local_semantic_observation_ref"
+                    )
+                    or {}
+                )
+                and not dict(
+                    entry.get(
+                        "target_local_component_coverage_ref"
+                    )
+                    or {}
+                )
+            )
             if (
                 entry.get("entry_kind") != "admitted_synthesis"
                 or entry.get("status") != "admitted"
@@ -1038,7 +1069,11 @@ class FinalAnswerPacket:
                 or entry.get("stale") is not False
                 or not _clean_text(entry.get("claim_text"), limit=1200)
                 or not _clean_token(entry.get("claim_digest"), limit=128)
-                or not (fresh_authority or carried_authority)
+                or not (
+                    fresh_authority
+                    or carried_authority
+                    or inferred_authority
+                )
             ):
                 raise ValueError(
                     "FinalAnswerPacket synthesis entry is not current RunKernel-admitted state"
@@ -2235,6 +2270,12 @@ class FinalAnswerPacket:
         if self.direct_component_entries:
             lines.append("- Approved direct component findings:")
             for entry in self.direct_component_entries:
+                purpose_suffix = (
+                    " (supporting premise only)"
+                    if entry.get("component_purpose")
+                    == "supporting_premise"
+                    else ""
+                )
                 lines.append(
                     "  - "
                     + str(
@@ -2242,12 +2283,34 @@ class FinalAnswerPacket:
                         or entry.get("component_id")
                         or "component"
                     )
+                    + purpose_suffix
                     + ": "
                     + str(entry.get("claim_text") or "")
                 )
         if self.admitted_synthesis_entries:
             lines.append("- Approved admitted synthesis (render as combined findings):")
             for entry in self.admitted_synthesis_entries:
+                if entry.get("support_kind") == "inferred":
+                    lines.append(
+                        "  - Admitted inference for target "
+                        + str(
+                            entry.get("answer_target_component_id")
+                            or "target"
+                        )
+                        + " at semantic depth "
+                        + str(entry.get("semantic_inference_depth") or "")
+                        + " via "
+                        + str(entry.get("relationship_type") or "relationship")
+                        + ": "
+                        + str(entry.get("claim_text") or "")
+                    )
+                    lines.append(
+                        "    Explain only this admitted relationship from its exact "
+                        "premises; do not say a premise source directly stated the "
+                        "inferred conclusion, invent premises, strengthen confidence, "
+                        "or create another inference."
+                    )
+                    continue
                 lines.append(
                     "  - "
                     + str(entry.get("synthesis_key") or "synthesis")

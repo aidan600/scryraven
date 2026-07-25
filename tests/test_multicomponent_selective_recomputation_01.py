@@ -43,11 +43,11 @@ from core.ordinary_multicomponent_synthesis_runtime import (
     _execute_selective_reconstruction,
 )
 from core.run_kernel import (
-    MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
     Observation,
     RunKernel,
     RunKernelTransitionError,
     RunStageStatus,
+    contract_amendment_graph_transition_authority,
 )
 from core.strict_one_shot_model_transport import (
     wrap_text_callable_as_strict_one_shot_transport,
@@ -60,6 +60,10 @@ from tests.test_multicomponent_component_work_graph_v1 import (
     _seed_component_admission,
     _seed_role_artifact,
     _validate_synthesis,
+)
+
+GRAPH_TRANSITION_AUTHORITY_STAGE = (
+    "contract_amendment_graph_transition_authority"
 )
 
 
@@ -190,25 +194,33 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
     filing = next(
         item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
     )
-    authorization_core = {
-        "schema_version": "multicomponent_missing_component_recovery_authorization_v1",
-        "owner": "RunKernel.MulticomponentRecoveryAuthorization",
-        "canonical_state": True,
-        "run_id": RUN_ID,
-        "request_id": REQUEST_ID,
-        "authorization_id": "recovery-authorization:test",
-        "authorized_action_id": "recovery-action:test",
-        "target_kind": "synthesis",
-        "target_key": "synthesis_02",
-        "resolved_target": _node_ref(filing),
-        "graph_id": graph["graph_id"],
-        "graph_revision": graph["graph_revision"],
-        "graph_digest": graph["graph_digest"],
+    amendment_admission = {
+        "amendment_record_id": "amendment:test",
+        "amendment_record_digest": "amendment-record-digest",
+        "authorized_action_id": "amendment-admission-action:test",
+        "admission_digest": "amendment-admission-digest",
+        "analyst_query_resolution_proposal_ref": {
+            "local_target_key": "filing_route",
+        },
     }
-    authorization = {
-        **authorization_core,
-        "authorization_digest": safe_packet_digest(authorization_core),
-    }
+    amendment_application = {
+        "amendment_record_id": "amendment:test",
+        "authorized_action_id": "amendment-application-action:test",
+        "application_digest": "amendment-application-digest",
+        "operations": [
+                {
+                    "operation_kind": "revise_component",
+                    "component_id": "component:component-4",
+                }
+            ],
+        }
+    authorization = contract_amendment_graph_transition_authority(
+        graph=graph,
+        amendment_application=amendment_application,
+        amendment_admission=amendment_admission,
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+    )
     recovered_node = _component_node(
         5,
         admission_overrides={
@@ -238,17 +250,6 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
         "accepted_answer_component_refs": accepted_refs,
         "accepted_answer_component_count": len(accepted_refs),
     }
-    amendment_admission = {
-        "amendment_record_id": "amendment:test",
-        "amendment_record_digest": "amendment-record-digest",
-        "authorized_action_id": "amendment-admission-action:test",
-        "admission_digest": "amendment-admission-digest",
-    }
-    amendment_application = {
-        "amendment_record_id": "amendment:test",
-        "authorized_action_id": "amendment-application-action:test",
-        "application_digest": "amendment-application-digest",
-    }
     recovered_admission = {
         "schema_version": "multicomponent_component_admission_ref_v1",
         "owner": "RunKernel.MulticomponentComponentAdmission",
@@ -276,7 +277,7 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
         "preserved_nonclaims": recovered_node["preserved_nonclaims"],
         "blocker_refs": recovered_node["blocker_refs"],
     }
-    kernel.state.projections[MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE] = authorization
+    kernel.state.projections[GRAPH_TRANSITION_AUTHORITY_STAGE] = authorization
     kernel.state.current_answer_contract = current_contract
     kernel.state.contract_amendment_admission_projection = amendment_admission
     kernel.state.contract_amendment_application_projection = amendment_application
@@ -299,8 +300,23 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
             )
         }
         | {"accepted_answer_component_count": len(accepted_refs)},
-        contract_amendment_admission_ref=amendment_admission,
-        contract_amendment_application_ref=amendment_application,
+        contract_amendment_admission_ref={
+            key: amendment_admission[key]
+            for key in (
+                "amendment_record_id",
+                "amendment_record_digest",
+                "authorized_action_id",
+                "admission_digest",
+            )
+        },
+        contract_amendment_application_ref={
+            key: amendment_application[key]
+            for key in (
+                "amendment_record_id",
+                "authorized_action_id",
+                "application_digest",
+            )
+        },
         recovered_component_admission_ref=recovered_admission,
     )
     return kernel, graph, closure
@@ -323,7 +339,7 @@ def _transition_inputs(kernel: RunKernel, closure: dict) -> dict:
         ),
         "current_contract_ref": closure["current_contract_ref"],
         "recovery_authorization_ref": kernel.state.projections[
-            MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+            GRAPH_TRANSITION_AUTHORITY_STAGE
         ],
         "contract_amendment_admission_ref": closure[
             "contract_amendment_admission_ref"
@@ -496,17 +512,30 @@ def test_selective_closure_rejects_forged_digest() -> None:
 
 
 def test_selective_closure_rejects_wrong_source_graph_binding() -> None:
-    kernel, _graph, _closure = _closure_fixture()
-    authorization = kernel.state.projections[
-        MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-    ]
+    kernel, graph, closure = _closure_fixture()
+    authorization = deepcopy(kernel.state.projections[
+        GRAPH_TRANSITION_AUTHORITY_STAGE
+    ])
     authorization["graph_revision"] += 1
 
     with pytest.raises(
-        RunKernelTransitionError,
-        match="authorization-bound graph snapshot",
+        ComponentWorkGraphV1Error,
+        match="authorization-bound source graph",
     ):
-        kernel.authorize_multicomponent_selective_recomputation_closure()
+        derive_selective_recomputation_closure(
+            graph,
+            recovery_authorization_ref=authorization,
+            current_contract_ref=closure["current_contract_ref"],
+            contract_amendment_admission_ref=closure[
+                "contract_amendment_admission_ref"
+            ],
+            contract_amendment_application_ref=closure[
+                "contract_amendment_application_ref"
+            ],
+            recovered_component_admission_ref=closure[
+                "recovered_component_admission_ref"
+            ],
+        )
 
 
 def test_selective_invalidation_carries_only_unaffected_synthesis() -> None:
@@ -1164,7 +1193,7 @@ def test_closure_cannot_be_derived_after_selective_topology_replacement() -> Non
         derive_selective_recomputation_closure(
             amended,
             recovery_authorization_ref=kernel.state.projections[
-                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                GRAPH_TRANSITION_AUTHORITY_STAGE
             ],
             current_contract_ref=closure["current_contract_ref"],
             contract_amendment_admission_ref=closure[
@@ -1413,25 +1442,33 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
     filing = next(
         item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
     )
-    authorization_core = {
-        "schema_version": "multicomponent_missing_component_recovery_authorization_v1",
-        "owner": "RunKernel.MulticomponentRecoveryAuthorization",
-        "canonical_state": True,
-        "run_id": RUN_ID,
-        "request_id": REQUEST_ID,
-        "authorization_id": "recovery-authorization:unrelated",
-        "authorized_action_id": "recovery-action:unrelated",
-        "target_kind": "synthesis",
-        "target_key": "synthesis_02",
-        "resolved_target": _node_ref(filing),
-        "graph_id": graph["graph_id"],
-        "graph_revision": graph["graph_revision"],
-        "graph_digest": graph["graph_digest"],
+    amendment_admission = {
+        "amendment_record_id": "amendment:unrelated",
+        "amendment_record_digest": "amendment-record-digest-unrelated",
+        "authorized_action_id": "amendment-admission-action:unrelated",
+        "admission_digest": "amendment-admission-digest-unrelated",
+        "analyst_query_resolution_proposal_ref": {
+            "local_target_key": "filing_route",
+        },
     }
-    authorization = {
-        **authorization_core,
-        "authorization_digest": safe_packet_digest(authorization_core),
-    }
+    amendment_application = {
+        "amendment_record_id": "amendment:unrelated",
+        "authorized_action_id": "amendment-application-action:unrelated",
+        "application_digest": "amendment-application-digest-unrelated",
+        "operations": [
+                {
+                    "operation_kind": "revise_component",
+                    "component_id": "component:component-4",
+                }
+            ],
+        }
+    authorization = contract_amendment_graph_transition_authority(
+        graph=graph,
+        amendment_application=amendment_application,
+        amendment_admission=amendment_admission,
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+    )
     recovered_node = _component_node(
         5,
         admission_overrides={
@@ -1461,17 +1498,6 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         "accepted_answer_component_refs": accepted_refs,
         "accepted_answer_component_count": len(accepted_refs),
     }
-    amendment_admission = {
-        "amendment_record_id": "amendment:unrelated",
-        "amendment_record_digest": "amendment-record-digest-unrelated",
-        "authorized_action_id": "amendment-admission-action:unrelated",
-        "admission_digest": "amendment-admission-digest-unrelated",
-    }
-    amendment_application = {
-        "amendment_record_id": "amendment:unrelated",
-        "authorized_action_id": "amendment-application-action:unrelated",
-        "application_digest": "amendment-application-digest-unrelated",
-    }
     recovered_admission = {
         "schema_version": "multicomponent_component_admission_ref_v1",
         "owner": "RunKernel.MulticomponentComponentAdmission",
@@ -1497,7 +1523,7 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         "preserved_nonclaims": recovered_node["preserved_nonclaims"],
         "blocker_refs": recovered_node["blocker_refs"],
     }
-    kernel.state.projections[MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE] = authorization
+    kernel.state.projections[GRAPH_TRANSITION_AUTHORITY_STAGE] = authorization
     kernel.state.current_answer_contract = current_contract
     kernel.state.contract_amendment_admission_projection = amendment_admission
     kernel.state.contract_amendment_application_projection = amendment_application
@@ -1520,8 +1546,23 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
             )
         }
         | {"accepted_answer_component_count": len(accepted_refs)},
-        contract_amendment_admission_ref=amendment_admission,
-        contract_amendment_application_ref=amendment_application,
+        contract_amendment_admission_ref={
+            key: amendment_admission[key]
+            for key in (
+                "amendment_record_id",
+                "amendment_record_digest",
+                "authorized_action_id",
+                "admission_digest",
+            )
+        },
+        contract_amendment_application_ref={
+            key: amendment_application[key]
+            for key in (
+                "amendment_record_id",
+                "authorized_action_id",
+                "application_digest",
+            )
+        },
         recovered_component_admission_ref=recovered_admission,
     )
     canonical_closure = reduce_selective_recomputation_closure(

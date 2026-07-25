@@ -86,7 +86,8 @@ RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 RUN_ID = "run:sem-09-offline"
 REQUEST_ID = "request:sem-09"
 COMPONENT_ID = "component:reported-total"
-EVIDENCE_ID = "evidence:public-record-notice"
+COMPONENT_SOURCE_OBLIGATION_ID = "obligation:reported_total"
+EVIDENCE_ID = "evidence:public_record_notice"
 COVERAGE_RECORD_ID = "coverage:reported-total"
 AMENDMENT_RECORD_ID = "amendment:reported-total-caveat"
 
@@ -111,6 +112,9 @@ def _ledger_projection(
         build_evidence_ledger_observation_from_run_contract,
     )
 
+    semantic_contract = _accept_contract(
+        RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    )
     candidate = {
         "candidate_id": "C1",
         "url": "https://example.gov/rule",
@@ -155,6 +159,7 @@ def _ledger_projection(
                 "candidates": [
                     {
                         "candidate_id": EVIDENCE_ID,
+                        "requirement_id": COMPONENT_SOURCE_OBLIGATION_ID,
                         "url": "https://example.org/public-record-notice",
                         "title": "Public record notice",
                         "source_class": "primary_source_documents",
@@ -166,6 +171,32 @@ def _ledger_projection(
                         "record_kind": "fact",
                         "eligible_for_stronger_obligation": True,
                         "final_evidence_eligible": True,
+                    }
+                ],
+                "requirements": [
+                    {
+                        "requirement_id": COMPONENT_SOURCE_OBLIGATION_ID,
+                        "requirement_kind": "component_direct_support",
+                        "component_id": COMPONENT_ID,
+                        "source_obligation_id": COMPONENT_SOURCE_OBLIGATION_ID,
+                        "run_id": RUN_ID,
+                        "request_id": REQUEST_ID,
+                        "answer_contract_version": semantic_contract[
+                            "accepted_contract_version"
+                        ],
+                        "answer_contract_digest": semantic_contract[
+                            "accepted_contract_digest"
+                        ],
+                        "required_source_class": "primary_source_documents",
+                        "required_source_tier": "primary",
+                        "required_currentness": "current",
+                    }
+                ],
+                "requirement_links": [
+                    {
+                        "requirement_id": COMPONENT_SOURCE_OBLIGATION_ID,
+                        "candidate_id": EVIDENCE_ID,
+                        "link_status": "fixture_link",
                     }
                 ],
             }
@@ -192,6 +223,7 @@ def _component() -> AnswerComponentContract:
         requirement_posture=RequirementPosture.REQUIRED,
         acceptance_criteria=("state the bounded value", "bind it to evidence"),
         semantic_slot_ids=("slot:reporting-period",),
+        source_obligation_candidate_ids=(COMPONENT_SOURCE_OBLIGATION_ID,),
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         materiality=Materiality.MATERIAL,
@@ -234,6 +266,7 @@ def _accept_contract(kernel: RunKernel) -> dict[str, object]:
 
 
 def _seed_evidence_ledger(kernel: RunKernel) -> None:
+    accepted = kernel.state.initial_answer_contract
     kernel.state.evidence_ledger.reduce_observation(
         {
             "observation_id": f"evidence-seed:{EVIDENCE_ID}",
@@ -241,6 +274,7 @@ def _seed_evidence_ledger(kernel: RunKernel) -> None:
             "candidates": [
                 {
                     "candidate_id": EVIDENCE_ID,
+                    "requirement_id": COMPONENT_SOURCE_OBLIGATION_ID,
                     "url": "https://example.org/public-record-notice",
                     "title": "Public record notice",
                     "source_class": "primary_source_documents",
@@ -252,6 +286,32 @@ def _seed_evidence_ledger(kernel: RunKernel) -> None:
                     "record_kind": "fact",
                     "eligible_for_stronger_obligation": True,
                     "final_evidence_eligible": True,
+                }
+            ],
+            "requirements": [
+                {
+                    "requirement_id": COMPONENT_SOURCE_OBLIGATION_ID,
+                    "requirement_kind": "component_direct_support",
+                    "component_id": COMPONENT_ID,
+                    "source_obligation_id": COMPONENT_SOURCE_OBLIGATION_ID,
+                    "run_id": RUN_ID,
+                    "request_id": REQUEST_ID,
+                    "answer_contract_version": accepted[
+                        "accepted_contract_version"
+                    ],
+                    "answer_contract_digest": accepted[
+                        "accepted_contract_digest"
+                    ],
+                    "required_source_class": "primary_source_documents",
+                    "required_source_tier": "primary",
+                    "required_currentness": "current",
+                }
+            ],
+            "requirement_links": [
+                {
+                    "requirement_id": COMPONENT_SOURCE_OBLIGATION_ID,
+                    "candidate_id": EVIDENCE_ID,
+                    "link_status": "fixture_link",
                 }
             ],
         }
@@ -354,7 +414,7 @@ def _ledger_binding(kernel: RunKernel) -> EvidenceLedgerSnapshotBinding:
         ledger_schema_version=EVIDENCE_LEDGER_SCHEMA_VERSION,
         ledger_digest=digest,
         custody_status=EvidenceCustodyStatus.CUSTODIED,
-        source_requirement_ids=(),
+        source_requirement_ids=(COMPONENT_SOURCE_OBLIGATION_ID,),
         ledger_observation_refs=observation_refs,
         version_validity=VersionValidity.VALID,
     )
@@ -383,7 +443,7 @@ def _coverage_record(
     defaults = {
         "coverage_state": CoverageState.SATISFIED,
         "semantic_support_status": SemanticSupportStatus.SUPPORTED,
-        "source_obligation_status": SourceObligationStatus.NOT_APPLICABLE,
+        "source_obligation_status": SourceObligationStatus.SATISFIED,
         "content_availability_status": ContentAvailabilityStatus.AVAILABLE,
         "evidence_custody_status": EvidenceCustodyStatus.CUSTODIED,
         "evidence_basis": (
@@ -539,6 +599,8 @@ def _coverage_history_entry(accepted: dict[str, Any], **overrides: Any) -> dict[
     component_ref = accepted["accepted_answer_component_refs"][0]
     entry = {
         "answer_component_id": component_ref["component_id"],
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
         "accepted_contract_version": accepted["accepted_contract_version"],
         "accepted_contract_digest": accepted["accepted_contract_digest"],
         "component_revision": component_ref["component_revision"],
@@ -546,7 +608,7 @@ def _coverage_history_entry(accepted: dict[str, Any], **overrides: Any) -> dict[
         "coverage_record_id": COVERAGE_RECORD_ID,
         "coverage_state": "satisfied",
         "semantic_support_status": "supported",
-        "source_obligation_status": "not_applicable",
+        "source_obligation_status": "satisfied",
         "content_availability_status": "available",
         "evidence_custody_status": "custodied",
         "evidence_basis": [
@@ -565,7 +627,7 @@ def _coverage_history_entry(accepted: dict[str, Any], **overrides: Any) -> dict[
             "ledger_schema_version": EVIDENCE_LEDGER_SCHEMA_VERSION,
             "ledger_digest": "fixture-ledger-digest",
             "custody_status": "custodied",
-            "source_requirement_ids": [],
+            "source_requirement_ids": [COMPONENT_SOURCE_OBLIGATION_ID],
             "ledger_observation_refs": [],
             "version_validity": "valid",
         },
@@ -683,7 +745,9 @@ def _input(
             initial_answer_contract=kernel.state.initial_answer_contract,
             component_coverage_history=kernel.state.component_coverage_history,
             contract_amendment_admission_history=kernel.state.contract_amendment_admission_history,
-            evidence_ledger_projection=ledger,
+            evidence_ledger_projection=(
+                kernel.state.evidence_ledger.to_projection().to_dict()
+            ),
         )
     return RunSufficiencyJudgmentInput(
         contract_projection=contract,
@@ -823,7 +887,9 @@ def test_missing_required_component_emits_version_bound_gap_identity() -> None:
             "component_digest": component_ref["component_digest"],
             "accepted_contract_version": accepted["accepted_contract_version"],
             "accepted_contract_digest": accepted["accepted_contract_digest"],
-            "source_obligation_candidate_ids": [],
+            "source_obligation_candidate_ids": [
+                COMPONENT_SOURCE_OBLIGATION_ID
+            ],
         }
     ]
     assert assessment["accepted_contract_version"] == accepted[

@@ -1077,7 +1077,10 @@ def finalize_searchos_existing_gap_recovery_cycle(
     """Close the lease with exact expenditure and honest terminal disposition."""
 
     canonical = validate_searchos_state(state)
-    cycle = validate_active_searchos_recovery_cycle_ref(canonical, cycle_ref)
+    cycle = validate_active_searchos_recovery_cycle_ref(
+        canonical,
+        cycle_ref,
+    )
     slot_ref = _mapping(cycle["recovery_slot_ref"])
     slot = _mapping(_mapping(canonical["slots_by_id"]).get(slot_ref["slot_id"]))
     admission = _mapping(component_admission_ref)
@@ -1544,6 +1547,37 @@ def _recovery_cycle_admission_ref(
         "recovery_classification": safe["recovery_classification"],
         "generation_depth": safe["generation_depth"],
     }
+
+
+def validate_active_searchos_generalized_recovery_cycle_ref(
+    state: Mapping[str, Any],
+    cycle_admission_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the exact active generalized recovery-cycle admission ref."""
+
+    canonical = validate_searchos_state(state)
+    supplied = _mapping(cycle_admission_ref)
+    active = _mapping(canonical.get("active_recovery_cycle_ref"))
+    if supplied != active or not active:
+        raise SearchOSExistingGapRecoveryError(
+            "SearchOS recovery execution requires the exact active cycle"
+        )
+    admission = next(
+        (
+            _mapping(item)
+            for item in canonical.get(
+                "recovery_cycle_admission_history"
+            )
+            or ()
+            if _recovery_cycle_admission_ref(_mapping(item)) == active
+        ),
+        None,
+    )
+    if admission is None:
+        raise SearchOSExistingGapRecoveryError(
+            "active SearchOS recovery admission is absent"
+        )
+    return admission
 
 
 def _recovery_cycle_terminal_ref(
@@ -2102,6 +2136,7 @@ __all__ = [
     "finalize_searchos_existing_gap_recovery_cycle",
     "ensure_searchos_whole_run_recovery_lease",
     "recovery_cycle_ref",
+    "validate_active_searchos_generalized_recovery_cycle_ref",
     "validate_active_searchos_recovery_cycle_ref",
     "validate_searchos_existing_gap_basis",
     "validate_searchos_recovery_cycle",
