@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Mapping, Sequence
 
-from core.multicomponent_role_runtime import safe_packet_digest
 from core.multicomponent_sufficiency_consumption_runtime import (
     build_multicomponent_graph_consumption,
 )
@@ -351,6 +350,14 @@ def _searchos_recovery_terminal_consumption(
     judgment_input: RunSufficiencyJudgmentInput,
     terminal: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if terminal.get("schema_version") == (
+        "searchos_recovery_cycle_terminal_v2"
+    ):
+        return _generalized_searchos_recovery_terminal_consumption(
+            judgment_input=judgment_input,
+            terminal=terminal,
+        )
+
     from core.searchos_existing_gap_recovery_runtime import (
         validate_searchos_recovery_terminal_aggregate,
     )
@@ -650,6 +657,290 @@ def _searchos_recovery_terminal_consumption(
         "recovery_slot_ref": recovery_slot_ref,
         "component_coverage_ref": coverage_ref,
         "terminal_blocker": blocker,
+        "target_source_truth_status": target_assessment.status,
+        "target_requirement_ids": target_requirement_ids,
+        "required_source_obligation_assessments": [
+            item.to_dict() for item in assessments
+        ],
+    }
+
+
+def _generalized_searchos_recovery_terminal_consumption(
+    *,
+    judgment_input: RunSufficiencyJudgmentInput,
+    terminal: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Consume one exact generalized terminal without restoring the old lane."""
+
+    from core.searchos_iterative_judgment_runtime import (
+        validate_searchos_state,
+    )
+
+    canonical_terminal = _mapping(terminal)
+    searchos_state = validate_searchos_state(
+        judgment_input.searchos_state
+    )
+    run_identity = _mapping(judgment_input.run_identity)
+    if (
+        canonical_terminal.get("run_id")
+        != run_identity.get("run_id")
+        or canonical_terminal.get("request_id")
+        != run_identity.get("request_id")
+        or searchos_state.get("run_id")
+        != run_identity.get("run_id")
+        or searchos_state.get("request_id")
+        != run_identity.get("request_id")
+    ):
+        raise ValueError(
+            "generalized SearchOS recovery terminal differs from run identity"
+        )
+    matching_terminals = [
+        _mapping(item)
+        for item in _list(
+            searchos_state.get("recovery_cycle_terminal_history")
+        )
+        if isinstance(item, Mapping)
+        and item.get("cycle_terminal_id")
+        == canonical_terminal.get("cycle_terminal_id")
+        and item.get("cycle_terminal_digest")
+        == canonical_terminal.get("cycle_terminal_digest")
+    ]
+    if len(matching_terminals) != 1 or matching_terminals[0] != (
+        canonical_terminal
+    ):
+        raise ValueError(
+            "generalized SearchOS recovery terminal is not exact current history"
+        )
+    cycle_ref = _mapping(
+        canonical_terminal.get("cycle_admission_ref")
+    )
+    admissions = [
+        _mapping(item)
+        for item in _list(
+            searchos_state.get("recovery_cycle_admission_history")
+        )
+        if isinstance(item, Mapping)
+        and item.get("cycle_id") == cycle_ref.get("cycle_id")
+        and item.get("cycle_admission_id")
+        == cycle_ref.get("cycle_admission_id")
+        and item.get("cycle_admission_digest")
+        == cycle_ref.get("cycle_admission_digest")
+    ]
+    if len(admissions) != 1:
+        raise ValueError(
+            "generalized SearchOS terminal lost its immutable admission"
+        )
+    admission = admissions[0]
+    recovery_slot_ref = _mapping(
+        admission.get("recovery_slot_ref")
+    )
+    recovery_slot = _mapping(
+        _mapping(searchos_state.get("slots_by_id")).get(
+            recovery_slot_ref.get("slot_id")
+        )
+    )
+    component_ref = _mapping(admission.get("component_ref"))
+    source_obligation_ref = _mapping(
+        admission.get("source_obligation_ref")
+    )
+    if (
+        _mapping(recovery_slot.get("slot_ref"))
+        != recovery_slot_ref
+        or _mapping(recovery_slot.get("component_ref"))
+        != component_ref
+        or _mapping(recovery_slot.get("source_obligation_ref"))
+        != source_obligation_ref
+    ):
+        raise ValueError(
+            "generalized SearchOS terminal slot lineage is stale"
+        )
+    semantic_state = _mapping(judgment_input.semantic_state_facts)
+    component_id = clean_token(component_ref.get("component_id"))
+    source_obligation_id = clean_token(
+        source_obligation_ref.get("source_obligation_id")
+        or source_obligation_ref.get("candidate_id")
+    )
+    accepted_components = [
+        _mapping(item)
+        for item in _list(
+            semantic_state.get("accepted_required_component_refs")
+        )
+        if isinstance(item, Mapping)
+        and clean_token(item.get("answer_component_id"))
+        == component_id
+    ]
+    if (
+        len(accepted_components) != 1
+        or accepted_components[0].get("component_revision")
+        != component_ref.get("component_revision")
+        or accepted_components[0].get("component_digest")
+        != component_ref.get("component_digest")
+        or source_obligation_id
+        not in set(
+            _string_list(
+                accepted_components[0].get(
+                    "source_obligation_candidate_ids"
+                )
+            )
+        )
+    ):
+        raise ValueError(
+            "generalized SearchOS terminal component is not current"
+        )
+    semantic_ref_projection = _mapping(
+        semantic_state.get("semantic_ref_projection")
+    )
+    source_requirement_ids = set(
+        _string_list(
+            semantic_ref_projection.get("source_obligation_refs")
+        )
+    )
+    coverage_refs = [
+        _mapping(item)
+        for item in _list(
+            semantic_ref_projection.get("coverage_record_refs")
+        )
+        if isinstance(item, Mapping)
+    ]
+    source_obligation_coverage_refs = [
+        _mapping(item)
+        for item in _list(
+            semantic_ref_projection.get(
+                "source_obligation_coverage_refs"
+            )
+        )
+        if isinstance(item, Mapping)
+    ]
+    required_obligations: dict[str, dict[str, Any]] = {}
+    for slot_id in _list(searchos_state.get("required_slot_ids")):
+        slot = _mapping(
+            _mapping(searchos_state.get("slots_by_id")).get(slot_id)
+        )
+        slot_ref = _mapping(slot.get("slot_ref"))
+        if slot_ref.get("component_id") != component_id:
+            continue
+        obligation_id = clean_token(
+            slot_ref.get("source_obligation_id")
+        )
+        if obligation_id:
+            required_obligations.setdefault(
+                obligation_id,
+                _mapping(slot.get("source_obligation_ref")),
+            )
+    ledger = _mapping(judgment_input.evidence_ledger_projection)
+    assessments = [
+        _searchos_obligation_assessment(
+            ledger=ledger,
+            component_id=component_id or "",
+            source_obligation_id=obligation_id,
+            source_obligation_ref=obligation_ref,
+            current_requirement_ids=source_requirement_ids,
+            current_coverage_refs=coverage_refs,
+            source_obligation_coverage_refs=(
+                source_obligation_coverage_refs
+            ),
+        )
+        for obligation_id, obligation_ref in sorted(
+            required_obligations.items()
+        )
+    ]
+    target_assessments = [
+        item
+        for item in assessments
+        if item.source_obligation_id == source_obligation_id
+    ]
+    if len(target_assessments) != 1:
+        raise ValueError(
+            "generalized SearchOS terminal target obligation is not current"
+        )
+    target_assessment = target_assessments[0]
+    target_requirement_ids = [
+        target_assessment.requirement_id
+    ] if target_assessment.status == "satisfied" else []
+    coverage_ref = _mapping(
+        canonical_terminal.get("component_coverage_ref")
+    )
+    recovered = canonical_terminal.get("terminal_status") == "recovered"
+    if recovered and (
+        target_assessment.status != "satisfied"
+        or not target_requirement_ids
+        or not any(
+            ref.get("coverage_record_id")
+            == coverage_ref.get("coverage_record_id")
+            and ref.get("coverage_record_digest")
+            == coverage_ref.get("coverage_record_digest")
+            for ref in coverage_refs
+        )
+    ):
+        raise ValueError(
+            "recovered generalized SearchOS terminal lacks current coverage"
+        )
+    reason = clean_text(
+        canonical_terminal.get("terminal_reason"),
+        limit=240,
+    )
+    blocker_class = None
+    if not recovered:
+        normalized_reason = (reason or "").casefold()
+        blocker_class = (
+            "provider_or_acquisition"
+            if any(
+                marker in normalized_reason
+                for marker in (
+                    "model",
+                    "provider",
+                    "acquisition",
+                    "fetch",
+                    "read",
+                    "navigation",
+                    "discover",
+                )
+            )
+            else "validation"
+            if "failed" in normalized_reason
+            else "recovery_exhaustion"
+        )
+    aggregate = _mapping(
+        searchos_state.get("recovery_terminal_aggregate")
+    )
+    return {
+        "schema_version": (
+            "run_sufficiency_searchos_recovery_terminal_consumption_v2"
+        ),
+        "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "canonical_state": True,
+        "terminal_aggregate_id": aggregate.get(
+            "terminal_aggregate_id"
+        ),
+        "terminal_aggregate_digest": aggregate.get(
+            "terminal_aggregate_digest"
+        ),
+        "cycle_terminal_id": canonical_terminal.get(
+            "cycle_terminal_id"
+        ),
+        "cycle_terminal_digest": canonical_terminal.get(
+            "cycle_terminal_digest"
+        ),
+        "terminal_status": canonical_terminal.get("terminal_status"),
+        "component_ref": component_ref,
+        "source_obligation_ref": source_obligation_ref,
+        "cycle_id": cycle_ref.get("cycle_id"),
+        "cycle_admission_digest": cycle_ref.get(
+            "cycle_admission_digest"
+        ),
+        "recovery_slot_ref": recovery_slot_ref,
+        "component_coverage_ref": coverage_ref,
+        "terminal_component_ready": (
+            recovered and target_assessment.status == "satisfied"
+        ),
+        "terminal_blocker": (
+            {
+                "blocker_class": blocker_class,
+                "reason_code": reason,
+            }
+            if blocker_class
+            else {}
+        ),
         "target_source_truth_status": target_assessment.status,
         "target_requirement_ids": target_requirement_ids,
         "required_source_obligation_assessments": [
@@ -2181,7 +2472,6 @@ def build_deterministic_sufficiency_judgment(
                 terminal=searchos_recovery_terminal,
             )
         )
-        terminal = searchos_recovery_terminal
     if searchos_required_needs_block:
         searchos_required_needs_block_consumption = (
             _searchos_required_needs_block_consumption(
@@ -2202,7 +2492,7 @@ def build_deterministic_sufficiency_judgment(
             searchos_recovery_terminal_consumption
             and _scheduler_block_matches_recovery_terminal_component(
                 canonical_scheduler,
-                terminal,
+                searchos_recovery_terminal_consumption,
             )
         ):
             scheduler_required_work_blocked = False
@@ -2463,7 +2753,7 @@ def build_deterministic_sufficiency_judgment(
     recovery_exhausted = _recovery_exhausted(search, budget)
     if (
         searchos_recovery_terminal_consumption.get("terminal_status")
-        == "exhausted_insufficient"
+        in {"exhausted_insufficient", "failed"}
     ):
         recovery_exhausted = True
     search_satisfied = _search_stopped_satisfied(search)
@@ -2659,7 +2949,7 @@ def build_deterministic_sufficiency_judgment(
     )
     if (
         searchos_recovery_terminal_consumption.get("terminal_status")
-        == "exhausted_insufficient"
+        in {"exhausted_insufficient", "failed"}
         and searchos_terminal_blocker_class
         in {"provider_or_acquisition", "validation"}
     ):

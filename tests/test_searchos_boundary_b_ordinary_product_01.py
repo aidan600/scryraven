@@ -34,7 +34,6 @@ from tests.helpers.offline_ordinary_pipeline import (
     scrub_offline_runtime,
 )
 
-
 UNIQUE_RECOVERED_RESULT = "BOUNDARY_B_RECOVERED_E_RESULT_7F3A"
 BOUNDARY_B_QUERY = (
     "For the fictional Alder filing rule, determine the filing route that "
@@ -226,7 +225,7 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                     ),
                     "score": 1.0,
                     "credibility": 4,
-                    "source_tier": "secondary",
+                    "source_tier": "official",
                     "source_class": "supporting_fact",
                     "currentness_signal": "current",
                     "readable_status": "readable",
@@ -246,7 +245,7 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 ),
                 "score": 1.0,
                 "credibility": 4,
-                "source_tier": "secondary",
+                "source_tier": "official",
                 "source_class": "supporting_fact",
                 "currentness_signal": "current",
                 "readable_status": "readable",
@@ -357,7 +356,7 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                                 ),
                                 "source_obligation_specification": {
                                     "candidate_id": (
-                                        "obligation:searched-premise-C"
+                                        "obligation:searched_premise_c"
                                     ),
                                     "obligation_kind": "supporting_fact",
                                 },

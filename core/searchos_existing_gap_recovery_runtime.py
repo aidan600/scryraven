@@ -1626,6 +1626,7 @@ def admit_searchos_recovery_cycle(
     dependency_component_refs: Sequence[Mapping[str, Any]],
     generation_parent_ref: Mapping[str, Any],
     generation_depth: int,
+    prior_terminal_slot_ref: Mapping[str, Any] | None = None,
     contract_amendment_record_ref: Mapping[str, Any] | None = None,
     contract_amendment_admission_ref: Mapping[str, Any] | None = None,
     contract_amendment_application_ref: Mapping[str, Any] | None = None,
@@ -1653,6 +1654,7 @@ def admit_searchos_recovery_cycle(
     dependencies = [
         deepcopy(_mapping(item)) for item in dependency_component_refs
     ]
+    prior_slot_ref = deepcopy(_mapping(prior_terminal_slot_ref))
     if len({_digest(item) for item in targets}) != len(targets):
         raise SearchOSExistingGapRecoveryError(
             "recovery answer-target refs must be unique"
@@ -1669,6 +1671,35 @@ def admit_searchos_recovery_cycle(
         raise SearchOSExistingGapRecoveryError(
             "searched-premise recovery requires answer targets"
         )
+    if recovery_classification == "searched_premise" and prior_slot_ref:
+        raise SearchOSExistingGapRecoveryError(
+            "searched-premise recovery cannot fabricate a prior slot"
+        )
+    if recovery_classification == "existing_component_gap":
+        prior_slot_id = _token(
+            prior_slot_ref.get("slot_id"),
+            "existing-gap prior terminal slot id",
+        )
+        prior_slot = _mapping(
+            _mapping(canonical.get("slots_by_id")).get(prior_slot_id)
+        )
+        if (
+            not prior_slot
+            or _mapping(prior_slot.get("slot_ref")) != prior_slot_ref
+            or _mapping(prior_slot.get("component_ref"))
+            != _mapping(component_ref)
+            or _mapping(prior_slot.get("source_obligation_ref"))
+            != _mapping(source_obligation_ref)
+            or prior_slot.get("posture")
+            not in {
+                SearchOSSlotPosture.SEMANTICALLY_HANDED_OFF.value,
+                SearchOSSlotPosture.UNRESOLVED_HANDOFF.value,
+                SearchOSSlotPosture.STALE_OR_INVALID.value,
+            }
+        ):
+            raise SearchOSExistingGapRecoveryError(
+                "existing-gap recovery prior terminal slot is stale"
+            )
     admission_input = {
         "stable_replay_key": replay_key,
         "recovery_classification": recovery_classification,
@@ -1677,6 +1708,7 @@ def admit_searchos_recovery_cycle(
         "current_graph_ref": deepcopy(_mapping(current_graph_ref)),
         "component_ref": deepcopy(_mapping(component_ref)),
         "source_obligation_ref": deepcopy(_mapping(source_obligation_ref)),
+        "prior_terminal_slot_ref": prior_slot_ref,
         "answer_target_refs": targets,
         "dependency_component_refs": dependencies,
         "generation_parent_ref": deepcopy(_mapping(generation_parent_ref)),
@@ -1858,6 +1890,7 @@ def admit_searchos_recovery_cycle(
         "recovery_cycle_ref": {"cycle_id": cycle_id},
         "recovery_lease_ref": lease_ref,
         "prior_slot_absent": recovery_classification == "searched_premise",
+        "prior_terminal_slot_ref": prior_slot_ref,
     }
     slot_core["slot_ref"] = {
         "slot_id": slot_id,
@@ -1886,6 +1919,7 @@ def admit_searchos_recovery_cycle(
         "whole_run_lease_ref": lease_ref,
         "recovery_slot_ref": deepcopy(slot_core["slot_ref"]),
         "prior_slot_absent": recovery_classification == "searched_premise",
+        "prior_terminal_slot_ref": prior_slot_ref,
         "initial_candidate_window_empty": True,
         "search_planner_rerun": False,
         "new_acquisition_lane": False,

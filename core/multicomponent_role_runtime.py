@@ -550,9 +550,9 @@ def _normalize_semantic_output(
             payload,
         )
     if role == ROLE_SCRUTINEER:
-        if "missing_component_proposals" in payload or "query_resolution_proposals" in payload:
+        if "query_resolution_proposals" in payload:
             raise MulticomponentRoleRuntimeError(
-                "Scrutineer cannot author query-resolution or missing-component proposals"
+                "Scrutineer cannot author query-resolution proposals"
             )
         status = _normalize_key(payload.get("challenge_status"))
         if status not in _ROLE_STATUSES[role]:

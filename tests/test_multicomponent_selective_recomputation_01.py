@@ -191,9 +191,6 @@ def _node_ref(node: dict) -> dict:
 
 def _closure_fixture() -> tuple[RunKernel, dict, dict]:
     kernel, graph = _selective_source_graph()
-    filing = next(
-        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
-    )
     amendment_admission = {
         "amendment_record_id": "amendment:test",
         "amendment_record_digest": "amendment-record-digest",
@@ -233,8 +230,14 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
             "component_id": item["component_id"],
             "component_revision": item["component_revision"],
             "component_digest": item["component_digest"],
+            "component_purpose": "user_facing_answer_target",
             "user_facing_label": item["component_label"],
             "user_facing_question": item["component_question"],
+            "allowed_support_kinds": ["direct"],
+            "max_inference_depth": 0,
+            "source_obligation_candidate_ids": [
+                f"obligation:{item['component_id']}:direct"
+            ],
         }
         for item in [*graph["component_nodes"], recovered_node]
     ]
@@ -346,6 +349,9 @@ def _transition_inputs(kernel: RunKernel, closure: dict) -> dict:
         ],
         "amendment_application_ref": closure[
             "contract_amendment_application_ref"
+        ],
+        "accepted_component_refs": kernel.state.current_answer_contract[
+            "accepted_answer_component_refs"
         ],
     }
 
@@ -1005,7 +1011,7 @@ def test_selective_reconstruction_calls_cross_and_dprime_only_for_affected_keys(
     assert all(not item.startswith("benefit_summary:") for item in dprime_keys)
 
 
-def test_five_component_northstar_product_path_selectively_recovers_and_finalizes(
+def test_boundary_b_product_path_selectively_reproves_and_finalizes(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1020,10 +1026,11 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
         HANDOFF_SUFFICIENCY,
         install_handoff_capture,
         offline_balanced_run_config,
+        scrub_offline_runtime,
     )
-    from tests.test_multicomponent_dynamic_graph_recovery_01 import (
-        DynamicNorthstarHarness,
-        _forbid_direct_semantic_producer,
+    from tests.test_searchos_boundary_b_ordinary_product_01 import (
+        UNIQUE_RECOVERED_RESULT,
+        BoundaryBOrdinaryHarness,
     )
 
     def forbidden_whole_graph_rebuild(**_kwargs):
@@ -1034,8 +1041,19 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
         "_execute_fresh_resynthesis",
         forbidden_whole_graph_rebuild,
     )
-    _forbid_direct_semantic_producer(monkeypatch)
-    harness = DynamicNorthstarHarness(tmp_path)
+    scrub_offline_runtime(monkeypatch)
+
+    def forbidden_direct_semantic_producer(*_args, **_kwargs):
+        raise AssertionError(
+            "qualifying multicomponent run cannot use direct semantic authority"
+        )
+
+    monkeypatch.setattr(
+        runtime,
+        "execute_ordinary_semantic_producer_handoff_from_scope",
+        forbidden_direct_semantic_producer,
+    )
+    harness = BoundaryBOrdinaryHarness(tmp_path)
     captured = install_handoff_capture(
         monkeypatch,
         capture_stages=(
@@ -1062,16 +1080,10 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
     closure = kernel.state.projections[MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE]
     carry = kernel.state.projections[MULTICOMPONENT_CARRY_FORWARD_STAGE]
-    recovery_outcome = kernel.state.projections["multicomponent_recovery_outcome"]
-    assert closure["directly_affected_synthesis_keys"] == ["filing_route"]
-    assert closure["transitively_affected_synthesis_keys"] == [
-        "applicant_guidance"
-    ]
-    assert closure["affected_synthesis_keys"] == [
-        "filing_route",
-        "applicant_guidance",
-    ]
-    assert closure["unaffected_active_synthesis_keys"] == ["benefit_summary"]
+    assert closure["directly_affected_synthesis_keys"] == ["target_E"]
+    assert closure["transitively_affected_synthesis_keys"] == []
+    assert closure["affected_synthesis_keys"] == ["target_E"]
+    assert closure["unaffected_active_synthesis_keys"] == []
     closure_action = next(
         item
         for item in kernel.state.issued_actions.values()
@@ -1084,34 +1096,31 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     )
     assert closure_action.sequence < invalidation_action.sequence
     by_key = {item["synthesis_key"]: item for item in graph["synthesis_nodes"]}
-    carried = by_key["benefit_summary"]
-    carry_record = carry["carry_forward_records"][0]
-    assert carried["node_id"] == carry_record["prior_node_ref"]["node_id"]
-    assert carried["node_revision"] != carry_record["prior_node_ref"][
-        "node_revision"
-    ]
-    assert carried["node_digest"] != carry_record["prior_node_ref"]["node_digest"]
-    assert carry_record["new_node_ref"]["node_digest"] == carried["node_digest"]
-    assert carried["dprime_validation_ref"] == {}
-    assert carried["runkernel_admission_ref"] == {}
-    assert carried["carried_semantic_lineage"]["prior_synthesis_dprime_ref"]
-    assert carried["carried_semantic_lineage"]["prior_synthesis_admission_ref"]
+    assert set(by_key) == {"target_E"}
+    assert carry["carry_forward_count"] == 0
+    assert carry["carry_forward_records"] == []
     assert carry["final_graph_ref"]["graph_digest"] != graph["graph_digest"]
-    assert carry["runkernel_carry_forward_action_ref"] == carried[
-        "current_node_authority"
-    ]["runkernel_carry_forward_action_ref"]
     stale_keys = {
         item["superseded_node_ref"]["synthesis_key"]
         for item in graph["stale_synthesis_history"]
     }
-    assert stale_keys == {"filing_route", "applicant_guidance"}
-    assert by_key["filing_route"]["superseded_node_ref"]["synthesis_key"] == (
-        "filing_route"
+    assert stale_keys == {"target_E"}
+    assert by_key["target_E"]["superseded_node_ref"]["synthesis_key"] == (
+        "target_E"
     )
-    assert by_key["applicant_guidance"]["input_namespaces"] == {
-        "component_inputs": [],
-        "affected_synthesis_inputs": ["filing_route"],
-        "preserved_synthesis_inputs": ["benefit_summary"],
+    recovered_component_ids = {
+        item["component_id"]
+        for item in graph["component_nodes"]
+        if item["component_id"] != "premise_D"
+    }
+    assert len(recovered_component_ids) == 1
+    assert by_key["target_E"]["input_namespaces"] == {
+        "component_inputs": [
+            *sorted(recovered_component_ids),
+            "premise_D",
+        ],
+        "affected_synthesis_inputs": [],
+        "preserved_synthesis_inputs": [],
     }
     selective_cross = next(
         item
@@ -1121,20 +1130,17 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     assert [
         item["synthesis_key"]
         for item in selective_cross["semantic_output"]["synthesis_proposals"]
-    ] == ["filing_route", "applicant_guidance"]
+    ] == ["target_E"]
     selective_dprime_actions = [
         item
         for item in kernel.state.issued_actions.values()
         if item.inputs.get("role") == "synthesis_dprime"
         and ":selective:" in str(item.inputs.get("logical_evaluation_key"))
     ]
-    assert len(selective_dprime_actions) == 2
-    assert all(
-        not str(item.inputs["logical_evaluation_key"]).startswith(
-            "benefit_summary:"
-        )
-        for item in selective_dprime_actions
-    )
+    assert len(selective_dprime_actions) == 1
+    assert str(
+        selective_dprime_actions[0].inputs["logical_evaluation_key"]
+    ).startswith("target_E:")
     scrutineer_actions = [
         item
         for item in kernel.state.issued_actions.values()
@@ -1148,36 +1154,24 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     assert graph["whole_graph_resynthesis_rounds"] == 0
     assert graph["selective_recomputation_rounds"] == 1
     assert graph["logical_accounting"] == {
-        "component_analyst_evaluations": 5,
-        "component_dprime_evaluations": 5,
+        "component_analyst_evaluations": 2,
+        "component_dprime_evaluations": 2,
         "cross_component_analyst_evaluations": 2,
-        "synthesis_dprime_evaluations": 5,
+        "synthesis_dprime_evaluations": 2,
         "scrutineer_evaluations": 2,
     }
-    assert recovery_outcome["affected_synthesis_count"] == 2
-    assert recovery_outcome["preserved_synthesis_count"] == 1
-    assert recovery_outcome["recomputed_synthesis_count"] == 2
-    assert recovery_outcome["fresh_full_case_scrutineer_ref"] == graph[
-        "scrutineer_ref"
-    ]
     sufficiency = captured["sufficiency_projection"]
     assert sufficiency["final_answer_allowed"] is True
     packet = captured["packet_handoff"].packet
-    assert len(packet.direct_component_entries) == 5
+    assert len(packet.direct_component_entries) == 2
     assert {
         item["synthesis_key"] for item in packet.admitted_synthesis_entries
-    } == {"benefit_summary", "filing_route", "applicant_guidance"}
+    } == {"target_E"}
     assert captured["author_handoff_called"] is True
     normalized = " ".join(outcome.report.split())
-    assert "$1,200" in normalized
-    assert "at or below $60,000" in normalized
-    assert "paper application" in normalized
-    assert "account number" in normalized
-    assert "verified two-part Northstar benefit" in selective_cross[
-        "semantic_output"
-    ]["synthesis_proposals"][1]["claim_text"]
+    assert UNIQUE_RECOVERED_RESULT in normalized
     assert any(
-        "verified two-part Northstar benefit" in str(item.get("claim_text") or "")
+        UNIQUE_RECOVERED_RESULT in str(item.get("claim_text") or "")
         for item in packet.admitted_synthesis_entries
     )
     assert harness.forbidden_live_calls == []
@@ -1439,9 +1433,6 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         synthesis_key="unrelated_note",
     )
 
-    filing = next(
-        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
-    )
     amendment_admission = {
         "amendment_record_id": "amendment:unrelated",
         "amendment_record_digest": "amendment-record-digest-unrelated",
@@ -1481,8 +1472,14 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
             "component_id": item["component_id"],
             "component_revision": item["component_revision"],
             "component_digest": item["component_digest"],
+            "component_purpose": "user_facing_answer_target",
             "user_facing_label": item["component_label"],
             "user_facing_question": item["component_question"],
+            "allowed_support_kinds": ["direct"],
+            "max_inference_depth": 0,
+            "source_obligation_candidate_ids": [
+                f"obligation:{item['component_id']}:direct"
+            ],
         }
         for item in [*graph["component_nodes"], recovered_node]
     ]
@@ -1645,13 +1642,14 @@ def test_selective_failure_blocks_without_whole_graph_fallback(
     from core.cost_accounting import CostAccumulator
     from core.protocols import NullStatusWriter
     from tests.helpers.offline_ordinary_pipeline import (
+        HANDOFF_AUTHOR,
         HANDOFF_SEMANTIC,
         install_handoff_capture,
         offline_balanced_run_config,
+        scrub_offline_runtime,
     )
-    from tests.test_multicomponent_dynamic_graph_recovery_01 import (
-        DynamicNorthstarHarness,
-        _forbid_direct_semantic_producer,
+    from tests.test_searchos_boundary_b_ordinary_product_01 import (
+        BoundaryBOrdinaryHarness,
     )
 
     whole_graph_called = False
@@ -1670,28 +1668,39 @@ def test_selective_failure_blocks_without_whole_graph_fallback(
         fail_selective,
     )
     monkeypatch.setattr(runtime, "_execute_fresh_resynthesis", observe_whole_graph)
-    _forbid_direct_semantic_producer(monkeypatch)
-    harness = DynamicNorthstarHarness(tmp_path)
+    scrub_offline_runtime(monkeypatch)
+
+    def forbid_direct_semantic_producer(*_args, **_kwargs):
+        raise AssertionError("direct semantic fallback is forbidden")
+
+    monkeypatch.setattr(
+        runtime,
+        "execute_ordinary_semantic_producer_handoff_from_scope",
+        forbid_direct_semantic_producer,
+    )
+    harness = BoundaryBOrdinaryHarness(tmp_path)
     captured = install_handoff_capture(
         monkeypatch,
-        capture_stages=(HANDOFF_SEMANTIC,),
+        capture_stages=(HANDOFF_SEMANTIC, HANDOFF_AUTHOR),
     )
 
-    with pytest.raises(Exception):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-07-11",
-                session_id="selective-failure-session",
-                run_id="selective-failure-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-11",
+            session_id="selective-failure-session",
+            run_id="selective-failure-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
 
     kernel = captured["semantic_run_kernel"]
-    recovery = kernel.state.projections["multicomponent_dynamic_recovery"]
-    assert recovery["status"] == "blocked"
-    assert recovery["whole_graph_fallback_invoked"] is False
+    terminals = kernel.state.searchos_state["recovery_cycle_terminal_history"]
+    assert len(terminals) == 1
+    assert terminals[0]["terminal_status"] == "failed"
+    assert "multicomponent_dynamic_recovery" not in kernel.state.projections
     assert whole_graph_called is False
+    assert captured["author_handoff_called"] is False
+    assert "could not produce a supported answer" in outcome.report.casefold()

@@ -1038,6 +1038,7 @@ def _execute_searchos_slice_a_iterative_judgment(
     new_semantic_material = _semantic_passages(
         semantic_handoffs=semantic_handoffs[prior_handoff_count:],
         packet_by_custody_id=packet_by_custody_id,
+        discovery_result_store=discovery_result_store,
     )
     semantic_material = [
         *(
@@ -2474,6 +2475,7 @@ def _semantic_passages(
     *,
     semantic_handoffs: Sequence[Mapping[str, Any]],
     packet_by_custody_id: Mapping[str, Mapping[str, Any]],
+    discovery_result_store: Any,
 ) -> list[dict[str, Any]]:
     passages: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -2511,12 +2513,25 @@ def _semantic_passages(
                 )
                 if navigation_origin:
                     url = normalize_discovery_result_url(url)
-                read_source_facts: dict[str, str] = {}
+                read_source_facts: dict[str, Any] = {}
+                source_result_ref = discovery_result_store.ref_for_url(
+                    str(url)
+                )
+                source_material = discovery_result_store.material_for_ref(
+                    source_result_ref
+                )
+                if source_material is not None:
+                    read_source_facts.update(
+                        dict(source_material.source_facts)
+                    )
                 tier = classify_source(
                     str(url), str(reference.get("content_title") or "")
                 )
-                if tier != "unknown":
-                    read_source_facts = {"source_tier": tier}
+                if (
+                    tier != "unknown"
+                    and not read_source_facts.get("source_tier")
+                ):
+                    read_source_facts["source_tier"] = tier
                 qualification_lineage: dict[str, Any] = {
                     "navigation_origin": navigation_origin,
                     "canonical_candidate_id": source_id,

@@ -191,6 +191,7 @@ class DiscoveryResultMaterialRecord:
     title: str
     snippet: str
     material_text: str
+    source_facts: Mapping[str, Any]
     original_chars: int
     retained_chars: int
     truncated: bool
@@ -213,6 +214,7 @@ class DiscoveryResultMaterialRecord:
             "material_ref": self.ref(),
             "material_class": self.material_class,
             "material_digest": self.material_digest,
+            **dict(self.source_facts),
         }
         if self.published_or_observed_date:
             payload["published_or_observed_date"] = self.published_or_observed_date
@@ -373,6 +375,7 @@ class DiscoveryResultMaterialStore:
             title=pending_material.title,
             snippet=pending_material.snippet,
             material_text=pending_material.material_text,
+            source_facts=pending_material.source_facts,
             original_chars=pending_material.original_chars,
             retained_chars=pending_material.retained_chars,
             truncated=pending_material.truncated,
@@ -825,10 +828,31 @@ def _build_material_record(
 ) -> DiscoveryResultMaterialRecord:
     full_material = material_text if isinstance(material_text, str) else str(material_text or "")
     retained_material = full_material[:DISCOVERY_RESULT_MATERIAL_CHAR_CAP]
+    source_facts = {
+        key: value
+        for key in (
+            "source_tier",
+            "source_class",
+            "currentness_signal",
+            "readable_status",
+            "fetchable_status",
+            "evidence_material_type",
+            "contextual_only",
+            "lower_tier",
+            "eligible_for_stronger_obligation",
+            "final_evidence_eligible",
+        )
+        if (
+            value := result.get(key)
+        )
+        is not None
+        and isinstance(value, (str, bool, int, float))
+    }
     material_digest = _digest(
         {
             "material_class": material_class,
             "bounded_material": retained_material,
+            "source_facts": source_facts,
         }
     )
     retained_material_digest = material_digest
@@ -855,6 +879,7 @@ def _build_material_record(
         title=title,
         snippet=snippet,
         material_text=retained_material,
+        source_facts=_frozen(source_facts),
         original_chars=len(full_material),
         retained_chars=len(retained_material),
         truncated=len(retained_material) < len(full_material),

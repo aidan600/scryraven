@@ -102,6 +102,25 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "Northstar ordinary applicant online filing",
             ),
             raw_author_response=NORTHSTAR_REPORT,
+            read_content_by_url={
+                "https://northstar.example/rule-101": (
+                    "The Northstar Home-Energy Rebate base rebate is $1,200."
+                ),
+                "https://northstar.example/rule-102": (
+                    "Northstar applications are due October 31, 2027."
+                ),
+                "https://northstar.example/rule-103": (
+                    "The Northstar income bonus is available at or below $60,000."
+                ),
+                "https://northstar.example/rule-104": (
+                    "Applicants claiming the Northstar income bonus must use "
+                    "the paper application."
+                ),
+                "https://northstar.example/rule-105": (
+                    "Applicants not claiming the Northstar income bonus may "
+                    "file online."
+                ),
+            },
             logger_name="test_multicomponent_northstar",
         )
         self.role_input_packets: list[dict[str, Any]] = []
@@ -236,35 +255,35 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 101,
                 "Northstar base rebate amount $1,200",
                 "The Northstar Home-Energy Rebate base rebate is $1,200.",
-                "sourced_numeric_values",
+                "official_current_rules",
                 "Northstar base rebate amount",
             ),
             (
                 102,
                 "Northstar application deadline October 31 2027",
                 "Northstar applications are due October 31, 2027.",
-                "legal_or_regulatory_text",
+                "official_current_rules",
                 '"Northstar Home-Energy Rebate" Northstar application deadline',
             ),
             (
                 103,
                 "Northstar income bonus threshold $60,000",
                 "The Northstar income bonus is available at or below $60,000.",
-                "sourced_numeric_values",
+                "official_current_rules",
                 "Northstar income-based bonus qualification",
             ),
             (
                 104,
                 "Northstar bonus claimant paper application rule",
                 "Applicants claiming the Northstar income bonus must use the paper application.",
-                "primary_source_documents",
+                "official_current_rules",
                 "Northstar bonus applicant paper application",
             ),
             (
                 105,
                 "Northstar non-bonus online filing rule",
                 "Applicants not claiming the Northstar income bonus may file online.",
-                "primary_source_documents",
+                "official_current_rules",
                 "Northstar ordinary applicant online filing",
             ),
             (

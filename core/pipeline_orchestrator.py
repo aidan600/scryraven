@@ -3627,6 +3627,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             )
                             or {}
                         ),
+                        prior_terminal_slot_ref=dict(
+                            recovery_basis.get(
+                                "prior_terminal_slot_ref"
+                            )
+                            or {}
+                        ),
                         answer_target_refs=(),
                         dependency_component_refs=(),
                         generation_parent_ref={},
@@ -3860,14 +3866,35 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         )
                         in {"admitted", "admitted_with_caveats"}
                     )
+                    normalized_recovery_failure = str(
+                        recovery_failure_reason or ""
+                    ).casefold()
+                    recovery_terminal_status = (
+                        "recovered"
+                        if recovered
+                        else "failed"
+                        if (
+                            normalized_recovery_failure.startswith(
+                                "recovery_component_admission_failed:"
+                            )
+                            or any(
+                                marker in normalized_recovery_failure
+                                for marker in (
+                                    "model",
+                                    "provider",
+                                    "acquisition",
+                                    "transport",
+                                )
+                            )
+                        )
+                        else "exhausted_insufficient"
+                    )
                     terminal_result = (
                         run_kernel.authorize_searchos_recovery_terminal(
                             cycle_admission_ref=recovery_admission[
                                 "cycle_admission_ref"
                             ],
-                            terminal_status=(
-                                "recovered" if recovered else "failed"
-                            ),
+                            terminal_status=recovery_terminal_status,
                             terminal_reason=(
                                 None
                                 if recovered

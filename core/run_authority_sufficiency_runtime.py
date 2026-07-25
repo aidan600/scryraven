@@ -279,6 +279,9 @@ def execute_sufficiency_judgment_handoff_from_scope(
         ),
         searchos_existing_gap_recovery_terminal_state=(
             run_kernel.state.projections.get(
+                "searchos_recovery_cycle_terminal"
+            )
+            or run_kernel.state.projections.get(
                 "searchos_existing_gap_recovery_terminal"
             )
         ),

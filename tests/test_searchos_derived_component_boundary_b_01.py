@@ -312,7 +312,7 @@ def test_analyst_owns_resolution_candidates_and_scrutineer_authorship_is_retired
                 "challenge_targets": [
                     {"target_kind": "synthesis", "target_key": "target_E"}
                 ],
-                "missing_component_proposals": [
+                "query_resolution_proposals": [
                     {"proposal_key": "legacy"}
                 ],
                 "caveats": [],

@@ -6522,7 +6522,6 @@ class RunKernel:
             "inferred_resolution_binding",
             "accounting",
             "finalize",
-            "graph_amendment",
             "resynthesis_structure",
             "selective_invalidation",
             "selective_resynthesis_structure",
@@ -8496,6 +8495,7 @@ class RunKernel:
         current_graph_ref: Mapping[str, Any] | None,
         component_ref: Mapping[str, Any],
         source_obligation_ref: Mapping[str, Any],
+        prior_terminal_slot_ref: Mapping[str, Any] | None = None,
         answer_target_refs: Sequence[Mapping[str, Any]] = (),
         dependency_component_refs: Sequence[Mapping[str, Any]] = (),
         generation_parent_ref: Mapping[str, Any] | None = None,
@@ -8511,7 +8511,14 @@ class RunKernel:
             admit_searchos_recovery_cycle,
         )
 
-        lease = self.ensure_searchos_whole_run_recovery_lease()
+        existing_lease = deepcopy(
+            dict(self.state.searchos_state.get("recovery_lease") or {})
+        )
+        lease = (
+            existing_lease
+            if existing_lease
+            else self.ensure_searchos_whole_run_recovery_lease()
+        )
         request = {
             "stable_replay_key": stable_replay_key,
             "recovery_classification": recovery_classification,
@@ -8520,6 +8527,9 @@ class RunKernel:
             "current_graph_ref": deepcopy(dict(current_graph_ref or {})),
             "component_ref": deepcopy(dict(component_ref)),
             "source_obligation_ref": deepcopy(dict(source_obligation_ref)),
+            "prior_terminal_slot_ref": deepcopy(
+                dict(prior_terminal_slot_ref or {})
+            ),
             "answer_target_refs": [
                 deepcopy(dict(item)) for item in answer_target_refs
             ],
@@ -21927,7 +21937,6 @@ class RunKernel:
                 derive_selective_recomputation_closure,
                 expected_graph_after_transition,
                 graph_with_inferred_resolution_proposal,
-                graph_with_recovered_component,
                 graph_with_selective_invalidation,
                 validate_component_work_graph_v1,
                 validate_selective_recomputation_closure,
@@ -22628,119 +22637,6 @@ class RunKernel:
                             proposal=proposal,
                             action_ref=action_ref,
                         )
-                    )
-                elif operation == "graph_amendment":
-                    accepted_contract = _safe_mapping(
-                        self.state.current_answer_contract
-                    )
-                    if not accepted_contract:
-                        raise RunKernelTransitionError(
-                            "Graph V1 amendment requires current AnswerContract"
-                        )
-                    current_component_ids = {
-                        item.get("component_id")
-                        for item in current_graph.get("component_nodes") or ()
-                        if isinstance(item, Mapping)
-                    }
-                    added_components = [
-                        _safe_mapping(item)
-                        for item in accepted_contract.get(
-                            "accepted_answer_component_refs", []
-                        )
-                        if isinstance(item, Mapping)
-                        and item.get("component_id") not in current_component_ids
-                    ]
-                    component_admission = _safe_mapping(
-                        self.state.projections.get(
-                            MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
-                        )
-                    )
-                    if len(added_components) != 1:
-                        raise RunKernelTransitionError(
-                            "Graph V1 amendment requires exactly one added component"
-                        )
-                    added_component = added_components[0]
-                    matching_admissions = [
-                        _safe_mapping(item)
-                        for item in component_admission.get(
-                            "component_admission_refs", []
-                        )
-                        if isinstance(item, Mapping)
-                        and item.get("component_id")
-                        == added_component.get("component_id")
-                        and item.get("accepted_contract_digest")
-                        == accepted_contract.get("accepted_contract_digest")
-                    ]
-                    if len(matching_admissions) != 1:
-                        raise RunKernelTransitionError(
-                            "Graph V1 amendment requires exact recovered component admission"
-                        )
-                    recovered_node = component_work_node_v1_from_admitted_component(
-                        run_id=self.state.run_id,
-                        request_id=self.state.request_id,
-                        accepted_component_ref=added_component,
-                        component_admission_ref=matching_admissions[0],
-                    )
-                    contract_ref = {
-                        "owner": accepted_contract.get("owner"),
-                        "canonical_state": accepted_contract.get("canonical_state"),
-                        "run_id": self.state.run_id,
-                        "request_id": self.state.request_id,
-                        "accepted_contract_version": accepted_contract.get(
-                            "accepted_contract_version"
-                        ),
-                        "accepted_contract_digest": accepted_contract.get(
-                            "accepted_contract_digest"
-                        ),
-                        "parent_question_meaning_record_id": accepted_contract.get(
-                            "parent_question_meaning_record_id"
-                        ),
-                        "parent_question_meaning_record_digest": accepted_contract.get(
-                            "parent_question_meaning_record_digest"
-                        ),
-                        "accepted_answer_component_count": accepted_contract.get(
-                            "accepted_answer_component_count"
-                        )
-                        or len(
-                            accepted_contract.get(
-                                "accepted_answer_component_refs", []
-                            )
-                        ),
-                    }
-                    recovery_ref = (
-                        contract_amendment_graph_transition_authority(
-                            graph=current_graph,
-                            amendment_application=(
-                                self.state.contract_amendment_application_projection
-                            ),
-                            amendment_admission=(
-                                self.state.contract_amendment_admission_projection
-                            ),
-                            run_id=self.state.run_id,
-                            request_id=self.state.request_id,
-                        )
-                    )
-                    application = _safe_mapping(
-                        self.state.contract_amendment_application_projection
-                    )
-                    application_ref = {
-                        "owner": application.get("owner"),
-                        "application_digest": application.get(
-                            "application_digest"
-                        ),
-                        "authorized_action_id": application.get(
-                            "authorized_action_id"
-                        ),
-                        "amendment_record_id": application.get(
-                            "amendment_record_id"
-                        ),
-                    }
-                    transition_graph = graph_with_recovered_component(
-                        current_graph,
-                        recovered_component_node=recovered_node,
-                        current_contract_ref=contract_ref,
-                        recovery_authorization_ref=recovery_ref,
-                        amendment_application_ref=application_ref,
                     )
                 elif operation == "resynthesis_structure":
                     evaluation_key = _clean_text(
