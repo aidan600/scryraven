@@ -117,10 +117,7 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
 def _component_requires_direct_work(
     component_ref: Mapping[str, Any],
 ) -> bool:
-    return "direct" in {
-        str(item)
-        for item in component_ref.get("allowed_support_kinds") or ()
-    }
+    return "direct" in {str(item) for item in component_ref.get("allowed_support_kinds") or ()}
 
 
 def _matching_records(values: Any, **expected: Any) -> list[dict[str, Any]]:
@@ -158,9 +155,7 @@ def execute_multicomponent_role_call(
         MULTICOMPONENT_SCHEDULER_STAGE,
     )
 
-    scheduler_state = _safe_mapping(
-        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    )
+    scheduler_state = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     if scheduler_state.get("status") != "active":
         # Historical/component tests without a qualifying product scheduler keep
         # their established direct RunKernel role authorization contract. A
@@ -669,10 +664,7 @@ def _qualify_searchos_read_material_after_component_dprime(
     requirement_ids_by_obligation = {
         qualified_obligation_id: (
             "searchos_semantic_requirement:"
-            + qualified_obligation_id.split(":", 1)[-1]
-            .casefold()
-            .replace("-", "_")
-            .replace(" ", "_")
+            + qualified_obligation_id.split(":", 1)[-1].casefold().replace("-", "_").replace(" ", "_")
             + ":"
             + safe_packet_digest(
                 {
@@ -941,15 +933,9 @@ def _execute_fresh_resynthesis(
         accepted_contract_ref=contract_ref,
         requested_synthesis_directive=requested_synthesis_directive,
         component_analyst_input_packets=component_packets,
-        accepted_component_refs=current_contract.get(
-            "accepted_answer_component_refs"
-        )
-        or (),
+        accepted_component_refs=current_contract.get("accepted_answer_component_refs") or (),
         requested_mode=str(
-            _safe_mapping(
-                run_kernel.state.multicomponent_scheduler_context
-            ).get("requested_mode")
-            or "Balanced"
+            _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("requested_mode") or "Balanced"
         ),
     )
     cross_key = f"graph-v1:revision:{graph['graph_revision']}"
@@ -970,15 +956,9 @@ def _execute_fresh_resynthesis(
         cross_component_artifact=cross_artifact,
         component_analyst_input_packets=component_packets,
         transient_cross_input_packet=cross_input,
-        accepted_component_refs=current_contract.get(
-            "accepted_answer_component_refs"
-        )
-        or (),
+        accepted_component_refs=current_contract.get("accepted_answer_component_refs") or (),
         requested_mode=str(
-            _safe_mapping(
-                run_kernel.state.multicomponent_scheduler_context
-            ).get("requested_mode")
-            or "Balanced"
+            _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("requested_mode") or "Balanced"
         ),
         inferred_resolution_proposals=(
             _selected_query_resolution_proposals_for_artifact(
@@ -1233,10 +1213,6 @@ def _execute_selective_resynthesis(
     )
 
 
-
-
-
-
 def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) -> dict[str, Any]:
     """Reconstruct the exact canonical packet named by scheduler-selected work."""
 
@@ -1299,13 +1275,8 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
             accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
             component_refs = [
                 _safe_mapping(item)
-                for item in accepted.get(
-                    "accepted_answer_component_refs"
-                )
-                or ()
-                if _component_requires_direct_work(
-                    _safe_mapping(item)
-                )
+                for item in accepted.get("accepted_answer_component_refs") or ()
+                if _component_requires_direct_work(_safe_mapping(item))
             ]
             admissions_projection = _safe_mapping(
                 run_kernel.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
@@ -1333,13 +1304,8 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
                     accepted_contract_ref=_accepted_contract_ref(accepted),
                     requested_synthesis_directive=str(context.get("requested_synthesis_directive") or ""),
                     component_analyst_input_packets=analyst_inputs,
-                    accepted_component_refs=accepted.get(
-                        "accepted_answer_component_refs"
-                    )
-                    or (),
-                    requested_mode=str(
-                        context.get("requested_mode") or "Balanced"
-                    ),
+                    accepted_component_refs=accepted.get("accepted_answer_component_refs") or (),
+                    requested_mode=str(context.get("requested_mode") or "Balanced"),
                 )
         elif graph_raw:
             graph = validate_component_work_graph_v1(graph_raw)
@@ -1383,8 +1349,6 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
     if not packet or packet_digest != work.get("input_packet_digest"):
         raise OrdinaryMulticomponentRuntimeError("scheduler-selected work packet could not be reconstructed exactly")
     return packet
-
-
 
 
 def _admit_scheduler_validated_synthesis(run_kernel: Any) -> dict[str, Any]:
@@ -1441,27 +1405,17 @@ def _record_analyst_query_resolution_candidates(
     semantic_output = _safe_mapping(artifact.get("semantic_output"))
     candidates = [
         _safe_mapping(item)
-        for item in semantic_output.get("query_resolution_proposals")
-        or ()
+        for item in semantic_output.get("query_resolution_proposals") or ()
         if isinstance(item, Mapping)
     ]
     if not candidates:
         return
-    contract = (
-        run_kernel.state.current_answer_contract
-        or run_kernel.state.initial_answer_contract
-    )
+    contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     qmr_ref = {
-        "question_meaning_record_id": contract.get(
-            "parent_question_meaning_record_id"
-        ),
-        "question_meaning_record_digest": contract.get(
-            "parent_question_meaning_record_digest"
-        ),
+        "question_meaning_record_id": contract.get("parent_question_meaning_record_id"),
+        "question_meaning_record_digest": contract.get("parent_question_meaning_record_digest"),
     }
-    parent_contract_ref = _safe_mapping(
-        artifact.get("accepted_contract_ref")
-    )
+    parent_contract_ref = _safe_mapping(artifact.get("accepted_contract_ref"))
     parent_graph_ref = _safe_mapping(artifact.get("graph_ref"))
     bound = [
         bind_analyst_query_resolution_proposal(
@@ -1473,19 +1427,9 @@ def _record_analyst_query_resolution_candidates(
         )
         for candidate in candidates
     ]
-    projection = _safe_mapping(
-        run_kernel.state.projections.get(
-            ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
-        )
-    )
-    history = [
-        _safe_mapping(item)
-        for item in projection.get("proposals") or ()
-        if isinstance(item, Mapping)
-    ]
-    known = {
-        str(item.get("proposal_id") or ""): item for item in history
-    }
+    projection = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
+    history = [_safe_mapping(item) for item in projection.get("proposals") or () if isinstance(item, Mapping)]
+    known = {str(item.get("proposal_id") or ""): item for item in history}
     for proposal in bound:
         known.setdefault(str(proposal["proposal_id"]), proposal)
     proposals = list(known.values())
@@ -1495,14 +1439,9 @@ def _record_analyst_query_resolution_candidates(
         scope_key = safe_packet_digest(
             {
                 "run_id": proposal.get("run_id"),
-                "parent_contract_ref": proposal.get(
-                    "parent_contract_ref"
-                ),
-                "parent_graph_ref": proposal.get("parent_graph_ref")
-                or {"graph_absent": True},
-                "target_ref_set_digest": proposal.get(
-                    "target_ref_set_digest"
-                ),
+                "parent_contract_ref": proposal.get("parent_contract_ref"),
+                "parent_graph_ref": proposal.get("parent_graph_ref") or {"graph_absent": True},
+                "target_ref_set_digest": proposal.get("target_ref_set_digest"),
             }
         )
         scope_groups.setdefault(scope_key, []).append(proposal)
@@ -1513,9 +1452,7 @@ def _record_analyst_query_resolution_candidates(
                 **arbitrate_analyst_query_resolution_proposals(group),
             }
         )
-    run_kernel.state.projections[
-        ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
-    ] = {
+    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = {
         "schema_version": "analyst_query_resolution_proposal_registry_v1",
         "owner": "RunKernel.AnalystQueryResolutionProposalRegistry",
         "canonical_state": False,
@@ -1525,8 +1462,7 @@ def _record_analyst_query_resolution_candidates(
         "proposals": proposals,
         "arbitrations": arbitration_records,
         "ambiguous_resolution_proposals": any(
-            item.get("status") == "ambiguous_resolution_proposals"
-            for item in arbitration_records
+            item.get("status") == "ambiguous_resolution_proposals" for item in arbitration_records
         ),
         "raw_private_retained": False,
     }
@@ -1538,11 +1474,7 @@ def _selected_query_resolution_proposals_for_artifact(
     artifact: Mapping[str, Any],
     classification: str | None = None,
 ) -> list[dict[str, Any]]:
-    registry = _safe_mapping(
-        run_kernel.state.projections.get(
-            ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
-        )
-    )
+    registry = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
     return selected_proposals_for_role_artifact(
         registry=registry,
         role_artifact=artifact,
@@ -1565,19 +1497,12 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
     )
     from core.run_kernel import Observation, RunStageStatus
 
-    registry = _safe_mapping(
-        run_kernel.state.projections.get(
-            ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
-        )
-    )
+    registry = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
     selected = [
         _safe_mapping(_safe_mapping(item).get("selected_proposal"))
         for item in registry.get("arbitrations") or ()
         if _safe_mapping(item).get("mutation_permitted") is True
-        and _safe_mapping(
-            _safe_mapping(item).get("selected_proposal")
-        ).get("classification")
-        == "searched_premise"
+        and _safe_mapping(_safe_mapping(item).get("selected_proposal")).get("classification") == "searched_premise"
     ]
     selected = [item for item in selected if item]
     if not selected:
@@ -1607,30 +1532,21 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
             "proposal": proposal,
         }
     current_contract = _safe_mapping(
-        run_kernel.state.current_answer_contract
-        or run_kernel.state.initial_answer_contract
+        run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     )
-    source_graph = _safe_mapping(
-        run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-    )
-    proposal_artifact_ref = _safe_mapping(
-        proposal.get("role_artifact_ref")
-    )
+    source_graph = _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+    proposal_artifact_ref = _safe_mapping(proposal.get("role_artifact_ref"))
     graph_created_by_proposal_artifact = any(
-        _safe_mapping(
-            _safe_mapping(item).get("proposal_ref")
-        ).get("cross_component_analyst_ref", {}).get("artifact_id")
+        _safe_mapping(_safe_mapping(item).get("proposal_ref")).get("cross_component_analyst_ref", {}).get("artifact_id")
         == proposal_artifact_ref.get("artifact_id")
-        and _safe_mapping(
-            _safe_mapping(item).get("proposal_ref")
-        ).get("cross_component_analyst_ref", {}).get("artifact_digest")
+        and _safe_mapping(_safe_mapping(item).get("proposal_ref"))
+        .get("cross_component_analyst_ref", {})
+        .get("artifact_digest")
         == proposal_artifact_ref.get("artifact_digest")
         for item in source_graph.get("synthesis_nodes") or ()
         if isinstance(item, Mapping)
     )
-    recorded_parent_graph_ref = _safe_mapping(
-        proposal.get("parent_graph_ref")
-    )
+    recorded_parent_graph_ref = _safe_mapping(proposal.get("parent_graph_ref"))
     current_source_graph_ref = {
         "graph_id": source_graph.get("graph_id"),
         "graph_revision": source_graph.get("graph_revision"),
@@ -1641,8 +1557,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
     if (
         not current_contract
         or not source_graph
-        or proposal.get("parent_contract_ref")
-        != _accepted_contract_ref(current_contract)
+        or proposal.get("parent_contract_ref") != _accepted_contract_ref(current_contract)
         or not (
             recorded_parent_graph_ref == current_source_graph_ref
             or (
@@ -1653,8 +1568,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         )
     ):
         raise OrdinaryMulticomponentRuntimeError(
-            "selected searched-premise proposal is stale against current "
-            "contract or graph"
+            "selected searched-premise proposal is stale against current contract or graph"
         )
     variant = _safe_mapping(proposal.get("variant_payload"))
     proposal_digest = str(proposal.get("proposal_digest") or "")
@@ -1666,16 +1580,10 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         new_component_spec={
             "component_id": component_id,
             "user_facing_label": premise_semantics[:120],
-            "user_facing_question": (
-                f"What direct evidence establishes: {premise_semantics}"
-            )[:360],
-            "acceptance_criteria": (
-                "Use one exact current direct source for the searched premise.",
-            ),
+            "user_facing_question": (f"What direct evidence establishes: {premise_semantics}")[:360],
+            "acceptance_criteria": ("Use one exact current direct source for the searched premise.",),
             "mandatory_caveats": tuple(variant.get("caveats") or ()),
-            "prohibited_upgrades": tuple(
-                variant.get("prohibited_upgrades") or ()
-            ),
+            "prohibited_upgrades": tuple(variant.get("prohibited_upgrades") or ()),
         },
         request_digest=safe_packet_digest(
             {
@@ -1702,9 +1610,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         },
     )
     if isinstance(admission_action, Mapping):
-        amendment_admission = _safe_mapping(
-            admission_action.get("contract_amendment_admission")
-        )
+        amendment_admission = _safe_mapping(admission_action.get("contract_amendment_admission"))
     else:
         run_kernel.reduce(
             Observation.from_action(
@@ -1714,9 +1620,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
                 payload={"contract_amendment_record": record_payload},
             )
         )
-        amendment_admission = _safe_mapping(
-            run_kernel.state.contract_amendment_admission_projection
-        )
+        amendment_admission = _safe_mapping(run_kernel.state.contract_amendment_admission_projection)
     application_action = run_kernel.authorize_contract_amendment_application(
         amendment_record_id=record.amendment_record_id,
         amendment_record_digest=record.record_digest,
@@ -1726,9 +1630,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         inputs={"requested_mode": requested_mode},
     )
     if isinstance(application_action, Mapping):
-        amendment_application = _safe_mapping(
-            application_action.get("contract_amendment_application")
-        )
+        amendment_application = _safe_mapping(application_action.get("contract_amendment_application"))
     else:
         run_kernel.reduce(
             Observation.from_action(
@@ -1738,102 +1640,63 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
                 payload={},
             )
         )
-        amendment_application = _safe_mapping(
-            run_kernel.state.contract_amendment_application_projection
-        )
+        amendment_application = _safe_mapping(run_kernel.state.contract_amendment_application_projection)
     amended_contract = _safe_mapping(run_kernel.state.current_answer_contract)
     component_ref = next(
         (
             _safe_mapping(item)
-            for item in amended_contract.get(
-                "accepted_answer_component_refs"
-            )
-            or ()
+            for item in amended_contract.get("accepted_answer_component_refs") or ()
             if _safe_mapping(item).get("component_id") == component_id
         ),
         {},
     )
     if not component_ref:
-        raise OrdinaryMulticomponentRuntimeError(
-            "searched-premise amendment did not atomically add its component"
-        )
+        raise OrdinaryMulticomponentRuntimeError("searched-premise amendment did not atomically add its component")
     target_ids = {
-        str(_safe_mapping(item).get("component_id") or "")
-        for item in variant.get("answer_target_refs") or ()
+        str(_safe_mapping(item).get("component_id") or "") for item in variant.get("answer_target_refs") or ()
     }
     target_refs = sorted(
         [
             _safe_mapping(item)
-            for item in amended_contract.get(
-                "accepted_answer_component_refs"
-            )
-            or ()
-            if str(_safe_mapping(item).get("component_id") or "")
-            in target_ids
+            for item in amended_contract.get("accepted_answer_component_refs") or ()
+            if str(_safe_mapping(item).get("component_id") or "") in target_ids
         ],
         key=safe_packet_digest,
     )
-    source_candidate_id = str(
-        component_ref.get("source_obligation_candidate_ids", [""])[0]
-    )
-    obligation_specification = _safe_mapping(
-        variant.get("source_obligation_specification")
-    )
-    source_obligation_ref = (
-        build_pre_acquisition_source_obligation_ref(
-            answer_contract_ref={
-                "source": "current_answer_contract",
-                "contract_version": amended_contract.get(
-                    "accepted_contract_version"
-                ),
-                "contract_digest": amended_contract.get(
-                    "accepted_contract_digest"
-                ),
-            },
-            source_obligation_id=source_candidate_id,
-            source_obligation_descriptor={
-                "obligation_id": source_candidate_id,
-                "kind": str(
-                    obligation_specification.get(
-                        "obligation_kind"
-                    )
-                    or "supporting_fact"
-                ),
-                "strictness": str(
-                    obligation_specification.get("strictness")
-                    or "required"
-                ),
-            },
-            component_refs=[
-                {
-                    key: component_ref.get(key)
-                    for key in (
-                        "component_id",
-                        "component_revision",
-                        "component_digest",
-                    )
-                }
-            ],
-        )
+    source_candidate_id = str(component_ref.get("source_obligation_candidate_ids", [""])[0])
+    obligation_specification = _safe_mapping(variant.get("source_obligation_specification"))
+    source_obligation_ref = build_pre_acquisition_source_obligation_ref(
+        answer_contract_ref={
+            "source": "current_answer_contract",
+            "contract_version": amended_contract.get("accepted_contract_version"),
+            "contract_digest": amended_contract.get("accepted_contract_digest"),
+        },
+        source_obligation_id=source_candidate_id,
+        source_obligation_descriptor={
+            "obligation_id": source_candidate_id,
+            "kind": str(obligation_specification.get("obligation_kind") or "supporting_fact"),
+            "strictness": str(obligation_specification.get("strictness") or "required"),
+        },
+        component_refs=[
+            {
+                key: component_ref.get(key)
+                for key in (
+                    "component_id",
+                    "component_revision",
+                    "component_digest",
+                )
+            }
+        ],
     )
     lease = run_kernel.ensure_searchos_whole_run_recovery_lease()
     del lease
     searchos_parent_state_ref = {
         "state_id": run_kernel.state.searchos_state.get("state_id"),
-        "state_digest": run_kernel.state.searchos_state.get(
-            "state_digest"
-        ),
+        "state_digest": run_kernel.state.searchos_state.get("state_digest"),
     }
-    generation_depth = int(
-        _safe_mapping(variant.get("recovery_generation")).get("depth")
-        or 0
-    )
+    generation_depth = int(_safe_mapping(variant.get("recovery_generation")).get("depth") or 0)
     terminal_history = [
-        _safe_mapping(item)
-        for item in run_kernel.state.searchos_state.get(
-            "recovery_cycle_terminal_history"
-        )
-        or ()
+        _safe_mapping(item) for item in run_kernel.state.searchos_state.get("recovery_cycle_terminal_history") or ()
     ]
     generation_parent_ref = searchos_parent_state_ref
     if generation_depth > 1:
@@ -1892,11 +1755,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         source_obligation_ref=source_obligation_ref,
         answer_target_refs=target_refs,
         dependency_component_refs=[
-            _safe_mapping(item)
-            for item in variant.get(
-                "current_dependency_component_refs"
-            )
-            or ()
+            _safe_mapping(item) for item in variant.get("current_dependency_component_refs") or ()
         ],
         generation_parent_ref=generation_parent_ref,
         generation_depth=generation_depth,
@@ -1913,16 +1772,10 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
                 cycle_result,
                 observation_type=cycle_result.expected_observation_type,
                 status=RunStageStatus.COMPLETED,
-                payload=cycle_result.inputs[
-                    "recovery_admission_observation"
-                ],
+                payload=cycle_result.inputs["recovery_admission_observation"],
             )
         )
-        cycle_admission = _safe_mapping(
-            run_kernel.state.projections[
-                "searchos_recovery_cycle_admission"
-            ]
-        )
+        cycle_admission = _safe_mapping(run_kernel.state.projections["searchos_recovery_cycle_admission"])
     return {
         **cycle_admission,
         "proposal": proposal,
@@ -1954,26 +1807,18 @@ def execute_searchos_recovery_graph_reproof_from_scope(
     )
 
     source_graph = validate_component_work_graph_v1(
-        _safe_mapping(
-            run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-        )
+        _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
     )
     current_contract = _safe_mapping(run_kernel.state.current_answer_contract)
     current_contract_ref = _accepted_contract_ref(current_contract)
-    amendment_admission = _safe_mapping(
-        run_kernel.state.contract_amendment_admission_projection
-    )
-    amendment_application = _safe_mapping(
-        run_kernel.state.contract_amendment_application_projection
-    )
-    graph_transition_authority = (
-        contract_amendment_graph_transition_authority(
-            graph=source_graph,
-            amendment_application=amendment_application,
-            amendment_admission=amendment_admission,
-            run_id=run_kernel.state.run_id,
-            request_id=run_kernel.state.request_id,
-        )
+    amendment_admission = _safe_mapping(run_kernel.state.contract_amendment_admission_projection)
+    amendment_application = _safe_mapping(run_kernel.state.contract_amendment_application_projection)
+    graph_transition_authority = contract_amendment_graph_transition_authority(
+        graph=source_graph,
+        amendment_application=amendment_application,
+        amendment_admission=amendment_admission,
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
     )
     admission_ref = {
         key: amendment_admission.get(key)
@@ -2008,10 +1853,7 @@ def execute_searchos_recovery_graph_reproof_from_scope(
     component_id = str(recovered_admission.get("component_id") or "")
     component_ref = next(
         _safe_mapping(item)
-        for item in current_contract.get(
-            "accepted_answer_component_refs"
-        )
-        or ()
+        for item in current_contract.get("accepted_answer_component_refs") or ()
         if _safe_mapping(item).get("component_id") == component_id
     )
     recovered_node = component_work_node_v1_from_admitted_component(
@@ -2029,10 +1871,7 @@ def execute_searchos_recovery_graph_reproof_from_scope(
         recovery_authorization_ref=graph_transition_authority,
         contract_amendment_admission_ref=admission_ref,
         amendment_application_ref=application_ref,
-        accepted_component_refs=current_contract.get(
-            "accepted_answer_component_refs"
-        )
-        or (),
+        accepted_component_refs=current_contract.get("accepted_answer_component_refs") or (),
     )
     return _execute_selective_resynthesis(
         run_kernel=run_kernel,
@@ -2195,12 +2034,7 @@ def _consume_scheduler_selected_artifact(
                 contract_amendment_admission_ref=drive_context["contract_amendment_admission_ref"],
                 amendment_application_ref=drive_context["contract_amendment_application_ref"],
                 accepted_component_refs=(
-                    _safe_mapping(
-                        run_kernel.state.current_answer_contract
-                    ).get(
-                        "accepted_answer_component_refs"
-                    )
-                    or ()
+                    _safe_mapping(run_kernel.state.current_answer_contract).get("accepted_answer_component_refs") or ()
                 ),
             )
         return
@@ -2219,13 +2053,8 @@ def _consume_scheduler_selected_artifact(
             accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
             component_refs = [
                 _safe_mapping(item)
-                for item in accepted.get(
-                    "accepted_answer_component_refs"
-                )
-                or ()
-                if _component_requires_direct_work(
-                    _safe_mapping(item)
-                )
+                for item in accepted.get("accepted_answer_component_refs") or ()
+                if _component_requires_direct_work(_safe_mapping(item))
             ]
             admissions = {
                 str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(item)
@@ -2255,15 +2084,9 @@ def _consume_scheduler_selected_artifact(
                 additional_scrutineer_trigger_reasons=tuple(
                     drive_context.get("additional_scrutineer_trigger_reasons") or ()
                 ),
-                accepted_component_refs=accepted.get(
-                    "accepted_answer_component_refs"
-                )
-                or (),
+                accepted_component_refs=accepted.get("accepted_answer_component_refs") or (),
                 requested_mode=str(
-                    _safe_mapping(
-                        run_kernel.state.multicomponent_scheduler_context
-                    ).get("requested_mode")
-                    or "Balanced"
+                    _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("requested_mode") or "Balanced"
                 ),
                 inferred_resolution_proposals=(
                     _selected_query_resolution_proposals_for_artifact(
@@ -2856,19 +2679,9 @@ def _drive_run_kernel_selected_semantic_work(
                 component_refs = [
                     _safe_mapping(item)
                     for item in accepted.get("accepted_answer_component_refs") or ()
-                    if isinstance(item, Mapping)
-                    and _component_requires_direct_work(
-                        _safe_mapping(item)
-                    )
+                    if isinstance(item, Mapping) and _component_requires_direct_work(_safe_mapping(item))
                 ]
-                if (
-                    len(component_refs) == 1
-                    and len(
-                        accepted.get("accepted_answer_component_refs")
-                        or ()
-                    )
-                    == 1
-                ):
+                if len(component_refs) == 1 and len(accepted.get("accepted_answer_component_refs") or ()) == 1:
                     from core.component_work_graph_v1 import (
                         component_work_graph_v1_from_single_component_admission,
                     )
@@ -2964,20 +2777,11 @@ def _execute_selected_lane(
         raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
     metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
     all_component_refs = [
-        dict(item)
-        for item in accepted.get("accepted_answer_component_refs")
-        or ()
-        if isinstance(item, Mapping)
+        dict(item) for item in accepted.get("accepted_answer_component_refs") or () if isinstance(item, Mapping)
     ]
-    component_refs = [
-        item
-        for item in all_component_refs
-        if _component_requires_direct_work(item)
-    ]
+    component_refs = [item for item in all_component_refs if _component_requires_direct_work(item)]
     single_component_direct_admission = (
-        allow_searchos_component_receiver
-        and len(all_component_refs) == 1
-        and len(component_refs) == 1
+        allow_searchos_component_receiver and len(all_component_refs) == 1 and len(component_refs) == 1
     )
     if _clean_text(metadata.get("requested_synthesis_directive"), limit=360) != requested_synthesis_directive and not (
         single_component_direct_admission and requested_synthesis_directive == "single_component_direct_admission"
@@ -3079,11 +2883,7 @@ def _execute_selected_lane(
             None,
         ),
         allow_single_component_direct_admission=(single_component_direct_admission),
-        requested_mode=str(
-            runtime_scope.get("mode")
-            or runtime_scope.get("strategy")
-            or "Balanced"
-        ),
+        requested_mode=str(runtime_scope.get("mode") or runtime_scope.get("strategy") or "Balanced"),
     )
     try:
         _drive_run_kernel_selected_semantic_work(
@@ -3129,9 +2929,7 @@ def execute_searchos_recovery_component_admission_from_scope(
         if isinstance(item, Mapping) and item.get("component_id") == component_id
     ]
     if len(components) != 1:
-        raise OrdinaryMulticomponentRuntimeError(
-            "SearchOS recovery lost its accepted component"
-        )
+        raise OrdinaryMulticomponentRuntimeError("SearchOS recovery lost its accepted component")
     component_ref = components[0]
     final_top_evidence = [
         dict(item) for item in runtime_scope.get("final_top_evidence") or () if isinstance(item, Mapping)
@@ -3158,9 +2956,7 @@ def execute_searchos_recovery_component_admission_from_scope(
         or passage_slot_ref.get("slot_id") != recovery_slot_ref.get("slot_id")
         or passage_slot_ref.get("recovery_cycle_id") != exact_cycle_ref.get("cycle_id")
     ):
-        raise OrdinaryMulticomponentRuntimeError(
-            "recovery component admission requires exact cycle READ material"
-        )
+        raise OrdinaryMulticomponentRuntimeError("recovery component admission requires exact cycle READ material")
     analyst_input = component_analyst_input_packet(
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
@@ -3225,9 +3021,7 @@ def execute_searchos_recovery_component_admission_from_scope(
         "component_dprime_prompt_contract_unchanged": True,
         "scrutineer_called": False,
         "specialist_called": False,
-        "derived_component_created": (
-            cycle.get("recovery_classification") == "searched_premise"
-        ),
+        "derived_component_created": (cycle.get("recovery_classification") == "searched_premise"),
         "graph_mutated": False,
     }
 

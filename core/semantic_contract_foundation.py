@@ -396,9 +396,7 @@ class AnswerComponentContract:
         supplied_digest = _clean_token(self.component_digest, limit=96)
         computed_digest = _digest_json(self._digest_payload())
         if supplied_digest is not None and supplied_digest != computed_digest:
-            raise ValueError(
-                f"answer component {self.component_id} component_digest does not match payload content"
-            )
+            raise ValueError(f"answer component {self.component_id} component_digest does not match payload content")
         object.__setattr__(self, "component_digest", supplied_digest or computed_digest)
 
     def _digest_payload(self) -> dict[str, Any]:
@@ -497,14 +495,10 @@ def validate_answer_component_contract_set(
                     f"{prefix} direct-or-inferred support requires exactly one direct-route source obligation candidate"
                 )
         else:
-            errors.append(
-                f"{prefix} allowed_support_kinds must be [direct], [inferred], or [direct, inferred]"
-            )
+            errors.append(f"{prefix} allowed_support_kinds must be [direct], [inferred], or [direct, inferred]")
 
         if component.max_inference_depth > profile_ceiling:
-            errors.append(
-                f"{prefix} max_inference_depth exceeds {requested_mode!s} profile ceiling {profile_ceiling}"
-            )
+            errors.append(f"{prefix} max_inference_depth exceeds {requested_mode!s} profile ceiling {profile_ceiling}")
         if len(set(dependencies)) != len(dependencies):
             errors.append(f"{prefix} contains duplicate dependency components")
         for dependency in dependencies:
@@ -529,9 +523,7 @@ def validate_answer_component_contract_set(
 
     adjacency = {
         component.component_id: tuple(
-            dependency
-            for dependency in component.dependency_component_ids
-            if dependency in component_id_set
+            dependency for dependency in component.dependency_component_ids if dependency in component_id_set
         )
         for component in items
     }

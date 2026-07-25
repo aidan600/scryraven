@@ -103,22 +103,14 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
             ),
             raw_author_response=NORTHSTAR_REPORT,
             read_content_by_url={
-                "https://northstar.example/rule-101": (
-                    "The Northstar Home-Energy Rebate base rebate is $1,200."
-                ),
-                "https://northstar.example/rule-102": (
-                    "Northstar applications are due October 31, 2027."
-                ),
-                "https://northstar.example/rule-103": (
-                    "The Northstar income bonus is available at or below $60,000."
-                ),
+                "https://northstar.example/rule-101": ("The Northstar Home-Energy Rebate base rebate is $1,200."),
+                "https://northstar.example/rule-102": ("Northstar applications are due October 31, 2027."),
+                "https://northstar.example/rule-103": ("The Northstar income bonus is available at or below $60,000."),
                 "https://northstar.example/rule-104": (
-                    "Applicants claiming the Northstar income bonus must use "
-                    "the paper application."
+                    "Applicants claiming the Northstar income bonus must use the paper application."
                 ),
                 "https://northstar.example/rule-105": (
-                    "Applicants not claiming the Northstar income bonus may "
-                    "file online."
+                    "Applicants not claiming the Northstar income bonus may file online."
                 ),
             },
             logger_name="test_multicomponent_northstar",
