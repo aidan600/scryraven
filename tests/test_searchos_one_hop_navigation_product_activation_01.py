@@ -123,12 +123,8 @@ def _official_requirement_planner_payload() -> dict[str, Any]:
                             "candidate_kind": "primary",
                             "candidate_query_text": "Alpha official requirements launch color",
                             "requested_role": "official_bias",
-                            "source_obligation_candidate_ids": [
-                                "obligation:official_current"
-                            ],
-                            "distinct_need_justification": (
-                                "The required component needs direct official support."
-                            ),
+                            "source_obligation_candidate_ids": ["obligation:official_current"],
+                            "distinct_need_justification": ("The required component needs direct official support."),
                             "recon_requirement": {
                                 "posture": "not_needed",
                                 "unresolved_dimension_ids": [],
@@ -224,9 +220,7 @@ def _install_navigation_model(
             custody_refs = list(request.get("read_custody_refs") or ())
             materials = list(payload.get("read_custody_materials") or ())
             navigation_materials = [
-                dict(item)
-                for item in materials
-                if dict(item).get("origin") == "searchos_navigation"
+                dict(item) for item in materials if dict(item).get("origin") == "searchos_navigation"
             ]
             navigation_options = list(request.get("navigation_options") or ())
             common = {
@@ -248,9 +242,7 @@ def _install_navigation_model(
                     **common,
                     "action": "REQUEST_READ_PAGE",
                     "candidate_use_option_ref": dict(
-                        dict(request["candidate_use_options"][0])[
-                            "candidate_use_option_ref"
-                        ]
+                        dict(request["candidate_use_options"][0])["candidate_use_option_ref"]
                     ),
                     "reason": "Read the admitted parent candidate.",
                 }
@@ -261,13 +253,9 @@ def _install_navigation_model(
                 if self.read_assessment_decision == "NAVIGATION_INSUFFICIENT":
                     slot_id = dict(request["slot_ref"])["slot_id"]
                     self.__dict__["dispositions_before_navigation_assessment"] = deepcopy(
-                        self.run_kernel.state.searchos_state["slots_by_id"][slot_id][
-                            "candidate_option_dispositions"
-                        ]
+                        self.run_kernel.state.searchos_state["slots_by_id"][slot_id]["candidate_option_dispositions"]
                     )
-                    self.__dict__["post_navigation_legal_actions"] = list(
-                        request["legal_actions"]
-                    )
+                    self.__dict__["post_navigation_legal_actions"] = list(request["legal_actions"])
                     decision = {
                         **common,
                         "action": "HANDOFF_UNRESOLVED",
@@ -278,22 +266,15 @@ def _install_navigation_model(
                     decision = {
                         **common,
                         "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                        "read_custody_refs": [
-                            dict(item["read_custody_ref"])
-                            for item in navigation_materials
-                        ],
+                        "read_custody_refs": [dict(item["read_custody_ref"]) for item in navigation_materials],
                         "reason": "The linked page contains the decisive fact.",
                     }
             elif navigation_options:
                 already_navigated = any(
-                    item.get("action") == "REQUEST_NAVIGATE_BREADCRUMB"
-                    and item.get("slot_id") == common["slot_id"]
+                    item.get("action") == "REQUEST_NAVIGATE_BREADCRUMB" and item.get("slot_id") == common["slot_id"]
                     for item in self.__dict__.get("navigation_decisions", [])
                 )
-                if (
-                    self.read_assessment_decision == "NAVIGATE_THEN_UNRESOLVED"
-                    and already_navigated
-                ):
+                if self.read_assessment_decision == "NAVIGATE_THEN_UNRESOLVED" and already_navigated:
                     decision = {
                         **common,
                         "action": "HANDOFF_UNRESOLVED",
@@ -305,9 +286,7 @@ def _install_navigation_model(
                     decision = {
                         **common,
                         "action": "REQUEST_NAVIGATE_BREADCRUMB",
-                        "navigation_candidate_ref": dict(
-                            dict(navigation_options[0])["navigation_candidate_ref"]
-                        ),
+                        "navigation_candidate_ref": dict(dict(navigation_options[0])["navigation_candidate_ref"]),
                         "reason": "Select the exact current breadcrumb reference.",
                         "read_custody_assessments": assessments,
                     }
@@ -354,35 +333,25 @@ def _install_navigation_model(
         return original(self, prompt, system_prompt, **kwargs)
 
     def capture_receiver(run_kernel: RunKernel, *args: Any, **kwargs: Any) -> Any:
-        run_kernel.navigation_ledger_before_receiver = (
-            run_kernel.state.evidence_ledger.to_projection().to_dict()
-        )
+        run_kernel.navigation_ledger_before_receiver = run_kernel.state.evidence_ledger.to_projection().to_dict()
         try:
             result = original_receiver(run_kernel, *args, **kwargs)
         except Exception as exc:
             run_kernel.navigation_receiver_errors = [str(exc)]
             raise
-        run_kernel.navigation_ledger_after_receiver = (
-            run_kernel.state.evidence_ledger.to_projection().to_dict()
-        )
+        run_kernel.navigation_ledger_after_receiver = run_kernel.state.evidence_ledger.to_projection().to_dict()
         return result
 
-    def capture_judgment_authorization(
-        run_kernel: RunKernel, *args: Any, **kwargs: Any
-    ) -> Any:
+    def capture_judgment_authorization(run_kernel: RunKernel, *args: Any, **kwargs: Any) -> Any:
         try:
             return original_judgment_authorization(run_kernel, *args, **kwargs)
         except Exception as exc:
             run_kernel.navigation_authorization_errors = [str(exc)]
             raise
 
-    def capture_ledger_authorization(
-        run_kernel: RunKernel, *args: Any, **kwargs: Any
-    ) -> Any:
+    def capture_ledger_authorization(run_kernel: RunKernel, *args: Any, **kwargs: Any) -> Any:
         inputs = dict(kwargs.get("inputs") or {})
-        if str(inputs.get("qualification_id") or "").startswith(
-            "searchos_custody_qualification:"
-        ):
+        if str(inputs.get("qualification_id") or "").startswith("searchos_custody_qualification:"):
             capture["qualification_authorizations"].append(deepcopy(inputs))
         return original_ledger_authorization(run_kernel, *args, **kwargs)
 
@@ -428,17 +397,13 @@ def _install_navigation_model(
         )
 
     def capture_sufficiency(run_kernel: RunKernel, runtime_scope: Any, **kwargs: Any) -> Any:
-        run_kernel.navigation_sufficiency_ledger_input = deepcopy(
-            runtime_scope["evidence_ledger_projection"]
-        )
+        run_kernel.navigation_sufficiency_ledger_input = deepcopy(runtime_scope["evidence_ledger_projection"])
         return original_sufficiency(run_kernel, runtime_scope, **kwargs)
 
     def capture_final_material(*args: Any, **kwargs: Any) -> Any:
         handoff = kwargs.get("final_evidence_handoff")
         if handoff is not None:
-            capture["final_material_ledger_projections"].append(
-                deepcopy(handoff.evidence_ledger_projection)
-            )
+            capture["final_material_ledger_projections"].append(deepcopy(handoff.evidence_ledger_projection))
         return original_final_material(*args, **kwargs)
 
     monkeypatch.setattr(PostRetirementOrdinaryPipelineHarness, "ask_model", ask_model)
@@ -486,9 +451,7 @@ def _run(
     parent_markdown: str = PARENT_MARKDOWN,
 ) -> tuple[Any, Any]:
     offline_planner = SearchPlannerModelAdapter(
-        ask_model=lambda *_args, **_kwargs: json.dumps(
-            _official_requirement_planner_payload()
-        ),
+        ask_model=lambda *_args, **_kwargs: json.dumps(_official_requirement_planner_payload()),
         provider="offline-response-only",
         model="offline-search-planner",
         enabled=True,
@@ -526,17 +489,14 @@ def _run(
         read_assessment_decision=decision_mode,
         analyst_response=f"The exact linked source establishes {LINKED_FACT}.",
         raw_author_response=(
-            f"Alpha's official requirement is that its launch color is {LINKED_FACT}. "
-            f"[[1]]({CHILD_URL})"
+            f"Alpha's official requirement is that its launch color is {LINKED_FACT}. [[1]]({CHILD_URL})"
         ),
         deps_overrides=overrides,
         harness_sink=harness_sink,
     )
 
 
-def _inject_qualification_source_facts(
-    monkeypatch: pytest.MonkeyPatch, **facts: Any
-) -> None:
+def _inject_qualification_source_facts(monkeypatch: pytest.MonkeyPatch, **facts: Any) -> None:
     from core import ordinary_multicomponent_synthesis_runtime as multicomponent
 
     original = multicomponent._qualify_searchos_read_material_after_component_dprime
@@ -547,9 +507,7 @@ def _inject_qualification_source_facts(
         lineage = dict(passage["searchos_qualification_lineage"])
         passage.update(facts)
         bindable.candidate_record.update(facts)
-        canonical_candidate = kwargs["run_kernel"].state.evidence_ledger.candidates[
-            bindable.evidence_ref_id
-        ]
+        canonical_candidate = kwargs["run_kernel"].state.evidence_ledger.candidates[bindable.evidence_ref_id]
         for key, value in facts.items():
             setattr(canonical_candidate, key, value)
         if facts.get("source_tier") == "secondary":
@@ -577,25 +535,19 @@ def _qualification_records(
     observations = [
         dict(item)
         for item in projection.get("observation_refs") or ()
-        if str(dict(item).get("observation_id") or "").startswith(
-            "searchos_custody_qualification:"
-        )
+        if str(dict(item).get("observation_id") or "").startswith("searchos_custody_qualification:")
     ]
     custody = [
         dict(item)
         for item in projection.get("custody_records") or ()
-        if str(dict(item).get("observation_id") or "").startswith(
-            "searchos_custody_qualification:"
-        )
+        if str(dict(item).get("observation_id") or "").startswith("searchos_custody_qualification:")
     ]
     return observations, custody
 
 
 def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
-    navigation = build_searchos_judgment_decision_contract_v1(
-        navigation_enabled=True
-    )
+    navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
         "a03ef82d195ddb696a31f8c262060499c0ca38a8ea38449f04e443d426a1d9d6"  # pragma: allowlist secret
     )
@@ -606,9 +558,7 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
     assert "navigation_candidate_ref" not in ordinary["allowed_output_fields"]
     nav_action = navigation["actions"]["REQUEST_NAVIGATE_BREADCRUMB"]
-    assert navigation["decision_schema_version"] == (
-        "searchos_navigation_judgment_decision_v1"
-    )
+    assert navigation["decision_schema_version"] == ("searchos_navigation_judgment_decision_v1")
     assert "navigation_candidate_ref" in navigation["allowed_output_fields"]
     assert nav_action["required_fields"][-1] == "navigation_candidate_ref"
     assert set(nav_action["authorship_forbidden"]) == {
@@ -620,9 +570,7 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     }
 
 
-def test_one_hop_navigation_reaches_component_and_final_answer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_tracking_store(monkeypatch)
     runtime_capture = _install_navigation_model(monkeypatch)
     extraction_calls = _capture_extraction(monkeypatch)
@@ -632,49 +580,37 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
     assert all(
         slot["posture"] == "semantically_handed_off"
         for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
-    ), json.dumps({
-        "slots": [
-            {
-                "id": slot["slot_id"],
-                "posture": slot["posture"],
-                "reason": slot["latest_reason"],
-                "custody_origins": [
-                    custody.get("origin") for custody in slot["custody_refs"]
-                ],
-            }
-            for slot in harness.run_kernel.state.searchos_state[
-                "slots_by_id"
-            ].values()
-        ],
-        "decisions": [
-            (item["slot_id"], item["action"])
-            for item in getattr(harness, "navigation_decisions", [])
-        ],
-        "inputs": [
-            (
-                item["authorized_request"]["slot_ref"]["slot_id"],
-                [
-                    material.get("origin")
-                    for material in item["read_custody_materials"]
-                ],
-            )
-            for item in getattr(harness, "navigation_model_inputs", [])
-        ],
-        "authorization_errors": getattr(
-            harness.run_kernel, "navigation_authorization_errors", []
-        ),
-        "receiver_failure": outcome.execution_trace["searchos_slice_a"].get(
-            "component_receiver_failure"
-        ),
-    }, sort_keys=True, default=str)
+    ), json.dumps(
+        {
+            "slots": [
+                {
+                    "id": slot["slot_id"],
+                    "posture": slot["posture"],
+                    "reason": slot["latest_reason"],
+                    "custody_origins": [custody.get("origin") for custody in slot["custody_refs"]],
+                }
+                for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
+            ],
+            "decisions": [(item["slot_id"], item["action"]) for item in getattr(harness, "navigation_decisions", [])],
+            "inputs": [
+                (
+                    item["authorized_request"]["slot_ref"]["slot_id"],
+                    [material.get("origin") for material in item["read_custody_materials"]],
+                )
+                for item in getattr(harness, "navigation_model_inputs", [])
+            ],
+            "authorization_errors": getattr(harness.run_kernel, "navigation_authorization_errors", []),
+            "receiver_failure": outcome.execution_trace["searchos_slice_a"].get("component_receiver_failure"),
+        },
+        sort_keys=True,
+        default=str,
+    )
     assert harness.searchos_product_result.semantic_handoffs, json.dumps(
         {
             "state": harness.run_kernel.state.searchos_state,
             "decisions": getattr(harness, "navigation_decisions", []),
             "inputs": getattr(harness, "navigation_model_inputs", []),
-            "authorization_errors": getattr(
-                harness.run_kernel, "navigation_authorization_errors", []
-            ),
+            "authorization_errors": getattr(harness.run_kernel, "navigation_authorization_errors", []),
         },
         sort_keys=True,
         default=str,
@@ -682,19 +618,11 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
     assert LINKED_FACT in outcome.report, json.dumps(
         {
             "report": outcome.report,
-            "semantic_outcomes": outcome.execution_trace["searchos_slice_a"][
-                "semantic_outcomes_by_slot"
-            ],
-            "component_receiver_failure": outcome.execution_trace[
-                "searchos_slice_a"
-            ].get("component_receiver_failure"),
-            "receiver_errors": getattr(
-                harness.run_kernel, "navigation_receiver_errors", []
-            ),
+            "semantic_outcomes": outcome.execution_trace["searchos_slice_a"]["semantic_outcomes_by_slot"],
+            "component_receiver_failure": outcome.execution_trace["searchos_slice_a"].get("component_receiver_failure"),
+            "receiver_errors": getattr(harness.run_kernel, "navigation_receiver_errors", []),
             "materials": harness.searchos_product_result.searchos_semantic_material,
-            "admission": harness.run_kernel.state.projections.get(
-                "multicomponent_component_admission"
-            ),
+            "admission": harness.run_kernel.state.projections.get("multicomponent_component_admission"),
             "projection_keys": sorted(harness.run_kernel.state.projections),
         },
         sort_keys=True,
@@ -706,68 +634,43 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
     material = list(harness.searchos_semantic_material_before_pipeline_consumption)
     assert len(material) == 1
     assert material[0]["_provider"] == "searchos_read_custody"
-    admitted = harness.run_kernel.state.projections[
-        "multicomponent_component_admission"
-    ]["component_admission_refs"][0]
+    admitted = harness.run_kernel.state.projections["multicomponent_component_admission"]["component_admission_refs"][0]
     evidence_ids = {item["evidence_ref_id"] for item in admitted["evidence_refs"]}
     assert admitted["admission_status"] == "admitted"
     canonical_candidate_id = material[0]["source_id"]
     assert material[0]["candidate_id"] == canonical_candidate_id
-    assert material[0]["searchos_evidence_ledger_candidate_id"] == (
-        canonical_candidate_id
-    )
+    assert material[0]["searchos_evidence_ledger_candidate_id"] == (canonical_candidate_id)
     assert canonical_candidate_id in evidence_ids
     kernel = harness.run_kernel
     semantic_admission = kernel.state.semantic_observation_admission_history[-1]
     assert semantic_admission["evidence_refs"] == [canonical_candidate_id]
-    assert semantic_admission["content_refs"] == [
-        f"content:component-1:{canonical_candidate_id}"
-    ]
-    assert semantic_admission["content_ref_records"][0]["content_ref_id"] == (
-        semantic_admission["content_refs"][0]
-    )
+    assert semantic_admission["content_refs"] == [f"content:component-1:{canonical_candidate_id}"]
+    assert semantic_admission["content_ref_records"][0]["content_ref_id"] == (semantic_admission["content_refs"][0])
     coverage = kernel.state.component_coverage_history[-1]
-    assert coverage["content_reference_bindings"][0]["evidence_ref_id"] == (
-        canonical_candidate_id
-    )
+    assert coverage["content_reference_bindings"][0]["evidence_ref_id"] == (canonical_candidate_id)
     [qualification_authorization] = runtime_capture["qualification_authorizations"]
     qualification_id = qualification_authorization["qualification_id"]
     qualification_basis = qualification_authorization["qualification_basis"]
     assert qualification_id.startswith("searchos_custody_qualification:")
     assert len(qualification_id.rsplit(":", 1)[1]) == 64
     assert set(qualification_id.rsplit(":", 1)[1]) <= set("0123456789abcdef")
-    assert qualification_id == (
-        "searchos_custody_qualification:" + safe_packet_digest(qualification_basis)
-    )
+    assert qualification_id == ("searchos_custody_qualification:" + safe_packet_digest(qualification_basis))
     assert qualification_basis["identity_kind"] == "searchos_custody_qualification_v1"
     assert qualification_basis["canonical_candidate_id"] == canonical_candidate_id
     assert qualification_basis["component_ref"] == {
-        key: admitted[key]
-        for key in ("component_id", "component_revision", "component_digest")
+        key: admitted[key] for key in ("component_id", "component_revision", "component_digest")
     }
     material_lineage = material[0]["searchos_qualification_lineage"]
-    assert qualification_basis["navigation_content_reference"] == (
-        material_lineage["navigation_content_reference"]
-    )
-    assert qualification_basis["fetch_read_content_packet"] == (
-        material_lineage["fetch_read_content_packet"]
-    )
-    assert qualification_basis["read_custody_ref"] == (
-        material_lineage["read_custody_ref"]
-    )
+    assert qualification_basis["navigation_content_reference"] == (material_lineage["navigation_content_reference"])
+    assert qualification_basis["fetch_read_content_packet"] == (material_lineage["fetch_read_content_packet"])
+    assert qualification_basis["read_custody_ref"] == (material_lineage["read_custody_ref"])
     assert qualification_basis["slot_ref"] == material_lineage["slot_ref"]
-    assert qualification_basis["semantic_handoff_ref"] == (
-        material_lineage["semantic_handoff_ref"]
-    )
+    assert qualification_basis["semantic_handoff_ref"] == (material_lineage["semantic_handoff_ref"])
     assert len(qualification_basis["component_dprime_artifact_digest"]) == 64
     assert "url" not in json.dumps(qualification_basis, sort_keys=True).casefold()
     [pre_content_ledger] = runtime_capture["ledger_before_content"]
-    pre_content_observations, pre_content_custody = _qualification_records(
-        pre_content_ledger
-    )
-    assert [item["observation_id"] for item in pre_content_observations] == [
-        qualification_id
-    ]
+    pre_content_observations, pre_content_custody = _qualification_records(pre_content_ledger)
+    assert [item["observation_id"] for item in pre_content_observations] == [qualification_id]
     assert pre_content_custody == [
         {
             "candidate_id": canonical_candidate_id,
@@ -792,9 +695,7 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
         }
     ]
     qualified_candidate = next(
-        item
-        for item in pre_content_ledger["candidate_records"]
-        if item["candidate_id"] == canonical_candidate_id
+        item for item in pre_content_ledger["candidate_records"] if item["candidate_id"] == canonical_candidate_id
     )
     assert qualified_candidate["source_tier"] == "official"
     assert qualified_candidate["evidence_material_type"] == "searchos_read_custody"
@@ -808,24 +709,18 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
         for item in kernel.navigation_ledger_before_receiver["candidate_records"]
         if item["candidate_id"] == canonical_candidate_id
     )
-    assert qualified_candidate["final_evidence_eligible"] == (
-        pre_qualification_candidate["final_evidence_eligible"]
-    )
+    assert qualified_candidate["final_evidence_eligible"] == (pre_qualification_candidate["final_evidence_eligible"])
     physical = kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
         "fetch_read_candidate_custody_records"
     ]
-    assert [item["candidate_id"] for item in physical].count(
-        canonical_candidate_id
-    ) == 1
+    assert [item["candidate_id"] for item in physical].count(canonical_candidate_id) == 1
     assert kernel.state.initial_answer_contract
     assert kernel.state.current_answer_contract == {}
     before_requirements = {
-        item["requirement_id"]
-        for item in kernel.navigation_ledger_before_receiver["source_requirements"]
+        item["requirement_id"] for item in kernel.navigation_ledger_before_receiver["source_requirements"]
     }
     after_requirements = {
-        item["requirement_id"]: item
-        for item in kernel.navigation_ledger_after_receiver["source_requirements"]
+        item["requirement_id"]: item for item in kernel.navigation_ledger_after_receiver["source_requirements"]
     }
     navigation_requirement_ids = {
         requirement_id
@@ -836,46 +731,32 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
     assert len(navigation_requirement_ids) == 1
     navigation_requirement_id = next(iter(navigation_requirement_ids))
     assert after_requirements[navigation_requirement_id]["status"] == "satisfied"
-    assert canonical_candidate_id in after_requirements[navigation_requirement_id][
-        "linked_candidate_ids"
-    ]
+    assert canonical_candidate_id in after_requirements[navigation_requirement_id]["linked_candidate_ids"]
     before_candidates = {
-        item["candidate_id"]: item
-        for item in harness.navigation_ledger_at_semantic_handoff[
-            "candidate_records"
-        ]
+        item["candidate_id"]: item for item in harness.navigation_ledger_at_semantic_handoff["candidate_records"]
     }
     after_candidates = {
-        item["candidate_id"]: item
-        for item in kernel.navigation_ledger_after_receiver["candidate_records"]
+        item["candidate_id"]: item for item in kernel.navigation_ledger_after_receiver["candidate_records"]
     }
     assert before_candidates[canonical_candidate_id]["fact_disposition"] == "observed"
     assert after_candidates[canonical_candidate_id]["fact_disposition"] == "accepted"
     assert set(after_candidates) == set(before_candidates)
     sufficiency_requirements = {
-        item["requirement_id"]: item
-        for item in kernel.navigation_sufficiency_ledger_input["source_requirements"]
+        item["requirement_id"]: item for item in kernel.navigation_sufficiency_ledger_input["source_requirements"]
     }
-    assert sufficiency_requirements[navigation_requirement_id] == (
-        after_requirements[navigation_requirement_id]
-    )
-    assert runtime_capture["final_material_ledger_projections"][-1] == (
-        kernel.navigation_ledger_after_receiver
-    )
+    assert sufficiency_requirements[navigation_requirement_id] == (after_requirements[navigation_requirement_id])
+    assert runtime_capture["final_material_ledger_projections"][-1] == (kernel.navigation_ledger_after_receiver)
     assert kernel.state.sufficiency_judgment_projection["final_answer_allowed"] is True
     assert kernel.state.sufficiency_judgment_projection["missing_required_obligations"] == [], json.dumps(
         kernel.state.sufficiency_judgment_projection["missing_required_obligations"],
         sort_keys=True,
     )
-    assert outcome.execution_trace["searchos_slice_a"]["readiness_projection"][
-        "all_required_slots_slice_a_ready"
-    ] is True
+    assert (
+        outcome.execution_trace["searchos_slice_a"]["readiness_projection"]["all_required_slots_slice_a_ready"] is True
+    )
 
     state = harness.run_kernel.state.searchos_state
-    options = [
-        NavigationOption.from_dict(item)
-        for item in state["navigation"]["options_by_id"].values()
-    ]
+    options = [NavigationOption.from_dict(item) for item in state["navigation"]["options_by_id"].values()]
     assert len(options) == 2
     assert max(option.child_depth for option in options) == 1
     assert {option.disposition for option in options} == {"custodied", "selectable"}
@@ -889,28 +770,23 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
         "REQUEST_NAVIGATE_BREADCRUMB",
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
     ]
-    assert navigation_decisions[1]["navigation_candidate_ref"] == (
-        selection_input["authorized_request"]["navigation_options"][0][
-            "navigation_candidate_ref"
-        ]
+    assert (
+        navigation_decisions[1]["navigation_candidate_ref"]
+        == (selection_input["authorized_request"]["navigation_options"][0]["navigation_candidate_ref"])
     )
     judgment_inputs = harness.navigation_model_inputs
     judgment_prompts = runtime_capture["judgment_system_prompts"]
     assert len(judgment_inputs) == len(judgment_prompts) == len(navigation_decisions)
-    assert judgment_inputs[0]["authorized_request"]["schema_version"] == (
-        "searchos_judgment_request_v1"
-    )
-    assert judgment_inputs[0]["decision_contract"]["decision_contract_digest"] == (
-        build_searchos_judgment_decision_contract_v1()["decision_contract_digest"]
+    assert judgment_inputs[0]["authorized_request"]["schema_version"] == ("searchos_judgment_request_v1")
+    assert (
+        judgment_inputs[0]["decision_contract"]["decision_contract_digest"]
+        == (build_searchos_judgment_decision_contract_v1()["decision_contract_digest"])
     )
     assert judgment_prompts[0] == SEARCHOS_JUDGMENT_SYSTEM_PROMPT
     navigation_rounds = [
         (payload, prompt, decision)
-        for payload, prompt, decision in zip(
-            judgment_inputs, judgment_prompts, navigation_decisions, strict=True
-        )
-        if payload["authorized_request"]["schema_version"]
-        == "searchos_navigation_judgment_request_v1"
+        for payload, prompt, decision in zip(judgment_inputs, judgment_prompts, navigation_decisions, strict=True)
+        if payload["authorized_request"]["schema_version"] == "searchos_navigation_judgment_request_v1"
     ]
     assert navigation_rounds
     for payload, prompt, decision in navigation_rounds:
@@ -928,21 +804,15 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
         assert set(request["legal_actions"]) <= expected_actions
         assert "REQUEST_NAVIGATE_BREADCRUMB" in request["legal_actions"]
         assert set(contract["actions"]) == expected_actions
-        assert contract["decision_schema_version"] == (
-            "searchos_navigation_judgment_decision_v1"
-        )
+        assert contract["decision_schema_version"] == ("searchos_navigation_judgment_decision_v1")
         assert decision["schema_version"] == contract["decision_schema_version"]
         normalized_prompt = " ".join(prompt.split())
         assert prompt != SEARCHOS_JUDGMENT_SYSTEM_PROMPT
         assert prompt.count("searchos_navigation_judgment_decision_v1") == 1
         assert (
-            "Return exactly one JSON object matching "
-            "searchos_navigation_judgment_decision_v1."
+            "Return exactly one JSON object matching searchos_navigation_judgment_decision_v1."
         ) in normalized_prompt
-        assert (
-            "Return exactly one JSON object matching "
-            "searchos_judgment_decision_v1."
-        ) not in normalized_prompt
+        assert ("Return exactly one JSON object matching searchos_judgment_decision_v1.") not in normalized_prompt
         assert all(f"- {action}" in prompt for action in expected_actions)
         assert (
             "After READ custody exists, REQUEST_READ_PAGE, "
@@ -959,13 +829,9 @@ def test_one_hop_navigation_reaches_component_and_final_answer(
             "disposition, deterministic fallback, or unsupported field."
         ) in normalized_prompt
         assert (
-            "REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free "
-            "navigation_candidate_ref"
+            "REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free navigation_candidate_ref"
         ) in normalized_prompt
-        assert (
-            "Exact navigation destination URLs are intentionally absent from "
-            "the input."
-        ) in normalized_prompt
+        assert ("Exact navigation destination URLs are intentionally absent from the input.") in normalized_prompt
     assert CHILD_URL not in json.dumps(selection_input, sort_keys=True)
     assert CHILD_URL not in json.dumps(state, sort_keys=True)
 
@@ -990,9 +856,7 @@ def test_empty_navigation_rounds_use_exact_ordinary_request_and_prompt(
     outcome, harness = _run(
         tmp_path,
         monkeypatch,
-        parent_markdown=(
-            f"Alpha's official requirement is that its launch color is {LINKED_FACT}."
-        ),
+        parent_markdown=(f"Alpha's official requirement is that its launch color is {LINKED_FACT}."),
     )
 
     assert outcome.failure_card
@@ -1034,9 +898,7 @@ def test_ordinary_final_evidence_selection_does_not_upgrade_source_strength(
     outcome, harness = _run(
         tmp_path,
         monkeypatch,
-        parent_markdown=(
-            f"Alpha's launch-color requirement is reported as {LINKED_FACT}."
-        ),
+        parent_markdown=(f"Alpha's launch-color requirement is reported as {LINKED_FACT}."),
     )
     kernel = harness.run_kernel
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
@@ -1044,21 +906,13 @@ def test_ordinary_final_evidence_selection_does_not_upgrade_source_strength(
 
     assert len(observations) == len(custody) == 1
     candidate_id = custody[0]["candidate_id"]
-    candidate = next(
-        item
-        for item in ledger["candidate_records"]
-        if item["candidate_id"] == candidate_id
-    )
+    candidate = next(item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id)
     requirement = next(
-        item
-        for item in ledger["source_requirements"]
-        if item["requirement_id"] == custody[0]["requirement_id"]
+        item for item in ledger["source_requirements"] if item["requirement_id"] == custody[0]["requirement_id"]
     )
     assert all(
-        item["authorized_request"]["schema_version"]
-        == "searchos_judgment_request_v1"
-        and item["decision_contract"]["decision_schema_version"]
-        == "searchos_judgment_decision_v1"
+        item["authorized_request"]["schema_version"] == "searchos_judgment_request_v1"
+        and item["decision_contract"]["decision_schema_version"] == "searchos_judgment_decision_v1"
         for item in harness.navigation_model_inputs
     )
     assert candidate["source_tier"] == "secondary"
@@ -1069,11 +923,10 @@ def test_ordinary_final_evidence_selection_does_not_upgrade_source_strength(
     assert kernel.state.semantic_observation_admission_history == []
     assert kernel.state.component_coverage_history == []
     assert "multicomponent_component_admission" not in kernel.state.projections
-    assert not kernel.state.sufficiency_judgment_projection.get(
-        "final_answer_allowed", False
-    )
-    assert kernel.state.final_answer_packet == {}
-    assert runtime_capture["final_material_ledger_projections"] == []
+    assert not kernel.state.sufficiency_judgment_projection.get("final_answer_allowed", False)
+    assert kernel.state.final_answer_packet["final_answer_allowed"] is False
+    assert kernel.state.final_answer_packet["readiness_status"] == "blocked"
+    assert len(runtime_capture["final_material_ledger_projections"]) == 1
     assert harness.author_prompts == []
     assert outcome.failure_card
 
@@ -1096,29 +949,19 @@ def test_ordinary_official_current_source_strength_remains_compatible(
     _outcome, harness = _run(
         tmp_path,
         monkeypatch,
-        parent_markdown=(
-            f"Alpha's official requirement is that its launch color is {LINKED_FACT}."
-        ),
+        parent_markdown=(f"Alpha's official requirement is that its launch color is {LINKED_FACT}."),
     )
     kernel = harness.run_kernel
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
     observations, custody = _qualification_records(ledger)
 
     assert len(observations) == len(custody) == 1
-    assert runtime_capture["qualification_dprime"]["semantic_output"][
-        "validation_status"
-    ] == "supported"
+    assert runtime_capture["qualification_dprime"]["semantic_output"]["validation_status"] == "supported"
     assert len(runtime_capture["qualification_authorizations"]) == 1
     candidate_id = custody[0]["candidate_id"]
-    candidate = next(
-        item
-        for item in ledger["candidate_records"]
-        if item["candidate_id"] == candidate_id
-    )
+    candidate = next(item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id)
     requirement = next(
-        item
-        for item in ledger["source_requirements"]
-        if item["requirement_id"] == custody[0]["requirement_id"]
+        item for item in ledger["source_requirements"] if item["requirement_id"] == custody[0]["requirement_id"]
     )
     assert candidate["source_tier"] == "official"
     assert candidate["source_class"] == "official_current_rules"
@@ -1157,9 +1000,7 @@ def test_component_role_rejection_exhausts_recovery_without_semantic_authority(
     ]
     candidate_id = navigation_custody["evidence_ledger_candidate_id"]
     assert [item["candidate_id"] for item in physical].count(candidate_id) == 1
-    candidate = next(
-        item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id
-    )
+    candidate = next(item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id)
     before_candidate = next(
         item
         for item in kernel.navigation_ledger_before_receiver["candidate_records"]
@@ -1175,9 +1016,7 @@ def test_component_role_rejection_exhausts_recovery_without_semantic_authority(
     assert runtime_capture["qualification_authorizations"] == []
     assert kernel.state.semantic_observation_admission_history == []
     assert kernel.state.component_coverage_history == []
-    component_admission = kernel.state.projections[
-        "multicomponent_component_admission"
-    ]
+    component_admission = kernel.state.projections["multicomponent_component_admission"]
     assert component_admission["admitted_component_count"] == 0
     assert all(
         item["admission_status"] not in {"admitted", "admitted_with_caveats"}
@@ -1185,22 +1024,18 @@ def test_component_role_rejection_exhausts_recovery_without_semantic_authority(
         and not item.get("evidence_refs")
         for item in component_admission["component_admission_refs"]
     )
-    assert not kernel.state.sufficiency_judgment_projection.get(
-        "final_answer_allowed", False
-    )
-    terminal = kernel.state.projections[
-        "searchos_existing_gap_recovery_terminal"
-    ]
+    assert not kernel.state.sufficiency_judgment_projection.get("final_answer_allowed", False)
+    terminal = kernel.state.projections["searchos_existing_gap_recovery_terminal"]
     assert terminal["terminal_status"] == "exhausted_insufficient"
     assert terminal["coverage_gained"] is False
     assert terminal["gap_remains"] is True
-    assert terminal["whole_run_lease_status"] == (
-        "settled_exhausted_insufficient"
+    assert terminal["whole_run_lease_status"] == ("settled_exhausted_insufficient")
+    assert (
+        outcome.execution_trace["searchos_slice_a"]["existing_gap_recovery"]["scrutineer_recovery_input_used"] is False
     )
-    assert outcome.execution_trace["searchos_slice_a"][
-        "existing_gap_recovery"
-    ]["scrutineer_recovery_input_used"] is False
-    assert runtime_capture["final_material_ledger_projections"] == []
+    assert len(runtime_capture["final_material_ledger_projections"]) == 1
+    assert kernel.state.final_answer_packet["final_answer_allowed"] is False
+    assert kernel.state.final_answer_packet["readiness_status"] == "blocked"
     assert harness.author_prompts == []
 
 
@@ -1226,13 +1061,9 @@ def test_supported_claim_does_not_launder_weak_or_stale_source_authority(
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
     observations, custody = _qualification_records(ledger)
 
-    assert len(observations) == len(custody) == 1, getattr(
-        kernel, "navigation_receiver_errors", []
-    )
+    assert len(observations) == len(custody) == 1, getattr(kernel, "navigation_receiver_errors", [])
     candidate_id = custody[0]["candidate_id"]
-    candidate = next(
-        item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id
-    )
+    candidate = next(item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id)
     assert candidate["fact_disposition"] == "accepted"
     assert candidate["eligible_for_stronger_obligation"] is False
     for key, value in source_facts.items():
@@ -1242,27 +1073,21 @@ def test_supported_claim_does_not_launder_weak_or_stale_source_authority(
         for item in ledger["source_requirements"]
         if item["requirement_id"].startswith("searchos_semantic_requirement:")
     ]
-    requirement = next(
-        item for item in ledger["source_requirements"] if item["requirement_id"] == requirement_id
-    )
+    requirement = next(item for item in ledger["source_requirements"] if item["requirement_id"] == requirement_id)
     assert requirement["status"] != "satisfied"
     assert kernel.state.semantic_observation_admission_history == []
     assert kernel.state.component_coverage_history == []
     assert "multicomponent_component_admission" not in kernel.state.projections
-    assert not kernel.state.sufficiency_judgment_projection.get(
-        "final_answer_allowed", False
-    )
-    assert runtime_capture["final_material_ledger_projections"] == []
+    assert not kernel.state.sufficiency_judgment_projection.get("final_answer_allowed", False)
+    assert len(runtime_capture["final_material_ledger_projections"]) == 1
+    assert kernel.state.final_answer_packet["final_answer_allowed"] is False
+    assert kernel.state.final_answer_packet["readiness_status"] == "blocked"
     assert harness.author_prompts == []
     assert outcome.failure_card
 
 
-def test_exact_qualification_replay_is_count_stable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    runtime_capture = _install_navigation_model(
-        monkeypatch, replay_qualification=True
-    )
+def test_exact_qualification_replay_is_count_stable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime_capture = _install_navigation_model(monkeypatch, replay_qualification=True)
     _outcome, harness = _run(tmp_path, monkeypatch)
     before, after = runtime_capture["qualification_replay_projections"]
     observations, custody = _qualification_records(after)
@@ -1271,23 +1096,21 @@ def test_exact_qualification_replay_is_count_stable(
 
     assert after == before
     assert len(observations) == len(custody) == 1
-    assert sum(
-        item["requirement_id"] == requirement_id
-        for item in after["source_requirements"]
-    ) == 1
-    assert sum(
-        item["candidate_id"] == custody[0]["candidate_id"]
-        and item["requirement_id"] == requirement_id
-        and item["link_status"] == "accepted"
-        for item in after["requirement_links"]
-    ) == 1
+    assert sum(item["requirement_id"] == requirement_id for item in after["source_requirements"]) == 1
+    assert (
+        sum(
+            item["candidate_id"] == custody[0]["candidate_id"]
+            and item["requirement_id"] == requirement_id
+            and item["link_status"] == "accepted"
+            for item in after["requirement_links"]
+        )
+        == 1
+    )
     assert custody[0]["observation_id"] == qualification_id
     physical = harness.run_kernel.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
         "fetch_read_candidate_custody_records"
     ]
-    assert [item["candidate_id"] for item in physical].count(
-        custody[0]["candidate_id"]
-    ) == 1
+    assert [item["candidate_id"] for item in physical].count(custody[0]["candidate_id"]) == 1
 
 
 def test_one_physical_candidate_has_component_bound_qualification_reuse(
@@ -1303,9 +1126,7 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
     component_two = {
         **component_one,
         "component_id": "component-2",
-        "component_digest": safe_packet_digest(
-            {"reuse_component": "component-2", "source": component_one}
-        ),
+        "component_digest": safe_packet_digest({"reuse_component": "component-2", "source": component_one}),
     }
     contract["accepted_answer_component_refs"] = [
         *contract["accepted_answer_component_refs"],
@@ -1322,9 +1143,7 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
     slot_two_ref["slot_digest"] = safe_packet_digest(
         {key: value for key, value in slot_two_ref.items() if key != "slot_digest"}
     )
-    navigation_custody = next(
-        item for item in slot_one["custody_refs"] if item.get("origin") == "searchos_navigation"
-    )
+    navigation_custody = next(item for item in slot_one["custody_refs"] if item.get("origin") == "searchos_navigation")
     custody_two = {
         **deepcopy(navigation_custody),
         "slot_ref": slot_two_ref,
@@ -1356,8 +1175,7 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
             "slot_id": slot_two_ref["slot_id"],
             "slot_ref": slot_two_ref,
             "component_ref": {
-                key: component_two[key]
-                for key in ("component_id", "component_revision", "component_digest")
+                key: component_two[key] for key in ("component_id", "component_revision", "component_digest")
             },
             "custody_refs": [custody_two],
             "posture": "semantically_handed_off",
@@ -1370,18 +1188,14 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
     passage_two = deepcopy(first_bindable.passage)
     passage_two["searchos_slot_ref"] = slot_two_ref
     passage_two["searchos_semantic_handoff_ref"] = {
-        key: handoff_two[key]
-        for key in ("semantic_handoff_id", "semantic_handoff_digest")
+        key: handoff_two[key] for key in ("semantic_handoff_id", "semantic_handoff_digest")
     }
     lineage_two = dict(passage_two["searchos_qualification_lineage"])
     lineage_two["slot_ref"] = slot_two_ref
     lineage_two["read_custody_ref"] = {
-        key: custody_two[key]
-        for key in ("read_custody_material_id", "read_custody_material_digest")
+        key: custody_two[key] for key in ("read_custody_material_id", "read_custody_material_digest")
     }
-    lineage_two["semantic_handoff_ref"] = passage_two[
-        "searchos_semantic_handoff_ref"
-    ]
+    lineage_two["semantic_handoff_ref"] = passage_two["searchos_semantic_handoff_ref"]
     passage_two["searchos_qualification_lineage"] = lineage_two
     bindable_two = type(first_bindable)(
         passage=passage_two,
@@ -1393,12 +1207,15 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
         {"component_id": "component-2", "source": dprime_two["artifact_digest"]}
     )
 
-    assert multicomponent._qualify_searchos_read_material_after_component_dprime(
-        run_kernel=kernel,
-        component_ref=component_two,
-        bindable=bindable_two,
-        dprime_artifact=dprime_two,
-    ) == first_bindable.evidence_ref_id
+    assert (
+        multicomponent._qualify_searchos_read_material_after_component_dprime(
+            run_kernel=kernel,
+            component_ref=component_two,
+            bindable=bindable_two,
+            dprime_artifact=dprime_two,
+        )
+        == first_bindable.evidence_ref_id
+    )
     projection = kernel.state.evidence_ledger.to_projection().to_dict()
     observations, qualification_custody = _qualification_records(projection)
     requirement_ids = {item["requirement_id"] for item in qualification_custody}
@@ -1409,15 +1226,16 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
     assert len(observations) == len(qualification_custody) == 2
     assert len({item["observation_id"] for item in observations}) == 2
     assert len(requirement_ids) == 2
-    assert sum(
-        item["candidate_id"] == first_bindable.evidence_ref_id
-        and item["requirement_id"] in requirement_ids
-        and item["link_status"] == "accepted"
-        for item in projection["requirement_links"]
-    ) == 2
-    assert [item["candidate_id"] for item in physical].count(
-        first_bindable.evidence_ref_id
-    ) == 1
+    assert (
+        sum(
+            item["candidate_id"] == first_bindable.evidence_ref_id
+            and item["requirement_id"] in requirement_ids
+            and item["link_status"] == "accepted"
+            for item in projection["requirement_links"]
+        )
+        == 2
+    )
+    assert [item["candidate_id"] for item in physical].count(first_bindable.evidence_ref_id) == 1
 
 
 def test_navigation_insufficiency_does_not_invent_discovery_identity(
@@ -1433,15 +1251,13 @@ def test_navigation_insufficiency_does_not_invent_discovery_identity(
     state = harness.run_kernel.state.searchos_state
     assert not hasattr(harness.run_kernel, "navigation_ledger_before_receiver")
     assert "multicomponent_component_admission" not in harness.run_kernel.state.projections
-    assert runtime_capture["final_material_ledger_projections"] == []
+    assert len(runtime_capture["final_material_ledger_projections"]) == 1
+    assert harness.run_kernel.state.final_answer_packet["final_answer_allowed"] is False
     slot = next(iter(state["slots_by_id"].values()))
     before = harness.dispositions_before_navigation_assessment
     assert slot["candidate_option_dispositions"] == before
     assert "" not in slot["candidate_option_dispositions"]
-    assert all(
-        record.get("candidate_use_option_id")
-        for record in slot["candidate_option_dispositions"].values()
-    )
+    assert all(record.get("candidate_use_option_id") for record in slot["candidate_option_dispositions"].values())
     option = next(
         NavigationOption.from_dict(item)
         for item in state["navigation"]["options_by_id"].values()
@@ -1470,18 +1286,11 @@ def test_returned_destination_failure_continues_without_retry_or_fallback(
         tmp_path,
         monkeypatch,
         decision_mode="NAVIGATE_THEN_UNRESOLVED",
-        deps_overrides={
-            "searchos_read_acquisition_transports": AcquisitionTransports(
-                tavily_extract=transport
-            )
-        },
+        deps_overrides={"searchos_read_acquisition_transports": AcquisitionTransports(tavily_extract=transport)},
     )
     state = harness.run_kernel.state.searchos_state
     slot = next(iter(state["slots_by_id"].values()))
-    option = next(
-        NavigationOption.from_dict(item)
-        for item in state["navigation"]["options_by_id"].values()
-    )
+    option = next(NavigationOption.from_dict(item) for item in state["navigation"]["options_by_id"].values())
     assert transport_calls == [PARENT_URL, CHILD_URL]
     assert option.disposition == "destination_failed"
     assert slot["posture"] == "unresolved_handoff"
@@ -1490,9 +1299,7 @@ def test_returned_destination_failure_continues_without_retry_or_fallback(
     assert outcome.failure_card
 
 
-def test_post_ledger_invariant_propagates_and_discards_locator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_post_ledger_invariant_propagates_and_discards_locator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_tracking_store(monkeypatch)
     _install_navigation_model(monkeypatch)
     original = RunKernel.authorize_searchos_read_custody_admission
@@ -1507,16 +1314,11 @@ def test_post_ledger_invariant_propagates_and_discards_locator(
             candidate_id = custody_material_ref["evidence_ledger_candidate_id"]
             candidates = {
                 item["candidate_id"]
-                for item in self.state.evidence_ledger.to_projection().to_dict()[
-                    "candidate_records"
-                ]
+                for item in self.state.evidence_ledger.to_projection().to_dict()["candidate_records"]
             }
-            physical = (
-                self.state.evidence_ledger
-                .to_fetch_read_candidate_custody_projection()[
-                    "fetch_read_candidate_custody_records"
-                ]
-            )
+            physical = self.state.evidence_ledger.to_fetch_read_candidate_custody_projection()[
+                "fetch_read_candidate_custody_records"
+            ]
             assert candidate_id in candidates
             assert [item["candidate_id"] for item in physical] == [candidate_id]
             raise RunKernelTransitionError("synthetic post-ledger SearchOS rejection")

@@ -24,16 +24,10 @@ from core.official_current_source_custody import (
 
 EVIDENCE_LEDGER_SCHEMA_VERSION = "evidence_ledger_ag91j_v1"
 EVIDENCE_LEDGER_TRACE_KEY = "evidence_ledger"
-COMPONENT_SCOPED_SOURCE_CUSTODY_SCHEMA_VERSION = (
-    "component_scoped_source_custody_ag_custody_01_v1"
-)
+COMPONENT_SCOPED_SOURCE_CUSTODY_SCHEMA_VERSION = "component_scoped_source_custody_ag_custody_01_v1"
 COMPONENT_SCOPED_SOURCE_CUSTODY_TRACE_KEY = "component_scoped_source_custody"
-COMPONENT_SCOPED_SOURCE_CUSTODY_NEXT_CONSUMER = (
-    "component evidence/citation binding"
-)
-FETCH_READ_CANDIDATE_CUSTODY_SCHEMA_VERSION = (
-    "fetch_read_candidate_custody_ag_evidence_ledger_candidate_custody_01_v1"
-)
+COMPONENT_SCOPED_SOURCE_CUSTODY_NEXT_CONSUMER = "component evidence/citation binding"
+FETCH_READ_CANDIDATE_CUSTODY_SCHEMA_VERSION = "fetch_read_candidate_custody_ag_evidence_ledger_candidate_custody_01_v1"
 FETCH_READ_CANDIDATE_CUSTODY_TRACE_KEY = "fetch_read_candidate_custody"
 FETCH_READ_CANDIDATE_CUSTODY_NEXT_CONSUMER = "evidence-relative analysis packet"
 
@@ -76,17 +70,11 @@ class EvidenceCustodyGapType(str, Enum):
     MISSING_SOURCE_CLASS_FIT = "missing_source_class_fit"
     MISSING_OFFICIAL_CURRENT_CANDIDATE = "missing_official_current_candidate"
     LEGACY_AGGREGATE_ONLY_PATH = "legacy_aggregate_only_path"
-    HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE = (
-        "helper_controller_assessment_not_promotable"
-    )
+    HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE = "helper_controller_assessment_not_promotable"
     CANDIDATE_DROPPED_WITHOUT_DISPOSITION = "candidate_dropped_without_disposition"
-    FINAL_EVIDENCE_SELECTED_WITHOUT_LEDGER_CUSTODY = (
-        "final_evidence_selected_without_ledger_custody"
-    )
+    FINAL_EVIDENCE_SELECTED_WITHOUT_LEDGER_CUSTODY = "final_evidence_selected_without_ledger_custody"
     MISSING_COMPONENT_SOURCE_CANDIDATE = "missing_component_source_candidate"
-    UNFETCHED_OR_UNREAD_COMPONENT_CANDIDATE = (
-        "unfetched_or_unread_component_candidate"
-    )
+    UNFETCHED_OR_UNREAD_COMPONENT_CANDIDATE = "unfetched_or_unread_component_candidate"
     MISSING_SOURCE_BOUND_VALUE = "missing_source_bound_value"
     UNSUPPORTED_NUMERIC_VALUE = "unsupported_numeric_value"
 
@@ -125,9 +113,7 @@ _SENSITIVE_EXACT_KEYS = frozenset(
 )
 _SECRET_VALUE_PATTERNS = (
     re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
-    re.compile(
-        r"(?i)\b(api[_ -]?key|secret|token|password)\b\s*[:=]\s*[^,\s;]+"
-    ),
+    re.compile(r"(?i)\b(api[_ -]?key|secret|token|password)\b\s*[:=]\s*[^,\s;]+"),
 )
 _SENSITIVE_VALUE_MARKERS = (
     "RAW_PROMPT",
@@ -269,8 +255,21 @@ class EvidenceCandidate:
     contextual_only: bool = False
     lower_tier: bool = False
     final_evidence_eligible: bool | str = UNKNOWN
+    final_evidence_eligibility_explicit: bool = False
 
     def merge(self, update: Mapping[str, Any]) -> None:
+        had_source_strength_facts = (
+            any(
+                getattr(self, field_name) not in (None, "", UNKNOWN)
+                for field_name in (
+                    "source_tier",
+                    "source_class",
+                    "currentness_signal",
+                )
+            )
+            or self.contextual_only
+            or self.lower_tier
+        )
         for field_name in (
             "url",
             "normalized_source_identity",
@@ -298,16 +297,23 @@ class EvidenceCandidate:
         for field_name in ("contextual_only", "lower_tier"):
             if bool(update.get(field_name)):
                 setattr(self, field_name, True)
-        if update.get("final_evidence_eligible") not in (None, "", UNKNOWN):
-            self.final_evidence_eligible = bool(update.get("final_evidence_eligible"))
-        if update.get("eligible_for_stronger_obligation") is not None:
-            self.eligible_for_stronger_obligation = bool(
-                update.get("eligible_for_stronger_obligation")
+        if update.get("final_evidence_eligibility_explicit") is True:
+            self.final_evidence_eligibility_explicit = True
+        incoming_final_eligibility = update.get("final_evidence_eligible")
+        if incoming_final_eligibility not in (None, "", UNKNOWN):
+            selection_only_upgrade = (
+                bool(incoming_final_eligibility)
+                and self.final_evidence_eligible is False
+                and self.final_evidence_eligibility_explicit
+                and update.get("final_evidence_selection_only") is True
             )
-        else:
-            self.eligible_for_stronger_obligation = (
-                self.eligible_for_stronger_obligation
-                or _strong_source_candidate(self)
+            if not selection_only_upgrade:
+                self.final_evidence_eligible = bool(incoming_final_eligibility)
+        if update.get("eligible_for_stronger_obligation") is not None:
+            self.eligible_for_stronger_obligation = bool(update.get("eligible_for_stronger_obligation"))
+        elif not had_source_strength_facts:
+            self.eligible_for_stronger_obligation = self.eligible_for_stronger_obligation or _strong_source_candidate(
+                self
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -315,9 +321,7 @@ class EvidenceCandidate:
             {
                 "candidate_id": _clean_token(self.candidate_id),
                 "url": _clean_text(self.url, limit=500),
-                "normalized_source_identity": _clean_text(
-                    self.normalized_source_identity, limit=500
-                ),
+                "normalized_source_identity": _clean_text(self.normalized_source_identity, limit=500),
                 "title": _clean_text(self.title),
                 "domain": _clean_text(self.domain, limit=160),
                 "source_label": _clean_text(self.source_label),
@@ -336,9 +340,7 @@ class EvidenceCandidate:
                 "helper_assessment": _clean_text(self.helper_assessment),
                 "proposal_disposition": _clean_text(self.proposal_disposition),
                 "disposition_reason": _clean_text(self.disposition_reason),
-                "eligible_for_stronger_obligation": bool(
-                    self.eligible_for_stronger_obligation
-                ),
+                "eligible_for_stronger_obligation": bool(self.eligible_for_stronger_obligation),
                 "contextual_only": bool(self.contextual_only),
                 "lower_tier": bool(self.lower_tier),
                 "final_evidence_eligible": self.final_evidence_eligible,
@@ -407,23 +409,15 @@ class SourceRequirementRecord:
                     self.answer_contract_digest,
                     limit=160,
                 ),
-                "recovery_authorization_id": _clean_token(
-                    self.recovery_authorization_id
-                ),
-                "recovery_authorization_digest": _clean_token(
-                    self.recovery_authorization_digest
-                ),
+                "recovery_authorization_id": _clean_token(self.recovery_authorization_id),
+                "recovery_authorization_digest": _clean_token(self.recovery_authorization_digest),
                 "required_source_class": _clean_token(self.required_source_class),
                 "required_source_tier": _clean_token(self.required_source_tier),
                 "required_currentness": _clean_token(self.required_currentness),
-                "required_evidence_material_type": _clean_token(
-                    self.required_evidence_material_type
-                ),
+                "required_evidence_material_type": _clean_token(self.required_evidence_material_type),
                 "status": self.status.value,
                 "reason": _clean_text(self.reason),
-                "aggregate_counts_insufficient": bool(
-                    self.aggregate_counts_insufficient
-                ),
+                "aggregate_counts_insufficient": bool(self.aggregate_counts_insufficient),
             }
         )
         payload["linked_candidate_ids"] = list(self.linked_candidate_ids)
@@ -491,33 +485,23 @@ class EvidenceLedger:
     gaps: list[EvidenceCustodyGap] = field(default_factory=list)
     final_evidence_refs: list[dict[str, Any]] = field(default_factory=list)
     observation_refs: list[dict[str, Any]] = field(default_factory=list)
-    component_source_custody: dict[str, dict[str, Any]] = field(
-        default_factory=dict
-    )
-    fetch_read_candidate_custody: dict[str, dict[str, Any]] = field(
-        default_factory=dict
-    )
+    component_source_custody: dict[str, dict[str, Any]] = field(default_factory=dict)
+    fetch_read_candidate_custody: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def reduce_observation(
         self,
         observation: Mapping[str, Any] | EvidenceLedgerObservation,
     ) -> "EvidenceLedger":
         payload = (
-            observation.to_dict()
-            if isinstance(observation, EvidenceLedgerObservation)
-            else _safe_mapping(observation)
+            observation.to_dict() if isinstance(observation, EvidenceLedgerObservation) else _safe_mapping(observation)
         )
         observation_id = _clean_token(payload.get("observation_id")) or (
             f"evidence-ledger-observation:{len(self.observation_refs) + 1}"
         )
         source = _clean_text(payload.get("observation_source"), limit=120) or UNKNOWN
-        if any(
-            ref.get("observation_id") == observation_id for ref in self.observation_refs
-        ):
+        if any(ref.get("observation_id") == observation_id for ref in self.observation_refs):
             return self
-        self.observation_refs.append(
-            {"observation_id": observation_id, "source": source}
-        )
+        self.observation_refs.append({"observation_id": observation_id, "source": source})
         for requirement in _list(payload.get("requirements") or payload.get("source_requirements")):
             self._admit_requirement(requirement)
         for candidate in _list(payload.get("candidates")):
@@ -548,11 +532,9 @@ class EvidenceLedger:
     ) -> dict[str, Any]:
         """Consume offline SearchExecutor bridge observations into ledger custody."""
 
-        observation = (
-            build_component_scoped_source_custody_observation_from_offline_search_executor_bridge(
-                bridge_projection=bridge_projection,
-                observation_id=observation_id,
-            )
+        observation = build_component_scoped_source_custody_observation_from_offline_search_executor_bridge(
+            bridge_projection=bridge_projection,
+            observation_id=observation_id,
         )
         self.reduce_observation(observation)
         return self.to_component_scoped_source_custody_projection()
@@ -575,33 +557,23 @@ class EvidenceLedger:
             "custody_record_count": len(self.custody_records),
             "candidate_records": [
                 candidate.to_dict()
-                for candidate in sorted(
-                    self.candidates.values(), key=lambda item: item.candidate_id
-                )
+                for candidate in sorted(self.candidates.values(), key=lambda item: item.candidate_id)
             ],
             "custody_records": [record.to_dict() for record in self.custody_records],
             "source_requirements": [
                 requirement.to_dict()
-                for requirement in sorted(
-                    self.requirements.values(), key=lambda item: item.requirement_id
-                )
+                for requirement in sorted(self.requirements.values(), key=lambda item: item.requirement_id)
             ],
             "requirement_links": [link.to_dict() for link in self.links],
             "custody_gaps": gap_payloads,
             "final_evidence_refs": list(self.final_evidence_refs),
             "observation_refs": list(self.observation_refs),
             "official_current_source_custody": official_current_projection.to_dict(),
-            "component_scoped_source_custody": (
-                self.to_component_scoped_source_custody_projection()
-            ),
-            "fetch_read_candidate_custody": (
-                self.to_fetch_read_candidate_custody_projection()
-            ),
+            "component_scoped_source_custody": (self.to_component_scoped_source_custody_projection()),
+            "fetch_read_candidate_custody": (self.to_fetch_read_candidate_custody_projection()),
             "compatibility": {
                 "controller_evidence_ledger_status": "compatibility_only_subordinate",
-                "allocation_result_candidate_custody_status": (
-                    "admitted_as_sanitized_observation_input_when_present"
-                ),
+                "allocation_result_candidate_custody_status": ("admitted_as_sanitized_observation_input_when_present"),
                 "legacy_aggregate_only_authority_status": "demoted_not_satisfying",
                 "final_evidence_compatibility_gap_count": len(
                     [
@@ -624,10 +596,7 @@ class EvidenceLedger:
             )
         ]
         custody_gaps = [
-            gap
-            for component in components
-            for gap in _list(component.get("custody_gaps"))
-            if isinstance(gap, Mapping)
+            gap for component in components for gap in _list(component.get("custody_gaps")) if isinstance(gap, Mapping)
         ]
         obligation_statuses = [
             obligation.get("source_obligation_status")
@@ -645,12 +614,10 @@ class EvidenceLedger:
             "offline_bridge_consumer": True,
             "component_count": len(components),
             "source_obligation_count": sum(
-                _positive_int(component.get("source_obligation_count"))
-                for component in components
+                _positive_int(component.get("source_obligation_count")) for component in components
             ),
             "candidate_link_count": sum(
-                _positive_int(component.get("candidate_link_count"))
-                for component in components
+                _positive_int(component.get("candidate_link_count")) for component in components
             ),
             "per_component_custody": components,
             "custody_gaps": custody_gaps,
@@ -709,12 +676,8 @@ class EvidenceLedger:
             "fetch_read_packet_consumer": True,
             "candidate_content_custody_visible": bool(records),
             "custody_record_count": len(records),
-            "readable_record_count": sum(
-                1 for record in records if record.get("fetch_read_status") == "readable"
-            ),
-            "unreadable_record_count": sum(
-                1 for record in records if record.get("fetch_read_status") != "readable"
-            ),
+            "readable_record_count": sum(1 for record in records if record.get("fetch_read_status") == "readable"),
+            "unreadable_record_count": sum(1 for record in records if record.get("fetch_read_status") != "readable"),
             "fetch_read_candidate_custody_records": records,
             "custody_gaps": custody_gaps,
             "custody_gap_count": len(custody_gaps),
@@ -764,8 +727,7 @@ class EvidenceLedger:
                 if _candidate_satisfies_requirement(candidate, requirement):
                     status = (
                         OfficialCurrentCustodyStatus.CANDIDATE_PARTIALLY_ACCEPTED
-                        if candidate.fact_disposition
-                        is CandidateDisposition.PARTIALLY_ACCEPTED
+                        if candidate.fact_disposition is CandidateDisposition.PARTIALLY_ACCEPTED
                         else OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED
                     )
                 elif _bad_readability(candidate):
@@ -776,9 +738,7 @@ class EvidenceLedger:
                     requirement.requirement_id,
                     status=status,
                     candidate_id=candidate.candidate_id,
-                    reason=_candidate_requirement_rejection_reason(
-                        candidate, requirement
-                    ),
+                    reason=_candidate_requirement_rejection_reason(candidate, requirement),
                     attempt_id="evidence_ledger_requirement_projection",
                 )
         return state.finalize_requirements()
@@ -802,14 +762,10 @@ class EvidenceLedger:
                 requirement_id=requirement_id,
                 requirement_kind=_requirement_kind(record),
                 origin_ref=_clean_text(
-                    record.get("origin_ref")
-                    or record.get("answer_contract_ref")
-                    or record.get("source_obligation_ref")
+                    record.get("origin_ref") or record.get("answer_contract_ref") or record.get("source_obligation_ref")
                 ),
                 component_id=_clean_token(record.get("component_id")),
-                source_obligation_id=_clean_token(
-                    record.get("source_obligation_id")
-                ),
+                source_obligation_id=_clean_token(record.get("source_obligation_id")),
                 run_id=_clean_text(
                     record.get("run_id"),
                     limit=160,
@@ -826,38 +782,24 @@ class EvidenceLedger:
                     record.get("answer_contract_digest"),
                     limit=160,
                 ),
-                recovery_authorization_id=_clean_token(
-                    record.get("recovery_authorization_id")
-                ),
-                recovery_authorization_digest=_clean_token(
-                    record.get("recovery_authorization_digest")
-                ),
-                required_source_class=_clean_token(
-                    record.get("required_source_class") or record.get("source_class")
-                ),
+                recovery_authorization_id=_clean_token(record.get("recovery_authorization_id")),
+                recovery_authorization_digest=_clean_token(record.get("recovery_authorization_digest")),
+                required_source_class=_clean_token(record.get("required_source_class") or record.get("source_class")),
                 required_source_tier=_clean_token(record.get("required_source_tier")),
                 required_currentness=_clean_token(record.get("required_currentness")),
                 required_evidence_material_type=_clean_token(
-                    record.get("required_evidence_material_type")
-                    or record.get("required_material_type")
+                    record.get("required_evidence_material_type") or record.get("required_material_type")
                 ),
-                aggregate_counts_insufficient=bool(
-                    record.get("aggregate_counts_insufficient")
-                ),
+                aggregate_counts_insufficient=bool(record.get("aggregate_counts_insufficient")),
             )
             self.requirements[requirement_id] = requirement
         else:
             incoming_kind = _requirement_kind(record)
-            if (
-                requirement.requirement_kind in {"general", "unknown"}
-                and incoming_kind not in {"general", "unknown"}
-            ):
+            if requirement.requirement_kind in {"general", "unknown"} and incoming_kind not in {"general", "unknown"}:
                 requirement.requirement_kind = incoming_kind
             if not requirement.origin_ref:
                 requirement.origin_ref = _clean_text(
-                    record.get("origin_ref")
-                    or record.get("answer_contract_ref")
-                    or record.get("source_obligation_ref")
+                    record.get("origin_ref") or record.get("answer_contract_ref") or record.get("source_obligation_ref")
                 )
             for field_name in (
                 "component_id",
@@ -885,10 +827,7 @@ class EvidenceLedger:
                     else _clean_token(record.get(field_name))
                 )
                 if current and incoming and current != incoming:
-                    raise ValueError(
-                        "source requirement exact lineage binding conflict: "
-                        f"{field_name}"
-                    )
+                    raise ValueError(f"source requirement exact lineage binding conflict: {field_name}")
                 if not current and incoming:
                     setattr(requirement, field_name, incoming)
             if not requirement.required_source_class:
@@ -897,20 +836,14 @@ class EvidenceLedger:
                 )
             if not requirement.required_evidence_material_type:
                 requirement.required_evidence_material_type = _clean_token(
-                    record.get("required_evidence_material_type")
-                    or record.get("required_material_type")
+                    record.get("required_evidence_material_type") or record.get("required_material_type")
                 )
             if not requirement.required_source_tier:
-                requirement.required_source_tier = _clean_token(
-                    record.get("required_source_tier")
-                )
+                requirement.required_source_tier = _clean_token(record.get("required_source_tier"))
             if not requirement.required_currentness:
-                requirement.required_currentness = _clean_token(
-                    record.get("required_currentness")
-                )
-            requirement.aggregate_counts_insufficient = (
-                requirement.aggregate_counts_insufficient
-                or bool(record.get("aggregate_counts_insufficient"))
+                requirement.required_currentness = _clean_token(record.get("required_currentness"))
+            requirement.aggregate_counts_insufficient = requirement.aggregate_counts_insufficient or bool(
+                record.get("aggregate_counts_insufficient")
             )
         linked = _list(record.get("linked_candidate_ids"))
         for candidate_id in linked:
@@ -933,8 +866,7 @@ class EvidenceLedger:
             self._gap(
                 EvidenceCustodyGapType.LEGACY_AGGREGATE_ONLY_PATH,
                 requirement_id=_clean_token(record.get("requirement_id")),
-                reason=_clean_text(record.get("reason"))
-                or "aggregate candidate observation has no candidate identity",
+                reason=_clean_text(record.get("reason")) or "aggregate candidate observation has no candidate identity",
                 source_ref=source,
             )
             req = self.requirements.get(_clean_token(record.get("requirement_id")))
@@ -962,8 +894,7 @@ class EvidenceLedger:
         if record_kind is CandidateCustodyKind.FACT:
             candidate.fact_disposition = disposition
             candidate.disposition_reason = (
-                _clean_text(record.get("reason") or record.get("disposition_reason"))
-                or candidate.disposition_reason
+                _clean_text(record.get("reason") or record.get("disposition_reason")) or candidate.disposition_reason
             )
         elif record_kind is CandidateCustodyKind.HELPER_ASSESSMENT:
             candidate.helper_assessment = disposition.value
@@ -983,9 +914,7 @@ class EvidenceLedger:
                 record_kind=record_kind,
                 disposition=disposition,
                 reason=_clean_text(
-                    record.get("reason")
-                    or record.get("disposition_reason")
-                    or record.get("rejection_reason")
+                    record.get("reason") or record.get("disposition_reason") or record.get("rejection_reason")
                 ),
                 source=source,
                 requirement_id=_clean_token(record.get("requirement_id")),
@@ -997,13 +926,10 @@ class EvidenceLedger:
             self._link_candidate(
                 requirement_id,
                 candidate_id,
-                reason=_clean_text(record.get("link_reason"))
-                or "candidate_observation_link",
+                reason=_clean_text(record.get("link_reason")) or "candidate_observation_link",
                 status=disposition.value,
             )
-        candidate_already_has_requirement_lineage = any(
-            link.candidate_id == candidate_id for link in self.links
-        )
+        candidate_already_has_requirement_lineage = any(link.candidate_id == candidate_id for link in self.links)
         if not requirement_ids and not candidate_already_has_requirement_lineage:
             for requirement in self.requirements.values():
                 if _candidate_satisfies_requirement(candidate, requirement):
@@ -1054,8 +980,7 @@ class EvidenceLedger:
             (
                 index
                 for index, link in enumerate(self.links)
-                if link.requirement_id == requirement_id
-                and link.candidate_id == candidate_id
+                if link.requirement_id == requirement_id and link.candidate_id == candidate_id
             ),
             None,
         )
@@ -1069,8 +994,7 @@ class EvidenceLedger:
                 )
             )
         elif status in {"accepted", "partially_accepted"} and (
-            self.links[existing_link_index].link_status
-            not in {"accepted", "partially_accepted"}
+            self.links[existing_link_index].link_status not in {"accepted", "partially_accepted"}
         ):
             self.links[existing_link_index] = SourceObligationLink(
                 requirement_id=requirement_id,
@@ -1178,9 +1102,7 @@ class EvidenceLedger:
                 if candidate_id in self.candidates
             ]
             satisfying = [
-                candidate
-                for candidate in linked_candidates
-                if _candidate_satisfies_requirement(candidate, requirement)
+                candidate for candidate in linked_candidates if _candidate_satisfies_requirement(candidate, requirement)
             ]
             if satisfying:
                 requirement.status = SourceRequirementStatus.SATISFIED
@@ -1289,8 +1211,7 @@ def build_evidence_ledger_observation_from_runtime(
                     "disposition": _disposition_from_official_current_status(status),
                     "record_kind": CandidateCustodyKind.FACT.value,
                     "reason": record.get("disposition_reason"),
-                    "source_class": record.get("source_class")
-                    or _required_class_for_requirement_id(req_id),
+                    "source_class": record.get("source_class") or _required_class_for_requirement_id(req_id),
                     "eligible_for_stronger_obligation": status
                     in {
                         OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED.value,
@@ -1315,26 +1236,20 @@ def build_evidence_ledger_observation_from_runtime(
         if not candidate_id:
             continue
         source_custody_requirement_id = _clean_token(
-            source.get("source_custody_requirement_id")
-            or source.get("custody_requirement_id")
+            source.get("source_custody_requirement_id") or source.get("custody_requirement_id")
         )
         source_custody_required_class = _clean_token(
-            source.get("required_source_class")
-            or source.get("source_custody_required_source_class")
+            source.get("required_source_class") or source.get("source_custody_required_source_class")
         )
         if source_custody_requirement_id and source_custody_required_class:
             requirements.append(
                 {
                     "requirement_id": source_custody_requirement_id,
-                    "requirement_kind": _kind_for_source_class(
-                        source_custody_required_class
-                    ),
+                    "requirement_kind": _kind_for_source_class(source_custody_required_class),
                     "required_source_class": source_custody_required_class,
                     "required_source_tier": source.get("required_source_tier"),
                     "required_currentness": source.get("required_currentness"),
-                    "required_evidence_material_type": source.get(
-                        "required_evidence_material_type"
-                    ),
+                    "required_evidence_material_type": source.get("required_evidence_material_type"),
                     "origin_ref": "source_custody_policy",
                     "aggregate_counts_insufficient": False,
                 }
@@ -1343,22 +1258,26 @@ def build_evidence_ledger_observation_from_runtime(
                 {
                     "requirement_id": source_custody_requirement_id,
                     "candidate_id": candidate_id,
-                    "link_reason": source.get("source_custody_admission_reason")
-                    or "source_custody_policy_candidate",
+                    "link_reason": source.get("source_custody_admission_reason") or "source_custody_policy_candidate",
                     "link_status": "selected" if final_evidence_selected else "observed",
                 }
             )
         selected_disposition = (
-            CandidateDisposition.ACCEPTED.value
-            if final_evidence_selected
-            else CandidateDisposition.OBSERVED.value
+            CandidateDisposition.ACCEPTED.value if final_evidence_selected else CandidateDisposition.OBSERVED.value
         )
+        # Final-evidence selection and semantic coverage are consumers of
+        # source-strength facts, not authority to upgrade those facts.
         stronger_obligation_eligible = (
-            bool(final_evidence_selected)
-            if source.get("component_gap_recovery_semantic_coverage_committed")
-            is True
+            False
+            if source.get("contextual_only") is True or source.get("lower_tier") is True
             else source.get("eligible_for_stronger_obligation")
         )
+        final_evidence_eligible = source.get(
+            "final_evidence_eligible",
+            UNKNOWN,
+        )
+        if final_evidence_eligible in (None, "", UNKNOWN):
+            final_evidence_eligible = bool(final_evidence_selected)
         source_candidates.append(
             {
                 "candidate_id": candidate_id,
@@ -1366,33 +1285,23 @@ def build_evidence_ledger_observation_from_runtime(
                 "url": source.get("url"),
                 "title": source.get("title"),
                 "domain": source.get("domain") or source.get("normalized_domain"),
-                "provider_name": source.get("provider_name")
-                or source.get("provider"),
-                "provider_role": source.get("provider_role")
-                or source.get("_provider_role"),
-                "retrieval_pass_id": source.get("retrieval_pass_id")
-                or source.get("retrieval_stage"),
-                "query_ref": source.get("query_ref")
-                or source.get("query_preview")
-                or source.get("query"),
+                "provider_name": source.get("provider_name") or source.get("provider"),
+                "provider_role": source.get("provider_role") or source.get("_provider_role"),
+                "retrieval_pass_id": source.get("retrieval_pass_id") or source.get("retrieval_stage"),
+                "query_ref": source.get("query_ref") or source.get("query_preview") or source.get("query"),
                 "source_tier": source.get("source_tier"),
                 "source_class": source.get("source_class"),
-                "currentness_signal": source.get("currentness_signal")
-                or source.get("currentness"),
+                "currentness_signal": source.get("currentness_signal") or source.get("currentness"),
                 "evidence_material_type": _evidence_material_type(source),
                 "full_page_fetched": source.get("full_page_fetched"),
                 "snippet_only": source.get("snippet_only"),
-                "readable_status": source.get("readable_status")
-                or source.get("readability_status")
-                or "readable",
-                "fetchable_status": source.get("fetchable_status")
-                or source.get("fetch_status"),
+                "readable_status": source.get("readable_status") or source.get("readability_status") or "readable",
+                "fetchable_status": source.get("fetchable_status") or source.get("fetch_status"),
                 "disposition": selected_disposition,
                 "record_kind": CandidateCustodyKind.FACT.value,
-                "eligible_for_stronger_obligation": (
-                    stronger_obligation_eligible
-                ),
-                "final_evidence_eligible": bool(final_evidence_selected),
+                "eligible_for_stronger_obligation": (stronger_obligation_eligible),
+                "final_evidence_eligible": final_evidence_eligible,
+                "final_evidence_selection_only": bool(final_evidence_selected),
             }
         )
     candidates.extend(source_candidates)
@@ -1454,20 +1363,9 @@ def build_evidence_ledger_observation_from_run_contract(
                 ),
                 "origin_ref": f"RunKernel.RunAuthorityContract:{contract_id}",
                 "component_id": requirement.get("component_id"),
-                "source_obligation_id": (
-                    requirement.get("source_obligation_id")
-                    or requirement.get("obligation_id")
-                ),
-                "run_id": (
-                    requirement.get("run_id")
-                    or projection.get("run_id")
-                    or run_id
-                ),
-                "request_id": (
-                    requirement.get("request_id")
-                    or projection.get("request_id")
-                    or request_id
-                ),
+                "source_obligation_id": (requirement.get("source_obligation_id") or requirement.get("obligation_id")),
+                "run_id": (requirement.get("run_id") or projection.get("run_id") or run_id),
+                "request_id": (requirement.get("request_id") or projection.get("request_id") or request_id),
                 "answer_contract_version": (
                     requirement.get("answer_contract_version")
                     or projection.get("accepted_contract_version")
@@ -1529,15 +1427,9 @@ def build_component_scoped_source_custody_observation_from_offline_search_execut
             requirements.append(
                 {
                     "requirement_id": requirement_id,
-                    "requirement_kind": _requirement_kind_from_obligation(
-                        obligation
-                    ),
-                    "origin_ref": (
-                        "offline_search_executor_bridge:"
-                        f"{component_record.get('component_id')}"
-                    ),
-                    "required_source_class": obligation.get("required_source_class")
-                    or obligation.get("source_class"),
+                    "requirement_kind": _requirement_kind_from_obligation(obligation),
+                    "origin_ref": (f"offline_search_executor_bridge:{component_record.get('component_id')}"),
+                    "required_source_class": obligation.get("required_source_class") or obligation.get("source_class"),
                     "aggregate_counts_insufficient": False,
                 }
             )
@@ -1555,8 +1447,7 @@ def build_component_scoped_source_custody_observation_from_offline_search_execut
                     "url": candidate.get("url"),
                     "domain": candidate.get("domain"),
                     "title": candidate.get("title"),
-                    "source_class": candidate.get("source_class_hint")
-                    or candidate.get("required_source_class"),
+                    "source_class": candidate.get("source_class_hint") or candidate.get("required_source_class"),
                     "record_kind": CandidateCustodyKind.PROPOSAL.value,
                     "disposition": CandidateDisposition.PROPOSED.value,
                     "reason": "offline bridge candidate link only",
@@ -1584,9 +1475,7 @@ def build_component_scoped_source_custody_observation_from_offline_search_execut
         source="offline_search_executor_bridge_component_source_custody",
         payload={
             "observation_id": observation_id,
-            "observation_source": (
-                "offline_search_executor_bridge_component_source_custody"
-            ),
+            "observation_source": ("offline_search_executor_bridge_component_source_custody"),
             "requirements": requirements,
             "candidates": candidates,
             "requirement_links": links,
@@ -1629,9 +1518,7 @@ def _candidate_update(record: Mapping[str, Any], *, candidate_id: str) -> dict[s
     source_class = _clean_token(record.get("source_class"))
     source_tier = _clean_token(record.get("source_tier"))
     lower_tier = (
-        bool(record.get("contextual_only"))
-        or source_class in _WEAK_SOURCE_CLASSES
-        or source_tier in _WEAK_SOURCE_TIERS
+        bool(record.get("contextual_only")) or source_class in _WEAK_SOURCE_CLASSES or source_tier in _WEAK_SOURCE_TIERS
     )
     domain = _clean_text(record.get("domain") or record.get("normalized_domain"), limit=160)
     if not domain:
@@ -1648,43 +1535,29 @@ def _candidate_update(record: Mapping[str, Any], *, candidate_id: str) -> dict[s
         "provider_name": _clean_text(record.get("provider_name") or record.get("provider")),
         "provider_role": _clean_text(record.get("provider_role"), limit=120),
         "retrieval_pass_id": _clean_token(record.get("retrieval_pass_id")),
-        "query_ref": _clean_text(
-            record.get("query_ref")
-            or record.get("query_preview")
-            or record.get("query")
-        ),
+        "query_ref": _clean_text(record.get("query_ref") or record.get("query_preview") or record.get("query")),
         "action_ref": _clean_token(record.get("action_ref") or record.get("action_id")),
         "source_tier": source_tier,
         "source_class": source_class,
-        "currentness_signal": _clean_token(
-            record.get("currentness_signal") or record.get("currentness")
-        ),
+        "currentness_signal": _clean_token(record.get("currentness_signal") or record.get("currentness")),
         "evidence_material_type": _evidence_material_type(record),
-        "readable_status": _clean_token(
-            record.get("readable_status") or record.get("readability_status")
-        ),
-        "fetchable_status": _clean_token(
-            record.get("fetchable_status") or record.get("fetch_status")
-        ),
+        "readable_status": _clean_token(record.get("readable_status") or record.get("readability_status")),
+        "fetchable_status": _clean_token(record.get("fetchable_status") or record.get("fetch_status")),
         "disposition_reason": _clean_text(
-            record.get("reason")
-            or record.get("disposition_reason")
-            or record.get("rejection_reason")
+            record.get("reason") or record.get("disposition_reason") or record.get("rejection_reason")
         ),
-        "eligible_for_stronger_obligation": record.get(
-            "eligible_for_stronger_obligation"
-        ),
+        "eligible_for_stronger_obligation": record.get("eligible_for_stronger_obligation"),
         "contextual_only": bool(record.get("contextual_only")) or lower_tier,
         "lower_tier": lower_tier,
         "final_evidence_eligible": record.get("final_evidence_eligible", UNKNOWN),
+        "final_evidence_selection_only": bool(record.get("final_evidence_selection_only")),
+        "final_evidence_eligibility_explicit": bool(record.get("final_evidence_eligibility_explicit")),
     }
 
 
 def _evidence_material_type(record: Mapping[str, Any]) -> str | None:
     explicit = _clean_token(
-        record.get("evidence_material_type")
-        or record.get("material_type")
-        or record.get("source_material_type")
+        record.get("evidence_material_type") or record.get("material_type") or record.get("source_material_type")
     )
     if explicit:
         return explicit
@@ -1805,8 +1678,7 @@ def _candidate_requirement_rejection_reason(
             _clean_token(requirement.required_source_class) == "official_current_rules"
             and _clean_token(candidate.source_tier) in _STRONG_SOURCE_TIERS
         ) and not (
-            _clean_token(requirement.required_source_class)
-            == "current_primary_or_official"
+            _clean_token(requirement.required_source_class) == "current_primary_or_official"
             and _clean_token(candidate.source_class)
             in {
                 "official_current_rules",
@@ -1878,9 +1750,7 @@ def _strong_source_candidate(candidate: EvidenceCandidate) -> bool:
     ) and _clean_token(candidate.currentness_signal) not in _BAD_CURRENTNESS
 
 
-def source_taxonomy_quality_facts(
-    *, source_class: Any = None, source_tier: Any = None
-) -> dict[str, Any]:
+def source_taxonomy_quality_facts(*, source_class: Any = None, source_tier: Any = None) -> dict[str, Any]:
     """Project the canonical source taxonomy without changing ledger policy.
 
     This deliberately classifies source class and source tier independently.
@@ -1891,9 +1761,7 @@ def source_taxonomy_quality_facts(
     normalized_class = _clean_token(source_class) or "unknown"
     normalized_tier = _clean_token(source_tier) or "unknown"
 
-    def strength(
-        value: str, *, strong: frozenset[str], weak: frozenset[str]
-    ) -> str:
+    def strength(value: str, *, strong: frozenset[str], weak: frozenset[str]) -> str:
         if value in strong:
             return "strong"
         if value in weak:
@@ -1929,9 +1797,7 @@ def _requirement_kind(record: Mapping[str, Any]) -> str:
     raw = _clean_token(record.get("requirement_kind") or record.get("kind"))
     if raw:
         return raw
-    return _kind_for_source_class(
-        _clean_token(record.get("required_source_class") or record.get("source_class"))
-    )
+    return _kind_for_source_class(_clean_token(record.get("required_source_class") or record.get("source_class")))
 
 
 def _kind_for_requirement_id(requirement_id: str) -> str:
@@ -2077,11 +1943,7 @@ def _list(value: Any) -> list[Any]:
 
 
 def _compact(payload: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in payload.items()
-        if value not in (None, "", [], {})
-    }
+    return {key: value for key, value in payload.items() if value not in (None, "", [], {})}
 
 
 def _append_unique(target: list[str], value: str | None) -> None:
@@ -2131,9 +1993,7 @@ def _component_custody_from_bridge_component(
         obligation_id = _clean_token(obligation.get("source_obligation_id"))
         linked = obligation_id in candidate_obligation_ids
         obligation["source_obligation_status"] = (
-            "blocked_by_unfetched_or_unread_candidate"
-            if linked
-            else "missing_candidate"
+            "blocked_by_unfetched_or_unread_candidate" if linked else "missing_candidate"
         )
         obligation["source_obligation_satisfied"] = False
         gaps.append(
@@ -2187,9 +2047,7 @@ def _source_obligation_ref_from_bridge(
     if not obligation_id:
         return {}
     source_class = _clean_token(
-        obligation.get("required_source_class")
-        or obligation.get("source_class")
-        or obligation.get("search_constraint")
+        obligation.get("required_source_class") or obligation.get("source_class") or obligation.get("search_constraint")
     )
     return _safe_mapping(
         {
@@ -2209,9 +2067,7 @@ def _candidate_link_from_bridge(
     candidate: Mapping[str, Any],
 ) -> dict[str, Any]:
     ledger_shape = _safe_mapping(candidate.get("evidence_ledger_candidate_observation"))
-    candidate_id = _clean_component_id(
-        ledger_shape.get("candidate_id") or candidate.get("candidate_id")
-    )
+    candidate_id = _clean_component_id(ledger_shape.get("candidate_id") or candidate.get("candidate_id"))
     if not candidate_id:
         return {}
     obligation_id = _clean_component_id(
@@ -2302,9 +2158,7 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
         CandidateDisposition.UNFETCHABLE.value,
     }:
         disposition = (
-            CandidateDisposition.OBSERVED.value
-            if status == "readable"
-            else CandidateDisposition.UNREADABLE.value
+            CandidateDisposition.OBSERVED.value if status == "readable" else CandidateDisposition.UNREADABLE.value
         )
     payload = {
         "record_kind": "fetch_read_candidate_custody",
@@ -2319,46 +2173,26 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
         "reference_digest": _clean_text(record.get("reference_digest"), limit=128),
         "run_id": _clean_text(record.get("run_id"), limit=160),
         "request_id": _clean_text(record.get("request_id"), limit=160),
-        "current_answer_contract_ref": _safe_mapping(
-            record.get("current_answer_contract_ref")
-        ),
+        "current_answer_contract_ref": _safe_mapping(record.get("current_answer_contract_ref")),
         "current_answer_contract_digest": _clean_text(
             record.get("current_answer_contract_digest"),
             limit=128,
         ),
         "component_ref": _safe_mapping(record.get("component_ref")),
-        "source_obligation_ref": _safe_mapping(
-            record.get("source_obligation_ref")
-        ),
+        "source_obligation_ref": _safe_mapping(record.get("source_obligation_ref")),
         "slot_ref": _safe_mapping(record.get("slot_ref")),
-        "navigation_option_ref": _safe_mapping(
-            record.get("navigation_option_ref")
-        ),
-        "navigation_selection_ref": _safe_mapping(
-            record.get("navigation_selection_ref")
-        ),
-        "destination_binding_ref": _safe_mapping(
-            record.get("destination_binding_ref")
-        ),
-        "parent_read_custody_ref": _safe_mapping(
-            record.get("parent_read_custody_ref")
-        ),
-        "terminal_receipt_ref": _safe_mapping(
-            record.get("terminal_receipt_ref")
-        ),
-        "custody_authorization_ref": _safe_mapping(
-            record.get("custody_authorization_ref")
-        ),
-        "search_executor_handoff_ref": _safe_mapping(
-            record.get("search_executor_handoff_ref")
-        ),
+        "navigation_option_ref": _safe_mapping(record.get("navigation_option_ref")),
+        "navigation_selection_ref": _safe_mapping(record.get("navigation_selection_ref")),
+        "destination_binding_ref": _safe_mapping(record.get("destination_binding_ref")),
+        "parent_read_custody_ref": _safe_mapping(record.get("parent_read_custody_ref")),
+        "terminal_receipt_ref": _safe_mapping(record.get("terminal_receipt_ref")),
+        "custody_authorization_ref": _safe_mapping(record.get("custody_authorization_ref")),
+        "search_executor_handoff_ref": _safe_mapping(record.get("search_executor_handoff_ref")),
         "search_executor_handoff_digest": _clean_text(
             record.get("search_executor_handoff_digest"),
             limit=128,
         ),
-        "search_result_candidate_packet_ref": _safe_mapping(
-            record.get("search_result_candidate_packet_ref")
-        ),
+        "search_result_candidate_packet_ref": _safe_mapping(record.get("search_result_candidate_packet_ref")),
         "search_result_candidate_packet_id": _clean_text(
             record.get("search_result_candidate_packet_id"),
             limit=320,
@@ -2367,9 +2201,7 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
             record.get("search_result_candidate_packet_digest"),
             limit=128,
         ),
-        "fetch_read_content_packet_ref": _safe_mapping(
-            record.get("fetch_read_content_packet_ref")
-        ),
+        "fetch_read_content_packet_ref": _safe_mapping(record.get("fetch_read_content_packet_ref")),
         "fetch_read_content_packet_id": _clean_text(
             record.get("fetch_read_content_packet_id"),
             limit=320,
@@ -2400,9 +2232,7 @@ def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str,
         "fetch_read_status": status,
         "disposition": disposition,
         "bounded_content_present": bool(record.get("bounded_content_present")),
-        "bounded_character_count": _positive_int(
-            record.get("bounded_character_count")
-        ),
+        "bounded_character_count": _positive_int(record.get("bounded_character_count")),
         "excerpt_digest": _clean_text(record.get("excerpt_digest"), limit=128),
         "read_error_code": _clean_text(record.get("read_error_code"), limit=120),
         "failure_reason": _clean_text(record.get("failure_reason"), limit=500),
@@ -2431,8 +2261,7 @@ def _fetch_read_candidate_custody_gap(record: Mapping[str, Any]) -> dict[str, An
             "fetch_read_status": _clean_token(record.get("fetch_read_status")),
             "read_error_code": _clean_text(record.get("read_error_code"), limit=120),
             "failure_reason": _clean_text(record.get("failure_reason"), limit=500),
-            "reason": _clean_text(record.get("failure_reason"), limit=500)
-            or "fetch/read reference is not readable",
+            "reason": _clean_text(record.get("failure_reason"), limit=500) or "fetch/read reference is not readable",
             "source_ref": _clean_text(
                 record.get("fetch_read_content_packet_id"),
                 limit=320,

@@ -488,7 +488,8 @@ def _spine(
     final_evidence_records: Sequence[Mapping[str, Any]] | None = None,
     search_work_projection: Mapping[str, Any] | None = None,
     quant_work_units: Sequence[Mapping[str, Any]] | None = None,
-    canonical_coverage_component_ids: Sequence[str] = (),
+    required_component_ids: Sequence[str] = (),
+    covered_component_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     projection = search_work_projection if search_work_projection is not None else _search_work_projection()
     adapter = _adapter()
@@ -522,14 +523,14 @@ def _spine(
             ),
             None,
         )
-        for component_id in canonical_coverage_component_ids
+        for component_id in covered_component_ids
     }
     assert all(candidate is not None for candidate in candidates_by_component.values())
-    if canonical_coverage_component_ids:
+    if required_component_ids or covered_component_ids:
         accepted_contract = _accept_answer_contract(
             kernel,
             contract,
-            required_component_ids=canonical_coverage_component_ids,
+            required_component_ids=required_component_ids,
         )
         _reduce_exact_run_contract_requirements(
             kernel,
@@ -613,12 +614,14 @@ def _spine(
         source_obligation_projection=ledger,
         sufficiency_judgment_projection=judgment.to_projection(),
     )
-    packet, payload = derive_author_input_payload(
-        packet,
-        prompt="BASE AUTHOR PROMPT",
-        author_system_prompt_key="author",
-        author_effort="low",
-    )
+    payload = None
+    if packet.final_answer_allowed:
+        packet, payload = derive_author_input_payload(
+            packet,
+            prompt="BASE AUTHOR PROMPT",
+            author_system_prompt_key="author",
+            author_effort="low",
+        )
     return {
         "admitted": admitted,
         "query_plan_trace": query_plan_trace,
@@ -649,6 +652,7 @@ def _assert_canonical_component_closure(
     *,
     requirement: Mapping[str, Any],
     candidate: Mapping[str, Any],
+    expect_full_coverage: bool = True,
 ) -> None:
     component_id = str(requirement["component_id"])
     requirement_id = _ledger_token(requirement["requirement_id"])
@@ -701,12 +705,13 @@ def _assert_canonical_component_closure(
         }
     ]
 
-    facts = result["semantic_state_facts"]
-    assert facts["covered_component_count"] == facts["required_component_count"]
-    assert facts["missing_component_count"] == 0
-    semantic_consumption = result["judgment"].to_projection()["semantic_consumption"]
-    assert semantic_consumption["covered_component_count"] == (semantic_consumption["required_component_count"])
-    assert semantic_consumption["direct_answer_blocked"] is False
+    if expect_full_coverage:
+        facts = result["semantic_state_facts"]
+        assert facts["covered_component_count"] == facts["required_component_count"]
+        assert facts["missing_component_count"] == 0
+        semantic_consumption = result["judgment"].to_projection()["semantic_consumption"]
+        assert semantic_consumption["covered_component_count"] == (semantic_consumption["required_component_count"])
+        assert semantic_consumption["direct_answer_blocked"] is False
 
 
 def test_direct_official_current_sufficiency_constrains_packet_and_author_payload() -> None:
@@ -724,11 +729,11 @@ def test_direct_official_current_sufficiency_constrains_packet_and_author_payloa
         candidate_queries=[QUERY_BY_COMPONENT["component-fee"]],
         retrieval_records=[record],
         search_work_projection=_search_work_for_components("component-fee"),
-        canonical_coverage_component_ids=("component-fee",),
+        required_component_ids=("component-fee",),
+        covered_component_ids=("component-fee",),
     )
     packet = result["packet"]
     authority = _payload_authority(result)
-
     _assert_canonical_component_closure(
         result,
         requirement=REQS["official"],
@@ -817,14 +822,16 @@ def test_legal_current_primary_and_canonical_docs_satisfy_their_obligations() ->
         candidate_queries=[QUERY_BY_COMPONENT["component-legal"]],
         retrieval_records=[legal],
         search_work_projection=_search_work_for_components("component-legal"),
-        canonical_coverage_component_ids=("component-legal",),
+        required_component_ids=("component-legal",),
+        covered_component_ids=("component-legal",),
     )
     canonical_result = _spine(
         _contract(REQS["canonical"]),
         candidate_queries=[QUERY_BY_COMPONENT["component-api"]],
         retrieval_records=[canonical],
         search_work_projection=_search_work_for_components("component-api"),
-        canonical_coverage_component_ids=("component-api",),
+        required_component_ids=("component-api",),
+        covered_component_ids=("component-api",),
     )
 
     _assert_canonical_component_closure(
@@ -893,21 +900,33 @@ def test_mixed_multipart_preserves_separate_satisfied_and_missing_obligations() 
             "component-fee",
             "component-legal",
         ),
-        canonical_coverage_component_ids=("component-fee",),
+        required_component_ids=("component-fee", "component-legal"),
+        covered_component_ids=("component-fee",),
     )
-    authority = _payload_authority(result)
-
     _assert_canonical_component_closure(
         result,
         requirement=REQS["official"],
         candidate=record,
+        expect_full_coverage=False,
     )
+    assert len(result["accepted_contract"]["accepted_answer_component_refs"]) == 2
+    assert all(
+        item["requirement_posture"] == "required"
+        for item in result["accepted_contract"]["accepted_answer_component_refs"]
+    )
+    assert len(result["component_coverage_history"]) == 1
+    assert len(result["judgment"].satisfied_obligations) == 1
+    assert {_ledger_token(item.component_id) for item in result["judgment"].missing_required_obligations} == {
+        "component_legal"
+    }
+    assert result["semantic_state_facts"]["required_component_count"] == 2
+    assert result["semantic_state_facts"]["covered_component_count"] == 1
+    assert result["semantic_state_facts"]["missing_component_count"] == 1
     assert result["judgment"].decision is (RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED)
-    assert authority["readiness_status"] == "insufficient_authorized"
-    assert authority["satisfied_source_obligations"][0]["component_id"] == ("component_fee")
-    assert authority["missing_source_obligations"][0]["component_id"] == ("component_legal")
-    assert authority["citation_eligible_source_ids"] == [606]
-    assert "Partial source obligations" not in result["payload"].prompt
+    assert result["packet"].readiness_status is FinalAnswerReadinessStatus.BLOCKED
+    assert [item.source_id for item in result["packet"].citation_eligible] == [606]
+    assert result["packet"].final_answer_allowed is False
+    assert result["payload"] is None
 
 
 def test_no_provider_job_handoff_or_g1_bridge_payload_invents_no_satisfaction() -> None:
@@ -1008,7 +1027,8 @@ def test_author_payload_authority_is_redacted_and_machine_readable() -> None:
         candidate_queries=[QUERY_BY_COMPONENT["component-fee"]],
         retrieval_records=[dirty_record],
         search_work_projection=_search_work_for_components("component-fee"),
-        canonical_coverage_component_ids=("component-fee",),
+        required_component_ids=("component-fee",),
+        covered_component_ids=("component-fee",),
     )
     payload = result["payload"]
     encoded = json.dumps(

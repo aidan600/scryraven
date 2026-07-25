@@ -119,8 +119,11 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
 
 
 def _matching_records(values: Any, **expected: Any) -> list[dict[str, Any]]:
-    return [dict(raw) for raw in values or () if isinstance(raw, Mapping)
-            and all(raw.get(key) == value for key, value in expected.items())]
+    return [
+        dict(raw)
+        for raw in values or ()
+        if isinstance(raw, Mapping) and all(raw.get(key) == value for key, value in expected.items())
+    ]
 
 
 def _one_record(values: Any, reason: str, **expected: Any) -> dict[str, Any]:
@@ -164,9 +167,7 @@ def execute_multicomponent_role_call(
     lease = run_kernel.grant_next_multicomponent_work_lease()
     work = _safe_mapping(lease.get("work"))
     if lease.get("status") == LEASE_DENIED_EXHAUSTED:
-        raise _ScheduledSemanticWorkBlocked(
-            "required semantic work denied by the compatibility envelope"
-        )
+        raise _ScheduledSemanticWorkBlocked("required semantic work denied by the compatibility envelope")
     if (
         work.get("role") != role
         or work.get("logical_evaluation_key") != logical_evaluation_key
@@ -178,8 +179,7 @@ def execute_multicomponent_role_call(
             reason="deterministic_consumer_did_not_match_scheduler_ready_work",
         )
         raise OrdinaryMulticomponentRuntimeError(
-            "ordinary deterministic transition requested work other than the "
-            "RunKernel-selected first ready item"
+            "ordinary deterministic transition requested work other than the RunKernel-selected first ready item"
         )
     try:
         return _execute_multicomponent_role_transport(
@@ -192,13 +192,9 @@ def execute_multicomponent_role_call(
             **runtime_kwargs,
         )
     except Exception as exc:
-        scheduler = _safe_mapping(
-            run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-        )
+        scheduler = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
         if str(scheduler.get("status") or "").startswith("blocked_"):
-            raise _ScheduledSemanticWorkBlocked(
-                "required scheduled semantic work did not complete"
-            ) from exc
+            raise _ScheduledSemanticWorkBlocked("required scheduled semantic work did not complete") from exc
         raise
 
 
@@ -230,15 +226,9 @@ def _accepted_contract_ref(accepted: Mapping[str, Any]) -> dict[str, Any]:
         "request_id": accepted.get("request_id"),
         "accepted_contract_version": accepted.get("accepted_contract_version"),
         "accepted_contract_digest": accepted.get("accepted_contract_digest"),
-        "parent_question_meaning_record_id": accepted.get(
-            "parent_question_meaning_record_id"
-        ),
-        "parent_question_meaning_record_digest": accepted.get(
-            "parent_question_meaning_record_digest"
-        ),
-        "accepted_answer_component_count": accepted.get(
-            "accepted_answer_component_count"
-        ),
+        "parent_question_meaning_record_id": accepted.get("parent_question_meaning_record_id"),
+        "parent_question_meaning_record_digest": accepted.get("parent_question_meaning_record_digest"),
+        "accepted_answer_component_count": accepted.get("accepted_answer_component_count"),
     }
 
 
@@ -270,9 +260,7 @@ def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
     transport = runtime_scope.get("strict_one_shot_smart_model_transport")
     if not callable(transport) and deps is not None:
         transport = getattr(deps, "strict_one_shot_smart_model_transport", None)
-    canonical_provider = normalize_canonical_model_provider(
-        runtime_scope.get("smart_provider")
-    )
+    canonical_provider = normalize_canonical_model_provider(runtime_scope.get("smart_provider"))
     model = str(runtime_scope.get("smart_model") or "")
     if not callable(transport):
         transport = build_strict_one_shot_smart_model_transport(
@@ -291,10 +279,7 @@ def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _component_text_by_id(qmr: Any) -> dict[str, str]:
-    return {
-        component.component_id: component.user_facing_question
-        for component in qmr.answer_components
-    }
+    return {component.component_id: component.user_facing_question for component in qmr.answer_components}
 
 
 def _accepted_component_text_by_id(
@@ -303,9 +288,7 @@ def _accepted_component_text_by_id(
     return {
         str(component["component_id"]): str(component["user_facing_question"])
         for component in accepted.get("accepted_answer_component_refs") or ()
-        if isinstance(component, Mapping)
-        and component.get("component_id")
-        and component.get("user_facing_question")
+        if isinstance(component, Mapping) and component.get("component_id") and component.get("user_facing_question")
     }
 
 
@@ -316,16 +299,13 @@ def _selected_multicomponent_contract(
 ) -> bool:
     metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
     component_refs = [
-        item
-        for item in accepted.get("accepted_answer_component_refs") or ()
-        if isinstance(item, Mapping)
+        item for item in accepted.get("accepted_answer_component_refs") or () if isinstance(item, Mapping)
     ]
     if allow_searchos_component_receiver:
         return 1 <= len(component_refs) <= 5
     return (
         metadata.get("explicit_factual_component_list") is True
-        and _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
-        is not None
+        and _clean_text(metadata.get("requested_synthesis_directive"), limit=360) is not None
         and 2 <= len(component_refs) <= 5
     )
 
@@ -367,9 +347,7 @@ def _exact_conflict_facts(
     return None, None
 
 
-def _exact_currency_fact(
-    *, candidate: Mapping[str, Any], passage: Mapping[str, Any]
-) -> str | None:
+def _exact_currency_fact(*, candidate: Mapping[str, Any], passage: Mapping[str, Any]) -> str | None:
     for owner in (candidate, passage):
         value = owner.get("canonical_currency_unit")
         if isinstance(value, str):
@@ -420,12 +398,8 @@ def _evidence_input(bindable: Any | None) -> dict[str, Any]:
         passage_keys=("readable_status", "readability_status"),
         limit=80,
     )
-    canonical_currency = _exact_currency_fact(
-        candidate=candidate, passage=passage
-    )
-    conflict, contradictory = _exact_conflict_facts(
-        candidate=candidate, passage=passage
-    )
+    canonical_currency = _exact_currency_fact(candidate=candidate, passage=passage)
+    conflict, contradictory = _exact_conflict_facts(candidate=candidate, passage=passage)
     custody = {
         key: candidate.get(key)
         for key in (
@@ -483,18 +457,15 @@ def _semantic_material(
     if not supported:
         return None, [], None
     if bindable is None:
-        raise OrdinaryMulticomponentRuntimeError(
-            "component roles claimed support without bounded evidence"
-        )
-    accepted = (
-        run_kernel.state.current_answer_contract
-        or run_kernel.state.initial_answer_contract
-    )
+        raise OrdinaryMulticomponentRuntimeError("component roles claimed support without bounded evidence")
+    accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     component_id = str(component_ref["component_id"])
     recovery_cycle_id = str(_safe_mapping(searchos_recovery_cycle_ref).get("cycle_id") or "")
     recovery_suffix = ":" + recovery_cycle_id if recovery_cycle_id else ""
     evidence_ref_id = _qualify_searchos_read_material_after_component_dprime(
-        run_kernel=run_kernel, component_ref=component_ref, bindable=bindable,
+        run_kernel=run_kernel,
+        component_ref=component_ref,
+        bindable=bindable,
         dprime_artifact=dprime_artifact,
     ) or str(bindable.evidence_ref_id)
     content_ref = build_sanitized_content_reference_from_passage(
@@ -507,12 +478,8 @@ def _semantic_material(
     observation = SemanticObservation(
         observation_id=(f"observation:{component_id}:{bindable.evidence_ref_id}{recovery_suffix}"),
         observation_kind=ObservationKind.SUPPORT,
-        question_meaning_record_id=accepted[
-            "parent_question_meaning_record_id"
-        ],
-        question_meaning_record_digest=accepted[
-            "parent_question_meaning_record_digest"
-        ],
+        question_meaning_record_id=accepted["parent_question_meaning_record_id"],
+        question_meaning_record_digest=accepted["parent_question_meaning_record_digest"],
         contract_version=accepted["accepted_contract_version"],
         contract_digest=accepted["accepted_contract_digest"],
         answer_component_id=component_id,
@@ -541,9 +508,7 @@ def _semantic_material(
         accepted_contract=accepted,
         observation=observation,
         content_ref=content_ref,
-        evidence_ledger_projection=(
-            run_kernel.state.evidence_ledger.to_projection().to_dict()
-        ),
+        evidence_ledger_projection=(run_kernel.state.evidence_ledger.to_projection().to_dict()),
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
         query=query,
@@ -552,14 +517,10 @@ def _semantic_material(
     if coverage is not None and recovery_cycle_id:
         coverage = replace(
             coverage,
-            record_id=(
-                f"coverage:{component_id}:searchos-recovery:{recovery_cycle_id}"
-            ),
+            record_id=(f"coverage:{component_id}:searchos-recovery:{recovery_cycle_id}"),
             metadata={
                 **dict(coverage.metadata),
-                "searchos_recovery_cycle_ref": deepcopy(
-                    _safe_mapping(searchos_recovery_cycle_ref)
-                ),
+                "searchos_recovery_cycle_ref": deepcopy(_safe_mapping(searchos_recovery_cycle_ref)),
             },
         ).require_valid()
     if coverage is None:
@@ -575,34 +536,20 @@ def _semantic_material(
             source_obligation_candidate_ids=tuple(obligation_ids),
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
-            answer_contract_version=accepted[
-                "accepted_contract_version"
-            ],
-            answer_contract_digest=accepted[
-                "accepted_contract_digest"
-            ],
+            answer_contract_version=accepted["accepted_contract_version"],
+            answer_contract_digest=accepted["accepted_contract_digest"],
             ignore_satisfied_provider_job_historical_gaps=True,
         )
-        qualification_blockers = (
-            ledger_qualification_blockers_for_satisfied_coverage(
-                coverage={
-                    "coverage_state": "satisfied",
-                    "content_reference_bindings": [
-                        {"evidence_ref_id": evidence_ref_id}
-                    ],
-                    "evidence_ledger_binding": {
-                        "source_requirement_ids": list(
-                            qualified_requirement_ids
-                        )
-                    },
-                    "source_obligation_status": "satisfied",
-                },
-                evidence_ledger_projection=(
-                    run_kernel.state.evidence_ledger.to_projection().to_dict()
-                ),
-                accepted_component=component_ref,
-                extra_evidence_refs=(evidence_ref_id,),
-            )
+        qualification_blockers = ledger_qualification_blockers_for_satisfied_coverage(
+            coverage={
+                "coverage_state": "satisfied",
+                "content_reference_bindings": [{"evidence_ref_id": evidence_ref_id}],
+                "evidence_ledger_binding": {"source_requirement_ids": list(qualified_requirement_ids)},
+                "source_obligation_status": "satisfied",
+            },
+            evidence_ledger_projection=(run_kernel.state.evidence_ledger.to_projection().to_dict()),
+            accepted_component=component_ref,
+            extra_evidence_refs=(evidence_ref_id,),
         )
         raise OrdinaryMulticomponentRuntimeError(
             "component D-prime support could not satisfy canonical coverage for "
@@ -614,10 +561,7 @@ def _semantic_material(
             + ", qualified_requirements="
             + ",".join(qualified_requirement_ids)
             + ", qualification_blockers="
-            + ",".join(
-                str(item.get("code") or "unknown")
-                for item in qualification_blockers
-            )
+            + ",".join(str(item.get("code") or "unknown") for item in qualification_blockers)
             + ")"
         )
     return observation.to_dict(), [content_ref.to_dict()], coverage.to_dict()
@@ -651,8 +595,7 @@ def _qualify_searchos_read_material_after_component_dprime(
     )
     if not (
         lineage
-        and
-        passage.get("material_authority") == "read_custody_material"
+        and passage.get("material_authority") == "read_custody_material"
         and passage.get("_provider") == "searchos_read_custody"
         and current_handoff
         and slot_ref.get("source_obligation_id")
@@ -674,21 +617,31 @@ def _qualify_searchos_read_material_after_component_dprime(
         execute_evidence_ledger_reduction_action,
     )
 
-    component_identity = {key: component_ref.get(key) for key in ("component_id", "component_revision", "component_digest")}
+    component_identity = {
+        key: component_ref.get(key) for key in ("component_id", "component_revision", "component_digest")
+    }
     navigation_ref, packet_ref, custody_ref = (
-        _safe_mapping(lineage.get(key)) for key in ("navigation_content_reference", "fetch_read_content_packet", "read_custody_ref"))
+        _safe_mapping(lineage.get(key))
+        for key in ("navigation_content_reference", "fetch_read_content_packet", "read_custody_ref")
+    )
     evidence_ref_id = str(bindable.evidence_ref_id)
     dprime_digest = str(dprime_artifact.get("artifact_digest") or "")
     accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     accepted_component = _one_record(
-        accepted.get("accepted_answer_component_refs"), "SearchOS qualification component is stale",
+        accepted.get("accepted_answer_component_refs"),
+        "SearchOS qualification component is stale",
         **component_identity,
     )
-    component_obligations = {str(_safe_mapping(item).get("candidate_id") or item) for item in accepted_component.get("source_obligation_candidate_ids") or ()}
+    component_obligations = {
+        str(_safe_mapping(item).get("candidate_id") or item)
+        for item in accepted_component.get("source_obligation_candidate_ids") or ()
+    }
     ref_fields = (
-        (navigation_ref, ("reference_id", "reference_digest")), (packet_ref, ("packet_id", "packet_digest")),
+        (navigation_ref, ("reference_id", "reference_digest")),
+        (packet_ref, ("packet_id", "packet_digest")),
         (custody_ref, ("read_custody_material_id", "read_custody_material_digest")),
-        (handoff_ref, ("semantic_handoff_id", "semantic_handoff_digest")))
+        (handoff_ref, ("semantic_handoff_id", "semantic_handoff_digest")),
+    )
     if (
         str(slot_ref.get("source_obligation_id") or "") not in component_obligations
         or lineage.get("canonical_candidate_id") != evidence_ref_id
@@ -696,7 +649,8 @@ def _qualify_searchos_read_material_after_component_dprime(
         or _safe_mapping(passage.get("searchos_slot_ref")) != slot_ref
         or _safe_mapping(passage.get("searchos_semantic_handoff_ref")) != handoff_ref
         or any(not all(ref.get(key) for key in keys) for ref, keys in ref_fields)
-        or len(dprime_digest) != 64 or set(dprime_digest) - set("0123456789abcdef")
+        or len(dprime_digest) != 64
+        or set(dprime_digest) - set("0123456789abcdef")
     ):
         raise OrdinaryMulticomponentRuntimeError("SearchOS qualification lineage is incomplete or stale")
 
@@ -741,14 +695,17 @@ def _qualify_searchos_read_material_after_component_dprime(
     physical = ledger.to_fetch_read_candidate_custody_projection().get("fetch_read_candidate_custody_records")
     slot = _safe_mapping(_safe_mapping(run_kernel.state.searchos_state.get("slots_by_id")).get(slot_id))
     current_custody = _one_record(
-        slot.get("custody_refs"), "SearchOS qualification lost current custody",
+        slot.get("custody_refs"),
+        "SearchOS qualification lost current custody",
         evidence_ledger_candidate_id=evidence_ref_id,
         read_custody_material_id=custody_ref["read_custody_material_id"],
         read_custody_material_digest=custody_ref["read_custody_material_digest"],
     )
     physical_record = _one_record(
-        physical, "SearchOS qualification lost physical custody",
-        reference_id=navigation_ref["reference_id"], reference_digest=navigation_ref["reference_digest"],
+        physical,
+        "SearchOS qualification lost physical custody",
+        reference_id=navigation_ref["reference_id"],
+        reference_digest=navigation_ref["reference_digest"],
         fetch_read_content_packet_id=packet_ref["packet_id"],
         fetch_read_content_packet_digest=packet_ref["packet_digest"],
     )
@@ -757,9 +714,16 @@ def _qualify_searchos_read_material_after_component_dprime(
     if (
         projected_candidate_id not in before_candidate_ids
         or len(_matching_records(physical, candidate_id=ledger_candidate_id)) != 1
-        or lineage.get("navigation_origin") is True and ledger_candidate_id != evidence_ref_id
-        or any(_safe_mapping(current_custody.get("evidence_ledger_custody_ref")).get(key) != value for key, value in navigation_ref.items())
-        or any(_safe_mapping(current_custody.get("fetch_read_content_packet_ref")).get(key) != value for key, value in packet_ref.items())
+        or lineage.get("navigation_origin") is True
+        and ledger_candidate_id != evidence_ref_id
+        or any(
+            _safe_mapping(current_custody.get("evidence_ledger_custody_ref")).get(key) != value
+            for key, value in navigation_ref.items()
+        )
+        or any(
+            _safe_mapping(current_custody.get("fetch_read_content_packet_ref")).get(key) != value
+            for key, value in packet_ref.items()
+        )
     ):
         raise OrdinaryMulticomponentRuntimeError("SearchOS qualification lost canonical physical custody")
 
@@ -769,15 +733,21 @@ def _qualify_searchos_read_material_after_component_dprime(
         raise OrdinaryMulticomponentRuntimeError("SearchOS qualification source facts drifted")
     fact_passage = {**lineage_facts, **passage}
     aliases_by_key = {
-        "source_class": ("source_class",), "source_tier": ("source_tier",),
+        "source_class": ("source_class",),
+        "source_tier": ("source_tier",),
         "currentness_signal": ("currentness_signal", "currentness"),
-        "evidence_material_type": ("evidence_material_type",), "readable_status": ("readable_status", "readability_status"),
+        "evidence_material_type": ("evidence_material_type",),
+        "readable_status": ("readable_status", "readability_status"),
         "fetchable_status": ("fetchable_status", "fetch_status"),
     }
     source_facts = {
-        key: value for key, aliases in aliases_by_key.items()
-        if (value := _structured_evidence_fact(
-            candidate=candidate, passage=fact_passage, candidate_keys=aliases, passage_keys=aliases))
+        key: value
+        for key, aliases in aliases_by_key.items()
+        if (
+            value := _structured_evidence_fact(
+                candidate=candidate, passage=fact_passage, candidate_keys=aliases, passage_keys=aliases
+            )
+        )
     }
     for key in ("contextual_only", "lower_tier"):
         value = fact_passage.get(key)
@@ -789,7 +759,20 @@ def _qualify_searchos_read_material_after_component_dprime(
         # Preserve established canonical truth.  Omitting a false/default value
         # lets EvidenceLedger derive eligibility from the source taxonomy.
         source_facts["eligible_for_stronger_obligation"] = True
-    if slot_ref.get("recovery_cycle_id"):
+    elif (
+        source_facts.get("source_tier") == "official"
+        and source_facts.get("source_class") == "official_current_rules"
+        and source_facts.get("currentness_signal") == "current"
+    ):
+        source_facts["eligible_for_stronger_obligation"] = True
+    explicit_final_eligibility = lineage_facts.get(
+        "final_evidence_eligible",
+        "unknown",
+    )
+    if explicit_final_eligibility is False:
+        source_facts["final_evidence_eligible"] = False
+        source_facts["final_evidence_eligibility_explicit"] = True
+    elif slot_ref.get("recovery_cycle_id"):
         source_facts["final_evidence_eligible"] = True
 
     payload = {
@@ -797,9 +780,7 @@ def _qualify_searchos_read_material_after_component_dprime(
         "observation_source": "searchos_component_dprime_material_qualification",
         "source_requirements": [
             {
-                "requirement_id": requirement_ids_by_obligation[
-                    qualified_obligation_id
-                ],
+                "requirement_id": requirement_ids_by_obligation[qualified_obligation_id],
                 "requirement_kind": {
                     "canonical_docs": "canonical",
                     "legal_primary": "legal",
@@ -812,12 +793,8 @@ def _qualify_searchos_read_material_after_component_dprime(
                 "component_id": component_id,
                 "run_id": run_kernel.state.run_id,
                 "request_id": run_kernel.state.request_id,
-                "answer_contract_version": accepted[
-                    "accepted_contract_version"
-                ],
-                "answer_contract_digest": accepted[
-                    "accepted_contract_digest"
-                ],
+                "answer_contract_version": accepted["accepted_contract_version"],
+                "answer_contract_digest": accepted["accepted_contract_digest"],
                 "origin_ref": ("RunKernel.SearchOSIterativeJudgment:" + str(handoff_ref["semantic_handoff_id"])),
                 "aggregate_counts_insufficient": False,
             }
@@ -857,8 +834,11 @@ def _qualify_searchos_read_material_after_component_dprime(
     if _candidate_ids(projection) != before_candidate_ids:
         raise OrdinaryMulticomponentRuntimeError("SearchOS qualification replaced canonical candidate state")
     _one_record(
-        projection.get("candidate_records"), "SearchOS candidate qualification missing", candidate_id=projected_candidate_id,
-        fact_disposition="accepted", **source_facts,
+        projection.get("candidate_records"),
+        "SearchOS candidate qualification missing",
+        candidate_id=projected_candidate_id,
+        fact_disposition="accepted",
+        **source_facts,
     )
     _one_record(
         projection.get("custody_records"),
@@ -882,7 +862,9 @@ def _qualify_searchos_read_material_after_component_dprime(
             link_status="accepted",
         )
     _one_record(
-        projection.get("observation_refs"), "SearchOS qualification observation missing", observation_id=qualification_id,
+        projection.get("observation_refs"),
+        "SearchOS qualification observation missing",
+        observation_id=qualification_id,
     )
     return evidence_ref_id
 
@@ -907,19 +889,13 @@ def _current_searchos_read_handoff_for_component(
         return False
     handoff_ref = _safe_mapping(passage.get("searchos_semantic_handoff_ref"))
     current_handoff = any(
-        _safe_mapping(item).get("semantic_handoff_id")
-        == handoff_ref.get("semantic_handoff_id")
-        and _safe_mapping(item).get("semantic_handoff_digest")
-        == handoff_ref.get("semantic_handoff_digest")
+        _safe_mapping(item).get("semantic_handoff_id") == handoff_ref.get("semantic_handoff_id")
+        and _safe_mapping(item).get("semantic_handoff_digest") == handoff_ref.get("semantic_handoff_digest")
         and _safe_mapping(_safe_mapping(item).get("slot_ref")) == slot_ref
         for item in searchos_state.get("semantic_handoff_refs") or ()
         if isinstance(item, Mapping)
     )
-    evidence_ref_id = str(
-        passage.get("searchos_evidence_ledger_candidate_id")
-        or passage.get("source_id")
-        or ""
-    )
+    evidence_ref_id = str(passage.get("searchos_evidence_ledger_candidate_id") or passage.get("source_id") or "")
     current_custody = any(
         _safe_mapping(item).get("evidence_ledger_candidate_id") == evidence_ref_id
         and _safe_mapping(_safe_mapping(item).get("slot_ref")) == slot_ref
@@ -944,14 +920,10 @@ def _execute_fresh_resynthesis(
     current_contract = run_kernel.state.current_answer_contract
     contract_ref = _accepted_contract_ref(current_contract)
     component_packets = _safe_mapping(
-        _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get(
-            "component_analyst_input_packets"
-        )
+        _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("component_analyst_input_packets")
     )
     if not component_packets:
-        raise OrdinaryMulticomponentRuntimeError(
-            "fresh resynthesis requires current scheduler-owned component packets"
-        )
+        raise OrdinaryMulticomponentRuntimeError("fresh resynthesis requires current scheduler-owned component packets")
     cross_input = cross_component_input_packet(
         component_nodes=graph["component_nodes"],
         accepted_contract_ref=contract_ref,
@@ -985,9 +957,7 @@ def _execute_fresh_resynthesis(
             current,
             synthesis_key=synthesis_key,
         )
-        evaluation_key = (
-            f"{synthesis_key}:graph-revision:{current['graph_revision']}"
-        )
+        evaluation_key = f"{synthesis_key}:graph-revision:{current['graph_revision']}"
         dprime_artifact = execute_multicomponent_role_call(
             run_kernel=run_kernel,
             role=ROLE_SYNTHESIS_DPRIME,
@@ -1006,11 +976,7 @@ def _execute_fresh_resynthesis(
                 dprime_artifact=dprime_artifact,
             ),
         )
-        node = next(
-            item
-            for item in current["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
+        node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
         if node.get("status") != "validated":
             break
         node_is_upstream = any(
@@ -1047,14 +1013,8 @@ def _execute_fresh_resynthesis(
         )
 
     for synthesis_key in deferred_admission_keys:
-        node = next(
-            item
-            for item in current["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
-        if node.get("status") == "validated" and current.get(
-            "scrutineer_status"
-        ) in {"passed", "passed_with_caveats"}:
+        node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
+        if node.get("status") == "validated" and current.get("scrutineer_status") in {"passed", "passed_with_caveats"}:
             current = admit_synthesis_node_via_runkernel(
                 run_kernel=run_kernel,
                 synthesis_key=synthesis_key,
@@ -1119,10 +1079,7 @@ def _execute_selective_reconstruction(
             current,
             synthesis_key=synthesis_key,
         )
-        evaluation_key = (
-            f"{synthesis_key}:selective:graph-revision:"
-            f"{current['graph_revision']}"
-        )
+        evaluation_key = f"{synthesis_key}:selective:graph-revision:{current['graph_revision']}"
         dprime_artifact = execute_multicomponent_role_call(
             run_kernel=run_kernel,
             role=ROLE_SYNTHESIS_DPRIME,
@@ -1141,11 +1098,7 @@ def _execute_selective_reconstruction(
                 dprime_artifact=dprime_artifact,
             ),
         )
-        node = next(
-            item
-            for item in current["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
+        node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
         if node.get("status") != "validated":
             break
         node_is_upstream = any(
@@ -1179,9 +1132,7 @@ def _execute_selective_resynthesis(
         closure=closure,
         role_kwargs=role_kwargs,
     )
-    scrutiny_key = (
-        f"full-case:selective:graph-revision:{current['graph_revision']}"
-    )
+    scrutiny_key = f"full-case:selective:graph-revision:{current['graph_revision']}"
     scrutineer_artifact = execute_multicomponent_role_call(
         run_kernel=run_kernel,
         role=ROLE_SCRUTINEER,
@@ -1199,14 +1150,8 @@ def _execute_selective_resynthesis(
         ),
     )
     for synthesis_key in deferred_admission_keys:
-        node = next(
-            item
-            for item in current["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
-        if node.get("status") == "validated" and current.get(
-            "scrutineer_status"
-        ) in {"passed", "passed_with_caveats"}:
+        node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
+        if node.get("status") == "validated" and current.get("scrutineer_status") in {"passed", "passed_with_caveats"}:
             current = admit_synthesis_node_via_runkernel(
                 run_kernel=run_kernel,
                 synthesis_key=synthesis_key,
@@ -1243,22 +1188,16 @@ def _attempt_dynamic_recovery(
 ) -> dict[str, Any] | None:
     output = _safe_mapping(scrutineer_artifact.get("semantic_output"))
     proposals = [
-        _safe_mapping(item)
-        for item in output.get("missing_component_proposals") or ()
-        if isinstance(item, Mapping)
+        _safe_mapping(item) for item in output.get("missing_component_proposals") or () if isinstance(item, Mapping)
     ]
     if not proposals:
         return None
     if len(proposals) != 1:
-        raise OrdinaryMulticomponentRuntimeError(
-            "ordinary dynamic recovery can consume exactly one proposal"
-        )
+        raise OrdinaryMulticomponentRuntimeError("ordinary dynamic recovery can consume exactly one proposal")
     from core.run_kernel import Observation, RunStageStatus
 
-    authorization_action = (
-        run_kernel.authorize_multicomponent_missing_component_recovery(
-            proposal_key=str(proposals[0]["proposal_key"])
-        )
+    authorization_action = run_kernel.authorize_multicomponent_missing_component_recovery(
+        proposal_key=str(proposals[0]["proposal_key"])
     )
     run_kernel.reduce(
         Observation.from_action(
@@ -1285,9 +1224,7 @@ def _attempt_dynamic_recovery(
             "ordinary_acquisition_attempt_count": 0,
             "direct_semantic_producer_used": False,
             "runtime_parallelism": False,
-            "pending_recovery_disposition": (
-                RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION
-            ),
+            "pending_recovery_disposition": (RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION),
         }
         return None
     amendment = apply_recovered_component_amendment(run_kernel=run_kernel)
@@ -1318,9 +1255,7 @@ def _attempt_dynamic_recovery(
     amendment_admission = run_kernel.state.contract_amendment_admission_projection
     amendment_admission_ref = {
         "amendment_record_id": amendment_admission.get("amendment_record_id"),
-        "amendment_record_digest": amendment_admission.get(
-            "amendment_record_digest"
-        ),
+        "amendment_record_digest": amendment_admission.get("amendment_record_digest"),
         "authorized_action_id": amendment_admission.get("authorized_action_id"),
         "admission_digest": amendment_admission.get("admission_digest"),
     }
@@ -1384,14 +1319,10 @@ def _attempt_dynamic_recovery(
             {
                 "status": RECOVERY_STATUS_BLOCKED,
                 "blocker": "recovered component did not pass typed admission",
-                "pending_recovery_disposition": (
-                    RECOVERY_DISPOSITION_BLOCKED_COMPONENT_ADMISSION
-                ),
+                "pending_recovery_disposition": (RECOVERY_DISPOSITION_BLOCKED_COMPONENT_ADMISSION),
             }
         )
-        run_kernel.state.projections[
-            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
-        ] = recovery_projection
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = recovery_projection
         return None
     recovered_node = component_work_node_v1_from_admitted_component(
         run_id=run_kernel.state.run_id,
@@ -1399,9 +1330,7 @@ def _attempt_dynamic_recovery(
         accepted_component_ref=component_ref,
         component_admission_ref=component_admission_ref,
     )
-    current_contract_ref = _accepted_contract_ref(
-        run_kernel.state.current_answer_contract
-    )
+    current_contract_ref = _accepted_contract_ref(run_kernel.state.current_answer_contract)
     closure_candidate = derive_selective_recomputation_closure(
         graph,
         recovery_authorization_ref=authorization,
@@ -1443,15 +1372,11 @@ def _attempt_dynamic_recovery(
                 "status": RECOVERY_STATUS_BLOCKED,
                 "blocker": "selective recomputation authority could not be proven",
                 "selective_failure_type": type(exc).__name__,
-                "pending_recovery_disposition": (
-                    RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
-                ),
+                "pending_recovery_disposition": (RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS),
                 "whole_graph_fallback_invoked": False,
             }
         )
-        run_kernel.state.projections[
-            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
-        ] = recovery_projection
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = recovery_projection
         pending_actions = [
             item
             for item in run_kernel.state.issued_actions.values()
@@ -1461,9 +1386,7 @@ def _attempt_dynamic_recovery(
             reduce_recovery_outcome(
                 run_kernel=run_kernel,
                 disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
-                observed_provider_identities=(
-                    acquisition.observed_provider_identities
-                ),
+                observed_provider_identities=(acquisition.observed_provider_identities),
                 blocker_reason=str(recovery_projection["blocker"]),
             )
         if not isinstance(exc, _ScheduledSemanticWorkBlocked):
@@ -1485,24 +1408,18 @@ def _attempt_dynamic_recovery(
                 "blocker": "selective recomputation did not reach ready posture",
             }
         )
-        run_kernel.state.projections[
-            MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
-        ] = recovery_projection
+        run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = recovery_projection
         reduce_recovery_outcome(
             run_kernel=run_kernel,
             disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
-            observed_provider_identities=(
-                acquisition.observed_provider_identities
-            ),
+            observed_provider_identities=(acquisition.observed_provider_identities),
             blocker_reason=str(recovery_projection["blocker"]),
         )
     else:
         reduce_recovery_outcome(
             run_kernel=run_kernel,
             disposition=RECOVERY_DISPOSITION_ACQUIRED,
-            observed_provider_identities=(
-                acquisition.observed_provider_identities
-            ),
+            observed_provider_identities=(acquisition.observed_provider_identities),
         )
     run_kernel.complete_multicomponent_graph_scheduler()
     return final_graph
@@ -1515,29 +1432,21 @@ def _reduce_pending_recovery_outcome(run_kernel: Any) -> None:
 
     if run_kernel.state.projections.get(MULTICOMPONENT_RECOVERY_OUTCOME_STAGE):
         return
-    trace = _safe_mapping(
-        run_kernel.state.projections.get(MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE)
-    )
-    disposition = _clean_text(
-        trace.get("pending_recovery_disposition"), limit=100
-    )
+    trace = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE))
+    disposition = _clean_text(trace.get("pending_recovery_disposition"), limit=100)
     if not disposition:
         return
     reduce_recovery_outcome(
         run_kernel=run_kernel,
         disposition=disposition,
         observed_provider_identities=tuple(
-            str(item)
-            for item in trace.get("observed_provider_identities") or ()
-            if str(item or "").strip()
+            str(item) for item in trace.get("observed_provider_identities") or () if str(item or "").strip()
         ),
         blocker_reason=_clean_text(trace.get("blocker"), limit=300),
     )
 
 
-def _scheduler_work_input_packet(
-    *, run_kernel: Any, work: Mapping[str, Any]
-) -> dict[str, Any]:
+def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) -> dict[str, Any]:
     """Reconstruct the exact canonical packet named by scheduler-selected work."""
 
     from core.component_work_graph_v1 import (
@@ -1556,9 +1465,7 @@ def _scheduler_work_input_packet(
     context = _safe_mapping(run_kernel.state.multicomponent_scheduler_context)
     analyst_inputs = {
         str(key): _safe_mapping(value)
-        for key, value in _safe_mapping(
-            context.get("component_analyst_input_packets")
-        ).items()
+        for key, value in _safe_mapping(context.get("component_analyst_input_packets")).items()
     }
     if work.get("work_kind") == "specialist_capability":
         from core.multicomponent_graph_scheduling import (
@@ -1573,15 +1480,11 @@ def _scheduler_work_input_packet(
         packet = analyst_inputs.get(component_id, {})
     elif role == ROLE_COMPONENT_DPRIME and component_id:
         analyst = _safe_mapping(
-            run_kernel.state.projections.get(
-                f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
-            )
+            run_kernel.state.projections.get(f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}")
         )
         analyst_input = analyst_inputs.get(component_id, {})
         specialist_handoff: dict[str, Any] = {}
-        specialist_state = _safe_mapping(
-            run_kernel.state.projections.get("specialist_work_plane")
-        )
+        specialist_state = _safe_mapping(run_kernel.state.projections.get("specialist_work_plane"))
         if specialist_state:
             from core.specialist_graph_runtime import handoff_for_target
 
@@ -1600,33 +1503,19 @@ def _scheduler_work_input_packet(
             else {}
         )
     else:
-        graph_raw = _safe_mapping(
-            run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-        )
+        graph_raw = _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
         if role == ROLE_CROSS_COMPONENT_ANALYST and not graph_raw:
-            accepted = (
-                run_kernel.state.current_answer_contract
-                or run_kernel.state.initial_answer_contract
-            )
-            component_refs = [
-                _safe_mapping(item)
-                for item in accepted.get("accepted_answer_component_refs") or ()
-            ]
+            accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+            component_refs = [_safe_mapping(item) for item in accepted.get("accepted_answer_component_refs") or ()]
             admissions_projection = _safe_mapping(
-                run_kernel.state.projections.get(
-                    MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
-                )
+                run_kernel.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
             )
             admissions = {
-                str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(
-                    item
-                )
-                for item in admissions_projection.get("component_admission_refs")
-                or ()
+                str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(item)
+                for item in admissions_projection.get("component_admission_refs") or ()
             }
             if not component_refs or any(
-                str(item.get("component_id") or "") not in admissions
-                for item in component_refs
+                str(item.get("component_id") or "") not in admissions for item in component_refs
             ):
                 packet = {}
             else:
@@ -1635,29 +1524,21 @@ def _scheduler_work_input_packet(
                         run_id=run_kernel.state.run_id,
                         request_id=run_kernel.state.request_id,
                         accepted_component_ref=component_ref,
-                        component_admission_ref=admissions[
-                            str(component_ref["component_id"])
-                        ],
+                        component_admission_ref=admissions[str(component_ref["component_id"])],
                     )
                     for component_ref in component_refs
                 ]
                 packet = cross_component_input_packet(
                     component_nodes=nodes,
                     accepted_contract_ref=_accepted_contract_ref(accepted),
-                    requested_synthesis_directive=str(
-                        context.get("requested_synthesis_directive") or ""
-                    ),
+                    requested_synthesis_directive=str(context.get("requested_synthesis_directive") or ""),
                     component_analyst_input_packets=analyst_inputs,
                 )
         elif graph_raw:
             graph = validate_component_work_graph_v1(graph_raw)
             if role == ROLE_CROSS_COMPONENT_ANALYST:
                 closure = validate_selective_recomputation_closure(
-                    _safe_mapping(
-                        run_kernel.state.projections.get(
-                            MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
-                        )
-                    )
+                    _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE))
                 )
                 packet = selective_cross_component_input_packet(
                     graph,
@@ -1665,9 +1546,7 @@ def _scheduler_work_input_packet(
                 )
             elif role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
                 specialist_handoff = {}
-                specialist_state = _safe_mapping(
-                    run_kernel.state.projections.get("specialist_work_plane")
-                )
+                specialist_state = _safe_mapping(run_kernel.state.projections.get("specialist_work_plane"))
                 if specialist_state:
                     from core.specialist_graph_runtime import (
                         handoff_for_target,
@@ -1695,9 +1574,7 @@ def _scheduler_work_input_packet(
 
         packet_digest = specialist_digest(packet)
     if not packet or packet_digest != work.get("input_packet_digest"):
-        raise OrdinaryMulticomponentRuntimeError(
-            "scheduler-selected work packet could not be reconstructed exactly"
-        )
+        raise OrdinaryMulticomponentRuntimeError("scheduler-selected work packet could not be reconstructed exactly")
     return packet
 
 
@@ -1713,22 +1590,16 @@ def _begin_scheduler_dynamic_recovery(
 
     output = _safe_mapping(scrutineer_artifact.get("semantic_output"))
     proposals = [
-        _safe_mapping(item)
-        for item in output.get("missing_component_proposals") or ()
-        if isinstance(item, Mapping)
+        _safe_mapping(item) for item in output.get("missing_component_proposals") or () if isinstance(item, Mapping)
     ]
     if not proposals:
         return False
     if len(proposals) != 1:
-        raise OrdinaryMulticomponentRuntimeError(
-            "ordinary dynamic recovery can consume exactly one proposal"
-        )
+        raise OrdinaryMulticomponentRuntimeError("ordinary dynamic recovery can consume exactly one proposal")
     from core.run_kernel import Observation, RunStageStatus
 
-    authorization_action = (
-        run_kernel.authorize_multicomponent_missing_component_recovery(
-            proposal_key=str(proposals[0]["proposal_key"])
-        )
+    authorization_action = run_kernel.authorize_multicomponent_missing_component_recovery(
+        proposal_key=str(proposals[0]["proposal_key"])
     )
     run_kernel.reduce(
         Observation.from_action(
@@ -1755,9 +1626,7 @@ def _begin_scheduler_dynamic_recovery(
             "ordinary_acquisition_attempt_count": 0,
             "direct_semantic_producer_used": False,
             "runtime_parallelism": False,
-            "pending_recovery_disposition": (
-                RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION
-            ),
+            "pending_recovery_disposition": (RECOVERY_DISPOSITION_BLOCKED_REQUIRES_CONFIRMATION),
         }
         return False
     amendment = apply_recovered_component_amendment(run_kernel=run_kernel)
@@ -1786,9 +1655,7 @@ def _begin_scheduler_dynamic_recovery(
     amendment_admission = run_kernel.state.contract_amendment_admission_projection
     amendment_admission_ref = {
         "amendment_record_id": amendment_admission.get("amendment_record_id"),
-        "amendment_record_digest": amendment_admission.get(
-            "amendment_record_digest"
-        ),
+        "amendment_record_digest": amendment_admission.get("amendment_record_digest"),
         "authorized_action_id": amendment_admission.get("authorized_action_id"),
         "admission_digest": amendment_admission.get("admission_digest"),
     }
@@ -1807,30 +1674,22 @@ def _begin_scheduler_dynamic_recovery(
     drive_context["recovery_authorization_ref"] = dict(authorization)
     drive_context["contract_amendment_admission_ref"] = amendment_admission_ref
     drive_context["contract_amendment_application_ref"] = application_ref
-    drive_context["observed_provider_identities"] = tuple(
-        acquisition.observed_provider_identities
-    )
+    drive_context["observed_provider_identities"] = tuple(acquisition.observed_provider_identities)
     return True
 
 
 def _admit_scheduler_validated_synthesis(run_kernel: Any) -> dict[str, Any]:
     """Admit deterministic validated leaves after whole-case scrutiny."""
 
-    graph = _safe_mapping(
-        run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-    )
-    scrutiny_allows_admission = (
-        graph.get("scrutineer_required") is not True
-        or graph.get("scrutineer_status") in {"passed", "passed_with_caveats"}
-    )
+    graph = _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+    scrutiny_allows_admission = graph.get("scrutineer_required") is not True or graph.get("scrutineer_status") in {
+        "passed",
+        "passed_with_caveats",
+    }
     if not scrutiny_allows_admission:
         return graph
     for synthesis_key in graph.get("synthesis_topological_order") or ():
-        node = next(
-            item
-            for item in graph.get("synthesis_nodes") or ()
-            if item.get("synthesis_key") == synthesis_key
-        )
+        node = next(item for item in graph.get("synthesis_nodes") or () if item.get("synthesis_key") == synthesis_key)
         if node.get("status") == "validated":
             graph = admit_synthesis_node_via_runkernel(
                 run_kernel=run_kernel,
@@ -1839,9 +1698,7 @@ def _admit_scheduler_validated_synthesis(run_kernel: Any) -> dict[str, Any]:
     return graph
 
 
-def _finalize_scheduler_graph(
-    *, run_kernel: Any, drive_context: Mapping[str, Any]
-) -> None:
+def _finalize_scheduler_graph(*, run_kernel: Any, drive_context: Mapping[str, Any]) -> None:
     graph = _admit_scheduler_validated_synthesis(run_kernel)
     logical, physical = derive_multicomponent_role_call_accounting(
         run_kernel.state.projections,
@@ -1871,9 +1728,7 @@ def _finalize_scheduler_graph(
         reduce_recovery_outcome(
             run_kernel=run_kernel,
             disposition=disposition,
-            observed_provider_identities=tuple(
-                drive_context.get("observed_provider_identities") or ()
-            ),
+            observed_provider_identities=tuple(drive_context.get("observed_provider_identities") or ()),
             blocker_reason=blocker,
         )
     run_kernel.complete_multicomponent_graph_scheduler()
@@ -1904,10 +1759,7 @@ def _consume_scheduler_selected_artifact(
     evaluation_key = str(work.get("logical_evaluation_key") or "")
     if role == ROLE_COMPONENT_ANALYST:
         if specialist_need_proposal_present:
-            accepted = (
-                run_kernel.state.current_answer_contract
-                or run_kernel.state.initial_answer_contract
-            )
+            accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
             component_ref = next(
                 _safe_mapping(item)
                 for item in accepted.get("accepted_answer_component_refs") or ()
@@ -1916,9 +1768,7 @@ def _consume_scheduler_selected_artifact(
             deps = drive_context["runtime_scope"].get("deps")
             run_kernel.bind_specialist_need_from_role_artifact(
                 role_artifact=artifact,
-                proposal_candidate=_safe_mapping(
-                    specialist_need_proposal_candidate
-                ),
+                proposal_candidate=_safe_mapping(specialist_need_proposal_candidate),
                 role_input_packet=input_packet,
                 canonical_target_ref={
                     "target_kind": "component",
@@ -1926,19 +1776,12 @@ def _consume_scheduler_selected_artifact(
                     "target_revision": component_ref.get("component_revision"),
                     "target_digest": component_ref.get("component_digest"),
                 },
-                specialist_capability_registry=getattr(
-                    deps, "specialist_capability_registry", None
-                ),
-                specialist_execution_policy=getattr(
-                    deps, "specialist_execution_policy", None
-                ),
+                specialist_capability_registry=getattr(deps, "specialist_capability_registry", None),
+                specialist_execution_policy=getattr(deps, "specialist_execution_policy", None),
             )
         return
     if role == ROLE_COMPONENT_DPRIME and component_id:
-        accepted = (
-            run_kernel.state.current_answer_contract
-            or run_kernel.state.initial_answer_contract
-        )
+        accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
         component_ref = next(
             _safe_mapping(item)
             for item in accepted.get("accepted_answer_component_refs") or ()
@@ -1950,14 +1793,10 @@ def _consume_scheduler_selected_artifact(
             .get(component_id)
         )
         analyst_artifact = _safe_mapping(
-            run_kernel.state.projections.get(
-                f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
-            )
+            run_kernel.state.projections.get(f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}")
         )
         specialist_handoff: dict[str, Any] = {}
-        specialist_state = _safe_mapping(
-            run_kernel.state.projections.get("specialist_work_plane")
-        )
+        specialist_state = _safe_mapping(run_kernel.state.projections.get("specialist_work_plane"))
         if specialist_state:
             from core.multicomponent_role_runtime import role_artifact_ref
             from core.specialist_graph_runtime import handoff_for_target
@@ -1985,9 +1824,7 @@ def _consume_scheduler_selected_artifact(
                 specialist_handoff = consumed_handoff
         bindable = drive_context["selected_bindables"].get(component_id)
         if bindable is None:
-            raise OrdinaryMulticomponentRuntimeError(
-                "scheduler-selected component lost its evidence binding"
-            )
+            raise OrdinaryMulticomponentRuntimeError("scheduler-selected component lost its evidence binding")
         observation, content_refs, coverage = _semantic_material(
             run_kernel=run_kernel,
             component_ref=component_ref,
@@ -2016,33 +1853,21 @@ def _consume_scheduler_selected_artifact(
                 "admitted",
                 "admitted_with_caveats",
             }:
-                raise _ScheduledSemanticWorkBlocked(
-                    "recovered component did not pass typed admission"
-                )
-            source_graph = validate_component_work_graph_v1(
-                _safe_mapping(drive_context.get("recovery_graph"))
-            )
+                raise _ScheduledSemanticWorkBlocked("recovered component did not pass typed admission")
+            source_graph = validate_component_work_graph_v1(_safe_mapping(drive_context.get("recovery_graph")))
             recovered_node = component_work_node_v1_from_admitted_component(
                 run_id=run_kernel.state.run_id,
                 request_id=run_kernel.state.request_id,
                 accepted_component_ref=component_ref,
                 component_admission_ref=component_admission_ref,
             )
-            current_contract_ref = _accepted_contract_ref(
-                run_kernel.state.current_answer_contract
-            )
+            current_contract_ref = _accepted_contract_ref(run_kernel.state.current_answer_contract)
             closure_candidate = derive_selective_recomputation_closure(
                 source_graph,
-                recovery_authorization_ref=drive_context[
-                    "recovery_authorization_ref"
-                ],
+                recovery_authorization_ref=drive_context["recovery_authorization_ref"],
                 current_contract_ref=current_contract_ref,
-                contract_amendment_admission_ref=drive_context[
-                    "contract_amendment_admission_ref"
-                ],
-                contract_amendment_application_ref=drive_context[
-                    "contract_amendment_application_ref"
-                ],
+                contract_amendment_admission_ref=drive_context["contract_amendment_admission_ref"],
+                contract_amendment_application_ref=drive_context["contract_amendment_application_ref"],
                 recovered_component_admission_ref=component_admission_ref,
             )
             closure = reduce_selective_recomputation_closure(
@@ -2055,43 +1880,25 @@ def _consume_scheduler_selected_artifact(
                 closure=closure,
                 recovered_component_node=recovered_node,
                 current_contract_ref=current_contract_ref,
-                recovery_authorization_ref=drive_context[
-                    "recovery_authorization_ref"
-                ],
-                contract_amendment_admission_ref=drive_context[
-                    "contract_amendment_admission_ref"
-                ],
-                amendment_application_ref=drive_context[
-                    "contract_amendment_application_ref"
-                ],
+                recovery_authorization_ref=drive_context["recovery_authorization_ref"],
+                contract_amendment_admission_ref=drive_context["contract_amendment_admission_ref"],
+                amendment_application_ref=drive_context["contract_amendment_application_ref"],
             )
         return
     if role == ROLE_CROSS_COMPONENT_ANALYST:
-        graph_raw = _safe_mapping(
-            run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-        )
+        graph_raw = _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
         if not graph_raw:
             from core.multicomponent_component_admission import (
                 MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
             )
 
             packet = _safe_mapping(input_packet)
-            accepted = (
-                run_kernel.state.current_answer_contract
-                or run_kernel.state.initial_answer_contract
-            )
-            component_refs = [
-                _safe_mapping(item)
-                for item in accepted.get("accepted_answer_component_refs") or ()
-            ]
+            accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+            component_refs = [_safe_mapping(item) for item in accepted.get("accepted_answer_component_refs") or ()]
             admissions = {
-                str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(
-                    item
-                )
+                str(_safe_mapping(item).get("component_id") or ""): _safe_mapping(item)
                 for item in _safe_mapping(
-                    run_kernel.state.projections.get(
-                        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
-                    )
+                    run_kernel.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
                 ).get("component_admission_refs")
                 or ()
             }
@@ -2100,30 +1907,21 @@ def _consume_scheduler_selected_artifact(
                     run_id=run_kernel.state.run_id,
                     request_id=run_kernel.state.request_id,
                     accepted_component_ref=component_ref,
-                    component_admission_ref=admissions[
-                        str(component_ref["component_id"])
-                    ],
+                    component_admission_ref=admissions[str(component_ref["component_id"])],
                 )
                 for component_ref in component_refs
             ]
             candidate = component_work_graph_v1_from_cross_component_artifact(
                 run_id=run_kernel.state.run_id,
                 request_id=run_kernel.state.request_id,
-                accepted_contract_ref=_safe_mapping(
-                    packet.get("accepted_contract_ref")
-                ),
-                requested_synthesis_directive=str(
-                    packet.get("requested_synthesis_directive") or ""
-                ),
+                accepted_contract_ref=_safe_mapping(packet.get("accepted_contract_ref")),
+                requested_synthesis_directive=str(packet.get("requested_synthesis_directive") or ""),
                 component_nodes=component_nodes,
                 cross_component_artifact=artifact,
-                component_analyst_input_packets=_safe_mapping(
-                    drive_context.get("component_analyst_input_packets")
-                ),
+                component_analyst_input_packets=_safe_mapping(drive_context.get("component_analyst_input_packets")),
                 transient_cross_input_packet=packet,
                 additional_scrutineer_trigger_reasons=tuple(
-                    drive_context.get("additional_scrutineer_trigger_reasons")
-                    or ()
+                    drive_context.get("additional_scrutineer_trigger_reasons") or ()
                 ),
             )
             reduce_component_work_graph_v1(
@@ -2132,63 +1930,41 @@ def _consume_scheduler_selected_artifact(
                 graph_candidate=candidate,
             )
             if specialist_need_proposal_present:
-                target = _safe_mapping(
-                    _safe_mapping(specialist_need_proposal_candidate).get("target")
-                )
+                target = _safe_mapping(_safe_mapping(specialist_need_proposal_candidate).get("target"))
                 graph = validate_component_work_graph_v1(
-                    _safe_mapping(
-                        run_kernel.state.projections.get(
-                            COMPONENT_WORK_GRAPH_V1_STAGE
-                        )
-                    )
+                    _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
                 )
                 node = next(
                     (
                         _safe_mapping(item)
                         for item in graph.get("synthesis_nodes") or ()
-                        if _safe_mapping(item).get("synthesis_key")
-                        == target.get("target_key")
+                        if _safe_mapping(item).get("synthesis_key") == target.get("target_key")
                     ),
                     {},
                 )
                 deps = drive_context["runtime_scope"].get("deps")
                 run_kernel.bind_specialist_need_from_role_artifact(
                     role_artifact=artifact,
-                    proposal_candidate=_safe_mapping(
-                        specialist_need_proposal_candidate
-                    ),
+                    proposal_candidate=_safe_mapping(specialist_need_proposal_candidate),
                     role_input_packet=input_packet,
                     canonical_target_ref={
                         "target_kind": "synthesis",
-                        "target_key": (
-                            node.get("synthesis_key")
-                            or "unsupported-cross-component-target"
-                        ),
+                        "target_key": (node.get("synthesis_key") or "unsupported-cross-component-target"),
                         "target_revision": node.get("node_revision"),
                         "target_digest": node.get("node_digest"),
                     },
-                    specialist_capability_registry=getattr(
-                        deps, "specialist_capability_registry", None
-                    ),
-                    specialist_execution_policy=getattr(
-                        deps, "specialist_execution_policy", None
-                    ),
+                    specialist_capability_registry=getattr(deps, "specialist_capability_registry", None),
+                    specialist_execution_policy=getattr(deps, "specialist_execution_policy", None),
                 )
         elif work.get("output_schema_variant") == SELECTIVE_CROSS_COMPONENT_SCHEMA:
             graph = validate_component_work_graph_v1(graph_raw)
             closure = validate_selective_recomputation_closure(
-                _safe_mapping(
-                    run_kernel.state.projections.get(
-                        MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE
-                    )
-                )
+                _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE))
             )
-            candidate = (
-                component_work_graph_v1_selective_resynthesis_from_cross_artifact(
-                    graph,
-                    closure=closure,
-                    cross_component_artifact=artifact,
-                )
+            candidate = component_work_graph_v1_selective_resynthesis_from_cross_artifact(
+                graph,
+                closure=closure,
+                cross_component_artifact=artifact,
             )
             reduce_component_work_graph_v1(
                 run_kernel=run_kernel,
@@ -2199,15 +1975,11 @@ def _consume_scheduler_selected_artifact(
         else:
             graph = validate_component_work_graph_v1(graph_raw)
             component_packets = _safe_mapping(
-                _safe_mapping(
-                    run_kernel.state.multicomponent_scheduler_context
-                ).get("component_analyst_input_packets")
+                _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("component_analyst_input_packets")
             )
             candidate = component_work_graph_v1_resynthesis_from_cross_component_artifact(
                 graph,
-                accepted_contract_ref=_accepted_contract_ref(
-                    run_kernel.state.current_answer_contract
-                ),
+                accepted_contract_ref=_accepted_contract_ref(run_kernel.state.current_answer_contract),
                 cross_component_artifact=artifact,
                 component_analyst_input_packets=component_packets,
                 transient_cross_input_packet=input_packet,
@@ -2221,9 +1993,7 @@ def _consume_scheduler_selected_artifact(
         return
     if role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
         specialist_handoff: dict[str, Any] = {}
-        specialist_state = _safe_mapping(
-            run_kernel.state.projections.get("specialist_work_plane")
-        )
+        specialist_state = _safe_mapping(run_kernel.state.projections.get("specialist_work_plane"))
         if specialist_state:
             from core.multicomponent_role_runtime import role_artifact_ref
             from core.specialist_graph_runtime import handoff_for_target
@@ -2250,9 +2020,7 @@ def _consume_scheduler_selected_artifact(
                     )
                 specialist_handoff = consumed_handoff
         graph = validate_component_work_graph_v1(
-            _safe_mapping(
-                run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-            )
+            _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
         )
         graph = reduce_component_work_graph_v1(
             run_kernel=run_kernel,
@@ -2266,11 +2034,7 @@ def _consume_scheduler_selected_artifact(
                 specialist_need_handoff=specialist_handoff or None,
             ),
         )
-        node = next(
-            item
-            for item in graph["synthesis_nodes"]
-            if item["synthesis_key"] == synthesis_key
-        )
+        node = next(item for item in graph["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
         node_is_upstream = any(
             ref.get("node_id") == node.get("node_id")
             for candidate in graph["synthesis_nodes"]
@@ -2285,9 +2049,7 @@ def _consume_scheduler_selected_artifact(
         return
     if role == ROLE_SCRUTINEER:
         graph = validate_component_work_graph_v1(
-            _safe_mapping(
-                run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-            )
+            _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
         )
         graph = reduce_component_work_graph_v1(
             run_kernel=run_kernel,
@@ -2299,9 +2061,7 @@ def _consume_scheduler_selected_artifact(
             ),
         )
         if specialist_need_proposal_present:
-            target = _safe_mapping(
-                _safe_mapping(specialist_need_proposal_candidate).get("target")
-            )
+            target = _safe_mapping(_safe_mapping(specialist_need_proposal_candidate).get("target"))
             target_kind = str(target.get("target_kind") or "")
             target_key = str(target.get("target_key") or "")
             target_node = next(
@@ -2316,22 +2076,15 @@ def _consume_scheduler_selected_artifact(
                 _safe_mapping(item)
                 for item in graph.get("synthesis_nodes") or ()
                 if any(
-                    _safe_mapping(ref).get("node_id")
-                    == target_node.get("node_id")
+                    _safe_mapping(ref).get("node_id") == target_node.get("node_id")
                     for ref in _safe_mapping(item).get("input_node_refs") or ()
                 )
             ]
-            leaf_authorized = (
-                target_kind == "synthesis"
-                and bool(target_node)
-                and not descendants
-            )
+            leaf_authorized = target_kind == "synthesis" and bool(target_node) and not descendants
             deps = drive_context["runtime_scope"].get("deps")
             run_kernel.bind_specialist_need_from_role_artifact(
                 role_artifact=artifact,
-                proposal_candidate=_safe_mapping(
-                    specialist_need_proposal_candidate
-                ),
+                proposal_candidate=_safe_mapping(specialist_need_proposal_candidate),
                 role_input_packet=input_packet,
                 canonical_target_ref={
                     "target_kind": target_kind,
@@ -2339,12 +2092,8 @@ def _consume_scheduler_selected_artifact(
                     "target_revision": target_node.get("node_revision"),
                     "target_digest": target_node.get("node_digest"),
                 },
-                specialist_capability_registry=getattr(
-                    deps, "specialist_capability_registry", None
-                ),
-                specialist_execution_policy=getattr(
-                    deps, "specialist_execution_policy", None
-                ),
+                specialist_capability_registry=getattr(deps, "specialist_capability_registry", None),
+                specialist_execution_policy=getattr(deps, "specialist_execution_policy", None),
                 scrutineer_leaf_target_authorized=leaf_authorized,
             )
             if leaf_authorized:
@@ -2362,9 +2111,7 @@ def _consume_scheduler_selected_artifact(
             drive_context=drive_context,
         )
         return
-    raise OrdinaryMulticomponentRuntimeError(
-        "scheduler selected unsupported semantic work descriptor"
-    )
+    raise OrdinaryMulticomponentRuntimeError("scheduler selected unsupported semantic work descriptor")
 
 
 def _record_phase5a_model_costs_on_main_thread(
@@ -2388,11 +2135,7 @@ def _record_phase5a_model_costs_on_main_thread(
     accumulator = runtime_scope.get("accumulator")
     model = str(configured_model or runtime_scope.get("smart_model") or "")
     ordered = sorted(
-        (
-            (action, result)
-            for action, result in zip(actions, results, strict=True)
-            if result is not None
-        ),
+        ((action, result) for action, result in zip(actions, results, strict=True) if result is not None),
         key=lambda pair: (
             int(getattr(pair[0], "sequence", 0) or 0),
             str(getattr(pair[0], "action_id", "") or ""),
@@ -2429,66 +2172,41 @@ def _execute_run_kernel_selected_batch(
 
     batch = run_kernel.grant_next_multicomponent_work_batch()
     if batch.get("status") == LEASE_DENIED_EXHAUSTED:
-        raise _ScheduledSemanticWorkBlocked(
-            "required semantic work denied by the compatibility envelope"
-        )
-    scheduler = _safe_mapping(
-        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    )
+        raise _ScheduledSemanticWorkBlocked("required semantic work denied by the compatibility envelope")
+    scheduler = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     leases_by_id = {
         str(_safe_mapping(item).get("lease_id") or ""): _safe_mapping(item)
         for item in scheduler.get("lease_history") or ()
     }
     leases = [
-        leases_by_id[str(_safe_mapping(ref).get("lease_id") or "")]
-        for ref in batch.get("ordered_lease_refs") or ()
+        leases_by_id[str(_safe_mapping(ref).get("lease_id") or "")] for ref in batch.get("ordered_lease_refs") or ()
     ]
     works = [_safe_mapping(lease.get("work")) for lease in leases]
     try:
-        packets = [
-            _scheduler_work_input_packet(run_kernel=run_kernel, work=work)
-            for work in works
-        ]
+        packets = [_scheduler_work_input_packet(run_kernel=run_kernel, work=work) for work in works]
     except Exception as exc:
         run_kernel.cancel_multicomponent_work_batch(
             batch_id=str(batch.get("batch_id") or ""),
             reason="exact_batch_packet_reconstruction_failed",
         )
-        if (
-            len(works) == 1
-            and works[0].get("work_kind") == "specialist_capability"
-        ):
-            proposal_posture = _safe_mapping(
-                works[0].get("specialist_proposal_ref")
-            ).get("posture")
-            run_kernel.dispose_failed_specialist_reconstruction(
-                work=works[0]
-            )
+        if len(works) == 1 and works[0].get("work_kind") == "specialist_capability":
+            proposal_posture = _safe_mapping(works[0].get("specialist_proposal_ref")).get("posture")
+            run_kernel.dispose_failed_specialist_reconstruction(work=works[0])
             if proposal_posture == "optional":
                 return
-            current = _safe_mapping(
-                run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-            )
-            if (
-                proposal_posture == "required"
-                and current.get("status") == "blocked_required_specialist_work"
-            ):
+            current = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+            if proposal_posture == "required" and current.get("status") == "blocked_required_specialist_work":
                 raise _ScheduledSemanticWorkBlocked(
                     "required Specialist input reconstruction failed before dispatch"
                 ) from exc
             raise OrdinaryMulticomponentRuntimeError(
-                "required Specialist reconstruction failure did not reach its "
-                "scheduler blocked terminal"
+                "required Specialist reconstruction failure did not reach its scheduler blocked terminal"
             ) from exc
         raise
     from core.specialist_graph_runtime import specialist_digest
 
     packet_digests = [
-        (
-            specialist_digest(packet)
-            if work.get("work_kind") == "specialist_capability"
-            else safe_packet_digest(packet)
-        )
+        (specialist_digest(packet) if work.get("work_kind") == "specialist_capability" else safe_packet_digest(packet))
         for work, packet in zip(works, packets, strict=True)
     ]
     actions = run_kernel.commit_multicomponent_batch_dispatch(
@@ -2497,20 +2215,17 @@ def _execute_run_kernel_selected_batch(
     )
     if works and works[0].get("work_kind") == "specialist_capability":
         if len(works) != 1 or len(actions) != 1:
-            raise OrdinaryMulticomponentRuntimeError(
-                "Specialist execution must remain serial width one"
-            )
+            raise OrdinaryMulticomponentRuntimeError("Specialist execution must remain serial width one")
         from core.specialist_graph_runtime import (
             SpecialistCapabilityRegistry,
             build_specialist_terminal_result,
             execute_specialist_capability,
         )
+
         deps = _safe_mapping(drive_context.get("runtime_scope")).get("deps")
         registry = getattr(deps, "specialist_capability_registry", None)
         if not isinstance(registry, SpecialistCapabilityRegistry):
-            raise OrdinaryMulticomponentRuntimeError(
-                "Specialist execution lost its injected registry"
-            )
+            raise OrdinaryMulticomponentRuntimeError("Specialist execution lost its injected registry")
         action = actions[0]
         work_node = _safe_mapping(action.inputs.get("specialist_work_node"))
         action_ref = {
@@ -2550,12 +2265,8 @@ def _execute_run_kernel_selected_batch(
             )
         )
         if result.get("execution_posture") == "completed":
-            plane = _safe_mapping(
-                run_kernel.state.projections.get("specialist_work_plane")
-            )
-            proposal_id = _safe_mapping(result.get("proposal_ref")).get(
-                "proposal_id"
-            )
+            plane = _safe_mapping(run_kernel.state.projections.get("specialist_work_plane"))
+            proposal_id = _safe_mapping(result.get("proposal_ref")).get("proposal_id")
             proposal = next(
                 (
                     _safe_mapping(item)
@@ -2571,11 +2282,7 @@ def _execute_run_kernel_selected_batch(
                 )
 
                 graph = validate_component_work_graph_v1(
-                    _safe_mapping(
-                        run_kernel.state.projections.get(
-                            COMPONENT_WORK_GRAPH_V1_STAGE
-                        )
-                    )
+                    _safe_mapping(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
                 )
                 remediated = graph_with_specialist_leaf_remediation(
                     graph,
@@ -2584,21 +2291,12 @@ def _execute_run_kernel_selected_batch(
                 reduce_component_work_graph_v1(
                     run_kernel=run_kernel,
                     operation="specialist_remediation",
-                    synthesis_key=str(
-                        _safe_mapping(result.get("canonical_target_ref")).get(
-                            "target_key"
-                        )
-                        or ""
-                    ),
+                    synthesis_key=str(_safe_mapping(result.get("canonical_target_ref")).get("target_key") or ""),
                     graph_candidate=remediated,
                 )
-        current = _safe_mapping(
-            run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-        )
+        current = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
         if str(current.get("status") or "").startswith("blocked_"):
-            raise _ScheduledSemanticWorkBlocked(
-                "required scheduled Specialist work did not complete"
-            )
+            raise _ScheduledSemanticWorkBlocked("required scheduled Specialist work did not complete")
         return
     try:
         prepared_calls = [
@@ -2607,11 +2305,7 @@ def _execute_run_kernel_selected_batch(
                 input_packet=packet,
                 **{
                     **dict(role_kwargs),
-                    "provider": str(
-                        scheduler.get("configured_provider_class")
-                        or role_kwargs.get("provider")
-                        or ""
-                    ),
+                    "provider": str(scheduler.get("configured_provider_class") or role_kwargs.get("provider") or ""),
                 },
             )
             for action, packet in zip(actions, packets, strict=True)
@@ -2634,9 +2328,7 @@ def _execute_run_kernel_selected_batch(
                     },
                 )
             )
-        raise _ScheduledSemanticWorkBlocked(
-            "committed batch transport preparation failed"
-        ) from exc
+        raise _ScheduledSemanticWorkBlocked("committed batch transport preparation failed") from exc
 
     active_count = 0
     maximum_in_flight = 0
@@ -2653,9 +2345,7 @@ def _execute_run_kernel_selected_batch(
             with counter_lock:
                 active_count -= 1
 
-    results: list[SafeMulticomponentWorkerResult | None] = [
-        None for _ in prepared_calls
-    ]
+    results: list[SafeMulticomponentWorkerResult | None] = [None for _ in prepared_calls]
     effective_width = int(scheduler.get("effective_width") or 1)
     use_executor = effective_width > 1 and str(batch.get("parallel_class") or "") in {
         "parallel_initial_component_analyst",
@@ -2715,9 +2405,7 @@ def _execute_run_kernel_selected_batch(
                 executor.shutdown(wait=True, cancel_futures=False)
 
     if any(result is None for result in results):
-        raise OrdinaryMulticomponentRuntimeError(
-            "committed batch did not produce one safe outcome per child"
-        )
+        raise OrdinaryMulticomponentRuntimeError("committed batch did not produce one safe outcome per child")
     _record_phase5a_model_costs_on_main_thread(
         drive_context=drive_context,
         actions=actions,
@@ -2760,9 +2448,7 @@ def _execute_run_kernel_selected_batch(
                 )
             artifact = None
         artifacts.append(artifact)
-    for work, artifact, input_packet, result in zip(
-        works, artifacts, packets, results, strict=True
-    ):
+    for work, artifact, input_packet, result in zip(works, artifacts, packets, results, strict=True):
         if artifact is not None:
             assert result is not None
             try:
@@ -2771,12 +2457,8 @@ def _execute_run_kernel_selected_batch(
                     work=work,
                     artifact=artifact,
                     input_packet=input_packet,
-                    specialist_need_proposal_present=(
-                        result.specialist_need_proposal_present
-                    ),
-                    specialist_need_proposal_candidate=(
-                        result.specialist_need_proposal_candidate
-                    ),
+                    specialist_need_proposal_present=(result.specialist_need_proposal_present),
+                    specialist_need_proposal_candidate=(result.specialist_need_proposal_candidate),
                     drive_context=drive_context,
                 )
             except Exception as exc:
@@ -2790,38 +2472,24 @@ def _execute_run_kernel_selected_batch(
                     recovery.update(
                         {
                             "status": RECOVERY_STATUS_BLOCKED,
-                            "blocker": (
-                                "selective recomputation authority could not be proven"
-                            ),
+                            "blocker": ("selective recomputation authority could not be proven"),
                             "selective_failure_type": type(exc).__name__,
-                            "pending_recovery_disposition": (
-                                RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS
-                            ),
+                            "pending_recovery_disposition": (RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS),
                             "whole_graph_fallback_invoked": False,
                         }
                     )
-                    run_kernel.state.projections[
-                        MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE
-                    ] = recovery
-                    if not run_kernel.state.projections.get(
-                        "multicomponent_recovery_outcome"
-                    ):
+                    run_kernel.state.projections[MULTICOMPONENT_DYNAMIC_RECOVERY_STAGE] = recovery
+                    if not run_kernel.state.projections.get("multicomponent_recovery_outcome"):
                         reduce_recovery_outcome(
                             run_kernel=run_kernel,
                             disposition=RECOVERY_DISPOSITION_BLOCKED_RESYNTHESIS,
-                            observed_provider_identities=tuple(
-                                drive_context.get("observed_provider_identities") or ()
-                            ),
+                            observed_provider_identities=tuple(drive_context.get("observed_provider_identities") or ()),
                             blocker_reason=str(recovery["blocker"]),
                         )
                 raise
-    current = _safe_mapping(
-        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    )
+    current = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
     if str(current.get("status") or "").startswith("blocked_"):
-        raise _ScheduledSemanticWorkBlocked(
-            "required scheduled semantic work did not complete"
-        )
+        raise _ScheduledSemanticWorkBlocked("required scheduled semantic work did not complete")
 
 
 def _drive_run_kernel_selected_semantic_work(
@@ -2841,30 +2509,28 @@ def _drive_run_kernel_selected_semantic_work(
         "runtime_scope": runtime_scope,
         "selected_bindables": dict(selected_bindables),
         "component_analyst_input_packets": {
-            str(key): _safe_mapping(value)
-            for key, value in component_analyst_input_packets.items()
+            str(key): _safe_mapping(value) for key, value in component_analyst_input_packets.items()
         },
         "query": query,
         "cost_recorded_child_action_ids": set(),
         "additional_scrutineer_trigger_reasons": (
             *(("deep_mode",) if mode.casefold() == "deep" else ()),
-            *(("high_stakes_quantitative_posture",) if _safe_mapping(
-                runtime_scope.get("economist_safety_telemetry")
-            ).get("high_stakes_quant_detected") is True else ()),
+            *(
+                ("high_stakes_quantitative_posture",)
+                if _safe_mapping(runtime_scope.get("economist_safety_telemetry")).get("high_stakes_quant_detected")
+                is True
+                else ()
+            ),
         ),
     }
     role_kwargs = _role_runtime_kwargs(runtime_scope)
     while True:
-        scheduler = _safe_mapping(
-            run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-        )
+        scheduler = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
         status = str(scheduler.get("status") or "")
         if status == "completed":
             return
         if status.startswith("blocked_"):
-            raise _ScheduledSemanticWorkBlocked(
-                "required scheduled semantic work did not complete"
-            )
+            raise _ScheduledSemanticWorkBlocked("required scheduled semantic work did not complete")
         run_kernel.dispose_exhausted_optional_specialist_proposals()
         ready = run_kernel.derive_current_multicomponent_ready_work()
         if not ready:
@@ -2950,13 +2616,9 @@ def _drive_run_kernel_selected_semantic_work(
                 drive_context=drive_context,
             )
         except Exception as exc:
-            current = _safe_mapping(
-                run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-            )
+            current = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
             if str(current.get("status") or "").startswith("blocked_"):
-                raise _ScheduledSemanticWorkBlocked(
-                    "required scheduled semantic work did not complete"
-                ) from exc
+                raise _ScheduledSemanticWorkBlocked("required scheduled semantic work did not complete") from exc
             raise
 
 
@@ -2984,9 +2646,7 @@ def _execute_selected_lane(
         raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
 
     final_top_evidence = [
-        dict(item)
-        for item in runtime_scope.get("final_top_evidence") or ()
-        if isinstance(item, Mapping)
+        dict(item) for item in runtime_scope.get("final_top_evidence") or () if isinstance(item, Mapping)
     ]
     selected = select_bindable_final_passages_for_components(
         final_top_evidence,
@@ -2995,12 +2655,8 @@ def _execute_selected_lane(
         component_text_by_id=_accepted_component_text_by_id(accepted),
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
-        answer_contract_version=accepted[
-            "accepted_contract_version"
-        ],
-        answer_contract_digest=accepted[
-            "accepted_contract_digest"
-        ],
+        answer_contract_version=accepted["accepted_contract_version"],
+        answer_contract_digest=accepted["accepted_contract_digest"],
     )
     # Custody-gap exception is authorized only for the selected typed lane.
     typed_lane_custody_exception = True
@@ -3043,15 +2699,9 @@ def _execute_selected_lane(
                 ),
                 run_id=run_kernel.state.run_id,
                 request_id=run_kernel.state.request_id,
-                answer_contract_version=accepted[
-                    "accepted_contract_version"
-                ],
-                answer_contract_digest=accepted[
-                    "accepted_contract_digest"
-                ],
-                ignore_satisfied_provider_job_historical_gaps=(
-                    typed_lane_custody_exception
-                ),
+                answer_contract_version=accepted["accepted_contract_version"],
+                answer_contract_digest=accepted["accepted_contract_digest"],
+                ignore_satisfied_provider_job_historical_gaps=(typed_lane_custody_exception),
             )
         ):
             missing_component_reasons[component_id] = "source_obligation_custody_not_current"
@@ -3071,9 +2721,7 @@ def _execute_selected_lane(
             request_id=run_kernel.state.request_id,
             accepted_contract=accepted,
             component_ref=component_ref,
-            evidence_input=_evidence_input(
-                selected.get(str(component_ref["component_id"]))
-            ),
+            evidence_input=_evidence_input(selected.get(str(component_ref["component_id"]))),
         )
         for component_ref in component_refs
     }
@@ -3152,12 +2800,8 @@ def execute_searchos_same_component_reassessment_from_scope(
         component_text_by_id=_accepted_component_text_by_id(accepted),
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
-        answer_contract_version=accepted[
-            "accepted_contract_version"
-        ],
-        answer_contract_digest=accepted[
-            "accepted_contract_digest"
-        ],
+        answer_contract_version=accepted["accepted_contract_version"],
+        answer_contract_digest=accepted["accepted_contract_digest"],
     )
     bindable = selected.get(component_id)
     passage = _safe_mapping(getattr(bindable, "passage", None) if bindable is not None else None)
@@ -3270,16 +2914,10 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         )
 
     if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
-        return OrdinaryMulticomponentResult(
-            status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
-        )
-    scheduler_state = _safe_mapping(
-        run_kernel.state.projections.get("multicomponent_graph_scheduler")
-    )
+        return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED)
+    scheduler_state = _safe_mapping(run_kernel.state.projections.get("multicomponent_graph_scheduler"))
     if str(scheduler_state.get("status") or "").startswith("blocked_"):
-        return OrdinaryMulticomponentResult(
-            status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
-        )
+        return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED)
     if run_kernel.state.initial_answer_contract:
         accepted = run_kernel.state.initial_answer_contract
         metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
@@ -3288,9 +2926,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             allow_searchos_component_receiver=(allow_searchos_component_receiver),
         ):
             if not execute_selected_lane:
-                return OrdinaryMulticomponentResult(
-                    status=OrdinaryMulticomponentStatus.SELECTED_PENDING
-                )
+                return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.SELECTED_PENDING)
             requested_synthesis_directive = _clean_text(
                 metadata.get("requested_synthesis_directive"),
                 limit=360,
@@ -3312,9 +2948,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 # Canonical exhaustion/failure is ordinary readiness input.  Do
                 # not escape the selected lane or invoke the direct producer.
                 pass
-            return OrdinaryMulticomponentResult(
-                status=OrdinaryMulticomponentStatus.COMPLETED
-            )
+            return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.COMPLETED)
         return direct_or_deferred()
 
     search_work_plan = _safe_mapping(run_kernel.state.search_work_plan)
@@ -3326,9 +2960,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
     mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
     records = build_deterministic_search_work_runtime_records(
         DeterministicSearchWorkRuntimeInput(
-            contract_id=str(
-                run_contract.get("contract_id") or run_kernel.state.run_id
-            ),
+            contract_id=str(run_contract.get("contract_id") or run_kernel.state.run_id),
             run_contract_projection=run_contract,
             route_facts=route,
             requested_mode=mode,
@@ -3364,9 +2996,8 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             "typed multi-component qualification could not build its answer contract"
         )
     _accept_question_meaning_record(run_kernel, qmr)
-    return OrdinaryMulticomponentResult(
-        status=OrdinaryMulticomponentStatus.SELECTED_PENDING
-    )
+    return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.SELECTED_PENDING)
+
 
 def ordinary_multicomponent_path_completed(run_kernel: Any) -> bool:
     return bool(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
