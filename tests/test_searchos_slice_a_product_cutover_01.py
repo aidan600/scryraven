@@ -544,7 +544,17 @@ def test_required_unresolved_slot_reaches_sufficiency_owned_blocked_fap(
     assert {
         item["blocker_class"]
         for item in subordinate_block["blocker_facts"]
-    } == {"gap_basis_rejection", "recovery_ineligible"}
+    } == {"recovery_ineligible"}
+    assert {
+        item["interpretation"]
+        for item in subordinate_block["blocker_facts"]
+    } == {"lawful_recovery_ineligible"}
+    block_consumption = harness.run_kernel.state.sufficiency_judgment_history[
+        -1
+    ]["searchos_required_needs_block_consumption"]
+    assert block_consumption["final_blocker_interpretation"] == (
+        "lawful_recovery_ineligible"
+    )
     assert "final_answer_packet_allowed" not in subordinate_block
     assert "author_execution_allowed" not in subordinate_block
     action_types = [
@@ -619,14 +629,22 @@ def test_component_receiver_and_gap_basis_failures_reach_sufficiency(
     assert blocker_classes == {
         "component_receiver_failure",
         "gap_basis_rejection",
-        "recovery_ineligible",
     }
+    assert {
+        item["interpretation"]
+        for item in block["blocker_facts"]
+    } == {"structural_or_validation_blocker"}
     assert harness.run_kernel.state.sufficiency_judgment_history
     assert (
         harness.run_kernel.state.sufficiency_judgment_history[-1][
             "final_answer_allowed"
         ]
         is False
+    )
+    assert harness.run_kernel.state.sufficiency_judgment_history[-1][
+        "searchos_required_needs_block_consumption"
+    ]["final_blocker_interpretation"] == (
+        "structural_or_validation_blocker"
     )
     action_types = [
         action.action_type
@@ -680,12 +698,24 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
             "searchos_required_needs_block"
         ]["blocker_facts"]
     }
+    assert {
+        item["interpretation"]
+        for item in harness.run_kernel.state.projections[
+            "searchos_required_needs_block"
+        ]["blocker_facts"]
+        if item["blocker_class"] == "validation_failure"
+    } == {"structural_or_validation_blocker"}
     assert harness.run_kernel.state.sufficiency_judgment_history
     assert (
         harness.run_kernel.state.sufficiency_judgment_history[-1][
             "final_answer_allowed"
         ]
         is False
+    )
+    assert harness.run_kernel.state.sufficiency_judgment_history[-1][
+        "searchos_required_needs_block_consumption"
+    ]["final_blocker_interpretation"] == (
+        "structural_or_validation_blocker"
     )
     assert harness.read_transport_calls == []
     assert len(harness.search_calls) == 1

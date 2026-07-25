@@ -615,14 +615,20 @@ def _searchos_recovery_terminal_consumption(
             "source_obligation_coverage_refs="
             f"{source_obligation_coverage_refs})"
         )
-    if (
-        canonical_terminal.get("terminal_status")
-        == "exhausted_insufficient"
-        and target_assessment.status == "satisfied"
-    ):
-        raise ValueError(
-            "exhausted SearchOS terminal conflicts with current source truth"
-        )
+        if (
+            canonical_terminal.get("terminal_status")
+            == "exhausted_insufficient"
+            and target_assessment.status == "satisfied"
+        ):
+            raise ValueError(
+                "exhausted SearchOS terminal conflicts with current source "
+                "truth (terminal_reason="
+                + str(
+                    canonical_terminal.get("terminal_reason")
+                    or "absent"
+                )
+                + ")"
+            )
     blocker = _mapping(canonical_terminal.get("terminal_blocker"))
     return {
         "schema_version": (
@@ -649,6 +655,98 @@ def _searchos_recovery_terminal_consumption(
         "required_source_obligation_assessments": [
             item.to_dict() for item in assessments
         ],
+    }
+
+
+def _searchos_required_needs_block_consumption(
+    *,
+    judgment_input: RunSufficiencyJudgmentInput,
+    block: Mapping[str, Any],
+) -> dict[str, Any]:
+    from core.searchos_iterative_judgment_runtime import (
+        validate_searchos_required_needs_block,
+    )
+
+    canonical = validate_searchos_required_needs_block(
+        block,
+        state=judgment_input.searchos_state,
+    )
+    run_identity = _mapping(judgment_input.run_identity)
+    if (
+        canonical.get("run_id") != run_identity.get("run_id")
+        or canonical.get("request_id")
+        != run_identity.get("request_id")
+    ):
+        raise ValueError(
+            "SearchOS required-needs block does not match current run"
+        )
+    blocker_facts = [
+        {
+            "blocker_class": clean_token(item.get("blocker_class")),
+            "interpretation": clean_token(
+                item.get("interpretation")
+            ),
+            "reason_code": clean_text(
+                item.get("reason_code"),
+                limit=240,
+            ),
+            "slot_id": clean_token(item.get("slot_id")),
+        }
+        for item in _list(canonical.get("blocker_facts"))
+        if isinstance(item, Mapping)
+    ]
+    interpretations = list(
+        dict.fromkeys(
+            str(item["interpretation"])
+            for item in blocker_facts
+            if item.get("interpretation")
+        )
+    )
+    interpretation_precedence = (
+        "structural_or_validation_blocker",
+        "provider_or_acquisition_blocker",
+        "lawful_recovery_exhaustion",
+        "lawful_recovery_ineligible",
+    )
+    final_interpretation = next(
+        (
+            item
+            for item in interpretation_precedence
+            if item in interpretations
+        ),
+        None,
+    )
+    if not final_interpretation:
+        raise ValueError(
+            "SearchOS required-needs block has no canonical interpretation"
+        )
+    unresolved_slot_refs = [
+        _mapping(item.get("slot_ref"))
+        for item in _list(
+            canonical.get("unresolved_required_slots")
+        )
+        if isinstance(item, Mapping)
+    ]
+    return {
+        "schema_version": (
+            "run_sufficiency_searchos_required_needs_block_"
+            "consumption_v1"
+        ),
+        "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "canonical_state": True,
+        "block_id": canonical.get("block_id"),
+        "block_digest": canonical.get("block_digest"),
+        "readiness_projection_ref": _mapping(
+            canonical.get("readiness_projection_ref")
+        ),
+        "run_id": canonical.get("run_id"),
+        "request_id": canonical.get("request_id"),
+        "unresolved_exact_slot_refs": unresolved_slot_refs,
+        "blocker_facts": blocker_facts,
+        "canonical_blocker_interpretations": interpretations,
+        "final_blocker_interpretation": final_interpretation,
+        "subordinate_consumption_only": True,
+        "whole_run_posture_selected_by_sufficiency": True,
     }
 
 
@@ -2192,9 +2290,21 @@ def build_deterministic_sufficiency_judgment(
     semantic_state = _mapping(judgment_input.semantic_state_facts)
     scheduler_required_work_blocked = False
     searchos_recovery_terminal_consumption: dict[str, Any] = {}
+    searchos_required_needs_block_consumption: dict[str, Any] = {}
     searchos_recovery_terminal = _mapping(
         judgment_input.searchos_existing_gap_recovery_terminal_state
     )
+    searchos_required_needs_block = _mapping(
+        judgment_input.searchos_required_needs_block_state
+    )
+    if (
+        searchos_recovery_terminal
+        and searchos_required_needs_block
+    ):
+        raise ValueError(
+            "SearchOS recovery terminal and required-needs block "
+            "cannot both govern one Sufficiency input"
+        )
     if searchos_recovery_terminal:
         searchos_recovery_terminal_consumption = (
             _searchos_recovery_terminal_consumption(
@@ -2203,6 +2313,13 @@ def build_deterministic_sufficiency_judgment(
             )
         )
         terminal = searchos_recovery_terminal
+    if searchos_required_needs_block:
+        searchos_required_needs_block_consumption = (
+            _searchos_required_needs_block_consumption(
+                judgment_input=judgment_input,
+                block=searchos_required_needs_block,
+            )
+        )
     scheduler_state = _mapping(judgment_input.multicomponent_scheduler_state)
     if scheduler_state:
         from core.multicomponent_graph_scheduling import validate_scheduler_state
@@ -2673,6 +2790,37 @@ def build_deterministic_sufficiency_judgment(
             multicomponent_consumption[
                 "searchos_recovery_terminal_blocked"
             ] = True
+    searchos_required_block_interpretation = clean_token(
+        searchos_required_needs_block_consumption.get(
+            "final_blocker_interpretation"
+        )
+    )
+    if searchos_required_block_interpretation in {
+        "structural_or_validation_blocker",
+        "provider_or_acquisition_blocker",
+    }:
+        decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+        posture = SufficiencyPosture.BLOCKED
+        final_allowed = False
+        rationale = (
+            "searchos_required_needs_"
+            + str(searchos_required_block_interpretation)
+            + "_blocked"
+        )
+        if multicomponent_consumption:
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption[
+                "direct_component_entry_count"
+            ] = 0
+            multicomponent_consumption[
+                "admitted_synthesis_entries"
+            ] = []
+            multicomponent_consumption[
+                "admitted_synthesis_entry_count"
+            ] = 0
+            multicomponent_consumption[
+                "searchos_required_needs_blocked"
+            ] = True
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,
@@ -2712,6 +2860,16 @@ def build_deterministic_sufficiency_judgment(
                         + searchos_terminal_blocker_class,
                     )
                     if searchos_terminal_blocker_class
+                    else ()
+                ),
+                *(
+                    (
+                        "searchos_required_needs_block_"
+                        + str(
+                            searchos_required_block_interpretation
+                        ),
+                    )
+                    if searchos_required_block_interpretation
                     else ()
                 ),
                 *(
@@ -2797,6 +2955,16 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
         )
+    if searchos_required_needs_block_consumption:
+        prohibited = tuple(
+            dict.fromkeys(
+                (
+                    *prohibited,
+                    "do_not_bypass_sufficiency_after_searchos_required_needs",
+                    "do_not_reinterpret_searchos_blocker_reason_text",
+                )
+            )
+        )
     required_satisfied = not missing and not any(
         item.status == "partial" and item.requirement_kind != "reputable_secondary"
         for item in partial
@@ -2806,6 +2974,11 @@ def build_deterministic_sufficiency_judgment(
     if semantic_overlay.direct_answer_blocked or semantic_overlay.finalization_blocked:
         required_satisfied = False
     if component_readiness.get("component_readiness_blocked"):
+        required_satisfied = False
+    if searchos_required_block_interpretation in {
+        "structural_or_validation_blocker",
+        "provider_or_acquisition_blocker",
+    }:
         required_satisfied = False
     semantic_consumption = build_semantic_consumption_summary(
         judgment_input.semantic_state_facts,
@@ -2840,6 +3013,9 @@ def build_deterministic_sufficiency_judgment(
         multicomponent_graph_consumption=multicomponent_consumption,
         searchos_existing_gap_recovery_terminal_consumption=(
             searchos_recovery_terminal_consumption
+        ),
+        searchos_required_needs_block_consumption=(
+            searchos_required_needs_block_consumption
         ),
     )
     final_packet_inputs = dict(judgment.final_packet_inputs)
@@ -3211,6 +3387,7 @@ def preserve_multicomponent_sufficiency_authority(
     if (
         not deterministic_judgment.multicomponent_graph_consumption
         and not deterministic_judgment.searchos_existing_gap_recovery_terminal_consumption
+        and not deterministic_judgment.searchos_required_needs_block_consumption
     ):
         return committed
     return replace(
@@ -3254,6 +3431,9 @@ def preserve_multicomponent_sufficiency_authority(
         ),
         searchos_existing_gap_recovery_terminal_consumption=(
             deterministic_judgment.searchos_existing_gap_recovery_terminal_consumption
+        ),
+        searchos_required_needs_block_consumption=(
+            deterministic_judgment.searchos_required_needs_block_consumption
         ),
     )
 

@@ -12,6 +12,9 @@ from copy import deepcopy
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.component_coverage_reduction_runtime import (
+    ledger_qualification_blockers_for_satisfied_coverage,
+)
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_OWNER,
     SearchOSRequirementPosture,
@@ -35,6 +38,17 @@ _EVIDENCE_DELTA_KIND = "new_exact_obligation_support_assessment"
 
 class SearchOSExistingGapRecoveryError(ValueError):
     """Raised before any recovery authority or work can be created."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        blocker_interpretation: str = (
+            "structural_or_validation_blocker"
+        ),
+    ) -> None:
+        super().__init__(message)
+        self.blocker_interpretation = blocker_interpretation
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -189,17 +203,22 @@ def _unique_tokens(value: Any) -> list[str]:
     return tokens if len(tokens) == len(set(tokens)) else []
 
 
-def _exact_recovery_coverage_chain(
+def _exact_recovery_coverage_chain_shape(
     *,
     coverage_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     answer_contract_ref: Mapping[str, Any],
     source_obligation_id: str,
     consumed_candidate_ids: Sequence[str],
+    run_id: str,
+    request_id: str,
 ) -> bool:
     coverage = _mapping(coverage_ref)
     requirement_ids = _unique_tokens(
         coverage.get("source_requirement_ids")
+        or _mapping(
+            coverage.get("evidence_ledger_binding")
+        ).get("source_requirement_ids")
     )
     obligation_ids = _unique_tokens(
         coverage.get("source_obligation_ids")
@@ -220,6 +239,8 @@ def _exact_recovery_coverage_chain(
         coverage.get("coverage_state") == "satisfied"
         and coverage.get("coverage_record_id")
         and coverage.get("coverage_record_digest")
+        and coverage.get("run_id") == run_id
+        and coverage.get("request_id") == request_id
         and coverage.get("answer_component_id")
         == component_ref.get("component_id")
         and coverage.get("component_revision")
@@ -245,6 +266,110 @@ def _exact_recovery_coverage_chain(
     )
 
 
+def _exact_recovery_coverage_chain(
+    *,
+    coverage_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    answer_contract_ref: Mapping[str, Any],
+    source_obligation_id: str,
+    consumed_candidate_ids: Sequence[str],
+    evidence_ledger_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+) -> bool:
+    """Revalidate one exact coverage chain against current ledger truth."""
+
+    coverage = _mapping(coverage_ref)
+    if not _exact_recovery_coverage_chain_shape(
+        coverage_ref=coverage,
+        component_ref=component_ref,
+        answer_contract_ref=answer_contract_ref,
+        source_obligation_id=source_obligation_id,
+        consumed_candidate_ids=consumed_candidate_ids,
+        run_id=run_id,
+        request_id=request_id,
+    ):
+        return False
+    requirement_ids = _unique_tokens(
+        coverage.get("source_requirement_ids")
+        or _mapping(
+            coverage.get("evidence_ledger_binding")
+        ).get("source_requirement_ids")
+    )
+    candidate_ids = _unique_tokens(coverage.get("candidate_ids"))
+    if len(requirement_ids) != 1 or len(candidate_ids) != 1:
+        return False
+    requirement_id = requirement_ids[0]
+    candidate_id = candidate_ids[0]
+    requirement_identity = _evidence_ledger_identity(
+        requirement_id
+    )
+    candidate_identity = _evidence_ledger_identity(candidate_id)
+    ledger = _mapping(evidence_ledger_projection)
+    requirement_rows = [
+        _mapping(item)
+        for item in ledger.get("source_requirements") or ()
+        if isinstance(item, Mapping)
+        and _evidence_ledger_identity(
+            item.get("requirement_id")
+        )
+        == requirement_identity
+    ]
+    candidate_rows = [
+        _mapping(item)
+        for item in ledger.get("candidate_records") or ()
+        if isinstance(item, Mapping)
+        and _evidence_ledger_identity(item.get("candidate_id"))
+        == candidate_identity
+    ]
+    exact_links = [
+        _mapping(item)
+        for item in ledger.get("requirement_links") or ()
+        if isinstance(item, Mapping)
+        and _evidence_ledger_identity(
+            item.get("requirement_id")
+        )
+        == requirement_identity
+    ]
+    if (
+        len(requirement_rows) != 1
+        or len(candidate_rows) != 1
+        or len(exact_links) != 1
+        or _evidence_ledger_identity(
+            exact_links[0].get("candidate_id")
+        )
+        != candidate_identity
+        or exact_links[0].get("link_status") != "accepted"
+        or exact_links[0].get("link_reason")
+        == "selected_candidate_matches_existing_requirement"
+        or candidate_rows[0].get("stale") is True
+    ):
+        return False
+    coverage_for_validation = {
+        **coverage,
+        "source_obligation_status": "satisfied",
+        "source_obligation_ids": [source_obligation_id],
+        "content_reference_bindings": [
+            {"evidence_ref_id": candidate_id}
+        ],
+        "evidence_ledger_binding": {
+            **_mapping(coverage.get("evidence_ledger_binding")),
+            "source_requirement_ids": requirement_ids,
+        },
+    }
+    return not ledger_qualification_blockers_for_satisfied_coverage(
+        coverage=coverage_for_validation,
+        evidence_ledger_projection=ledger,
+        accepted_component={
+            "component_id": component_ref.get("component_id"),
+            "source_obligation_candidate_ids": [
+                source_obligation_id
+            ],
+        },
+        extra_evidence_refs=candidate_ids,
+    )
+
+
 def build_searchos_existing_gap_basis(
     *,
     state: Mapping[str, Any],
@@ -265,7 +390,10 @@ def build_searchos_existing_gap_basis(
     if slot.get("posture") != SearchOSSlotPosture.SEMANTICALLY_HANDED_OFF.value or not slot.get(
         "semantic_handoff_refs"
     ):
-        raise SearchOSExistingGapRecoveryError("existing-gap recovery requires a terminal post-analysis handoff")
+        raise SearchOSExistingGapRecoveryError(
+            "existing-gap recovery requires a terminal post-analysis handoff",
+            blocker_interpretation="lawful_recovery_ineligible",
+        )
     slot_ref = _mapping(slot.get("slot_ref"))
     component_id = _token(slot_ref.get("component_id"), "component_id")
     obligation_id = _token(slot_ref.get("source_obligation_id"), "source_obligation_id")
@@ -370,8 +498,34 @@ def build_searchos_existing_gap_basis(
         if item.get("requirement_id") in coverage_requirement_ids
         and item.get("status") == "satisfied"
     )
-    if latest_status in {"admitted", "admitted_with_caveats"} and exact_requirement_ids:
-        raise SearchOSExistingGapRecoveryError("existing-gap basis cannot reopen a satisfied source obligation")
+    current_coverage = (
+        current_target_coverage_records[0]
+        if current_target_coverage_records
+        else {}
+    )
+    exact_current_satisfied_chain = bool(
+        current_coverage
+        and _exact_recovery_coverage_chain(
+            coverage_ref=current_coverage,
+            component_ref=component_ref,
+            answer_contract_ref=answer_contract_ref,
+            source_obligation_id=obligation_id,
+            consumed_candidate_ids=_unique_tokens(
+                current_coverage.get("candidate_ids")
+            ),
+            evidence_ledger_projection=evidence_ledger_projection,
+            run_id=canonical["run_id"],
+            request_id=canonical["request_id"],
+        )
+    )
+    if (
+        latest_status in {"admitted", "admitted_with_caveats"}
+        and exact_current_satisfied_chain
+    ):
+        raise SearchOSExistingGapRecoveryError(
+            "existing-gap basis cannot reopen a satisfied source obligation",
+            blocker_interpretation="lawful_recovery_ineligible",
+        )
     coverage_basis = (
         {
             "basis_kind": "current_component_coverage",
@@ -420,7 +574,11 @@ def build_searchos_existing_gap_basis(
         "component_analyst_proposal_ref": deepcopy(latest_admission["analyst_finding_ref"]),
         "component_dprime_validation_ref": deepcopy(latest_admission["dprime_validation_ref"]),
         "coverage_basis": coverage_basis,
-        "exact_satisfied_requirement_ids": exact_requirement_ids,
+        "exact_satisfied_requirement_ids": (
+            exact_requirement_ids
+            if exact_current_satisfied_chain
+            else []
+        ),
         "evidence_ledger_basis": {
             "projection_digest": _digest(evidence_ledger_projection),
             "matching_source_requirement_facts": ledger_requirements,
@@ -903,6 +1061,7 @@ def finalize_searchos_existing_gap_recovery_cycle(
     state: Mapping[str, Any],
     cycle_ref: Mapping[str, Any],
     component_admission_ref: Mapping[str, Any] | None,
+    evidence_ledger_projection: Mapping[str, Any],
     failure_reason: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Close the lease with exact expenditure and honest terminal disposition."""
@@ -924,6 +1083,20 @@ def finalize_searchos_existing_gap_recovery_cycle(
         "admitted",
         "admitted_with_caveats",
     }
+    exact_chain_current = _exact_recovery_coverage_chain(
+        coverage_ref=coverage_ref,
+        component_ref=_mapping(slot.get("component_ref")),
+        answer_contract_ref=_mapping(
+            cycle.get("answer_contract_ref")
+        ),
+        source_obligation_id=str(
+            slot_ref.get("source_obligation_id") or ""
+        ),
+        consumed_candidate_ids=admission_candidate_ids,
+        evidence_ledger_projection=evidence_ledger_projection,
+        run_id=canonical["run_id"],
+        request_id=canonical["request_id"],
+    )
     admitted = (
         admission_claimed
         and admission.get("component_id") == slot_ref.get("component_id")
@@ -942,17 +1115,7 @@ def finalize_searchos_existing_gap_recovery_cycle(
         == _mapping(cycle.get("answer_contract_ref")).get(
             "answer_contract_digest"
         )
-        and _exact_recovery_coverage_chain(
-            coverage_ref=coverage_ref,
-            component_ref=_mapping(slot.get("component_ref")),
-            answer_contract_ref=_mapping(
-                cycle.get("answer_contract_ref")
-            ),
-            source_obligation_id=str(
-                slot_ref.get("source_obligation_id") or ""
-            ),
-            consumed_candidate_ids=admission_candidate_ids,
-        )
+        and exact_chain_current
     )
     terminal_status = "recovered" if admitted else "exhausted_insufficient"
     reason = (
@@ -1226,7 +1389,7 @@ def validate_searchos_recovery_terminal_aggregate(
                 != "satisfied"
                 or not coverage_ref.get("coverage_record_id")
                 or not coverage_ref.get("coverage_record_digest")
-                or not _exact_recovery_coverage_chain(
+                or not _exact_recovery_coverage_chain_shape(
                     coverage_ref=coverage_ref,
                     component_ref=component_ref,
                     answer_contract_ref=answer_contract_ref,
@@ -1234,6 +1397,8 @@ def validate_searchos_recovery_terminal_aggregate(
                         slot_ref.get("source_obligation_id") or ""
                     ),
                     consumed_candidate_ids=consumed_candidate_ids,
+                    run_id=str(safe.get("run_id") or ""),
+                    request_id=str(safe.get("request_id") or ""),
                 )
             )
         )

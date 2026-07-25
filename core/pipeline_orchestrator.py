@@ -3510,10 +3510,32 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         ),
                     )
                 except SearchOSExistingGapRecoveryError as exc:
+                    blocker_interpretation = str(
+                        getattr(
+                            exc,
+                            "blocker_interpretation",
+                            "structural_or_validation_blocker",
+                        )
+                    )
+                    blocker_class = {
+                        "lawful_recovery_exhaustion": (
+                            "recovery_policy_closed"
+                        ),
+                        "lawful_recovery_ineligible": (
+                            "recovery_ineligible"
+                        ),
+                        "provider_or_acquisition_blocker": (
+                            "provider_or_acquisition_failure"
+                        ),
+                    }.get(
+                        blocker_interpretation,
+                        "gap_basis_rejection",
+                    )
                     recovery_trace["gap_basis_rejections"].append(
                         {
                             "slot_id": unresolved_slot_id,
-                            "blocker_class": "gap_basis_rejection",
+                            "blocker_class": blocker_class,
+                            "interpretation": blocker_interpretation,
                             "reason_code": str(exc)[:240],
                         }
                     )
@@ -3863,13 +3885,33 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 recovery_block_facts.get("gap_basis_rejections")
                 or ()
             )
-            for unresolved in (
-                searchos_readiness_projection.get(
-                    "unresolved_required_slots"
+            represented_blocker_keys = {
+                (
+                    str(dict(item or {}).get("slot_id") or ""),
+                    str(
+                        dict(item or {}).get("blocker_class")
+                        or ""
+                    ),
                 )
-                or ()
-            ):
-                unresolved_mapping = dict(unresolved or {})
+                for item in subordinate_blocker_facts
+            }
+            unresolved_required_slots = [
+                dict(item or {})
+                for item in (
+                    searchos_readiness_projection.get(
+                        "unresolved_required_slots"
+                    )
+                    or ()
+                )
+            ]
+            for unresolved_mapping in unresolved_required_slots:
+                unresolved_slot_id = str(
+                    dict(
+                        unresolved_mapping.get("slot_ref")
+                        or {}
+                    ).get("slot_id")
+                    or ""
+                )
                 posture = str(
                     unresolved_mapping.get(
                         "latest_judgment_posture"
@@ -3877,55 +3919,110 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     or ""
                 )
                 if posture in {"judgment_failed", "stale_or_invalid"}:
-                    subordinate_blocker_facts.append(
-                        {
-                            "blocker_class": "validation_failure",
-                            "reason_code": (
-                                unresolved_mapping.get("reason")
-                                or posture
-                            ),
-                            "slot_id": dict(
-                                unresolved_mapping.get("slot_ref")
-                                or {}
-                            ).get("slot_id"),
-                        }
+                    blocker_key = (
+                        unresolved_slot_id,
+                        "validation_failure",
                     )
+                    if blocker_key not in represented_blocker_keys:
+                        subordinate_blocker_facts.append(
+                            {
+                                "blocker_class": "validation_failure",
+                                "interpretation": (
+                                    "structural_or_validation_blocker"
+                                ),
+                                "reason_code": (
+                                    unresolved_mapping.get("reason")
+                                    or posture
+                                ),
+                                "slot_id": unresolved_slot_id,
+                            }
+                        )
+                        represented_blocker_keys.add(blocker_key)
                 elif posture == "budget_exhausted":
-                    subordinate_blocker_facts.append(
-                        {
-                            "blocker_class": "recovery_policy_closed",
-                            "reason_code": "judgment_budget_exhausted",
-                            "slot_id": dict(
-                                unresolved_mapping.get("slot_ref")
-                                or {}
-                            ).get("slot_id"),
-                        }
+                    blocker_key = (
+                        unresolved_slot_id,
+                        "recovery_policy_closed",
                     )
+                    if blocker_key not in represented_blocker_keys:
+                        subordinate_blocker_facts.append(
+                            {
+                                "blocker_class": (
+                                    "recovery_policy_closed"
+                                ),
+                                "interpretation": (
+                                    "lawful_recovery_exhaustion"
+                                ),
+                                "reason_code": (
+                                    "judgment_budget_exhausted"
+                                ),
+                                "slot_id": unresolved_slot_id,
+                            }
+                        )
+                        represented_blocker_keys.add(blocker_key)
             if searchos_slice_a_projection.get(
                 "component_receiver_failure"
             ):
-                subordinate_blocker_facts.append(
-                    {
-                        "blocker_class": "component_receiver_failure",
-                        "reason_code": searchos_slice_a_projection.get(
-                            "component_receiver_failure_reason"
+                for unresolved_mapping in unresolved_required_slots:
+                    unresolved_slot_id = str(
+                        dict(
+                            unresolved_mapping.get("slot_ref")
+                            or {}
+                        ).get("slot_id")
+                        or ""
+                    )
+                    blocker_key = (
+                        unresolved_slot_id,
+                        "component_receiver_failure",
+                    )
+                    if blocker_key not in represented_blocker_keys:
+                        subordinate_blocker_facts.append(
+                            {
+                                "blocker_class": (
+                                    "component_receiver_failure"
+                                ),
+                                "interpretation": (
+                                    "structural_or_validation_blocker"
+                                ),
+                                "reason_code": (
+                                    searchos_slice_a_projection.get(
+                                        "component_receiver_failure_reason"
+                                    )
+                                    or "component_receiver_failure"
+                                ),
+                                "slot_id": unresolved_slot_id,
+                            }
                         )
-                        or "component_receiver_failure",
-                        "slot_id": "",
-                    }
+                        represented_blocker_keys.add(blocker_key)
+            for unresolved_mapping in unresolved_required_slots:
+                unresolved_slot_id = str(
+                    dict(
+                        unresolved_mapping.get("slot_ref")
+                        or {}
+                    ).get("slot_id")
+                    or ""
                 )
-            if not recovery_block_facts.get(
-                "eligible_required_gap_found"
-            ):
-                subordinate_blocker_facts.append(
-                    {
-                        "blocker_class": "recovery_ineligible",
-                        "reason_code": (
-                            "no_lawful_materially_novel_recovery_purpose"
-                        ),
-                        "slot_id": "",
-                    }
-                )
+                if not any(
+                    key[0] == unresolved_slot_id
+                    for key in represented_blocker_keys
+                ):
+                    subordinate_blocker_facts.append(
+                        {
+                            "blocker_class": "recovery_ineligible",
+                            "interpretation": (
+                                "lawful_recovery_ineligible"
+                            ),
+                            "reason_code": (
+                                "no_lawful_materially_novel_recovery_purpose"
+                            ),
+                            "slot_id": unresolved_slot_id,
+                        }
+                    )
+                    represented_blocker_keys.add(
+                        (
+                            unresolved_slot_id,
+                            "recovery_ineligible",
+                        )
+                    )
             block_action = (
                 run_kernel.authorize_searchos_required_needs_block(
                     blocker_facts=subordinate_blocker_facts

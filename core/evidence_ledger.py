@@ -394,13 +394,18 @@ class SourceRequirementRecord:
                 "origin_ref": _clean_text(self.origin_ref),
                 "component_id": _clean_token(self.component_id),
                 "source_obligation_id": _clean_token(self.source_obligation_id),
-                "run_id": _clean_token(self.run_id),
-                "request_id": _clean_token(self.request_id),
-                "answer_contract_version": _clean_token(
-                    self.answer_contract_version
+                "run_id": _clean_text(self.run_id, limit=160),
+                "request_id": _clean_text(
+                    self.request_id,
+                    limit=160,
                 ),
-                "answer_contract_digest": _clean_token(
-                    self.answer_contract_digest
+                "answer_contract_version": _clean_text(
+                    self.answer_contract_version,
+                    limit=160,
+                ),
+                "answer_contract_digest": _clean_text(
+                    self.answer_contract_digest,
+                    limit=160,
                 ),
                 "recovery_authorization_id": _clean_token(
                     self.recovery_authorization_id
@@ -805,13 +810,21 @@ class EvidenceLedger:
                 source_obligation_id=_clean_token(
                     record.get("source_obligation_id")
                 ),
-                run_id=_clean_token(record.get("run_id")),
-                request_id=_clean_token(record.get("request_id")),
-                answer_contract_version=_clean_token(
-                    record.get("answer_contract_version")
+                run_id=_clean_text(
+                    record.get("run_id"),
+                    limit=160,
                 ),
-                answer_contract_digest=_clean_token(
-                    record.get("answer_contract_digest")
+                request_id=_clean_text(
+                    record.get("request_id"),
+                    limit=160,
+                ),
+                answer_contract_version=_clean_text(
+                    record.get("answer_contract_version"),
+                    limit=160,
+                ),
+                answer_contract_digest=_clean_text(
+                    record.get("answer_contract_digest"),
+                    limit=160,
                 ),
                 recovery_authorization_id=_clean_token(
                     record.get("recovery_authorization_id")
@@ -857,7 +870,20 @@ class EvidenceLedger:
                 "recovery_authorization_digest",
             ):
                 current = getattr(requirement, field_name)
-                incoming = _clean_token(record.get(field_name))
+                incoming = (
+                    _clean_text(
+                        record.get(field_name),
+                        limit=160,
+                    )
+                    if field_name
+                    in {
+                        "run_id",
+                        "request_id",
+                        "answer_contract_version",
+                        "answer_contract_digest",
+                    }
+                    else _clean_token(record.get(field_name))
+                )
                 if current and incoming and current != incoming:
                     raise ValueError(
                         "source requirement exact lineage binding conflict: "
@@ -1392,6 +1418,10 @@ def build_evidence_ledger_observation_from_run_contract(
     *,
     observation_id: str,
     contract_projection: Mapping[str, Any] | None,
+    run_id: str | None = None,
+    request_id: str | None = None,
+    answer_contract_version: str | None = None,
+    answer_contract_digest: str | None = None,
 ) -> EvidenceLedgerObservation:
     """Build ledger source requirements from canonical RunAuthority contract state."""
 
@@ -1428,20 +1458,27 @@ def build_evidence_ledger_observation_from_run_contract(
                     requirement.get("source_obligation_id")
                     or requirement.get("obligation_id")
                 ),
-                "run_id": requirement.get("run_id") or projection.get("run_id"),
+                "run_id": (
+                    requirement.get("run_id")
+                    or projection.get("run_id")
+                    or run_id
+                ),
                 "request_id": (
                     requirement.get("request_id")
                     or projection.get("request_id")
+                    or request_id
                 ),
                 "answer_contract_version": (
                     requirement.get("answer_contract_version")
                     or projection.get("accepted_contract_version")
                     or projection.get("contract_version")
+                    or answer_contract_version
                 ),
                 "answer_contract_digest": (
                     requirement.get("answer_contract_digest")
                     or projection.get("accepted_contract_digest")
                     or projection.get("contract_digest")
+                    or answer_contract_digest
                 ),
                 "required_source_class": source_class,
                 "required_source_tier": requirement.get("required_source_tier"),

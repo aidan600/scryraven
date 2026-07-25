@@ -15,6 +15,7 @@ from core.evidence_ledger_lifecycle import (
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.final_answer_packet import ClaimPosture, FinalAnswerReadinessStatus
 from core.final_answer_runtime_adapter import build_final_answer_packet
+from core.run_authority_contract import stable_hash
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_authority_contract_templates import build_deterministic_contract
 from core.run_authority_projection_refs import (
@@ -279,8 +280,12 @@ def test_sufficiency_input_builder_preserves_payload_semantics() -> None:
 
 def test_evidence_ledger_lifecycle_helper_matches_direct_reduction_shape() -> None:
     direct_kernel = _kernel_with_contract("ag92e-direct")
-    helper_kernel = _kernel_with_contract("ag92e-helper")
+    helper_kernel = _kernel_with_contract("ag92e-direct")
     contract_projection = dict(direct_kernel.state.run_contract_projection)
+    contract_lineage_version = str(
+        contract_projection["schema_version"]
+    )
+    contract_lineage_digest = stable_hash(contract_projection)
 
     direct_action = direct_kernel.authorize_evidence_ledger_reduction(
         inputs={
@@ -296,10 +301,27 @@ def test_evidence_ledger_lifecycle_helper_matches_direct_reduction_shape() -> No
         payload=build_evidence_ledger_observation_from_run_contract(
             observation_id="ag92e-direct:evidence-ledger:run-contract",
             contract_projection=contract_projection,
+            run_id=direct_kernel.state.run_id,
+            request_id=direct_kernel.state.request_id,
+            answer_contract_version=contract_lineage_version,
+            answer_contract_digest=contract_lineage_digest,
         ).to_dict(),
     )
     direct_kernel.reduce(direct_result.observation)
     direct_projection = direct_kernel.state.evidence_ledger.to_projection().to_dict()
+    assert direct_projection["source_requirements"]
+    for requirement in direct_projection["source_requirements"]:
+        assert (
+            requirement["run_id"],
+            requirement["request_id"],
+            requirement["answer_contract_version"],
+            requirement["answer_contract_digest"],
+        ) == (
+            direct_kernel.state.run_id,
+            direct_kernel.state.request_id,
+            contract_lineage_version,
+            contract_lineage_digest,
+        )
 
     helper_projection = reduce_run_contract_requirements_into_evidence_ledger(
         run_kernel=helper_kernel,

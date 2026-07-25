@@ -48,6 +48,14 @@ from core.run_kernel import (
     ObservationType,
     RunKernel,
 )
+from core.searchos_iterative_judgment_runtime import (
+    build_searchos_initial_state,
+    build_searchos_policy_snapshot,
+    build_searchos_required_needs_block,
+    build_searchos_slice_a_readiness_v1,
+    mark_searchos_slot_unresolved,
+    record_searchos_readiness_projection,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -127,6 +135,11 @@ def _input(
     inference_facts: dict[str, Any] | None = None,
     weak_failure_facts: dict[str, Any] | None = None,
     budget: dict[str, Any] | None = None,
+    run_identity: dict[str, Any] | None = None,
+    searchos_state: dict[str, Any] | None = None,
+    searchos_required_needs_block_state: (
+        dict[str, Any] | None
+    ) = None,
 ) -> RunSufficiencyJudgmentInput:
     return RunSufficiencyJudgmentInput(
         contract_projection=contract,
@@ -143,6 +156,11 @@ def _input(
         indirect_inference_facts=inference_facts or {},
         weak_failure_facts=weak_failure_facts or {},
         budget=budget or {"iteration": 1, "max_iterations": 3},
+        run_identity=run_identity or {},
+        searchos_state=searchos_state or {},
+        searchos_required_needs_block_state=(
+            searchos_required_needs_block_state or {}
+        ),
     )
 
 
@@ -165,6 +183,71 @@ def _sufficiency_projection(
     return build_deterministic_sufficiency_judgment(
         _input(contract, ledger, **kwargs)
     ).to_projection()
+
+
+def _typed_searchos_required_needs_block(
+    *,
+    blocker_class: str,
+    interpretation: str,
+    reason_code: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    policy = build_searchos_policy_snapshot(
+        run_id="ag92c-searchos-run",
+        request_id="ag92c-searchos-request",
+        profile_name="Balanced",
+    )
+    state = build_searchos_initial_state(
+        run_id="ag92c-searchos-run",
+        request_id="ag92c-searchos-request",
+        answer_contract_ref={
+            "answer_contract_id": "answer-contract:ag92c",
+            "answer_contract_digest": "a" * 64,
+        },
+        policy_snapshot=policy,
+        active_slots=[
+            {
+                "slot_id": "slot:required",
+                "component_ref": {
+                    "component_id": "component:required",
+                    "component_digest": "b" * 64,
+                },
+                "source_obligation_ref": {
+                    "source_obligation_id": "obligation:required",
+                    "source_obligation_digest": "c" * 64,
+                },
+                "requirement_posture": "required",
+            }
+        ],
+        initial_candidate_state_ref={
+            "candidate_state_id": "candidate-state:ag92c",
+            "candidate_state_digest": "d" * 64,
+        },
+    )
+    state = mark_searchos_slot_unresolved(
+        state,
+        slot_id="slot:required",
+        reason="same bounded subordinate reason",
+    )
+    readiness = build_searchos_slice_a_readiness_v1(
+        state=state,
+        semantic_outcomes_by_slot={},
+    )
+    state = record_searchos_readiness_projection(
+        state,
+        readiness=readiness,
+    )
+    block = build_searchos_required_needs_block(
+        readiness,
+        blocker_facts=[
+            {
+                "blocker_class": blocker_class,
+                "interpretation": interpretation,
+                "reason_code": reason_code,
+                "slot_id": "slot:required",
+            }
+        ],
+    )
+    return state, block
 
 
 def _kernel_with_contract_ledger_search(
@@ -400,6 +483,78 @@ def test_ordinary_explainer_without_required_official_current_does_not_overblock
     assert not judgment.missing_required_obligations
     assert judgment.final_answer_allowed is True
     assert judgment.final_answer_posture is not SufficiencyPosture.BLOCKED
+
+
+@pytest.mark.parametrize(
+    (
+        "blocker_class",
+        "interpretation",
+        "must_force_blocked",
+    ),
+    [
+        (
+            "validation_failure",
+            "structural_or_validation_blocker",
+            True,
+        ),
+        (
+            "provider_or_acquisition_failure",
+            "provider_or_acquisition_blocker",
+            True,
+        ),
+        (
+            "recovery_policy_closed",
+            "lawful_recovery_exhaustion",
+            False,
+        ),
+        (
+            "recovery_ineligible",
+            "lawful_recovery_ineligible",
+            False,
+        ),
+    ],
+)
+def test_sufficiency_uses_typed_searchos_blocker_interpretation_not_reason_text(
+    blocker_class: str,
+    interpretation: str,
+    must_force_blocked: bool,
+) -> None:
+    contract = _contract("Explain why plants need sunlight")
+    ledger = _ledger_projection(contract)
+    searchos_state, block = _typed_searchos_required_needs_block(
+        blocker_class=blocker_class,
+        interpretation=interpretation,
+        reason_code="same_reason_text_for_every_interpretation",
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        _input(
+            contract,
+            ledger,
+            final_evidence_count=1,
+            run_identity={
+                "run_id": searchos_state["run_id"],
+                "request_id": searchos_state["request_id"],
+            },
+            searchos_state=searchos_state,
+            searchos_required_needs_block_state=block,
+        )
+    )
+
+    consumption = (
+        judgment.searchos_required_needs_block_consumption
+    )
+    assert consumption["final_blocker_interpretation"] == (
+        interpretation
+    )
+    assert consumption["blocker_facts"][0]["reason_code"] == (
+        "same_reason_text_for_every_interpretation"
+    )
+    assert (
+        judgment.final_answer_posture is SufficiencyPosture.BLOCKED
+    ) is must_force_blocked
+    assert (
+        judgment.final_answer_allowed is False
+    ) is must_force_blocked
 
 
 def test_unresolved_central_conflict_blocks_overconfident_posture() -> None:

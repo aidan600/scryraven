@@ -8714,6 +8714,9 @@ class RunKernel:
                 state=self.state.searchos_state,
                 cycle_ref=recovery_cycle_ref,
                 component_admission_ref=component_admission_ref,
+                evidence_ledger_projection=(
+                    self.state.evidence_ledger.to_projection().to_dict()
+                ),
                 failure_reason=failure_reason,
             )
         except ValueError as exc:
@@ -16936,6 +16939,9 @@ class RunKernel:
                     state=self.state.searchos_state,
                     cycle_ref=active_cycle_ref,
                     component_admission_ref=admission or None,
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
                     failure_reason=_clean_text(
                         action.inputs.get("failure_reason"),
                         limit=240,
@@ -24195,6 +24201,12 @@ def _canonical_sufficiency_judgment_projection(
         "searchos_existing_gap_recovery_terminal_consumption": (
             judgment_projection.get(
                 "searchos_existing_gap_recovery_terminal_consumption",
+                {},
+            )
+        ),
+        "searchos_required_needs_block_consumption": (
+            judgment_projection.get(
+                "searchos_required_needs_block_consumption",
                 {},
             )
         ),

@@ -1030,18 +1030,34 @@ def ledger_qualification_blockers_for_satisfied_coverage(
             else:
                 exact_owned_obligation_ids.add(requirement_obligation_id)
             lineage_checks = (
-                ("run_id", coverage.get("run_id")),
-                ("request_id", coverage.get("request_id")),
+                (
+                    "run_id",
+                    coverage.get("run_id"),
+                    "ledger_source_requirement_missing_run_id",
+                ),
+                (
+                    "request_id",
+                    coverage.get("request_id"),
+                    "ledger_source_requirement_missing_request_id",
+                ),
                 (
                     "answer_contract_version",
                     coverage.get("accepted_contract_version"),
+                    (
+                        "ledger_source_requirement_missing_"
+                        "contract_version"
+                    ),
                 ),
                 (
                     "answer_contract_digest",
                     coverage.get("accepted_contract_digest"),
+                    (
+                        "ledger_source_requirement_missing_"
+                        "contract_digest"
+                    ),
                 ),
             )
-            for key, expected in lineage_checks:
+            for key, expected, missing_code in lineage_checks:
                 observed = _clean_token(requirement.get(key), limit=200)
                 expected_token = _clean_token(expected, limit=200)
                 comparable_observed = (
@@ -1054,11 +1070,29 @@ def ledger_qualification_blockers_for_satisfied_coverage(
                     if key in {"run_id", "request_id"}
                     else expected_token
                 )
-                if (
-                    observed
-                    and expected_token
-                    and comparable_observed != comparable_expected
-                ):
+                if not observed:
+                    _append_ledger_blocker(
+                        blockers,
+                        code=missing_code,
+                        reason=(
+                            "coverage-bound source requirement is missing "
+                            f"mandatory current {key}"
+                        ),
+                        evidence_ref_id=evidence_ref,
+                        requirement_id=requirement_id,
+                    )
+                elif not expected_token:
+                    _append_ledger_blocker(
+                        blockers,
+                        code=f"coverage_current_lineage_missing_{key}",
+                        reason=(
+                            "authoritative coverage is missing current "
+                            f"{key} needed to validate its source requirement"
+                        ),
+                        evidence_ref_id=evidence_ref,
+                        requirement_id=requirement_id,
+                    )
+                elif comparable_observed != comparable_expected:
                     _append_ledger_blocker(
                         blockers,
                         code=f"ledger_source_requirement_stale_{key}",

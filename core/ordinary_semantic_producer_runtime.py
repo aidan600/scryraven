@@ -540,6 +540,11 @@ def select_bindable_final_passages_for_components(
     evidence_ledger_projection: Mapping[str, Any],
     component_refs: Sequence[Mapping[str, Any]],
     component_text_by_id: Mapping[str, str] | None = None,
+    *,
+    run_id: str | None = None,
+    request_id: str | None = None,
+    answer_contract_version: Any = None,
+    answer_contract_digest: str | None = None,
 ) -> dict[str, BindableFinalPassage]:
     bindables = _bindable_final_passages(final_top_evidence, evidence_ledger_projection)
     if not bindables:
@@ -586,6 +591,10 @@ def select_bindable_final_passages_for_components(
                 evidence_ref_id=bindable.evidence_ref_id,
                 component_id=component_id,
                 source_obligation_candidate_ids=obligation_ids,
+                run_id=run_id,
+                request_id=request_id,
+                answer_contract_version=answer_contract_version,
+                answer_contract_digest=answer_contract_digest,
             )
             score = _token_overlap_score(
                 component_ref=component_ref,
@@ -618,6 +627,10 @@ def source_requirement_ids_for_component_candidate(
     evidence_ref_id: str,
     component_id: str | None = None,
     source_obligation_candidate_ids: Sequence[str] = (),
+    run_id: str | None = None,
+    request_id: str | None = None,
+    answer_contract_version: Any = None,
+    answer_contract_digest: str | None = None,
     ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> tuple[str, ...]:
     """Expose exact scoped preflight or retained unscoped compatibility lookup."""
@@ -630,7 +643,17 @@ def source_requirement_ids_for_component_candidate(
     return lookup(
         evidence_ledger_projection,
         evidence_ref_id=evidence_ref_id,
-        **({"component_id": component_id} if component_id else {}),
+        **(
+            {
+                "component_id": component_id,
+                "run_id": run_id,
+                "request_id": request_id,
+                "answer_contract_version": answer_contract_version,
+                "answer_contract_digest": answer_contract_digest,
+            }
+            if component_id
+            else {}
+        ),
         source_obligation_candidate_ids=source_obligation_candidate_ids,
         ignore_satisfied_provider_job_historical_gaps=(
             ignore_satisfied_provider_job_historical_gaps
@@ -839,18 +862,34 @@ def _exact_owned_source_requirement_ids_for_candidate(
     evidence_ref_id: str,
     component_id: str,
     source_obligation_candidate_ids: Sequence[str],
+    run_id: str | None,
+    request_id: str | None,
+    answer_contract_version: Any,
+    answer_contract_digest: str | None,
     ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> tuple[str, ...]:
     """Return only unique, explicitly linked, exact-owned satisfied rows."""
 
     candidate_id = _clean_token(evidence_ref_id)
     component_identity = _owned_identity(component_id)
+    run_identity = _owned_identity(run_id)
+    request_identity = _owned_identity(request_id)
+    contract_version = _clean_token(answer_contract_version)
+    contract_digest = _clean_token(answer_contract_digest)
     obligation_identities = {
         identity
         for item in source_obligation_candidate_ids
         if (identity := _owned_identity(item))
     }
-    if not candidate_id or not component_identity or not obligation_identities:
+    if (
+        not candidate_id
+        or not component_identity
+        or not obligation_identities
+        or not run_identity
+        or not request_identity
+        or not contract_version
+        or not contract_digest
+    ):
         return ()
 
     candidate_rows = [
@@ -918,6 +957,14 @@ def _exact_owned_source_requirement_ids_for_candidate(
             != component_identity
             or _owned_identity(requirement.get("source_obligation_id"))
             not in obligation_identities
+            or _owned_identity(requirement.get("run_id"))
+            != run_identity
+            or _owned_identity(requirement.get("request_id"))
+            != request_identity
+            or _clean_token(requirement.get("answer_contract_version"))
+            != contract_version
+            or _clean_token(requirement.get("answer_contract_digest"))
+            != contract_digest
             or requirement_id in blocked_requirement_ids
         ):
             continue
@@ -1049,6 +1096,14 @@ def build_component_coverage_proposal(
             evidence_ref_id=observation.evidence_refs[0],
             component_id=component_ref["component_id"],
             source_obligation_candidate_ids=source_obligation_candidate_ids,
+            run_id=run_id,
+            request_id=request_id,
+            answer_contract_version=accepted_contract[
+                "accepted_contract_version"
+            ],
+            answer_contract_digest=accepted_contract[
+                "accepted_contract_digest"
+            ],
             ignore_satisfied_provider_job_historical_gaps=(
                 ignore_satisfied_provider_job_historical_gaps
             ),
@@ -1132,16 +1187,7 @@ def build_component_coverage_proposal(
         metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
     ).require_valid()
     blockers = ledger_qualification_blockers_for_satisfied_coverage(
-        coverage={
-            "coverage_state": record.coverage_state.value,
-            "content_reference_bindings": [
-                {"evidence_ref_id": content_ref.evidence_ref_id},
-            ],
-            "evidence_ledger_binding": {
-                "source_requirement_ids": list(source_requirement_ids),
-            },
-            "source_obligation_status": record.source_obligation_status.value,
-        },
+        coverage=record.to_dict(),
         evidence_ledger_projection=evidence_ledger_projection,
         accepted_component=component_ref,
         extra_evidence_refs=observation.evidence_refs,
@@ -1329,6 +1375,14 @@ def preflight_ordinary_semantic_producer_bundle(
         evidence_ledger_projection,
         component_refs,
         component_text_by_id=component_text_by_id,
+        run_id=run_id,
+        request_id=request_id,
+        answer_contract_version=accepted_contract[
+            "accepted_contract_version"
+        ],
+        answer_contract_digest=accepted_contract[
+            "accepted_contract_digest"
+        ],
     )
     if not selected_bindables:
         return OrdinarySemanticProducerPreflightResult(

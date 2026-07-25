@@ -942,6 +942,28 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         for item in current_ledger["source_requirements"]
         if item.get("requirement_id") == target_requirement_ids[0]
     )
+    assert (
+        target_requirement["run_id"],
+        target_requirement["request_id"],
+        target_requirement["answer_contract_version"],
+        target_requirement["answer_contract_digest"],
+        target_requirement["component_id"],
+        target_requirement["source_obligation_id"],
+        target_requirement["requirement_id"],
+    ) == (
+        kernel.state.run_id,
+        kernel.state.request_id,
+        terminal["answer_contract_ref"]["contract_version"],
+        terminal["answer_contract_ref"][
+            "answer_contract_digest"
+        ],
+        terminal["component_ref"]["component_id"].replace(
+            "-",
+            "_",
+        ),
+        target_obligation_id,
+        target_requirement_ids[0],
+    )
     target_links = [
         item
         for item in current_ledger["requirement_links"]
@@ -2369,6 +2391,8 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
                 "coverage_record_id": "coverage:recovery-finalization-proof",
                 "coverage_record_digest": "d" * 64,
                 "coverage_state": "satisfied",
+                "run_id": admitted_state["run_id"],
+                "request_id": admitted_state["request_id"],
                 "answer_component_id": coverage_component_id,
                 "component_revision": recovery_component_ref[
                     "component_revision"
@@ -2398,6 +2422,60 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
             },
         }
 
+    def exact_ledger_for_admission(
+        admission_ref: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        coverage_ref = dict(
+            admission_ref["component_coverage_ref"]
+        )
+        requirement_id = coverage_ref["source_requirement_ids"][0]
+        candidate_id = coverage_ref["candidate_ids"][0]
+        return {
+            "candidate_records": [
+                {
+                    "candidate_id": candidate_id,
+                    "fact_disposition": "accepted",
+                }
+            ],
+            "custody_records": [
+                {
+                    "candidate_id": candidate_id,
+                    "record_kind": "fact",
+                    "disposition": "accepted",
+                }
+            ],
+            "source_requirements": [
+                {
+                    "requirement_id": requirement_id,
+                    "requirement_kind": "component_source_obligation",
+                    "component_id": coverage_ref[
+                        "answer_component_id"
+                    ],
+                    "source_obligation_id": coverage_ref[
+                        "source_obligation_ids"
+                    ][0],
+                    "status": "satisfied",
+                    "run_id": admitted_state["run_id"],
+                    "request_id": admitted_state["request_id"],
+                    "answer_contract_version": (
+                        recovery_contract_ref["contract_version"]
+                    ),
+                    "answer_contract_digest": (
+                        recovery_contract_ref[
+                            "answer_contract_digest"
+                        ]
+                    ),
+                }
+            ],
+            "requirement_links": [
+                {
+                    "requirement_id": requirement_id,
+                    "candidate_id": candidate_id,
+                    "link_status": "accepted",
+                }
+            ],
+        }
+
     for foreign_or_sibling in (
         exact_shaped_admission(
             coverage_component_id="component:foreign",
@@ -2415,6 +2493,11 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
                 state=deepcopy(admitted_state),
                 cycle_ref=admission["cycle_ref"],
                 component_admission_ref=foreign_or_sibling,
+                evidence_ledger_projection=(
+                    exact_ledger_for_admission(
+                        foreign_or_sibling
+                    )
+                ),
             )
         )
         assert (
@@ -2431,11 +2514,16 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
         finalize_searchos_existing_gap_recovery_cycle(
             state=deepcopy(admitted_state),
             cycle_ref=admission["cycle_ref"],
-            component_admission_ref=exact_shaped_admission(
-                coverage_component_id=recovery_component_ref[
-                    "component_id"
-                ],
-                coverage_obligation_id=target_obligation_id,
+            component_admission_ref=(
+                exact_admission := exact_shaped_admission(
+                    coverage_component_id=recovery_component_ref[
+                        "component_id"
+                    ],
+                    coverage_obligation_id=target_obligation_id,
+                )
+            ),
+            evidence_ledger_projection=(
+                exact_ledger_for_admission(exact_admission)
             ),
         )
     )
@@ -2604,6 +2692,7 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
             state=terminal_state,
             cycle_ref=terminal_replay["cycle_ref"],
             component_admission_ref=None,
+            evidence_ledger_projection={},
         )
 
 
@@ -2683,6 +2772,8 @@ def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
     current_coverage = {
         "canonical_state": True,
         "stale": False,
+        "run_id": state["run_id"],
+        "request_id": state["request_id"],
         "answer_component_id": basis["prior_terminal_slot_ref"][
             "component_id"
         ],
@@ -2754,29 +2845,144 @@ def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
 
     satisfied_projection = deepcopy(projection)
     satisfied_projection["component_admission_refs"][-1]["admission_status"] = "admitted"
-    satisfied_coverage = [
-        {
-            **current_coverage,
-            "coverage_record_id": "coverage:component_1",
-            "coverage_record_digest": "a" * 64,
-            "coverage_state": "satisfied",
-            "evidence_ledger_binding": {"source_requirement_ids": ["requirement:official_current"]},
-        }
+    exact_requirement_id = "requirement:official_current"
+    exact_candidate_id = "candidate:official_current"
+    exact_satisfied_coverage = {
+        **current_coverage,
+        "coverage_record_id": "coverage:component_1",
+        "coverage_record_digest": "a" * 64,
+        "coverage_state": "satisfied",
+        "candidate_ids": [exact_candidate_id],
+        "evidence_ledger_binding": {
+            "source_requirement_ids": [exact_requirement_id]
+        },
+        "owned_requirement_candidate_refs": [
+            {
+                "requirement_id": exact_requirement_id,
+                "source_obligation_id": (
+                    basis["prior_terminal_slot_ref"][
+                        "source_obligation_id"
+                    ]
+                ),
+                "candidate_id": exact_candidate_id,
+                "link_status": "accepted",
+            }
+        ],
+    }
+    satisfied_ledger = {
+        "candidate_records": [
+            {
+                "candidate_id": exact_candidate_id,
+                "fact_disposition": "accepted",
+            }
+        ],
+        "custody_records": [
+            {
+                "candidate_id": exact_candidate_id,
+                "record_kind": "fact",
+                "disposition": "accepted",
+            }
+        ],
+        "source_requirements": [
+            {
+                "requirement_id": exact_requirement_id,
+                "requirement_kind": "component_source_obligation",
+                "source_obligation_id": (
+                    basis["prior_terminal_slot_ref"][
+                        "source_obligation_id"
+                    ]
+                ),
+                "component_id": basis["prior_terminal_slot_ref"][
+                    "component_id"
+                ],
+                "status": "satisfied",
+                "run_id": state["run_id"],
+                "request_id": state["request_id"],
+                "answer_contract_version": (
+                    state["answer_contract_ref"]["contract_version"]
+                ),
+                "answer_contract_digest": (
+                    state["answer_contract_ref"][
+                        "answer_contract_digest"
+                    ]
+                ),
+            }
+        ],
+        "requirement_links": [
+            {
+                "requirement_id": exact_requirement_id,
+                "candidate_id": exact_candidate_id,
+                "link_status": "accepted",
+            }
+        ],
+    }
+    incomplete_chain_variants = [
+        (
+            {
+                **exact_satisfied_coverage,
+                "coverage_state": "unsatisfied",
+            },
+            satisfied_ledger,
+        ),
+        (
+            {
+                **exact_satisfied_coverage,
+                "candidate_ids": [],
+            },
+            satisfied_ledger,
+        ),
+        (
+            {
+                **exact_satisfied_coverage,
+                "owned_requirement_candidate_refs": [],
+            },
+            satisfied_ledger,
+        ),
+        (
+            exact_satisfied_coverage,
+            {
+                **satisfied_ledger,
+                "requirement_links": [
+                    {
+                        **satisfied_ledger[
+                            "requirement_links"
+                        ][0],
+                        "link_reason": (
+                            "selected_candidate_matches_existing_requirement"
+                        ),
+                    }
+                ],
+            },
+        ),
+        (
+            exact_satisfied_coverage,
+            {
+                **satisfied_ledger,
+                "source_requirements": [
+                    {
+                        **satisfied_ledger[
+                            "source_requirements"
+                        ][0],
+                        "component_id": "component:foreign",
+                    }
+                ],
+            },
+        ),
     ]
-    satisfied_ledger = deepcopy(ledger)
-    satisfied_ledger.setdefault("source_requirements", []).append(
-        {
-            "requirement_id": "requirement:official_current",
-            "requirement_kind": "official_current",
-            "source_obligation_id": basis["prior_terminal_slot_ref"][
-                "source_obligation_id"
-            ],
-            "component_id": basis["prior_terminal_slot_ref"][
-                "component_id"
-            ],
-            "status": "satisfied",
+    for incomplete_coverage, incomplete_ledger in (
+        incomplete_chain_variants
+    ):
+        incomplete_basis = build_searchos_existing_gap_basis(
+            state=state,
+            slot_id=slot_id,
+            component_admission_projection=satisfied_projection,
+            component_coverage_history=[incomplete_coverage],
+            evidence_ledger_projection=incomplete_ledger,
+        )
+        assert incomplete_basis["gap_kind"] in {
+            "same_component_semantic_admission_not_supported",
+            "same_component_source_obligation_not_covered",
         }
-    )
     with pytest.raises(
         SearchOSExistingGapRecoveryError,
         match="cannot reopen a satisfied source obligation",
@@ -2785,7 +2991,7 @@ def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
             state=state,
             slot_id=slot_id,
             component_admission_projection=satisfied_projection,
-            component_coverage_history=satisfied_coverage,
+            component_coverage_history=[exact_satisfied_coverage],
             evidence_ledger_projection=satisfied_ledger,
         )
 
@@ -3018,6 +3224,10 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
     obligation_sibling = "obligation:a:sibling"
     requirement_id = "requirement:shared-family:a"
     candidate_id = "candidate:shared-family"
+    run_id = "run:exact-ownership"
+    request_id = "request:exact-ownership"
+    contract_version = 1
+    contract_digest = "a" * 64
     projection = {
         "candidate_records": [
             {
@@ -3039,6 +3249,10 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
                 "component_id": component_a,
                 "source_obligation_id": obligation_a,
                 "status": "satisfied",
+                "run_id": run_id,
+                "request_id": request_id,
+                "answer_contract_version": contract_version,
+                "answer_contract_digest": contract_digest,
             }
         ],
         "requirement_links": [
@@ -3055,7 +3269,31 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         evidence_ref_id=candidate_id,
         component_id=component_a,
         source_obligation_candidate_ids=[obligation_a],
+        run_id=run_id,
+        request_id=request_id,
+        answer_contract_version=contract_version,
+        answer_contract_digest=contract_digest,
     ) == (requirement_id,)
+    for lineage_field in (
+        "run_id",
+        "request_id",
+        "answer_contract_version",
+        "answer_contract_digest",
+    ):
+        incomplete_lineage_projection = deepcopy(projection)
+        incomplete_lineage_projection["source_requirements"][0].pop(
+            lineage_field
+        )
+        assert not source_requirement_ids_for_component_candidate(
+            incomplete_lineage_projection,
+            evidence_ref_id=candidate_id,
+            component_id=component_a,
+            source_obligation_candidate_ids=[obligation_a],
+            run_id=run_id,
+            request_id=request_id,
+            answer_contract_version=contract_version,
+            answer_contract_digest=contract_digest,
+        )
     for foreign_owner in (
         {
             "component_id": component_b,
@@ -3069,6 +3307,10 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         assert not source_requirement_ids_for_component_candidate(
             projection,
             evidence_ref_id=candidate_id,
+            run_id=run_id,
+            request_id=request_id,
+            answer_contract_version=contract_version,
+            answer_contract_digest=contract_digest,
             **foreign_owner,
         )
     ambiguous_projection = deepcopy(projection)
@@ -3083,6 +3325,10 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         evidence_ref_id=candidate_id,
         component_id=component_a,
         source_obligation_candidate_ids=[obligation_a],
+        run_id=run_id,
+        request_id=request_id,
+        answer_contract_version=contract_version,
+        answer_contract_digest=contract_digest,
     )
     implicit_projection = deepcopy(projection)
     implicit_projection["requirement_links"][0]["link_reason"] = (
@@ -3093,10 +3339,18 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         evidence_ref_id=candidate_id,
         component_id=component_a,
         source_obligation_candidate_ids=[obligation_a],
+        run_id=run_id,
+        request_id=request_id,
+        answer_contract_version=contract_version,
+        answer_contract_digest=contract_digest,
     )
 
     coverage = {
         "coverage_state": "satisfied",
+        "run_id": run_id,
+        "request_id": request_id,
+        "accepted_contract_version": contract_version,
+        "accepted_contract_digest": contract_digest,
         "answer_component_id": component_a,
         "source_obligation_status": "satisfied",
         "source_obligation_ids": [obligation_a],
@@ -3158,8 +3412,8 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         "component_digest": "c" * 64,
     }
     contract_ref = {
-        "contract_version": 1,
-        "answer_contract_digest": "a" * 64,
+        "contract_version": contract_version,
+        "answer_contract_digest": contract_digest,
     }
     exact_coverage_ref = {
         **coverage,
@@ -3210,6 +3464,9 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         answer_contract_ref=contract_ref,
         source_obligation_id=obligation_a,
         consumed_candidate_ids=[candidate_id],
+        evidence_ledger_projection=projection,
+        run_id=run_id,
+        request_id=request_id,
     )
     assert not _exact_recovery_coverage_chain(
         coverage_ref=exact_coverage_ref,
@@ -3217,4 +3474,7 @@ def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() ->
         answer_contract_ref=contract_ref,
         source_obligation_id=obligation_sibling,
         consumed_candidate_ids=[candidate_id],
+        evidence_ledger_projection=projection,
+        run_id=run_id,
+        request_id=request_id,
     )

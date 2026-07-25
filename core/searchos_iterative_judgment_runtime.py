@@ -33,7 +33,21 @@ SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION = "searchos_navigation_judgm
 SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION = "searchos_navigation_judgment_decision_v1"
 SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION = "searchos_semantic_evaluation_handoff_v1"
 SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION = "searchos_slice_a_readiness_v1"
+SEARCHOS_REQUIRED_NEEDS_BLOCK_SCHEMA_VERSION = (
+    "searchos_slice_a_required_needs_block_v1"
+)
 SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED = "SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED"
+SEARCHOS_BLOCKER_INTERPRETATION_BY_CLASS = {
+    "component_receiver_failure": "structural_or_validation_blocker",
+    "gap_basis_rejection": "structural_or_validation_blocker",
+    "validation_failure": "structural_or_validation_blocker",
+    "provider_or_acquisition_failure": "provider_or_acquisition_blocker",
+    "recovery_policy_closed": "lawful_recovery_exhaustion",
+    "recovery_ineligible": "lawful_recovery_ineligible",
+}
+SEARCHOS_BLOCKER_INTERPRETATIONS = frozenset(
+    SEARCHOS_BLOCKER_INTERPRETATION_BY_CLASS.values()
+)
 
 MAXIMUM_ACTIVE_SLOTS = 8
 CANDIDATE_USE_WINDOW_SIZE = 12
@@ -1010,52 +1024,14 @@ def record_searchos_readiness_projection(state: Mapping[str, Any], *, readiness:
 
 def record_searchos_required_needs_block(state: Mapping[str, Any], *, block: Mapping[str, Any]) -> dict[str, Any]:
     candidate = _validated_state_copy(state)
-    safe = _mapping(block)
-    if safe.get("schema_version") != "searchos_slice_a_required_needs_block_v1":
-        raise SearchOSRuntimeError("required-needs block schema mismatch")
-    if safe.get("block_type") != SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED:
-        raise SearchOSRuntimeError("required-needs block type mismatch")
+    safe = validate_searchos_required_needs_block(
+        block,
+        state=candidate,
+    )
     readiness_ref = _required_ref(safe.get("readiness_projection_ref"), "readiness_projection_ref")
     if readiness_ref != _mapping(candidate.get("readiness_projection_ref")):
         raise SearchOSRuntimeError("required-needs block readiness ref is stale")
     claimed = _digest_token(safe.get("block_digest"), "block_digest")
-    core = {
-        key: deepcopy(value)
-        for key, value in safe.items()
-        if key not in {"block_id", "block_digest", "replay_identity"}
-    }
-    if _digest(core) != claimed:
-        raise SearchOSRuntimeError("required-needs block digest mismatch")
-    if safe.get("block_id") != (f"searchos-required-needs-block:{claimed[:24]}") or safe.get("replay_identity") != (
-        f"searchos-required-needs-block:{claimed}"
-    ):
-        raise SearchOSRuntimeError("required-needs block identity mismatch")
-    if any(
-        safe.get(field) is not False
-        for field in (
-            "query_authorized",
-            "read_authorized",
-            "retry_authorized",
-            "recovery_authorized",
-        )
-    ):
-        raise SearchOSRuntimeError("required-needs block broadens closed authority")
-    if (
-        safe.get("semantic_receiver_ready") is not False
-        or safe.get("sufficiency_adjudication_required") is not True
-        or safe.get("subordinate_to_sufficiency") is not True
-        or any(
-            field in safe
-            for field in (
-                "successful_sufficiency_allowed",
-                "final_answer_packet_allowed",
-                "author_execution_allowed",
-            )
-        )
-    ):
-        raise SearchOSRuntimeError(
-            "required-needs block must remain subordinate to Sufficiency"
-        )
     candidate["required_needs_block_ref"] = {
         "block_id": safe["block_id"],
         "block_digest": claimed,
@@ -2185,8 +2161,57 @@ def build_searchos_required_needs_block(
     unresolved = [deepcopy(_mapping(item)) for item in safe.get("unresolved_required_slots") or ()]
     if not unresolved or safe.get("all_required_slots_slice_a_ready") is not False:
         raise SearchOSRuntimeError("required-needs block requires unresolved slots")
+    readiness_digest = _digest_token(
+        safe.get("readiness_projection_digest"),
+        "readiness_projection_digest",
+    )
+    readiness_core = {
+        key: deepcopy(value)
+        for key, value in safe.items()
+        if key
+        not in {
+            "readiness_projection_id",
+            "readiness_projection_digest",
+            "replay_identity",
+        }
+    }
+    if (
+        safe.get("owner") != SEARCHOS_OWNER
+        or safe.get("canonical_state") is not True
+        or _digest(readiness_core) != readiness_digest
+        or safe.get("readiness_projection_id")
+        != f"searchos-readiness:{readiness_digest[:24]}"
+        or safe.get("replay_identity")
+        != f"searchos-readiness:{readiness_digest}"
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block requires canonical current readiness"
+        )
+    unresolved_slot_refs = [
+        _required_ref(item.get("slot_ref"), "unresolved slot_ref")
+        for item in unresolved
+    ]
+    unresolved_slot_ids = [
+        _token(item.get("slot_id"), "unresolved slot_id", limit=200)
+        for item in unresolved_slot_refs
+    ]
+    if (
+        len(unresolved_slot_ids) != len(set(unresolved_slot_ids))
+        or any(
+            not ref.get("component_id")
+            or not ref.get("source_obligation_id")
+            for ref in unresolved_slot_refs
+        )
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block has malformed unresolved slot identity"
+        )
+    validated_blocker_facts = _validated_searchos_blocker_facts(
+        blocker_facts,
+        unresolved_slot_ids=unresolved_slot_ids,
+    )
     core = {
-        "schema_version": "searchos_slice_a_required_needs_block_v1",
+        "schema_version": SEARCHOS_REQUIRED_NEEDS_BLOCK_SCHEMA_VERSION,
         "owner": SEARCHOS_OWNER,
         "block_type": SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
         "run_id": safe.get("run_id"),
@@ -2196,23 +2221,7 @@ def build_searchos_required_needs_block(
             "readiness_projection_digest": safe.get("readiness_projection_digest"),
         },
         "unresolved_required_slots": unresolved,
-        "blocker_facts": [
-            {
-                "blocker_class": str(
-                    item.get("blocker_class") or "recovery_ineligible"
-                )[:80],
-                "reason_code": str(
-                    item.get("reason_code") or "required_need_unresolved"
-                )[:240],
-                "slot_id": (
-                    str(item.get("slot_id"))[:200]
-                    if item.get("slot_id")
-                    else None
-                ),
-            }
-            for item in blocker_facts
-            if isinstance(item, Mapping)
-        ],
+        "blocker_facts": validated_blocker_facts,
         "query_authorized": False,
         "read_authorized": False,
         "retry_authorized": False,
@@ -2227,12 +2236,247 @@ def build_searchos_required_needs_block(
         "canonical_state": True,
     }
     digest = _digest(core)
-    return {
+    block = {
         **core,
         "block_id": f"searchos-required-needs-block:{digest[:24]}",
         "block_digest": digest,
         "replay_identity": f"searchos-required-needs-block:{digest}",
     }
+    return validate_searchos_required_needs_block(block)
+
+
+def _validated_searchos_blocker_facts(
+    blocker_facts: Sequence[Mapping[str, Any]],
+    *,
+    unresolved_slot_ids: Sequence[str],
+) -> list[dict[str, str]]:
+    unresolved_ids = set(unresolved_slot_ids)
+    if not blocker_facts:
+        raise SearchOSRuntimeError(
+            "required-needs block requires canonical blocker facts"
+        )
+    facts: list[dict[str, str]] = []
+    seen_event_keys: set[tuple[str, str]] = set()
+    covered_slot_ids: set[str] = set()
+    for item in blocker_facts:
+        if not isinstance(item, Mapping):
+            raise SearchOSRuntimeError(
+                "required-needs blocker fact must be a mapping"
+            )
+        blocker_class = _token(
+            item.get("blocker_class"),
+            "blocker_class",
+            limit=80,
+        )
+        interpretation = _token(
+            item.get("interpretation"),
+            "blocker interpretation",
+            limit=80,
+        )
+        reason_code = _token(
+            item.get("reason_code"),
+            "blocker reason_code",
+            limit=240,
+        )
+        slot_id = _token(
+            item.get("slot_id"),
+            "blocker slot_id",
+            limit=200,
+        )
+        expected_interpretation = (
+            SEARCHOS_BLOCKER_INTERPRETATION_BY_CLASS.get(blocker_class)
+        )
+        if (
+            interpretation not in SEARCHOS_BLOCKER_INTERPRETATIONS
+            or expected_interpretation != interpretation
+        ):
+            raise SearchOSRuntimeError(
+                "required-needs blocker interpretation is absent, unknown, "
+                "or inconsistent with its producing branch"
+            )
+        if slot_id not in unresolved_ids:
+            raise SearchOSRuntimeError(
+                "required-needs blocker slot identity is stale or foreign"
+            )
+        event_key = (slot_id, blocker_class)
+        if event_key in seen_event_keys:
+            raise SearchOSRuntimeError(
+                "required-needs blocker facts ambiguously duplicate one "
+                "exact slot event"
+            )
+        seen_event_keys.add(event_key)
+        covered_slot_ids.add(slot_id)
+        facts.append(
+            {
+                "blocker_class": blocker_class,
+                "interpretation": interpretation,
+                "reason_code": reason_code,
+                "slot_id": slot_id,
+            }
+        )
+    if covered_slot_ids != unresolved_ids:
+        raise SearchOSRuntimeError(
+            "required-needs blocker facts do not cover every unresolved slot"
+        )
+    return facts
+
+
+def validate_searchos_required_needs_block(
+    block: Mapping[str, Any],
+    *,
+    state: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    safe = _mapping(block)
+    if (
+        safe.get("schema_version")
+        != SEARCHOS_REQUIRED_NEEDS_BLOCK_SCHEMA_VERSION
+        or safe.get("owner") != SEARCHOS_OWNER
+        or safe.get("block_type")
+        != SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
+        or safe.get("canonical_state") is not True
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block schema, owner, type, or canonical state mismatch"
+        )
+    claimed = _digest_token(safe.get("block_digest"), "block_digest")
+    core = {
+        key: deepcopy(value)
+        for key, value in safe.items()
+        if key not in {"block_id", "block_digest", "replay_identity"}
+    }
+    if (
+        _digest(core) != claimed
+        or safe.get("block_id")
+        != f"searchos-required-needs-block:{claimed[:24]}"
+        or safe.get("replay_identity")
+        != f"searchos-required-needs-block:{claimed}"
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block digest or identity mismatch"
+        )
+    run_id = _token(safe.get("run_id"), "block run_id")
+    request_id = _token(safe.get("request_id"), "block request_id")
+    readiness_ref = _required_ref(
+        safe.get("readiness_projection_ref"),
+        "readiness_projection_ref",
+    )
+    _token(
+        readiness_ref.get("readiness_projection_id"),
+        "readiness_projection_id",
+        limit=200,
+    )
+    _digest_token(
+        readiness_ref.get("readiness_projection_digest"),
+        "readiness_projection_digest",
+    )
+    unresolved = [
+        _mapping(item)
+        for item in safe.get("unresolved_required_slots") or ()
+        if isinstance(item, Mapping)
+    ]
+    unresolved_slot_refs = [
+        _required_ref(item.get("slot_ref"), "unresolved slot_ref")
+        for item in unresolved
+    ]
+    unresolved_slot_ids = [
+        _token(item.get("slot_id"), "unresolved slot_id", limit=200)
+        for item in unresolved_slot_refs
+    ]
+    if (
+        not unresolved_slot_ids
+        or len(unresolved_slot_ids) != len(set(unresolved_slot_ids))
+        or any(
+            not ref.get("component_id")
+            or not ref.get("source_obligation_id")
+            for ref in unresolved_slot_refs
+        )
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block has malformed unresolved slot identity"
+        )
+    raw_facts = safe.get("blocker_facts")
+    if not isinstance(raw_facts, Sequence) or isinstance(
+        raw_facts, str | bytes
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block blocker facts are malformed"
+        )
+    _validated_searchos_blocker_facts(
+        list(raw_facts),
+        unresolved_slot_ids=unresolved_slot_ids,
+    )
+    if any(
+        safe.get(field) is not False
+        for field in (
+            "query_authorized",
+            "read_authorized",
+            "retry_authorized",
+            "recovery_authorized",
+        )
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block broadens closed authority"
+        )
+    if (
+        safe.get("semantic_receiver_ready") is not False
+        or safe.get("sufficiency_adjudication_required") is not True
+        or safe.get("subordinate_to_sufficiency") is not True
+        or any(
+            field in safe
+            for field in (
+                "successful_sufficiency_allowed",
+                "final_answer_packet_allowed",
+                "author_execution_allowed",
+            )
+        )
+    ):
+        raise SearchOSRuntimeError(
+            "required-needs block must remain subordinate to Sufficiency"
+        )
+    if state is not None:
+        canonical_state = _validated_state_copy(state)
+        if (
+            canonical_state.get("run_id") != run_id
+            or canonical_state.get("request_id") != request_id
+            or _mapping(canonical_state.get("readiness_projection_ref"))
+            != readiness_ref
+        ):
+            raise SearchOSRuntimeError(
+                "required-needs block run, request, or readiness ref is stale"
+            )
+        required_slot_ids = set(
+            canonical_state.get("required_slot_ids") or ()
+        )
+        slots_by_id = _mapping(canonical_state.get("slots_by_id"))
+        for slot_ref in unresolved_slot_refs:
+            slot_id = slot_ref["slot_id"]
+            if (
+                slot_id not in required_slot_ids
+                or _mapping(_mapping(slots_by_id.get(slot_id)).get("slot_ref"))
+                != slot_ref
+            ):
+                raise SearchOSRuntimeError(
+                    "required-needs block unresolved slot is stale or foreign"
+                )
+        current_ref = _mapping(
+            canonical_state.get("required_needs_block_ref")
+        )
+        if current_ref and current_ref != {
+            "block_id": safe["block_id"],
+            "block_digest": claimed,
+            "block_type": safe["block_type"],
+        }:
+            raise SearchOSRuntimeError(
+                "required-needs block reference is not current"
+            )
+        current_block = _mapping(
+            canonical_state.get("required_needs_block")
+        )
+        if current_block and current_block != safe:
+            raise SearchOSRuntimeError(
+                "required-needs block payload is not current"
+            )
+    return deepcopy(safe)
 
 
 def _readiness_failure_reason(slot: Mapping[str, Any], outcome: Mapping[str, Any]) -> str:
@@ -2610,8 +2854,11 @@ def _require_schema(value: Mapping[str, Any], expected: str, label: str) -> None
 __all__ = [
     "CANDIDATE_USE_WINDOW_SIZE",
     "MAXIMUM_ACTIVE_SLOTS",
+    "SEARCHOS_BLOCKER_INTERPRETATION_BY_CLASS",
+    "SEARCHOS_BLOCKER_INTERPRETATIONS",
     "SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION",
     "SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION",
+    "SEARCHOS_REQUIRED_NEEDS_BLOCK_SCHEMA_VERSION",
     "SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED",
     "SearchOSJudgmentAction",
     "SearchOSMaterialAuthority",
@@ -2656,6 +2903,7 @@ __all__ = [
     "validate_searchos_append_only_lineage",
     "validate_searchos_iteration_candidate_set",
     "validate_searchos_judgment_model_output",
+    "validate_searchos_required_needs_block",
     "validate_searchos_revision_1_candidate_state",
     "validate_searchos_state",
 ]

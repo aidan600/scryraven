@@ -573,6 +573,14 @@ def _semantic_material(
             evidence_ref_id=evidence_ref_id,
             component_id=component_id,
             source_obligation_candidate_ids=tuple(obligation_ids),
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            answer_contract_version=accepted[
+                "accepted_contract_version"
+            ],
+            answer_contract_digest=accepted[
+                "accepted_contract_digest"
+            ],
             ignore_satisfied_provider_job_historical_gaps=True,
         )
         qualification_blockers = (
@@ -792,13 +800,24 @@ def _qualify_searchos_read_material_after_component_dprime(
                 "requirement_id": requirement_ids_by_obligation[
                     qualified_obligation_id
                 ],
-                "requirement_kind": qualified_obligation_id.split(
-                    ":", 1
-                )[-1],
+                "requirement_kind": {
+                    "canonical_docs": "canonical",
+                    "legal_primary": "legal",
+                    "source_bound_numeric": "source_bound",
+                }.get(
+                    qualified_obligation_id.split(":", 1)[-1],
+                    qualified_obligation_id.split(":", 1)[-1],
+                ),
                 "source_obligation_id": qualified_obligation_id,
                 "component_id": component_id,
                 "run_id": run_kernel.state.run_id,
                 "request_id": run_kernel.state.request_id,
+                "answer_contract_version": accepted[
+                    "accepted_contract_version"
+                ],
+                "answer_contract_digest": accepted[
+                    "accepted_contract_digest"
+                ],
                 "origin_ref": ("RunKernel.SearchOSIterativeJudgment:" + str(handoff_ref["semantic_handoff_id"])),
                 "aggregate_counts_insufficient": False,
             }
@@ -2974,6 +2993,14 @@ def _execute_selected_lane(
         run_kernel.state.evidence_ledger.to_projection().to_dict(),
         component_refs,
         component_text_by_id=_accepted_component_text_by_id(accepted),
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        answer_contract_version=accepted[
+            "accepted_contract_version"
+        ],
+        answer_contract_digest=accepted[
+            "accepted_contract_digest"
+        ],
     )
     # Custody-gap exception is authorized only for the selected typed lane.
     typed_lane_custody_exception = True
@@ -3014,6 +3041,14 @@ def _execute_selected_lane(
                     or component_ref.get("source_obligation_candidate_refs")
                     or ()
                 ),
+                run_id=run_kernel.state.run_id,
+                request_id=run_kernel.state.request_id,
+                answer_contract_version=accepted[
+                    "accepted_contract_version"
+                ],
+                answer_contract_digest=accepted[
+                    "accepted_contract_digest"
+                ],
                 ignore_satisfied_provider_job_historical_gaps=(
                     typed_lane_custody_exception
                 ),
@@ -3115,6 +3150,14 @@ def execute_searchos_same_component_reassessment_from_scope(
         run_kernel.state.evidence_ledger.to_projection().to_dict(),
         [component_ref],
         component_text_by_id=_accepted_component_text_by_id(accepted),
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        answer_contract_version=accepted[
+            "accepted_contract_version"
+        ],
+        answer_contract_digest=accepted[
+            "accepted_contract_digest"
+        ],
     )
     bindable = selected.get(component_id)
     passage = _safe_mapping(getattr(bindable, "passage", None) if bindable is not None else None)

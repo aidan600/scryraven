@@ -514,6 +514,8 @@ def stage_multicomponent_component_admission(
                     "coverage_record_digest": coverage_projection.get(
                         "coverage_record_digest"
                     ),
+                    "run_id": coverage_projection.get("run_id"),
+                    "request_id": coverage_projection.get("request_id"),
                     "coverage_state": coverage_projection.get("coverage_state"),
                     "answer_component_id": coverage_projection.get(
                         "answer_component_id"

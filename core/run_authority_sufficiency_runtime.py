@@ -292,6 +292,11 @@ def execute_sufficiency_judgment_handoff_from_scope(
                 "searchos_existing_gap_recovery_terminal"
             )
         ),
+        searchos_required_needs_block_state=(
+            run_kernel.state.projections.get(
+                "searchos_required_needs_block"
+            )
+        ),
         searchos_state=run_kernel.state.searchos_state,
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,

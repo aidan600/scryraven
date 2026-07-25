@@ -22,6 +22,7 @@ from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_actio
 from core.provider_job_evidence_ledger_bridge import (
     build_provider_job_evidence_ledger_observation,
 )
+from core.run_authority_contract import stable_hash
 from core.run_kernel import RunKernel
 
 
@@ -53,6 +54,15 @@ def reduce_run_contract_requirements_into_evidence_ledger(
         payload=build_evidence_ledger_observation_from_run_contract(
             observation_id=f"{run_id}:evidence-ledger:{observation_id_suffix}",
             contract_projection=run_contract_projection,
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            answer_contract_version=str(
+                run_contract_projection.get("schema_version")
+                or "run_authority_contract"
+            ),
+            answer_contract_digest=stable_hash(
+                run_contract_projection
+            ),
         ).to_dict(),
     )
     run_kernel.reduce(result.observation)
