@@ -73,11 +73,15 @@ def _contract_and_graph() -> tuple[dict, dict, dict[str, AnswerComponentContract
         "graph_revision": "1",
         "graph_digest": "graph-digest-1",
     }
-    return contract, graph, {
-        "A": premise_a,
-        "D": premise_d,
-        "E": target_e,
-    }
+    return (
+        contract,
+        graph,
+        {
+            "A": premise_a,
+            "D": premise_d,
+            "E": target_e,
+        },
+    )
 
 
 def _artifact(
@@ -273,9 +277,7 @@ def test_searched_premise_amendment_is_atomic_and_preserves_matrix() -> None:
     assert added["component_purpose"] == "supporting_premise"
     assert added["allowed_support_kinds"] == ["direct"]
     assert added["max_inference_depth"] == 0
-    assert added["source_obligation_candidate_ids"] == [
-        "obligation:component:C"
-    ]
+    assert added["source_obligation_candidate_ids"] == ["obligation:component:C"]
     revised = payload["operations"][1]["after_payload"]["component"]
     assert revised["dependency_component_ids"] == ["component:C"]
     assert revised["allowed_support_kinds"] == ["direct", "inferred"]
@@ -291,14 +293,10 @@ def test_analyst_owns_resolution_candidates_and_scrutineer_authorship_is_retired
             "caveats": [],
             "nonclaims": [],
             "blockers": ["Missing direct premise support."],
-            "query_resolution_proposals": [
-                _searched_candidate(components["E"])
-            ],
+            "query_resolution_proposals": [_searched_candidate(components["E"])],
         },
     )
-    assert normalized["query_resolution_proposals"][0]["classification"] == (
-        "searched_premise"
-    )
+    assert normalized["query_resolution_proposals"][0]["classification"] == ("searched_premise")
 
     with pytest.raises(
         MulticomponentRoleRuntimeError,
@@ -309,12 +307,8 @@ def test_analyst_owns_resolution_candidates_and_scrutineer_authorship_is_retired
             {
                 "challenge_status": "challenged",
                 "reasons": ["Missing premise."],
-                "challenge_targets": [
-                    {"target_kind": "synthesis", "target_key": "target_E"}
-                ],
-                "query_resolution_proposals": [
-                    {"proposal_key": "legacy"}
-                ],
+                "challenge_targets": [{"target_kind": "synthesis", "target_key": "target_E"}],
+                "query_resolution_proposals": [{"proposal_key": "legacy"}],
                 "caveats": [],
                 "nonclaims": [],
             },
@@ -433,13 +427,9 @@ def _expenditure() -> dict:
 
 def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> None:
     initial = _searchos_state("deep")
-    leased, lease, replayed = ensure_searchos_whole_run_recovery_lease(
-        state=initial
-    )
+    leased, lease, replayed = ensure_searchos_whole_run_recovery_lease(state=initial)
     assert replayed is False
-    leased_again, same_lease, replayed = (
-        ensure_searchos_whole_run_recovery_lease(state=leased)
-    )
+    leased_again, same_lease, replayed = ensure_searchos_whole_run_recovery_lease(state=leased)
     assert replayed is True
     assert leased_again == leased
     assert same_lease == lease
@@ -458,9 +448,7 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
     first_admission = deepcopy(first["cycle_admission"])
     assert first["work_authorized"] is True
     assert first_admission["prior_slot_absent"] is True
-    first_slot = first_state["slots_by_id"][
-        first["recovery_slot_ref"]["slot_id"]
-    ]
+    first_slot = first_state["slots_by_id"][first["recovery_slot_ref"]["slot_id"]]
     assert first_slot["current_candidate_state_ref"] == {}
     assert first_slot["current_window_ref"] == {}
     assert first_slot["candidate_wave_count"] == 0
@@ -487,13 +475,9 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
         component_admission_ref={"admission_id": "component:C1"},
         component_coverage_ref={"coverage_id": "coverage:C1"},
     )
-    assert terminal_state["recovery_cycle_admission_history"] == [
-        first_admission
-    ]
+    assert terminal_state["recovery_cycle_admission_history"] == [first_admission]
     assert len(terminal_state["recovery_cycle_terminal_history"]) == 1
-    first_expenditure_record = deepcopy(
-        terminal_state["recovery_expenditure_history"][0]
-    )
+    first_expenditure_record = deepcopy(terminal_state["recovery_expenditure_history"][0])
     assert terminal_state["active_recovery_cycle_ref"] == {}
 
     replay_state, replay = _admit_searched_cycle(
@@ -531,22 +515,12 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
         terminal_reason="No adequate direct source was acquired.",
         expenditure=_expenditure(),
     )
-    assert len(
-        second_terminal_state["recovery_cycle_admission_history"]
-    ) == 2
-    assert len(
-        second_terminal_state["recovery_cycle_terminal_history"]
-    ) == 2
-    assert second_terminal_state["recovery_terminal_aggregate"][
-        "terminal_count"
-    ] == 2
-    assert second_terminal_state["recovery_lease"] == leased[
-        "recovery_lease"
-    ]
+    assert len(second_terminal_state["recovery_cycle_admission_history"]) == 2
+    assert len(second_terminal_state["recovery_cycle_terminal_history"]) == 2
+    assert second_terminal_state["recovery_terminal_aggregate"]["terminal_count"] == 2
+    assert second_terminal_state["recovery_lease"] == leased["recovery_lease"]
     assert len(second_terminal_state["recovery_lease_history"]) == 1
-    assert second_terminal_state["recovery_expenditure_history"][0] == (
-        first_expenditure_record
-    )
+    assert second_terminal_state["recovery_expenditure_history"][0] == (first_expenditure_record)
     assert len(second_terminal_state["recovery_expenditure_history"]) == 2
     before_generation_three = deepcopy(second_terminal_state)
 

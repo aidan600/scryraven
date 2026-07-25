@@ -14,12 +14,8 @@ from copy import deepcopy
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
-ANALYST_QUERY_RESOLUTION_PROPOSAL_SCHEMA_VERSION = (
-    "analyst_query_resolution_proposal_v1"
-)
-ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY = (
-    "analyst_query_resolution_proposal"
-)
+ANALYST_QUERY_RESOLUTION_PROPOSAL_SCHEMA_VERSION = "analyst_query_resolution_proposal_v1"
+ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY = "analyst_query_resolution_proposal"
 
 CLASS_EXISTING_COMPONENT_GAP = "existing_component_gap"
 CLASS_SEARCHED_PREMISE = "searched_premise"
@@ -31,9 +27,7 @@ ALLOWED_CLASSIFICATIONS = frozenset(
         CLASS_INFERRED_CONCLUSION,
     }
 )
-ALLOWED_ORIGINATING_ROLES = frozenset(
-    {"component_analyst", "cross_component_analyst"}
-)
+ALLOWED_ORIGINATING_ROLES = frozenset({"component_analyst", "cross_component_analyst"})
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -79,9 +73,7 @@ def _token(value: Any, *, limit: int = 180) -> str | None:
 def _local_key(value: Any) -> str:
     text = _token(value, limit=80) or ""
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,79}", text):
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposal requires a bounded local key"
-        )
+        raise AnalystQueryResolutionProposalError("query-resolution proposal requires a bounded local key")
     return text
 
 
@@ -111,12 +103,8 @@ def _safe(value: Any, *, depth: int = 0) -> Any:
             if not key:
                 continue
             normalized_key = key.casefold()
-            if (
-                normalized_key != "raw_private_retained"
-                and (
-                    normalized_key.startswith("raw_")
-                    or normalized_key in _SENSITIVE_KEYS
-                )
+            if normalized_key != "raw_private_retained" and (
+                normalized_key.startswith("raw_") or normalized_key in _SENSITIVE_KEYS
             ):
                 raise AnalystQueryResolutionProposalError(
                     f"query-resolution proposal contains forbidden private field {key}"
@@ -136,9 +124,7 @@ def _digest(value: Mapping[str, Any]) -> str:
 def _required_text(mapping: Mapping[str, Any], key: str, *, limit: int = 800) -> str:
     text = _clean_text(mapping.get(key), limit=limit)
     if not text:
-        raise AnalystQueryResolutionProposalError(
-            f"query-resolution proposal requires {key}"
-        )
+        raise AnalystQueryResolutionProposalError(f"query-resolution proposal requires {key}")
     return text
 
 
@@ -155,15 +141,11 @@ def _text_list(
         if text:
             values.append(text)
     if len(values) != len(set(values)):
-        raise AnalystQueryResolutionProposalError(
-            f"{label} must contain unique refs"
-        )
+        raise AnalystQueryResolutionProposalError(f"{label} must contain unique refs")
     if nonempty and not values:
         raise AnalystQueryResolutionProposalError(f"{label} must be nonempty")
     if canonical_sorted and values != sorted(values):
-        raise AnalystQueryResolutionProposalError(
-            f"{label} must use canonical sorted order"
-        )
+        raise AnalystQueryResolutionProposalError(f"{label} must use canonical sorted order")
     return values
 
 
@@ -175,18 +157,13 @@ def _ref_list(
     canonical_sorted: bool = False,
 ) -> list[dict[str, Any]]:
     refs = [_mapping(item, label) for item in _sequence(value)]
-    identities = [
-        _digest(_safe(ref))
-        for ref in refs
-    ]
+    identities = [_digest(_safe(ref)) for ref in refs]
     if len(identities) != len(set(identities)):
         raise AnalystQueryResolutionProposalError(f"{label} must contain unique refs")
     if nonempty and not refs:
         raise AnalystQueryResolutionProposalError(f"{label} must be nonempty")
     if canonical_sorted and identities != sorted(identities):
-        raise AnalystQueryResolutionProposalError(
-            f"{label} must use canonical sorted order"
-        )
+        raise AnalystQueryResolutionProposalError(f"{label} must use canonical sorted order")
     return [_safe(ref) for ref in refs]
 
 
@@ -198,9 +175,7 @@ def normalize_local_query_resolution_candidate(
     candidate = _mapping(value, "query-resolution candidate")
     classification = _token(candidate.get("classification"))
     if classification not in ALLOWED_CLASSIFICATIONS:
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposal classification is invalid"
-        )
+        raise AnalystQueryResolutionProposalError("query-resolution proposal classification is invalid")
     local_proposal_key = _local_key(candidate.get("local_proposal_key"))
     local_target_key = _local_key(candidate.get("local_target_key"))
     common = {
@@ -309,9 +284,7 @@ def normalize_local_query_resolution_candidate(
                 "searched premise recovery_generation.depth must be a positive integer"
             )
         if not _token(payload["recovery_generation"].get("parent_ref")):
-            raise AnalystQueryResolutionProposalError(
-                "searched premise recovery_generation requires parent_ref"
-            )
+            raise AnalystQueryResolutionProposalError("searched premise recovery_generation requires parent_ref")
     else:
         if any(
             key in candidate
@@ -326,9 +299,7 @@ def normalize_local_query_resolution_candidate(
             )
         support_kind = _token(candidate.get("support_kind"))
         if support_kind != "inferred":
-            raise AnalystQueryResolutionProposalError(
-                "inferred conclusion support_kind must be inferred"
-            )
+            raise AnalystQueryResolutionProposalError("inferred conclusion support_kind must be inferred")
         depth = candidate.get("proposed_semantic_inference_depth")
         if not isinstance(depth, int) or isinstance(depth, bool) or depth < 1:
             raise AnalystQueryResolutionProposalError(
@@ -360,9 +331,7 @@ def normalize_local_query_resolution_candidate(
             ),
             "support_kind": "inferred",
             "proposed_semantic_inference_depth": depth,
-            "current_graph_ref": _safe(
-                _mapping(candidate.get("current_graph_ref"), "current_graph_ref")
-            ),
+            "current_graph_ref": _safe(_mapping(candidate.get("current_graph_ref"), "current_graph_ref")),
             "existing_specialist_handoff_refs": _ref_list(
                 candidate.get("existing_specialist_handoff_refs"),
                 label="existing_specialist_handoff_refs",
@@ -398,9 +367,7 @@ def bind_analyst_query_resolution_proposal(
     artifact = _mapping(role_artifact, "role_artifact")
     role = _token(artifact.get("role"))
     if role not in ALLOWED_ORIGINATING_ROLES:
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposals may originate only from Analyst roles"
-        )
+        raise AnalystQueryResolutionProposalError("query-resolution proposals may originate only from Analyst roles")
     required_artifact_fields = (
         "artifact_id",
         "artifact_digest",
@@ -410,20 +377,14 @@ def bind_analyst_query_resolution_proposal(
         "request_id",
     )
     if any(not _token(artifact.get(key)) for key in required_artifact_fields):
-        raise AnalystQueryResolutionProposalError(
-            "originating Analyst artifact lineage is incomplete"
-        )
+        raise AnalystQueryResolutionProposalError("originating Analyst artifact lineage is incomplete")
     recorded_contract = _safe(artifact.get("accepted_contract_ref") or {})
     if recorded_contract != _safe(parent_contract_ref):
-        raise AnalystQueryResolutionProposalError(
-            "proposal parent contract does not match the Analyst role input"
-        )
+        raise AnalystQueryResolutionProposalError("proposal parent contract does not match the Analyst role input")
     recorded_graph = _safe(artifact.get("graph_ref") or {})
     supplied_graph = _safe(parent_graph_ref or {})
     if recorded_graph != supplied_graph:
-        raise AnalystQueryResolutionProposalError(
-            "proposal parent graph does not match the Analyst role input"
-        )
+        raise AnalystQueryResolutionProposalError("proposal parent graph does not match the Analyst role input")
 
     candidate = normalize_local_query_resolution_candidate(local_candidate)
     if candidate["classification"] == CLASS_INFERRED_CONCLUSION:
@@ -466,9 +427,7 @@ def bind_analyst_query_resolution_proposal(
         "parent_graph_explicitly_absent": not bool(supplied_graph),
         "target_ref_set_digest": target_set_digest,
         "variant_payload": candidate,
-        "scrutineer_finding_ref": (
-            _safe(scrutineer_finding_ref) if scrutineer_finding_ref else None
-        ),
+        "scrutineer_finding_ref": (_safe(scrutineer_finding_ref) if scrutineer_finding_ref else None),
         "proposal_only": True,
         "canonical_state": False,
         "raw_private_retained": False,
@@ -486,36 +445,23 @@ def validate_bound_analyst_query_resolution_proposal(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
     proposal = _mapping(value, "bound query-resolution proposal")
-    if (
-        proposal.get("schema_version")
-        != ANALYST_QUERY_RESOLUTION_PROPOSAL_SCHEMA_VERSION
-    ):
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposal schema mismatch"
-        )
+    if proposal.get("schema_version") != ANALYST_QUERY_RESOLUTION_PROPOSAL_SCHEMA_VERSION:
+        raise AnalystQueryResolutionProposalError("query-resolution proposal schema mismatch")
     if proposal.get("proposal_only") is not True or proposal.get("canonical_state") is not False:
         raise AnalystQueryResolutionProposalError(
             "query-resolution proposal must remain noncanonical proposal-only state"
         )
     if proposal.get("raw_private_retained") is not False:
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposal cannot retain raw or private material"
-        )
+        raise AnalystQueryResolutionProposalError("query-resolution proposal cannot retain raw or private material")
     core = dict(proposal)
     proposal_id = _token(core.pop("proposal_id", None))
     proposal_digest = _token(core.pop("proposal_digest", None), limit=96)
     recomputed = _digest(core)
     if proposal_digest != recomputed:
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposal digest does not match content"
-        )
+        raise AnalystQueryResolutionProposalError("query-resolution proposal digest does not match content")
     if proposal_id != "analyst-query-resolution-proposal:" + recomputed[:24]:
-        raise AnalystQueryResolutionProposalError(
-            "query-resolution proposal id does not match content"
-        )
-    normalize_local_query_resolution_candidate(
-        _mapping(proposal.get("variant_payload"), "variant_payload")
-    )
+        raise AnalystQueryResolutionProposalError("query-resolution proposal id does not match content")
+    normalize_local_query_resolution_candidate(_mapping(proposal.get("variant_payload"), "variant_payload"))
     return _safe(proposal)
 
 
@@ -537,9 +483,7 @@ def replay_before_currentness(
             continue
         prior = validate_bound_analyst_query_resolution_proposal(prior)
         if prior["proposal_digest"] != normalized["proposal_digest"]:
-            raise AnalystQueryResolutionProposalError(
-                "query-resolution proposal stable replay identity conflict"
-            )
+            raise AnalystQueryResolutionProposalError("query-resolution proposal stable replay identity conflict")
         return {
             "status": "exact_replay",
             "proposal": prior,
@@ -548,14 +492,10 @@ def replay_before_currentness(
         }
 
     if normalized["parent_contract_ref"] != _safe(current_contract_ref):
-        raise AnalystQueryResolutionProposalError(
-            "stale query-resolution proposal parent contract"
-        )
+        raise AnalystQueryResolutionProposalError("stale query-resolution proposal parent contract")
     recorded_graph = normalized.get("parent_graph_ref") or {}
     if recorded_graph != _safe(current_graph_ref or {}):
-        raise AnalystQueryResolutionProposalError(
-            "stale query-resolution proposal parent graph"
-        )
+        raise AnalystQueryResolutionProposalError("stale query-resolution proposal parent graph")
     return {
         "status": "current_unapplied",
         "proposal": normalized,
@@ -569,10 +509,7 @@ def arbitrate_analyst_query_resolution_proposals(
 ) -> dict[str, Any]:
     """Collapse exact duplicates and fail closed on semantic alternatives."""
 
-    normalized = [
-        validate_bound_analyst_query_resolution_proposal(proposal)
-        for proposal in proposals
-    ]
+    normalized = [validate_bound_analyst_query_resolution_proposal(proposal) for proposal in proposals]
     if not normalized:
         return {
             "status": "no_resolution_proposal",
@@ -585,8 +522,7 @@ def arbitrate_analyst_query_resolution_proposals(
             {
                 "run_id": proposal["run_id"],
                 "parent_contract_ref": proposal["parent_contract_ref"],
-                "parent_graph_ref": proposal.get("parent_graph_ref")
-                or {"graph_absent": True},
+                "parent_graph_ref": proposal.get("parent_graph_ref") or {"graph_absent": True},
                 "target_ref_set_digest": proposal["target_ref_set_digest"],
             }
         )
@@ -601,9 +537,7 @@ def arbitrate_analyst_query_resolution_proposals(
             {
                 "classification": proposal["classification"],
                 "variant_payload": proposal["variant_payload"],
-                "question_meaning_record_ref": proposal[
-                    "question_meaning_record_ref"
-                ],
+                "question_meaning_record_ref": proposal["question_meaning_record_ref"],
             }
         ): proposal
         for proposal in normalized
@@ -651,10 +585,7 @@ def selected_proposals_for_role_artifact(
     artifact_digest = str(role_artifact.get("artifact_digest") or "")
     selected: list[dict[str, Any]] = []
     for arbitration in registry.get("arbitrations") or ():
-        if (
-            not isinstance(arbitration, Mapping)
-            or arbitration.get("mutation_permitted") is not True
-        ):
+        if not isinstance(arbitration, Mapping) or arbitration.get("mutation_permitted") is not True:
             continue
         proposal = arbitration.get("selected_proposal")
         if not isinstance(proposal, Mapping):
@@ -665,10 +596,7 @@ def selected_proposals_for_role_artifact(
         if (
             proposal_artifact.get("artifact_id") != artifact_id
             or proposal_artifact.get("artifact_digest") != artifact_digest
-            or (
-                classification is not None
-                and proposal.get("classification") != classification
-            )
+            or (classification is not None and proposal.get("classification") != classification)
         ):
             continue
         selected.append(dict(proposal))

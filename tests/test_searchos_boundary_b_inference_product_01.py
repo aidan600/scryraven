@@ -148,9 +148,7 @@ def _contract_ref(components: list[AnswerComponentContract]) -> dict:
         "accepted_contract_digest": "boundary-b-contract-digest",
         "parent_question_meaning_record_id": "qmr:boundary-b",
         "parent_question_meaning_record_digest": "qmr-digest:boundary-b",
-        "accepted_answer_component_refs": [
-            component.to_dict() for component in components
-        ],
+        "accepted_answer_component_refs": [component.to_dict() for component in components],
         "accepted_answer_component_count": len(components),
     }
 
@@ -186,9 +184,7 @@ def _proposal(
             "existing_specialist_handoff_refs": [],
             "assumptions": [],
             "caveats": ["Inference is limited to the admitted premises."],
-            "prohibited_upgrades": [
-                "Do not say a premise source directly states the conclusion."
-            ],
+            "prohibited_upgrades": ["Do not say a premise source directly states the conclusion."],
         },
         question_meaning_record_ref={
             "record_id": "qmr:boundary-b",
@@ -211,11 +207,7 @@ def _cross_artifact(
         {"synthesis_proposals": proposals},
         packet,
     )
-    core = {
-        key: deepcopy(value)
-        for key, value in artifact.items()
-        if key != "artifact_digest"
-    }
+    core = {key: deepcopy(value) for key, value in artifact.items() if key != "artifact_digest"}
     core["accepted_contract_ref"] = deepcopy(contract)
     core["graph_ref"] = deepcopy(graph_ref)
     return {**core, "artifact_digest": safe_packet_digest(core)}
@@ -414,22 +406,10 @@ def test_deep_depth_two_reuses_inferred_supporting_premise_without_fake_coverage
         run_kernel=kernel,
         synthesis_key="premise_C",
     )
-    c_node = next(
-        item
-        for item in graph["synthesis_nodes"]
-        if item["synthesis_key"] == "premise_C"
-    )
-    d_node = next(
-        item
-        for item in graph["component_nodes"]
-        if item["component_id"] == "component:D"
-    )
+    c_node = next(item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "premise_C")
+    d_node = next(item for item in graph["component_nodes"] if item["component_id"] == "component:D")
     proposal_e_artifact = deepcopy(cross)
-    proposal_e_core = {
-        key: deepcopy(value)
-        for key, value in proposal_e_artifact.items()
-        if key != "artifact_digest"
-    }
+    proposal_e_core = {key: deepcopy(value) for key, value in proposal_e_artifact.items() if key != "artifact_digest"}
     proposal_e_core["graph_ref"] = {
         "graph_id": graph["graph_id"],
         "graph_revision": graph["graph_revision"],
@@ -462,9 +442,7 @@ def test_deep_depth_two_reuses_inferred_supporting_premise_without_fake_coverage
         ROLE_SCRUTINEER,
         {
             "challenge_status": "passed",
-            "reasons": [
-                "The depth-two relationship remains within admitted premises."
-            ],
+            "reasons": ["The depth-two relationship remains within admitted premises."],
             "challenged_synthesis_keys": [],
             "caveats": [],
             "nonclaims": [],
@@ -496,33 +474,20 @@ def test_deep_depth_two_reuses_inferred_supporting_premise_without_fake_coverage
         graph_candidate=finalize_component_work_graph_v1(graph),
     )
     consumption = build_multicomponent_graph_consumption(graph)
-    by_key = {
-        item["synthesis_key"]: item
-        for item in consumption["admitted_synthesis_entries"]
-    }
+    by_key = {item["synthesis_key"]: item for item in consumption["admitted_synthesis_entries"]}
 
     assert set(by_key) == {"premise_C", "target_E"}, {
         "entries": by_key,
         "graph_status": graph["graph_status"],
         "suppressed": graph["graph_output_suppressed"],
-        "nodes": [
-            (item["synthesis_key"], item["status"])
-            for item in graph["synthesis_nodes"]
-        ],
+        "nodes": [(item["synthesis_key"], item["status"]) for item in graph["synthesis_nodes"]],
     }
     assert by_key["premise_C"]["semantic_inference_depth"] == 1
     assert by_key["target_E"]["semantic_inference_depth"] == 2
     assert by_key["premise_C"]["answer_target_component_id"] == "component:C"
     assert by_key["target_E"]["answer_target_component_id"] == "component:E"
     assert by_key["premise_C"].get("component_coverage_ref") in (None, {})
-    premise_readiness = {
-        item["component_id"]: item
-        for item in consumption["supporting_premise_readiness"]
-    }
-    assert premise_readiness["component:C"]["fulfillment_status"] == (
-        "fulfilled_inferred"
-    )
-    assert consumption["answer_target_fulfillments"][0][
-        "fulfillment_status"
-    ] == "fulfilled_inferred"
+    premise_readiness = {item["component_id"]: item for item in consumption["supporting_premise_readiness"]}
+    assert premise_readiness["component:C"]["fulfillment_status"] == ("fulfilled_inferred")
+    assert consumption["answer_target_fulfillments"][0]["fulfillment_status"] == "fulfilled_inferred"
     assert consumption["sufficient_with_admitted_inference"] is True
