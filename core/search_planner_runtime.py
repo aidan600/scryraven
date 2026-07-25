@@ -26,6 +26,7 @@ from core.search_work_query_shape_runtime import (
 )
 from core.semantic_contract_foundation import (
     AnswerComponentContract,
+    ComponentPurpose,
     Materiality,
     MaterialityPolicy,
     PartialAnswerPolicy,
@@ -344,6 +345,7 @@ class DeterministicSearchPlannerAdapter:
                 {
                     "component_id": component_id,
                     "component_revision": "1",
+                    "component_purpose": "user_facing_answer_target",
                     "user_facing_label": f"Required component {rank}",
                     "user_facing_question": subquestion,
                     "requirement_posture": "required",
@@ -1048,6 +1050,13 @@ def _question_meaning_record_from_adapter_result(
         "component_search_requirements_subordinate": True,
         "component_search_requirements_executed": False,
         "contract_amendment_candidates_deferred": bool(_safe_list(adapter_result.get("contract_amendment_candidates"))),
+        "relationship_hypotheses": _safe_list(
+            adapter_result.get("relationship_hypotheses")
+        ),
+        "relationship_hypotheses_proposal_only": True,
+        "relationship_hypotheses_canonical_state": False,
+        "relationship_hypotheses_supporting_authority": False,
+        "relationship_hypotheses_construct_search_work": False,
         "closed_surface_flags": dict(_CLOSED_SURFACE_FLAGS),
         **query_shape_metadata,
         "semantic_planning_owner": (
@@ -1234,6 +1243,8 @@ def _answer_components(value: Any) -> list[AnswerComponentContract]:
                 component_id=component_id,
                 user_facing_label=label,
                 user_facing_question=question,
+                component_purpose=mapping.get("component_purpose")
+                or ComponentPurpose.USER_FACING_ANSWER_TARGET,
                 component_revision=_clean_token(mapping.get("component_revision")) or "1",
                 requirement_posture=mapping.get("requirement_posture") or RequirementPosture.REQUIRED,
                 acceptance_criteria=tuple(_text_list(mapping.get("acceptance_criteria"), limit=320)),

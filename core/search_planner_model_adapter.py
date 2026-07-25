@@ -65,7 +65,10 @@ _SEMANTIC_SLOT_STATUSES = frozenset(
 )
 _MATERIALITY_VALUES = frozenset({"material", "non_material", "unknown"})
 _REQUIREMENT_POSTURES = frozenset({"required", "conditional", "optional"})
-_SUPPORT_KINDS = frozenset({"direct", "inferred", "computed"})
+_COMPONENT_PURPOSES = frozenset(
+    {"user_facing_answer_target", "supporting_premise"}
+)
+_SUPPORT_KINDS = frozenset({"direct", "inferred"})
 _PARTIAL_ANSWER_POLICIES = frozenset(
     {
         "qualify_visible_gap",
@@ -363,6 +366,9 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
         "contract_amendment_candidates": _contract_amendment_candidates(
             model_output.get("contract_amendment_candidates")
         ),
+        "relationship_hypotheses": _relationship_hypotheses(
+            model_output.get("relationship_hypotheses")
+        ),
     }
 
 
@@ -431,11 +437,9 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
         if component_id in seen:
             raise SearchPlannerModelAdapterError(f"duplicate answer component id: {component_id}")
         seen.add(component_id)
-        source_obligation_ids = _required_text_list(mapping, "source_obligation_candidate_ids")
-        if not source_obligation_ids:
-            raise SearchPlannerModelAdapterError(
-                f"answer component {component_id} requires source obligation candidates"
-            )
+        source_obligation_ids = _optional_text_list(
+            mapping.get("source_obligation_candidate_ids")
+        )
         requirement_posture = _required_enum_text(
             mapping,
             "requirement_posture",
@@ -451,6 +455,34 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                 "answer component contains unsupported support kinds: "
                 + ", ".join(unsupported_kinds)
             )
+        support_tuple = tuple(allowed_support_kinds)
+        if support_tuple not in {
+            ("direct",),
+            ("inferred",),
+            ("direct", "inferred"),
+        }:
+            raise SearchPlannerModelAdapterError(
+                f"answer component {component_id} has an invalid support-kind combination"
+            )
+        dependencies = _optional_text_list(mapping.get("dependency_component_ids"))
+        max_inference_depth = _required_non_negative_int(
+            mapping,
+            "max_inference_depth",
+        )
+        if support_tuple == ("direct",):
+            if max_inference_depth != 0 or len(source_obligation_ids) != 1:
+                raise SearchPlannerModelAdapterError(
+                    f"answer component {component_id} violates the direct-only component matrix"
+                )
+        elif support_tuple == ("inferred",):
+            if max_inference_depth < 1 or not dependencies or source_obligation_ids:
+                raise SearchPlannerModelAdapterError(
+                    f"answer component {component_id} violates the inferred-only component matrix"
+                )
+        elif max_inference_depth < 1 or not dependencies or len(source_obligation_ids) != 1:
+            raise SearchPlannerModelAdapterError(
+                f"answer component {component_id} violates the direct-or-inferred component matrix"
+            )
         partial_answer_policy = _clean_text(mapping.get("partial_answer_policy"))
         if (
             partial_answer_policy is not None
@@ -464,6 +496,11 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                 {
                     "component_id": component_id,
                     "component_revision": _required_text(mapping, "component_revision"),
+                    "component_purpose": _required_enum_text(
+                        mapping,
+                        "component_purpose",
+                        allowed=_COMPONENT_PURPOSES,
+                    ),
                     "user_facing_label": _required_text(mapping, "user_facing_label", limit=180),
                     "user_facing_question": _required_text(mapping, "user_facing_question", limit=400),
                     "requirement_posture": requirement_posture,
@@ -471,10 +508,10 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                     "semantic_slot_ids": _required_text_list(mapping, "semantic_slot_ids"),
                     "source_obligation_candidate_ids": source_obligation_ids,
                     "allowed_support_kinds": allowed_support_kinds,
-                    "max_inference_depth": _required_non_negative_int(mapping, "max_inference_depth"),
+                    "max_inference_depth": max_inference_depth,
                     "normalization_policy": _clean_text(mapping.get("normalization_policy"), limit=300),
                     "calculation_policy": _clean_text(mapping.get("calculation_policy"), limit=300),
-                    "dependency_component_ids": _optional_text_list(mapping.get("dependency_component_ids")),
+                    "dependency_component_ids": dependencies,
                     "partial_answer_policy": partial_answer_policy,
                     "mandatory_caveats": _optional_text_list(mapping.get("mandatory_caveats"), limit=260),
                     "prohibited_upgrades": _optional_text_list(mapping.get("prohibited_upgrades"), limit=260),
@@ -495,6 +532,48 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
             "search planner model output requires at least one required answer component"
         )
     return components
+
+
+def _relationship_hypotheses(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    hypotheses: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in _required_sequence(value, "relationship_hypotheses"):
+        if len(hypotheses) >= SEARCH_PLANNER_MAX_ANSWER_COMPONENTS:
+            raise SearchPlannerModelAdapterError(
+                "relationship hypotheses exceed the five-item local ceiling"
+            )
+        mapping = _required_mapping(item, "relationship hypothesis")
+        hypothesis_id = _required_text(mapping, "hypothesis_id")
+        if hypothesis_id in seen:
+            raise SearchPlannerModelAdapterError(
+                f"duplicate relationship hypothesis id: {hypothesis_id}"
+            )
+        seen.add(hypothesis_id)
+        hypotheses.append(
+            {
+                "hypothesis_id": hypothesis_id,
+                "target_component_id": _required_text(
+                    mapping,
+                    "target_component_id",
+                ),
+                "premise_component_ids": _required_text_list(
+                    mapping,
+                    "premise_component_ids",
+                ),
+                "relationship_summary": _required_text(
+                    mapping,
+                    "relationship_summary",
+                    limit=360,
+                ),
+                "proposal_only": True,
+                "canonical_state": False,
+                "supporting_authority": False,
+                "constructs_search_work": False,
+            }
+        )
+    return hypotheses
 
 
 def _source_obligation_candidates(value: Any) -> list[dict[str, Any]]:
@@ -694,13 +773,14 @@ def _validate_component_refs(
     component_ids: set[str],
     obligation_ids: set[str],
 ) -> None:
-    required_component_ids = {
+    direct_required_component_ids = {
         str(component["component_id"])
         for component in answer_components
         if component.get("requirement_posture") == "required"
+        and "direct" in (component.get("allowed_support_kinds") or ())
     }
     primary_count_by_component = {
-        component_id: 0 for component_id in required_component_ids
+        component_id: 0 for component_id in direct_required_component_ids
     }
     for component in answer_components:
         component_id = str(component["component_id"])
@@ -738,6 +818,13 @@ def _validate_component_refs(
         if component_id not in component_ids:
             raise SearchPlannerModelAdapterError(
                 f"component search requirement references missing component {component_id}"
+            )
+        component = next(
+            item for item in answer_components if item.get("component_id") == component_id
+        )
+        if tuple(component.get("allowed_support_kinds") or ()) == ("inferred",):
+            raise SearchPlannerModelAdapterError(
+                f"inferred-only component {component_id} cannot own component search requirements"
             )
         for obligation_id in requirement.get("source_obligation_candidate_ids") or ():
             if obligation_id not in obligation_ids:

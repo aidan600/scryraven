@@ -71,6 +71,9 @@ def _new_component() -> AnswerComponentContract:
             "do not upgrade the total beyond the cited record",
         ),
         semantic_slot_ids=("slot:reporting-period",),
+        source_obligation_candidate_ids=(
+            "source-obligation:confidence-band",
+        ),
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         materiality=Materiality.MATERIAL,

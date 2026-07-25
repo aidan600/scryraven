@@ -203,6 +203,23 @@ def build_searchos_policy_snapshot(
     existing_gap_recovery_runtime_open: bool = False,
 ) -> dict[str, Any]:
     profile = searchos_policy_profile(profile_name)
+    recovery_limits = {
+        SearchOSProfileName.FAST: {
+            "existing_component_cycles": 1,
+            "searched_premise_cycles": 0,
+            "total_cycles": 1,
+        },
+        SearchOSProfileName.BALANCED: {
+            "existing_component_cycles": 1,
+            "searched_premise_cycles": 1,
+            "total_cycles": 2,
+        },
+        SearchOSProfileName.DEEP: {
+            "existing_component_cycles": 1,
+            "searched_premise_cycles": 2,
+            "total_cycles": 3,
+        },
+    }[profile.profile_name]
     core = {
         **profile.to_dict(),
         "run_id": _token(run_id, "run_id"),
@@ -220,6 +237,22 @@ def build_searchos_policy_snapshot(
             "required_gaps_prioritized": True,
             "optional_gap_recovery_authorized": False,
             "same_limits_for_all_profiles": True,
+            "whole_run_lease_required": True,
+        },
+        "recovery_policy": {
+            "schema_version": "searchos_recovery_policy_v2",
+            "runtime_open": bool(existing_gap_recovery_runtime_open),
+            "maximum_existing_component_cycles_per_run": (
+                recovery_limits["existing_component_cycles"]
+            ),
+            "maximum_searched_premise_cycles_per_run": (
+                recovery_limits["searched_premise_cycles"]
+            ),
+            "maximum_total_cycles_per_run": recovery_limits["total_cycles"],
+            "one_linear_active_cycle": True,
+            "one_searched_premise_per_generation": True,
+            "maximum_searched_generation": 2,
+            "generation_three_rejected_before_work": True,
             "whole_run_lease_required": True,
         },
     }
@@ -383,6 +416,13 @@ def build_searchos_initial_state(
         "active_existing_gap_recovery_cycle_ref": {},
         "existing_gap_recovery_terminal_aggregate_ref": {},
         "existing_gap_recovery_terminal_aggregate": {},
+        "recovery_lease": {},
+        "recovery_lease_history": [],
+        "recovery_cycle_admission_history": [],
+        "recovery_cycle_terminal_history": [],
+        "active_recovery_cycle_ref": {},
+        "recovery_expenditure_history": [],
+        "recovery_terminal_aggregate": {},
     }
     if policy.get("navigation_runtime_open") is True:
         state_core["navigation"] = {"options_by_id": {}, "edges": []}
@@ -2535,6 +2575,29 @@ def _validated_policy_snapshot(value: Mapping[str, Any]) -> dict[str, Any]:
         raise SearchOSRuntimeError(
             "existing-gap recovery policy is invalid or profile-dependent"
         )
+    generalized = _mapping(safe.get("recovery_policy"))
+    expected_limits = {
+        "fast": (1, 0, 1),
+        "balanced": (1, 1, 2),
+        "deep": (1, 2, 3),
+    }.get(str(safe.get("profile_name") or "").casefold())
+    if (
+        generalized.get("schema_version") != "searchos_recovery_policy_v2"
+        or not isinstance(generalized.get("runtime_open"), bool)
+        or expected_limits is None
+        or (
+            generalized.get("maximum_existing_component_cycles_per_run"),
+            generalized.get("maximum_searched_premise_cycles_per_run"),
+            generalized.get("maximum_total_cycles_per_run"),
+        )
+        != expected_limits
+        or generalized.get("one_linear_active_cycle") is not True
+        or generalized.get("one_searched_premise_per_generation") is not True
+        or generalized.get("maximum_searched_generation") != 2
+        or generalized.get("generation_three_rejected_before_work") is not True
+        or generalized.get("whole_run_lease_required") is not True
+    ):
+        raise SearchOSRuntimeError("generalized SearchOS recovery policy is invalid")
     return safe
 
 

@@ -248,6 +248,7 @@ def _planner_payload(
             {
                 "component_id": component_id,
                 "component_revision": "1",
+                "component_purpose": "user_facing_answer_target",
                 "user_facing_label": f"Model component {index}",
                 "user_facing_question": f"What is model-owned need {index}?",
                 "requirement_posture": "required",

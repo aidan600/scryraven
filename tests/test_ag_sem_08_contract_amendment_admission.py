@@ -88,6 +88,7 @@ COMPONENT_ID = "component:reported-total"
 EVIDENCE_ID = "evidence:public-record-notice"
 COVERAGE_RECORD_ID = "coverage:reported-total"
 AMENDMENT_RECORD_ID = "amendment:reported-total-caveat"
+SOURCE_REQUIREMENT_ID = "source_requirement:reported_total"
 
 
 def _slot() -> SemanticSlot:
@@ -109,6 +110,9 @@ def _component() -> AnswerComponentContract:
         requirement_posture=RequirementPosture.REQUIRED,
         acceptance_criteria=("state the bounded value", "bind it to evidence"),
         semantic_slot_ids=("slot:reporting-period",),
+        source_obligation_candidate_ids=(
+            SOURCE_REQUIREMENT_ID,
+        ),
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         materiality=Materiality.MATERIAL,
@@ -149,10 +153,30 @@ def _accept_contract(kernel: RunKernel) -> dict[str, object]:
 
 
 def _seed_evidence_ledger(kernel: RunKernel, *, candidate_id: str = EVIDENCE_ID) -> None:
+    accepted = kernel.state.initial_answer_contract
     kernel.state.evidence_ledger.reduce_observation(
         {
             "observation_id": f"evidence-seed:{candidate_id}",
             "observation_source": "offline_fixture",
+            "requirements": [
+                {
+                    "requirement_id": SOURCE_REQUIREMENT_ID,
+                    "requirement_kind": "official_current",
+                    "component_id": COMPONENT_ID,
+                    "source_obligation_id": SOURCE_REQUIREMENT_ID,
+                    "run_id": RUN_ID,
+                    "request_id": REQUEST_ID,
+                    "answer_contract_version": accepted[
+                        "accepted_contract_version"
+                    ],
+                    "answer_contract_digest": accepted[
+                        "accepted_contract_digest"
+                    ],
+                    "required_source_class": "primary_source_documents",
+                    "required_source_tier": "primary",
+                    "required_currentness": "current",
+                }
+            ],
             "candidates": [
                 {
                     "candidate_id": candidate_id,
@@ -167,6 +191,7 @@ def _seed_evidence_ledger(kernel: RunKernel, *, candidate_id: str = EVIDENCE_ID)
                     "record_kind": "fact",
                     "eligible_for_stronger_obligation": True,
                     "final_evidence_eligible": True,
+                    "requirement_id": SOURCE_REQUIREMENT_ID,
                 }
             ],
         }
@@ -268,7 +293,7 @@ def _ledger_binding(kernel: RunKernel) -> EvidenceLedgerSnapshotBinding:
         ledger_schema_version=EVIDENCE_LEDGER_SCHEMA_VERSION,
         ledger_digest=digest,
         custody_status=EvidenceCustodyStatus.CUSTODIED,
-        source_requirement_ids=(),
+        source_requirement_ids=(SOURCE_REQUIREMENT_ID,),
         ledger_observation_refs=observation_refs,
         version_validity=VersionValidity.VALID,
     )
@@ -308,7 +333,7 @@ def _coverage_record(
         semantic_support_status=SemanticSupportStatus.SUPPORTED,
         support_posture=SupportPosture.DIRECT,
         derived_support_status=DerivedSupportStatus.NOT_APPLICABLE,
-        source_obligation_status=SourceObligationStatus.NOT_APPLICABLE,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
         content_availability_status=ContentAvailabilityStatus.AVAILABLE,
         evidence_custody_status=EvidenceCustodyStatus.CUSTODIED,
         version_validity=VersionValidity.VALID,
