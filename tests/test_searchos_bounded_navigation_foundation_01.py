@@ -240,9 +240,7 @@ def _pending_navigation() -> tuple[
     state, _, store = _admit("[child](/child)")
     state, candidate_window = _record_empty_candidate_window(state)
     state, reservation = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
-    state, charge = charge_searchos_judgment_call(
-        state, reservation_ref=reservation, slot_id="slot-1"
-    )
+    state, charge = charge_searchos_judgment_call(state, reservation_ref=reservation, slot_id="slot-1")
     navigation_window = project_navigation_window(state, slot_id="slot-1")
     custody = state["slots_by_id"]["slot-1"]["custody_refs"][0]
     request = build_searchos_navigation_judgment_request_v1(
@@ -450,9 +448,7 @@ def test_locator_store_is_exact_nonserializable_staged_and_run_bounded() -> None
     second = store.stage(normalize_navigation_destination("https://example.com/discard"))
     store.discard_staged([second])
     assert store.staged_count == 0 and store.committed_count == 1
-    assert store.consume_once_for_execution(binding) == (
-        "https://example.com/private"
-    )
+    assert store.consume_once_for_execution(binding) == ("https://example.com/private")
     with pytest.raises(NavigationRuntimeError, match="binding_unavailable"):
         store.consume_once_for_execution(binding)
     assert store.resolve(binding) is None
@@ -520,9 +516,7 @@ def test_canonical_boundary_redigested_option_replays_fail_closed(defect: str, v
     elif defect == "depth":
         raw["bounded_relationship_context"]["child_depth"] = 7
     else:
-        raw["ancestor_physical_identity_digests"] = [
-            raw["destination_binding_ref"]["physical_identity_digest"]
-        ]
+        raw["ancestor_physical_identity_digests"] = [raw["destination_binding_ref"]["physical_identity_digest"]]
     with pytest.raises(NavigationRuntimeError):
         NavigationOption.from_dict(_redigest_option(raw))
 
@@ -606,9 +600,7 @@ def test_canonical_boundary_ancestor_cycle_is_rejected_before_locator_staging() 
     assert store.staged_count == 0 and store.committed_count == 1
     [option_value] = admitted["navigation"]["options_by_id"].values()
     option = NavigationOption.from_dict(option_value)
-    assert option.destination_binding_ref["physical_identity_digest"] != ancestor[
-        "physical_identity_digest"
-    ]
+    assert option.destination_binding_ref["physical_identity_digest"] != ancestor["physical_identity_digest"]
     assert store.resolve(option.destination_binding_ref) == "https://example.com/c"
     window = project_navigation_window(admitted, slot_id="slot-1")
     assert len(window) == 1 and window[0]["relationship_label"] == "lawful sibling"
@@ -643,9 +635,7 @@ def test_policy_snapshots_have_exact_immutable_navigation_leashes(
 ) -> None:
     policy = searchos_policy_profile(profile)
     assert not hasattr(policy, "navigation_max_depth")
-    closed = build_searchos_policy_snapshot(
-        run_id="run-1", request_id="request-1", profile_name=profile
-    )
+    closed = build_searchos_policy_snapshot(run_id="run-1", request_id="request-1", profile_name=profile)
     assert not {
         "navigation_max_depth",
         "navigation_selections_per_slot",
@@ -664,7 +654,7 @@ def test_policy_snapshots_have_exact_immutable_navigation_leashes(
     ) == (depth, selections, edges)
 
 
-def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline() -> None:
+def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery() -> None:
     expected_policy = {
         "schema_version": "searchos_policy_profile_v1",
         "owner": "RunKernel.SearchOSIterativeJudgment",
@@ -679,6 +669,15 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         "followup_query_nominations_per_slot": 2,
         "navigation_runtime_open": False,
         "post_analyst_reentry_runtime_open": False,
+        "existing_gap_recovery_policy": {
+            "schema_version": "searchos_existing_gap_recovery_policy_v1",
+            "runtime_open": False,
+            "maximum_cycles_per_run": 1,
+            "same_limits_for_all_profiles": True,
+            "required_gaps_prioritized": True,
+            "optional_gap_recovery_authorized": False,
+            "whole_run_lease_required": True,
+        },
         "provisional_maximum_leash": True,
         "consumption_target": False,
         "permanently_calibrated": False,
@@ -690,9 +689,9 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         "prompt_can_override": False,
         "adapter_can_override": False,
         "environment_can_override": False,
-        "policy_snapshot_id": "searchos-policy:32f315e7842e95b47b1bc0ef",
-        "policy_snapshot_digest": "32f315e7842e95b47b1bc0efd3f6dd47b608ed58512c3b40ef7cd1c20bf52a59",  # pragma: allowlist secret
-        "replay_identity": "searchos-policy:32f315e7842e95b47b1bc0efd3f6dd47b608ed58512c3b40ef7cd1c20bf52a59",  # pragma: allowlist secret
+        "policy_snapshot_id": "searchos-policy:93f4f72e7e3b4c9ff873f248",
+        "policy_snapshot_digest": "93f4f72e7e3b4c9ff873f248104f27c0eac1ebf41ea04c2b5ec2cbd218c36d47",  # pragma: allowlist secret
+        "replay_identity": "searchos-policy:93f4f72e7e3b4c9ff873f248104f27c0eac1ebf41ea04c2b5ec2cbd218c36d47",  # pragma: allowlist secret
     }
     policy = build_searchos_policy_snapshot(
         run_id="run-baseline-identity",
@@ -700,9 +699,10 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         profile_name="Balanced",
     )
     assert policy == expected_policy
-    assert searchos_policy_snapshot_ref(expected_policy)["policy_snapshot_digest"] == expected_policy[
-        "policy_snapshot_digest"
-    ]
+    assert (
+        searchos_policy_snapshot_ref(expected_policy)["policy_snapshot_digest"]
+        == expected_policy["policy_snapshot_digest"]
+    )
     state = build_searchos_initial_state(
         run_id="run-baseline-identity",
         request_id="request-baseline-identity",
@@ -718,10 +718,13 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         ],
         initial_candidate_state_ref=_ref("candidate_state", "baseline"),
     )
-    assert state["state_digest"] == "2b16a41f9d1b981ce14a46ed28e4964d3ea68ef92a58fb29e3ad28405d88af41"  # pragma: allowlist secret
-    assert state["state_id"] == "searchos-state:2b16a41f9d1b981ce14a46ed"
+    assert (
+        state["state_digest"]
+        == "3053329357f989cdeb793614cf92a2cfc23f1d13d920e3fb3e1d6d179c87a8bb"  # pragma: allowlist secret
+    )
+    assert state["state_id"] == "searchos-state:3053329357f989cdeb793614"
     assert state["replay_identity"] == (
-        "searchos-state:2b16a41f9d1b981ce14a46ed28e4964d3ea68ef92a58fb29e3ad28405d88af41"  # pragma: allowlist secret
+        "searchos-state:3053329357f989cdeb793614cf92a2cfc23f1d13d920e3fb3e1d6d179c87a8bb"  # pragma: allowlist secret
     )
     assert set(state) == {
         "schema_version",
@@ -740,8 +743,16 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
         "slots_by_id",
         "budget",
         "semantic_handoff_refs",
+        "existing_gap_recovery_runtime_open",
+        "existing_gap_recovery_purpose_refs",
+        "existing_gap_recovery_lease_refs",
+        "existing_gap_recovery_cycles",
+        "active_existing_gap_recovery_cycle_ref",
+        "existing_gap_recovery_terminal_aggregate",
+        "existing_gap_recovery_terminal_aggregate_ref",
         "readiness_projection_ref",
         "required_needs_block_ref",
+        "required_needs_block",
         "comprehensive_recovery_runtime_open",
         "known_url_read_runtime_open",
         "search_attached_content_custody_runtime_open",
@@ -759,9 +770,7 @@ def test_canonical_boundary_closed_policy_and_state_match_exact_slice_a_baseline
 
 
 def test_canonical_boundary_policy_validator_rejects_partial_or_contradictory_limits() -> None:
-    closed = build_searchos_policy_snapshot(
-        run_id="run-1", request_id="request-1", profile_name="Balanced"
-    )
+    closed = build_searchos_policy_snapshot(run_id="run-1", request_id="request-1", profile_name="Balanced")
     with pytest.raises(SearchOSRuntimeError, match="closed navigation policy"):
         searchos_policy_snapshot_ref(_refresh_policy({**closed, "navigation_max_depth": 2}))
     opened = build_searchos_policy_snapshot(
@@ -865,15 +874,9 @@ def test_ipv6_label_is_private_across_navigation_foundation_surfaces() -> None:
         navigation_window=navigation_window,
         read_custody_refs=[custody],
     )
-    assert any(
-        item["normalized_url"] == parent_url
-        for item in request["read_custody_refs"]
-    )
+    assert any(item["normalized_url"] == parent_url for item in request["read_custody_refs"])
     serialized_request_navigation = json.dumps(request["navigation_options"], sort_keys=True)
-    assert all(
-        value not in serialized_request_navigation
-        for value in forbidden_navigation_values
-    )
+    assert all(value not in serialized_request_navigation for value in forbidden_navigation_values)
     decision = validate_searchos_judgment_model_output(
         request=request,
         model_output={
@@ -909,10 +912,7 @@ def test_ipv6_label_is_private_across_navigation_foundation_surfaces() -> None:
     )
     assert observation.payload["outcome"] == NAVIGATION_SELECTION_ADMITTED
     serialized_observation = json.dumps(observation.to_dict(), sort_keys=True)
-    assert all(
-        value not in serialized_observation
-        for value in forbidden_navigation_values
-    )
+    assert all(value not in serialized_observation for value in forbidden_navigation_values)
     assert store.resolve(option.destination_binding_ref) == exact_destination
 
 
@@ -950,12 +950,8 @@ def test_one_authorized_selection_admits_exactly_one_edge_and_read_nomination() 
         judgment_decision_ref=decision,
         navigation_candidate=candidate,
     )
-    assert "locator_store" not in signature(
-        kernel.authorize_searchos_navigation_selection
-    ).parameters
-    assert "locator_store" not in signature(
-        reduce_navigation_selection_observation
-    ).parameters
+    assert "locator_store" not in signature(kernel.authorize_searchos_navigation_selection).parameters
+    assert "locator_store" not in signature(reduce_navigation_selection_observation).parameters
     assert kernel.state.searchos_state == before
     snapshot = deepcopy(kernel.state.searchos_state)
     observation = execute_navigation_selection(
@@ -1017,9 +1013,7 @@ def test_missing_ephemeral_binding_is_recoverable_and_advances_the_window() -> N
         judgment_decision_ref=decision,
         navigation_candidate=candidate,
     )
-    unavailable_store = EphemeralNavigationLocatorStore(
-        run_id="run-1", request_id="request-1"
-    )
+    unavailable_store = EphemeralNavigationLocatorStore(run_id="run-1", request_id="request-1")
     observation = execute_navigation_selection(
         action=action,
         authorized_state_snapshot=deepcopy(pending),
@@ -1045,9 +1039,7 @@ def test_missing_ephemeral_binding_is_recoverable_and_advances_the_window() -> N
     )
     after = record_searchos_candidate_window(after, window=window)
     after, reservation = begin_searchos_judgment_round(after, slot_ids=["slot-1"])
-    after, charge = charge_searchos_judgment_call(
-        after, reservation_ref=reservation, slot_id="slot-1"
-    )
+    after, charge = charge_searchos_judgment_call(after, reservation_ref=reservation, slot_id="slot-1")
     request = build_searchos_navigation_judgment_request_v1(
         state=after,
         slot_id="slot-1",
@@ -1069,9 +1061,7 @@ def test_missing_ephemeral_binding_is_recoverable_and_advances_the_window() -> N
         ("parent", "navigation_parent_relationship_unavailable"),
     ],
 )
-def test_executor_fails_closed_at_every_policy_and_relationship_boundary(
-    exhaustion: str, reason: str
-) -> None:
+def test_executor_fails_closed_at_every_policy_and_relationship_boundary(exhaustion: str, reason: str) -> None:
     pending, store, decision, candidate = _pending_navigation()
     state = deepcopy(pending)
     slot = state["slots_by_id"]["slot-1"]
@@ -1092,8 +1082,7 @@ def test_executor_fails_closed_at_every_policy_and_relationship_boundary(
         slot["navigation_selection_count"] = policy["navigation_selections_per_slot"]
     elif exhaustion == "edge":
         state["navigation"]["edges"] = [
-            {"bounded_existing_edge": index}
-            for index in range(policy["navigation_edges_per_run"])
+            {"bounded_existing_edge": index} for index in range(policy["navigation_edges_per_run"])
         ]
     elif exhaustion == "read":
         slot["read_nomination_count"] = policy["read_nominations_per_slot"]
@@ -1124,9 +1113,7 @@ def test_executor_fails_closed_at_every_policy_and_relationship_boundary(
     kernel.reduce(observation)
     after = kernel.state.searchos_state
     assert after["slots_by_id"]["slot-1"]["read_nomination_count"] == before_slot["read_nomination_count"]
-    assert after["slots_by_id"]["slot-1"]["navigation_selection_count"] == before_slot[
-        "navigation_selection_count"
-    ]
+    assert after["slots_by_id"]["slot-1"]["navigation_selection_count"] == before_slot["navigation_selection_count"]
     assert len(after["navigation"]["edges"]) == before_edges
 
 
@@ -1140,14 +1127,10 @@ def test_canonical_boundary_executor_rejects_corrupted_cycle_material() -> None:
     )
     corrupted = deepcopy(pending)
     original = deepcopy(next(iter(corrupted["navigation"]["options_by_id"].values())))
-    original["ancestor_physical_identity_digests"] = [
-        original["destination_binding_ref"]["physical_identity_digest"]
-    ]
+    original["ancestor_physical_identity_digests"] = [original["destination_binding_ref"]["physical_identity_digest"]]
     impossible = _redigest_option(original)
     corrupt_candidate = _candidate_ref_from_option(impossible)
-    corrupted["navigation"]["options_by_id"] = {
-        impossible["navigation_option_id"]: impossible
-    }
+    corrupted["navigation"]["options_by_id"] = {impossible["navigation_option_id"]: impossible}
     corrupted["slots_by_id"]["slot-1"]["pending_navigation_candidate_ref"] = corrupt_candidate
     corrupted = _refresh_state(corrupted)
     corrupt_action = replace(

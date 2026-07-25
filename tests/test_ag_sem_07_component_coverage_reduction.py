@@ -34,6 +34,7 @@ from core.component_coverage_reduction_runtime import (
     build_component_coverage_reduction_projection,
     build_component_coverage_reduction_state,
     evidence_ledger_projection_digest,
+    ledger_qualification_blockers_for_satisfied_coverage,
 )
 from core.evidence_ledger import EVIDENCE_LEDGER_SCHEMA_VERSION
 from core.run_kernel import (
@@ -163,6 +164,7 @@ def _seed_evidence_ledger(
     requirements: tuple[dict[str, object], ...] = (),
     requirement_links: tuple[dict[str, object], ...] = (),
     observation_id: str | None = None,
+    enrich_requirement_lineage: bool = True,
 ) -> None:
     candidate: dict[str, object] = {
         "candidate_id": candidate_id,
@@ -182,11 +184,36 @@ def _seed_evidence_ledger(
     }
     if requirement_id is not None:
         candidate["requirement_id"] = requirement_id
+    accepted = dict(
+        kernel.state.current_answer_contract
+        or kernel.state.initial_answer_contract
+        or {}
+    )
+    requirement_rows = [
+        {
+            **(
+                {
+                    "run_id": kernel.state.run_id,
+                    "request_id": kernel.state.request_id,
+                    "answer_contract_version": accepted.get(
+                        "accepted_contract_version"
+                    ),
+                    "answer_contract_digest": accepted.get(
+                        "accepted_contract_digest"
+                    ),
+                }
+                if enrich_requirement_lineage
+                else {}
+            ),
+            **dict(item),
+        }
+        for item in requirements
+    ]
     kernel.state.evidence_ledger.reduce_observation(
         {
             "observation_id": observation_id or f"evidence-seed:{candidate_id}",
             "observation_source": "offline_fixture",
-            "requirements": list(requirements),
+            "requirements": requirement_rows,
             "candidates": [candidate],
             "requirement_links": list(requirement_links),
         }
@@ -752,6 +779,10 @@ def _official_requirement() -> dict[str, object]:
     return {
         "requirement_id": OFFICIAL_REQUIREMENT_ID,
         "requirement_kind": "official_current",
+        "component_id": COMPONENT_ID,
+        "source_obligation_id": OFFICIAL_REQUIREMENT_ID,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
         "required_source_class": "official_current_rules",
         "required_source_tier": "official",
         "required_currentness": "current",
@@ -914,6 +945,161 @@ def test_satisfied_coverage_accepts_qualified_linked_source_obligation_evidence(
 
     _reduce(kernel, accepted, record)
     assert kernel.state.component_coverage_projection["coverage_state"] == "satisfied"
+
+
+@pytest.mark.parametrize(
+    ("lineage_field", "expected_code"),
+    [
+        ("run_id", "ledger_source_requirement_missing_run_id"),
+        (
+            "request_id",
+            "ledger_source_requirement_missing_request_id",
+        ),
+        (
+            "answer_contract_version",
+            "ledger_source_requirement_missing_contract_version",
+        ),
+        (
+            "answer_contract_digest",
+            "ledger_source_requirement_missing_contract_digest",
+        ),
+    ],
+)
+def test_satisfied_coverage_rejects_missing_requirement_lineage(
+    lineage_field: str,
+    expected_code: str,
+) -> None:
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    accepted = _accept_contract(
+        kernel,
+        source_obligation_candidate_ids=(
+            OFFICIAL_REQUIREMENT_ID,
+        ),
+    )
+    requirement = {
+        **_official_requirement(),
+        "answer_contract_version": accepted[
+            "accepted_contract_version"
+        ],
+        "answer_contract_digest": accepted[
+            "accepted_contract_digest"
+        ],
+    }
+    requirement.pop(lineage_field)
+    _seed_evidence_ledger(
+        kernel,
+        requirements=(requirement,),
+        requirement_id=OFFICIAL_REQUIREMENT_ID,
+        source_class="official_current_rules",
+        source_tier="official",
+        enrich_requirement_lineage=False,
+    )
+    content_ref = _content_ref(accepted)
+    observation = _observation(accepted)
+    _admit(kernel, accepted, observation, content_ref)
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
+        source_requirement_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+    projection = kernel.state.evidence_ledger.to_projection().to_dict()
+
+    codes = {
+        item["code"]
+        for item in ledger_qualification_blockers_for_satisfied_coverage(
+            coverage=record.to_dict(),
+            evidence_ledger_projection=projection,
+            accepted_component=accepted[
+                "accepted_answer_component_refs"
+            ][0],
+        )
+    }
+    assert expected_code in codes
+    with pytest.raises(
+        RunKernelTransitionError,
+        match=expected_code,
+    ):
+        _reduce(kernel, accepted, record)
+
+
+@pytest.mark.parametrize(
+    "lineage_field",
+    [
+        "run_id",
+        "request_id",
+        "answer_contract_version",
+        "answer_contract_digest",
+    ],
+)
+def test_satisfied_coverage_rejects_stale_requirement_lineage(
+    lineage_field: str,
+) -> None:
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    accepted = _accept_contract(
+        kernel,
+        source_obligation_candidate_ids=(
+            OFFICIAL_REQUIREMENT_ID,
+        ),
+    )
+    requirement = {
+        **_official_requirement(),
+        "answer_contract_version": accepted[
+            "accepted_contract_version"
+        ],
+        "answer_contract_digest": accepted[
+            "accepted_contract_digest"
+        ],
+    }
+    requirement[lineage_field] = (
+        999
+        if lineage_field == "answer_contract_version"
+        else "stale-lineage"
+    )
+    _seed_evidence_ledger(
+        kernel,
+        requirements=(requirement,),
+        requirement_id=OFFICIAL_REQUIREMENT_ID,
+        source_class="official_current_rules",
+        source_tier="official",
+        enrich_requirement_lineage=False,
+    )
+    content_ref = _content_ref(accepted)
+    observation = _observation(accepted)
+    _admit(kernel, accepted, observation, content_ref)
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
+        source_requirement_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+    projection = kernel.state.evidence_ledger.to_projection().to_dict()
+
+    codes = {
+        item["code"]
+        for item in ledger_qualification_blockers_for_satisfied_coverage(
+            coverage=record.to_dict(),
+            evidence_ledger_projection=projection,
+            accepted_component=accepted[
+                "accepted_answer_component_refs"
+            ][0],
+        )
+    }
+    assert (
+        f"ledger_source_requirement_stale_{lineage_field}"
+        in codes
+    )
+    with pytest.raises(
+        RunKernelTransitionError,
+        match=(
+            f"ledger_source_requirement_stale_{lineage_field}"
+        ),
+    ):
+        _reduce(kernel, accepted, record)
 
 
 def test_conflicted_or_followup_required_coverage_cannot_present_as_satisfied() -> None:

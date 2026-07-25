@@ -30,9 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ORCHESTRATOR = ROOT / "core" / "pipeline_orchestrator.py"
 CLI = ROOT / "proplex" / "__main__.py"
 ORDINARY_LIVE_DRY_RUN = ROOT / "proplex" / "ordinary_live_entrypoint_dry_run.py"
-BOUNDED_PRODUCT_RUNNER = (
-    ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py"
-)
+BOUNDED_PRODUCT_RUNNER = ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py"
 ORDINARY_COMPOSITION_ROOTS = (
     CLI,
     ORDINARY_LIVE_DRY_RUN,
@@ -92,10 +90,7 @@ def _rundeps_keywords(path: Path) -> set[str]:
 def _imported_names(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8-sig"))
     names = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
+        alias.asname or alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
     }
     names.update(
         alias.asname or alias.name
@@ -114,19 +109,13 @@ def _imported_names(path: Path) -> set[str]:
 def test_current_composition_root_does_not_import_or_inject_retired_dependencies(
     composition_root: Path,
 ) -> None:
-    imported_retired_names = RETIRED_RUNDEPS_NAMES & _imported_names(
-        composition_root
-    )
-    injected_retired_names = RETIRED_RUNDEPS_NAMES & _rundeps_keywords(
-        composition_root
-    )
+    imported_retired_names = RETIRED_RUNDEPS_NAMES & _imported_names(composition_root)
+    injected_retired_names = RETIRED_RUNDEPS_NAMES & _rundeps_keywords(composition_root)
     assert not imported_retired_names, (
-        f"{composition_root} imports retired dependencies: "
-        f"{sorted(imported_retired_names)}"
+        f"{composition_root} imports retired dependencies: {sorted(imported_retired_names)}"
     )
     assert not injected_retired_names, (
-        f"{composition_root} injects retired RunDeps fields: "
-        f"{sorted(injected_retired_names)}"
+        f"{composition_root} injects retired RunDeps fields: {sorted(injected_retired_names)}"
     )
 
 
@@ -163,13 +152,11 @@ def test_ordinary_semantic_scout_spy_is_inert_and_downstream_still_completes(
 
     trace = outcome.execution_trace
     assert scout_calls == []
-    assert outcome.report == harness.raw_author_response
+    assert "FinalAnswerPacket readiness is blocked" in outcome.report
     assert harness.analyst_calls == 1
+    assert harness.author_prompts == []
     assert harness.search_calls
-    assert all(
-        call["provider_role"] != "scout_continuation"
-        for call in harness.search_calls
-    )
+    assert all(call["provider_role"] != "scout_continuation" for call in harness.search_calls)
     assert trace["scout_fired"] is False
     assert trace["scout_key"] is None
     assert trace["scout_queries"] == []
@@ -216,7 +203,7 @@ def test_ordinary_linkup_sourced_answer_spy_is_inert_and_analyst_gets_sources(
     assert harness.analyst_calls == 1
     assert harness.analyst_prompts
     assert "<evidence_block>" in harness.analyst_prompts[-1]
-    assert "Alpha official operating report" in harness.analyst_prompts[-1]
+    assert "Offline exact READ source" in harness.analyst_prompts[-1]
     assert PROVIDER_ANSWER_MARKER not in harness.analyst_prompts[-1]
     assert PROVIDER_ANSWER_MARKER not in "\n".join(harness.author_prompts)
     assert PROVIDER_ANSWER_MARKER not in outcome.report
@@ -259,7 +246,9 @@ def test_all_modes_share_one_ordinary_pipeline_without_retired_calls(
     )
 
     assert retired_calls == []
-    assert outcome.report == harness.raw_author_response
+    assert "FinalAnswerPacket readiness is blocked" in outcome.report
+    assert harness.analyst_calls == (0 if mode == "Fast" else 1)
+    assert harness.author_prompts == []
 
 
 def test_static_ordinary_composition_prompt_queryplan_and_scheduler_are_closed() -> None:

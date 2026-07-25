@@ -319,6 +319,7 @@ def _build_semantic_ref_projection(
     *,
     accepted_contract: Mapping[str, Any],
     latest_coverage: Mapping[str, Mapping[str, Any]],
+    component_coverage_history: Sequence[Mapping[str, Any]],
     required_component_ids: Sequence[str],
     semantic_state_facts_digest: str,
 ) -> dict[str, Any]:
@@ -330,6 +331,7 @@ def _build_semantic_ref_projection(
     evidence_ids: list[str] = []
     semantic_source_ref_bindings: list[dict[str, Any]] = []
     source_obligation_refs: list[str] = []
+    source_obligation_coverage_refs: list[dict[str, Any]] = []
     required_ids = [item for item in required_component_ids if item]
     safe_required_ids: set[str] = set()
     component_ref_index = {
@@ -378,6 +380,16 @@ def _build_semantic_ref_projection(
                 "coverage_record_id": coverage_record_id,
                 "coverage_record_digest": coverage_record_digest,
                 "answer_component_id": component_id,
+                "component_revision": coverage.get(
+                    "component_revision"
+                ),
+                "component_digest": coverage.get("component_digest"),
+                "accepted_contract_version": coverage.get(
+                    "accepted_contract_version"
+                ),
+                "accepted_contract_digest": coverage.get(
+                    "accepted_contract_digest"
+                ),
             },
         )
 
@@ -423,8 +435,101 @@ def _build_semantic_ref_projection(
                 )
 
         ledger_binding = _mapping(coverage.get("evidence_ledger_binding"))
+        coverage_source_obligation_ids = _token_list(
+            coverage.get("source_obligation_ids")
+        )
         for requirement_id in _token_list(ledger_binding.get("source_requirement_ids")):
             _append_unique_token(source_obligation_refs, requirement_id)
+            _append_unique_mapping(
+                source_obligation_coverage_refs,
+                {
+                    "requirement_id": requirement_id,
+                    "coverage_record_id": coverage_record_id,
+                    "coverage_record_digest": coverage_record_digest,
+                    "answer_component_id": component_id,
+                    "source_obligation_ids": (
+                        coverage_source_obligation_ids
+                    ),
+                },
+            )
+
+        for historical_coverage in component_coverage_history:
+            if not isinstance(historical_coverage, Mapping):
+                continue
+            historical = _mapping(historical_coverage)
+            if (
+                _clean_token(historical.get("answer_component_id"))
+                != component_id
+                or not _coverage_matches_accepted_component(
+                    historical,
+                    accepted_contract_version=_clean_token(
+                        accepted_contract.get("accepted_contract_version")
+                    ),
+                    accepted_contract_digest=_clean_token(
+                        accepted_contract.get("accepted_contract_digest"),
+                        limit=128,
+                    ),
+                    component_digest=component_digest,
+                )
+                or not _coverage_safe_for_ref_projection(historical)
+            ):
+                continue
+            historical_record_id = _clean_token(
+                historical.get("coverage_record_id")
+            )
+            historical_record_digest = _clean_token(
+                historical.get("coverage_record_digest"),
+                limit=128,
+            )
+            _append_unique_mapping(
+                coverage_record_refs,
+                {
+                    "coverage_record_id": historical_record_id,
+                    "coverage_record_digest": (
+                        historical_record_digest
+                    ),
+                    "answer_component_id": component_id,
+                    "component_revision": historical.get(
+                        "component_revision"
+                    ),
+                    "component_digest": historical.get(
+                        "component_digest"
+                    ),
+                    "accepted_contract_version": historical.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": historical.get(
+                        "accepted_contract_digest"
+                    ),
+                },
+            )
+            historical_binding = _mapping(
+                historical.get("evidence_ledger_binding")
+            )
+            historical_source_obligation_ids = _token_list(
+                historical.get("source_obligation_ids")
+            )
+            for requirement_id in _token_list(
+                historical_binding.get("source_requirement_ids")
+            ):
+                _append_unique_token(
+                    source_obligation_refs,
+                    requirement_id,
+                )
+                _append_unique_mapping(
+                    source_obligation_coverage_refs,
+                    {
+                        "requirement_id": requirement_id,
+                        "coverage_record_id": historical_record_id,
+                        "coverage_record_digest": (
+                            historical_record_digest
+                        ),
+                        "answer_component_id": component_id,
+                        "source_obligation_ids": (
+                            historical_source_obligation_ids
+                        ),
+                    },
+                )
 
     available = bool(required_ids) and len(safe_required_ids) == len(set(required_ids))
     projection: dict[str, Any] = {
@@ -458,6 +563,10 @@ def _build_semantic_ref_projection(
         projection["semantic_source_ref_bindings"] = semantic_source_ref_bindings
     if source_obligation_refs:
         projection["source_obligation_refs"] = source_obligation_refs
+    if source_obligation_coverage_refs:
+        projection["source_obligation_coverage_refs"] = (
+            source_obligation_coverage_refs
+        )
     return projection
 
 
@@ -512,6 +621,45 @@ def _safe_semantic_ref_projection(value: Any) -> dict[str, Any]:
             )
     if coverage_refs:
         safe["coverage_record_refs"] = coverage_refs[:_MAX_LIST_ITEMS]
+
+    source_obligation_coverage_refs = []
+    for ref in _list(
+        projection.get("source_obligation_coverage_refs")
+    ):
+        if not isinstance(ref, Mapping):
+            continue
+        requirement_id = _clean_token(ref.get("requirement_id"))
+        coverage_record_id = _clean_token(
+            ref.get("coverage_record_id")
+        )
+        coverage_record_digest = _clean_token(
+            ref.get("coverage_record_digest"),
+            limit=128,
+        )
+        answer_component_id = _clean_token(
+            ref.get("answer_component_id")
+        )
+        if (
+            requirement_id
+            and coverage_record_id
+            and coverage_record_digest
+            and answer_component_id
+        ):
+            source_obligation_coverage_refs.append(
+                {
+                    "requirement_id": requirement_id,
+                    "coverage_record_id": coverage_record_id,
+                    "coverage_record_digest": coverage_record_digest,
+                    "answer_component_id": answer_component_id,
+                    "source_obligation_ids": _token_list(
+                        ref.get("source_obligation_ids")
+                    ),
+                }
+            )
+    if source_obligation_coverage_refs:
+        safe["source_obligation_coverage_refs"] = (
+            source_obligation_coverage_refs[:_MAX_LIST_ITEMS]
+        )
 
     observation_refs = []
     for ref in _list(projection.get("semantic_observation_refs")):
@@ -726,9 +874,16 @@ def build_semantic_state_facts_for_sufficiency(
     accepted_required_component_refs = [
         {
             "answer_component_id": component_id,
+            "component_revision": _clean_token(
+                ref.get("component_revision")
+            ),
             "component_digest": component_digest,
             "accepted_contract_version": accepted_contract_version,
             "accepted_contract_digest": accepted_contract_digest,
+            "source_obligation_candidate_ids": _token_list(
+                ref.get("source_obligation_candidate_ids")
+                or ref.get("source_obligation_candidate_refs")
+            ),
         }
         for ref in required_refs
         if (component_id := _clean_token(ref.get("component_id")))
@@ -1237,6 +1392,7 @@ def build_semantic_state_facts_for_sufficiency(
             key: facts_core[key]
             for key in (
                 "accepted_contract_digest",
+                "accepted_required_component_refs",
                 "component_summaries",
                 "amendment_summaries",
                 "blockers",
@@ -1248,6 +1404,7 @@ def build_semantic_state_facts_for_sufficiency(
     facts_core["semantic_ref_projection"] = _build_semantic_ref_projection(
         accepted_contract=contract,
         latest_coverage=latest_coverage,
+        component_coverage_history=component_coverage_history,
         required_component_ids=required_component_ids,
         semantic_state_facts_digest=facts_core["semantic_state_facts_digest"],
     )

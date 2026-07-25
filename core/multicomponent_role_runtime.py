@@ -1144,6 +1144,7 @@ def execute_multicomponent_role_call(
     logical_evaluation_key: str,
     output_schema_variant: str | None = None,
     lease_id: str | None = None,
+    searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Authorize, execute, parse, bind, and reduce one semantic role call."""
 
@@ -1183,8 +1184,22 @@ def execute_multicomponent_role_call(
 
     scheduler_active = bool(
         run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    )
-    if scheduler_active:
+    ) and not bool(searchos_recovery_cycle_ref)
+    recovery_active = bool(searchos_recovery_cycle_ref)
+    if searchos_recovery_cycle_ref:
+        if lease_id:
+            raise MulticomponentRoleRuntimeError(
+                "SearchOS recovery role authority cannot combine with a "
+                "scheduler lease"
+            )
+        action = run_kernel.authorize_multicomponent_role_call(
+            role=normalized_role,
+            input_packet_digest=input_digest,
+            logical_evaluation_key=logical_evaluation_key,
+            specialist_handoff_digest=specialist_handoff_digest,
+            searchos_recovery_cycle_ref=searchos_recovery_cycle_ref,
+        )
+    elif scheduler_active:
         if not lease_id:
             raise MulticomponentRoleRuntimeError(
                 "scheduler-active semantic transport requires an exact lease"
@@ -1245,7 +1260,7 @@ def execute_multicomponent_role_call(
             output_schema_variant=schema_variant,
         )
     except Exception as exc:
-        if scheduler_active:
+        if scheduler_active or recovery_active:
             failure_kind = (
                 "model_transport_failure"
                 if not isinstance(exc, MulticomponentRoleRuntimeError)
@@ -1261,7 +1276,7 @@ def execute_multicomponent_role_call(
                     observation_type=action.expected_observation_type,
                     status=RunStageStatus.FAILED,
                     payload={
-                        "lease_settlement": LEASE_FAILED,
+                        **({"lease_settlement": LEASE_FAILED} if scheduler_active else {}),
                         "failure_kind": failure_kind,
                     },
                 )
@@ -1325,14 +1340,14 @@ def execute_multicomponent_role_call(
             expected_role=normalized_role,
         )
     except Exception:
-        if scheduler_active:
+        if scheduler_active or recovery_active:
             run_kernel.reduce(
                 Observation.from_action(
                     action,
                     observation_type=action.expected_observation_type,
                     status=RunStageStatus.FAILED,
                     payload={
-                        "lease_settlement": LEASE_FAILED,
+                        **({"lease_settlement": LEASE_FAILED} if scheduler_active else {}),
                         "failure_kind": "artifact_validation_failure",
                     },
                 )

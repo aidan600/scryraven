@@ -223,6 +223,9 @@ class OfflineOrdinaryPipelineHarness:
             self.read_assessment_calls.append(
                 {
                     "slot_id": dict(authorized.get("slot_ref") or {}).get("slot_id"),
+                    "recovery_cycle_id": dict(
+                        authorized.get("slot_ref") or {}
+                    ).get("recovery_cycle_id"),
                     "binding_ids": [
                         dict(item.get("candidate_use_option_ref") or {}).get("candidate_use_option_id")
                         for item in options
@@ -338,6 +341,26 @@ class OfflineOrdinaryPipelineHarness:
                     followup_query="Alpha exact model-authored follow-up query",
                     reason="offline_followup_needed",
                 )
+            recovery_judgment_calls = sum(
+                bool(item.get("recovery_cycle_id"))
+                for item in self.read_assessment_calls
+            )
+            if (
+                self.read_assessment_decision
+                == "RECOVERY_FOLLOWUP_THEN_READ"
+                and dict(authorized.get("slot_ref") or {}).get(
+                    "recovery_cycle_id"
+                )
+                and recovery_judgment_calls == 1
+                and not custody_refs
+            ):
+                return contract_decision(
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    followup_query=(
+                        "Alpha exact current official operating protocol details"
+                    ),
+                    reason="offline_recovery_followup_needed",
+                )
             if self.read_assessment_decision == "REQUEST_FIRST_THEN_NO_READ" and len(self.read_assessment_calls) > 1:
                 assessments = [
                     {
@@ -407,7 +430,11 @@ class OfflineOrdinaryPipelineHarness:
             if options:
                 selected_option = (
                     options[-1]
-                    if self.read_assessment_decision == "FOLLOWUP_THEN_READ"
+                    if self.read_assessment_decision
+                    in {
+                        "FOLLOWUP_THEN_READ",
+                        "RECOVERY_FOLLOWUP_THEN_READ",
+                    }
                     and len(self.read_assessment_calls) > 1
                     else options[0]
                 )

@@ -334,6 +334,13 @@ class RunSufficiencyJudgmentInput:
         default_factory=dict
     )
     multicomponent_scheduler_state: Mapping[str, Any] = field(default_factory=dict)
+    searchos_existing_gap_recovery_terminal_state: Mapping[str, Any] = field(
+        default_factory=dict
+    )
+    searchos_required_needs_block_state: Mapping[str, Any] = field(
+        default_factory=dict
+    )
+    searchos_state: Mapping[str, Any] = field(default_factory=dict)
     run_identity: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
@@ -414,6 +421,12 @@ class RunSufficiencyJudgmentInput:
                 self._multicomponent_recovery_authorization_model_ref()
             ),
             "multicomponent_scheduler_ref": self._multicomponent_scheduler_model_ref(),
+            "searchos_existing_gap_recovery_terminal_ref": (
+                self._searchos_existing_gap_recovery_terminal_model_ref()
+            ),
+            "searchos_required_needs_block_ref": (
+                self._searchos_required_needs_block_model_ref()
+            ),
             "run_ref": {
                 "run_id": clean_token(_safe_mapping(self.run_identity).get("run_id")),
                 "request_id": clean_token(
@@ -437,6 +450,98 @@ class RunSufficiencyJudgmentInput:
             "spent_units": envelope.get("spent_units"),
             "exhausted_required_work_ref": exhausted,
             "failed_required_work_ref": failed,
+        }
+
+    def _searchos_required_needs_block_model_ref(
+        self,
+    ) -> dict[str, Any]:
+        block = _safe_mapping(
+            self.searchos_required_needs_block_state
+        )
+        return {
+            "schema_version": clean_token(
+                block.get("schema_version")
+            ),
+            "owner": clean_token(block.get("owner")),
+            "canonical_state": block.get("canonical_state") is True,
+            "block_id": clean_token(block.get("block_id")),
+            "block_digest": clean_token(block.get("block_digest")),
+            "run_id": clean_token(block.get("run_id")),
+            "request_id": clean_token(block.get("request_id")),
+            "readiness_projection_ref": _safe_mapping(
+                block.get("readiness_projection_ref")
+            ),
+            "unresolved_required_slots": [
+                _safe_mapping(item)
+                for item in _list(
+                    block.get("unresolved_required_slots")
+                )[:_MAX_LIST_ITEMS]
+                if isinstance(item, Mapping)
+            ],
+            "blocker_facts": [
+                _safe_mapping(item)
+                for item in _list(
+                    block.get("blocker_facts")
+                )[:_MAX_LIST_ITEMS]
+                if isinstance(item, Mapping)
+            ],
+            "subordinate_to_sufficiency": (
+                block.get("subordinate_to_sufficiency") is True
+            ),
+        }
+
+    def _searchos_existing_gap_recovery_terminal_model_ref(
+        self,
+    ) -> dict[str, Any]:
+        terminal = _safe_mapping(
+            self.searchos_existing_gap_recovery_terminal_state
+        )
+        return {
+            "schema_version": clean_token(
+                terminal.get("schema_version")
+            ),
+            "owner": clean_token(terminal.get("owner")),
+            "canonical_state": terminal.get("canonical_state") is True,
+            "terminal_aggregate_id": clean_token(
+                terminal.get("terminal_aggregate_id")
+            ),
+            "terminal_aggregate_digest": clean_token(
+                terminal.get("terminal_aggregate_digest")
+            ),
+            "terminal_status": clean_token(
+                terminal.get("terminal_status")
+            ),
+            "cycle_ref": _safe_mapping(terminal.get("cycle_ref")),
+            "recovery_slot_ref": _safe_mapping(
+                terminal.get("recovery_slot_ref")
+            ),
+            "component_ref": _safe_mapping(terminal.get("component_ref")),
+            "source_obligation_ref": _safe_mapping(
+                terminal.get("source_obligation_ref")
+            ),
+            "component_admission_ref": _safe_mapping(
+                terminal.get("component_admission_ref")
+            ),
+            "component_coverage_ref": _safe_mapping(
+                terminal.get("component_coverage_ref")
+            ),
+            "terminal_blocker": _safe_mapping(
+                terminal.get("terminal_blocker")
+            ),
+            "coverage_gained": terminal.get("coverage_gained") is True,
+            "gap_remains": terminal.get("gap_remains") is True,
+            "lease_terminal": terminal.get("lease_terminal") is True,
+            "expenditure": _safe_mapping(terminal.get("expenditure")),
+            "searchos_state_ref": {
+                "state_id": clean_token(
+                    _safe_mapping(self.searchos_state).get("state_id")
+                ),
+                "state_digest": clean_token(
+                    _safe_mapping(self.searchos_state).get(
+                        "state_digest"
+                    )
+                ),
+            },
         }
 
     def _multicomponent_recovery_model_ref(self) -> dict[str, Any]:
@@ -600,6 +705,12 @@ class RunSufficiencyJudgment:
     multicomponent_graph_consumption: Mapping[str, Any] = field(
         default_factory=dict
     )
+    searchos_existing_gap_recovery_terminal_consumption: Mapping[
+        str, Any
+    ] = field(default_factory=dict)
+    searchos_required_needs_block_consumption: Mapping[
+        str, Any
+    ] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         decision = (
@@ -686,6 +797,20 @@ class RunSufficiencyJudgment:
         )
         object.__setattr__(
             self,
+            "searchos_existing_gap_recovery_terminal_consumption",
+            _safe_mapping(
+                self.searchos_existing_gap_recovery_terminal_consumption
+            ),
+        )
+        object.__setattr__(
+            self,
+            "searchos_required_needs_block_consumption",
+            _safe_mapping(
+                self.searchos_required_needs_block_consumption
+            ),
+        )
+        object.__setattr__(
+            self,
             "final_packet_inputs",
             _safe_mapping(self.final_packet_inputs)
             or self._default_final_packet_inputs(),
@@ -760,6 +885,20 @@ class RunSufficiencyJudgment:
             multicomponent_graph_consumption=_safe_mapping(
                 payload.get("multicomponent_graph_consumption")
             ),
+            searchos_existing_gap_recovery_terminal_consumption=(
+                _safe_mapping(
+                    payload.get(
+                        "searchos_existing_gap_recovery_terminal_consumption"
+                    )
+                )
+            ),
+            searchos_required_needs_block_consumption=(
+                _safe_mapping(
+                    payload.get(
+                        "searchos_required_needs_block_consumption"
+                    )
+                )
+            ),
         )
 
     def _default_final_packet_inputs(self) -> dict[str, Any]:
@@ -801,7 +940,7 @@ class RunSufficiencyJudgment:
             item.to_dict()
             for item in (*self.missing_required_obligations, *self.partial_obligations)
         ]
-        return {
+        packet_inputs = {
             "source": "RunKernel.RunAuthoritySufficiencyJudgment",
             "decision": self.decision.value,
             "final_answer_posture": self.final_answer_posture.value,
@@ -844,6 +983,21 @@ class RunSufficiencyJudgment:
                 "calculation_executed": bool(self.source_bound_numeric_resolutions),
             },
         }
+        terminal_consumption = _safe_mapping(
+            self.searchos_existing_gap_recovery_terminal_consumption
+        )
+        if terminal_consumption:
+            packet_inputs[
+                "searchos_existing_gap_recovery_terminal_consumption"
+            ] = terminal_consumption
+        required_needs_consumption = _safe_mapping(
+            self.searchos_required_needs_block_consumption
+        )
+        if required_needs_consumption:
+            packet_inputs[
+                "searchos_required_needs_block_consumption"
+            ] = required_needs_consumption
+        return packet_inputs
 
     def to_projection(self) -> dict[str, Any]:
         projection = safe_json(
@@ -896,6 +1050,12 @@ class RunSufficiencyJudgment:
                 "component_readiness": dict(self.component_readiness),
                 "multicomponent_graph_consumption": dict(
                     self.multicomponent_graph_consumption
+                ),
+                "searchos_existing_gap_recovery_terminal_consumption": dict(
+                    self.searchos_existing_gap_recovery_terminal_consumption
+                ),
+                "searchos_required_needs_block_consumption": dict(
+                    self.searchos_required_needs_block_consumption
                 ),
                 "semantic_state_facts_summary": self._semantic_state_facts_summary(),
                 "prompt_text_retained": False,

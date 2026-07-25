@@ -38,9 +38,7 @@ CURRENT_COMPOSITION_ROOTS = (
     ROOT / "proplex" / "ordinary_live_entrypoint_dry_run.py",
     ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py",
 )
-LEGACY_ECONOMIST_RETIREMENT_REASON = (
-    "legacy_economist_ordinary_execution_retired"
-)
+LEGACY_ECONOMIST_RETIREMENT_REASON = "legacy_economist_ordinary_execution_retired"
 LINKUP_CONTEXT_MARKER = "LINKUP_RETIREMENT_PARITY_CONTEXT"
 QUERY = "Compare Alpha and Beta operating rates using current evidence."
 
@@ -94,9 +92,7 @@ def test_static_ordinary_reachability_and_composition_are_closed() -> None:
         if isinstance(node, (ast.Assign, ast.AnnAssign))
         and any(
             isinstance(target, ast.Name) and target.id == "need_economist"
-            for target in (
-                node.targets if isinstance(node, ast.Assign) else (node.target,)
-            )
+            for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
         )
     ]
     assert len(need_assignments) == 1
@@ -104,10 +100,7 @@ def test_static_ordinary_reachability_and_composition_are_closed() -> None:
     assert need_assignments[0].value.value is False
     assert not any(
         isinstance(node, ast.If)
-        and any(
-            isinstance(child, ast.Name) and child.id == "need_economist"
-            for child in ast.walk(node.test)
-        )
+        and any(isinstance(child, ast.Name) and child.id == "need_economist" for child in ast.walk(node.test))
         for node in ast.walk(tree)
     )
 
@@ -116,32 +109,22 @@ def test_static_ordinary_reachability_and_composition_are_closed() -> None:
         assert "run_economist_step" not in composition_source, path
         for call in _rundeps_calls(path):
             assert not call.args, path
-            assert "run_economist_step" not in {
-                keyword.arg for keyword in call.keywords
-            }, path
+            assert "run_economist_step" not in {keyword.arg for keyword in call.keywords}, path
 
     cli_tree = ast.parse((ROOT / "proplex" / "__main__.py").read_text(encoding="utf-8"))
     assert "compose_quantitative_specialist_product_deps" in _call_names(cli_tree)
 
-    delegate_source = (ROOT / "scryraven" / "__main__.py").read_text(
-        encoding="utf-8"
-    )
+    delegate_source = (ROOT / "scryraven" / "__main__.py").read_text(encoding="utf-8")
     assert "from proplex.__main__ import main" in delegate_source
     assert "run_pipeline" not in delegate_source
     assert "RunDeps" not in delegate_source
 
-    assert "run_economist_step" in (
-        ROOT / "ui" / "pages_home.py"
-    ).read_text(encoding="utf-8")
-    assert "run_economist_step" in (
-        ROOT / "tests" / "test_economist_safety.py"
-    ).read_text(encoding="utf-8")
+    assert "run_economist_step" in (ROOT / "ui" / "pages_home.py").read_text(encoding="utf-8")
+    assert "run_economist_step" in (ROOT / "tests" / "test_economist_safety.py").read_text(encoding="utf-8")
 
 
 def test_rundeps_legacy_callable_is_optional_and_all_callers_are_keyword_only() -> None:
-    legacy_field = next(
-        field for field in fields(RunDeps) if field.name == "run_economist_step"
-    )
+    legacy_field = next(field for field in fields(RunDeps) if field.name == "run_economist_step")
     assert legacy_field.default is None
     assert legacy_field.default_factory is MISSING
 
@@ -167,8 +150,7 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
         primary_entity="Alpha",
         analyst_response="The retrieved evidence supports a bounded comparison.",
         raw_author_response=(
-            "The evidence supports a bounded qualitative comparison. "
-            "[[1]](https://alpha.example/report-1)"
+            "The evidence supports a bounded qualitative comparison. [[1]](https://alpha.example/report-1)"
         ),
         current_date="July 15, 2026",
         environment_overrides={
@@ -179,13 +161,11 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
     economist_handoff = trace["economist_handoff_contract"]
 
     assert harness.economist_calls == []
-    assert outcome.report == harness.raw_author_response
+    assert "FinalAnswerPacket readiness is blocked" in outcome.report
     assert trace["economist_ran"] is False
     assert trace["timing"]["economist_seconds"] == 0.0
     assert trace["economist_preflight_allowed"] is None
-    assert trace["economist_preflight_block_reason"] == (
-        LEGACY_ECONOMIST_RETIREMENT_REASON
-    )
+    assert trace["economist_preflight_block_reason"] == (LEGACY_ECONOMIST_RETIREMENT_REASON)
     assert trace["economist_preflight_missing_entities"] == []
     assert trace["economist_skip_reason"] == LEGACY_ECONOMIST_RETIREMENT_REASON
     assert trace["economist_schema_version"] is None
@@ -201,14 +181,12 @@ def test_quantitative_ordinary_run_never_calls_legacy_economist_or_preflight(
     assert DEFAULT_SYSTEM["economist"] not in systems
     assert not any(system.startswith("You classify evidence only") for system in systems)
     assert harness.analyst_prompts
-    assert harness.author_prompts
-    for prompt in (*harness.analyst_prompts, *harness.author_prompts):
+    assert harness.author_prompts == []
+    for prompt in harness.analyst_prompts:
         assert "QUANTITATIVE FRAMEWORK" not in prompt
         assert "economist_v1" not in prompt
         assert "quantitative_packet" not in prompt
         assert LEGACY_ECONOMIST_RETIREMENT_REASON not in prompt
-    assert "Analysis:" in harness.author_prompts[-1]
-    assert "Precision Evidence" in harness.author_prompts[-1]
 
 
 def test_linkup_precision_compatibility_dependency_is_inert_in_ordinary_runtime(
@@ -231,10 +209,7 @@ def test_linkup_precision_compatibility_dependency_is_inert_in_ordinary_runtime(
         core_topic="Alpha and Beta operating rates",
         primary_entity="Alpha",
         analyst_response="The retrieved source evidence supports the comparison.",
-        raw_author_response=(
-            "The evidence supports the comparison. "
-            "[[1]](https://alpha.example/report-1)"
-        ),
+        raw_author_response=("The evidence supports the comparison. [[1]](https://alpha.example/report-1)"),
         current_date="July 15, 2026",
         deps_overrides={"fetch_linkup_precision_block": fake_linkup},
         environment_overrides={
@@ -255,15 +230,11 @@ def test_linkup_precision_compatibility_dependency_is_inert_in_ordinary_runtime(
     # Lower-level transport remains only for named validation/error tests; the
     # ordinary orchestrator no longer imports, wraps, injects, or calls it.
     linkup_source = (ROOT / "core" / "pipeline.py").read_text(encoding="utf-8")
-    linkup_body = linkup_source.split(
-        "def fetch_linkup_precision_block(", maxsplit=1
-    )[1].split("\ndef ", maxsplit=1)[0]
+    linkup_body = linkup_source.split("def fetch_linkup_precision_block(", maxsplit=1)[1].split("\ndef ", maxsplit=1)[0]
     assert 'depth="deep"' in linkup_body
     assert 'output_type="sourcedAnswer"' in linkup_body
     assert "max_results=8" in linkup_body
-    assert "fetch_linkup_precision_block" not in ORCHESTRATOR.read_text(
-        encoding="utf-8"
-    )
+    assert "fetch_linkup_precision_block" not in ORCHESTRATOR.read_text(encoding="utf-8")
 
 
 def test_current_composition_and_cli_help_work_without_economist_callable(

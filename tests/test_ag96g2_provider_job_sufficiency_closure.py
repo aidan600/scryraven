@@ -56,7 +56,9 @@ def _contract(*requirements: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "contract_id": "ag96g2-contract",
         "selected_template_ids": ["ag96g2"],
-        "source_requirements": [dict(item) for item in requirements],
+        "source_requirements": [
+            {key: value for key, value in item.items() if key != "provider_job_id"} for item in requirements
+        ],
         "final_posture_policy": {
             "partial_allowed_if": "some required obligations remain missing",
             "mandatory_caveats": [
@@ -214,7 +216,9 @@ def _kernel_with_contract_and_provider_job_ledger(
             "API parameter documentation",
             "numeric rate amount source",
         ],
-        retrieval_records=retrieval_records if retrieval_records is not None else [
+        retrieval_records=retrieval_records
+        if retrieval_records is not None
+        else [
             _candidate(
                 query="official current filing fee",
                 source_class="official_current_rules",
@@ -266,8 +270,7 @@ def test_single_skeleton_contract_falls_back_to_unambiguous_provider_job_custody
         "source_requirements": [
             {
                 "requirement_id": (
-                    "provider_job_requirement:component-fee:"
-                    "obligation-official-fee:provider-official-fee"
+                    "provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"
                 ),
                 "requirement_kind": "official_current",
                 "required_source_class": "official_current_rules",
@@ -281,14 +284,9 @@ def test_single_skeleton_contract_falls_back_to_unambiguous_provider_job_custody
 
     judgment = _judgment(contract, ledger)
 
-    assert judgment.required_obligations_satisfied is True
-    assert judgment.satisfied_obligations[0].component_id == "component_fee"
-    assert judgment.satisfied_obligations[0].source_obligation_id == (
-        "obligation_official_fee"
-    )
-    assert judgment.satisfied_obligations[0].provider_job_id == (
-        "provider_official_fee"
-    )
+    assert judgment.required_obligations_satisfied is False
+    assert not judgment.satisfied_obligations
+    assert len(judgment.missing_required_obligations) == 1
 
 
 def test_ref_mismatch_does_not_use_official_current_class_fallback() -> None:
@@ -320,8 +318,7 @@ def test_ref_mismatch_does_not_use_official_current_class_fallback() -> None:
         "source_requirements": [
             {
                 "requirement_id": (
-                    "provider_job_requirement:component-fee:"
-                    "obligation-official-fee:provider-official-fee"
+                    "provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"
                 ),
                 "requirement_kind": "official_current",
                 "required_source_class": "official_current_rules",
@@ -335,12 +332,11 @@ def test_ref_mismatch_does_not_use_official_current_class_fallback() -> None:
 
     judgment = _judgment(contract, ledger)
 
-    assert [item.component_id for item in judgment.satisfied_obligations] == [
-        "component_fee"
-    ]
-    assert [item.component_id for item in judgment.missing_required_obligations] == [
-        "component_deadline"
-    ]
+    assert not judgment.satisfied_obligations
+    assert {item.component_id for item in judgment.missing_required_obligations} == {
+        "component_fee",
+        "component_deadline",
+    }
     assert judgment.required_obligations_satisfied is False
     assert judgment.decision is RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
 
@@ -361,8 +357,7 @@ def test_skeleton_contract_does_not_fallback_when_multiple_compatible_ledgers() 
         "source_requirements": [
             {
                 "requirement_id": (
-                    "provider_job_requirement:component-fee:"
-                    "obligation-official-fee:provider-official-fee"
+                    "provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"
                 ),
                 "requirement_kind": "official_current",
                 "required_source_class": "official_current_rules",
@@ -415,21 +410,14 @@ def test_satisfied_official_current_provider_job_custody_governs_ready_direct() 
     assert judgment.required_obligations_satisfied is True
     assert not judgment.missing_required_obligations
     assert judgment.satisfied_obligations[0].component_id == "component_fee"
-    assert judgment.satisfied_obligations[0].source_obligation_id == (
-        "obligation_official_fee"
-    )
-    assert judgment.satisfied_obligations[0].provider_job_id == (
-        "provider_official_fee"
-    )
+    assert judgment.satisfied_obligations[0].source_obligation_id == ("obligation_official_fee")
+    assert judgment.satisfied_obligations[0].provider_job_id is None
 
 
 def test_aggregate_only_official_current_never_satisfies_custody() -> None:
     contract = _contract(
         _requirement(
-            (
-                "provider_job_requirement:component-fee:"
-                "obligation-official-fee:provider-official-fee"
-            ),
+            ("provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"),
             kind="official_current",
             source_class="official_current_rules",
             source_tier="official",
@@ -445,8 +433,7 @@ def test_aggregate_only_official_current_never_satisfies_custody() -> None:
         "source_requirements": [
             {
                 "requirement_id": (
-                    "provider_job_requirement:component-fee:"
-                    "obligation-official-fee:provider-official-fee"
+                    "provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"
                 ),
                 "requirement_kind": "official_current",
                 "required_source_class": "official_current_rules",
@@ -462,8 +449,7 @@ def test_aggregate_only_official_current_never_satisfies_custody() -> None:
             {
                 "gap_type": "legacy_aggregate_only_path",
                 "requirement_id": (
-                    "provider_job_requirement:component-fee:"
-                    "obligation-official-fee:provider-official-fee"
+                    "provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"
                 ),
                 "reason": "aggregate count observed without candidate identity",
             }
@@ -474,12 +460,10 @@ def test_aggregate_only_official_current_never_satisfies_custody() -> None:
 
     assert judgment.decision is not RunSufficiencyDecision.READY_DIRECT
     assert judgment.missing_required_obligations
-    assert "aggregate_only_evidence_ledger_custody_insufficient" in (
-        judgment.mandatory_caveats
-    )
-    assert "do_not_treat_aggregate_counts_as_evidence_ledger_custody" in (
-        judgment.prohibited_upgrades
-    )
+    assert "official_current_unsatisfied:official_current_rules" in (judgment.mandatory_caveats)
+    assert "missing_source_custody_must_be_caveated" in (judgment.mandatory_caveats)
+    assert not judgment.satisfied_obligations
+    assert "do_not_treat_aggregate_counts_as_evidence_ledger_custody" in (judgment.prohibited_upgrades)
 
 
 def test_lower_tier_context_candidate_does_not_upgrade_strict_obligation() -> None:
@@ -509,9 +493,7 @@ def test_lower_tier_context_candidate_does_not_upgrade_strict_obligation() -> No
     assert judgment.decision is not RunSufficiencyDecision.READY_DIRECT
     assert judgment.missing_required_obligations
     assert not judgment.satisfied_obligations
-    assert "do_not_treat_lower_tier_stale_or_off_topic_evidence_as_required_custody" in (
-        judgment.prohibited_upgrades
-    )
+    assert "do_not_treat_lower_tier_stale_or_off_topic_evidence_as_required_custody" in (judgment.prohibited_upgrades)
 
 
 def test_legal_current_primary_candidate_satisfies_legal_obligation() -> None:
@@ -593,7 +575,7 @@ def test_canonical_documentation_candidate_satisfies_canonical_obligation() -> N
 def test_source_bound_numeric_candidate_without_extraction_remains_unknown() -> None:
     contract = _contract(
         _requirement(
-            "run-contract:source_bound_numeric",
+            ("provider_job_requirement:component-numeric:obligation-source-bound-numeric:provider-numeric-extract"),
             kind="source_bound_numeric",
             source_class="sourced_numeric_values",
             source_tier="official",
@@ -630,15 +612,13 @@ def test_source_bound_numeric_candidate_without_extraction_remains_unknown() -> 
     assert judgment.source_bound_numeric_unknowns
     assert judgment.decision is RunSufficiencyDecision.SOURCE_BOUND_NUMERIC_UNKNOWN
     assert judgment.final_answer_posture is SufficiencyPosture.PARTIAL_ANSWER
-    assert "do_not_present_source_bound_numeric_unknown_as_known" in (
-        judgment.prohibited_upgrades
-    )
+    assert "do_not_present_source_bound_numeric_unknown_as_known" in (judgment.prohibited_upgrades)
 
 
 def test_mixed_multipart_reports_satisfied_and_missing_separately() -> None:
     contract = _contract(
         _requirement(
-            "run-contract:official_current_rules",
+            ("provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"),
             kind="official_current",
             source_class="official_current_rules",
             source_tier="official",
@@ -648,7 +628,7 @@ def test_mixed_multipart_reports_satisfied_and_missing_separately() -> None:
             provider_job_id="provider-official-fee",
         ),
         _requirement(
-            "run-contract:legal_or_regulatory_text",
+            ("provider_job_requirement:component-legal:obligation-legal-deadline:provider-legal-currentness"),
             kind="legal_primary",
             source_class="legal_or_regulatory_text",
             source_tier="primary",
@@ -664,18 +644,14 @@ def test_mixed_multipart_reports_satisfied_and_missing_separately() -> None:
 
     assert judgment.decision is RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
     assert judgment.final_answer_posture is SufficiencyPosture.PARTIAL_ANSWER
-    assert [item.component_id for item in judgment.satisfied_obligations] == [
-        "component_fee"
-    ]
-    assert [item.component_id for item in judgment.missing_required_obligations] == [
-        "component_legal"
-    ]
+    assert [item.component_id for item in judgment.satisfied_obligations] == ["component_fee"]
+    assert {item.component_id for item in judgment.missing_required_obligations} == {"component_legal"}
 
 
 def test_g1_bridge_noop_fallback_does_not_invent_satisfaction() -> None:
     contract = _contract(
         _requirement(
-            "run-contract:official_current_rules",
+            ("provider_job_requirement:component-fee:obligation-official-fee:provider-official-fee"),
             kind="official_current",
             source_class="official_current_rules",
             source_tier="official",
@@ -726,9 +702,7 @@ def test_runtime_handoff_consumes_post_g1_runkernel_evidence_ledger_projection()
         "_pre_gate_failure_card_reason": None,
         "iterations_run": 1,
         "max_iterations": 3,
-        "_run_controller_mirror": SimpleNamespace(
-            state=SimpleNamespace(active_source_class_recovery_attempt_count=0)
-        ),
+        "_run_controller_mirror": SimpleNamespace(state=SimpleNamespace(active_source_class_recovery_attempt_count=0)),
     }
 
     handoff = execute_sufficiency_judgment_handoff_from_scope(
@@ -738,9 +712,7 @@ def test_runtime_handoff_consumes_post_g1_runkernel_evidence_ledger_projection()
     )
 
     assert handoff.projection["decision"] == RunSufficiencyDecision.READY_DIRECT.value
-    assert handoff.projection["satisfied_obligations"][0]["component_id"] == (
-        "component_fee"
-    )
+    assert handoff.projection["satisfied_obligations"][0]["component_id"] == ("component_fee")
 
 
 def test_final_packet_inputs_carry_machine_readable_posture_downstream() -> None:
@@ -837,9 +809,7 @@ def test_behavior_boundaries_and_redaction_are_preserved() -> None:
 
 
 def test_static_guards_keep_g2_inside_sufficiency_and_no_provider_runtime() -> None:
-    validation_imports = _imports(
-        ROOT / "core" / "run_authority_sufficiency_validation.py"
-    )
+    validation_imports = _imports(ROOT / "core" / "run_authority_sufficiency_validation.py")
     adapter_imports = _imports(ROOT / "core" / "run_authority_sufficiency_adapter.py")
     forbidden = {
         "core.search_providers",
@@ -854,9 +824,7 @@ def test_static_guards_keep_g2_inside_sufficiency_and_no_provider_runtime() -> N
     assert validation_imports.isdisjoint(forbidden)
     assert adapter_imports.isdisjoint(forbidden)
 
-    pipeline_source = (ROOT / "core" / "pipeline_orchestrator.py").read_text(
-        encoding="utf-8"
-    )
+    pipeline_source = (ROOT / "core" / "pipeline_orchestrator.py").read_text(encoding="utf-8")
     assert "build_deterministic_sufficiency_judgment" not in pipeline_source
     assert "SufficiencyRequirementAssessment(" not in pipeline_source
     assert "READY_DIRECT" not in pipeline_source

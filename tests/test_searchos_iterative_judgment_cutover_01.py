@@ -16,6 +16,7 @@ from copy import deepcopy
 
 import pytest
 
+import core.searchos_iterative_judgment_runtime as searchos_runtime
 from core.query_plan import QueryPlan, QueryPlanRole, QueryPlanStatus
 from core.run_kernel import (
     ActionType,
@@ -47,12 +48,14 @@ from core.searchos_iterative_judgment_runtime import (
     record_searchos_candidate_window,
     record_searchos_judgment_failure,
     record_searchos_read_custody_material,
+    record_searchos_readiness_projection,
     record_searchos_semantic_handoff,
     reduce_searchos_judgment_decision,
     return_searchos_pre_call_reservation,
     searchos_iteration_candidate_set_ref,
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
+    validate_searchos_required_needs_block,
 )
 
 
@@ -85,6 +88,51 @@ def _state(*, profile: str = "Fast", slots: int = 1) -> dict[str, object]:
         active_slots=[_slot(f"slot-{index}") for index in range(1, slots + 1)],
         initial_candidate_state_ref=_ref("candidate_state", "revision-1"),
     )
+
+
+def _lawful_ineligible_facts(
+    readiness: dict[str, object],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "blocker_class": "recovery_ineligible",
+            "interpretation": "lawful_recovery_ineligible",
+            "reason_code": (
+                "no_lawful_materially_novel_recovery_purpose"
+            ),
+            "slot_id": str(
+                dict(dict(item)["slot_ref"])["slot_id"]
+            ),
+        }
+        for item in readiness["unresolved_required_slots"]
+    ]
+
+
+def _reenvelope_required_needs_block(
+    block: dict[str, object],
+    **updates: object,
+) -> dict[str, object]:
+    core = {
+        key: deepcopy(value)
+        for key, value in block.items()
+        if key not in {
+            "block_id",
+            "block_digest",
+            "replay_identity",
+        }
+    }
+    core.update(deepcopy(updates))
+    digest = searchos_runtime._digest(core)
+    return {
+        **core,
+        "block_id": (
+            f"searchos-required-needs-block:{digest[:24]}"
+        ),
+        "block_digest": digest,
+        "replay_identity": (
+            f"searchos-required-needs-block:{digest}"
+        ),
+    }
 
 
 def _candidate(
@@ -978,7 +1026,10 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         },
     )
     assert readiness["all_required_slots_slice_a_ready"] is True
-    assert readiness["successful_sufficiency_allowed"] is True
+    assert readiness["semantic_receiver_ready"] is True
+    assert readiness["sufficiency_adjudication_required"] is True
+    assert "final_answer_packet_allowed" not in readiness
+    assert "author_execution_allowed" not in readiness
 
     exact_outcome = {
         "semantic_handoff_ref": handoff,
@@ -1026,11 +1077,16 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         state=state,
         semantic_outcomes_by_slot={},
     )
-    block = build_searchos_required_needs_block(blocked)
+    block = build_searchos_required_needs_block(
+        blocked,
+        blocker_facts=_lawful_ineligible_facts(blocked),
+    )
     assert block["block_type"] == SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
-    assert block["successful_sufficiency_allowed"] is False
-    assert block["final_answer_packet_allowed"] is False
-    assert block["author_execution_allowed"] is False
+    assert block["semantic_receiver_ready"] is False
+    assert block["sufficiency_adjudication_required"] is True
+    assert block["subordinate_to_sufficiency"] is True
+    assert "final_answer_packet_allowed" not in block
+    assert "author_execution_allowed" not in block
     assert block["query_authorized"] is False
     assert block["read_authorized"] is False
     assert block["recovery_authorized"] is False
@@ -1137,11 +1193,152 @@ def test_required_terminal_postures_share_block_family_with_distinct_reasons() -
         assert readiness["unresolved_required_slots"][0]["reason"] == (
             expected_reason
         )
-        block = build_searchos_required_needs_block(readiness)
+        block = build_searchos_required_needs_block(
+            readiness,
+            blocker_facts=_lawful_ineligible_facts(readiness),
+        )
         assert block["block_type"] == SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
-        assert block["author_execution_allowed"] is False
+        assert block["sufficiency_adjudication_required"] is True
+        assert block["subordinate_to_sufficiency"] is True
+        assert "author_execution_allowed" not in block
         block_ids.add(block["block_id"])
     assert len(block_ids) == 4
+
+
+@pytest.mark.parametrize(
+    "blocker_facts",
+    [
+        [],
+        [
+            {
+                "blocker_class": "recovery_ineligible",
+                "reason_code": "missing_interpretation",
+                "slot_id": "slot-1",
+            }
+        ],
+        [
+            {
+                "blocker_class": "recovery_ineligible",
+                "interpretation": "unknown_interpretation",
+                "reason_code": "unknown_interpretation",
+                "slot_id": "slot-1",
+            }
+        ],
+        [
+            {
+                "blocker_class": "recovery_ineligible",
+                "interpretation": (
+                    "structural_or_validation_blocker"
+                ),
+                "reason_code": "inconsistent_interpretation",
+                "slot_id": "slot-1",
+            }
+        ],
+        [
+            {
+                "blocker_class": "recovery_ineligible",
+                "interpretation": "lawful_recovery_ineligible",
+                "reason_code": "foreign_slot",
+                "slot_id": "slot-foreign",
+            }
+        ],
+        [
+            {
+                "blocker_class": "recovery_ineligible",
+                "interpretation": "lawful_recovery_ineligible",
+                "reason_code": "duplicate_one",
+                "slot_id": "slot-1",
+            },
+            {
+                "blocker_class": "recovery_ineligible",
+                "interpretation": "lawful_recovery_ineligible",
+                "reason_code": "duplicate_two",
+                "slot_id": "slot-1",
+            },
+        ],
+    ],
+)
+def test_required_needs_block_rejects_noncanonical_typed_facts(
+    blocker_facts: list[dict[str, str]],
+) -> None:
+    state = mark_searchos_slot_unresolved(
+        _state(),
+        slot_id="slot-1",
+        reason="offline_unresolved",
+    )
+    readiness = build_searchos_slice_a_readiness_v1(
+        state=state,
+        semantic_outcomes_by_slot={},
+    )
+
+    with pytest.raises(SearchOSRuntimeError):
+        build_searchos_required_needs_block(
+            readiness,
+            blocker_facts=blocker_facts,
+        )
+
+
+def test_required_needs_block_rejects_foreign_scope_stale_readiness_and_malformed_slot() -> None:
+    state = mark_searchos_slot_unresolved(
+        _state(),
+        slot_id="slot-1",
+        reason="offline_unresolved",
+    )
+    readiness = build_searchos_slice_a_readiness_v1(
+        state=state,
+        semantic_outcomes_by_slot={},
+    )
+    state_with_readiness = record_searchos_readiness_projection(
+        state,
+        readiness=readiness,
+    )
+    block = build_searchos_required_needs_block(
+        readiness,
+        blocker_facts=_lawful_ineligible_facts(readiness),
+    )
+    assert validate_searchos_required_needs_block(
+        block,
+        state=state_with_readiness,
+    ) == block
+
+    for foreign_scope in (
+        {"run_id": "run-foreign"},
+        {"request_id": "request-foreign"},
+        {
+            "readiness_projection_ref": {
+                **block["readiness_projection_ref"],
+                "readiness_projection_digest": "f" * 64,
+            }
+        },
+    ):
+        with pytest.raises(
+            SearchOSRuntimeError,
+            match="run, request, or readiness ref is stale",
+        ):
+            validate_searchos_required_needs_block(
+                _reenvelope_required_needs_block(
+                    block,
+                    **foreign_scope,
+                ),
+                state=state_with_readiness,
+            )
+
+    malformed_unresolved = deepcopy(
+        block["unresolved_required_slots"]
+    )
+    malformed_unresolved[0]["slot_ref"].pop(
+        "source_obligation_id"
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="malformed unresolved slot identity",
+    ):
+        validate_searchos_required_needs_block(
+            _reenvelope_required_needs_block(
+                block,
+                unresolved_required_slots=malformed_unresolved,
+            )
+        )
 
 
 def test_query_plan_admits_exact_model_followup_without_evaluator_or_expander() -> None:
@@ -1311,7 +1508,18 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
             payload={"readiness": readiness_action.inputs["readiness"]},
         )
     )
-    block_action = kernel.authorize_searchos_required_needs_block()
+    block_action = kernel.authorize_searchos_required_needs_block(
+        blocker_facts=[
+            {
+                "blocker_class": "recovery_ineligible",
+                "interpretation": "lawful_recovery_ineligible",
+                "reason_code": (
+                    "no_lawful_materially_novel_recovery_purpose"
+                ),
+                "slot_id": "slot-1",
+            }
+        ]
+    )
     kernel.reduce(
         Observation.from_action(
             block_action,
@@ -1323,7 +1531,34 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
     assert kernel.state.searchos_state["required_needs_block_ref"]["block_type"] == (
         SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED
     )
-    with pytest.raises(RunKernelTransitionError, match="keeps Sufficiency"):
+    assert kernel.state.projections[
+        "searchos_required_needs_block"
+    ]["blocker_facts"] == [
+        {
+            "blocker_class": "recovery_ineligible",
+            "interpretation": "lawful_recovery_ineligible",
+            "reason_code": (
+                "no_lawful_materially_novel_recovery_purpose"
+            ),
+            "slot_id": "slot-1",
+        }
+    ]
+    sufficiency_action = kernel.authorize(
+        stage="sufficiency_must_remain_reachable",
+        action_type=ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
+        reason="subordinate SearchOS facts require Sufficiency",
+        inputs={},
+        expected_observation_type=(
+            ObservationType.SUFFICIENCY_JUDGMENT_DECIDED
+        ),
+    )
+    assert sufficiency_action.action_type is (
+        ActionType.SUFFICIENCY_JUDGMENT_DECIDE
+    )
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="requires Sufficiency adjudication",
+    ):
         kernel.authorize(
             stage="forbidden_author",
             action_type=ActionType.AUTHOR_EXECUTE,

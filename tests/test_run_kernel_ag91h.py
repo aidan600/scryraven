@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Any
 
@@ -220,9 +221,7 @@ def test_route_executor_consumes_action_and_preserves_prompt_bytes() -> None:
 
 def test_query_plan_admission_consumes_action_and_keeps_queryplan_as_order_owner() -> None:
     kernel = RunKernel.start(run_id="run-query", request_id="request-query")
-    action = kernel.authorize_query_plan_admission(
-        inputs={"candidate_source": "researcher", "candidate_count": 2}
-    )
+    action = kernel.authorize_query_plan_admission(inputs={"candidate_source": "researcher", "candidate_count": 2})
     adapter = _query_adapter()
 
     result = execute_query_plan_admission_action(
@@ -233,10 +232,60 @@ def test_query_plan_admission_consumes_action_and_keeps_queryplan_as_order_owner
             router_text='{"intent":"general","report_type":"general_research","query_type":"product","core_topic":"Acme Widget","entities":["Acme Widget"],"primary_entity":"Acme Widget"}',
         ),
         candidate_queries=["deployment status", "support policy"],
-        candidate_source="researcher",
+        candidate_strategies=[
+            {
+                "strategy_id": "strategy:component-deployment:primary",
+                "component_id": "component-deployment",
+                "candidate_kind": "primary",
+                "candidate_query_text": "deployment status",
+                "requested_role": "initial",
+                "source_obligation_candidate_ids": [],
+            },
+            {
+                "strategy_id": "strategy:component-support:primary",
+                "component_id": "component-support",
+                "candidate_kind": "primary",
+                "candidate_query_text": "support policy",
+                "requested_role": "initial",
+                "source_obligation_candidate_ids": [],
+            },
+        ],
+        candidate_source="search_planner",
         query_type="product",
         current_date="June 8, 2026",
         max_queries=2,
+        search_work_projection={
+            "trace_key": "search_work_plan",
+            "passive": False,
+            "runtime_consumed": True,
+            "components": [
+                {
+                    "component_id": component_id,
+                    "source_obligations": [],
+                    "metadata": {
+                        "accepted_component_ref": {
+                            "component_id": component_id,
+                            "component_revision": "1",
+                            "component_digest": f"digest:{component_id}",
+                            "requirement_posture": "required",
+                        },
+                        "search_requirement_refs": [],
+                    },
+                }
+                for component_id in (
+                    "component-deployment",
+                    "component-support",
+                )
+            ],
+            "provider_jobs": [],
+            "metadata": {
+                "search_work_plan_id": "search-work:run-query",
+                "accepted_contract_ref": {
+                    "contract_version": "1",
+                    "contract_digest": "contract-digest:run-query",
+                },
+            },
+        },
         route_runtime_posture={
             "intent": "general",
             "report_type": "general_research",
@@ -258,8 +307,8 @@ def test_query_plan_admission_consumes_action_and_keeps_queryplan_as_order_owner
     assert result.observation.action_id == action.action_id
     assert result.observation.observation_type is ObservationType.QUERY_PLAN_ADMITTED
     assert result.current_queries == [
-        '"Acme Widget" deployment status',
-        '"Acme Widget" support policy',
+        "deployment status",
+        "support policy",
     ]
     assert result.observation.payload["query_order_owner"] == "QueryPlan"
     query_plan_ref = result.observation.payload["query_plan_ref"]
@@ -271,9 +320,7 @@ def test_query_plan_admission_consumes_action_and_keeps_queryplan_as_order_owner
 
 def test_stop_checkpoint_consumes_action_and_reduces_decision() -> None:
     kernel = RunKernel.start(run_id="run-stop", request_id="request-stop")
-    action = kernel.authorize_retrieval_stop_checkpoint(
-        inputs={"checkpoint_stage": "evaluator", "next_query_count": 1}
-    )
+    action = kernel.authorize_retrieval_stop_checkpoint(inputs={"checkpoint_stage": "evaluator", "next_query_count": 1})
     snapshot = build_retrieval_stop_controller_input(
         evaluator_sufficient=True,
         iteration=1,
@@ -437,14 +484,16 @@ def test_adapters_reject_missing_or_wrong_authorized_actions() -> None:
         )
     with pytest.raises(KeyError, match="main_retrieval_kernel_action"):
         execute_main_retrieval_pass_from_scope(
-            {"retrieval_scheduled_action": schedule_main_retrieval_action(
-                RetrievalScheduleInput(
-                    stage="main_retrieval",
-                    current_queries=["q"],
-                    search_depth="basic",
-                    providers=["p"],
+            {
+                "retrieval_scheduled_action": schedule_main_retrieval_action(
+                    RetrievalScheduleInput(
+                        stage="main_retrieval",
+                        current_queries=["q"],
+                        search_depth="basic",
+                        providers=["p"],
+                    )
                 )
-            )},
+            },
             retrieval_pass_records=[],
         )
     with pytest.raises(ValueError, match="authorized action type"):
@@ -558,14 +607,22 @@ def test_kernel_trace_projection_derives_from_run_state() -> None:
 def test_pipeline_orchestrator_consumes_run_kernel_for_migrated_stages() -> None:
     source = PIPELINE.read_text()
     post_author_source = (ROOT / "core" / "post_author_output_projection.py").read_text()
-    assert "from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel" in source
+    run_kernel_imports = {
+        alias.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom) and node.module == "core.run_kernel"
+        for alias in node.names
+    }
+    assert {"QUERY_PRODUCTION_STAGE", "RunKernel"} <= run_kernel_imports
     assert "run_kernel = RunKernel.start(" in source
     assert "run_kernel.authorize_route_request(" in source
     assert "execute_route_request_action(" in source
     assert "run_kernel.reduce(route_result.observation)" in source
-    assert "run_kernel.authorize_query_production(" in source
-    assert "execute_query_production_action(" in source
-    assert "run_kernel.reduce(query_production_result.observation)" in source
+    query_runtime_source = QUERY_RUNTIME.read_text()
+    assert "execute_initial_query_strategy_convergence(" in source
+    assert "run_kernel.authorize_query_production(" in query_runtime_source
+    assert "execute_query_production_action(" in query_runtime_source
+    assert "run_kernel.reduce(query_production_result.observation)" in query_runtime_source
     assert "query_plan_admission_inputs_from_query_production_projection(" in source
     assert "run_kernel.authorize_query_plan_admission(" in source
     assert "execute_query_plan_admission_action(" in source
@@ -581,7 +638,7 @@ def test_pipeline_orchestrator_consumes_run_kernel_for_migrated_stages() -> None
 
 def test_migrated_stages_are_not_purely_orchestrator_local() -> None:
     source = PIPELINE.read_text()
-    assert "router_prompt = f\"Today is {current_date}" not in source
+    assert 'router_prompt = f"Today is {current_date}' not in source
     assert "router_text = ask_model(" not in source
     assert "brave_reconnaissance(" not in source
     assert "q_prompt =" not in source

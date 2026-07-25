@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
@@ -323,6 +323,17 @@ class SearchOSSliceAProductResult:
     projection: Mapping[str, Any]
     provider_calls_attempted: int = 0
     provider_calls_completed: int = 0
+    initial_query_plan_items: tuple[Mapping[str, Any], ...] = ()
+    initial_identity_refs: tuple[Mapping[str, Any], ...] = ()
+    identity_deltas_by_digest: Mapping[
+        str, tuple[Mapping[str, Any], ...]
+    ] | None = None
+    candidate_packets: tuple[Mapping[str, Any], ...] = ()
+    reusable_read_custody_by_url: Mapping[str, Mapping[str, Any]] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 FollowupDiscover = Callable[[str, int, Mapping[str, Any]], Mapping[str, Any]]
@@ -356,6 +367,59 @@ def execute_searchos_slice_a_iterative_judgment(
         locator_store.discard_all()
 
 
+def execute_searchos_existing_gap_recovery_cycle(
+    *,
+    prior_result: SearchOSSliceAProductResult,
+    recovery_cycle_ref: Mapping[str, Any],
+    run_kernel: RunKernel,
+    candidate_packet: Mapping[str, Any],
+    query_authority: QueryPlanRuntimeAdapter,
+    discovery_result_store: Any,
+    profile_name: str,
+    ask_model: Callable[..., Any] | None,
+    provider: str | None,
+    model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    use_reasoning: bool,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    execute_followup_discover: FollowupDiscover | None,
+    before_transport: Callable[[], Any] | None = None,
+    measure_context_stage: Callable[..., Any] | None = None,
+) -> SearchOSSliceAProductResult:
+    """Consume an already-admitted SearchOS recovery lease through the same loop."""
+
+    locator_store = navigation_runtime.EphemeralNavigationLocatorStore(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+    )
+    try:
+        return _execute_searchos_slice_a_iterative_judgment(
+            locator_store=locator_store,
+            prior_result=prior_result,
+            recovery_cycle_ref=recovery_cycle_ref,
+            run_kernel=run_kernel,
+            candidate_packet=candidate_packet,
+            query_authority=query_authority,
+            discovery_result_store=discovery_result_store,
+            profile_name=profile_name,
+            ask_model=ask_model,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            use_reasoning=use_reasoning,
+            available_providers=available_providers,
+            acquisition_transports=acquisition_transports,
+            execute_followup_discover=execute_followup_discover,
+            before_transport=before_transport,
+            measure_context_stage=measure_context_stage,
+        )
+    finally:
+        locator_store.discard_all()
+
+
 def _execute_searchos_slice_a_iterative_judgment(
     *,
     locator_store: navigation_runtime.EphemeralNavigationLocatorStore,
@@ -375,6 +439,8 @@ def _execute_searchos_slice_a_iterative_judgment(
     execute_followup_discover: FollowupDiscover | None,
     before_transport: Callable[[], Any] | None = None,
     measure_context_stage: Callable[..., Any] | None = None,
+    prior_result: SearchOSSliceAProductResult | None = None,
+    recovery_cycle_ref: Mapping[str, Any] | None = None,
 ) -> SearchOSSliceAProductResult:
     """Run the canonical post-first-wave Slice A loop under RunKernel."""
 
@@ -382,70 +448,162 @@ def _execute_searchos_slice_a_iterative_judgment(
     initial_packet_ref = search_result_candidate_packet_ref_from_packet(initial_packet)
     if not initial_packet_ref:
         raise SearchOSRuntimeError("SearchOS Slice A requires revision-1 candidates")
-    initial_query_items = [item.to_dict() for item in query_authority.plan.items]
-    initial_identities = [item.ref() for item in discovery_result_store.identities()]
+    initial_query_items = (
+        [deepcopy(dict(item)) for item in prior_result.initial_query_plan_items]
+        if prior_result is not None
+        else [item.to_dict() for item in query_authority.plan.items]
+    )
+    initial_identities = (
+        [deepcopy(dict(item)) for item in prior_result.initial_identity_refs]
+        if prior_result is not None
+        else [item.ref() for item in discovery_result_store.identities()]
+    )
+    prior_packets = (
+        [
+            deepcopy(dict(item))
+            for item in prior_result.candidate_packets
+        ]
+        if prior_result is not None
+        else []
+    )
+    working_packet = prior_packets[-1] if prior_packets else initial_packet
     initial_binding_state = derive_selected_candidate_material_need_bindings(
         run_kernel=run_kernel,
-        candidate_packet=initial_packet,
+        candidate_packet=working_packet,
         query_plan=query_authority.plan,
         discovery_result_store=discovery_result_store,
     )
     bindings = _bindings_from_state(initial_binding_state)
-    revision_1 = build_searchos_revision_1_candidate_state_v1(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        candidate_packet_ref=initial_packet_ref,
-        initial_query_plan_ref=query_authority.plan.to_ref(),
-        initial_query_plan_items=initial_query_items,
-        initial_identity_set_ref=discovery_result_store.identity_set_ref(),
-        initial_identity_refs=initial_identities,
-        selected_candidate_refs=_candidate_refs(initial_packet),
-        bounded_candidate_material_refs=_material_refs(bindings),
-        selection_facts={
-            "selected_candidate_count": len(initial_packet.get("candidate_records") or ()),
-            "first_admitted_discover_wave_count": 1,
-        },
-        overflow_facts={
-            "selection_overflow_count": int(initial_packet.get("selection_overflow_count") or 0),
-            "contributor_overflow_count": sum(
-                int(item.get("contributor_overflow_count") or 0)
-                for item in initial_packet.get("candidate_records") or ()
-                if isinstance(item, Mapping)
-            ),
-        },
-    )
-    revision_ref = searchos_revision_1_candidate_state_ref(revision_1)
-    active_slots = _active_slots(run_kernel)
-    policy = build_searchos_policy_snapshot(
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        profile_name=_profile_name(profile_name),
-        navigation_runtime_open=True,
-    )
-    initialize = run_kernel.authorize_searchos_initialization(
-        answer_contract_ref=revision_1_answer_contract_ref(initial_packet),
-        policy_snapshot=policy,
-        active_slots=active_slots,
-        initial_candidate_state_ref=revision_ref,
-    )
-    run_kernel.reduce(
-        Observation.from_action(
-            initialize,
-            observation_type=ObservationType.SEARCHOS_INITIALIZED,
-            status=RunStageStatus.COMPLETED,
-            payload={"searchos_state": initialize.inputs["searchos_state"]},
+    revision_1 = (
+        deepcopy(dict(prior_result.revision_1))
+        if prior_result is not None
+        else build_searchos_revision_1_candidate_state_v1(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            candidate_packet_ref=initial_packet_ref,
+            initial_query_plan_ref=query_authority.plan.to_ref(),
+            initial_query_plan_items=initial_query_items,
+            initial_identity_set_ref=discovery_result_store.identity_set_ref(),
+            initial_identity_refs=initial_identities,
+            selected_candidate_refs=_candidate_refs(initial_packet),
+            bounded_candidate_material_refs=_material_refs(bindings),
+            selection_facts={
+                "selected_candidate_count": len(
+                    initial_packet.get("candidate_records") or ()
+                ),
+                "first_admitted_discover_wave_count": 1,
+            },
+            overflow_facts={
+                "selection_overflow_count": int(
+                    initial_packet.get("selection_overflow_count") or 0
+                ),
+                "contributor_overflow_count": sum(
+                    int(item.get("contributor_overflow_count") or 0)
+                    for item in initial_packet.get("candidate_records") or ()
+                    if isinstance(item, Mapping)
+                ),
+            },
         )
     )
+    revision_ref = searchos_revision_1_candidate_state_ref(revision_1)
+    if prior_result is None:
+        active_slots = _active_slots(run_kernel)
+        policy = build_searchos_policy_snapshot(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            profile_name=_profile_name(profile_name),
+            navigation_runtime_open=True,
+            existing_gap_recovery_runtime_open=True,
+        )
+        initialize = run_kernel.authorize_searchos_initialization(
+            answer_contract_ref=revision_1_answer_contract_ref(initial_packet),
+            policy_snapshot=policy,
+            active_slots=active_slots,
+            initial_candidate_state_ref=revision_ref,
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                initialize,
+                observation_type=ObservationType.SEARCHOS_INITIALIZED,
+                status=RunStageStatus.COMPLETED,
+                payload={
+                    "searchos_state": initialize.inputs["searchos_state"]
+                },
+            )
+        )
+    else:
+        from core.searchos_existing_gap_recovery_runtime import (
+            validate_active_searchos_recovery_cycle_ref,
+        )
 
-    packets_by_id = {initial_packet_ref["packet_id"]: initial_packet}
-    binding_candidate_states = {binding.binding_id: revision_ref for binding in bindings}
-    binding_iteration_refs: dict[str, Mapping[str, Any]] = {}
-    iteration_sets: list[Mapping[str, Any]] = []
-    identity_deltas_by_digest: dict[str, Sequence[Mapping[str, Any]]] = {}
-    custody_by_url: dict[str, dict[str, Any]] = {}
+        if recovery_cycle_ref is None:
+            raise SearchOSRuntimeError(
+                "recovery execution requires its exact admitted cycle"
+            )
+        validate_active_searchos_recovery_cycle_ref(
+            run_kernel.state.searchos_state,
+            recovery_cycle_ref,
+        )
+
+    packets_by_id = {
+        str(
+            search_result_candidate_packet_ref_from_packet(packet)[
+                "packet_id"
+            ]
+        ): packet
+        for packet in [initial_packet, *prior_packets]
+    }
+    candidate_packets = [initial_packet, *prior_packets]
+    if prior_packets and prior_packets[0] == initial_packet:
+        candidate_packets = prior_packets
+    current_binding_state_ref = (
+        deepcopy(
+            run_kernel.state.searchos_state["current_candidate_state_ref"]
+        )
+        if prior_result is not None
+        else revision_ref
+    )
+    binding_candidate_states = {
+        binding.binding_id: current_binding_state_ref for binding in bindings
+    }
+    binding_iteration_refs: dict[str, Mapping[str, Any]] = (
+        {
+            binding.binding_id: current_binding_state_ref
+            for binding in bindings
+        }
+        if prior_result is not None
+        and current_binding_state_ref.get("iteration_candidate_set_id")
+        else {}
+    )
+    iteration_sets: list[Mapping[str, Any]] = (
+        [deepcopy(dict(item)) for item in prior_result.iteration_candidate_sets]
+        if prior_result is not None
+        else []
+    )
+    identity_deltas_by_digest: dict[str, Sequence[Mapping[str, Any]]] = {
+        key: [deepcopy(dict(item)) for item in values]
+        for key, values in (
+            (prior_result.identity_deltas_by_digest or {}).items()
+            if prior_result is not None
+            else ()
+        )
+    }
+    custody_by_url: dict[str, dict[str, Any]] = {
+        str(url): deepcopy(dict(outcome))
+        for url, outcome in (
+            (prior_result.reusable_read_custody_by_url or {}).items()
+            if prior_result is not None
+            else ()
+        )
+    }
     packet_by_custody_id: dict[str, Mapping[str, Any]] = {}
     dispositions: dict[str, str] = {}
-    semantic_handoffs: list[Mapping[str, Any]] = []
+    semantic_handoffs: list[Mapping[str, Any]] = (
+        [deepcopy(dict(item)) for item in prior_result.semantic_handoffs]
+        if prior_result is not None
+        else []
+    )
+    prior_handoff_count = len(semantic_handoffs)
     provider_calls = [0, 0]
 
     while True:
@@ -634,6 +792,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                 binding = _binding_for_option(
                     bindings=bindings,
                     slot_id=slot_id,
+                    binding_slot_id=_binding_source_slot_id(current_slot),
                     option_ref=option_ref,
                     options=options,
                 )
@@ -792,6 +951,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                 if wave_packet:
                     wave_packet_ref = search_result_candidate_packet_ref_from_packet(wave_packet)
                     packets_by_id[wave_packet_ref["packet_id"]] = wave_packet
+                    candidate_packets.append(wave_packet)
                     selected_refs = _candidate_refs(wave_packet)
                     wave_binding_state = derive_selected_candidate_material_need_bindings(
                         run_kernel=run_kernel,
@@ -865,10 +1025,21 @@ def _execute_searchos_slice_a_iterative_judgment(
                 )
                 semantic_handoffs.append(deepcopy(handoff_action.inputs["semantic_handoff"]))
 
-    semantic_material = _semantic_passages(
-        semantic_handoffs=semantic_handoffs,
+    new_semantic_material = _semantic_passages(
+        semantic_handoffs=semantic_handoffs[prior_handoff_count:],
         packet_by_custody_id=packet_by_custody_id,
     )
+    semantic_material = [
+        *(
+            [
+                deepcopy(dict(item))
+                for item in prior_result.searchos_semantic_material
+            ]
+            if prior_result is not None
+            else []
+        ),
+        *new_semantic_material,
+    ]
     append_only_proof = validate_searchos_append_only_lineage(
         revision_1=revision_1,
         initial_query_plan_items=initial_query_items,
@@ -912,6 +1083,10 @@ def _execute_searchos_slice_a_iterative_judgment(
         "ag92b_full_search_judgment_invoked": False,
         "provider_calls_attempted": provider_calls[0],
         "provider_calls_completed": provider_calls[1],
+        "existing_gap_recovery_cycle_ref": deepcopy(
+            dict(recovery_cycle_ref or {})
+        ),
+        "existing_gap_recovery_executed": prior_result is not None,
     }
     return SearchOSSliceAProductResult(
         revision_1=revision_1,
@@ -921,6 +1096,19 @@ def _execute_searchos_slice_a_iterative_judgment(
         projection=projection,
         provider_calls_attempted=provider_calls[0],
         provider_calls_completed=provider_calls[1],
+        initial_query_plan_items=tuple(initial_query_items),
+        initial_identity_refs=tuple(initial_identities),
+        identity_deltas_by_digest={
+            key: tuple(deepcopy(dict(item)) for item in values)
+            for key, values in identity_deltas_by_digest.items()
+        },
+        candidate_packets=tuple(
+            deepcopy(dict(item)) for item in candidate_packets
+        ),
+        reusable_read_custody_by_url={
+            url: deepcopy(dict(outcome))
+            for url, outcome in custody_by_url.items()
+        },
     )
 
 
@@ -1090,11 +1278,13 @@ def _candidate_option_inputs(
     binding_candidate_states: Mapping[str, Mapping[str, Any]],
     binding_iteration_refs: Mapping[str, Mapping[str, Any]],
     discovery_result_store: Any,
+    binding_slot_id: str | None = None,
 ) -> list[dict[str, Any]]:
     slot_id = slot_ref.get("slot_id")
+    source_slot_id = binding_slot_id or slot_id
     rows: list[dict[str, Any]] = []
     for binding in bindings:
-        if binding.slot_id() != slot_id:
+        if binding.slot_id() != source_slot_id:
             continue
         material = discovery_result_store.material_for_ref(binding.source_material_ref)
         if material is None:
@@ -1116,6 +1306,14 @@ def _candidate_option_inputs(
     return rows
 
 
+def _binding_source_slot_id(slot: Mapping[str, Any]) -> str:
+    return str(
+        dict(slot.get("prior_terminal_slot_ref") or {}).get("slot_id")
+        or dict(slot.get("slot_ref") or {}).get("slot_id")
+        or ""
+    )
+
+
 def _prepare_candidate_window(
     *,
     slot: Mapping[str, Any],
@@ -1132,6 +1330,7 @@ def _prepare_candidate_window(
         binding_candidate_states=binding_candidate_states,
         binding_iteration_refs=binding_iteration_refs,
         discovery_result_store=discovery_result_store,
+        binding_slot_id=_binding_source_slot_id(slot),
     )
     options = build_candidate_use_options_v1(option_inputs)
     window_ordinal = max(1, int(slot.get("candidate_window_count") or 0))
@@ -1187,6 +1386,7 @@ def _binding_for_option(
     *,
     bindings: Sequence[SelectedCandidateMaterialNeedBindingV1],
     slot_id: str,
+    binding_slot_id: str | None = None,
     option_ref: Mapping[str, Any],
     options: Sequence[Mapping[str, Any]],
 ) -> SelectedCandidateMaterialNeedBindingV1:
@@ -1203,7 +1403,7 @@ def _binding_for_option(
         (
             item
             for item in bindings
-            if item.slot_id() == slot_id
+            if item.slot_id() == (binding_slot_id or slot_id)
             and item.normalized_url == option_ref.get("normalized_url")
             and item.candidate_ref.get("candidate_id") in candidate_ids
         ),
@@ -1246,6 +1446,7 @@ def _build_searchos_judgment_model_input(
         binding_candidate_states=binding_candidate_states,
         binding_iteration_refs=binding_iteration_refs,
         discovery_result_store=discovery_result_store,
+        binding_slot_id=_binding_source_slot_id(slot),
     )
     directional_by_url: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1742,11 +1943,16 @@ def build_searchos_semantic_outcomes_by_slot(
         for item in semantic_handoffs
         if isinstance(item, Mapping)
     }
-    admissions = {
-        str(item.get("component_id") or ""): dict(item)
-        for item in component_admission_projection.get("component_admission_refs") or ()
-        if isinstance(item, Mapping)
-    }
+    admissions_by_component: dict[str, list[dict[str, Any]]] = {}
+    for item in (
+        component_admission_projection.get("component_admission_refs") or ()
+    ):
+        if not isinstance(item, Mapping):
+            continue
+        admissions_by_component.setdefault(
+            str(item.get("component_id") or ""),
+            [],
+        ).append(dict(item))
     material_source_ids_by_slot: dict[str, set[str]] = {}
     for item in searchos_semantic_material:
         if not isinstance(item, Mapping):
@@ -1766,15 +1972,88 @@ def build_searchos_semantic_outcomes_by_slot(
             slot_ref.get("component_id") or dict(slot_ref.get("component_ref") or {}).get("component_id") or ""
         )
         handoff = handoffs.get(str(slot_id), {})
-        admission = admissions.get(component_id, {})
+        component_admissions = admissions_by_component.get(
+            component_id, []
+        )
+        recovery_admission = next(
+            (
+                admission
+                for admission in reversed(component_admissions)
+                if _recovery_admission_matches_slot(
+                    admission=admission,
+                    slot=slot,
+                )
+            ),
+            {},
+        )
+        if recovery_admission:
+            admission = recovery_admission
+            recovery_cycle_ref = dict(
+                admission.get("searchos_recovery_cycle_ref") or {}
+            )
+            recovery_slot_ref = dict(
+                recovery_cycle_ref.get("recovery_slot_ref") or {}
+            )
+            recovery_slot_id = str(
+                recovery_slot_ref.get("slot_id")
+                or ""
+            )
+            handoff = handoffs.get(recovery_slot_id, handoff)
+            material_slot_id = recovery_slot_id
+        else:
+            admission = next(
+                (
+                    candidate
+                    for candidate in reversed(component_admissions)
+                    if _ordinary_admission_matches_slot(
+                        admission=candidate,
+                        slot=slot,
+                    )
+                ),
+                {},
+            )
+            recovery_cycle_ref = {}
+            recovery_slot_ref = {}
+            material_slot_id = str(slot_id)
         evidence_ids = {
             str(item.get("evidence_ref_id") or "")
             for item in admission.get("evidence_refs") or ()
             if isinstance(item, Mapping)
         }
-        material_consumed = bool(material_source_ids_by_slot.get(str(slot_id), set()) & evidence_ids)
+        consumed_evidence_ids = (
+            material_source_ids_by_slot.get(material_slot_id, set())
+            & evidence_ids
+        )
+        material_consumed = bool(consumed_evidence_ids)
+        coverage_ref = dict(
+            admission.get("component_coverage_ref") or {}
+        )
+        exact_coverage_chain = _coverage_ref_matches_slot(
+            admission=admission,
+            slot=slot,
+        ) and _coverage_ref_matches_contract_and_candidates(
+            coverage_ref=coverage_ref,
+            answer_contract_ref=dict(
+                searchos_state.get("answer_contract_ref") or {}
+            ),
+            consumed_candidate_ids=consumed_evidence_ids,
+        )
+        recovery_evidence_ref = next(
+            (
+                dict(item)
+                for item in admission.get("evidence_refs") or ()
+                if isinstance(item, Mapping)
+                and str(item.get("evidence_ref_id") or "")
+                in consumed_evidence_ids
+            ),
+            {},
+        )
         admitted = bool(
-            admission.get("admission_status") in {"admitted", "admitted_with_caveats"} and material_consumed and handoff
+            admission.get("admission_status")
+            in {"admitted", "admitted_with_caveats"}
+            and material_consumed
+            and handoff
+            and exact_coverage_chain
         )
         outcomes[str(slot_id)] = {
             "semantic_handoff_ref": (
@@ -1800,6 +2079,16 @@ def build_searchos_semantic_outcomes_by_slot(
                     "component_revision": admission.get("component_revision"),
                     "component_digest": admission.get("component_digest"),
                     "admission_status": admission.get("admission_status"),
+                    "component_coverage_ref": deepcopy(coverage_ref),
+                    "source_requirement_ids": list(
+                        coverage_ref.get("source_requirement_ids") or ()
+                    ),
+                    "source_obligation_id": dict(
+                        slot.get("slot_ref") or {}
+                    ).get("source_obligation_id"),
+                    "consumed_candidate_ids": sorted(
+                        consumed_evidence_ids
+                    ),
                 }
                 if admitted
                 else {}
@@ -1807,8 +2096,189 @@ def build_searchos_semantic_outcomes_by_slot(
             "semantic_admission_status": "admitted" if admitted else "not_admitted",
             "material_authority": "read_custody_material",
             "searchos_handoff_material_consumed": material_consumed,
+            "searchos_recovery_cycle_ref": (
+                recovery_cycle_ref
+                if recovery_admission and material_consumed
+                else {}
+            ),
+            "searchos_recovery_evidence_ref": (
+                recovery_evidence_ref
+                if recovery_admission and material_consumed
+                else {}
+            ),
         }
     return outcomes
+
+
+def _ordinary_admission_matches_slot(
+    *,
+    admission: Mapping[str, Any],
+    slot: Mapping[str, Any],
+) -> bool:
+    component_ref = dict(slot.get("component_ref") or {})
+    return bool(
+        not dict(admission.get("searchos_recovery_cycle_ref") or {})
+        and admission.get("component_id") == component_ref.get("component_id")
+        and admission.get("component_revision")
+        == component_ref.get("component_revision")
+        and admission.get("component_digest")
+        == component_ref.get("component_digest")
+        and _coverage_ref_matches_slot(
+            admission=admission,
+            slot=slot,
+        )
+    )
+
+
+def _unique_tokens(value: Any) -> list[str]:
+    tokens = [
+        str(item or "").strip()
+        for item in value or ()
+        if str(item or "").strip()
+    ]
+    return tokens if len(tokens) == len(set(tokens)) else []
+
+
+def _coverage_ref_matches_slot(
+    *,
+    admission: Mapping[str, Any],
+    slot: Mapping[str, Any],
+) -> bool:
+    slot_ref = dict(slot.get("slot_ref") or {})
+    component_ref = dict(slot.get("component_ref") or {})
+    coverage_ref = dict(
+        admission.get("component_coverage_ref") or {}
+    )
+    target_obligation_id = str(
+        slot_ref.get("source_obligation_id") or ""
+    )
+    source_obligation_ids = _unique_tokens(
+        coverage_ref.get("source_obligation_ids")
+    )
+    source_requirement_ids = _unique_tokens(
+        coverage_ref.get("source_requirement_ids")
+    )
+    owned_links = [
+        dict(item)
+        for item in coverage_ref.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
+    ]
+    return bool(
+        coverage_ref.get("coverage_state") == "satisfied"
+        and coverage_ref.get("coverage_record_id")
+        and coverage_ref.get("coverage_record_digest")
+        and coverage_ref.get("answer_component_id")
+        == component_ref.get("component_id")
+        == slot_ref.get("component_id")
+        and coverage_ref.get("component_revision")
+        == component_ref.get("component_revision")
+        and coverage_ref.get("component_digest")
+        == component_ref.get("component_digest")
+        and source_obligation_ids == [target_obligation_id]
+        and source_requirement_ids
+        and len(owned_links) == len(source_requirement_ids)
+        and {
+            str(item.get("requirement_id") or "")
+            for item in owned_links
+        }
+        == set(source_requirement_ids)
+        and all(
+            item.get("source_obligation_id")
+            == target_obligation_id
+            and item.get("link_status") == "accepted"
+            and item.get("candidate_id")
+            in set(_unique_tokens(coverage_ref.get("candidate_ids")))
+            for item in owned_links
+        )
+    )
+
+
+def _coverage_ref_matches_contract_and_candidates(
+    *,
+    coverage_ref: Mapping[str, Any],
+    answer_contract_ref: Mapping[str, Any],
+    consumed_candidate_ids: set[str],
+) -> bool:
+    candidate_ids = set(_unique_tokens(coverage_ref.get("candidate_ids")))
+    owned_candidate_ids = {
+        str(item.get("candidate_id") or "")
+        for item in coverage_ref.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
+    }
+    return bool(
+        coverage_ref.get("accepted_contract_version")
+        == answer_contract_ref.get("contract_version")
+        and coverage_ref.get("accepted_contract_digest")
+        == answer_contract_ref.get("answer_contract_digest")
+        and consumed_candidate_ids
+        and consumed_candidate_ids <= candidate_ids
+        and consumed_candidate_ids <= owned_candidate_ids
+    )
+
+
+def _recovery_admission_matches_slot(
+    *,
+    admission: Mapping[str, Any],
+    slot: Mapping[str, Any],
+) -> bool:
+    slot_ref = dict(slot.get("slot_ref") or {})
+    component_ref = dict(slot.get("component_ref") or {})
+    source_obligation_ref = dict(
+        slot.get("source_obligation_ref") or {}
+    )
+    cycle_ref = dict(admission.get("searchos_recovery_cycle_ref") or {})
+    cycle_component_ref = dict(cycle_ref.get("component_ref") or {})
+    cycle_source_obligation_ref = dict(
+        cycle_ref.get("source_obligation_ref") or {}
+    )
+    prior_slot_ref = dict(
+        cycle_ref.get("prior_terminal_slot_ref") or {}
+    )
+    recovery_slot_ref = dict(cycle_ref.get("recovery_slot_ref") or {})
+    exact_target_slot = (
+        slot_ref == prior_slot_ref
+        or slot_ref == recovery_slot_ref
+    )
+    return bool(
+        admission.get("admission_status")
+        in {"admitted", "admitted_with_caveats"}
+        and admission.get("same_component_reassessment") is True
+        and _coverage_ref_matches_slot(
+            admission=admission,
+            slot=slot,
+        )
+        and cycle_ref
+        and cycle_ref.get("cycle_id")
+        == recovery_slot_ref.get("recovery_cycle_id")
+        and exact_target_slot
+        and recovery_slot_ref.get("component_id")
+        == slot_ref.get("component_id")
+        and recovery_slot_ref.get("source_obligation_id")
+        == slot_ref.get("source_obligation_id")
+        and cycle_component_ref == component_ref
+        and admission.get("component_id")
+        == component_ref.get("component_id")
+        and admission.get("component_revision")
+        == component_ref.get("component_revision")
+        and admission.get("component_digest")
+        == component_ref.get("component_digest")
+        and (
+            cycle_source_obligation_ref.get("source_obligation_id")
+            or cycle_source_obligation_ref.get("candidate_id")
+        )
+        == (
+            source_obligation_ref.get("source_obligation_id")
+            or source_obligation_ref.get("candidate_id")
+        )
+        == slot_ref.get("source_obligation_id")
+        and bool(admission.get("evidence_refs"))
+    )
 
 
 def build_searchos_required_needs_blocked_fap_projection(

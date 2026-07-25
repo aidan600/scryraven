@@ -819,9 +819,11 @@ def test_missing_required_component_emits_version_bound_gap_identity() -> None:
     assert facts["accepted_required_component_refs"] == [
         {
             "answer_component_id": component_ref["component_id"],
+            "component_revision": component_ref["component_revision"],
             "component_digest": component_ref["component_digest"],
             "accepted_contract_version": accepted["accepted_contract_version"],
             "accepted_contract_digest": accepted["accepted_contract_digest"],
+            "source_obligation_candidate_ids": [],
         }
     ]
     assert assessment["accepted_contract_version"] == accepted[

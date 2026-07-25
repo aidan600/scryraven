@@ -207,6 +207,8 @@ def stage_multicomponent_component_admission(
     component_coverage_record: Mapping[str, Any] | None,
     specialist_need_handoff: Mapping[str, Any] | None = None,
     allow_searchos_semantic_requirement_historical_gap_exception: bool = False,
+    logical_evaluation_key: str | None = None,
+    searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate owner execution and stage semantic/coverage state atomically."""
 
@@ -254,9 +256,10 @@ def stage_multicomponent_component_admission(
         raise MulticomponentComponentAdmissionError(
             "component D-prime nominated claim/input binding mismatch"
         )
+    evaluation_key = str(logical_evaluation_key or component_id)
     if (
-        analyst.get("logical_evaluation_key") != component_id
-        or dprime.get("logical_evaluation_key") != component_id
+        analyst.get("logical_evaluation_key") != evaluation_key
+        or dprime.get("logical_evaluation_key") != evaluation_key
     ):
         raise MulticomponentComponentAdmissionError(
             "component role logical evaluation key mismatch"
@@ -469,6 +472,7 @@ def stage_multicomponent_component_admission(
                 "accepted_contract_digest"
             ),
             "component_id": component["component_id"],
+            "logical_evaluation_key": evaluation_key,
             "component_revision": component["component_revision"],
             "component_digest": component["component_digest"],
             "admission_status": admission_status,
@@ -510,7 +514,50 @@ def stage_multicomponent_component_admission(
                     "coverage_record_digest": coverage_projection.get(
                         "coverage_record_digest"
                     ),
+                    "run_id": coverage_projection.get("run_id"),
+                    "request_id": coverage_projection.get("request_id"),
                     "coverage_state": coverage_projection.get("coverage_state"),
+                    "answer_component_id": coverage_projection.get(
+                        "answer_component_id"
+                    ),
+                    "component_revision": coverage_projection.get(
+                        "component_revision"
+                    ),
+                    "component_digest": coverage_projection.get(
+                        "component_digest"
+                    ),
+                    "accepted_contract_version": coverage_projection.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": coverage_projection.get(
+                        "accepted_contract_digest"
+                    ),
+                    "source_requirement_ids": list(
+                        dict(
+                            coverage_projection.get(
+                                "evidence_ledger_binding"
+                            )
+                            or {}
+                        ).get("source_requirement_ids")
+                        or ()
+                    ),
+                    "source_obligation_ids": list(
+                        coverage_projection.get(
+                            "source_obligation_ids"
+                        )
+                        or ()
+                    ),
+                    "candidate_ids": list(
+                        coverage_projection.get("candidate_ids") or ()
+                    ),
+                    "owned_requirement_candidate_refs": [
+                        dict(item)
+                        for item in coverage_projection.get(
+                            "owned_requirement_candidate_refs"
+                        )
+                        or ()
+                        if isinstance(item, Mapping)
+                    ],
                 }
                 if coverage_projection
                 else {}
@@ -526,6 +573,14 @@ def stage_multicomponent_component_admission(
             "required_caveats": caveats,
             "preserved_nonclaims": nonclaims,
             "blocker_refs": [{"reason": item} for item in blockers],
+            "searchos_recovery_cycle_ref": deepcopy(
+                _safe_mapping(searchos_recovery_cycle_ref)
+            ),
+            "same_component_reassessment": bool(
+                searchos_recovery_cycle_ref
+            ),
+            "derived_component_recovery": False,
+            "scrutineer_recovery_input": False,
             "logical_component_analyst_evaluations": 1,
             "logical_component_dprime_evaluations": 1,
             "physical_component_analyst_calls": 1,
@@ -546,6 +601,8 @@ def execute_multicomponent_component_admission(
     component_coverage_record: Mapping[str, Any] | None,
     specialist_need_handoff: Mapping[str, Any] | None = None,
     allow_searchos_semantic_requirement_historical_gap_exception: bool = False,
+    logical_evaluation_key: str | None = None,
+    searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Stage then atomically reduce one component through RunKernel."""
 
@@ -559,11 +616,12 @@ def execute_multicomponent_component_admission(
         dprime_artifact,
         expected_role=ROLE_COMPONENT_DPRIME,
     )
+    evaluation_key = str(logical_evaluation_key or component_id)
     completed_analyst = run_kernel.state.projections.get(
-        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{evaluation_key}"
     )
     completed_dprime = run_kernel.state.projections.get(
-        f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{component_id}"
+        f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{evaluation_key}"
     )
     if (
         not isinstance(completed_analyst, Mapping)
@@ -578,6 +636,8 @@ def execute_multicomponent_component_admission(
         component_id=component_id,
         analyst_artifact_digest=analyst["artifact_digest"],
         dprime_artifact_digest=dprime["artifact_digest"],
+        logical_evaluation_key=evaluation_key,
+        searchos_recovery_cycle_ref=searchos_recovery_cycle_ref,
     )
     accepted_contract = (
         run_kernel.state.current_answer_contract
@@ -606,6 +666,8 @@ def execute_multicomponent_component_admission(
         allow_searchos_semantic_requirement_historical_gap_exception=(
             allow_searchos_semantic_requirement_historical_gap_exception
         ),
+        logical_evaluation_key=evaluation_key,
+        searchos_recovery_cycle_ref=searchos_recovery_cycle_ref,
     )
     component_ref = staged["component_admission_ref"]
     prior = _safe_mapping(
@@ -616,7 +678,17 @@ def execute_multicomponent_component_admission(
         for item in prior.get("component_admission_refs") or ()
         if isinstance(item, Mapping)
     ]
-    if any(item.get("component_id") == component_id for item in prior_refs):
+    if any(
+        item.get("logical_evaluation_key") == evaluation_key
+        for item in prior_refs
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission logical evaluation is already present"
+        )
+    if (
+        any(item.get("component_id") == component_id for item in prior_refs)
+        and not searchos_recovery_cycle_ref
+    ):
         raise MulticomponentComponentAdmissionError(
             "component admission is append-only and component is already present"
         )

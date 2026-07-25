@@ -403,6 +403,9 @@ def _ledger_candidate_index(
 
 
 _STALE_CURRENTNESS_SIGNALS = frozenset({"stale", "outdated", "expired", "superseded"})
+_IMPLICIT_COMPATIBILITY_LINK_REASON = (
+    "selected_candidate_matches_existing_requirement"
+)
 
 
 def _candidate_is_bindable(
@@ -537,6 +540,11 @@ def select_bindable_final_passages_for_components(
     evidence_ledger_projection: Mapping[str, Any],
     component_refs: Sequence[Mapping[str, Any]],
     component_text_by_id: Mapping[str, str] | None = None,
+    *,
+    run_id: str | None = None,
+    request_id: str | None = None,
+    answer_contract_version: Any = None,
+    answer_contract_digest: str | None = None,
 ) -> dict[str, BindableFinalPassage]:
     bindables = _bindable_final_passages(final_top_evidence, evidence_ledger_projection)
     if not bindables:
@@ -578,10 +586,15 @@ def select_bindable_final_passages_for_components(
         )
         scored: list[tuple[int, int, BindableFinalPassage]] = []
         for order, bindable in enumerate(bindables):
-            source_requirement_ids = _source_requirement_ids_for_candidate(
+            source_requirement_ids = _exact_owned_source_requirement_ids_for_candidate(
                 evidence_ledger_projection,
                 evidence_ref_id=bindable.evidence_ref_id,
+                component_id=component_id,
                 source_obligation_candidate_ids=obligation_ids,
+                run_id=run_id,
+                request_id=request_id,
+                answer_contract_version=answer_contract_version,
+                answer_contract_digest=answer_contract_digest,
             )
             score = _token_overlap_score(
                 component_ref=component_ref,
@@ -612,14 +625,35 @@ def source_requirement_ids_for_component_candidate(
     evidence_ledger_projection: Mapping[str, Any],
     *,
     evidence_ref_id: str,
+    component_id: str | None = None,
     source_obligation_candidate_ids: Sequence[str] = (),
+    run_id: str | None = None,
+    request_id: str | None = None,
+    answer_contract_version: Any = None,
+    answer_contract_digest: str | None = None,
     ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> tuple[str, ...]:
-    """Expose existing coverage preflight without changing selection policy."""
+    """Expose exact scoped preflight or retained unscoped compatibility lookup."""
 
-    return _source_requirement_ids_for_candidate(
+    lookup = (
+        _exact_owned_source_requirement_ids_for_candidate
+        if component_id
+        else _compatibility_source_requirement_ids_for_candidate
+    )
+    return lookup(
         evidence_ledger_projection,
         evidence_ref_id=evidence_ref_id,
+        **(
+            {
+                "component_id": component_id,
+                "run_id": run_id,
+                "request_id": request_id,
+                "answer_contract_version": answer_contract_version,
+                "answer_contract_digest": answer_contract_digest,
+            }
+            if component_id
+            else {}
+        ),
         source_obligation_candidate_ids=source_obligation_candidate_ids,
         ignore_satisfied_provider_job_historical_gaps=(
             ignore_satisfied_provider_job_historical_gaps
@@ -732,13 +766,15 @@ def _requirement_matches_obligation_candidate(
     return False
 
 
-def _source_requirement_ids_for_candidate(
+def _compatibility_source_requirement_ids_for_candidate(
     evidence_ledger_projection: Mapping[str, Any],
     *,
     evidence_ref_id: str,
     source_obligation_candidate_ids: Sequence[str] = (),
     ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> tuple[str, ...]:
+    """Retained non-authoritative lookup for legacy unscoped callers only."""
+
     normalized_evidence_ref = _clean_token(evidence_ref_id) or ""
     if not normalized_evidence_ref:
         return ()
@@ -807,6 +843,133 @@ def _source_requirement_ids_for_candidate(
         for requirement_id in dict.fromkeys(satisfied_linked)
         if requirement_id not in blocked_requirement_ids
     )
+
+
+def _owned_identity(value: Any) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .casefold()
+        .replace("-", "_")
+        .replace(":", "_")
+        .replace(" ", "_")
+    )
+
+
+def _exact_owned_source_requirement_ids_for_candidate(
+    evidence_ledger_projection: Mapping[str, Any],
+    *,
+    evidence_ref_id: str,
+    component_id: str,
+    source_obligation_candidate_ids: Sequence[str],
+    run_id: str | None,
+    request_id: str | None,
+    answer_contract_version: Any,
+    answer_contract_digest: str | None,
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
+) -> tuple[str, ...]:
+    """Return only unique, explicitly linked, exact-owned satisfied rows."""
+
+    candidate_id = _clean_token(evidence_ref_id)
+    component_identity = _owned_identity(component_id)
+    run_identity = _owned_identity(run_id)
+    request_identity = _owned_identity(request_id)
+    contract_version = _clean_token(answer_contract_version)
+    contract_digest = _clean_token(answer_contract_digest)
+    obligation_identities = {
+        identity
+        for item in source_obligation_candidate_ids
+        if (identity := _owned_identity(item))
+    }
+    if (
+        not candidate_id
+        or not component_identity
+        or not obligation_identities
+        or not run_identity
+        or not request_identity
+        or not contract_version
+        or not contract_digest
+    ):
+        return ()
+
+    candidate_rows = [
+        dict(item)
+        for item in evidence_ledger_projection.get("candidate_records") or ()
+        if isinstance(item, Mapping)
+        and _clean_token(item.get("candidate_id")) == candidate_id
+    ]
+    if len(candidate_rows) != 1:
+        return ()
+    if (
+        _clean_token(
+            candidate_rows[0].get("fact_disposition")
+            or candidate_rows[0].get("disposition")
+        )
+        or ""
+    ).casefold() != "accepted":
+        return ()
+
+    requirement_rows_by_id: dict[str, list[dict[str, Any]]] = {}
+    for item in evidence_ledger_projection.get("source_requirements") or ():
+        if not isinstance(item, Mapping):
+            continue
+        requirement_id = _clean_token(item.get("requirement_id"))
+        if requirement_id:
+            requirement_rows_by_id.setdefault(requirement_id, []).append(dict(item))
+
+    accepted_links_by_requirement_id: dict[str, list[dict[str, Any]]] = {}
+    for item in evidence_ledger_projection.get("requirement_links") or ():
+        if not isinstance(item, Mapping):
+            continue
+        if _clean_token(item.get("candidate_id")) != candidate_id:
+            continue
+        requirement_id = _clean_token(item.get("requirement_id"))
+        if requirement_id:
+            accepted_links_by_requirement_id.setdefault(
+                requirement_id, []
+            ).append(dict(item))
+
+    blocked_requirement_ids = _requirement_ids_blocked_by_custody_gaps(
+        evidence_ledger_projection,
+        ignore_satisfied_provider_job_historical_gaps=(
+            ignore_satisfied_provider_job_historical_gaps
+        ),
+    )
+    exact_ids: list[str] = []
+    for requirement_id, links in accepted_links_by_requirement_id.items():
+        rows = requirement_rows_by_id.get(requirement_id, [])
+        if (
+            len(rows) != 1
+            or len(links) != 1
+            or (_clean_token(links[0].get("link_status")) or "").casefold()
+            != "accepted"
+            or (
+                _clean_token(links[0].get("link_reason")) or ""
+            ).casefold()
+            == _IMPLICIT_COMPATIBILITY_LINK_REASON
+        ):
+            continue
+        requirement = rows[0]
+        if (
+            (_clean_token(requirement.get("status")) or "").casefold()
+            != "satisfied"
+            or _owned_identity(requirement.get("component_id"))
+            != component_identity
+            or _owned_identity(requirement.get("source_obligation_id"))
+            not in obligation_identities
+            or _owned_identity(requirement.get("run_id"))
+            != run_identity
+            or _owned_identity(requirement.get("request_id"))
+            != request_identity
+            or _clean_token(requirement.get("answer_contract_version"))
+            != contract_version
+            or _clean_token(requirement.get("answer_contract_digest"))
+            != contract_digest
+            or requirement_id in blocked_requirement_ids
+        ):
+            continue
+        exact_ids.append(requirement_id)
+    return tuple(exact_ids)
 
 
 def _source_requirements_by_id(
@@ -928,10 +1091,19 @@ def build_component_coverage_proposal(
     if has_source_obligations:
         if not observation.evidence_refs:
             return None
-        source_requirement_ids = _source_requirement_ids_for_candidate(
+        source_requirement_ids = _exact_owned_source_requirement_ids_for_candidate(
             evidence_ledger_projection,
             evidence_ref_id=observation.evidence_refs[0],
+            component_id=component_ref["component_id"],
             source_obligation_candidate_ids=source_obligation_candidate_ids,
+            run_id=run_id,
+            request_id=request_id,
+            answer_contract_version=accepted_contract[
+                "accepted_contract_version"
+            ],
+            answer_contract_digest=accepted_contract[
+                "accepted_contract_digest"
+            ],
             ignore_satisfied_provider_job_historical_gaps=(
                 ignore_satisfied_provider_job_historical_gaps
             ),
@@ -1015,16 +1187,7 @@ def build_component_coverage_proposal(
         metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
     ).require_valid()
     blockers = ledger_qualification_blockers_for_satisfied_coverage(
-        coverage={
-            "coverage_state": record.coverage_state.value,
-            "content_reference_bindings": [
-                {"evidence_ref_id": content_ref.evidence_ref_id},
-            ],
-            "evidence_ledger_binding": {
-                "source_requirement_ids": list(source_requirement_ids),
-            },
-            "source_obligation_status": record.source_obligation_status.value,
-        },
+        coverage=record.to_dict(),
         evidence_ledger_projection=evidence_ledger_projection,
         accepted_component=component_ref,
         extra_evidence_refs=observation.evidence_refs,
@@ -1212,6 +1375,14 @@ def preflight_ordinary_semantic_producer_bundle(
         evidence_ledger_projection,
         component_refs,
         component_text_by_id=component_text_by_id,
+        run_id=run_id,
+        request_id=request_id,
+        answer_contract_version=accepted_contract[
+            "accepted_contract_version"
+        ],
+        answer_contract_digest=accepted_contract[
+            "accepted_contract_digest"
+        ],
     )
     if not selected_bindables:
         return OrdinarySemanticProducerPreflightResult(

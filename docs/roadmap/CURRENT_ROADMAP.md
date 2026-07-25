@@ -448,21 +448,22 @@ owns the detailed authority, internal implementation, inference, and retirement
 doctrine for the next checkpoint.
 
 Query strategy, READ/source custody, initial and in-loop SearchJudgment, semantic
-handoff, and bounded one-hop breadcrumb navigation are installed. This does not
-claim canonical post-analysis recovery or recursive navigation.
+handoff, bounded one-hop breadcrumb navigation, and the required
+existing-component/source-obligation recovery foundation are installed. This
+does not claim derived-component recovery, general inference, or recursive
+navigation.
 
 ### NEXT CHECKPOINT
 
 ```text
-SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
+SEARCHOS-DERIVED-COMPONENT-RECOVERY-AND-AUTHORITY-CONVERGENCE-01
 ```
 
-This remains one roadmap checkpoint. It contains two ordered internal
-implementation PRs, not two sibling roadmap phases. The checkpoint is complete
-only after both internal PRs land and pass the required offline integration
-proof.
+The parent convergence checkpoint remains one roadmap outcome with two ordered
+internal implementation PRs, not two sibling roadmap phases. Internal PR A is
+complete; Internal PR B and the offline integration proof remain.
 
-### NEXT BUILD: Internal PR A
+### COMPLETED BUILD: Internal PR A
 
 Working name:
 
@@ -470,20 +471,24 @@ Working name:
 SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01
 ```
 
-Internal PR A installs existing-component recovery and the Sufficiency stopping
-foundation. It must make canonical SearchOS the sole executable
+Internal PR A installs canonical SearchOS as the sole executable
 existing-component and source-obligation recovery authority on an ordinary
-SearchOS run. Competing executable existing-gap routes are cut off or
-subordinated. It does not open Analyst proposal, ContractAmendment mutation,
-component-graph mutation, Scrutineer behavior, specialist behavior, or general
-inference.
+SearchOS run. One exact required gap receives one whole-run lease in Fast,
+Balanced, and Deep; the prior slot is immutable, the new cycle is append-only,
+the same component runs through the unchanged Component Analyst and component
+D-prime, exact replay creates no new work, and the cycle closes recovered or
+exhausted-insufficient before ordinary Sufficiency makes the final stop
+decision. The retained Scrutineer/deterministic derived-component route is
+Boundary B-only and cannot execute as same-component fallback. Analyst
+proposal, ContractAmendment mutation, component-graph mutation, Specialist
+behavior, and general inference remain closed.
 
 Broad physical deletion of already-forward-dead AG-92B files, inert
 compatibility consumers, direct legacy tests, or historical helpers is not an
 Internal PR A merge gate. Those surfaces remain retirement targets and receive
 no new callers, fallback, or compatibility investment.
 
-### NEAR-TERM DIRECTION: Internal PR B
+### NEXT BUILD: Internal PR B
 
 Working name:
 
@@ -491,7 +496,7 @@ Working name:
 SEARCHOS-DERIVED-COMPONENT-RECOVERY-AND-AUTHORITY-CONVERGENCE-01
 ```
 
-Internal PR B follows and consumes Internal PR A. It connects Analyst-originated
+Internal PR B consumes Internal PR A. It connects Analyst-originated
 child proposals to independent ContractAmendment admission/application, exact
 parent/dependency lineage, the child's first canonical SearchOS recovery cycle,
 direct component support, graph reproof, selective resynthesis, and a changed
@@ -507,8 +512,8 @@ PR A useful and intact.
 ### Remaining Sequence
 
 ```text
-Internal PR A
--> Internal PR B
+Internal PR A (complete)
+-> Internal PR B (next)
 -> offline SearchOS integration gate
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01

@@ -606,6 +606,12 @@ SEARCHOS_READ_CUSTODY_ADMISSION_STAGE = "searchos_read_custody_admission"
 SEARCHOS_SEMANTIC_HANDOFF_STAGE = "searchos_semantic_evaluation_handoff"
 SEARCHOS_SLICE_A_READINESS_STAGE = "searchos_slice_a_readiness"
 SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE = "searchos_required_needs_block"
+SEARCHOS_EXISTING_GAP_RECOVERY_ADMISSION_STAGE = (
+    "searchos_existing_gap_recovery_admission"
+)
+SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_STAGE = (
+    "searchos_existing_gap_recovery_terminal"
+)
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -809,6 +815,8 @@ class ActionType(str, Enum):
     SEARCHOS_SEMANTIC_HANDOFF_ADMIT = "searchos_semantic_handoff_admit"
     SEARCHOS_SLICE_A_READINESS_DERIVE = "searchos_slice_a_readiness_derive"
     SEARCHOS_REQUIRED_NEEDS_BLOCK = "searchos_required_needs_block"
+    SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT = "searchos_existing_gap_recovery_admit"
+    SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCE = "searchos_existing_gap_recovery_terminal_reduce"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -968,6 +976,8 @@ class ObservationType(str, Enum):
     SEARCHOS_SEMANTIC_HANDOFF_ADMITTED = "searchos_semantic_handoff_admitted"
     SEARCHOS_SLICE_A_READINESS_DERIVED = "searchos_slice_a_readiness_derived"
     SEARCHOS_REQUIRED_NEEDS_BLOCKED = "searchos_required_needs_blocked"
+    SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED = "searchos_existing_gap_recovery_admitted"
+    SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCED = "searchos_existing_gap_recovery_terminal_reduced"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -2874,17 +2884,35 @@ class RunKernel:
                 "required_needs_block_ref"
             )
         )
-        if required_needs_block and action_type_value in {
-            ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
-            ActionType.SUFFICIENCY_READINESS_DECIDE,
-            ActionType.FINAL_ANSWER_PACKET_HARDEN,
-            ActionType.FINAL_ANSWER_PACKET_PREPARE,
-            ActionType.AUTHOR_PROSE_FINALIZE,
-            ActionType.AUTHOR_EXECUTE,
-        }:
+        sufficiency = _safe_mapping(
+            self.state.sufficiency_judgment_projection
+        )
+        if (
+            required_needs_block
+            and action_type_value
+            in {
+                ActionType.FINAL_ANSWER_PACKET_HARDEN,
+                ActionType.FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.AUTHOR_PROSE_FINALIZE,
+                ActionType.AUTHOR_EXECUTE,
+            }
+            and not sufficiency
+        ):
             raise RunKernelTransitionError(
-                "SearchOS Slice A required-needs block keeps Sufficiency, "
-                "FinalAnswerPacket, and Author closed"
+                "SearchOS subordinate blocker requires Sufficiency "
+                "adjudication before FinalAnswerPacket or Author"
+            )
+        if (
+            required_needs_block
+            and action_type_value
+            in {
+                ActionType.AUTHOR_PROSE_FINALIZE,
+                ActionType.AUTHOR_EXECUTE,
+            }
+            and sufficiency.get("final_answer_allowed") is not True
+        ):
+            raise RunKernelTransitionError(
+                "Sufficiency does not permit Author execution"
             )
         sequence = self.state.next_action_sequence
         action = AuthorizedAction(
@@ -6049,6 +6077,7 @@ class RunKernel:
         dispatch_action_id: str | None = None,
         output_schema_variant: str | None = None,
         specialist_handoff_digest: str | None = None,
+        searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
         """Authorize one exact semantic-role evaluation for the V1 lane."""
 
@@ -6118,7 +6147,45 @@ class RunKernel:
             )
         scheduler_raw = self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE, {})
         lease_inputs: dict[str, Any] = {}
-        if scheduler_raw:
+        recovery_inputs: dict[str, Any] = {}
+        if searchos_recovery_cycle_ref:
+            from core.searchos_existing_gap_recovery_runtime import (
+                recovery_cycle_ref,
+                validate_active_searchos_recovery_cycle_ref,
+            )
+
+            if (
+                role_name not in {"component_analyst", "component_dprime"}
+                or lease_id
+                or dispatch_action_id
+                or output_schema_variant
+                or handoff_digest
+            ):
+                raise RunKernelTransitionError(
+                    "SearchOS recovery may execute only unchanged Component Analyst and component D-prime calls"
+                )
+            try:
+                cycle = validate_active_searchos_recovery_cycle_ref(
+                    self.state.searchos_state,
+                    searchos_recovery_cycle_ref,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            exact_cycle_ref = recovery_cycle_ref(cycle)
+            recovery_slot_ref = _safe_mapping(exact_cycle_ref.get("recovery_slot_ref"))
+            expected_key = f"{recovery_slot_ref.get('component_id')}@{exact_cycle_ref.get('cycle_id')}"
+            if evaluation_key != expected_key:
+                raise RunKernelTransitionError("SearchOS same-component role evaluation key is stale")
+            recovery_inputs = {
+                "searchos_recovery_cycle_ref": exact_cycle_ref,
+                "searchos_recovery_lease_ref": deepcopy(exact_cycle_ref.get("recovery_lease_ref")),
+                "component_id": recovery_slot_ref.get("component_id"),
+                "target_kind": "existing_answer_component",
+                "same_component_reassessment": True,
+                "derived_component_recovery": False,
+                "scrutineer_recovery_input": False,
+            }
+        if scheduler_raw and not recovery_inputs:
             scheduler = validate_scheduler_state(scheduler_raw)
             lease = next(
                 (
@@ -6179,7 +6246,7 @@ class RunKernel:
                 ),
                 "output_schema_variant": output_schema_variant,
             }
-        elif lease_id or dispatch_action_id:
+        elif (lease_id or dispatch_action_id) and not recovery_inputs:
             raise RunKernelTransitionError(
                 "caller-authored lease lineage is forbidden without scheduler state"
             )
@@ -6195,6 +6262,7 @@ class RunKernel:
                     "ordinary-bounded-multicomponent-factual-synthesis-v1"
                 ),
                 "specialist_handoff_digest": handoff_digest,
+                **recovery_inputs,
                 **lease_inputs,
             },
             expected_observation_type=observation_type,
@@ -6206,6 +6274,8 @@ class RunKernel:
         component_id: str,
         analyst_artifact_digest: str,
         dprime_artifact_digest: str,
+        logical_evaluation_key: str | None = None,
+        searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
@@ -6214,7 +6284,16 @@ class RunKernel:
         component = _clean_text(component_id, limit=180)
         analyst_digest = _clean_text(analyst_artifact_digest, limit=128)
         dprime_digest = _clean_text(dprime_artifact_digest, limit=128)
-        if not component or not analyst_digest or not dprime_digest:
+        evaluation_key = _clean_text(
+            logical_evaluation_key or component,
+            limit=180,
+        )
+        if (
+            not component
+            or not analyst_digest
+            or not dprime_digest
+            or not evaluation_key
+        ):
             raise RunKernelTransitionError(
                 "multi-component admission requires component and role bindings"
             )
@@ -6222,17 +6301,48 @@ class RunKernel:
             self.state.current_answer_contract
             or self.state.initial_answer_contract
         )
+        recovery_ref: dict[str, Any] = {}
+        if searchos_recovery_cycle_ref:
+            from core.searchos_existing_gap_recovery_runtime import (
+                recovery_cycle_ref,
+                validate_active_searchos_recovery_cycle_ref,
+            )
+
+            try:
+                cycle = validate_active_searchos_recovery_cycle_ref(
+                    self.state.searchos_state,
+                    searchos_recovery_cycle_ref,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            recovery_ref = recovery_cycle_ref(cycle)
+            recovery_component = _safe_mapping(
+                recovery_ref.get("recovery_slot_ref")
+            ).get("component_id")
+            expected_key = (
+                f"{recovery_component}@{recovery_ref.get('cycle_id')}"
+            )
+            if component != recovery_component or evaluation_key != expected_key:
+                raise RunKernelTransitionError(
+                    "same-component admission does not match active SearchOS "
+                    "recovery authority"
+                )
         return self.authorize(
             stage="multicomponent_component_admission",
             action_type=ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE,
             reason="component_analyst_then_dprime_admission",
             inputs={
                 "component_id": component,
+                "logical_evaluation_key": evaluation_key,
                 "analyst_artifact_digest": analyst_digest,
                 "dprime_artifact_digest": dprime_digest,
                 "accepted_contract_digest": accepted_contract.get(
                     "accepted_contract_digest"
                 ),
+                "searchos_recovery_cycle_ref": recovery_ref,
+                "same_component_reassessment": bool(recovery_ref),
+                "derived_component_recovery": False,
+                "scrutineer_recovery_input": False,
             },
             expected_observation_type=(
                 ObservationType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED
@@ -8535,6 +8645,104 @@ class RunKernel:
         self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(state)
         return reservation
 
+    def authorize_searchos_existing_gap_recovery_admission(
+        self,
+        *,
+        gap_basis: Mapping[str, Any],
+        recovery_purpose: Mapping[str, Any],
+    ) -> AuthorizedAction | dict[str, Any]:
+        """Authorize the exact replay-safe whole-run recovery-cycle admission."""
+
+        from core.searchos_existing_gap_recovery_runtime import (
+            admit_searchos_existing_gap_recovery_cycle,
+        )
+
+        if not self.state.searchos_state:
+            raise RunKernelTransitionError("existing-gap recovery requires initialized SearchOS state")
+        try:
+            candidate, admission = admit_searchos_existing_gap_recovery_cycle(
+                state=self.state.searchos_state,
+                gap_basis=gap_basis,
+                recovery_purpose=recovery_purpose,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        if admission.get("exact_replay") is True:
+            # Exact replay resolves before generic authorization so the
+            # complete RunState, including action/observation counters and
+            # projections, remains byte-for-byte unchanged.
+            return deepcopy(admission)
+        return self.authorize(
+            stage=SEARCHOS_EXISTING_GAP_RECOVERY_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT,
+            reason="admit_exact_existing_gap_recovery_lease",
+            inputs={
+                "slot_id": _safe_mapping(gap_basis.get("prior_terminal_slot_ref")).get("slot_id"),
+                "gap_basis_id": gap_basis.get("gap_basis_id"),
+                "gap_basis_digest": gap_basis.get("gap_basis_digest"),
+                "recovery_purpose_id": recovery_purpose.get("recovery_purpose_id"),
+                "recovery_purpose_digest": recovery_purpose.get("recovery_purpose_digest"),
+                "recovery_admission_observation": {
+                    "status": admission.get("status"),
+                    "exact_replay": admission.get("exact_replay"),
+                    "work_authorized": admission.get("work_authorized"),
+                    "cycle_ref": deepcopy(admission.get("cycle_ref")),
+                    "searchos_state_ref": {
+                        "state_id": candidate.get("state_id"),
+                        "state_digest": candidate.get("state_digest"),
+                    },
+                },
+            },
+            expected_observation_type=(ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED),
+        )
+
+    def authorize_searchos_existing_gap_recovery_terminal(
+        self,
+        *,
+        recovery_cycle_ref: Mapping[str, Any],
+        component_admission_ref: Mapping[str, Any] | None,
+        failure_reason: str | None = None,
+    ) -> AuthorizedAction:
+        """Authorize one immutable recovery terminal from current expenditure."""
+
+        from core.searchos_existing_gap_recovery_runtime import (
+            finalize_searchos_existing_gap_recovery_cycle,
+        )
+
+        try:
+            candidate, terminal = finalize_searchos_existing_gap_recovery_cycle(
+                state=self.state.searchos_state,
+                cycle_ref=recovery_cycle_ref,
+                component_admission_ref=component_admission_ref,
+                evidence_ledger_projection=(
+                    self.state.evidence_ledger.to_projection().to_dict()
+                ),
+                failure_reason=failure_reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_STAGE,
+            action_type=(ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCE),
+            reason="close_existing_gap_recovery_lease_honestly",
+            inputs={
+                "cycle_id": recovery_cycle_ref.get("cycle_id"),
+                "cycle_digest": recovery_cycle_ref.get("cycle_digest"),
+                "component_admission_action_id": _safe_mapping(component_admission_ref).get("action_id"),
+                "failure_reason": failure_reason,
+                "recovery_terminal_observation": {
+                    "terminal_aggregate_id": terminal.get("terminal_aggregate_id"),
+                    "terminal_aggregate_digest": terminal.get("terminal_aggregate_digest"),
+                    "terminal_status": terminal.get("terminal_status"),
+                    "searchos_state_ref": {
+                        "state_id": candidate.get("state_id"),
+                        "state_digest": candidate.get("state_digest"),
+                    },
+                },
+            },
+            expected_observation_type=(ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCED),
+        )
+
     def return_searchos_pre_call_reservation(
         self,
         *,
@@ -8845,6 +9053,7 @@ class RunKernel:
         self,
         *,
         reason: str = "block_unresolved_searchos_slice_a_required_needs",
+        blocker_facts: Sequence[Mapping[str, Any]] = (),
     ) -> AuthorizedAction:
         from core.searchos_iterative_judgment_runtime import (
             build_searchos_required_needs_block,
@@ -8854,7 +9063,10 @@ class RunKernel:
             self.state.projections.get(SEARCHOS_SLICE_A_READINESS_STAGE)
         )
         try:
-            block = build_searchos_required_needs_block(readiness)
+            block = build_searchos_required_needs_block(
+                readiness,
+                blocker_facts=blocker_facts,
+            )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
         return self.authorize(
@@ -16615,6 +16827,143 @@ class RunKernel:
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(projection)
+        elif action.action_type is ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT:
+            from core.searchos_existing_gap_recovery_runtime import (
+                admit_searchos_existing_gap_recovery_cycle,
+                build_searchos_existing_gap_basis,
+                build_searchos_materially_novel_recovery_purpose,
+            )
+
+            expected_admission = _safe_mapping(action.inputs.get("recovery_admission_observation"))
+            observed_admission = _safe_mapping(observation.payload)
+            if observed_admission != expected_admission:
+                raise RunKernelTransitionError("SearchOS recovery admission observation differs from authorization")
+            try:
+                if expected_admission.get("exact_replay") is True:
+                    purpose_refs = [
+                        _safe_mapping(item)
+                        for item in self.state.searchos_state.get("existing_gap_recovery_purpose_refs") or ()
+                        if isinstance(item, Mapping)
+                    ]
+                    cycles = [
+                        _safe_mapping(item)
+                        for item in self.state.searchos_state.get("existing_gap_recovery_cycles") or ()
+                        if isinstance(item, Mapping)
+                    ]
+                    replay_cycle_ref = _safe_mapping(expected_admission.get("cycle_ref"))
+                    if (
+                        expected_admission.get("work_authorized") is not False
+                        or not any(
+                            item.get("recovery_purpose_id") == action.inputs.get("recovery_purpose_id")
+                            and item.get("recovery_purpose_digest") == action.inputs.get("recovery_purpose_digest")
+                            for item in purpose_refs
+                        )
+                        or not any(
+                            item.get("cycle_id") == replay_cycle_ref.get("cycle_id")
+                            and item.get("cycle_digest") == replay_cycle_ref.get("cycle_digest")
+                            for item in cycles
+                        )
+                        or _safe_mapping(expected_admission.get("searchos_state_ref"))
+                        != {
+                            "state_id": self.state.searchos_state.get("state_id"),
+                            "state_digest": self.state.searchos_state.get("state_digest"),
+                        }
+                    ):
+                        raise ValueError("SearchOS recovery exact replay is stale")
+                    recovery_admission = deepcopy(expected_admission)
+                else:
+                    gap_basis = build_searchos_existing_gap_basis(
+                        state=self.state.searchos_state,
+                        slot_id=str(action.inputs.get("slot_id") or ""),
+                        component_admission_projection=_safe_mapping(
+                            self.state.projections.get("multicomponent_component_admission")
+                        ),
+                        component_coverage_history=(self.state.component_coverage_history),
+                        evidence_ledger_projection=(self.state.evidence_ledger.to_projection().to_dict()),
+                    )
+                    if gap_basis.get("gap_basis_id") != action.inputs.get("gap_basis_id") or gap_basis.get(
+                        "gap_basis_digest"
+                    ) != action.inputs.get("gap_basis_digest"):
+                        raise ValueError("SearchOS recovery gap basis changed before reduction")
+                    purpose = build_searchos_materially_novel_recovery_purpose(gap_basis)
+                    if purpose.get("recovery_purpose_id") != action.inputs.get("recovery_purpose_id") or purpose.get(
+                        "recovery_purpose_digest"
+                    ) != action.inputs.get("recovery_purpose_digest"):
+                        raise ValueError("SearchOS recovery purpose changed before reduction")
+                    (
+                        self.state.searchos_state,
+                        recovery_admission,
+                    ) = admit_searchos_existing_gap_recovery_cycle(
+                        state=self.state.searchos_state,
+                        gap_basis=gap_basis,
+                        recovery_purpose=purpose,
+                    )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(recovery_admission)
+            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+        elif action.action_type is ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCE:
+            from core.searchos_existing_gap_recovery_runtime import (
+                finalize_searchos_existing_gap_recovery_cycle,
+                validate_searchos_recovery_terminal_aggregate,
+            )
+
+            expected_terminal = _safe_mapping(action.inputs.get("recovery_terminal_observation"))
+            observed_terminal = _safe_mapping(observation.payload)
+            if observed_terminal != expected_terminal:
+                raise RunKernelTransitionError("SearchOS recovery terminal observation differs from authorization")
+            try:
+                active_cycle_ref = _safe_mapping(
+                    self.state.searchos_state.get("active_existing_gap_recovery_cycle_ref")
+                )
+                if active_cycle_ref.get("cycle_id") != action.inputs.get("cycle_id") or active_cycle_ref.get(
+                    "cycle_digest"
+                ) != action.inputs.get("cycle_digest"):
+                    raise ValueError("SearchOS recovery terminal cycle changed before reduction")
+                admission_action_id = action.inputs.get("component_admission_action_id")
+                admission = next(
+                    (
+                        deepcopy(dict(item))
+                        for item in _safe_mapping(self.state.projections.get("multicomponent_component_admission")).get(
+                            "component_admission_refs"
+                        )
+                        or ()
+                        if isinstance(item, Mapping) and item.get("action_id") == admission_action_id
+                    ),
+                    {},
+                )
+                (
+                    self.state.searchos_state,
+                    recovery_terminal,
+                ) = finalize_searchos_existing_gap_recovery_cycle(
+                    state=self.state.searchos_state,
+                    cycle_ref=active_cycle_ref,
+                    component_admission_ref=admission or None,
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
+                    failure_reason=_clean_text(
+                        action.inputs.get("failure_reason"),
+                        limit=240,
+                    ),
+                )
+                validate_searchos_recovery_terminal_aggregate(recovery_terminal)
+                if (
+                    recovery_terminal.get("terminal_aggregate_id") != expected_terminal.get("terminal_aggregate_id")
+                    or recovery_terminal.get("terminal_aggregate_digest")
+                    != expected_terminal.get("terminal_aggregate_digest")
+                    or recovery_terminal.get("terminal_status") != expected_terminal.get("terminal_status")
+                    or {
+                        "state_id": self.state.searchos_state.get("state_id"),
+                        "state_digest": self.state.searchos_state.get("state_digest"),
+                    }
+                    != _safe_mapping(expected_terminal.get("searchos_state_ref"))
+                ):
+                    raise ValueError("SearchOS recovery terminal changed before reduction")
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(recovery_terminal)
+            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
         elif action.action_type is ActionType.SEARCHOS_NAVIGATION_SELECT:
             from core.searchos_navigation_runtime import (
                 reduce_navigation_selection_observation,
@@ -21959,25 +22308,39 @@ class RunKernel:
             )
 
             scheduler_active = bool(action.inputs.get("lease_id"))
-            if observation.status is RunStageStatus.FAILED:
-                if not scheduler_active:
-                    raise RunKernelTransitionError(
-                        "unscheduled semantic role failure cannot claim lease settlement"
-                    )
-                settlement = str(
-                    observation.payload.get("lease_settlement") or LEASE_FAILED
+            searchos_recovery_active = bool(
+                _safe_mapping(
+                    action.inputs.get("searchos_recovery_cycle_ref")
                 )
-                if settlement not in {LEASE_FAILED, LEASE_STALE}:
+            )
+            if observation.status is RunStageStatus.FAILED:
+                if not scheduler_active and not searchos_recovery_active:
                     raise RunKernelTransitionError(
-                        "semantic role failure settlement is invalid"
+                        "unscheduled semantic role failure cannot claim "
+                        "lease settlement"
                     )
-                self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = (
-                    settle_role_lease(
+                settlement = (
+                    str(
+                        observation.payload.get("lease_settlement")
+                        or LEASE_FAILED
+                    )
+                    if scheduler_active
+                    else "searchos_recovery_failed"
+                )
+                if scheduler_active:
+                    if settlement not in {LEASE_FAILED, LEASE_STALE}:
+                        raise RunKernelTransitionError(
+                            "semantic role failure settlement is invalid"
+                        )
+                    self.state.projections[
+                        MULTICOMPONENT_SCHEDULER_STAGE
+                    ] = settle_role_lease(
                         state=self.state,
                         action_inputs={
                             **dict(action.inputs),
                             "failure_kind": _clean_text(
-                                observation.payload.get("failure_kind"), limit=100
+                                observation.payload.get("failure_kind"),
+                                limit=100,
                             ),
                             "transport_submitted": observation.payload.get(
                                 "transport_submitted"
@@ -22012,10 +22375,13 @@ class RunKernel:
                         },
                         settlement=settlement,
                     )
-                )
                 self.state.projections[action.stage] = {
                     "schema_version": "multicomponent_semantic_role_failure_v1",
-                    "owner": "RunKernel.MulticomponentGraphScheduler",
+                    "owner": (
+                        "RunKernel.MulticomponentGraphScheduler"
+                        if scheduler_active
+                        else "RunKernel.SearchOSExistingGapRecovery"
+                    ),
                     "canonical_state": True,
                     "role": action.inputs.get("role"),
                     "logical_evaluation_key": action.inputs.get(
@@ -22023,6 +22389,13 @@ class RunKernel:
                     ),
                     "work_id": action.inputs.get("work_id"),
                     "lease_id": action.inputs.get("lease_id"),
+                    "searchos_recovery_cycle_ref": deepcopy(
+                        _safe_mapping(
+                            action.inputs.get(
+                                "searchos_recovery_cycle_ref"
+                            )
+                        )
+                    ),
                     "settlement": settlement,
                     "failure_kind": _clean_text(
                         observation.payload.get("failure_kind"), limit=100
@@ -22177,6 +22550,14 @@ class RunKernel:
                 )
             if (
                 component_ref.get("component_id") != action.inputs.get("component_id")
+                or component_ref.get("logical_evaluation_key")
+                != action.inputs.get("logical_evaluation_key")
+                or _safe_mapping(
+                    component_ref.get("searchos_recovery_cycle_ref")
+                )
+                != _safe_mapping(
+                    action.inputs.get("searchos_recovery_cycle_ref")
+                )
                 or _safe_mapping(component_ref.get("analyst_finding_ref")).get(
                     "artifact_digest"
                 )
@@ -22197,14 +22578,20 @@ class RunKernel:
             )
 
             component_id = str(component_ref.get("component_id") or "")
+            evaluation_key = str(
+                action.inputs.get("logical_evaluation_key")
+                or component_id
+            )
             completed_analyst = _safe_mapping(
                 self.state.projections.get(
-                    f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+                    f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:"
+                    f"{evaluation_key}"
                 )
             )
             completed_dprime = _safe_mapping(
                 self.state.projections.get(
-                    f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{component_id}"
+                    f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:"
+                    f"{evaluation_key}"
                 )
             )
             try:
@@ -22221,8 +22608,10 @@ class RunKernel:
                     "multi-component admission requires completed RunKernel role artifacts"
                 ) from exc
             if (
-                completed_analyst.get("logical_evaluation_key") != component_id
-                or completed_dprime.get("logical_evaluation_key") != component_id
+                completed_analyst.get("logical_evaluation_key")
+                != evaluation_key
+                or completed_dprime.get("logical_evaluation_key")
+                != evaluation_key
                 or role_artifact_ref(completed_analyst)
                 != _safe_mapping(component_ref.get("analyst_finding_ref"))
                 or role_artifact_ref(completed_dprime)
@@ -23808,6 +24197,18 @@ def _canonical_sufficiency_judgment_projection(
         "multicomponent_graph_consumption": judgment_projection.get(
             "multicomponent_graph_consumption",
             {},
+        ),
+        "searchos_existing_gap_recovery_terminal_consumption": (
+            judgment_projection.get(
+                "searchos_existing_gap_recovery_terminal_consumption",
+                {},
+            )
+        ),
+        "searchos_required_needs_block_consumption": (
+            judgment_projection.get(
+                "searchos_required_needs_block_consumption",
+                {},
+            )
         ),
         "final_packet_inputs": judgment_projection.get("final_packet_inputs", {}),
         "rationale": judgment_projection.get("rationale"),
