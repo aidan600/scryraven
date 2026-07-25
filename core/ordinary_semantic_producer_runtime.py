@@ -259,13 +259,18 @@ def _answer_component_from_candidate(
     component_id = _clean_token(candidate.component_id) or "component-1"
     if not component_id.startswith("component:"):
         component_id = f"component:{component_id}"
-    obligation_ids = tuple(
+    query_shape_obligation_ids = tuple(
         obligation_id
         for obligation_id in (
             _clean_token(item) for item in candidate.source_obligation_candidate_ids
         )
         if obligation_id
     )
+    # Query-shape classification can expose several overlapping obligation
+    # candidates for one user-facing fact (for example, an official current
+    # numeric value). A direct answer component owns one exact source need;
+    # the QMR retains the complete query-shape candidate set separately.
+    obligation_ids = query_shape_obligation_ids[:1]
     source_obligation_label = _direct_source_obligation_label(obligation_ids)
     return AnswerComponentContract(
         component_id=component_id,
@@ -283,7 +288,16 @@ def _answer_component_from_candidate(
         mandatory_caveats=("Answer remains evidence-bound.",),
         prohibited_upgrades=(f"Do not replace {source_obligation_label} evidence with an estimate.",),
         materiality=Materiality.MATERIAL,
-        metadata={"phase": "AG-SEM-11", "deterministic_runtime": True},
+        metadata={
+            "phase": "AG-SEM-11",
+            "deterministic_runtime": True,
+            "query_shape_source_obligation_candidate_ids": list(
+                query_shape_obligation_ids
+            ),
+            "exact_source_obligation_projection": (
+                len(query_shape_obligation_ids) > 1
+            ),
+        },
     )
 
 

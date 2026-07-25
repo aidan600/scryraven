@@ -332,14 +332,10 @@ def test_one_component_read_credits_only_exact_owned_obligation(
     assert coverage_ref["source_requirement_ids"]
     assert coverage_ref["candidate_ids"]
     assert coverage_ref["owned_requirement_candidate_refs"]
-    assert readiness["all_required_slots_slice_a_ready"] is False
+    assert readiness["all_required_slots_slice_a_ready"] is True
     assert readiness["required_ready_count"] == 1
-    assert readiness["required_slot_count"] > (
-        readiness["required_ready_count"]
-    )
-    assert searchos_projection["existing_gap_recovery"][
-        "terminal_aggregate"
-    ]["terminal_status"] == "exhausted_insufficient"
+    assert readiness["required_slot_count"] == readiness["required_ready_count"]
+    assert "existing_gap_recovery" not in searchos_projection
     assert searchos_projection.get("component_receiver_failure") is None
     exact_ready_outcomes = [
         item
@@ -463,7 +459,7 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
     ]
     assert exact_readiness[
         "all_required_slots_slice_a_ready"
-    ] is False
+    ] is True
     assert exact_readiness["required_ready_count"] == 1
     assert not any(
         "transport_failure" in str(slot.get("latest_reason") or "")
@@ -815,11 +811,9 @@ def test_two_components_use_one_shared_n_component_receiver(
 
     searchos = dict(outcome.execution_trace["searchos_slice_a"])
     readiness = dict(searchos["readiness_projection"])
-    assert readiness["all_required_slots_slice_a_ready"] is False
+    assert readiness["all_required_slots_slice_a_ready"] is True
     assert readiness["required_ready_count"] == 2
-    assert readiness["required_slot_count"] > (
-        readiness["required_ready_count"]
-    )
+    assert readiness["required_slot_count"] == readiness["required_ready_count"]
     assert harness.run_kernel is not None
     admissions = dict(harness.run_kernel.state.projections["multicomponent_component_admission"])[
         "component_admission_refs"

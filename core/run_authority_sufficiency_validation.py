@@ -2843,6 +2843,22 @@ def build_deterministic_sufficiency_judgment(
             )
         elif (
             query_centered_target_count
+            and graph_ready
+            and query_targets_fulfilled
+        ):
+            final_allowed = True
+            if multicomponent_consumption.get("mandatory_caveats"):
+                decision = RunSufficiencyDecision.READY_WITH_CAVEATS
+                posture = SufficiencyPosture.ANSWER_WITH_CAVEATS
+                rationale = (
+                    "all_required_answer_targets_fulfilled_direct_with_caveats"
+                )
+            else:
+                decision = RunSufficiencyDecision.READY_DIRECT
+                posture = SufficiencyPosture.DIRECT_ANSWER
+                rationale = "all_required_answer_targets_fulfilled_direct"
+        elif (
+            query_centered_target_count
             and not query_targets_fulfilled
         ):
             decision = RunSufficiencyDecision.BLOCK_FINALIZATION
