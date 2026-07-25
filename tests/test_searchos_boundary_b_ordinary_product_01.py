@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -495,6 +496,443 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
         return super().ask_model(prompt, system_prompt, **kwargs)
 
 
+class _FastInferencePlanner:
+    def produce(self, _planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        components = []
+        obligations = []
+        requirements = []
+        strategies = []
+        for component_id in ("premise_a", "premise_b"):
+            obligation_id = f"obligation:{component_id}"
+            query_text = f"Alder direct {component_id}"
+            components.append(
+                {
+                    "component_id": component_id,
+                    "component_revision": "1",
+                    "component_purpose": "supporting_premise",
+                    "user_facing_label": f"Direct {component_id}",
+                    "user_facing_question": (
+                        f"What directly establishes {component_id}?"
+                    ),
+                    "requirement_posture": "required",
+                    "acceptance_criteria": [
+                        "Use one exact current direct source."
+                    ],
+                    "semantic_slot_ids": ["slot:alder-fast"],
+                    "source_obligation_candidate_ids": [
+                        obligation_id
+                    ],
+                    "allowed_support_kinds": ["direct"],
+                    "max_inference_depth": 0,
+                    "materiality": "material",
+                    "partial_answer_policy": "qualify_visible_gap",
+                }
+            )
+            obligations.append(
+                {
+                    "candidate_id": obligation_id,
+                    "obligation_kind": "supporting_fact",
+                    "component_candidate_ids": [component_id],
+                    "strictness": "required",
+                    "metadata": {"provider_name_neutral": True},
+                }
+            )
+            strategy = {
+                "strategy_id": f"strategy:{component_id}:primary:1",
+                "component_id": component_id,
+                "candidate_kind": "primary",
+                "candidate_query_text": query_text,
+                "requested_role": "initial",
+                "source_obligation_candidate_ids": [obligation_id],
+                "domain_constraints": {"include": [], "exclude": []},
+                "distinct_need_justification": (
+                    f"Directly establish {component_id}."
+                ),
+                "immediate_dispatch_requested": True,
+                "immediate_dispatch_distinct_need": True,
+                "recon_requirement": {
+                    "posture": "not_needed",
+                    "unresolved_dimension_ids": [],
+                    "candidate_queries": [],
+                    "required_for_truthful_targeting": False,
+                },
+                "provider_name_neutral": True,
+            }
+            strategies.append(strategy)
+            requirements.append(
+                {
+                    "component_id": component_id,
+                    "requirement_id": (
+                        f"search-requirement:{component_id}:initial"
+                    ),
+                    "requirement_summary": (
+                        f"Find direct support for {component_id}."
+                    ),
+                    "source_obligation_candidate_ids": [
+                        obligation_id
+                    ],
+                    "preferred_source_kinds": ["supporting_fact"],
+                    "metadata": {
+                        "query_strategy_candidates": [strategy],
+                        "provider_name_neutral": True,
+                    },
+                }
+            )
+        components.append(
+            {
+                "component_id": "target_E",
+                "component_revision": "1",
+                "component_purpose": "user_facing_answer_target",
+                "user_facing_label": "Fast inferred target E",
+                "user_facing_question": (
+                    "What follows jointly from premises A and B?"
+                ),
+                "requirement_posture": "required",
+                "acceptance_criteria": [
+                    "Use only the admitted bounded relationship."
+                ],
+                "semantic_slot_ids": ["slot:alder-fast"],
+                "source_obligation_candidate_ids": [],
+                "allowed_support_kinds": ["inferred"],
+                "max_inference_depth": 1,
+                "dependency_component_ids": [
+                    "premise_a",
+                    "premise_b",
+                ],
+                "materiality": "material",
+                "partial_answer_policy": "qualify_visible_gap",
+            }
+        )
+        return {
+            "question_meaning_summary": (
+                "Infer target E from direct premises A and B."
+            ),
+            "requested_output": "Return the governed Fast target E.",
+            "explicit_factual_component_list": True,
+            "requested_synthesis_directive": (
+                "Infer target_E from exact admitted premises A and B."
+            ),
+            "semantic_slots": [
+                {
+                    "slot_id": "slot:alder-fast",
+                    "slot_kind": "entity",
+                    "status": "explicit",
+                    "candidate_values": ["Alder"],
+                    "selected_value": "Alder",
+                    "materiality": "material",
+                    "user_confirmation_required": False,
+                }
+            ],
+            "answer_components": components,
+            "source_obligation_candidates": obligations,
+            "component_search_requirements": requirements,
+            "relationship_hypotheses": [
+                {
+                    "local_hypothesis_key": "target_E",
+                    "relationship_type": "bounded_conjunction",
+                    "component_inputs": ["premise_a", "premise_b"],
+                    "proposal_only": True,
+                }
+            ],
+            "material_ambiguity_posture": "none_detected",
+            "mandatory_caveats": [],
+            "prohibited_upgrades": [
+                "Do not treat the planning hypothesis as admitted inference."
+            ],
+            "normalization_obligations": [],
+            "assumptions": [],
+            "unsupported_or_deferred_outputs": [],
+            "contract_amendment_candidates": [],
+            "planner_model_metadata": {
+                "model_adapter_enabled": False,
+                "provider": "none",
+                "model": "offline-fixture",
+                "raw_prompt_retained": False,
+                "raw_model_response_retained": False,
+                "provider_payload_retained": False,
+            },
+        }
+
+
+FAST_INFERRED_RESULT = "BOUNDARY_B_FAST_INFERRED_E_RESULT_2A91"
+
+
+class FastInferenceOrdinaryHarness(OfflineOrdinaryPipelineHarness):
+    def __init__(self, tmp_path: Path) -> None:
+        super().__init__(
+            tmp_path=tmp_path,
+            query=(
+                "For the fictional Alder Fast rule, what target E follows "
+                "jointly from direct premises A and B?"
+            ),
+            core_topic="Alder Fast rule",
+            primary_entity="Alder",
+            researcher_queries=(
+                "Alder direct premise_a",
+                "Alder direct premise_b",
+            ),
+            raw_author_response=FAST_INFERRED_RESULT,
+            logger_name="test_boundary_b_fast_inference",
+        )
+
+    def deps(self):
+        return replace(
+            super().deps(),
+            search_planner_adapter=_FastInferencePlanner(),
+        )
+
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "source_id": 811,
+                "title": "Alder direct premise A",
+                "url": "https://alder.example/fast-premise-a",
+                "text": "The Alder rule directly establishes premise A.",
+                "score": 1.0,
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": "supporting_fact",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+                "query_ref": "Alder direct premise_a",
+                "_provider": "offline_fake_search",
+            },
+            {
+                "source_id": 812,
+                "title": "Alder direct premise B",
+                "url": "https://alder.example/fast-premise-b",
+                "text": "The Alder rule directly establishes premise B.",
+                "score": 1.0,
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": "supporting_fact",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+                "query_ref": "Alder direct premise_b",
+                "_provider": "offline_fake_search",
+            },
+        ]
+
+    def ask_model(
+        self,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        if system_prompt in ROLE_SYSTEM_PROMPTS.values():
+            payload = json.loads(prompt)
+            self._record_model_call(system_prompt, kwargs)
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+                component_id = str(
+                    payload["component_ref"]["component_id"]
+                )
+                return json.dumps(
+                    {
+                        "claim_text": (
+                            f"Direct {component_id} is established."
+                        ),
+                        "support_status": "supported",
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
+                return json.dumps(
+                    {
+                        "validation_status": "supported",
+                        "reasons": ["Exact direct support is current."],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[
+                ROLE_CROSS_COMPONENT_ANALYST
+            ]:
+                target = BoundaryBOrdinaryHarness._component_by_id(
+                    payload,
+                    "target_E",
+                )
+                premise_refs = sorted(
+                    [
+                        {
+                            key: node.get(key)
+                            for key in (
+                                "node_kind",
+                                "node_id",
+                                "node_revision",
+                                "node_digest",
+                                "component_id",
+                                "synthesis_key",
+                                "status",
+                                "current",
+                                "stale",
+                            )
+                        }
+                        for node in payload["component_nodes"]
+                        if node.get("component_id")
+                        in {"premise_a", "premise_b"}
+                    ],
+                    key=safe_packet_digest,
+                )
+                return json.dumps(
+                    {
+                        "synthesis_proposals": [
+                            {
+                                "synthesis_key": "target_E",
+                                "claim_text": FAST_INFERRED_RESULT,
+                                "relationship_type": "bounded_conjunction",
+                                "component_inputs": [
+                                    "premise_a",
+                                    "premise_b",
+                                ],
+                                "synthesis_inputs": [],
+                                "caveats": [],
+                                "nonclaims": [],
+                                "blockers": [],
+                            }
+                        ],
+                        "query_resolution_proposals": [
+                            {
+                                "classification": "inferred_conclusion",
+                                "local_proposal_key": "infer_fast_target_E",
+                                "local_target_key": "target_E",
+                                "answer_target_ref": target,
+                                "current_admitted_premise_node_refs": (
+                                    premise_refs
+                                ),
+                                "relationship_type": (
+                                    "bounded_conjunction"
+                                ),
+                                "proposed_conclusion": (
+                                    FAST_INFERRED_RESULT
+                                ),
+                                "support_kind": "inferred",
+                                "proposed_semantic_inference_depth": 1,
+                                "current_graph_ref": {},
+                                "existing_specialist_handoff_refs": [],
+                                "assumptions": [],
+                                "caveats": [
+                                    "The result is admitted inference."
+                                ],
+                                "prohibited_upgrades": [
+                                    "Do not state that either source directly "
+                                    "asserts target E."
+                                ],
+                            }
+                        ],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:
+                return json.dumps(
+                    {
+                        "validation_status": "supported",
+                        "reasons": [
+                            "The exact premises support the bounded inference."
+                        ],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER]:
+                return json.dumps(
+                    {
+                        "challenge_status": "passed",
+                        "reasons": [
+                            "The depth-one inference preserves exact lineage."
+                        ],
+                        "challenge_targets": [],
+                        "caveats": [],
+                        "nonclaims": [],
+                    }
+                )
+        return super().ask_model(prompt, system_prompt, **kwargs)
+
+
+def test_fast_depth_one_inference_reaches_one_author_without_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def no_legacy(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("retired derived-recovery path was invoked")
+
+    monkeypatch.setattr(runtime, "_execute_fresh_resynthesis", no_legacy)
+    harness = FastInferenceOrdinaryHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    config = replace(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-25",
+            session_id="boundary-b-fast-request",
+            run_id="boundary-b-fast-run",
+        ),
+        mode="Fast",
+    )
+    outcome = orchestrator.run_pipeline(
+        config,
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+    kernel = captured["run_kernel"]
+    graph = kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ]
+    target = next(
+        item
+        for item in captured["sufficiency_projection"][
+            "multicomponent_graph_consumption"
+        ]["answer_target_fulfillments"]
+        if item["component_id"] == "target_E"
+    )
+    assert target["fulfillment_status"] == "fulfilled_inferred"
+    assert target["selected_support_kind"] == "inferred"
+    inferred = target["inferred_fulfillment_ref"]
+    assert inferred["semantic_inference_depth"] == 1
+    assert {
+        item["component_id"]
+        for item in inferred["premise_node_refs"]
+    } == {"premise_a", "premise_b"}
+    assert not kernel.state.contract_amendment_admission_history
+    assert not kernel.state.contract_amendment_application_history
+    assert kernel.state.searchos_state.get(
+        "recovery_cycle_admission_history"
+    ) in (None, [])
+    assert kernel.state.searchos_state.get(
+        "recovery_cycle_terminal_history"
+    ) in (None, [])
+    assert not kernel.state.searchos_state.get("recovery_lease")
+    assert graph["semantic_inference_profile"]["profile_ceiling"] == 1
+    assert captured["sufficiency_projection"]["final_answer_posture"] == (
+        "sufficient_with_admitted_inference"
+    )
+    packet = captured["packet_handoff"].packet
+    assert not any(
+        dict(item).get("component_id") == "target_E"
+        for item in packet.direct_component_entries
+    )
+    assert any(
+        dict(item).get("answer_target_component_id") == "target_E"
+        and dict(item).get("support_kind") == "inferred"
+        for item in packet.admitted_synthesis_entries
+    )
+    assert len(harness.author_prompts) == 1
+    assert captured["author_handoff_called"] is True
+    assert FAST_INFERRED_RESULT in outcome.report
+
+
 def test_balanced_searched_premise_changes_ordinary_backend_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -623,3 +1061,102 @@ def test_balanced_searched_premise_changes_ordinary_backend_result(
         or "_attempt_dynamic_recovery" in str(item)
         for item in kernel.state.projections
     )
+
+    admission = deepcopy(
+        kernel.state.contract_amendment_admission_history[0]
+    )
+    application = deepcopy(
+        kernel.state.contract_amendment_application_history[0]
+    )
+    mutation_counts_before = {
+        "issued_actions": len(kernel.state.issued_actions),
+        "observations": len(kernel.state.observations),
+        "amendment_admissions": len(
+            kernel.state.contract_amendment_admission_history
+        ),
+        "amendment_applications": len(
+            kernel.state.contract_amendment_application_history
+        ),
+        "recovery_admissions": len(admissions),
+        "recovery_terminals": len(terminals),
+        "author_calls": len(harness.author_prompts),
+    }
+    graph_before_replay = deepcopy(graph)
+    searchos_before_replay = deepcopy(kernel.state.searchos_state)
+
+    replay = (
+        runtime.authorize_searched_premise_recovery_from_analyst_proposals(
+            run_kernel=kernel,
+            requested_mode="Balanced",
+        )
+    )
+    admission_replay = kernel.authorize_contract_amendment_admission(
+        amendment_record_id=str(admission["amendment_record_id"]),
+        amendment_record_digest=str(
+            admission["amendment_record_digest"]
+        ),
+        parent_contract_digest=str(
+            admission["parent_contract_digest"]
+        ),
+        parent_contract_version=str(
+            admission["parent_contract_version"]
+        ),
+    )
+    application_replay = kernel.authorize_contract_amendment_application(
+        amendment_record_id=str(application["amendment_record_id"]),
+        amendment_record_digest=str(
+            application["amendment_record_digest"]
+        ),
+        admission_digest=str(application["admission_digest"]),
+        parent_contract_digest=str(
+            application["parent_contract_digest"]
+        ),
+        parent_contract_version=str(
+            application["parent_contract_version"]
+        ),
+    )
+
+    assert replay["status"] == "exact_replay"
+    assert replay["work_authorized"] is False
+    assert replay["contract_amendment_record"]["schema_version"] == (
+        "contract_amendment_record_v2"
+    )
+    assert replay["contract_amendment_admission"] == admission
+    assert replay["contract_amendment_application"] == application
+    assert replay["new_contract_ref"]["accepted_contract_digest"] == (
+        kernel.state.current_answer_contract["accepted_contract_digest"]
+    )
+    assert replay["graph_transition_ref"]["authorization_digest"]
+    assert replay["graph_transition_ref"]["closure_ref"][
+        "closure_digest"
+    ]
+    replay_without_proposal = {
+        key: value for key, value in replay.items() if key != "proposal"
+    }
+    assert admission_replay == replay_without_proposal
+    assert application_replay == replay_without_proposal
+    assert {
+        "issued_actions": len(kernel.state.issued_actions),
+        "observations": len(kernel.state.observations),
+        "amendment_admissions": len(
+            kernel.state.contract_amendment_admission_history
+        ),
+        "amendment_applications": len(
+            kernel.state.contract_amendment_application_history
+        ),
+        "recovery_admissions": len(
+            kernel.state.searchos_state[
+                "recovery_cycle_admission_history"
+            ]
+        ),
+        "recovery_terminals": len(
+            kernel.state.searchos_state[
+                "recovery_cycle_terminal_history"
+            ]
+        ),
+        "author_calls": len(harness.author_prompts),
+    } == mutation_counts_before
+    assert kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ] == graph_before_replay
+    assert kernel.state.searchos_state == searchos_before_replay

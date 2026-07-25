@@ -15,13 +15,14 @@ from enum import Enum
 from threading import Lock
 from typing import Any, Mapping, Sequence
 
-from core.component_coverage_reduction_runtime import (
-    ledger_qualification_blockers_for_satisfied_coverage,
-)
 from core.analyst_query_resolution_proposal import (
     ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
     arbitrate_analyst_query_resolution_proposals,
     bind_analyst_query_resolution_proposal,
+    selected_proposals_for_role_artifact,
+)
+from core.component_coverage_reduction_runtime import (
+    ledger_qualification_blockers_for_satisfied_coverage,
 )
 from core.component_work_graph_v1 import (
     COMPONENT_WORK_GRAPH_V1_STAGE,
@@ -1542,29 +1543,11 @@ def _selected_query_resolution_proposals_for_artifact(
             ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
         )
     )
-    artifact_id = str(artifact.get("artifact_id") or "")
-    artifact_digest = str(artifact.get("artifact_digest") or "")
-    selected: list[dict[str, Any]] = []
-    for arbitration in registry.get("arbitrations") or ():
-        item = _safe_mapping(arbitration)
-        if item.get("mutation_permitted") is not True:
-            continue
-        proposal = _safe_mapping(item.get("selected_proposal"))
-        proposal_artifact = _safe_mapping(
-            proposal.get("role_artifact_ref")
-        )
-        if (
-            proposal_artifact.get("artifact_id") != artifact_id
-            or proposal_artifact.get("artifact_digest")
-            != artifact_digest
-            or (
-                classification is not None
-                and proposal.get("classification") != classification
-            )
-        ):
-            continue
-        selected.append(proposal)
-    return selected
+    return selected_proposals_for_role_artifact(
+        registry=registry,
+        role_artifact=artifact,
+        classification=classification,
+    )
 
 
 def authorize_searched_premise_recovery_from_analyst_proposals(
@@ -1574,11 +1557,11 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
 ) -> dict[str, Any]:
     """Atomically amend for one selected searched premise and admit its cycle."""
 
-    from core.contract_amendment_record import (
-        build_contract_amendment_v2_from_analyst_proposal,
-    )
     from core.acquisition_control import (
         build_pre_acquisition_source_obligation_ref,
+    )
+    from core.contract_amendment_record import (
+        build_contract_amendment_v2_from_analyst_proposal,
     )
     from core.run_kernel import Observation, RunStageStatus
 
@@ -1608,6 +1591,21 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
             "mechanically select among multiple searched-premise proposals"
         )
     proposal = selected[0]
+    replay = run_kernel.contract_amendment_replay_for_analyst_proposal(
+        proposal_ref={
+            key: proposal.get(key)
+            for key in (
+                "proposal_id",
+                "proposal_digest",
+                "stable_replay_key",
+            )
+        }
+    )
+    if replay:
+        return {
+            **replay,
+            "proposal": proposal,
+        }
     current_contract = _safe_mapping(
         run_kernel.state.current_answer_contract
         or run_kernel.state.initial_answer_contract
@@ -1703,17 +1701,22 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
             "requested_mode": requested_mode,
         },
     )
-    run_kernel.reduce(
-        Observation.from_action(
-            admission_action,
-            observation_type=admission_action.expected_observation_type,
-            status=RunStageStatus.COMPLETED,
-            payload={"contract_amendment_record": record_payload},
+    if isinstance(admission_action, Mapping):
+        amendment_admission = _safe_mapping(
+            admission_action.get("contract_amendment_admission")
         )
-    )
-    amendment_admission = _safe_mapping(
-        run_kernel.state.contract_amendment_admission_projection
-    )
+    else:
+        run_kernel.reduce(
+            Observation.from_action(
+                admission_action,
+                observation_type=admission_action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={"contract_amendment_record": record_payload},
+            )
+        )
+        amendment_admission = _safe_mapping(
+            run_kernel.state.contract_amendment_admission_projection
+        )
     application_action = run_kernel.authorize_contract_amendment_application(
         amendment_record_id=record.amendment_record_id,
         amendment_record_digest=record.record_digest,
@@ -1722,17 +1725,22 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         parent_contract_version=record.parent_contract_version,
         inputs={"requested_mode": requested_mode},
     )
-    run_kernel.reduce(
-        Observation.from_action(
-            application_action,
-            observation_type=application_action.expected_observation_type,
-            status=RunStageStatus.COMPLETED,
-            payload={},
+    if isinstance(application_action, Mapping):
+        amendment_application = _safe_mapping(
+            application_action.get("contract_amendment_application")
         )
-    )
-    amendment_application = _safe_mapping(
-        run_kernel.state.contract_amendment_application_projection
-    )
+    else:
+        run_kernel.reduce(
+            Observation.from_action(
+                application_action,
+                observation_type=application_action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        amendment_application = _safe_mapping(
+            run_kernel.state.contract_amendment_application_projection
+        )
     amended_contract = _safe_mapping(run_kernel.state.current_answer_contract)
     component_ref = next(
         (

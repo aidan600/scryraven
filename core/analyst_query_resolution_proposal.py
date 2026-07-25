@@ -639,6 +639,42 @@ def arbitrate_analyst_query_resolution_proposals(
     }
 
 
+def selected_proposals_for_role_artifact(
+    *,
+    registry: Mapping[str, Any],
+    role_artifact: Mapping[str, Any],
+    classification: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return arbitration winners owned by one exact Analyst artifact."""
+
+    artifact_id = str(role_artifact.get("artifact_id") or "")
+    artifact_digest = str(role_artifact.get("artifact_digest") or "")
+    selected: list[dict[str, Any]] = []
+    for arbitration in registry.get("arbitrations") or ():
+        if (
+            not isinstance(arbitration, Mapping)
+            or arbitration.get("mutation_permitted") is not True
+        ):
+            continue
+        proposal = arbitration.get("selected_proposal")
+        if not isinstance(proposal, Mapping):
+            continue
+        proposal_artifact = proposal.get("role_artifact_ref")
+        if not isinstance(proposal_artifact, Mapping):
+            continue
+        if (
+            proposal_artifact.get("artifact_id") != artifact_id
+            or proposal_artifact.get("artifact_digest") != artifact_digest
+            or (
+                classification is not None
+                and proposal.get("classification") != classification
+            )
+        ):
+            continue
+        selected.append(dict(proposal))
+    return selected
+
+
 __all__ = [
     "ALLOWED_CLASSIFICATIONS",
     "ALLOWED_ORIGINATING_ROLES",
@@ -652,5 +688,6 @@ __all__ = [
     "bind_analyst_query_resolution_proposal",
     "normalize_local_query_resolution_candidate",
     "replay_before_currentness",
+    "selected_proposals_for_role_artifact",
     "validate_bound_analyst_query_resolution_proposal",
 ]

@@ -194,25 +194,36 @@ def test_application_rejects_stale_parent_contract_digest() -> None:
         kernel.reduce(observation)
 
 
-def test_application_rejects_duplicate_application() -> None:
+def test_exact_application_replay_precedes_currentness_and_is_mutation_free() -> None:
     kernel, _accepted, record = _admit_add_component()
     _apply_admitted(kernel, record)
 
     admission = kernel.state.contract_amendment_admission_projection
-    action = kernel.authorize_contract_amendment_application(
+    application_before = list(
+        kernel.state.contract_amendment_application_history
+    )
+    current_before = dict(kernel.state.current_answer_contract)
+    observation_count = len(kernel.state.observations)
+
+    replay = kernel.authorize_contract_amendment_application(
         amendment_record_id=record.amendment_record_id,
         amendment_record_digest=record.record_digest,
         admission_digest=admission["admission_digest"],
     )
-    observation = Observation.from_action(
-        action,
-        observation_type=ObservationType.CONTRACT_AMENDMENT_APPLIED,
-        status=RunStageStatus.COMPLETED,
-        payload={},
-    )
 
-    with pytest.raises(RunKernelTransitionError, match="duplicate contract amendment application"):
-        kernel.reduce(observation)
+    assert replay["status"] == "exact_replay"
+    assert replay["work_authorized"] is False
+    assert replay["contract_amendment_application"] == application_before[0]
+    assert (
+        replay["new_contract_ref"]["accepted_contract_digest"]
+        == current_before["accepted_contract_digest"]
+    )
+    assert (
+        kernel.state.contract_amendment_application_history
+        == application_before
+    )
+    assert kernel.state.current_answer_contract == current_before
+    assert len(kernel.state.observations) == observation_count
 
 
 def test_application_rejects_merely_proposed_admission_without_explicit_authority() -> None:

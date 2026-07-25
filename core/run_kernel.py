@@ -7888,6 +7888,204 @@ class RunKernel:
         self.state.next_observation_sequence += 1
 
 
+    def _contract_amendment_replay_bundle(
+        self,
+        *,
+        amendment_record_id: str,
+        amendment_record_digest: str,
+        admission_digest: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the immutable prior amendment chain before currentness checks."""
+
+        matching_admission: dict[str, Any] = {}
+        for item in self.state.contract_amendment_admission_history:
+            candidate = _safe_mapping(item)
+            same_id = (
+                _clean_text(candidate.get("amendment_record_id"))
+                == _clean_text(amendment_record_id)
+            )
+            same_digest = (
+                _clean_text(
+                    candidate.get("amendment_record_digest"),
+                    limit=128,
+                )
+                == _clean_text(amendment_record_digest, limit=128)
+            )
+            if same_id != same_digest:
+                raise RunKernelTransitionError(
+                    "contract amendment replay identity conflict"
+                )
+            if same_id and same_digest:
+                matching_admission = candidate
+                break
+        if not matching_admission:
+            return {}
+        if admission_digest and (
+            _clean_text(
+                matching_admission.get("admission_digest"),
+                limit=128,
+            )
+            != _clean_text(admission_digest, limit=128)
+        ):
+            raise RunKernelTransitionError(
+                "contract amendment replay admission identity conflict"
+            )
+
+        matching_application: dict[str, Any] = {}
+        for item in self.state.contract_amendment_application_history:
+            candidate = _safe_mapping(item)
+            if (
+                _clean_text(candidate.get("amendment_record_id"))
+                == _clean_text(amendment_record_id)
+                and _clean_text(
+                    candidate.get("amendment_record_digest"),
+                    limit=128,
+                )
+                == _clean_text(amendment_record_digest, limit=128)
+                and _clean_text(
+                    candidate.get("admission_digest"),
+                    limit=128,
+                )
+                == _clean_text(
+                    matching_admission.get("admission_digest"),
+                    limit=128,
+                )
+            ):
+                matching_application = candidate
+                break
+
+        graph_transition_ref: dict[str, Any] = {}
+        closure_history = _safe_mapping(
+            self.state.projections.get(
+                "multicomponent_selective_recomputation_closure_history"
+            )
+        )
+        application_digest = _clean_text(
+            matching_application.get("application_digest"),
+            limit=128,
+        )
+        for item in closure_history.get("closures") or ():
+            closure = _safe_mapping(item)
+            application_ref = _safe_mapping(
+                closure.get("contract_amendment_application_ref")
+            )
+            if (
+                application_digest
+                and _clean_text(
+                    application_ref.get("application_digest"),
+                    limit=128,
+                )
+                == application_digest
+            ):
+                graph_transition_ref = {
+                    **_safe_mapping(
+                        closure.get("recovery_authorization_ref")
+                    ),
+                    "source_graph_ref": _safe_mapping(
+                        closure.get("source_graph_ref")
+                    ),
+                    "closure_ref": {
+                        "closure_id": closure.get("closure_id"),
+                        "closure_digest": closure.get("closure_digest"),
+                    },
+                }
+                break
+
+        record_projection = {
+            key: deepcopy(matching_admission.get(key))
+            for key in (
+                "amendment_record_id",
+                "amendment_record_digest",
+                "analyst_query_resolution_proposal_ref",
+                "originating_role_artifact_ref",
+                "parent_contract_version",
+                "parent_contract_digest",
+                "parent_graph_ref",
+                "target_component_refs",
+                "dependency_component_refs",
+                "operations",
+            )
+            if matching_admission.get(key) is not None
+        }
+        record_projection["schema_version"] = "contract_amendment_record_v2"
+        return {
+            "status": "exact_replay",
+            "work_authorized": False,
+            "contract_amendment_record": record_projection,
+            "contract_amendment_record_ref": {
+                "amendment_record_id": matching_admission.get(
+                    "amendment_record_id"
+                ),
+                "amendment_record_digest": matching_admission.get(
+                    "amendment_record_digest"
+                ),
+            },
+            "contract_amendment_admission": deepcopy(matching_admission),
+            "contract_amendment_application": deepcopy(
+                matching_application
+            ),
+            "new_contract_ref": deepcopy(
+                matching_application.get(
+                    "current_answer_contract_projection"
+                )
+                or {}
+            ),
+            "graph_transition_ref": graph_transition_ref,
+        }
+
+    def contract_amendment_replay_for_analyst_proposal(
+        self,
+        *,
+        proposal_ref: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve an exact applied proposal from recorded lineage only."""
+
+        requested = _safe_mapping(proposal_ref)
+        stable_replay_key = _clean_text(
+            requested.get("stable_replay_key"),
+            limit=128,
+        )
+        proposal_digest = _clean_text(
+            requested.get("proposal_digest"),
+            limit=128,
+        )
+        if not stable_replay_key or not proposal_digest:
+            return {}
+        for item in self.state.contract_amendment_admission_history:
+            admission = _safe_mapping(item)
+            recorded = _safe_mapping(
+                admission.get(
+                    "analyst_query_resolution_proposal_ref"
+                )
+            )
+            if (
+                _clean_text(
+                    recorded.get("stable_replay_key"),
+                    limit=128,
+                )
+                != stable_replay_key
+            ):
+                continue
+            if (
+                _clean_text(
+                    recorded.get("proposal_digest"),
+                    limit=128,
+                )
+                != proposal_digest
+            ):
+                raise RunKernelTransitionError(
+                    "Analyst proposal replay identity conflict"
+                )
+            return self._contract_amendment_replay_bundle(
+                amendment_record_id=str(
+                    admission.get("amendment_record_id") or ""
+                ),
+                amendment_record_digest=str(
+                    admission.get("amendment_record_digest") or ""
+                ),
+            )
+        return {}
+
     def authorize_contract_amendment_admission(
         self,
         *,
@@ -7900,7 +8098,29 @@ class RunKernel:
         request_id: str | None = None,
         reason: str = CONTRACT_AMENDMENT_ADMISSION_REASON,
         inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
+    ) -> AuthorizedAction | dict[str, Any]:
+        replay = self._contract_amendment_replay_bundle(
+            amendment_record_id=amendment_record_id,
+            amendment_record_digest=amendment_record_digest,
+        )
+        if replay:
+            recorded = _safe_mapping(
+                replay.get("contract_amendment_admission")
+            )
+            for requested, recorded_key in (
+                (parent_contract_digest, "parent_contract_digest"),
+                (parent_contract_version, "parent_contract_version"),
+                (accepted_contract_digest, "accepted_contract_digest"),
+                (accepted_contract_version, "accepted_contract_version"),
+            ):
+                if requested is not None and _clean_text(
+                    requested,
+                    limit=200,
+                ) != _clean_text(recorded.get(recorded_key), limit=200):
+                    raise RunKernelTransitionError(
+                        "contract amendment replay parent identity conflict"
+                    )
+            return replay
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
                 "contract amendment admission requires an accepted initial answer contract"
@@ -7955,7 +8175,28 @@ class RunKernel:
         request_id: str | None = None,
         reason: str = CONTRACT_AMENDMENT_APPLICATION_REASON,
         inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
+    ) -> AuthorizedAction | dict[str, Any]:
+        replay = self._contract_amendment_replay_bundle(
+            amendment_record_id=amendment_record_id,
+            amendment_record_digest=amendment_record_digest,
+            admission_digest=admission_digest,
+        )
+        if replay.get("contract_amendment_application"):
+            recorded = _safe_mapping(
+                replay.get("contract_amendment_application")
+            )
+            for requested, recorded_key in (
+                (parent_contract_digest, "parent_contract_digest"),
+                (parent_contract_version, "parent_contract_version"),
+            ):
+                if requested is not None and _clean_text(
+                    requested,
+                    limit=200,
+                ) != _clean_text(recorded.get(recorded_key), limit=200):
+                    raise RunKernelTransitionError(
+                        "contract amendment replay parent identity conflict"
+                    )
+            return replay
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
                 "contract amendment application requires an accepted "
@@ -22337,6 +22578,17 @@ class RunKernel:
                             component_node=expected_component_nodes[0],
                         )
                     else:
+                        from core.analyst_query_resolution_proposal import (
+                            ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
+                            CLASS_INFERRED_CONCLUSION,
+                            selected_proposals_for_role_artifact,
+                        )
+
+                        inference_registry = _safe_mapping(
+                            self.state.projections.get(
+                                ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
+                            )
+                        )
                         structure_graph = component_work_graph_v1_from_cross_component_artifact(
                             run_id=self.state.run_id,
                             request_id=self.state.request_id,
@@ -22356,6 +22608,15 @@ class RunKernel:
                                     self.state.multicomponent_scheduler_context
                                 ).get("requested_mode")
                                 or "Balanced"
+                            ),
+                            inferred_resolution_proposals=(
+                                selected_proposals_for_role_artifact(
+                                    registry=inference_registry,
+                                    role_artifact=current_cross_artifact,
+                                    classification=(
+                                        CLASS_INFERRED_CONCLUSION
+                                    ),
+                                )
                             ),
                             additional_scrutineer_trigger_reasons=tuple(
                                 reason

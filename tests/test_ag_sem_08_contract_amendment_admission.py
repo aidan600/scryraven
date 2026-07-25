@@ -711,11 +711,22 @@ def test_blocked_disposition_may_be_admitted_when_valid() -> None:
     assert state["blocking_reasons"] == ["Mode budget exhausted for material amendment."]
 
 
-def test_duplicate_amendment_record_id_or_digest_is_rejected() -> None:
+def test_exact_amendment_admission_replay_is_mutation_free() -> None:
     kernel, accepted, record = _start_admitted_kernel_with_coverage()
     _admit_amendment(kernel, accepted, record)
-    with pytest.raises(RunKernelTransitionError, match="already admitted"):
-        _admit_amendment(kernel, accepted, record)
+    observation_count = len(kernel.state.observations)
+    history_before = list(kernel.state.contract_amendment_admission_history)
+
+    replay = kernel.authorize_contract_amendment_admission(
+        amendment_record_id=record.amendment_record_id,
+        amendment_record_digest=record.record_digest,
+    )
+
+    assert replay["status"] == "exact_replay"
+    assert replay["work_authorized"] is False
+    assert replay["contract_amendment_admission"] == history_before[0]
+    assert kernel.state.contract_amendment_admission_history == history_before
+    assert len(kernel.state.observations) == observation_count
 
 
 def test_candidate_invalidated_coverage_refs_remain_represented_only() -> None:

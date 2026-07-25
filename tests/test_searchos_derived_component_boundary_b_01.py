@@ -464,6 +464,19 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
     assert first_slot["current_candidate_state_ref"] == {}
     assert first_slot["current_window_ref"] == {}
     assert first_slot["candidate_wave_count"] == 0
+    active_snapshot = deepcopy(first_state)
+    with pytest.raises(
+        SearchOSExistingGapRecoveryError,
+        match="one linear active recovery cycle",
+    ):
+        _admit_searched_cycle(
+            first_state,
+            lease,
+            depth=2,
+            replay_key="replay:searched:active-sibling",
+            generation_parent_ref={},
+        )
+    assert first_state == active_snapshot
 
     terminal_state, first_terminal = terminalize_searchos_recovery_cycle(
         state=first_state,
@@ -478,6 +491,9 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
         first_admission
     ]
     assert len(terminal_state["recovery_cycle_terminal_history"]) == 1
+    first_expenditure_record = deepcopy(
+        terminal_state["recovery_expenditure_history"][0]
+    )
     assert terminal_state["active_recovery_cycle_ref"] == {}
 
     replay_state, replay = _admit_searched_cycle(
@@ -524,6 +540,15 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
     assert second_terminal_state["recovery_terminal_aggregate"][
         "terminal_count"
     ] == 2
+    assert second_terminal_state["recovery_lease"] == leased[
+        "recovery_lease"
+    ]
+    assert len(second_terminal_state["recovery_lease_history"]) == 1
+    assert second_terminal_state["recovery_expenditure_history"][0] == (
+        first_expenditure_record
+    )
+    assert len(second_terminal_state["recovery_expenditure_history"]) == 2
+    before_generation_three = deepcopy(second_terminal_state)
 
     with pytest.raises(
         SearchOSExistingGapRecoveryError,
@@ -536,6 +561,7 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
             replay_key="replay:searched:3",
             generation_parent_ref={},
         )
+    assert second_terminal_state == before_generation_three
 
 
 @pytest.mark.parametrize(

@@ -3583,6 +3583,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         recovery_basis
                     )
                 )
+                current_graph_projection = dict(
+                    run_kernel.state.projections.get(
+                        "multicomponent_component_work_graph_v1"
+                    )
+                    or {}
+                )
+                current_graph_ref = {
+                    key: current_graph_projection[key]
+                    for key in (
+                        "graph_id",
+                        "graph_revision",
+                        "graph_digest",
+                        "run_id",
+                        "request_id",
+                    )
+                    if current_graph_projection.get(key) is not None
+                }
                 recovery_admission_result = (
                     run_kernel.authorize_searchos_recovery_admission(
                         stable_replay_key=str(
@@ -3612,12 +3629,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             recovery_basis.get("answer_contract_ref")
                             or {}
                         ),
-                        current_graph_ref=dict(
-                            run_kernel.state.projections.get(
-                                "multicomponent_component_work_graph_v1"
-                            )
-                            or {}
-                        ),
+                        current_graph_ref=current_graph_ref,
                         component_ref=dict(
                             recovery_basis.get("component_ref") or {}
                         ),
