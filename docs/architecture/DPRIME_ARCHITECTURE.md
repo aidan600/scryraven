@@ -5,7 +5,7 @@ Authority: canonical:dprime-role-contract
 Default-read: no
 Applies-to: component and synthesis D-prime role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, additional Specialist activation, or live validation
-Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 ## Responsibility
@@ -27,6 +27,21 @@ D-prime is an evidence-relative validation role. It reviews one nominated
 proposal against the exact evidence, component, synthesis, dependency, scope,
 currentness, source-obligation, blocker, and caveat refs bound into its input.
 It does not choose the proposal, admit the result, or render an answer.
+
+## Boundary B Relationship Validation
+
+Component D-prime validates a searched premise only as direct depth-zero
+support against its exact source obligation and custody. It does not infer the
+answer target. Synthesis D-prime separately validates a Cross-Component
+Analyst relationship proposal against exact current target, premise-node,
+ComponentCoverage, dependency, parent-graph, depth, caveat, and
+prohibited-upgrade refs.
+
+RunKernel, not D-prime, enforces the profile ceiling and admits the relationship
+into Graph V1. A supporting premise may itself be inference-supported only when
+its own contract permits that support and its relationship is independently
+admitted; this enables the installed Deep depth-two chain without laundering
+an inferred node into direct evidence. SearchOS never performs this validation.
 
 ## Current Role Split
 

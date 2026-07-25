@@ -5,7 +5,7 @@ Authority: canonical:bounded-multicomponent-runtime
 Default-read: no
 Applies-to: ordinary bounded multi-component component, synthesis, recovery, scheduling, and finalization architecture
 Does-not-authorize: arbitrary-query claims, live calls, width expansion, additional Specialist capabilities, calculator scope expansion, or roadmap execution
-Verified-against-runtime: e39ab69fcba2c34bdf0ac9adfd2f3ce39dbaad64
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to the bounded ordinary multi-component runtime
 
 ## Responsibility And Supported Boundary
@@ -29,6 +29,34 @@ ordinary-bounded-multicomponent-factual-synthesis-v1
 
 It does not imply arbitrary-query multi-component support. Nonqualifying and
 single-component requests retain the established direct ordinary lane.
+
+## Installed Query-Centered Recovery And Inference
+
+The accepted component contract distinguishes `supporting_premise` from
+`user_facing_answer_target`. Supporting premises are direct-only depth-zero
+evidence obligations. Answer targets may allow direct, inferred, or both forms
+of support. When both are valid and current, Sufficiency prefers direct.
+
+Component Analyst and Cross-Component Analyst share
+`analyst_query_resolution_proposal_v1` for `existing_component_gap`,
+`searched_premise`, and `inferred_conclusion` variants. The schema is passive;
+deterministic arbitration admits mutation only for one exact noncompeting
+winner. Scrutineer findings may be context but Scrutineer, SearchOS, scheduler
+order, list order, and RunKernel never choose a semantic alternative.
+
+Boundary A reuses the accepted component. Boundary B uses the existing
+ContractAmendment v2 family to add a direct searched premise and revise exact
+targets/dependencies, then reuses the same whole-run SearchOS lease/cycle,
+QueryPlan, custody, component Analyst/D-prime, ComponentCoverage, Graph V1,
+and affected-only resynthesis path. The deleted legacy dynamic-recovery runtime
+has no ordinary fallback or consumer.
+
+SearchOS searches only the missing premise. Cross-Component Analyst proposes
+the relationship and conclusion over exact current Graph V1 nodes, synthesis
+D-prime validates it, and RunKernel admits it. Semantic depth is capped at 1
+for Fast/Balanced and 2 for Deep; searched recovery generations are capped at
+0/1/2. Exact replay precedes currentness rejection and creates no new action,
+history, amendment, lease, cycle, graph, FAP, or Author work.
 
 ## Lane Selection
 

@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 323ed6982aa131cda0dfe7c9bded9aad68f327a1
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -447,21 +447,23 @@ Direction](../architecture/SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTI
 owns the detailed authority, internal implementation, inference, and retirement
 doctrine for the next checkpoint.
 
-Query strategy, READ/source custody, initial and in-loop SearchJudgment, semantic
-handoff, bounded one-hop breadcrumb navigation, and the required
-existing-component/source-obligation recovery foundation are installed. This
-does not claim derived-component recovery, general inference, or recursive
-navigation.
+Query strategy, READ/source custody, initial and in-loop SearchJudgment,
+semantic handoff, bounded one-hop breadcrumb navigation, Boundary A
+existing-component/source-obligation recovery, Boundary B searched-premise
+recovery, and bounded query-centered inference are installed. SearchOS searches
+premises; Analyst/synthesis D-prime/RunKernel own inference proposal,
+validation, and admission. Recursive navigation and live validation remain
+outside the installed boundary.
 
 ### NEXT CHECKPOINT
 
 ```text
-SEARCHOS-DERIVED-COMPONENT-RECOVERY-AND-AUTHORITY-CONVERGENCE-01
+SEARCHOS-OFFLINE-INTEGRATION-GATE-01
 ```
 
-The parent convergence checkpoint remains one roadmap outcome with two ordered
-internal implementation PRs, not two sibling roadmap phases. Internal PR A is
-complete; Internal PR B and the offline integration proof remain.
+The parent gap-recovery-and-stop convergence checkpoint is complete as one
+roadmap outcome with its two ordered internal implementation PRs. No third
+inference implementation PR belongs between that outcome and this gate.
 
 ### COMPLETED BUILD: Internal PR A
 
@@ -488,7 +490,7 @@ compatibility consumers, direct legacy tests, or historical helpers is not an
 Internal PR A merge gate. Those surfaces remain retirement targets and receive
 no new callers, fallback, or compatibility investment.
 
-### NEXT BUILD: Internal PR B
+### COMPLETED BUILD: Internal PR B
 
 Working name:
 
@@ -500,10 +502,10 @@ Internal PR B consumes Internal PR A. It connects Analyst-originated
 child proposals to independent ContractAmendment admission/application, exact
 parent/dependency lineage, the child's first canonical SearchOS recovery cycle,
 direct component support, graph reproof, selective resynthesis, and a changed
-final result. It also installs `Fast 0 / Balanced 1 / Deep 2` recovery
-generation depth and replaces the active Scrutineer/deterministic
-derived-component recovery authority. General nonzero inferred support remains
-closed.
+final result. It installs searched recovery-generation ceilings of `Fast 0 /
+Balanced 1 / Deep 2`, semantic inference ceilings of `Fast 1 / Balanced 1 /
+Deep 2`, and replaces the active Scrutineer/deterministic derived-component
+recovery authority. The ordinary legacy dynamic-recovery runtime is deleted.
 
 The internal PRs must not be combined, and a third implementation PR must not
 be created merely for convenience. Reverting Internal PR B must leave Internal
@@ -513,8 +515,8 @@ PR A useful and intact.
 
 ```text
 Internal PR A (complete)
--> Internal PR B (next)
--> offline SearchOS integration gate
+-> Internal PR B (complete)
+-> SEARCHOS-OFFLINE-INTEGRATION-GATE-01 (next)
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
 -> SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01
@@ -523,7 +525,6 @@ Internal PR A (complete)
 
 ### DEFERRED
 
-- general nonzero inference support;
 - comparative provider/query calibration;
 - permanent mode/provider selection;
 - live shakeout;

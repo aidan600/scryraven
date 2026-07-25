@@ -5,7 +5,7 @@ Authority: canonical:component-dag-scheduling-concurrency
 Default-read: no
 Applies-to: ComponentWorkGraph, semantic-work scheduling, leases, batches, and runtime concurrency
 Does-not-authorize: new providers, adaptive width, Local parallelism, graph-bound parallelism, or mode-budget selection
-Verified-against-runtime: 4232c4570908065adf589ec2b44be695f82fce56
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to graph, scheduler, lease, dispatch, or concurrency behavior
 
 ## Responsibility
@@ -33,11 +33,28 @@ recovery state.
 
 The installed bounds are:
 
-- 2–5 component nodes;
+- 1–5 component nodes;
 - 1–4 synthesis nodes;
 - maximum synthesis depth 2;
 - at most one missing-component recovery and graph/AnswerContract amendment;
 - no recovery beyond the five-component cap.
+
+Supporting-premise nodes and user-facing answer-target nodes have distinct
+support matrices. A supporting premise requires exact direct depth-zero
+coverage, although it may later be an exact premise for an inferred target.
+An answer target may be direct-only, inferred-only, or direct-or-inferred as
+accepted by its contract. Fast/Balanced admit semantic depth 1; Deep admits
+depth 2. Recovery generation is a separate SearchOS policy: Fast 0, Balanced 1,
+Deep 2.
+
+Boundary B graph transition authority comes only from the existing
+ContractAmendment application. Graph V1 retains identity, advances revision,
+adds the admitted searched-premise node, binds exact target/dependency changes,
+and derives an affected-only closure. Fresh Cross-Component Analyst and
+synthesis D-prime work runs only for that closure; unaffected current admitted
+synthesis is carried forward under exact RunKernel authority. Replay lookup
+precedes stale graph/current-state rejection and cannot create a second
+transition, resynthesis round, lease, or canonical reduction.
 
 An empty edge set means no edge is admitted; it does not prove semantic
 independence. Structural edges come from accepted request structure. The

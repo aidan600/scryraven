@@ -139,26 +139,34 @@ candidate READ, semantic handoff, and unresolved-slot terminal. [ScryRaven
 Current State](SCRYRAVEN_CURRENT_STATE.md) owns installed one-hop and current
 product truth.
 
-## Planned Post-Analysis Recovery Boundary
+## Installed Post-Analysis Recovery And Inference Boundary
 
-Canonical post-analysis SearchOS recovery is not installed. The approved
-direction preserves every terminal slot as immutable and represents an
-admitted recovery cycle with a new, purpose-bound slot revision linked to the
-prior terminal slot.
+Boundary A existing-component/source-obligation recovery and Boundary B
+searched-premise recovery are installed under one append-only whole-run
+SearchOS lease/cycle owner. Every terminal slot and cycle record remains
+immutable. Local reservations and budgets remain distinct from the whole-run
+lease, and histories and expenditure remain cumulative without resets.
 
-A whole-run recovery lease will be distinct from local SearchOS action
-reservations and budgets. Prior histories and expenditure remain cumulative.
 QueryPlan retains sole ownership of exact query identity, admission, and
-material query equivalence. SearchOS reports slot and cycle facts, exhaustion,
-blockers, and lawful-novel-work posture; Sufficiency decides the whole-run
-final posture. A terminal SearchOS slot or `HANDOFF_UNRESOLVED` is not by
-itself a whole-run insufficiency decision.
+material query equivalence. SearchOS searches direct premises and reports slot,
+cycle, expenditure, exhaustion, and blocker facts. It does not author,
+validate, admit, or render an inference. Component/Cross-Component Analyst,
+synthesis D-prime, RunKernel Graph V1, Sufficiency, FAP, and Author retain those
+separate responsibilities.
+
+The installed ceilings are semantic inference depth 1 for Fast and Balanced
+and 2 for Deep; searched recovery generation is 0, 1, and 2 respectively.
+Exact replay is resolved before currentness rejection and creates no new
+amendment, cycle, graph, final packet, or Author work. Sufficiency remains the
+sole whole-run final-posture owner. A terminal SearchOS slot or
+`HANDOFF_UNRESOLVED` is not by itself a whole-run insufficiency decision.
 
 The canonical
 [SearchOS post-analysis recovery and inference direction](SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md)
 owns the detailed authorization basis, internal PR boundaries, inference
-direction, and legacy-retirement sequence. This operating-model summary does
-not install the transition.
+direction, and legacy-retirement sequence. This operating-model summary records
+the installed transition; executable authority remains in the ordinary owners
+named above.
 
 ## Query And Primary-Source Strategy
 

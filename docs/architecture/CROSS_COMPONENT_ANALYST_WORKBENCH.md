@@ -1,7 +1,7 @@
 # Cross-Component Analyst Workbench
 
-Status: established V0 proposal-only doctrine and historical phase plan. The
-canonical durable architecture and current next-BUILD direction live in
+Status: established proposal-only doctrine with installed Boundary B
+consumption. The canonical durable architecture and current product boundary live in
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 
 Mode: REPAIR.
@@ -18,17 +18,37 @@ before the next Build checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
 That checkpoint and the subsequent V0 contract sequence are now merged. They
 remain bounded reusable contracts, not ordinary product consumption. Phase 1
 `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01` now installs the separate
-ordinary V1 product path; the recommended next phase is
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
+ordinary V1 product path. SearchOS Boundary B now consumes its typed
+query-resolution proposals; the next roadmap checkpoint is the offline SearchOS
+integration gate.
+
+## Installed Boundary B Consumption
+
+Cross-Component Analyst may emit the shared
+`analyst_query_resolution_proposal_v1` only from its exact current graph and
+contract input. It may propose a searched premise or an inferred conclusion,
+but it cannot admit either. Deterministic arbitration permits mutation only for
+one exact noncompeting winner and is independent of list, arrival, scheduling,
+and confidence order. Exact replay identity remains bound to the originating
+artifact and recorded parent state.
+
+For a searched-premise winner, ContractAmendment v2 and RunKernel own contract
+mutation; SearchOS retrieves direct evidence for the premise; component
+D-prime admits direct support; and Graph V1 schedules a fresh affected-only
+Cross-Component Analyst pass. Cross-Component Analyst then proposes the exact
+target-mapped relationship, synthesis D-prime validates it, and RunKernel
+admits it. SearchOS and Scrutineer do not author inference. The installed
+semantic ceilings are depth 1 in Fast/Balanced and depth 2 in Deep.
 
 This document defines the smallest safe next architecture step from the current
 same-component multi-source, `ComponentWorkNode`-shaped lane toward future
 multi-component reasoning.
 
-It does not implement Cross-Component Analyst Workbench, ComponentWorkGraph,
-synthesis D-prime, graph admission, scheduling, runtime parallelism, budget
-leases, FAP, Author, source display, citation rendering, live validation, or
-multi-component answering.
+The original V0 doctrine in this document did not itself implement the
+Workbench. Ordinary V1 now consumes Cross-Component Analyst, ComponentWorkGraph,
+synthesis D-prime, graph admission, scheduling, bounded recovery/inference,
+FAP, Author, and multi-component answering through their current canonical
+owners. Live validation and arbitrary-query coverage remain nonproofs.
 
 For the ordinary product target, the Workbench contract alone is not a
 producer. The product needs a real dedicated configured-SmartModel

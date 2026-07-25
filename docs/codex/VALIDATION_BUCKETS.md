@@ -180,21 +180,29 @@ pass.
 
 ## SearchOS And Legacy Recovery Routing
 
-SearchOS Slice A retires ordinary forward component-gap recovery until the
-separately licensed recovery/stopping convergence phase. Validation is split by
-current authority:
+SearchOS Boundary A existing-gap recovery and Boundary B searched-premise
+recovery/bounded inference are installed. Validation is split by current
+authority:
 
-- `semantic_search_lane` owns durable Slice A required-needs terminal and exact
-  follow-up QueryPlan sentinels plus direct, isolated legacy SearchJudgment and
-  recovery compatibility contracts.
-- Retired ordinary AG-BAL forward-product fixtures remain explicit skips. They
-  are not `author_lane` or current product proof and may be replaced only when
-  comprehensive SearchOS recovery/re-entry is licensed and installed.
-- `author_lane` contains no component-gap-recovery materialization sentinel
-  while that product path is closed.
+- `semantic_search_lane` owns SearchJudgment, QueryPlan, Boundary A/B
+  lease/cycle/generation, acquisition/custody, terminal, and replay contracts.
+- `semantic_lane` owns Analyst proposal/arbitration, ContractAmendment,
+  component-purpose/support matrix, ComponentCoverage, Graph V1 inference,
+  selective reproof/resynthesis, and Sufficiency semantic consumption.
+- `author_lane` owns inferred FinalAnswerPacket packaging, citation boundary,
+  exactly-once Author execution, and final RunOutcome projection.
+- Boundary B Fast/Balanced/Deep product/owner proofs remain `phase_focus` until
+  a separately justified manifest promotion. They are not automatically
+  `fast_pr` sentinels.
+- Retired legacy dynamic-recovery behavior tests are deleted or converted to
+  static zero-reachability guards; no ordinary legacy fallback proof belongs
+  in a durable lane.
 
-Keep additional recovery detail in `phase_focus` unless it becomes current,
-cheap durable proof with a clear owner and cost posture.
+Run the full collection guard plus `fast_pr` for the ordinary PR tax. A phase
+that changes this cross-owner path should additionally run all three durable
+lanes and focused Boundary A/B tests. Keep expensive profile-detail proofs in
+`phase_focus` unless they become cheap durable proof with a clear owner and cost
+posture.
 
 ## Required New-Test Classification
 
