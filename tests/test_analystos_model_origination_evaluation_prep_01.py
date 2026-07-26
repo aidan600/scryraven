@@ -73,7 +73,7 @@ from tests.fixtures.searchos_analystos_offline_scenarios import (
     planner_payload,
 )
 
-REPOSITORY_SHA = "0719c70982b22a65f7688f2fbda5b0be8e653f95"
+REPOSITORY_SHA = "0719c70982b22a65f7688f2fbda5b0be8e653f95"  # pragma: allowlist secret
 
 
 class FakeTransport:
