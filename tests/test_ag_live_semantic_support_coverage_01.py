@@ -18,6 +18,7 @@ from core.fetch_read_content_reference import (
 from core.run_kernel import RunKernelTransitionError
 from scripts import ag_live_semantic_support_coverage_01 as harness
 from tests.test_ag_fetch_read_content_reference_01 import _readable_material
+from tests.test_ag_search_executor_handoff_01 import _initial_only_kernel
 from tests.test_ag_search_result_candidate_packet_01 import _packet_from_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,7 +84,8 @@ def _fixture_inputs(
     bounded_text: str = SUPPORT_TEXT,
     source_survival_result: str = "source_survival_pass",
 ) -> dict[str, Any]:
-    kernel, candidate_packet = _packet_from_state(candidate_count=1)
+    _candidate_kernel, candidate_packet = _packet_from_state(candidate_count=1)
+    kernel = _initial_only_kernel()
     material = _readable_material(
         candidate_packet,
         extra={
@@ -312,12 +314,8 @@ def test_bounded_content_insufficient_returns_source_content_insufficient(
 
     packet = _reduce(tmp_path, fixture, run_kernel=fixture["kernel"])
 
-    assert packet["semantic_support_result"] == (
-        "semantic_support_fail_source_content_insufficient"
-    )
-    assert packet["first_failed_gate"] == (
-        "gate_5_evidence_relative_analysis_proposal"
-    )
+    assert packet["semantic_support_result"] == ("semantic_support_fail_source_content_insufficient")
+    assert packet["first_failed_gate"] == ("gate_5_evidence_relative_analysis_proposal")
     assert packet["semantic_observation_attempted_count"] == 0
     assert packet["component_coverage_attempted_count"] == 0
 
@@ -353,9 +351,7 @@ def test_semantic_support_packet_names_358_input_artifact_digests_accurately(
             assert _file_digest(fixture["paths"]["fetch_read_content_packet"]) not in encoded
             assert _file_digest(fixture["paths"]["sanitized_content_reference"]) not in encoded
             assert _file_digest(fixture["paths"]["evidence_ledger_projection"]) not in encoded
-    assert packet["prior_358_source_survival_packet_digest"] == _file_digest(
-        fixture["paths"]["source_survival_packet"]
-    )
+    assert packet["prior_358_source_survival_packet_digest"] == _file_digest(fixture["paths"]["source_survival_packet"])
     assert packet["prior_358_fetch_read_content_packet_digest"] == _file_digest(
         fixture["paths"]["fetch_read_content_packet"]
     )
@@ -411,9 +407,7 @@ def test_no_direct_runkernel_semantic_or_coverage_state_mutation_is_used() -> No
         ".state.component_coverage_state",
         ".state.component_coverage_projection",
     )
-    assert not any(
-        fragment in target for target in targets for fragment in forbidden_fragments
-    )
+    assert not any(fragment in target for target in targets for fragment in forbidden_fragments)
 
 
 def test_closed_surfaces_remain_closed_zero_after_pass(tmp_path: Path) -> None:
@@ -483,9 +477,7 @@ def test_cli_path_reports_first_broken_runkernel_consumer_seam(tmp_path: Path) -
 
     packet = _reduce(tmp_path, fixture, run_kernel=None)
 
-    assert packet["semantic_support_result"] == (
-        "semantic_support_fail_semantic_observation_admission"
-    )
+    assert packet["semantic_support_result"] == ("semantic_support_fail_semantic_observation_admission")
     assert packet["first_failed_gate"] == "gate_6_semantic_observation_admission"
     assert packet["semantic_observation_attempted_count"] == 1
     assert packet["semantic_observation_admitted_count"] == 0

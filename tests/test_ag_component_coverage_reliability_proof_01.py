@@ -61,6 +61,7 @@ from tests.test_ag_analyst_evidence_relative_report_01 import (
     _support_proposal,
 )
 from tests.test_ag_fetch_read_content_reference_01 import _failed_material, _readable_material
+from tests.test_ag_search_executor_handoff_01 import _initial_only_kernel
 from tests.test_ag_search_result_candidate_packet_01 import _packet_from_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,7 +87,8 @@ RUN_ID_FRAGMENT = "ag-search-planner-revision-01"
 
 
 def _chain_fixture() -> dict[str, Any]:
-    kernel, candidate_packet = _packet_from_state(candidate_count=2)
+    _candidate_kernel, candidate_packet = _packet_from_state(candidate_count=2)
+    kernel = _initial_only_kernel()
     materials = [
         _readable_material(candidate_packet, index=0),
         _failed_material(candidate_packet, index=1),
@@ -166,9 +168,7 @@ def _semantic_content_ref_from_fetch_read(
         observed_at=fetch_read_reference.get("retrieved_or_observed_at") or "2026-06-28T00:00:00Z",
         metadata={
             "fixture_only": True,
-            "search_result_candidate_packet_digest": fetch_read_reference[
-                "search_result_candidate_packet_digest"
-            ],
+            "search_result_candidate_packet_digest": fetch_read_reference["search_result_candidate_packet_digest"],
             "fetch_read_content_packet_digest": fetch_read_reference.get("fetch_read_content_packet_digest"),
         },
     ).require_valid()
@@ -207,9 +207,7 @@ def _semantic_observation_from_content_ref(
         candidate_followup_gaps=(
             "Product bridge from Analyst possible_support_proposal to SemanticObservation admission is missing.",
         ),
-        candidate_contract_amendment_notes=(
-            "No contract mutation is created by this fixture-only observation.",
-        ),
+        candidate_contract_amendment_notes=("No contract mutation is created by this fixture-only observation.",),
         metadata={"fixture_only": True, REPORT_NAME: True},
     ).require_valid(content_references=(content_ref,))
 
@@ -391,9 +389,7 @@ def component_coverage_reliability_report(
 ) -> dict[str, Any]:
     analysis_report = chain["analysis_packet"]["analyst_report"]
     gap = next(
-        item
-        for item in analysis_report["analysis_gap_proposals"]
-        if item["gap_kind"] == "missing_readable_source"
+        item for item in analysis_report["analysis_gap_proposals"] if item["gap_kind"] == "missing_readable_source"
     )
     followup = next(
         item
@@ -791,19 +787,20 @@ def test_component_coverage_reliability_report_audits_consumed_unused_and_missin
     assert report["components_evaluated"][0]["coverage_result"] == "supported_with_caveats"
     assert report["components_evaluated"][1]["coverage_result"] == "blocked_passive_only"
     assert "accepted_observation_refs[].observation_id" in report["fields_consumed"]["component_coverage_reducer"]
-    assert "EvidenceRelativeAnalysisPacket.analyst_report.findings[].proposal_summary" in (
-        report["fields_unused_by_component_coverage"]
+    assert (
+        "EvidenceRelativeAnalysisPacket.analyst_report.findings[].proposal_summary"
+        in (report["fields_unused_by_component_coverage"])
     )
-    assert "EvidenceRelativeAnalysisPacket finding to SemanticObservation proposal/admission bridge" in (
-        report["missing_fields_or_bridges"]
+    assert (
+        "EvidenceRelativeAnalysisPacket finding to SemanticObservation proposal/admission bridge"
+        in (report["missing_fields_or_bridges"])
     )
-    assert "analysis_gap/followup proposal refs as stable ComponentCoverage blocker lineage" in (
-        report["missing_fields_or_bridges"]
+    assert (
+        "analysis_gap/followup proposal refs as stable ComponentCoverage blocker lineage"
+        in (report["missing_fields_or_bridges"])
     )
     assert "SemanticObservation admission as the next minimal bridge candidate" in report["surfaces_recommended_keep"]
-    assert "FollowupSearchIntent proposal as non-authorization" in (
-        report["surfaces_recommended_collapse_or_demote"]
-    )
+    assert "FollowupSearchIntent proposal as non-authorization" in (report["surfaces_recommended_collapse_or_demote"])
     assert report["semantic_observation_admission_bridge_recommended_next"] is True
     assert report["explicit_downstream_non_proofs"] == {
         "final_answer_packet_created": False,

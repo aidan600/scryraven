@@ -57,6 +57,9 @@ from core.specialist_graph_runtime import (
     specialist_digest,
 )
 from core.sufficiency_readiness_runtime import reduce_sufficiency_readiness
+from tests.helpers.canonical_answer_contract_fixture import (
+    apply_nonmaterial_current_contract_fixture,
+)
 from tests.test_ag_analysis_gap_followup_search_01 import (
     _contract_ref_from_projection,
 )
@@ -68,6 +71,7 @@ from tests.test_ag_component_coverage_reliability_proof_01 import (
     _reduce_coverage,
 )
 from tests.test_ag_fetch_read_content_reference_01 import _readable_material
+from tests.test_ag_search_executor_handoff_01 import _initial_only_kernel
 from tests.test_ag_search_result_candidate_packet_01 import _packet_from_state
 from tests.test_ag_semantic_observation_admission_bridge_01 import (
     _bridge,
@@ -84,7 +88,8 @@ PRIVATE_SPECIALIST_SENTINEL = "PRIVATE_HARDENED_SPECIALIST_SENTINEL"
 
 
 def _numeric_chain(*, bounded_source_text: str, safe_claim: str) -> dict[str, Any]:
-    kernel, candidate_packet = _packet_from_state(candidate_count=1)
+    _candidate_kernel, candidate_packet = _packet_from_state(candidate_count=1)
+    kernel = _initial_only_kernel()
     material = _readable_material(
         candidate_packet,
         extra={
@@ -119,6 +124,10 @@ def _numeric_chain(*, bounded_source_text: str, safe_claim: str) -> dict[str, An
     admission = _bridge(chain)
     coverage_record = _bridge_coverage_record(chain, admission)
     coverage_projection = _reduce_coverage(kernel, coverage_record)
+    apply_nonmaterial_current_contract_fixture(
+        kernel,
+        fixture_id="hardened-quantitative-authority",
+    )
     return {
         **chain,
         "semantic_admission": admission,
@@ -135,9 +144,7 @@ def _source_authority_material(
     content_ref = admission.sanitized_content_reference.to_dict()
     coverage = dict(chain["coverage_projection"])
     observation = dict(coverage["accepted_observation_refs"][0])
-    component = chain["kernel"].state.current_answer_contract[
-        "accepted_answer_component_refs"
-    ][0]
+    component = chain["kernel"].state.current_answer_contract["accepted_answer_component_refs"][0]
     metadata = dict(content_ref.get("metadata") or {})
     return {
         "source_proposition": source_proposition,
@@ -191,11 +198,7 @@ def _assert_author_fails_closed(chain: Mapping[str, Any]) -> None:
     assert kernel.state.author_prose_projection == {}
     assert kernel.state.author_prose_history == []
     assert (
-        sum(
-            action.action_type.value == "author_prose_finalize"
-            for action in kernel.state.issued_actions.values()
-        )
-        == 1
+        sum(action.action_type.value == "author_prose_finalize" for action in kernel.state.issued_actions.values()) == 1
     )
 
 
@@ -236,9 +239,7 @@ def test_hardened_direct_source_numeric_propositions_reach_author_prose(
     readiness_entry = readiness["component_readiness_map"][component_id]
     fap_entry = fap["component_packet_entries"][0]
     source_refs = readiness_entry["quantitative_source_authority_refs"]
-    rows = fap["quantitative_finalization_authority_manifest"][
-        "authorized_numeric_claims"
-    ]
+    rows = fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"]
     assert source_refs
     assert fap_entry["quantitative_source_authority_refs"] == source_refs
     assert rows
@@ -268,10 +269,7 @@ def test_hardened_direct_source_numeric_propositions_reach_author_prose(
             "readiness": readiness,
             "fap": fap,
             "author": author,
-            "issued_actions": [
-                action.to_dict()
-                for action in chain["kernel"].state.issued_actions.values()
-            ],
+            "issued_actions": [action.to_dict() for action in chain["kernel"].state.issued_actions.values()],
         },
         sort_keys=True,
     )
@@ -309,29 +307,16 @@ def test_hardened_dprime_only_arithmetic_conversion_and_same_value_laundering_fa
         bounded_source_text=source_text,
         safe_claim=safe_claim,
     )
-    materials = tuple(
-        _source_authority_material(chain, source_proposition=item)
-        for item in source_propositions
-    )
+    materials = tuple(_source_authority_material(chain, source_proposition=item) for item in source_propositions)
     readiness = reduce_sufficiency_readiness(
         run_kernel=chain["kernel"],
         quantitative_source_authority_materials=materials,
     ).readiness_projection
-    fap = reduce_hardened_final_answer_packet(
-        run_kernel=chain["kernel"]
-    ).final_answer_authority_projection
+    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"]).final_answer_authority_projection
 
     component_id = next(iter(readiness["component_readiness_map"]))
-    assert (
-        readiness["component_readiness_map"][component_id].get(
-            "quantitative_source_authority_refs", []
-        )
-        == []
-    )
-    assert (
-        fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"]
-        == []
-    )
+    assert readiness["component_readiness_map"][component_id].get("quantitative_source_authority_refs", []) == []
+    assert fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"] == []
     _assert_author_fails_closed(chain)
 
 
@@ -366,21 +351,11 @@ def test_hardened_broken_source_custody_grants_no_numeric_authority(
         run_kernel=chain["kernel"],
         quantitative_source_authority_materials=(material,),
     ).readiness_projection
-    fap = reduce_hardened_final_answer_packet(
-        run_kernel=chain["kernel"]
-    ).final_answer_authority_projection
+    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"]).final_answer_authority_projection
 
     component_id = next(iter(readiness["component_readiness_map"]))
-    assert (
-        readiness["component_readiness_map"][component_id].get(
-            "quantitative_source_authority_refs", []
-        )
-        == []
-    )
-    assert (
-        fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"]
-        == []
-    )
+    assert readiness["component_readiness_map"][component_id].get("quantitative_source_authority_refs", []) == []
+    assert fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"] == []
     _assert_author_fails_closed(chain)
 
 
@@ -391,9 +366,7 @@ def _real_component_specialist_handoff(
     consumed: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     transient = _component_transient(
-        evidence_text=(
-            f"{PRIVATE_SPECIALIST_SENTINEL}. Reported values were 10 USD and 20 USD."
-        )
+        evidence_text=(f"{PRIVATE_SPECIALIST_SENTINEL}. Reported values were 10 USD and 20 USD.")
     )
     transient["canonical_target_ref"] = {
         "target_kind": "component",
@@ -424,9 +397,7 @@ def _real_component_specialist_handoff(
         proposal=proposal,
         bounded_input_digest=specialist_digest(transient),
         bounded_input_lineage_refs=({"lineage_id": "hardened-specialist-lineage"},),
-        bounded_input_reconstruction_ref={
-            "reconstruction_id": "hardened-specialist-reconstruction"
-        },
+        bounded_input_reconstruction_ref={"reconstruction_id": "hardened-specialist-reconstruction"},
     )
     authorization_ref = {"action_id": "specialist-execution-action"}
     lease_ref = {"lease_id": "specialist-lease"}
@@ -519,9 +490,7 @@ def _align_chain_to_component_specialist(
             content_ref["component_contract_digest"] = component_digest
 
 
-def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author() -> (
-    None
-):
+def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author() -> None:
     claim = "The combined reported value is 30 USD."
     handoff, result = _real_component_specialist_handoff()
     chain = _numeric_chain(
@@ -542,28 +511,17 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
 
     component = readiness["component_readiness_map"]["component:quantitative"]
     readiness_ref = component["specialist_quantitative_authority_ref"]
-    fap_ref = fap["component_packet_entries"][0][
-        "specialist_quantitative_authority_ref"
-    ]
-    rows = fap["quantitative_finalization_authority_manifest"][
-        "authorized_numeric_claims"
-    ]
-    row = next(
-        item for item in rows if item["authority_kind"] == "specialist_derived_numeric"
-    )
+    fap_ref = fap["component_packet_entries"][0]["specialist_quantitative_authority_ref"]
+    rows = fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"]
+    row = next(item for item in rows if item["authority_kind"] == "specialist_derived_numeric")
     assert result["capability_id"] == "specialist.source_bound_calculation"
     assert result["execution_posture"] == "completed"
     assert readiness_ref == fap_ref
     assert readiness_ref["normalized_numeric_value_text"] == "30"
     assert readiness_ref["canonical_unit"] == "USD"
     assert readiness_ref["precision_posture"] == "exact_as_reported"
-    assert (
-        readiness_ref["claim_material_digest"]
-        == sha256(claim.encode("utf-8")).hexdigest()
-    )
-    assert readiness_ref["applicable_dprime_consumption_ref"]["route"] == (
-        "component_dprime"
-    )
+    assert readiness_ref["claim_material_digest"] == sha256(claim.encode("utf-8")).hexdigest()
+    assert readiness_ref["applicable_dprime_consumption_ref"]["route"] == ("component_dprime")
     assert readiness_ref["current"] is True
     assert readiness_ref["stale"] is False
     assert row["normalized_numeric_value_text"] == "30"
@@ -578,10 +536,7 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
             "readiness": readiness,
             "fap": fap,
             "author": author,
-            "actions": [
-                action.to_dict()
-                for action in chain["kernel"].state.issued_actions.values()
-            ],
+            "actions": [action.to_dict() for action in chain["kernel"].state.issued_actions.values()],
         },
         sort_keys=True,
     )
@@ -638,20 +593,10 @@ def test_broken_component_specialist_lineage_grants_no_hardened_authority(
         run_kernel=chain["kernel"],
         specialist_quantitative_authority_inputs=inputs,
     ).readiness_projection
-    fap = reduce_hardened_final_answer_packet(
-        run_kernel=chain["kernel"]
-    ).final_answer_authority_projection
+    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"]).final_answer_authority_projection
 
     component = readiness["component_readiness_map"]["component:quantitative"]
     assert component.get("specialist_quantitative_authority_ref", {}) == {}
-    assert (
-        fap["component_packet_entries"][0].get(
-            "specialist_quantitative_authority_ref", {}
-        )
-        == {}
-    )
-    assert (
-        fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"]
-        == []
-    )
+    assert fap["component_packet_entries"][0].get("specialist_quantitative_authority_ref", {}) == {}
+    assert fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"] == []
     _assert_author_fails_closed(chain)

@@ -28,12 +28,13 @@ from core.search_executor_handoff_runtime import (
     revision_ref_from_revision_state,
     scout_ref_from_scout_report_state,
 )
+from tests.helpers.canonical_answer_contract_fixture import (
+    apply_nonmaterial_current_contract_fixture,
+)
 from tests.test_ag_search_planner_revision_01 import (
     COMPONENT_ID,
     CONSUMED_HINT_IDS,
     _accept_planner_qmr,
-    _admit_revision_candidate,
-    _apply_admitted_revision_candidate,
     _kernel,
     _prepare_kernel,
     _produce_planner,
@@ -84,10 +85,21 @@ def _initial_only_kernel() -> RunKernel:
 
 
 def _current_contract_kernel() -> RunKernel:
+    kernel = _initial_only_kernel()
+    apply_nonmaterial_current_contract_fixture(
+        kernel,
+        fixture_id="ag-search-executor-handoff",
+    )
+    return kernel
+
+
+def _revision_context_current_contract_kernel() -> RunKernel:
     kernel = _prepare_kernel()
     _reduce_revision(kernel)
-    record = _admit_revision_candidate(kernel)
-    _apply_admitted_revision_candidate(kernel, record)
+    apply_nonmaterial_current_contract_fixture(
+        kernel,
+        fixture_id="ag-search-executor-revision-context",
+    )
     return kernel
 
 
@@ -178,23 +190,13 @@ def _handoff_input(
         request_id=kernel.state.request_id,
         parent_current_contract_ref=current_ref,
         parent_initial_contract_ref=initial_ref,
-        contract_parent_kind=(
-            "current_answer_contract"
-            if current_ref
-            else "initial_answer_contract_fallback"
-        ),
+        contract_parent_kind=("current_answer_contract" if current_ref else "initial_answer_contract_fallback"),
         parent_search_planner_proposal_ref=planner_ref_from_search_planner_state(
             kernel.state.search_planner_proposal_state
         ),
-        parent_search_planner_revision_ref=revision_ref_from_revision_state(
-            kernel.state.search_planner_revision_state
-        ),
+        parent_search_planner_revision_ref=revision_ref_from_revision_state(kernel.state.search_planner_revision_state),
         parent_scout_disambiguation_report_ref=(
-            scout_ref_from_scout_report_state(
-                kernel.state.scout_disambiguation_report_state
-            )
-            if direction_refs
-            else {}
+            scout_ref_from_scout_report_state(kernel.state.scout_disambiguation_report_state) if direction_refs else {}
         ),
         answer_component_refs=contract.get("accepted_answer_component_refs", []),
         source_obligation_candidate_refs=_source_refs_from_contract(contract),
@@ -294,15 +296,17 @@ def test_search_executor_handoff_prefers_current_contract_when_present() -> None
 
     state = kernel.state.search_executor_handoff_state
     assert state["contract_parent_kind"] == "current_answer_contract"
-    assert state["parent_current_contract_ref"]["contract_digest"] == (
-        kernel.state.current_answer_contract["accepted_contract_digest"]
+    assert (
+        state["parent_current_contract_ref"]["contract_digest"]
+        == (kernel.state.current_answer_contract["accepted_contract_digest"])
     )
-    assert state["parent_initial_contract_ref"]["contract_digest"] == (
-        kernel.state.initial_answer_contract["accepted_contract_digest"]
+    assert (
+        state["parent_initial_contract_ref"]["contract_digest"]
+        == (kernel.state.initial_answer_contract["accepted_contract_digest"])
     )
-    assert "Jurisdiction remains unresolved; Scout hints are not evidence." in state[
-        "required_caveats"
-    ]
+    assert state["parent_search_planner_revision_ref"] == {}
+    assert state["parent_scout_disambiguation_report_ref"] == {}
+    assert state["required_caveats"] == ["Keep ambiguity visible until resolved."]
 
 
 def test_search_executor_handoff_explicit_initial_fallback_when_no_current_contract() -> None:
@@ -313,8 +317,9 @@ def test_search_executor_handoff_explicit_initial_fallback_when_no_current_contr
     state = kernel.state.search_executor_handoff_state
     assert state["contract_parent_kind"] == "initial_answer_contract_fallback"
     assert state["parent_current_contract_ref"] == {}
-    assert state["parent_initial_contract_ref"]["contract_digest"] == (
-        kernel.state.initial_answer_contract["accepted_contract_digest"]
+    assert (
+        state["parent_initial_contract_ref"]["contract_digest"]
+        == (kernel.state.initial_answer_contract["accepted_contract_digest"])
     )
     assert state["initial_answer_contract_fallback_explicit"] is True
 
@@ -345,28 +350,22 @@ def test_search_executor_handoff_reduces_to_run_kernel_state_projection_history(
 
 def test_search_executor_handoff_binds_to_planner_revision_scout_and_contracts() -> None:
     def assert_reject(mutator, match: str) -> None:
-        kernel = _current_contract_kernel()
+        kernel = _revision_context_current_contract_kernel()
         input_ = _handoff_input(kernel)
         observation, _payload = _payload_from_input(kernel, input_, mutator)
         with pytest.raises(RunKernelTransitionError, match=match):
             kernel.reduce(observation)
 
     assert_reject(
-        lambda payload: payload["parent_current_contract_ref"].update(
-            {"contract_digest": "stale-current"}
-        ),
+        lambda payload: payload["parent_current_contract_ref"].update({"contract_digest": "stale-current"}),
         "stale parent digest",
     )
     assert_reject(
-        lambda payload: payload["parent_initial_contract_ref"].update(
-            {"contract_digest": "stale-initial"}
-        ),
+        lambda payload: payload["parent_initial_contract_ref"].update({"contract_digest": "stale-initial"}),
         "stale parent digest",
     )
     assert_reject(
-        lambda payload: payload["parent_search_planner_proposal_ref"].update(
-            {"proposal_digest": "stale-planner"}
-        ),
+        lambda payload: payload["parent_search_planner_proposal_ref"].update({"proposal_digest": "stale-planner"}),
         "stale parent planner",
     )
     assert_reject(
@@ -376,15 +375,11 @@ def test_search_executor_handoff_binds_to_planner_revision_scout_and_contracts()
         "stale parent planner",
     )
     assert_reject(
-        lambda payload: payload["parent_search_planner_revision_ref"].update(
-            {"revision_digest": "stale-revision"}
-        ),
+        lambda payload: payload["parent_search_planner_revision_ref"].update({"revision_digest": "stale-revision"}),
         "stale planner revision",
     )
     assert_reject(
-        lambda payload: payload["parent_scout_disambiguation_report_ref"].update(
-            {"report_digest": "stale-scout"}
-        ),
+        lambda payload: payload["parent_scout_disambiguation_report_ref"].update({"report_digest": "stale-scout"}),
         "stale Scout report",
     )
 
@@ -433,7 +428,7 @@ def test_search_executor_handoff_constructs_query_intents_and_search_tasks() -> 
 
 
 def test_scout_direction_refs_remain_non_evidence() -> None:
-    kernel = _current_contract_kernel()
+    kernel = _revision_context_current_contract_kernel()
     evidence_before = kernel.state.evidence_ledger.to_projection().to_dict()
     citation_before = deepcopy(kernel.state.followup_citation_eligibility_history)
 
@@ -454,16 +449,14 @@ def test_scout_direction_refs_remain_non_evidence() -> None:
 
 
 def test_search_executor_handoff_rejects_scout_direction_evidence_role() -> None:
-    kernel = _current_contract_kernel()
+    kernel = _revision_context_current_contract_kernel()
     input_ = _handoff_input(kernel)
     action = kernel.authorize_search_executor_handoff()
     payload = build_search_executor_handoff_observation_payload(
         handoff_input=input_.to_payload(),
         authorized_action_id=action.action_id,
     )
-    payload["search_executor_handoff"]["scout_direction_hint_refs"][0]["role"] = (
-        "evidence_support"
-    )
+    payload["search_executor_handoff"]["scout_direction_hint_refs"][0]["role"] = "evidence_support"
     observation = Observation.from_action(
         action,
         observation_type=ObservationType.SEARCH_EXECUTOR_HANDOFF_CREATED,

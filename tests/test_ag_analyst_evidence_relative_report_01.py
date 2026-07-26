@@ -27,6 +27,7 @@ from tests.test_ag_fetch_read_content_reference_01 import (
     _failed_material,
     _readable_material,
 )
+from tests.test_ag_search_executor_handoff_01 import _initial_only_kernel
 from tests.test_ag_search_result_candidate_packet_01 import _packet_from_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,9 +36,7 @@ DOCS = (
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
     ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
 )
-LEGACY_AUDIT_DOC = (
-    ROOT / "docs" / "architecture" / "AG_ANALYST_EVIDENCE_RELATIVE_REPORT_01.md"
-)
+LEGACY_AUDIT_DOC = ROOT / "docs" / "architecture" / "AG_ANALYST_EVIDENCE_RELATIVE_REPORT_01.md"
 
 FALSE_FLAGS = {
     "semantic_observation_admitted": False,
@@ -66,15 +65,10 @@ def _analysis_fixture(
     failed_count: int = 1,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     candidate_count = readable_count + failed_count
-    kernel, candidate_packet = _packet_from_state(candidate_count=candidate_count)
-    materials = [
-        _readable_material(candidate_packet, index=index)
-        for index in range(readable_count)
-    ]
-    materials.extend(
-        _failed_material(candidate_packet, index=readable_count + index)
-        for index in range(failed_count)
-    )
+    _candidate_kernel, candidate_packet = _packet_from_state(candidate_count=candidate_count)
+    kernel = _initial_only_kernel()
+    materials = [_readable_material(candidate_packet, index=index) for index in range(readable_count)]
+    materials.extend(_failed_material(candidate_packet, index=readable_count + index) for index in range(failed_count))
     fetch_read_packet = build_fetch_read_content_packet_from_candidate_packet(
         candidate_packet,
         materials,
@@ -87,9 +81,7 @@ def _analysis_fixture(
 
 
 def _custody_records(projection: Mapping[str, Any]) -> list[dict[str, Any]]:
-    records = projection["fetch_read_candidate_custody"][
-        "fetch_read_candidate_custody_records"
-    ]
+    records = projection["fetch_read_candidate_custody"]["fetch_read_candidate_custody_records"]
     return [dict(record) for record in records]
 
 
@@ -97,11 +89,7 @@ def _records_by_status(
     projection: Mapping[str, Any],
     status: str,
 ) -> list[dict[str, Any]]:
-    return [
-        record
-        for record in _custody_records(projection)
-        if record["fetch_read_status"] == status
-    ]
+    return [record for record in _custody_records(projection) if record["fetch_read_status"] == status]
 
 
 def _support_proposal(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -111,12 +99,8 @@ def _support_proposal(record: Mapping[str, Any]) -> dict[str, Any]:
         "reference_digest": record["reference_digest"],
         "candidate_id": record["candidate_id"],
         "candidate_digest": record["candidate_digest"],
-        "fetch_read_content_packet_digest": record[
-            "fetch_read_content_packet_digest"
-        ],
-        "search_result_candidate_packet_digest": record[
-            "search_result_candidate_packet_digest"
-        ],
+        "fetch_read_content_packet_digest": record["fetch_read_content_packet_digest"],
+        "search_result_candidate_packet_digest": record["search_result_candidate_packet_digest"],
         "component_id": record["component_id"],
         "proposal_summary": "Appears relevant to the requested component.",
         "reason": "offline analyst proposal over custody identity only",
@@ -191,26 +175,19 @@ def test_happy_path_packet_report_construction_from_evidence_ledger_custody() ->
     assert finding["proposal_kind"] == "possible_support_proposal"
     assert finding["reference_id"] == readable_records[0]["reference_id"]
     assert finding["reference_digest"] == readable_records[0]["reference_digest"]
-    assert finding["fetch_read_content_packet_id"] == (
-        readable_records[0]["fetch_read_content_packet_id"]
-    )
-    assert finding["search_result_candidate_packet_digest"] == (
-        readable_records[0]["search_result_candidate_packet_digest"]
+    assert finding["fetch_read_content_packet_id"] == (readable_records[0]["fetch_read_content_packet_id"])
+    assert (
+        finding["search_result_candidate_packet_digest"]
+        == (readable_records[0]["search_result_candidate_packet_digest"])
     )
     assert finding["candidate_url"] == readable_records[0]["candidate_url"]
     assert finding["candidate_domain"] == readable_records[0]["candidate_domain"]
     assert finding["candidate_title"] == readable_records[0]["candidate_title"]
     assert finding["excerpt_digest"] == readable_records[0]["excerpt_digest"]
-    assert finding["bounded_character_count"] == (
-        readable_records[0]["bounded_character_count"]
-    )
+    assert finding["bounded_character_count"] == (readable_records[0]["bounded_character_count"])
 
-    gaps_by_ref = {
-        gap["trigger_reference_id"]: gap for gap in report["analysis_gap_proposals"]
-    }
-    assert gaps_by_ref[failed_records[0]["reference_id"]]["gap_kind"] == (
-        "missing_readable_source"
-    )
+    gaps_by_ref = {gap["trigger_reference_id"]: gap for gap in report["analysis_gap_proposals"]}
+    assert gaps_by_ref[failed_records[0]["reference_id"]]["gap_kind"] == ("missing_readable_source")
 
 
 def test_packet_report_finding_and_gap_ids_and_digests_are_stable() -> None:
@@ -230,14 +207,13 @@ def test_packet_report_finding_and_gap_ids_and_digests_are_stable() -> None:
     assert second["packet_id"] == first["packet_id"]
     assert second["packet_digest"] == first["packet_digest"]
     assert second["analyst_report"]["report_id"] == first["analyst_report"]["report_id"]
-    assert second["analyst_report"]["report_digest"] == (
-        first["analyst_report"]["report_digest"]
+    assert second["analyst_report"]["report_digest"] == (first["analyst_report"]["report_digest"])
+    assert (
+        second["analyst_report"]["findings"][0]["finding_id"] == (first["analyst_report"]["findings"][0]["finding_id"])
     )
-    assert second["analyst_report"]["findings"][0]["finding_id"] == (
-        first["analyst_report"]["findings"][0]["finding_id"]
-    )
-    assert second["analyst_report"]["analysis_gap_proposals"][0]["gap_id"] == (
-        first["analyst_report"]["analysis_gap_proposals"][0]["gap_id"]
+    assert (
+        second["analyst_report"]["analysis_gap_proposals"][0]["gap_id"]
+        == (first["analyst_report"]["analysis_gap_proposals"][0]["gap_id"])
     )
     assert rebuilt == first
 
@@ -311,14 +287,9 @@ def test_readable_but_unanalyzed_custody_produces_analysis_missing_gap_not_suppo
     unanalyzed = readable[1]
     report = packet["analyst_report"]
 
-    assert all(
-        finding["reference_id"] != unanalyzed["reference_id"]
-        for finding in report["findings"]
-    )
+    assert all(finding["reference_id"] != unanalyzed["reference_id"] for finding in report["findings"])
     gap = next(
-        gap
-        for gap in report["analysis_gap_proposals"]
-        if gap["trigger_reference_id"] == unanalyzed["reference_id"]
+        gap for gap in report["analysis_gap_proposals"] if gap["trigger_reference_id"] == unanalyzed["reference_id"]
     )
     assert gap["gap_kind"] == "analysis_missing"
     assert gap["source_obligation_satisfied"] is False
@@ -330,15 +301,8 @@ def test_failed_or_unreadable_custody_produces_gap_not_support() -> None:
     failed = _records_by_status(projection, "failed")[0]
     report = packet["analyst_report"]
 
-    assert all(
-        finding["reference_id"] != failed["reference_id"]
-        for finding in report["findings"]
-    )
-    gap = next(
-        gap
-        for gap in report["analysis_gap_proposals"]
-        if gap["trigger_reference_id"] == failed["reference_id"]
-    )
+    assert all(finding["reference_id"] != failed["reference_id"] for finding in report["findings"])
+    gap = next(gap for gap in report["analysis_gap_proposals"] if gap["trigger_reference_id"] == failed["reference_id"])
     assert gap["gap_kind"] == "missing_readable_source"
     assert gap["fetch_read_status"] == "failed"
     assert gap["reason"] == "timeout"
@@ -461,9 +425,7 @@ def test_closed_flags_stay_false_at_packet_report_finding_and_gap_levels() -> No
 def test_no_downstream_runkernel_state_is_created() -> None:
     kernel, _fetch_read_packet, _projection, packet = _packet()
 
-    assert evidence_relative_analysis_packet_ref_from_packet(packet)["packet_id"] == (
-        packet["packet_id"]
-    )
+    assert evidence_relative_analysis_packet_ref_from_packet(packet)["packet_id"] == (packet["packet_id"])
     assert "evidence_relative_analysis_packet" not in kernel.state.projections
     assert kernel.state.component_coverage_state == {}
     assert kernel.state.sufficiency_judgment == {}

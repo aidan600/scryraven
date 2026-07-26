@@ -101,9 +101,7 @@ def _bridge_coverage_record(chain: Mapping[str, Any], result: Any):
         followup_need=FollowupNeed.OPTIONAL,
         currentness_posture=CurrentnessPosture.CURRENT,
         metadata={
-            "semantic_observation_admission_bridge": (
-                SEMANTIC_OBSERVATION_ADMISSION_BRIDGE_HELPER
-            ),
+            "semantic_observation_admission_bridge": (SEMANTIC_OBSERVATION_ADMISSION_BRIDGE_HELPER),
             "analyst_finding_id": result.analyst_finding["finding_id"],
         },
     ).require_valid()
@@ -168,8 +166,9 @@ def test_valid_support_finding_admits_semantic_observation_through_runkernel() -
     assert payload["durable_packet"] is False
     assert payload["source_analyst_finding_id"] == support["finding_id"]
     assert payload["source_analyst_finding_digest"] == support["finding_digest"]
-    assert payload["admission_action_id"] == (
-        kernel.state.semantic_observation_admission_projection["authorized_action_id"]
+    assert (
+        payload["admission_action_id"]
+        == (kernel.state.semantic_observation_admission_projection["authorized_action_id"])
     )
     assert payload["admission_status"] == "admitted"
     assert len(kernel.state.semantic_observation_admission_history) == 1
@@ -177,14 +176,17 @@ def test_valid_support_finding_admits_semantic_observation_through_runkernel() -
         kernel.state.semantic_observation_admission_projection["observation_id"]
         == result.semantic_observation.observation_id
     )
-    assert result.semantic_observation.contract_digest == (
-        kernel.state.initial_answer_contract["accepted_contract_digest"]
+    assert (
+        result.semantic_observation.contract_digest
+        == (kernel.state.initial_answer_contract["accepted_contract_digest"])
     )
-    assert payload["current_answer_contract_ref"]["contract_digest"] == (
-        kernel.state.current_answer_contract["accepted_contract_digest"]
+    assert (
+        payload["current_answer_contract_ref"]["contract_digest"]
+        == (chain["analysis_packet"]["current_answer_contract_digest"])
     )
-    assert payload["accepted_contract_ref"]["contract_digest"] == (
-        kernel.state.initial_answer_contract["accepted_contract_digest"]
+    assert (
+        payload["accepted_contract_ref"]["contract_digest"]
+        == (kernel.state.initial_answer_contract["accepted_contract_digest"])
     )
     _assert_downstream_closed(kernel)
 
@@ -234,9 +236,7 @@ def test_analyst_possible_support_alone_cannot_create_component_coverage() -> No
             answer_component_id=support["component_id"],
             component_revision="1",
             component_digest=(
-                kernel.state.initial_answer_contract["accepted_answer_component_refs"][0][
-                    "component_digest"
-                ]
+                kernel.state.initial_answer_contract["accepted_answer_component_refs"][0]["component_digest"]
             ),
         )
         assert action
@@ -342,18 +342,16 @@ def test_bridge_preserves_source_and_packet_lineage_without_satisfying_obligatio
     assert payload["candidate_digest"] == finding["candidate_digest"]
     assert payload["reference_id"] == finding["reference_id"]
     assert payload["reference_digest"] == finding["reference_digest"]
-    assert payload["fetch_read_content_packet_ref"]["packet_digest"] == (
-        finding["fetch_read_content_packet_digest"]
+    assert payload["fetch_read_content_packet_ref"]["packet_digest"] == (finding["fetch_read_content_packet_digest"])
+    assert (
+        payload["evidence_ledger_ref"]["projection_digest"]
+        == (chain["analysis_packet"]["evidence_ledger_projection_digest"])
     )
-    assert payload["evidence_ledger_ref"]["projection_digest"] == (
-        chain["analysis_packet"]["evidence_ledger_projection_digest"]
+    assert (
+        payload["fetch_read_candidate_custody_ref"]["projection_digest"]
+        == (finding["evidence_ledger_custody_projection_ref"]["projection_digest"])
     )
-    assert payload["fetch_read_candidate_custody_ref"]["projection_digest"] == (
-        finding["evidence_ledger_custody_projection_ref"]["projection_digest"]
-    )
-    assert payload["source_obligation_candidate_ids"] == [
-        "obligation:official-current"
-    ]
+    assert payload["source_obligation_candidate_ids"] == ["obligation:official-current"]
     assert payload["source_obligation_candidate_ids_are_lineage_only"] is True
     assert payload["closed_downstream_flags"]["source_obligation_satisfied"] is False
     assert payload["closed_downstream_flags"]["citation_eligible"] is False
@@ -368,12 +366,7 @@ def test_followup_search_intent_remains_proposal_only_and_gap_lineage_downstream
         item
         for item in followup_packet["analysis_gap_search_proposals"]
         if item["source_gap_id"]
-        in {
-            gap.get("gap_id")
-            for gap in chain["analysis_packet"]["analyst_report"][
-                "analysis_gap_proposals"
-            ]
-        }
+        in {gap.get("gap_id") for gap in chain["analysis_packet"]["analyst_report"]["analysis_gap_proposals"]}
     )
 
     result = _bridge(chain)
