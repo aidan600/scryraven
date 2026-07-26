@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
+Verified-against-runtime: 0719c70982b22a65f7688f2fbda5b0be8e653f95
 Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -89,6 +89,7 @@ configuration.
 | `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
 | `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, the unchanged same-component Analyst and D-prime, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
 | `SEARCHOS-BOUNDARY-B-CONVERGENCE` | Boundary B is installed through the ordinary consumer. Component Analyst or Cross-Component Analyst may emit the shared typed query-resolution proposal; deterministic arbitration selects only an exact noncompeting proposal. A searched-premise winner reuses ContractAmendment v2, the same whole-run SearchOS lease/cycle owner, QueryPlan, acquisition/custody, ComponentCoverage, Graph V1 reproof, and affected-only resynthesis. SearchOS searches the missing premise but never authors or admits inference. Target-mapped Graph V1 inference is bounded to semantic depth 1 in Fast/Balanced and 2 in Deep. Sufficiency, FAP, Author, RunOutcome, and CLI output consume only current admitted direct or inferred posture. The former ordinary dynamic-recovery runtime is deleted and has zero ordinary reachability. |
+| `SEARCHOS-ANALYSTOS-OFFLINE-GATE` | PR #521 installs the reusable seven-scenario fictional SearchOS/AnalystOS ordinary-path gate. It proves direct closure, one searched-premise recovery, depth-two reconstruction, nested recovery with fresh whole-case reconciliation, root-query retention against a distractor, honest nonclosure, exact nested semantic-role artifact custody, atomic action bookkeeping, defensive proposal custody/replay, and exact action/observation sequence closure under the installed Fast 0 / Balanced 1 / Deep 2 serial searched-generation limits. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -112,6 +113,9 @@ Cross-Component Analyst proposes synthesis or one typed query-resolution
 proposal; synthesis D-prime validates exact relationships; and RunKernel admits
 canonical graph/synthesis state. An arbitration-selected searched-premise
 proposal may trigger bounded SearchOS recovery and selective recomputation.
+Fresh current-state Cross-Component Analyst reconciliation runs whenever
+recovered or newly inferred upstream authority makes a previously blocked
+target derivable, before another recovery decision is allowed.
 The resulting admitted state
 continues through ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome,
 and CLI output, or reaches the safe blocked non-Author terminal when required.
@@ -686,9 +690,36 @@ that packet. Offline ordinary proofs cover Fast depth-one inference with no
 recovery, Balanced depth-one inference after one searched-premise cycle, and a
 Deep depth-two chain whose supporting premise is itself inference-supported.
 
-The parent gap-recovery-and-stop convergence outcome is complete. The next
-roadmap checkpoint is the offline SearchOS integration gate; it is not a third
-inference implementation PR and grants no live-call authority.
+## Installed Offline SearchOS/AnalystOS Integration Gate
+
+PR #521 installs one reusable seven-scenario fictional ordinary-product gate
+over the existing Component Analyst and Cross-Component Analyst semantic work
+plane. `AnalystOS` is a product-level name for that work plane, not another
+kernel, controller, graph, or canonical-state owner.
+
+The gate proves direct closure, one searched-premise recovery, pure depth-two
+reconstruction, nested recovery followed by fresh whole-case reconciliation,
+root-query retention against a distractor, and honest nonclosure. Recovered or
+newly inferred upstream authority that unblocks a target triggers fresh
+current-state Cross-Component Analyst reconciliation before another recovery
+decision. Nested semantic-role observation custody preserves exact artifact
+content; semantic-role action bookkeeping becomes canonical only after
+validation; proposal selection, recording, and replay use defensive custody;
+and every issued RunKernel action closes before a later observation reduces.
+
+Searched recovery remains `Fast 0 / Balanced 1 / Deep 2`, with Deep generation
+2 reachable only through exact serial lineage from generation 1. No sibling,
+branching, parallel-child, or multi-premise-per-generation recovery is
+installed. The Balanced two-late-premise scenario lawfully reaches
+`BOUNDED LIMIT` before a second amendment, query, READ, recovery cycle,
+relationship admission, inferred answer, or Author call.
+
+This deterministic gate proves that the operating system can carry valid
+model-boundary semantic proposals. It does not prove that a real SearchPlanner
+or Analyst model can reliably originate the correct decomposition.
+Real-model origination, arbitrary-query quality, provider quality, and live
+product correctness remain unproved. The present evaluation-preparation phase
+performs no real model call.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -731,14 +762,10 @@ Only fixtures whose success condition requires the retired ordinary forward
 composition remain explicitly skipped; those skips are not counted as current
 product-path proof.
 
-Separately, the ordinary bounded multi-component path still has executable
-legacy dynamic derived-component recovery. Scrutineer originates the
-missing-component proposal, deterministic machinery constructs the component
-and ContractAmendment, and a separate recovery planner drives acquisition.
-Its amendment, graph-reentry, and selective-recomputation mechanics remain
-useful, but that Scrutineer/deterministic proposal authority is scheduled for
-replacement by the Analyst-originated path. Canonical post-analysis SearchOS
-recovery remains uninstalled.
+The former ordinary legacy dynamic derived-component recovery runtime is
+deleted and has no ordinary fallback. Analyst-originated Boundary B now reuses
+the installed ContractAmendment, graph-reentry, and selective-recomputation
+owners under canonical post-analysis SearchOS recovery.
 
 `core.scout` now exposes only fixed inert import compatibility for the retained
 `core.pipeline` re-export and bounded validation composition: `run_scout`
@@ -786,8 +813,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
   custody.
 - Provider-failure cross-provider retry.
 - SearchOS recursive breadcrumb navigation, navigation depth greater than one,
-  canonical post-analysis recovery cycles, a whole-run recovery lease,
-  recovery-generation-depth policy, and final stopping convergence.
+  or sibling, branching, parallel-child, or multi-premise-per-generation
+  searched recovery.
 - DISCOVER-attached readable-source custody or support eligibility.
 - Direct current-need known-URL READ outside admitted candidate state.
 - A browser or general local scraper as an ordinary product path.
@@ -797,6 +824,9 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 ## Not Proved
 
 - No live validation was performed.
+- The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
+  or Component/Cross-Component Analyst reliably originates its required
+  semantic decomposition.
 - No acquisition-completeness repair was performed.
 - Broad arbitrary-query query-strategy quality and post-result sufficiency
   judgment remain unproved.
@@ -860,11 +890,10 @@ and this document does not license changes to that surface.
 
 Prioritization and phase selection are owned exclusively by
 [Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not
-installed-state claims. The next build is Internal PR A,
-`SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01`, inside the single
-`SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01` checkpoint. Its detailed
-boundary is owned by the
-[canonical recovery and inference direction](SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md).
+installed-state claims. The immediate acceptance slice is offline/no-live
+`ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01`, followed only under a
+separate exact addendum by the bounded live-model origination evaluation.
+Comparative provider/query calibration remains the next durable roadmap phase.
 
 ## Historical Provenance
 

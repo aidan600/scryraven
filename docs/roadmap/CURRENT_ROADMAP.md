@@ -5,7 +5,7 @@ Authority: canonical:current-roadmap
 Default-read: yes
 Applies-to: approved product and architecture sequence
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
+Verified-against-runtime: 0719c70982b22a65f7688f2fbda5b0be8e653f95
 Update-trigger: maintainer changes priority, order, or checkpoint definition
 
 ## Purpose
@@ -455,15 +455,18 @@ premises; Analyst/synthesis D-prime/RunKernel own inference proposal,
 validation, and admission. Recursive navigation and live validation remain
 outside the installed boundary.
 
-### NEXT CHECKPOINT
+### COMPLETED CHECKPOINT
 
 ```text
 SEARCHOS-OFFLINE-INTEGRATION-GATE-01
 ```
 
 The parent gap-recovery-and-stop convergence checkpoint is complete as one
-roadmap outcome with its two ordered internal implementation PRs. No third
-inference implementation PR belongs between that outcome and this gate.
+roadmap outcome with its two ordered internal implementation PRs. PR #521 then
+installed the reusable seven-scenario fictional SearchOS/AnalystOS ordinary-path
+gate. It proves that the deterministic operating system can carry valid
+model-boundary semantic proposals; it does not prove real-model origination,
+provider/query quality, arbitrary-query behavior, or live product correctness.
 
 ### COMPLETED BUILD: Internal PR A
 
@@ -511,12 +514,29 @@ The internal PRs must not be combined, and a third implementation PR must not
 be created merely for convenience. Reverting Internal PR B must leave Internal
 PR A useful and intact.
 
-### Remaining Sequence
+### Immediate Acceptance Slice
+
+```text
+ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01
+-> separately licensed bounded live-model origination evaluation
+```
+
+Preparation is offline and no-live. The later bounded live evaluation requires
+its own exact addendum and measures SearchPlanner origination and Analyst
+origination separately before combined runs. This acceptance slice preserves
+the installed `Fast 0 / Balanced 1 / Deep 2` searched-generation limits and
+does not reopen sibling, branching, parallel-child, or multi-premise recovery.
+It is an acceptance checkpoint, not a new durable architecture layer, and the
+evaluation harness is not installed model capability.
+
+### Durable Sequence After Acceptance
 
 ```text
 Internal PR A (complete)
 -> Internal PR B (complete)
--> SEARCHOS-OFFLINE-INTEGRATION-GATE-01 (next)
+-> SEARCHOS-OFFLINE-INTEGRATION-GATE-01 (complete)
+-> ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01
+-> separately licensed bounded live-model origination evaluation
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
 -> SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01
