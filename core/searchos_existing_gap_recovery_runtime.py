@@ -29,15 +29,15 @@ RECOVERY_CYCLE_SCHEMA_VERSION = "searchos_existing_gap_recovery_cycle_v1"
 RECOVERY_TERMINAL_SCHEMA_VERSION = "searchos_existing_gap_recovery_terminal_aggregate_v1"
 MAXIMUM_EXISTING_GAP_RECOVERY_CYCLES = 1
 SEARCHOS_RECOVERY_LEASE_SCHEMA_VERSION = "searchos_whole_run_recovery_lease_v2"
-SEARCHOS_RECOVERY_CYCLE_ADMISSION_SCHEMA_VERSION = (
-    "searchos_recovery_cycle_admission_v2"
-)
-SEARCHOS_RECOVERY_CYCLE_TERMINAL_SCHEMA_VERSION = (
-    "searchos_recovery_cycle_terminal_v2"
-)
-SEARCHOS_RECOVERY_TERMINAL_AGGREGATE_SCHEMA_VERSION = (
-    "searchos_recovery_terminal_aggregate_v2"
-)
+SEARCHOS_RECOVERY_CYCLE_ADMISSION_SCHEMA_VERSION = "searchos_recovery_cycle_admission_v2"
+SEARCHOS_RECOVERY_CYCLE_TERMINAL_SCHEMA_VERSION = "searchos_recovery_cycle_terminal_v2"
+SEARCHOS_RECOVERY_TERMINAL_AGGREGATE_SCHEMA_VERSION = "searchos_recovery_terminal_aggregate_v2"
+RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION = {
+    "structural_or_validation_blocker": "structural_or_validation",
+    "provider_or_acquisition_blocker": "provider_or_acquisition",
+    "lawful_recovery_exhaustion": "recovery_exhaustion",
+    "lawful_recovery_ineligible": "recovery_ineligible",
+}
 _GAP_KINDS = {
     "same_component_semantic_admission_not_supported",
     "same_component_source_obligation_not_covered",
@@ -1611,6 +1611,47 @@ def _recovery_policy(state: Mapping[str, Any]) -> dict[str, Any]:
     return policy
 
 
+def validate_searched_premise_generation_prework(
+    state: Mapping[str, Any],
+    *,
+    generation_depth: int,
+) -> dict[str, Any]:
+    """Reject an ineligible searched generation before amendment mutation."""
+
+    canonical = validate_searchos_state(state)
+    policy = _recovery_policy(canonical)
+    admissions = [_mapping(item) for item in canonical.get("recovery_cycle_admission_history") or ()]
+    searched = [item for item in admissions if item.get("recovery_classification") == "searched_premise"]
+    if _mapping(canonical.get("recovery_terminal_aggregate")).get("posture") == "settled":
+        raise SearchOSExistingGapRecoveryError(
+            "settled whole-run recovery aggregate rejects amendment mutation or work"
+        )
+    depth = int(generation_depth)
+    maximum_generation = int(policy["maximum_searched_generation"])
+    if depth > maximum_generation:
+        raise SearchOSExistingGapRecoveryError(
+            f"searched recovery generation {depth} is rejected before amendment mutation or work"
+        )
+    if depth != len(searched) + 1:
+        raise SearchOSExistingGapRecoveryError("searched recovery generations must be contiguous and linear")
+    if len(searched) >= int(policy["maximum_searched_premise_cycles_per_run"]):
+        raise SearchOSExistingGapRecoveryError(
+            "searched-premise recovery cycle budget is exhausted before amendment mutation or work"
+        )
+    if len(admissions) >= int(policy["maximum_total_cycles_per_run"]):
+        raise SearchOSExistingGapRecoveryError(
+            "whole-run SearchOS recovery cycle budget is exhausted before amendment mutation or work"
+        )
+    return {
+        "status": "eligible_before_amendment_mutation",
+        "generation_depth": depth,
+        "expected_generation_depth": len(searched) + 1,
+        "maximum_searched_generation": maximum_generation,
+        "searched_cycle_count": len(searched),
+        "total_cycle_count": len(admissions),
+    }
+
+
 def admit_searchos_recovery_cycle(
     *,
     state: Mapping[str, Any],
@@ -1802,10 +1843,8 @@ def admit_searchos_recovery_cycle(
 
     depth = int(generation_depth)
     if recovery_classification == "searched_premise":
-        if depth >= 3:
-            raise SearchOSExistingGapRecoveryError(
-                "searched recovery generation 3 is rejected before work"
-            )
+        if depth > int(policy["maximum_searched_generation"]):
+            raise SearchOSExistingGapRecoveryError(f"searched recovery generation {depth} is rejected before work")
         if depth != len(searched) + 1:
             raise SearchOSExistingGapRecoveryError(
                 "searched recovery generations must be contiguous and linear"
@@ -1844,9 +1883,9 @@ def admit_searchos_recovery_cycle(
                 "searched-premise recovery requires the exact applied amendment chain"
             )
     elif depth != 0:
-        raise SearchOSExistingGapRecoveryError(
-            "existing-component recovery generation depth must be 0"
-        )
+        raise SearchOSExistingGapRecoveryError("existing-component recovery generation depth must be 0")
+    if _mapping(canonical.get("recovery_terminal_aggregate")).get("posture") == "settled":
+        raise SearchOSExistingGapRecoveryError("settled whole-run recovery aggregate cannot admit new work")
 
     cycle_seed = {
         "run_id": canonical["run_id"],
@@ -1960,6 +1999,10 @@ def admit_searchos_recovery_cycle(
     budget["judgment_call_ceiling"] += reserved + additional
     budget["reserved_calls_remaining_by_required_slot"][slot_id] = reserved
     budget["shared_calls_remaining"] += additional
+    candidate["recovery_terminal_aggregate"] = _build_generalized_recovery_terminal_aggregate(
+        candidate,
+        lawful_selected_recovery_work_remains=True,
+    )
     return validate_searchos_state(_refresh_state(candidate)), {
         "status": "admitted",
         "work_authorized": True,
@@ -1975,6 +2018,8 @@ def terminalize_searchos_recovery_cycle(
     cycle_admission_ref: Mapping[str, Any],
     terminal_status: str,
     terminal_reason: str | None,
+    terminal_interpretation: str | None,
+    lawful_selected_recovery_work_remains: bool,
     expenditure: Mapping[str, Any],
     component_admission_ref: Mapping[str, Any] | None = None,
     component_coverage_ref: Mapping[str, Any] | None = None,
@@ -1991,9 +2036,22 @@ def terminalize_searchos_recovery_cycle(
     ]
     if prior_terminals:
         prior = prior_terminals[0]
+        normalized_terminal_reason = _clean_terminal_reason(terminal_reason)
         requested_terminal_input = {
             "terminal_status": terminal_status,
-            "terminal_reason": terminal_reason,
+            "terminal_reason": normalized_terminal_reason,
+            "terminal_interpretation": terminal_interpretation,
+            "lawful_selected_recovery_work_remains": bool(lawful_selected_recovery_work_remains),
+            "terminal_blocker": (
+                {
+                    "blocker_class": (RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION[str(terminal_interpretation)]),
+                    "interpretation": terminal_interpretation,
+                    "reason_code": normalized_terminal_reason,
+                }
+                if terminal_status != "recovered"
+                and terminal_interpretation in RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION
+                else {}
+            ),
             "expenditure": deepcopy(_mapping(expenditure)),
             "component_admission_ref": deepcopy(
                 _mapping(component_admission_ref)
@@ -2026,15 +2084,25 @@ def terminalize_searchos_recovery_cycle(
             "SearchOS recovery cycle admission is absent"
         )
     if terminal_status not in {"recovered", "exhausted_insufficient", "failed"}:
-        raise SearchOSExistingGapRecoveryError(
-            "SearchOS recovery terminal status is invalid"
-        )
-    if terminal_status != "recovered" and not _clean_terminal_reason(
-        terminal_reason
-    ):
-        raise SearchOSExistingGapRecoveryError(
-            "unsuccessful SearchOS recovery terminal requires a reason"
-        )
+        raise SearchOSExistingGapRecoveryError("SearchOS recovery terminal status is invalid")
+    if terminal_status != "recovered" and not _clean_terminal_reason(terminal_reason):
+        raise SearchOSExistingGapRecoveryError("unsuccessful SearchOS recovery terminal requires a reason")
+    if terminal_status == "recovered":
+        if terminal_interpretation is not None:
+            raise SearchOSExistingGapRecoveryError("recovered SearchOS terminal cannot carry a blocker interpretation")
+    elif terminal_interpretation not in RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION:
+        raise SearchOSExistingGapRecoveryError("unsuccessful SearchOS terminal requires a typed interpretation")
+    expected_status = (
+        "failed"
+        if terminal_interpretation
+        in {
+            "structural_or_validation_blocker",
+            "provider_or_acquisition_blocker",
+        }
+        else "exhausted_insufficient"
+    )
+    if terminal_status != "recovered" and terminal_status != expected_status:
+        raise SearchOSExistingGapRecoveryError("SearchOS terminal status and typed interpretation conflict")
     expenditure_safe = deepcopy(_mapping(expenditure))
     if any(
         not isinstance(expenditure_safe.get(key), int)
@@ -2053,6 +2121,17 @@ def terminalize_searchos_recovery_cycle(
     terminal_input = {
         "terminal_status": terminal_status,
         "terminal_reason": _clean_terminal_reason(terminal_reason),
+        "terminal_interpretation": terminal_interpretation,
+        "lawful_selected_recovery_work_remains": bool(lawful_selected_recovery_work_remains),
+        "terminal_blocker": (
+            {
+                "blocker_class": (RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION[str(terminal_interpretation)]),
+                "interpretation": terminal_interpretation,
+                "reason_code": _clean_terminal_reason(terminal_reason),
+            }
+            if terminal_status != "recovered"
+            else {}
+        ),
         "expenditure": expenditure_safe,
         "component_admission_ref": deepcopy(
             _mapping(component_admission_ref)
@@ -2107,41 +2186,210 @@ def terminalize_searchos_recovery_cycle(
             }
         )
         candidate["slots_by_id"][slot_id] = slot
+    candidate["recovery_terminal_aggregate"] = _build_generalized_recovery_terminal_aggregate(
+        candidate,
+        lawful_selected_recovery_work_remains=(lawful_selected_recovery_work_remains),
+        settled_interpretation=(
+            None
+            if lawful_selected_recovery_work_remains
+            else ("recovery_completed" if terminal_status == "recovered" else str(terminal_interpretation))
+        ),
+    )
+    return validate_searchos_state(_refresh_state(candidate)), terminal
+
+
+def _build_generalized_recovery_terminal_aggregate(
+    state: Mapping[str, Any],
+    *,
+    lawful_selected_recovery_work_remains: bool,
+    settled_interpretation: str | None = None,
+) -> dict[str, Any]:
+    """Project cumulative recovery posture under the one immutable lease."""
+
+    candidate = _mapping(state)
+    admissions = [_mapping(item) for item in candidate.get("recovery_cycle_admission_history") or ()]
+    terminals = [_mapping(item) for item in candidate.get("recovery_cycle_terminal_history") or ()]
+    active_cycle_ref = _mapping(candidate.get("active_recovery_cycle_ref"))
+    policy = _recovery_policy(candidate)
+    cumulative_expenditure = {
+        key: sum(
+            int(_mapping(_mapping(item).get("expenditure")).get(key) or 0)
+            for item in candidate.get("recovery_expenditure_history") or ()
+        )
+        for key in (
+            "logical_judgment_calls",
+            "search_queries",
+            "read_operations",
+            "navigation_operations",
+            "acquisition_operations",
+        )
+    }
+    settled = bool(not active_cycle_ref and not lawful_selected_recovery_work_remains)
+    if settled and settled_interpretation is None:
+        raise SearchOSExistingGapRecoveryError("settled recovery aggregate requires a typed interpretation")
     aggregate_core = {
         "schema_version": SEARCHOS_RECOVERY_TERMINAL_AGGREGATE_SCHEMA_VERSION,
         "owner": SEARCHOS_OWNER,
-        "run_id": canonical["run_id"],
-        "request_id": canonical["request_id"],
-        "whole_run_lease_ref": _whole_run_recovery_lease_ref(
-            candidate["recovery_lease"]
-        ),
-        "cycle_admission_refs": [
-            _recovery_cycle_admission_ref(item)
-            for item in candidate["recovery_cycle_admission_history"]
-        ],
-        "cycle_terminal_refs": [
-            _recovery_cycle_terminal_ref(item)
-            for item in candidate["recovery_cycle_terminal_history"]
-        ],
-        "active_cycle_ref": {},
-        "expenditure_history_digest": _digest(
-            candidate["recovery_expenditure_history"]
-        ),
-        "admission_count": len(
-            candidate["recovery_cycle_admission_history"]
-        ),
-        "terminal_count": len(
-            candidate["recovery_cycle_terminal_history"]
-        ),
+        "run_id": candidate["run_id"],
+        "request_id": candidate["request_id"],
+        "whole_run_lease_ref": _whole_run_recovery_lease_ref(candidate["recovery_lease"]),
+        "cycle_admission_refs": [_recovery_cycle_admission_ref(item) for item in admissions],
+        "cycle_terminal_refs": [_recovery_cycle_terminal_ref(item) for item in terminals],
+        "active_cycle_ref": active_cycle_ref,
+        "expenditure_history_digest": _digest(candidate["recovery_expenditure_history"]),
+        "cumulative_expenditure": cumulative_expenditure,
+        "mode_cycle_generation_caps": {
+            "maximum_existing_component_cycles_per_run": int(policy["maximum_existing_component_cycles_per_run"]),
+            "maximum_searched_premise_cycles_per_run": int(policy["maximum_searched_premise_cycles_per_run"]),
+            "maximum_total_cycles_per_run": int(policy["maximum_total_cycles_per_run"]),
+            "maximum_searched_generation": int(policy["maximum_searched_generation"]),
+        },
+        "admission_count": len(admissions),
+        "terminal_count": len(terminals),
+        "posture": "settled" if settled else "open",
+        "lawful_selected_recovery_work_remains": bool(lawful_selected_recovery_work_remains),
+        "settled_interpretation": (settled_interpretation if settled else None),
         "canonical_state": True,
     }
-    candidate["recovery_terminal_aggregate"] = _envelope(
+    return _envelope(
         aggregate_core,
         id_field="terminal_aggregate_id",
         digest_field="terminal_aggregate_digest",
         prefix="searchos-recovery-terminal-aggregate",
     )
-    return validate_searchos_state(_refresh_state(candidate)), terminal
+
+
+def validate_searchos_generalized_recovery_terminal_aggregate(
+    aggregate: Mapping[str, Any],
+    *,
+    state: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate the typed cumulative whole-run recovery projection."""
+
+    safe = _validate_envelope(
+        aggregate,
+        schema_version=(SEARCHOS_RECOVERY_TERMINAL_AGGREGATE_SCHEMA_VERSION),
+        id_field="terminal_aggregate_id",
+        digest_field="terminal_aggregate_digest",
+        prefix="searchos-recovery-terminal-aggregate",
+        label="generalized SearchOS recovery terminal aggregate",
+    )
+    admission_refs = [_mapping(item) for item in safe.get("cycle_admission_refs") or ()]
+    terminal_refs = [_mapping(item) for item in safe.get("cycle_terminal_refs") or ()]
+    active_ref = _mapping(safe.get("active_cycle_ref"))
+    cumulative = _mapping(safe.get("cumulative_expenditure"))
+    caps = _mapping(safe.get("mode_cycle_generation_caps"))
+    posture = safe.get("posture")
+    settled_interpretation = safe.get("settled_interpretation")
+    allowed_settled = {
+        *RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION,
+        "recovery_completed",
+    }
+    cumulative_keys = {
+        "logical_judgment_calls",
+        "search_queries",
+        "read_operations",
+        "navigation_operations",
+        "acquisition_operations",
+    }
+    cap_keys = {
+        "maximum_existing_component_cycles_per_run",
+        "maximum_searched_premise_cycles_per_run",
+        "maximum_total_cycles_per_run",
+        "maximum_searched_generation",
+    }
+    if (
+        safe.get("owner") != SEARCHOS_OWNER
+        or safe.get("canonical_state") is not True
+        or not _mapping(safe.get("whole_run_lease_ref"))
+        or int(safe.get("admission_count") or 0) != len(admission_refs)
+        or int(safe.get("terminal_count") or 0) != len(terminal_refs)
+        or len(terminal_refs) > len(admission_refs)
+        or set(cumulative) != cumulative_keys
+        or any(not isinstance(cumulative.get(key), int) or int(cumulative.get(key)) < 0 for key in cumulative_keys)
+        or set(caps) != cap_keys
+        or any(not isinstance(caps.get(key), int) or int(caps.get(key)) < 0 for key in cap_keys)
+        or (
+            posture == "open"
+            and (
+                settled_interpretation is not None
+                or (not active_ref and safe.get("lawful_selected_recovery_work_remains") is not True)
+            )
+        )
+        or (
+            posture == "settled"
+            and (
+                active_ref
+                or safe.get("lawful_selected_recovery_work_remains") is not False
+                or settled_interpretation not in allowed_settled
+            )
+        )
+        or posture not in {"open", "settled"}
+    ):
+        raise SearchOSExistingGapRecoveryError("generalized SearchOS recovery aggregate is invalid")
+    if state is not None:
+        canonical = validate_searchos_state(state)
+        policy = _recovery_policy(canonical)
+        expected_caps = {
+            key: int(policy[key])
+            for key in (
+                "maximum_existing_component_cycles_per_run",
+                "maximum_searched_premise_cycles_per_run",
+                "maximum_total_cycles_per_run",
+                "maximum_searched_generation",
+            )
+        }
+        expected_cumulative = {
+            key: sum(
+                int(_mapping(_mapping(item).get("expenditure")).get(key) or 0)
+                for item in canonical.get("recovery_expenditure_history") or ()
+            )
+            for key in cumulative
+        }
+        if (
+            _mapping(canonical.get("recovery_terminal_aggregate")) != safe
+            or safe.get("run_id") != canonical.get("run_id")
+            or safe.get("request_id") != canonical.get("request_id")
+            or admission_refs
+            != [_recovery_cycle_admission_ref(item) for item in canonical.get("recovery_cycle_admission_history") or ()]
+            or terminal_refs
+            != [_recovery_cycle_terminal_ref(item) for item in canonical.get("recovery_cycle_terminal_history") or ()]
+            or active_ref != _mapping(canonical.get("active_recovery_cycle_ref"))
+            or caps != expected_caps
+            or cumulative != expected_cumulative
+            or safe.get("expenditure_history_digest") != _digest(canonical.get("recovery_expenditure_history") or ())
+        ):
+            raise SearchOSExistingGapRecoveryError("generalized recovery aggregate is stale against SearchOS state")
+    return safe
+
+
+def settle_searchos_recovery_terminal_aggregate(
+    *,
+    state: Mapping[str, Any],
+    settled_interpretation: str,
+) -> dict[str, Any]:
+    """Settle the whole-run aggregate once no lawful selected work remains."""
+
+    if settled_interpretation not in {
+        *RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION,
+        "recovery_completed",
+    }:
+        raise SearchOSExistingGapRecoveryError("recovery aggregate settlement requires a typed interpretation")
+    canonical = validate_searchos_state(state)
+    existing = _mapping(canonical.get("recovery_terminal_aggregate"))
+    if existing.get("posture") == "settled":
+        if existing.get("settled_interpretation") != (settled_interpretation):
+            raise SearchOSExistingGapRecoveryError("settled recovery aggregate cannot be reinterpreted")
+        return canonical
+    if _mapping(canonical.get("active_recovery_cycle_ref")):
+        raise SearchOSExistingGapRecoveryError("active recovery cycle prevents whole-run settlement")
+    candidate = deepcopy(canonical)
+    candidate["recovery_terminal_aggregate"] = _build_generalized_recovery_terminal_aggregate(
+        candidate,
+        lawful_selected_recovery_work_remains=False,
+        settled_interpretation=settled_interpretation,
+    )
+    return validate_searchos_state(_refresh_state(candidate))
 
 
 def _clean_terminal_reason(value: Any) -> str | None:
@@ -2157,6 +2405,7 @@ __all__ = [
     "RECOVERY_CYCLE_SCHEMA_VERSION",
     "RECOVERY_LEASE_SCHEMA_VERSION",
     "RECOVERY_PURPOSE_SCHEMA_VERSION",
+    "RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION",
     "RECOVERY_TERMINAL_SCHEMA_VERSION",
     "SEARCHOS_RECOVERY_CYCLE_ADMISSION_SCHEMA_VERSION",
     "SEARCHOS_RECOVERY_CYCLE_TERMINAL_SCHEMA_VERSION",
@@ -2175,6 +2424,9 @@ __all__ = [
     "validate_searchos_existing_gap_basis",
     "validate_searchos_recovery_cycle",
     "validate_searchos_recovery_purpose",
+    "validate_searchos_generalized_recovery_terminal_aggregate",
     "validate_searchos_recovery_terminal_aggregate",
+    "validate_searched_premise_generation_prework",
+    "settle_searchos_recovery_terminal_aggregate",
     "terminalize_searchos_recovery_cycle",
 ]

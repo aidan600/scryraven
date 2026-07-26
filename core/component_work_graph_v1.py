@@ -3231,6 +3231,13 @@ def graph_with_synthesis_admission(
                 "semantic_inference_depth"
             ],
             "support_kind": "inferred",
+            "query_resolution_proposal_ref": proposal_ref,
+            "premise_node_ref_digests": sorted(_digest(_safe_mapping(item)) for item in relation["premise_node_refs"]),
+            "premise_component_coverage_ref_digests": sorted(
+                _digest(_safe_mapping(item)) for item in relation["premise_component_coverage_refs"]
+            ),
+            "synthesis_dprime_validation_ref": _safe_mapping(relation["synthesis_dprime_validation_ref"]),
+            "runkernel_graph_admission_action_ref": _safe_mapping(relation["runkernel_graph_admission_action_ref"]),
         }
         node["target_fulfillment_status"] = "admitted_inferred"
         current["inferred_relationship_admission_history"] = [

@@ -278,17 +278,11 @@ def execute_sufficiency_judgment_handoff_from_scope(
             "multicomponent_graph_scheduler"
         ),
         searchos_existing_gap_recovery_terminal_state=(
-            run_kernel.state.projections.get(
-                "searchos_recovery_cycle_terminal"
-            )
-            or run_kernel.state.projections.get(
-                "searchos_existing_gap_recovery_terminal"
-            )
+            run_kernel.state.searchos_state.get("recovery_terminal_aggregate")
+            or run_kernel.state.projections.get("searchos_existing_gap_recovery_terminal")
         ),
         searchos_required_needs_block_state=(
-            run_kernel.state.projections.get(
-                "searchos_required_needs_block"
-            )
+            run_kernel.state.projections.get("searchos_required_needs_block")
         ),
         searchos_state=run_kernel.state.searchos_state,
         run_id=run_kernel.state.run_id,

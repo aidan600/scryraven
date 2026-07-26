@@ -915,16 +915,16 @@ def _execute_searchos_slice_a_iterative_judgment(
                     continue
                 iteration = len(iteration_sets) + 2
                 try:
+                    query_admission = query_authority.admit_searchos_followup_query(
+                        judgment_decision=decision,
+                        iteration=iteration,
+                    )
                     query_plan_action = run_kernel.authorize_query_plan_admission(
                         inputs={
                             "authority": "SearchOSJudgment",
                             "judgment_decision_ref": _decision_ref(decision),
                             "iteration": iteration,
                         }
-                    )
-                    query_admission = query_authority.admit_searchos_followup_query(
-                        judgment_decision=decision,
-                        iteration=iteration,
                     )
                     run_kernel.reduce(
                         Observation.from_action(
@@ -937,7 +937,10 @@ def _execute_searchos_slice_a_iterative_judgment(
                 except Exception as exc:
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
-                        reason=f"followup_query_admission_rejected:{type(exc).__name__}",
+                        reason=(
+                            "followup_query_admission_rejected:"
+                            f"{type(exc).__name__}:" + " ".join(str(exc).strip().split())[:120]
+                        ),
                     )
                     continue
                 before_identities = list(discovery_result_store.identities())

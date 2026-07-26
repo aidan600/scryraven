@@ -173,6 +173,8 @@ from core.ordinary_multicomponent_synthesis_runtime import (
     execute_searchos_recovery_component_admission_from_scope,
     execute_searchos_recovery_graph_reproof_from_scope,
     ordinary_multicomponent_path_selected,
+    record_analyst_query_resolution_downstream_refs,
+    resolve_next_searched_premise_recovery_posture,
 )
 from core.persistence_side_effects import (
     execute_persistence_side_effects,
@@ -3671,23 +3673,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             ],
                         )
                     )
-                    recovery_admission = dict(
-                        run_kernel.state.projections[
-                            "searchos_recovery_cycle_admission"
-                        ]
-                    )
-            if recovery_admission is not None:
-                recovery_trace["admission_status"] = recovery_admission[
-                    "status"
-                ]
-                recovery_trace["cycle_ref"] = dict(
-                    recovery_admission["cycle_admission_ref"]
-                )
-                recovery_trace["attempted"] = (
-                    recovery_admission.get("work_authorized") is True
-                )
+                    recovery_admission = dict(run_kernel.state.projections["searchos_recovery_cycle_admission"])
+            while recovery_admission is not None:
+                recovery_trace["admission_status"] = recovery_admission["status"]
+                recovery_trace["cycle_ref"] = dict(recovery_admission["cycle_admission_ref"])
+                recovery_trace["attempted"] = recovery_admission.get("work_authorized") is True
                 recovery_component_admission: dict[str, Any] | None = None
                 recovery_failure_reason: str | None = None
+                recovery_failure_interpretation: str | None = None
+                next_recovery_posture: dict[str, Any] = {
+                    "status": "not_evaluated",
+                    "lawful_selected_recovery_work_remains": False,
+                    "proposal_ref": {},
+                }
                 if recovery_admission.get("work_authorized") is True:
                     recovery_result = (
                         execute_searchos_recovery_cycle(
@@ -3837,17 +3835,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                         "graph_status"
                                     ),
                                 }
-                            recovery_component_admission = (
-                                candidate_component_admission
-                            )
-                            recovery_trace[
-                                "recovery_component_admission"
-                            ] = reassessment
+                                record_analyst_query_resolution_downstream_refs(
+                                    run_kernel=run_kernel,
+                                    proposal_ref=dict(recovery_admission.get("proposal") or {}),
+                                    downstream_refs={
+                                        "component_admission_ref": (candidate_component_admission),
+                                        "graph_reproof_ref": dict(recovery_trace["graph_reproof_ref"]),
+                                    },
+                                )
+                                next_recovery_posture = dict(
+                                    resolve_next_searched_premise_recovery_posture(
+                                        run_kernel=run_kernel,
+                                    )
+                                )
+                                recovery_trace["next_generation_posture"] = dict(next_recovery_posture)
+                            recovery_component_admission = candidate_component_admission
+                            recovery_trace["recovery_component_admission"] = reassessment
                         except Exception as exc:
                             recovery_failure_reason = (
                                 "recovery_component_admission_failed:"
                                 + type(exc).__name__
+                                + ":"
+                                + " ".join(str(exc).strip().split())[:160]
                             )
+                            recovery_failure_interpretation = "structural_or_validation_blocker"
                     else:
                         recovery_slot = dict(
                             dict(
@@ -3861,6 +3872,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         recovery_failure_reason = str(
                             recovery_slot.get("latest_reason")
                             or "recovery_cycle_produced_no_semantic_handoff"
+                        )
+                        recovery_failure_interpretation = {
+                            "judgment_failed": ("provider_or_acquisition_blocker"),
+                            "stale_or_invalid": ("structural_or_validation_blocker"),
+                        }.get(
+                            str(recovery_slot.get("posture") or ""),
+                            "lawful_recovery_exhaustion",
                         )
                     recovery_slot = dict(
                         dict(
@@ -3878,84 +3896,40 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         )
                         in {"admitted", "admitted_with_caveats"}
                     )
-                    normalized_recovery_failure = str(
-                        recovery_failure_reason or ""
-                    ).casefold()
                     recovery_terminal_status = (
                         "recovered"
                         if recovered
                         else "failed"
-                        if (
-                            normalized_recovery_failure.startswith(
-                                "recovery_component_admission_failed:"
-                            )
-                            or any(
-                                marker in normalized_recovery_failure
-                                for marker in (
-                                    "model",
-                                    "provider",
-                                    "acquisition",
-                                    "transport",
-                                )
-                            )
-                        )
+                        if recovery_failure_interpretation
+                        in {
+                            "structural_or_validation_blocker",
+                            "provider_or_acquisition_blocker",
+                        }
                         else "exhausted_insufficient"
                     )
-                    terminal_result = (
-                        run_kernel.authorize_searchos_recovery_terminal(
-                            cycle_admission_ref=recovery_admission[
-                                "cycle_admission_ref"
-                            ],
-                            terminal_status=recovery_terminal_status,
-                            terminal_reason=(
-                                None
-                                if recovered
-                                else recovery_failure_reason
-                                or "recovery_component_not_admitted"
-                            ),
-                            expenditure={
-                                "logical_judgment_calls": int(
-                                    recovery_slot.get(
-                                        "judgment_call_count"
-                                    )
-                                    or 0
-                                ),
-                                "search_queries": int(
-                                    recovery_slot.get(
-                                        "followup_query_nomination_count"
-                                    )
-                                    or 0
-                                ),
-                                "read_operations": int(
-                                    recovery_slot.get(
-                                        "read_nomination_count"
-                                    )
-                                    or 0
-                                ),
-                                "navigation_operations": int(
-                                    recovery_slot.get(
-                                        "navigation_selection_count"
-                                    )
-                                    or 0
-                                ),
-                                "acquisition_operations": int(
-                                    recovery_slot.get(
-                                        "candidate_wave_count"
-                                    )
-                                    or 0
-                                ),
-                            },
-                            component_admission_ref=(
-                                recovery_component_admission
-                            ),
-                            component_coverage_ref=dict(
-                                (
-                                    recovery_component_admission
-                                    or {}
-                                ).get("component_coverage_ref")
-                                or {}
-                            ),
-                        )
+                    terminal_result = run_kernel.authorize_searchos_recovery_terminal(
+                        cycle_admission_ref=recovery_admission["cycle_admission_ref"],
+                        terminal_status=recovery_terminal_status,
+                        terminal_reason=(
+                            None if recovered else recovery_failure_reason or "recovery_component_not_admitted"
+                        ),
+                        terminal_interpretation=(
+                            None if recovered else recovery_failure_interpretation or "lawful_recovery_exhaustion"
+                        ),
+                        lawful_selected_recovery_work_remains=bool(
+                            next_recovery_posture.get("lawful_selected_recovery_work_remains")
+                        ),
+                        expenditure={
+                            "logical_judgment_calls": int(recovery_slot.get("judgment_call_count") or 0),
+                            "search_queries": int(recovery_slot.get("followup_query_nomination_count") or 0),
+                            "read_operations": int(recovery_slot.get("read_nomination_count") or 0),
+                            "navigation_operations": int(recovery_slot.get("navigation_selection_count") or 0),
+                            "acquisition_operations": int(recovery_slot.get("candidate_wave_count") or 0),
+                        },
+                        component_admission_ref=(recovery_component_admission),
+                        component_coverage_ref=dict(
+                            (recovery_component_admission or {}).get("component_coverage_ref") or {}
+                        ),
                     )
                     if isinstance(terminal_result, Mapping):
                         recovery_trace["terminal"] = dict(
@@ -4080,31 +4054,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             )
                         ),
                     }
-            searchos_slice_a_projection[
-                "existing_gap_recovery"
-            ] = recovery_trace
-        searchos_recovery_terminal = dict(
-            run_kernel.state.searchos_state.get(
-                "recovery_terminal_aggregate"
-            )
-            or {}
-        )
-        if (
-            not searchos_readiness_projection.get(
-                "all_required_slots_slice_a_ready"
-            )
-            and not searchos_recovery_terminal
-        ):
-            recovery_block_facts = dict(
-                searchos_slice_a_projection.get(
-                    "existing_gap_recovery"
-                )
-                or {}
-            )
-            subordinate_blocker_facts = list(
-                recovery_block_facts.get("gap_basis_rejections")
-                or ()
-            )
+                    if next_recovery_posture.get("lawful_selected_recovery_work_remains") is True:
+                        next_admission = dict(
+                            authorize_searched_premise_recovery_from_analyst_proposals(
+                                run_kernel=run_kernel,
+                                requested_mode=strategy,
+                                proposal_ref=dict(next_recovery_posture.get("proposal_ref") or {}),
+                            )
+                        )
+                        recovery_admission = next_admission if next_admission.get("work_authorized") is True else None
+                    else:
+                        recovery_admission = None
+                else:
+                    recovery_admission = None
+            searchos_slice_a_projection["existing_gap_recovery"] = recovery_trace
+        searchos_recovery_terminal = dict(run_kernel.state.searchos_state.get("recovery_terminal_aggregate") or {})
+        if not searchos_readiness_projection.get("all_required_slots_slice_a_ready") and not searchos_recovery_terminal:
+            recovery_block_facts = dict(searchos_slice_a_projection.get("existing_gap_recovery") or {})
+            subordinate_blocker_facts = list(recovery_block_facts.get("gap_basis_rejections") or ())
             represented_blocker_keys = {
                 (
                     str(dict(item or {}).get("slot_id") or ""),

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from core.analyst_query_resolution_proposal import (
     bind_analyst_query_resolution_proposal,
 )
@@ -21,6 +23,7 @@ from core.component_work_graph_v1 import (
 from core.component_work_node import (
     component_work_node_v1_from_admitted_component,
 )
+from core.final_answer_packet import FinalAnswerPacket
 from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
@@ -225,6 +228,160 @@ def _node_ref(node: dict) -> dict:
         "current": node.get("current") is True,
         "stale": node.get("stale") is True,
     }
+
+
+def _valid_fap_inferred_entry(*, carried: bool = False) -> dict:
+    premise_ref = {
+        "node_id": "node:A",
+        "status": "admitted",
+        "current": True,
+        "stale": False,
+    }
+    coverage_ref = {
+        "coverage_record_id": "coverage:A",
+        "coverage_record_digest": "coverage-digest:A",
+    }
+    proposal_ref = {
+        "proposal_id": "proposal:target_E",
+        "proposal_digest": "proposal-digest:target_E",
+        "stable_replay_key": "aqrp:target_E",
+    }
+    entry = {
+        "entry_kind": "admitted_synthesis",
+        "synthesis_key": "target_E",
+        "synthesis_depth": 1,
+        "claim_text": "Target E follows from exact premises A and B.",
+        "claim_id": "claim:target_E",
+        "claim_digest": "claim-digest:target_E",
+        "relationship_type": "bounded_conjunction",
+        "status": "admitted",
+        "current": True,
+        "stale": False,
+        "input_node_refs": [],
+        "dprime_validation_ref": {
+            "artifact_id": "synthesis-dprime:target_E",
+            "artifact_digest": "synthesis-dprime-digest:target_E",
+        },
+        "runkernel_admission_ref": {
+            "action_id": "synthesis-admission:target_E",
+        },
+        "carried_semantic_lineage": {},
+        "current_node_authority": {},
+        "support_kind": "inferred",
+        "semantic_inference_depth": 1,
+        "answer_target_component_id": "component:E",
+        "answer_target_ref": {"component_id": "component:E"},
+        "premise_node_refs": [premise_ref],
+        "premise_component_coverage_refs": [coverage_ref],
+        "inferred_relationship_admission_ref": {
+            "relationship_admission_id": "relationship:target_E",
+            "relationship_admission_digest": ("relationship-digest:target_E"),
+            "answer_target_component_id": "component:E",
+            "semantic_inference_depth": 1,
+            "support_kind": "inferred",
+            "query_resolution_proposal_ref": dict(proposal_ref),
+            "premise_node_ref_digests": [safe_packet_digest(premise_ref)],
+            "premise_component_coverage_ref_digests": [safe_packet_digest(coverage_ref)],
+            "synthesis_dprime_validation_ref": {
+                "artifact_id": "synthesis-dprime:target_E",
+                "artifact_digest": ("synthesis-dprime-digest:target_E"),
+            },
+            "runkernel_graph_admission_action_ref": {
+                "action_id": "synthesis-admission:target_E",
+            },
+        },
+        "query_resolution_proposal_ref": dict(proposal_ref),
+        "target_fulfillment_status": "admitted_inferred",
+        "target_local_semantic_observation_ref": {},
+        "target_local_component_coverage_ref": {},
+    }
+    if carried:
+        entry["dprime_validation_ref"] = {}
+        entry["runkernel_admission_ref"] = {}
+        entry["carried_semantic_lineage"] = {
+            "prior_cross_component_analyst_ref": {
+                "artifact_id": "prior-cross",
+            },
+            "prior_synthesis_claim_ref": {
+                "claim_id": "prior-claim",
+            },
+            "prior_synthesis_dprime_ref": {
+                "artifact_id": "prior-dprime",
+            },
+            "prior_synthesis_admission_ref": {
+                "action_id": "prior-admission",
+            },
+        }
+        entry["current_node_authority"] = {
+            "runkernel_carry_forward_action_ref": {
+                "operation": "selective_invalidation",
+                "action_id": "carry:target_E",
+            }
+        }
+        entry["inferred_relationship_admission_ref"]["synthesis_dprime_validation_ref"] = dict(
+            entry["carried_semantic_lineage"]["prior_synthesis_dprime_ref"]
+        )
+        entry["inferred_relationship_admission_ref"]["runkernel_graph_admission_action_ref"] = dict(
+            entry["carried_semantic_lineage"]["prior_synthesis_admission_ref"]
+        )
+    return entry
+
+
+def _fap_with_inferred(entry: dict) -> FinalAnswerPacket:
+    return FinalAnswerPacket(
+        packet_id="fap:boundary-b-inferred",
+        admitted_synthesis_entries=(entry,),
+        multicomponent_graph_readiness="ready",
+    )
+
+
+def test_fap_requires_base_authority_plus_exact_inferred_shape() -> None:
+    fresh = _valid_fap_inferred_entry()
+    carried = _valid_fap_inferred_entry(carried=True)
+    assert _fap_with_inferred(fresh).admitted_synthesis_entries
+    assert _fap_with_inferred(carried).admitted_synthesis_entries
+
+    invalid_entries: list[dict] = []
+    for key in ("dprime_validation_ref", "runkernel_admission_ref"):
+        invalid = deepcopy(fresh)
+        invalid[key] = {}
+        invalid_entries.append(invalid)
+    incomplete_relationship = deepcopy(fresh)
+    incomplete_relationship["inferred_relationship_admission_ref"].pop("relationship_admission_digest")
+    invalid_entries.append(incomplete_relationship)
+    wrong_target = deepcopy(fresh)
+    wrong_target["inferred_relationship_admission_ref"]["answer_target_component_id"] = "component:other"
+    invalid_entries.append(wrong_target)
+    wrong_depth = deepcopy(fresh)
+    wrong_depth["inferred_relationship_admission_ref"]["semantic_inference_depth"] = 2
+    invalid_entries.append(wrong_depth)
+    wrong_support = deepcopy(fresh)
+    wrong_support["inferred_relationship_admission_ref"]["support_kind"] = "direct"
+    invalid_entries.append(wrong_support)
+    wrong_proposal_lineage = deepcopy(fresh)
+    wrong_proposal_lineage["inferred_relationship_admission_ref"]["query_resolution_proposal_ref"][
+        "proposal_digest"
+    ] = "proposal-digest:other"
+    invalid_entries.append(wrong_proposal_lineage)
+    wrong_premise_lineage = deepcopy(fresh)
+    wrong_premise_lineage["inferred_relationship_admission_ref"]["premise_node_ref_digests"] = ["premise-digest:other"]
+    invalid_entries.append(wrong_premise_lineage)
+    target_observation = deepcopy(fresh)
+    target_observation["target_local_semantic_observation_ref"] = {"observation_id": "forbidden"}
+    invalid_entries.append(target_observation)
+    target_coverage = deepcopy(fresh)
+    target_coverage["target_local_component_coverage_ref"] = {"coverage_record_id": "forbidden"}
+    invalid_entries.append(target_coverage)
+    invalid_carried = deepcopy(carried)
+    invalid_carried["carried_semantic_lineage"] = {}
+    invalid_entries.append(invalid_carried)
+
+    for invalid in invalid_entries:
+        with pytest.raises(
+            ValueError,
+            match="synthesis entry is not current RunKernel-admitted state",
+        ):
+            _fap_with_inferred(invalid)
 
 
 def test_fast_depth_one_inference_fulfills_target_without_searchos_recovery() -> None:

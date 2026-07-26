@@ -442,7 +442,7 @@ def test_component_origin_runs_through_v3_registry_and_component_dprime(
         ]
         == "specialist_need_handoff"
     )
-    assert scheduler["compatibility_envelope"]["total_units"] == 22
+    assert scheduler["compatibility_envelope"]["total_units"] == 24
     assert plane["provider_request_attempt_count"] == plane["model_call_count"] == 0
     assert plane["token_usage"] == plane["model_cost"] == 0
     assert plane["maximum_observed_in_flight"] == 1

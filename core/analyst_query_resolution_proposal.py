@@ -28,6 +28,16 @@ ALLOWED_CLASSIFICATIONS = frozenset(
     }
 )
 ALLOWED_ORIGINATING_ROLES = frozenset({"component_analyst", "cross_component_analyst"})
+PROPOSAL_LIFECYCLE_STATUSES = frozenset(
+    {
+        "pending",
+        "consumed",
+        "ambiguous",
+        "rejected",
+        "superseded_stale",
+        "exact_replay",
+    }
+)
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -128,6 +138,17 @@ def _required_text(mapping: Mapping[str, Any], key: str, *, limit: int = 800) ->
     return text
 
 
+def _required_choice(
+    mapping: Mapping[str, Any],
+    key: str,
+    choices: frozenset[str],
+) -> str:
+    value = _token(mapping.get(key))
+    if value not in choices:
+        raise AnalystQueryResolutionProposalError(f"query-resolution proposal {key} is invalid")
+    return value
+
+
 def _text_list(
     value: Any,
     *,
@@ -165,6 +186,33 @@ def _ref_list(
     if canonical_sorted and identities != sorted(identities):
         raise AnalystQueryResolutionProposalError(f"{label} must use canonical sorted order")
     return [_safe(ref) for ref in refs]
+
+
+def _component_ref_list(
+    value: Any,
+    *,
+    label: str,
+    nonempty: bool = False,
+) -> list[dict[str, Any]]:
+    refs = _ref_list(
+        value,
+        label=label,
+        nonempty=nonempty,
+        canonical_sorted=True,
+    )
+    if any(
+        not all(
+            _token(ref.get(key))
+            for key in (
+                "component_id",
+                "component_revision",
+                "component_digest",
+            )
+        )
+        for ref in refs
+    ):
+        raise AnalystQueryResolutionProposalError(f"{label} requires exact component id, revision, and digest")
+    return refs
 
 
 def normalize_local_query_resolution_candidate(
@@ -229,35 +277,89 @@ def normalize_local_query_resolution_candidate(
             ),
         }
     elif classification == CLASS_SEARCHED_PREMISE:
+        normalized_premise_identity = _required_text(
+            candidate,
+            "normalized_premise_identity",
+            limit=240,
+        )
+        if normalized_premise_identity != normalized_premise_identity.casefold():
+            raise AnalystQueryResolutionProposalError("searched premise normalized_premise_identity must be normalized")
+        source_obligation_specification = _safe(
+            _mapping(
+                candidate.get("source_obligation_specification"),
+                "source_obligation_specification",
+            )
+        )
+        if any(
+            not _token(source_obligation_specification.get(key))
+            for key in ("candidate_id", "obligation_kind", "strictness")
+        ):
+            raise AnalystQueryResolutionProposalError(
+                "searched premise source_obligation_specification requires "
+                "candidate_id, obligation_kind, and strictness"
+            )
         payload = {
             **common,
-            "answer_target_refs": _ref_list(
+            "normalized_premise_identity": normalized_premise_identity,
+            "answer_target_refs": _component_ref_list(
                 candidate.get("answer_target_refs"),
                 label="answer_target_refs",
                 nonempty=True,
-                canonical_sorted=True,
             ),
-            "parent_component_refs": _ref_list(
+            "parent_component_refs": _component_ref_list(
                 candidate.get("parent_component_refs"),
                 label="parent_component_refs",
                 nonempty=True,
-                canonical_sorted=True,
             ),
-            "current_dependency_component_refs": _ref_list(
+            "current_dependency_component_refs": _component_ref_list(
                 candidate.get("current_dependency_component_refs"),
                 label="current_dependency_component_refs",
-                canonical_sorted=True,
             ),
             "premise_semantics": _required_text(
                 candidate,
                 "premise_semantics",
             ),
-            "source_obligation_specification": _safe(
-                _mapping(
-                    candidate.get("source_obligation_specification"),
-                    "source_obligation_specification",
-                )
+            "user_facing_label": _required_text(
+                candidate,
+                "user_facing_label",
+                limit=240,
             ),
+            "user_facing_question": _required_text(
+                candidate,
+                "user_facing_question",
+                limit=500,
+            ),
+            "acceptance_criteria": _text_list(
+                candidate.get("acceptance_criteria"),
+                label="acceptance_criteria",
+                nonempty=True,
+            ),
+            "requirement_posture": _required_choice(
+                candidate,
+                "requirement_posture",
+                frozenset({"required", "conditional", "optional"}),
+            ),
+            "materiality": _required_choice(
+                candidate,
+                "materiality",
+                frozenset({"material", "non_material"}),
+            ),
+            "partial_answer_policy": _required_choice(
+                candidate,
+                "partial_answer_policy",
+                frozenset(
+                    {
+                        "qualify_visible_gap",
+                        "block_if_required_unsatisfied",
+                        "allow_if_optional_only",
+                    }
+                ),
+            ),
+            "mandatory_caveats": _text_list(
+                candidate.get("mandatory_caveats"),
+                label="mandatory_caveats",
+            ),
+            "source_obligation_specification": source_obligation_specification,
             "necessity_rationale": _required_text(
                 candidate,
                 "necessity_rationale",
@@ -509,7 +611,13 @@ def arbitrate_analyst_query_resolution_proposals(
 ) -> dict[str, Any]:
     """Collapse exact duplicates and fail closed on semantic alternatives."""
 
-    normalized = [validate_bound_analyst_query_resolution_proposal(proposal) for proposal in proposals]
+    normalized = sorted(
+        (validate_bound_analyst_query_resolution_proposal(proposal) for proposal in proposals),
+        key=lambda item: (
+            str(item.get("proposal_digest") or ""),
+            str(item.get("proposal_id") or ""),
+        ),
+    )
     if not normalized:
         return {
             "status": "no_resolution_proposal",
@@ -532,35 +640,51 @@ def arbitrate_analyst_query_resolution_proposals(
         raise AnalystQueryResolutionProposalError(
             "proposal arbitration requires one exact run/parent/target/role-input state"
         )
-    content_by_digest = {
-        _digest(
+    content_by_digest: dict[str, list[dict[str, Any]]] = {}
+    for proposal in normalized:
+        content_digest = _digest(
             {
                 "classification": proposal["classification"],
                 "variant_payload": proposal["variant_payload"],
                 "question_meaning_record_ref": proposal["question_meaning_record_ref"],
             }
-        ): proposal
-        for proposal in normalized
-    }
-    refs = [
+        )
+        content_by_digest.setdefault(content_digest, []).append(proposal)
+    refs = sorted(
+        [
+            {
+                "proposal_id": proposal["proposal_id"],
+                "proposal_digest": proposal["proposal_digest"],
+                "stable_replay_key": proposal["stable_replay_key"],
+            }
+            for proposal in normalized
+        ],
+        key=lambda item: (
+            str(item["proposal_digest"]),
+            str(item["proposal_id"]),
+            str(item["stable_replay_key"]),
+        ),
+    )
+    arbitration_identity = "aqrp-arbitration:" + _digest(
         {
-            "proposal_id": proposal["proposal_id"],
-            "proposal_digest": proposal["proposal_digest"],
-            "stable_replay_key": proposal["stable_replay_key"],
+            "scope_key": next(iter(scope_keys)),
+            "normalized_content_digests": sorted(content_by_digest),
+            "proposal_refs": refs,
         }
-        for proposal in normalized
-    ]
+    )
     if len(content_by_digest) > 1:
         return {
             "status": "ambiguous_resolution_proposals",
             "selected_proposal": None,
             "proposal_refs": refs,
+            "arbitration_identity": arbitration_identity,
             "mutation_permitted": False,
             "contract_amendment_permitted": False,
             "searchos_permitted": False,
             "inferred_relationship_admission_permitted": False,
         }
-    selected = next(iter(content_by_digest.values()))
+    normalized_content_digest = next(iter(content_by_digest))
+    selected = content_by_digest[normalized_content_digest][0]
     return {
         "status": (
             "one_unique_resolution_proposal"
@@ -569,6 +693,9 @@ def arbitrate_analyst_query_resolution_proposals(
         ),
         "selected_proposal": selected,
         "proposal_refs": refs,
+        "normalized_content_digest": normalized_content_digest,
+        "collapsed_proposal_identity": ("aqrp-collapsed:" + normalized_content_digest),
+        "arbitration_identity": arbitration_identity,
         "mutation_permitted": True,
     }
 
@@ -611,6 +738,7 @@ __all__ = [
     "CLASS_EXISTING_COMPONENT_GAP",
     "CLASS_INFERRED_CONCLUSION",
     "CLASS_SEARCHED_PREMISE",
+    "PROPOSAL_LIFECYCLE_STATUSES",
     "AnalystQueryResolutionProposalError",
     "arbitrate_analyst_query_resolution_proposals",
     "bind_analyst_query_resolution_proposal",

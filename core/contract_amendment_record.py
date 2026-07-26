@@ -910,6 +910,15 @@ def build_contract_amendment_v2_from_analyst_proposal(
     component_kwargs = dict(new_component_spec)
     component_kwargs.pop("component_digest", None)
     if classification == CLASS_SEARCHED_PREMISE:
+        nonmechanical_overrides = set(component_kwargs) - {
+            "component_id",
+            "component_revision",
+            "metadata",
+        }
+        if nonmechanical_overrides:
+            raise ValueError(
+                "searched-premise component semantics must come from the Analyst proposal, not amendment machinery"
+            )
         source_spec = variant["source_obligation_specification"]
         source_candidate_id = _clean_token(
             source_spec.get("candidate_id")
@@ -925,6 +934,14 @@ def build_contract_amendment_v2_from_analyst_proposal(
         component_kwargs.update(
             {
                 "component_purpose": ComponentPurpose.SUPPORTING_PREMISE,
+                "user_facing_label": variant["user_facing_label"],
+                "user_facing_question": variant["user_facing_question"],
+                "acceptance_criteria": tuple(variant["acceptance_criteria"]),
+                "requirement_posture": variant["requirement_posture"],
+                "materiality": variant["materiality"],
+                "partial_answer_policy": variant["partial_answer_policy"],
+                "mandatory_caveats": tuple(variant["mandatory_caveats"]),
+                "prohibited_upgrades": tuple(variant["prohibited_upgrades"]),
                 "allowed_support_kinds": (SupportKind.DIRECT,),
                 "max_inference_depth": 0,
                 "source_obligation_candidate_ids": (source_candidate_id,),
@@ -932,6 +949,8 @@ def build_contract_amendment_v2_from_analyst_proposal(
                     **dict(component_kwargs.get("metadata") or {}),
                     "searched_premise": True,
                     "source_obligation_specification": dict(source_spec),
+                    "normalized_premise_identity": variant["normalized_premise_identity"],
+                    "premise_semantics": variant["premise_semantics"],
                     "recovery_generation_parent_ref": generation_parent_ref,
                     "recovery_generation_depth": generation_depth,
                 },
@@ -985,11 +1004,8 @@ def build_contract_amendment_v2_from_analyst_proposal(
                     }
                 )
             )
-            support_kinds = current.allowed_support_kinds
-            max_depth = current.max_inference_depth
-            if support_kinds == (SupportKind.DIRECT,):
-                support_kinds = (SupportKind.DIRECT, SupportKind.INFERRED)
-                max_depth = 1
+            if SupportKind.INFERRED not in current.allowed_support_kinds or current.max_inference_depth < 1:
+                raise ValueError("searched-premise target must already permit inferred support before amendment")
             current_payload = current.to_dict()
             current_payload.pop("component_digest", None)
             current_payload.update(
@@ -999,8 +1015,6 @@ def build_contract_amendment_v2_from_analyst_proposal(
                         f"{bound['proposal_digest'][:8]}"
                     ),
                     "dependency_component_ids": dependencies,
-                    "allowed_support_kinds": support_kinds,
-                    "max_inference_depth": max_depth,
                 }
             )
             revised = AnswerComponentContract(**current_payload)

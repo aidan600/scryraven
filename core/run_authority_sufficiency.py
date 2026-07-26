@@ -489,45 +489,30 @@ class RunSufficiencyJudgmentInput:
     def _searchos_existing_gap_recovery_terminal_model_ref(
         self,
     ) -> dict[str, Any]:
-        terminal = _safe_mapping(
-            self.searchos_existing_gap_recovery_terminal_state
-        )
+        aggregate = _safe_mapping(self.searchos_existing_gap_recovery_terminal_state)
         return {
-            "schema_version": clean_token(
-                terminal.get("schema_version")
-            ),
-            "owner": clean_token(terminal.get("owner")),
-            "canonical_state": terminal.get("canonical_state") is True,
-            "terminal_aggregate_id": clean_token(
-                terminal.get("terminal_aggregate_id")
-            ),
-            "terminal_aggregate_digest": clean_token(
-                terminal.get("terminal_aggregate_digest")
-            ),
-            "terminal_status": clean_token(
-                terminal.get("terminal_status")
-            ),
-            "cycle_ref": _safe_mapping(terminal.get("cycle_ref")),
-            "recovery_slot_ref": _safe_mapping(
-                terminal.get("recovery_slot_ref")
-            ),
-            "component_ref": _safe_mapping(terminal.get("component_ref")),
-            "source_obligation_ref": _safe_mapping(
-                terminal.get("source_obligation_ref")
-            ),
-            "component_admission_ref": _safe_mapping(
-                terminal.get("component_admission_ref")
-            ),
-            "component_coverage_ref": _safe_mapping(
-                terminal.get("component_coverage_ref")
-            ),
-            "terminal_blocker": _safe_mapping(
-                terminal.get("terminal_blocker")
-            ),
-            "coverage_gained": terminal.get("coverage_gained") is True,
-            "gap_remains": terminal.get("gap_remains") is True,
-            "lease_terminal": terminal.get("lease_terminal") is True,
-            "expenditure": _safe_mapping(terminal.get("expenditure")),
+            "schema_version": clean_token(aggregate.get("schema_version")),
+            "owner": clean_token(aggregate.get("owner")),
+            "canonical_state": (aggregate.get("canonical_state") is True),
+            "terminal_aggregate_id": clean_token(aggregate.get("terminal_aggregate_id")),
+            "terminal_aggregate_digest": clean_token(aggregate.get("terminal_aggregate_digest")),
+            "posture": clean_token(aggregate.get("posture")),
+            "settled_interpretation": clean_token(aggregate.get("settled_interpretation")),
+            "whole_run_lease_ref": _safe_mapping(aggregate.get("whole_run_lease_ref")),
+            "cycle_admission_refs": [
+                _safe_mapping(item)
+                for item in _list(aggregate.get("cycle_admission_refs"))[:_MAX_LIST_ITEMS]
+                if isinstance(item, Mapping)
+            ],
+            "cycle_terminal_refs": [
+                _safe_mapping(item)
+                for item in _list(aggregate.get("cycle_terminal_refs"))[:_MAX_LIST_ITEMS]
+                if isinstance(item, Mapping)
+            ],
+            "active_cycle_ref": _safe_mapping(aggregate.get("active_cycle_ref")),
+            "cumulative_expenditure": _safe_mapping(aggregate.get("cumulative_expenditure")),
+            "mode_cycle_generation_caps": _safe_mapping(aggregate.get("mode_cycle_generation_caps")),
+            "lawful_selected_recovery_work_remains": (aggregate.get("lawful_selected_recovery_work_remains") is True),
             "searchos_state_ref": {
                 "state_id": clean_token(
                     _safe_mapping(self.searchos_state).get("state_id")

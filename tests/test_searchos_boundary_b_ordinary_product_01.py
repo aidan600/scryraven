@@ -24,6 +24,9 @@ from core.multicomponent_role_runtime import (
     safe_packet_digest,
 )
 from core.protocols import NullStatusWriter
+from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -299,13 +302,22 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                                 "classification": "searched_premise",
                                 "local_proposal_key": "recover_premise_C",
                                 "local_target_key": "target_E",
+                                "normalized_premise_identity": ("alder missing filing condition premise c"),
                                 "answer_target_refs": [target],
                                 "parent_component_refs": [target],
                                 "current_dependency_component_refs": [premise_d],
                                 "premise_semantics": ("Alder missing filing condition premise C"),
+                                "user_facing_label": ("Alder signed-condition premise C"),
+                                "user_facing_question": ("Which signed Alder filing condition establishes premise C?"),
+                                "acceptance_criteria": ["Use the exact signed Alder filing-condition record."],
+                                "requirement_posture": "required",
+                                "materiality": "material",
+                                "partial_answer_policy": ("qualify_visible_gap"),
+                                "mandatory_caveats": ["Premise C is limited to the signed condition."],
                                 "source_obligation_specification": {
                                     "candidate_id": ("obligation:searched_premise_c"),
                                     "obligation_kind": "supporting_fact",
+                                    "strictness": "required",
                                 },
                                 "necessity_rationale": (
                                     "The accepted filing-route target cannot be fulfilled without premise C."
@@ -412,6 +424,390 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                         "nonclaims": [],
                     }
                 )
+        return super().ask_model(prompt, system_prompt, **kwargs)
+
+
+SERIAL_E_RESULT = "BOUNDARY_B_DEEP_SERIAL_E_RESULT_41C8"
+SERIAL_F_RESULT = "BOUNDARY_B_DEEP_SERIAL_F_RESULT_92B6"
+
+
+class _DeepSerialBoundaryBPlanner(_BoundaryBPlanner):
+    def produce(
+        self,
+        planner_input: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        payload = deepcopy(dict(super().produce(planner_input)))
+        payload["answer_components"].append(
+            {
+                "component_id": "target_F",
+                "component_revision": "1",
+                "component_purpose": "user_facing_answer_target",
+                "user_facing_label": "Governed reporting route F",
+                "user_facing_question": ("Which Alder reporting route follows?"),
+                "requirement_posture": "required",
+                "acceptance_criteria": ["Use only an admitted relationship over current premises."],
+                "semantic_slot_ids": ["slot:alder"],
+                "source_obligation_candidate_ids": [],
+                "allowed_support_kinds": ["inferred"],
+                "max_inference_depth": 2,
+                "dependency_component_ids": ["premise_D"],
+                "materiality": "material",
+                "partial_answer_policy": "qualify_visible_gap",
+            }
+        )
+        payload["relationship_hypotheses"].append(
+            {
+                "local_hypothesis_key": "target_F",
+                "relationship_type": "conditional_reporting_route",
+                "component_inputs": ["premise_D"],
+                "proposal_only": True,
+            }
+        )
+        payload["question_meaning_summary"] = (
+            "Answer targets E and F through two serial, directly sourced premise generations."
+        )
+        payload["requested_synthesis_directive"] = "Determine target_E and target_F from their exact admitted premises."
+        return payload
+
+
+class DeepSerialBoundaryBOrdinaryHarness(BoundaryBOrdinaryHarness):
+    def __init__(self, tmp_path: Path) -> None:
+        super().__init__(tmp_path)
+        self.query = (
+            "For the fictional Alder Deep rule, determine filing route E "
+            "and reporting route F through any necessary serial premises."
+        )
+        self.raw_author_response = f"{SERIAL_E_RESULT}. {SERIAL_F_RESULT}."
+        self.selective_cross_calls = 0
+        self.followup_queries: list[tuple[str, str]] = []
+
+    def deps(self):
+        return replace(
+            super().deps(),
+            search_planner_adapter=_DeepSerialBoundaryBPlanner(),
+        )
+
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        if len(self.search_calls) <= 1:
+            return super().build_search_passages()
+        if len(self.search_calls) == 2:
+            return [
+                {
+                    "source_id": 822,
+                    "title": "Alder direct searched premise C",
+                    "url": "https://alder.example/deep-premise-c",
+                    "text": ("The Alder rule directly establishes searched premise C."),
+                    "score": 1.0,
+                    "credibility": 4,
+                    "source_tier": "official",
+                    "source_class": "supporting_fact",
+                    "currentness_signal": "current",
+                    "readable_status": "readable",
+                    "disposition": "accepted",
+                    "query_ref": "Alder missing filing condition premise C",
+                    "_provider": "offline_fake_search",
+                }
+            ]
+        return [
+            {
+                "source_id": 823,
+                "title": "Alder direct searched grandchild premise B",
+                "url": "https://alder.example/deep-premise-b",
+                "text": ("The Alder rule directly establishes searched grandchild premise B."),
+                "score": 1.0,
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": "supporting_fact",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+                "query_ref": "Alder missing reporting condition premise B",
+                "_provider": "offline_fake_search",
+            }
+        ]
+
+    @staticmethod
+    def _searched_candidate(
+        *,
+        target: Mapping[str, Any],
+        dependency_refs: list[dict[str, Any]],
+        premise_key: str,
+        depth: int,
+        parent_ref: str,
+    ) -> dict[str, Any]:
+        label = "Alder grandchild reporting premise B" if premise_key == "B" else "Alder signed-condition premise C"
+        question = (
+            "Which signed Alder reporting condition establishes grandchild premise B?"
+            if premise_key == "B"
+            else "Which signed Alder filing condition establishes premise C?"
+        )
+        return {
+            "classification": "searched_premise",
+            "local_proposal_key": (f"recover_premise_{premise_key}_generation_{depth}"),
+            "local_target_key": str(target["component_id"]),
+            "normalized_premise_identity": (f"alder searched premise {premise_key.casefold()} generation {depth}"),
+            "answer_target_refs": [dict(target)],
+            "parent_component_refs": [dict(target)],
+            "current_dependency_component_refs": sorted(
+                dependency_refs,
+                key=safe_packet_digest,
+            ),
+            "premise_semantics": (f"Alder directly sourced premise {premise_key} at generation {depth}"),
+            "user_facing_label": label,
+            "user_facing_question": question,
+            "acceptance_criteria": [f"Use the exact signed Alder premise {premise_key} record."],
+            "requirement_posture": "required",
+            "materiality": "material",
+            "partial_answer_policy": "qualify_visible_gap",
+            "mandatory_caveats": [f"Premise {premise_key} remains direct-source bounded."],
+            "source_obligation_specification": {
+                "candidate_id": (f"obligation:searched_premise_{premise_key.casefold()}"),
+                "obligation_kind": "supporting_fact",
+                "strictness": "required",
+            },
+            "necessity_rationale": (f"The accepted target requires direct premise {premise_key}."),
+            "why_current_premises_insufficient": (
+                f"The current graph does not directly establish premise {premise_key}."
+            ),
+            "searchability_material_need_posture": ("material_and_searchable"),
+            "recovery_generation": {
+                "parent_ref": parent_ref,
+                "depth": depth,
+            },
+            "assumptions": [],
+            "caveats": [],
+            "prohibited_upgrades": [f"Do not infer premise {premise_key} from the search direction."],
+        }
+
+    @staticmethod
+    def _inferred_candidate(
+        *,
+        payload: Mapping[str, Any],
+        target: Mapping[str, Any],
+        recovered: Mapping[str, Any],
+        result: str,
+        local_key: str,
+    ) -> dict[str, Any]:
+        premise_refs = sorted(
+            [
+                {
+                    key: node.get(key)
+                    for key in (
+                        "node_kind",
+                        "node_id",
+                        "node_revision",
+                        "node_digest",
+                        "component_id",
+                        "synthesis_key",
+                        "status",
+                        "current",
+                        "stale",
+                    )
+                }
+                for node in [
+                    *payload.get(
+                        "licensed_current_component_refs",
+                        [],
+                    ),
+                    recovered,
+                ]
+                if node.get("component_id") in {"premise_D", recovered.get("component_id")}
+            ],
+            key=safe_packet_digest,
+        )
+        return {
+            "classification": "inferred_conclusion",
+            "local_proposal_key": local_key,
+            "local_target_key": str(target["component_id"]),
+            "answer_target_ref": dict(target),
+            "current_admitted_premise_node_refs": premise_refs,
+            "relationship_type": "bounded_serial_rule",
+            "proposed_conclusion": result,
+            "support_kind": "inferred",
+            "proposed_semantic_inference_depth": 1,
+            "current_graph_ref": dict(payload["graph_ref"]),
+            "existing_specialist_handoff_refs": [],
+            "assumptions": [],
+            "caveats": ["The result is admitted inference."],
+            "prohibited_upgrades": ["Do not state that either source directly asserts the target."],
+        }
+
+    def ask_model(
+        self,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        if system_prompt.startswith(SEARCHOS_JUDGMENT_SYSTEM_PROMPT):
+            payload = json.loads(prompt)
+            authorized = dict(payload.get("authorized_request") or payload)
+            cycle_id = str(dict(authorized.get("slot_ref") or {}).get("recovery_cycle_id") or "")
+            prior_for_cycle = [item for item in self.read_assessment_calls if item.get("recovery_cycle_id") == cycle_id]
+            if cycle_id and not prior_for_cycle:
+                prior_cycle_ids = {
+                    str(item.get("recovery_cycle_id") or "")
+                    for item in self.read_assessment_calls
+                    if item.get("recovery_cycle_id")
+                }
+                cycle_number = len(prior_cycle_ids) + 1
+                retained = [item for item in self.read_assessment_calls if not item.get("recovery_cycle_id")]
+                retained_count = len(retained)
+                prior = self.read_assessment_calls
+                self.read_assessment_calls = retained
+                try:
+                    result = super().ask_model(
+                        prompt,
+                        system_prompt,
+                        **kwargs,
+                    )
+                    newly_recorded = self.read_assessment_calls[retained_count:]
+                finally:
+                    self.read_assessment_calls = prior
+                self.read_assessment_calls.extend(newly_recorded)
+                decision = json.loads(result)
+                if decision.get("action") == "PROPOSE_FOLLOWUP_QUERY":
+                    decision["followup_query"] = {
+                        1: "ZXQ41C8 signed filing predicate record",
+                        2: "QVB92B6 reporting trigger document",
+                    }[cycle_number]
+                    self.followup_queries.append((cycle_id, decision["followup_query"]))
+                return json.dumps(decision)
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
+            payload = json.loads(prompt)
+            self.role_packets.append({"system_prompt": system_prompt, "payload": payload})
+            self._record_model_call(system_prompt, kwargs)
+            target_e = self._component_by_id(payload, "target_E")
+            premise_d = self._component_by_id(payload, "premise_D")
+            return json.dumps(
+                {
+                    "synthesis_proposals": [
+                        {
+                            "synthesis_key": "target_E",
+                            "claim_text": ("Target E awaits direct searched premise C."),
+                            "relationship_type": "bounded_serial_rule",
+                            "component_inputs": ["premise_D"],
+                            "synthesis_inputs": [],
+                            "caveats": [],
+                            "nonclaims": [],
+                            "blockers": [],
+                        },
+                        {
+                            "synthesis_key": "target_F",
+                            "claim_text": ("Target F awaits a later direct premise."),
+                            "relationship_type": "bounded_serial_rule",
+                            "component_inputs": ["premise_D"],
+                            "synthesis_inputs": [],
+                            "caveats": [],
+                            "nonclaims": [],
+                            "blockers": [],
+                        },
+                    ],
+                    "query_resolution_proposals": [
+                        self._searched_candidate(
+                            target=target_e,
+                            dependency_refs=[premise_d],
+                            premise_key="C",
+                            depth=1,
+                            parent_ref="initial-searchos-state",
+                        )
+                    ],
+                }
+            )
+        if system_prompt == SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT:
+            payload = json.loads(prompt)
+            self.role_packets.append({"system_prompt": system_prompt, "payload": payload})
+            self._record_model_call(system_prompt, kwargs)
+            self.selective_cross_calls += 1
+            recovered = dict(payload["current_recovered_component_ref"])
+            premise_d = self._component_by_id(payload, "premise_D")
+            graph_ref = dict(payload["graph_ref"])
+            if self.selective_cross_calls == 1:
+                target = self._component_by_id(payload, "target_E")
+                next_target = self._component_by_id(
+                    payload,
+                    "target_F",
+                )
+                return json.dumps(
+                    {
+                        "synthesis_proposals": [
+                            {
+                                "synthesis_key": "target_E",
+                                "claim_text": SERIAL_E_RESULT,
+                                "relationship_type": ("bounded_serial_rule"),
+                                "component_inputs": sorted(
+                                    [
+                                        "premise_D",
+                                        recovered["component_id"],
+                                    ]
+                                ),
+                                "affected_synthesis_inputs": [],
+                                "preserved_synthesis_inputs": [],
+                                "caveats": [],
+                                "nonclaims": [],
+                                "blockers": [],
+                            }
+                        ],
+                        "query_resolution_proposals": [
+                            self._inferred_candidate(
+                                payload=payload,
+                                target=target,
+                                recovered=recovered,
+                                result=SERIAL_E_RESULT,
+                                local_key="infer_serial_target_E",
+                            ),
+                            self._searched_candidate(
+                                target=next_target,
+                                dependency_refs=[premise_d],
+                                premise_key="B",
+                                depth=2,
+                                parent_ref=str(graph_ref["graph_digest"]),
+                            ),
+                        ],
+                    }
+                )
+            target = self._component_by_id(payload, "target_F")
+            generation_three_target = self._component_by_id(
+                payload,
+                "target_E",
+            )
+            return json.dumps(
+                {
+                    "synthesis_proposals": [
+                        {
+                            "synthesis_key": "target_F",
+                            "claim_text": SERIAL_F_RESULT,
+                            "relationship_type": "bounded_serial_rule",
+                            "component_inputs": sorted(
+                                [
+                                    "premise_D",
+                                    recovered["component_id"],
+                                ]
+                            ),
+                            "affected_synthesis_inputs": [],
+                            "preserved_synthesis_inputs": [],
+                            "caveats": [],
+                            "nonclaims": [],
+                            "blockers": [],
+                        }
+                    ],
+                    "query_resolution_proposals": [
+                        self._inferred_candidate(
+                            payload=payload,
+                            target=target,
+                            recovered=recovered,
+                            result=SERIAL_F_RESULT,
+                            local_key="infer_serial_target_F",
+                        ),
+                        self._searched_candidate(
+                            target=generation_three_target,
+                            dependency_refs=[premise_d],
+                            premise_key="G",
+                            depth=3,
+                            parent_ref=str(graph_ref["graph_digest"]),
+                        ),
+                    ],
+                }
+            )
         return super().ask_model(prompt, system_prompt, **kwargs)
 
 
@@ -723,6 +1119,187 @@ class FastInferenceOrdinaryHarness(OfflineOrdinaryPipelineHarness):
         return super().ask_model(prompt, system_prompt, **kwargs)
 
 
+def test_deep_serial_generations_run_through_one_ordinary_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def no_legacy(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("retired legacy derived-recovery path was invoked")
+
+    monkeypatch.setattr(runtime, "_execute_fresh_resynthesis", no_legacy)
+    harness = DeepSerialBoundaryBOrdinaryHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    config = replace(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-25",
+            session_id="boundary-b-deep-serial-request",
+            run_id="boundary-b-deep-serial-run",
+            smart_search_judgment_model=True,
+        ),
+        mode="Deep",
+    )
+    outcome = orchestrator.run_pipeline(
+        config,
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    kernel = captured["run_kernel"]
+    admissions = deepcopy(kernel.state.searchos_state["recovery_cycle_admission_history"])
+    terminals = deepcopy(kernel.state.searchos_state["recovery_cycle_terminal_history"])
+    amendment_admissions = deepcopy(kernel.state.contract_amendment_admission_history)
+    amendment_applications = deepcopy(kernel.state.contract_amendment_application_history)
+    graph = deepcopy(kernel.state.projections["multicomponent_component_work_graph_v1"])
+    registry = deepcopy(kernel.state.projections["analyst_query_resolution_proposal"])
+    searched = sorted(
+        [item for item in registry["proposals"] if item["classification"] == "searched_premise"],
+        key=lambda item: int(item["variant_payload"]["recovery_generation"]["depth"]),
+    )
+    lifecycle = registry["proposal_lifecycle"]
+
+    assert [item["generation_depth"] for item in admissions] == [1, 2], (
+        [
+            (
+                item["terminal_status"],
+                item.get("terminal_interpretation"),
+                item.get("terminal_reason"),
+            )
+            for item in terminals
+        ],
+        [
+            (
+                item["variant_payload"]["recovery_generation"]["depth"],
+                lifecycle[item["proposal_id"]]["status"],
+                lifecycle[item["proposal_id"]].get("reason"),
+            )
+            for item in searched
+        ],
+        harness.selective_cross_calls,
+        len(harness.search_calls),
+        harness.followup_queries,
+    )
+    assert len(terminals) == 2
+    assert all(item["terminal_status"] == "recovered" for item in terminals), (
+        [
+            (
+                item["terminal_status"],
+                item.get("terminal_interpretation"),
+                item.get("terminal_reason"),
+            )
+            for item in terminals
+        ],
+        kernel.state.projections.get("searchos_slice_a", {}).get("existing_gap_recovery"),
+        [item.get("query") for item in harness.search_calls],
+    )
+    lease_refs = {
+        (
+            item["whole_run_lease_ref"]["recovery_lease_id"],
+            item["whole_run_lease_ref"]["recovery_lease_digest"],
+        )
+        for item in admissions
+    }
+    assert len(lease_refs) == 1
+    assert len(kernel.state.searchos_state["recovery_lease_history"]) == 1
+    assert len(amendment_admissions) == len(amendment_applications) == 2
+    assert len(searched) == 3
+    assert lifecycle[searched[0]["proposal_id"]]["status"] == "consumed"
+    assert lifecycle[searched[1]["proposal_id"]]["status"] == "consumed"
+    assert lifecycle[searched[2]["proposal_id"]]["status"] == "rejected"
+    assert [
+        item["status"]
+        for item in registry["proposal_lifecycle_history"]
+        if item["proposal_id"] == searched[1]["proposal_id"]
+    ] == ["pending", "consumed", "consumed"]
+    assert "generation 3" in str(lifecycle[searched[2]["proposal_id"]]["reason"])
+    assert lifecycle[searched[0]["proposal_id"]]["downstream_refs"]["graph_reproof_ref"]["graph_digest"]
+    assert (
+        lifecycle[searched[1]["proposal_id"]]["downstream_refs"]["graph_reproof_ref"]["graph_digest"]
+        == graph["graph_digest"]
+    )
+
+    searched_component_nodes = [
+        item for item in graph["component_nodes"] if str(item["component_id"]).startswith("component:searched-premise:")
+    ]
+    assert len(searched_component_nodes) == 2
+    assert all(item["component_coverage_ref"]["coverage_state"] == "satisfied" for item in searched_component_nodes)
+    assert graph["selective_recomputation_rounds"] == 1
+    assert len(kernel.state.projections["multicomponent_selective_recomputation_closure_history"]["closures"]) == 2
+    assert graph["graph_status"] == "ready"
+    fulfillments = {
+        item["component_id"]: item
+        for item in captured["sufficiency_projection"]["multicomponent_graph_consumption"]["answer_target_fulfillments"]
+    }
+    assert fulfillments["target_E"]["fulfillment_status"] == ("fulfilled_inferred")
+    assert fulfillments["target_F"]["fulfillment_status"] == ("fulfilled_inferred")
+    aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert aggregate["posture"] == "settled"
+    assert aggregate["settled_interpretation"] == "recovery_completed"
+    assert aggregate["admission_count"] == aggregate["terminal_count"] == 2
+    assert len(harness.search_calls) == 3
+    assert harness.selective_cross_calls == 2
+    assert len(harness.author_prompts) == 1
+    assert captured["author_handoff_called"] is True
+    assert SERIAL_E_RESULT in outcome.report
+    assert SERIAL_F_RESULT in outcome.report
+    assert not any(
+        "_begin_scheduler_dynamic_recovery" in str(item) or "_attempt_dynamic_recovery" in str(item)
+        for item in kernel.state.projections
+    )
+
+    mutation_counts_before_replay = {
+        "issued_actions": len(kernel.state.issued_actions),
+        "observations": len(kernel.state.observations),
+        "amendment_admissions": len(kernel.state.contract_amendment_admission_history),
+        "amendment_applications": len(kernel.state.contract_amendment_application_history),
+        "recovery_admissions": len(kernel.state.searchos_state["recovery_cycle_admission_history"]),
+        "recovery_terminals": len(kernel.state.searchos_state["recovery_cycle_terminal_history"]),
+        "graph_digest": graph["graph_digest"],
+        "author_calls": len(harness.author_prompts),
+        "search_calls": len(harness.search_calls),
+    }
+    first_downstream = deepcopy(lifecycle[searched[0]["proposal_id"]]["downstream_refs"])
+    replay = runtime.authorize_searched_premise_recovery_from_analyst_proposals(
+        run_kernel=kernel,
+        requested_mode="Deep",
+        proposal_ref={
+            key: searched[0][key]
+            for key in (
+                "proposal_id",
+                "proposal_digest",
+                "stable_replay_key",
+            )
+        },
+    )
+    assert replay["status"] == "exact_replay"
+    assert replay["work_authorized"] is False
+    assert replay["downstream_refs"] == first_downstream
+    assert kernel.state.contract_amendment_admission_history == (amendment_admissions)
+    assert kernel.state.contract_amendment_application_history == (amendment_applications)
+    assert kernel.state.searchos_state["recovery_cycle_admission_history"] == admissions
+    assert kernel.state.searchos_state["recovery_cycle_terminal_history"] == terminals
+    assert {
+        "issued_actions": len(kernel.state.issued_actions),
+        "observations": len(kernel.state.observations),
+        "amendment_admissions": len(kernel.state.contract_amendment_admission_history),
+        "amendment_applications": len(kernel.state.contract_amendment_application_history),
+        "recovery_admissions": len(kernel.state.searchos_state["recovery_cycle_admission_history"]),
+        "recovery_terminals": len(kernel.state.searchos_state["recovery_cycle_terminal_history"]),
+        "graph_digest": kernel.state.projections["multicomponent_component_work_graph_v1"]["graph_digest"],
+        "author_calls": len(harness.author_prompts),
+        "search_calls": len(harness.search_calls),
+    } == mutation_counts_before_replay
+
+
 def test_fast_depth_one_inference_reaches_one_author_without_recovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -858,6 +1435,32 @@ def test_balanced_searched_premise_changes_ordinary_backend_result(
     recovered = recovered_candidates[0]
     assert recovered["semantic_inference_depth"] == 0
     assert recovered["component_coverage_ref"]["coverage_state"] == ("satisfied")
+    recovered_contract_component = next(
+        item
+        for item in kernel.state.current_answer_contract["accepted_answer_component_refs"]
+        if item["component_id"] == recovered["component_id"]
+    )
+    assert recovered_contract_component["user_facing_label"] == ("Alder signed-condition premise C")
+    assert recovered_contract_component["user_facing_question"] == (
+        "Which signed Alder filing condition establishes premise C?"
+    )
+    assert recovered_contract_component["acceptance_criteria"] == [
+        "Use the exact signed Alder filing-condition record."
+    ]
+    assert recovered_contract_component["mandatory_caveats"] == ["Premise C is limited to the signed condition."]
+    assert recovered["accepted_component_ref"] == (recovered_contract_component)
+    initial_target = next(
+        item
+        for item in kernel.state.initial_answer_contract["accepted_answer_component_refs"]
+        if item["component_id"] == "target_E"
+    )
+    amended_target = next(
+        item
+        for item in kernel.state.current_answer_contract["accepted_answer_component_refs"]
+        if item["component_id"] == "target_E"
+    )
+    assert amended_target["allowed_support_kinds"] == (initial_target["allowed_support_kinds"])
+    assert amended_target["max_inference_depth"] == (initial_target["max_inference_depth"])
     assert target["selected_support_kind"] == "inferred"
     assert target["fulfillment_status"] == "fulfilled_inferred"
     inferred_fulfillment = target["inferred_fulfillment_ref"]
@@ -868,6 +1471,13 @@ def test_balanced_searched_premise_changes_ordinary_backend_result(
     }
     assert graph["selective_recomputation_rounds"] == 1
     assert graph["graph_status"] == "ready"
+    registry = kernel.state.projections["analyst_query_resolution_proposal"]
+    searched_proposal = next(item for item in registry["proposals"] if item["classification"] == "searched_premise")
+    lifecycle = registry["proposal_lifecycle"][searched_proposal["proposal_id"]]
+    assert lifecycle["status"] == "consumed"
+    assert lifecycle["downstream_refs"]["graph_reproof_ref"]["graph_digest"] == graph["graph_digest"]
+    assert kernel.state.searchos_state["recovery_terminal_aggregate"]["posture"] == "settled"
+    assert kernel.state.searchos_state["recovery_terminal_aggregate"]["settled_interpretation"] == "recovery_completed"
     assert captured["sufficiency_projection"]["decision"] == ("ready_with_admitted_inference")
     assert captured["sufficiency_projection"]["final_answer_posture"] == ("sufficient_with_admitted_inference")
     packet = captured["packet_handoff"].packet

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import ast
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import core.run_authority_sufficiency_validation as sufficiency_validation
 from core.component_coverage_record import (
     ComponentCoverageRecord,
     ConflictPosture,
@@ -97,6 +99,191 @@ def _contract() -> dict[str, Any]:
         query="What is the current official filing fee?",
         mode="Balanced",
     ).to_projection()
+
+
+def _query_target_consumption(
+    *,
+    partial_answer_policy: str,
+    fulfilled_with_inference: bool = False,
+) -> dict[str, Any]:
+    direct_entry = {
+        "entry_kind": "direct_component",
+        "component_id": "component:independent",
+        "admission_status": "admitted",
+        "current": True,
+        "stale": False,
+        "claim_text": "The independent target is supported.",
+        "claim_digest": "independent-claim-digest",
+        "semantic_observation_ref": {"observation_id": "observation:1"},
+        "component_coverage_ref": {"coverage_record_id": "coverage:1"},
+    }
+    inferred_entry = {
+        "entry_kind": "admitted_synthesis",
+        "support_kind": "inferred",
+    }
+    return {
+        "graph_ready_for_synthesis": fulfilled_with_inference,
+        "graph_readiness_status": ("ready" if fulfilled_with_inference else "missing_dependency"),
+        "required_answer_target_count": 2,
+        "all_required_answer_targets_fulfilled": (fulfilled_with_inference),
+        "sufficient_with_admitted_inference": (fulfilled_with_inference),
+        "answer_target_fulfillments": [
+            {
+                "component_id": "component:independent",
+                "component_ref": {
+                    "component_id": "component:independent",
+                    "partial_answer_policy": partial_answer_policy,
+                },
+                "fulfillment_status": "fulfilled_direct",
+            },
+            {
+                "component_id": "component:unresolved",
+                "component_ref": {
+                    "component_id": "component:unresolved",
+                    "partial_answer_policy": partial_answer_policy,
+                },
+                "fulfillment_status": ("fulfilled_inferred" if fulfilled_with_inference else "unfulfilled"),
+            },
+        ],
+        "direct_component_entries": [direct_entry],
+        "direct_component_entry_count": 1,
+        "admitted_synthesis_entries": ([inferred_entry] if fulfilled_with_inference else []),
+        "admitted_synthesis_entry_count": (1 if fulfilled_with_inference else 0),
+        "mandatory_caveats": [],
+        "limitations": ["One required target remains unresolved."],
+    }
+
+
+@pytest.mark.parametrize(
+    (
+        "interpretation",
+        "partial_policy",
+        "expected_decision",
+        "expected_allowed",
+    ),
+    [
+        (
+            "structural_or_validation_blocker",
+            "qualify_visible_gap",
+            "block_finalization",
+            False,
+        ),
+        (
+            "provider_or_acquisition_blocker",
+            "qualify_visible_gap",
+            "block_finalization",
+            False,
+        ),
+        (
+            "lawful_recovery_exhaustion",
+            "qualify_visible_gap",
+            "partial_answer_authorized",
+            True,
+        ),
+        (
+            "lawful_recovery_ineligible",
+            "block_if_required_unsatisfied",
+            "insufficient_evidence",
+            False,
+        ),
+    ],
+)
+def test_query_target_posture_uses_typed_recovery_facts(
+    monkeypatch: pytest.MonkeyPatch,
+    interpretation: str,
+    partial_policy: str,
+    expected_decision: str,
+    expected_allowed: bool,
+) -> None:
+    consumption = _query_target_consumption(partial_answer_policy=partial_policy)
+    monkeypatch.setattr(
+        sufficiency_validation,
+        "build_multicomponent_graph_consumption",
+        lambda *_args, **_kwargs: deepcopy(consumption),
+    )
+    monkeypatch.setattr(
+        sufficiency_validation,
+        "_searchos_recovery_terminal_consumption",
+        lambda **_kwargs: {
+            "terminal_status": (
+                "failed"
+                if interpretation
+                in {
+                    "structural_or_validation_blocker",
+                    "provider_or_acquisition_blocker",
+                }
+                else "exhausted_insufficient"
+            ),
+            "settled_interpretation": interpretation,
+            "terminal_blocker": {
+                "blocker_class": "typed-test",
+                "interpretation": interpretation,
+                "reason_code": "Identical diagnostic prose.",
+            },
+        },
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 1},
+            multicomponent_graph_state={"graph_id": "typed-test"},
+            searchos_existing_gap_recovery_terminal_state={"schema_version": "typed-test"},
+        )
+    )
+    assert judgment.decision.value == expected_decision
+    assert judgment.final_answer_allowed is expected_allowed
+    retained = judgment.multicomponent_graph_consumption["direct_component_entries"]
+    if expected_allowed:
+        assert retained == consumption["direct_component_entries"]
+    else:
+        assert retained == []
+
+
+def test_unfulfilled_target_policy_without_typed_recovery_is_not_enough(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    consumption = _query_target_consumption(partial_answer_policy="qualify_visible_gap")
+    monkeypatch.setattr(
+        sufficiency_validation,
+        "build_multicomponent_graph_consumption",
+        lambda *_args, **_kwargs: deepcopy(consumption),
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 1},
+            multicomponent_graph_state={"graph_id": "typed-test"},
+        )
+    )
+    assert judgment.decision.value == "insufficient_evidence"
+    assert judgment.final_answer_allowed is False
+    assert judgment.multicomponent_graph_consumption["direct_component_entries"] == []
+
+
+def test_complete_admitted_inference_remains_sufficient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    consumption = _query_target_consumption(
+        partial_answer_policy="block_if_required_unsatisfied",
+        fulfilled_with_inference=True,
+    )
+    monkeypatch.setattr(
+        sufficiency_validation,
+        "build_multicomponent_graph_consumption",
+        lambda *_args, **_kwargs: deepcopy(consumption),
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 1},
+            multicomponent_graph_state={"graph_id": "inference-test"},
+        )
+    )
+    assert judgment.decision.value == "ready_with_admitted_inference"
+    assert judgment.final_answer_allowed is True
 
 
 def _ledger_projection(

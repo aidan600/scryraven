@@ -6680,6 +6680,17 @@ class RunKernel:
         if any(
             item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
             and item.inputs.get("operation") == "selective_closure"
+            and _safe_mapping(item.inputs.get("source_graph_ref"))
+            == {
+                "graph_id": graph.get("graph_id"),
+                "graph_revision": graph.get("graph_revision"),
+                "graph_digest": graph.get("graph_digest"),
+            }
+            and _safe_mapping(item.inputs.get("recovery_authorization_ref"))
+            == {
+                "authorization_id": authorization.get("authorization_id"),
+                "authorization_digest": authorization.get("authorization_digest"),
+            }
             for item in self.state.issued_actions.values()
         ):
             raise RunKernelTransitionError(
@@ -6808,6 +6819,8 @@ class RunKernel:
         if any(
             item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
             and item.inputs.get("operation") == "selective_invalidation"
+            and item.inputs.get("closure_id") == closure.get("closure_id")
+            and item.inputs.get("closure_digest") == closure.get("closure_digest")
             for item in self.state.issued_actions.values()
         ):
             raise RunKernelTransitionError(
@@ -6936,15 +6949,9 @@ class RunKernel:
                 "component coverage reduction requires at least one admitted "
                 "SemanticObservation"
             )
-        accepted = self.state.initial_answer_contract
-        resolved_contract_digest = (
-            accepted_contract_digest
-            or accepted.get("accepted_contract_digest")
-        )
-        resolved_contract_version = (
-            accepted_contract_version
-            or accepted.get("accepted_contract_version")
-        )
+        accepted = self.state.current_answer_contract or self.state.initial_answer_contract
+        resolved_contract_digest = accepted_contract_digest or accepted.get("accepted_contract_digest")
+        resolved_contract_version = accepted_contract_version or accepted.get("accepted_contract_version")
         for label, value in (
             ("coverage_record_id", coverage_record_id),
             ("coverage_record_digest", coverage_record_digest),
@@ -8122,16 +8129,10 @@ class RunKernel:
                     )
             return replay
         if not self.state.initial_answer_contract_projection:
-            raise RunKernelTransitionError(
-                "contract amendment admission requires an accepted initial answer contract"
-            )
-        accepted = self.state.initial_answer_contract
-        resolved_contract_digest = (
-            accepted_contract_digest or accepted.get("accepted_contract_digest")
-        )
-        resolved_contract_version = (
-            accepted_contract_version or accepted.get("accepted_contract_version")
-        )
+            raise RunKernelTransitionError("contract amendment admission requires an accepted initial answer contract")
+        accepted = self.state.current_answer_contract or self.state.initial_answer_contract
+        resolved_contract_digest = accepted_contract_digest or accepted.get("accepted_contract_digest")
+        resolved_contract_version = accepted_contract_version or accepted.get("accepted_contract_version")
         resolved_parent_digest = parent_contract_digest or resolved_contract_digest
         resolved_parent_version = parent_contract_version or resolved_contract_version
         for label, value in (
@@ -8836,6 +8837,8 @@ class RunKernel:
         cycle_admission_ref: Mapping[str, Any],
         terminal_status: str,
         terminal_reason: str | None,
+        terminal_interpretation: str | None,
+        lawful_selected_recovery_work_remains: bool,
         expenditure: Mapping[str, Any],
         component_admission_ref: Mapping[str, Any] | None = None,
         component_coverage_ref: Mapping[str, Any] | None = None,
@@ -8850,6 +8853,8 @@ class RunKernel:
             "cycle_admission_ref": deepcopy(dict(cycle_admission_ref)),
             "terminal_status": terminal_status,
             "terminal_reason": terminal_reason,
+            "terminal_interpretation": terminal_interpretation,
+            "lawful_selected_recovery_work_remains": bool(lawful_selected_recovery_work_remains),
             "expenditure": deepcopy(dict(expenditure)),
             "component_admission_ref": deepcopy(
                 dict(component_admission_ref or {})
@@ -22440,17 +22445,22 @@ class RunKernel:
                 )
                 self.state.projections[action.stage] = deepcopy(expected)
                 if scheduler is not None:
-                    self.state.projections[
-                        "multicomponent_graph_scheduler"
-                    ] = scheduler
-                self.state.projections[f"{action.stage}_history"] = {
-                    "schema_version": (
-                        "multicomponent_selective_recomputation_closure_history_v1"
-                    ),
+                    self.state.projections["multicomponent_graph_scheduler"] = scheduler
+                history_key = f"{action.stage}_history"
+                prior_closures = [
+                    deepcopy(_safe_mapping(item))
+                    for item in _safe_mapping(self.state.projections.get(history_key)).get("closures") or ()
+                    if isinstance(item, Mapping)
+                ]
+                if any(item.get("closure_digest") == expected.get("closure_digest") for item in prior_closures):
+                    raise RunKernelTransitionError("selective closure history rejects a duplicate canonical closure")
+                closures = [*prior_closures, deepcopy(expected)]
+                self.state.projections[history_key] = {
+                    "schema_version": ("multicomponent_selective_recomputation_closure_history_v1"),
                     "owner": expected["owner"],
                     "canonical_state": True,
-                    "closure_count": 1,
-                    "closures": [deepcopy(expected)],
+                    "closure_count": len(closures),
+                    "closures": closures,
                 }
                 self.state.observations.append(observation)
                 self.state.next_observation_sequence += 1

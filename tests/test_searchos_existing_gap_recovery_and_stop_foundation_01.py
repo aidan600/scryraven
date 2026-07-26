@@ -1086,31 +1086,14 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     }
     assert sufficiency_inputs
     terminal_input = sufficiency_inputs[-1]
-    assert (
-        terminal_input.searchos_existing_gap_recovery_terminal_state
-        == terminal
-    )
-    terminal_consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
+    terminal_aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert terminal_input.searchos_existing_gap_recovery_terminal_state == terminal_aggregate
+    terminal_consumption = sufficiency["searchos_existing_gap_recovery_terminal_consumption"]
     assert terminal_consumption["terminal_status"] == "recovered"
-    assert (
-        terminal_consumption["source_obligation_ref"][
-            "source_obligation_id"
-        ]
-        == target_obligation_id
-    )
-    assert terminal_consumption["target_requirement_ids"] == (
-        target_requirement_ids
-    )
-    assert terminal_consumption["target_source_truth_status"] == "satisfied"
+    assert terminal_consumption["aggregate_posture"] == "settled"
+    assert terminal_consumption["settled_interpretation"] == ("recovery_completed")
     assert terminal_consumption["terminal_blocker"] == {}
-    assert all(
-        item["status"] == "satisfied"
-        for item in terminal_consumption[
-            "required_source_obligation_assessments"
-        ]
-    )
+    assert terminal_consumption["cycle_terminal_refs"][-1]["cycle_terminal_digest"] == terminal["cycle_terminal_digest"]
     assert "response name is Raven" in outcome.report
     assert harness.author_prompts
     assert "Raven" in harness.author_prompts[-1]
@@ -1729,13 +1712,12 @@ def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
     assert not kernel.state.semantic_observation_admission_history
     assert sufficiency_inputs
     terminal_input = sufficiency_inputs[-1]
+    terminal_aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert terminal_input.searchos_existing_gap_recovery_terminal_state == terminal_aggregate
     assert (
-        terminal_input.searchos_existing_gap_recovery_terminal_state
-        == terminal
+        terminal_input.to_model_payload()["searchos_existing_gap_recovery_terminal_ref"]["settled_interpretation"]
+        == "lawful_recovery_exhaustion"
     )
-    assert terminal_input.to_model_payload()[
-        "searchos_existing_gap_recovery_terminal_ref"
-    ]["terminal_status"] == "exhausted_insufficient"
     sufficiency = kernel.state.sufficiency_judgment_projection
     assert sufficiency["final_answer_posture"] in {
         "partial_answer",
@@ -1746,7 +1728,7 @@ def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
         "searchos_existing_gap_recovery_terminal_consumption"
     ]
     assert consumption["terminal_status"] == "exhausted_insufficient"
-    assert consumption["target_source_truth_status"] != "satisfied"
+    assert consumption["settled_interpretation"] == ("lawful_recovery_exhaustion")
     assert trace["existing_gap_recovery"]["derived_component_recovery_invoked"] is False
     assert trace["existing_gap_recovery"]["scrutineer_recovery_input_used"] is False
     if sufficiency["final_answer_allowed"]:
@@ -2246,24 +2228,15 @@ def test_recovery_model_failure_blocks_without_author_or_role_fallback(
     assert terminal["terminal_status"] == "failed"
     assert "model" in str(terminal["terminal_reason"]).casefold()
     assert sufficiency_inputs
-    assert (
-        sufficiency_inputs[-1]
-        .searchos_existing_gap_recovery_terminal_state
-        == terminal
-    )
+    terminal_aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert sufficiency_inputs[-1].searchos_existing_gap_recovery_terminal_state == terminal_aggregate
     sufficiency = kernel.state.sufficiency_judgment_projection
     assert sufficiency["final_answer_posture"] == "blocked"
     assert sufficiency["final_answer_allowed"] is False
-    consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
-    assert consumption["terminal_blocker"]["blocker_class"] == (
-        "provider_or_acquisition"
-    )
-    assert any(
-        "provider_or_acquisition" in reason
-        for reason in sufficiency["readiness_reasons"]
-    )
+    consumption = sufficiency["searchos_existing_gap_recovery_terminal_consumption"]
+    assert consumption["terminal_blocker"]["blocker_class"] == ("provider_or_acquisition")
+    assert consumption["settled_interpretation"] == ("provider_or_acquisition_blocker")
+    assert any("provider_or_acquisition" in reason for reason in sufficiency["readiness_reasons"])
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]) == 1
     assert ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER] not in role_system_prompts
     assert not harness.author_prompts

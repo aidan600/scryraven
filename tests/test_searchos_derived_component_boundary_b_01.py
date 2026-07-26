@@ -23,6 +23,7 @@ from core.searchos_existing_gap_recovery_runtime import (
     SearchOSExistingGapRecoveryError,
     admit_searchos_recovery_cycle,
     ensure_searchos_whole_run_recovery_lease,
+    settle_searchos_recovery_terminal_aggregate,
     terminalize_searchos_recovery_cycle,
 )
 from core.searchos_iterative_judgment_runtime import (
@@ -52,9 +53,17 @@ def _direct(component_id: str, *, purpose: str = "supporting_premise") -> Answer
 def _contract_and_graph() -> tuple[dict, dict, dict[str, AnswerComponentContract]]:
     premise_a = _direct("component:A")
     premise_d = _direct("component:D")
-    target_e = _direct(
-        "component:E",
-        purpose=ComponentPurpose.USER_FACING_ANSWER_TARGET.value,
+    target_e = AnswerComponentContract(
+        component_id="component:E",
+        component_purpose=(ComponentPurpose.USER_FACING_ANSWER_TARGET),
+        user_facing_label="component:E",
+        user_facing_question="What establishes component:E?",
+        source_obligation_candidate_ids=("obligation:component:E",),
+        allowed_support_kinds=(
+            SupportKind.DIRECT,
+            SupportKind.INFERRED,
+        ),
+        max_inference_depth=1,
     )
     contract = {
         "canonical_state": True,
@@ -110,13 +119,23 @@ def _searched_candidate(target: AnswerComponentContract) -> dict:
         "classification": "searched_premise",
         "local_proposal_key": "recover_C",
         "local_target_key": "target_E",
+        "normalized_premise_identity": "alder premise c",
         "answer_target_refs": [target.to_dict()],
         "parent_component_refs": [target.to_dict()],
         "current_dependency_component_refs": [],
         "premise_semantics": "Premise C required to evaluate target E.",
+        "user_facing_label": "Distinctive recovered premise C label",
+        "user_facing_question": ("Which distinctive filing condition establishes premise C?"),
+        "acceptance_criteria": ["Distinctive criterion: verify the signed filing condition."],
+        "requirement_posture": "required",
+        "materiality": "material",
+        "partial_answer_policy": "qualify_visible_gap",
+        "mandatory_caveats": ["Distinctive mandatory caveat for premise C."],
         "source_obligation_specification": {
             "candidate_id": "obligation:component:C",
             "obligation_kind": "authoritative_direct_support",
+            "strictness": "required",
+            "distinctive_source_semantics": ("Signed filing-condition record only."),
         },
         "necessity_rationale": "The accepted target cannot be fulfilled without C.",
         "why_current_premises_insufficient": "A and D do not establish C.",
@@ -205,8 +224,34 @@ def test_proposal_arbitration_collapses_equivalent_and_blocks_alternatives() -> 
     first, _, _ = _bind(candidate, artifact_suffix="one")
     second, _, _ = _bind(candidate, artifact_suffix="two")
     collapsed = arbitrate_analyst_query_resolution_proposals([first, second])
+    reversed_collapsed = arbitrate_analyst_query_resolution_proposals([second, first])
     assert collapsed["status"] == "byte_equivalent_resolution_proposals_collapsed"
     assert collapsed["mutation_permitted"] is True
+    assert reversed_collapsed == collapsed
+    assert collapsed["proposal_refs"] == sorted(
+        collapsed["proposal_refs"],
+        key=lambda item: (
+            item["proposal_digest"],
+            item["proposal_id"],
+            item["stable_replay_key"],
+        ),
+    )
+
+    first_record = build_contract_amendment_v2_from_analyst_proposal(
+        proposal=collapsed["selected_proposal"],
+        current_contract=first["parent_contract_ref"],
+        new_component_spec={"component_id": "component:C"},
+        request_digest="request-digest-order",
+        requested_mode="Balanced",
+    )
+    reversed_record = build_contract_amendment_v2_from_analyst_proposal(
+        proposal=reversed_collapsed["selected_proposal"],
+        current_contract=first["parent_contract_ref"],
+        new_component_spec={"component_id": "component:C"},
+        request_digest="request-digest-order",
+        requested_mode="Balanced",
+    )
+    assert reversed_record.to_dict() == first_record.to_dict()
 
     alternative = deepcopy(candidate)
     alternative["premise_semantics"] = "A materially different premise C."
@@ -259,9 +304,6 @@ def test_searched_premise_amendment_is_atomic_and_preserves_matrix() -> None:
         current_contract=contract,
         new_component_spec={
             "component_id": "component:C",
-            "user_facing_label": "Recovered premise C",
-            "user_facing_question": "What establishes premise C?",
-            "acceptance_criteria": ("Direct source support for C.",),
         },
         request_digest="request-digest-1",
         requested_mode="Balanced",
@@ -278,9 +320,57 @@ def test_searched_premise_amendment_is_atomic_and_preserves_matrix() -> None:
     assert added["allowed_support_kinds"] == ["direct"]
     assert added["max_inference_depth"] == 0
     assert added["source_obligation_candidate_ids"] == ["obligation:component:C"]
+    assert added["user_facing_label"] == ("Distinctive recovered premise C label")
+    assert added["user_facing_question"] == ("Which distinctive filing condition establishes premise C?")
+    assert added["acceptance_criteria"] == ["Distinctive criterion: verify the signed filing condition."]
+    assert added["mandatory_caveats"] == ["Distinctive mandatory caveat for premise C."]
+    assert (
+        added["metadata"]["source_obligation_specification"]["distinctive_source_semantics"]
+        == "Signed filing-condition record only."
+    )
     revised = payload["operations"][1]["after_payload"]["component"]
     assert revised["dependency_component_ids"] == ["component:C"]
     assert revised["allowed_support_kinds"] == ["direct", "inferred"]
+    assert revised["max_inference_depth"] == 1
+
+
+def test_searched_premise_rejects_direct_only_target_without_widening() -> None:
+    contract, graph, components = _contract_and_graph()
+    direct_target = _direct(
+        "component:E",
+        purpose=ComponentPurpose.USER_FACING_ANSWER_TARGET.value,
+    )
+    contract["accepted_answer_component_refs"][-1] = direct_target.to_dict()
+    proposal = bind_analyst_query_resolution_proposal(
+        role_artifact=_artifact(
+            contract=contract,
+            graph=graph,
+        ),
+        local_candidate=_searched_candidate(direct_target),
+        question_meaning_record_ref={
+            "record_id": "qmr:1",
+            "record_digest": "qmr-digest-1",
+        },
+        parent_contract_ref=contract,
+        parent_graph_ref=graph,
+    )
+    before = deepcopy(contract)
+    with pytest.raises(
+        ValueError,
+        match="must already permit inferred support",
+    ):
+        build_contract_amendment_v2_from_analyst_proposal(
+            proposal=proposal,
+            current_contract=contract,
+            new_component_spec={"component_id": "component:C"},
+            request_digest="request-digest-direct-only",
+            requested_mode="Balanced",
+        )
+    assert contract == before
+    assert components["E"].allowed_support_kinds == (
+        SupportKind.DIRECT,
+        SupportKind.INFERRED,
+    )
 
 
 def test_analyst_owns_resolution_candidates_and_scrutineer_authorship_is_retired() -> None:
@@ -471,6 +561,8 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
         cycle_admission_ref=first["cycle_admission_ref"],
         terminal_status="recovered",
         terminal_reason=None,
+        terminal_interpretation=None,
+        lawful_selected_recovery_work_remains=True,
         expenditure=_expenditure(),
         component_admission_ref={"admission_id": "component:C1"},
         component_coverage_ref={"coverage_id": "coverage:C1"},
@@ -479,6 +571,8 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
     assert len(terminal_state["recovery_cycle_terminal_history"]) == 1
     first_expenditure_record = deepcopy(terminal_state["recovery_expenditure_history"][0])
     assert terminal_state["active_recovery_cycle_ref"] == {}
+    assert terminal_state["recovery_terminal_aggregate"]["posture"] == ("open")
+    assert terminal_state["recovery_terminal_aggregate"]["lawful_selected_recovery_work_remains"] is True
 
     replay_state, replay = _admit_searched_cycle(
         terminal_state,
@@ -508,16 +602,36 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
         },
     )
     assert second["cycle_admission"]["generation_depth"] == 2
-    second_terminal_state, _ = terminalize_searchos_recovery_cycle(
+    second_terminal_state, second_terminal = terminalize_searchos_recovery_cycle(
         state=second_state,
         cycle_admission_ref=second["cycle_admission_ref"],
         terminal_status="exhausted_insufficient",
         terminal_reason="No adequate direct source was acquired.",
+        terminal_interpretation="lawful_recovery_exhaustion",
+        lawful_selected_recovery_work_remains=False,
         expenditure=_expenditure(),
     )
+    normalized_replay_state, normalized_replay_terminal = terminalize_searchos_recovery_cycle(
+        state=second_terminal_state,
+        cycle_admission_ref=second["cycle_admission_ref"],
+        terminal_status="exhausted_insufficient",
+        terminal_reason=("  No   adequate direct source was acquired.  "),
+        terminal_interpretation="lawful_recovery_exhaustion",
+        lawful_selected_recovery_work_remains=False,
+        expenditure=_expenditure(),
+    )
+    assert normalized_replay_state == second_terminal_state
+    assert normalized_replay_terminal == second_terminal
     assert len(second_terminal_state["recovery_cycle_admission_history"]) == 2
     assert len(second_terminal_state["recovery_cycle_terminal_history"]) == 2
     assert second_terminal_state["recovery_terminal_aggregate"]["terminal_count"] == 2
+    assert second_terminal_state["recovery_terminal_aggregate"]["posture"] == "settled"
+    assert (
+        second_terminal_state["recovery_terminal_aggregate"]["settled_interpretation"] == "lawful_recovery_exhaustion"
+    )
+    assert second_terminal_state["recovery_terminal_aggregate"]["cumulative_expenditure"] == {
+        key: value * 2 for key, value in _expenditure().items()
+    }
     assert second_terminal_state["recovery_lease"] == leased["recovery_lease"]
     assert len(second_terminal_state["recovery_lease_history"]) == 1
     assert second_terminal_state["recovery_expenditure_history"][0] == (first_expenditure_record)
@@ -536,6 +650,82 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
             generation_parent_ref={},
         )
     assert second_terminal_state == before_generation_three
+
+
+def test_terminal_policy_uses_typed_interpretation_not_reason_prose() -> None:
+    initial = _searchos_state("balanced")
+    leased, lease, _ = ensure_searchos_whole_run_recovery_lease(state=initial)
+    admitted, cycle = _admit_searched_cycle(
+        leased,
+        lease,
+        depth=1,
+        replay_key="replay:typed:structural",
+        generation_parent_ref={
+            "state_id": leased["state_id"],
+            "state_digest": leased["state_digest"],
+        },
+    )
+    structural_state, structural = terminalize_searchos_recovery_cycle(
+        state=admitted,
+        cycle_admission_ref=cycle["cycle_admission_ref"],
+        terminal_status="failed",
+        terminal_reason="Identical diagnostic prose.",
+        terminal_interpretation="structural_or_validation_blocker",
+        lawful_selected_recovery_work_remains=False,
+        expenditure=_expenditure(),
+    )
+    assert structural["terminal_blocker"] == {
+        "blocker_class": "structural_or_validation",
+        "interpretation": "structural_or_validation_blocker",
+        "reason_code": "Identical diagnostic prose.",
+    }
+    assert (
+        structural_state["recovery_terminal_aggregate"]["settled_interpretation"] == "structural_or_validation_blocker"
+    )
+    with pytest.raises(
+        SearchOSExistingGapRecoveryError,
+        match="typed interpretation",
+    ):
+        settle_searchos_recovery_terminal_aggregate(
+            state=admitted,
+            settled_interpretation="invented_from_reason_prose",
+        )
+
+    admitted_2, cycle_2 = _admit_searched_cycle(
+        leased,
+        lease,
+        depth=1,
+        replay_key="replay:typed:exhaustion",
+        generation_parent_ref={
+            "state_id": leased["state_id"],
+            "state_digest": leased["state_digest"],
+        },
+    )
+    exhausted_state, exhausted = terminalize_searchos_recovery_cycle(
+        state=admitted_2,
+        cycle_admission_ref=cycle_2["cycle_admission_ref"],
+        terminal_status="exhausted_insufficient",
+        terminal_reason="Identical diagnostic prose.",
+        terminal_interpretation="lawful_recovery_exhaustion",
+        lawful_selected_recovery_work_remains=False,
+        expenditure=_expenditure(),
+    )
+    assert exhausted["terminal_blocker"]["interpretation"] == "lawful_recovery_exhaustion"
+    assert exhausted_state["recovery_terminal_aggregate"]["settled_interpretation"] == "lawful_recovery_exhaustion"
+
+    with pytest.raises(
+        SearchOSExistingGapRecoveryError,
+        match="status and typed interpretation conflict",
+    ):
+        terminalize_searchos_recovery_cycle(
+            state=admitted_2,
+            cycle_admission_ref=cycle_2["cycle_admission_ref"],
+            terminal_status="failed",
+            terminal_reason="Identical diagnostic prose.",
+            terminal_interpretation="lawful_recovery_exhaustion",
+            lawful_selected_recovery_work_remains=False,
+            expenditure=_expenditure(),
+        )
 
 
 @pytest.mark.parametrize(

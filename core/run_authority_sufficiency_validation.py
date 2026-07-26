@@ -350,9 +350,12 @@ def _searchos_recovery_terminal_consumption(
     judgment_input: RunSufficiencyJudgmentInput,
     terminal: Mapping[str, Any],
 ) -> dict[str, Any]:
-    if terminal.get("schema_version") == (
-        "searchos_recovery_cycle_terminal_v2"
-    ):
+    if terminal.get("schema_version") == ("searchos_recovery_terminal_aggregate_v2"):
+        return _generalized_searchos_recovery_aggregate_consumption(
+            judgment_input=judgment_input,
+            aggregate=terminal,
+        )
+    if terminal.get("schema_version") == ("searchos_recovery_cycle_terminal_v2"):
         return _generalized_searchos_recovery_terminal_consumption(
             judgment_input=judgment_input,
             terminal=terminal,
@@ -665,6 +668,64 @@ def _searchos_recovery_terminal_consumption(
     }
 
 
+def _generalized_searchos_recovery_aggregate_consumption(
+    *,
+    judgment_input: RunSufficiencyJudgmentInput,
+    aggregate: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Consume only the settled typed whole-run SearchOS aggregate."""
+
+    from core.searchos_existing_gap_recovery_runtime import (
+        RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION,
+        validate_searchos_generalized_recovery_terminal_aggregate,
+    )
+
+    canonical = validate_searchos_generalized_recovery_terminal_aggregate(
+        aggregate,
+        state=judgment_input.searchos_state,
+    )
+    run_identity = _mapping(judgment_input.run_identity)
+    if canonical.get("run_id") != run_identity.get("run_id") or canonical.get("request_id") != run_identity.get(
+        "request_id"
+    ):
+        raise ValueError("generalized SearchOS recovery aggregate differs from run identity")
+    if canonical.get("posture") != "settled":
+        raise ValueError("Sufficiency cannot consume an open SearchOS recovery aggregate")
+    interpretation = clean_token(canonical.get("settled_interpretation"))
+    blocker_class = RECOVERY_TERMINAL_BLOCKER_CLASS_BY_INTERPRETATION.get(str(interpretation))
+    terminal_history = [
+        _mapping(item)
+        for item in _list(_mapping(judgment_input.searchos_state).get("recovery_cycle_terminal_history"))
+        if isinstance(item, Mapping)
+    ]
+    latest_terminal = terminal_history[-1] if terminal_history else {}
+    if blocker_class:
+        terminal_blocker = _mapping(latest_terminal.get("terminal_blocker"))
+        if (
+            terminal_blocker.get("blocker_class") != blocker_class
+            or terminal_blocker.get("interpretation") != interpretation
+        ):
+            raise ValueError("settled SearchOS aggregate typed blocker differs from its terminal history")
+    else:
+        terminal_blocker = {}
+    return {
+        "schema_version": ("run_sufficiency_searchos_recovery_terminal_consumption_v3"),
+        "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "canonical_state": True,
+        "terminal_aggregate_id": canonical.get("terminal_aggregate_id"),
+        "terminal_aggregate_digest": canonical.get("terminal_aggregate_digest"),
+        "aggregate_posture": "settled",
+        "settled_interpretation": interpretation,
+        "terminal_status": latest_terminal.get("terminal_status"),
+        "terminal_blocker": terminal_blocker,
+        "cycle_admission_refs": list(canonical.get("cycle_admission_refs") or ()),
+        "cycle_terminal_refs": list(canonical.get("cycle_terminal_refs") or ()),
+        "cumulative_expenditure": _mapping(canonical.get("cumulative_expenditure")),
+        "mode_cycle_generation_caps": _mapping(canonical.get("mode_cycle_generation_caps")),
+        "lawful_selected_recovery_work_remains": False,
+    }
+
+
 def _generalized_searchos_recovery_terminal_consumption(
     *,
     judgment_input: RunSufficiencyJudgmentInput,
@@ -872,37 +933,20 @@ def _generalized_searchos_recovery_terminal_consumption(
             for ref in coverage_refs
         )
     ):
-        raise ValueError(
-            "recovered generalized SearchOS terminal lacks current coverage"
-        )
-    reason = clean_text(
-        canonical_terminal.get("terminal_reason"),
-        limit=240,
-    )
-    blocker_class = None
-    if not recovered:
-        normalized_reason = (reason or "").casefold()
-        blocker_class = (
-            "provider_or_acquisition"
-            if any(
-                marker in normalized_reason
-                for marker in (
-                    "model",
-                    "provider",
-                    "acquisition",
-                    "fetch",
-                    "read",
-                    "navigation",
-                    "discover",
-                )
-            )
-            else "validation"
-            if "failed" in normalized_reason
-            else "recovery_exhaustion"
-        )
-    aggregate = _mapping(
-        searchos_state.get("recovery_terminal_aggregate")
-    )
+        raise ValueError("recovered generalized SearchOS terminal lacks current coverage")
+    blocker = _mapping(canonical_terminal.get("terminal_blocker"))
+    if not recovered and (
+        not blocker.get("blocker_class")
+        or blocker.get("interpretation")
+        not in {
+            "structural_or_validation_blocker",
+            "provider_or_acquisition_blocker",
+            "lawful_recovery_exhaustion",
+            "lawful_recovery_ineligible",
+        }
+    ):
+        raise ValueError("generalized SearchOS cycle terminal lacks typed blocker facts")
+    aggregate = _mapping(searchos_state.get("recovery_terminal_aggregate"))
     return {
         "schema_version": (
             "run_sufficiency_searchos_recovery_terminal_consumption_v2"
@@ -930,17 +974,8 @@ def _generalized_searchos_recovery_terminal_consumption(
         ),
         "recovery_slot_ref": recovery_slot_ref,
         "component_coverage_ref": coverage_ref,
-        "terminal_component_ready": (
-            recovered and target_assessment.status == "satisfied"
-        ),
-        "terminal_blocker": (
-            {
-                "blocker_class": blocker_class,
-                "reason_code": reason,
-            }
-            if blocker_class
-            else {}
-        ),
+        "terminal_component_ready": (recovered and target_assessment.status == "satisfied"),
+        "terminal_blocker": blocker,
         "target_source_truth_status": target_assessment.status,
         "target_requirement_ids": target_requirement_ids,
         "required_source_obligation_assessments": [
@@ -2751,9 +2786,12 @@ def build_deterministic_sufficiency_judgment(
     failure_reason = _failure_card_reason(weak_facts)
     search_insufficient = _search_stopped_insufficient(search)
     recovery_exhausted = _recovery_exhausted(search, budget)
-    if (
-        searchos_recovery_terminal_consumption.get("terminal_status")
-        in {"exhausted_insufficient", "failed"}
+    if searchos_recovery_terminal_consumption.get("settled_interpretation") in {
+        "lawful_recovery_exhaustion",
+        "lawful_recovery_ineligible",
+    } or (
+        not searchos_recovery_terminal_consumption.get("settled_interpretation")
+        and searchos_recovery_terminal_consumption.get("terminal_status") == "exhausted_insufficient"
     ):
         recovery_exhausted = True
     search_satisfied = _search_stopped_satisfied(search)
@@ -2787,56 +2825,47 @@ def build_deterministic_sufficiency_judgment(
         final_allowed = False
         rationale = "component_readiness_not_satisfied"
     if multicomponent_consumption:
-        ordinary_ready_with_caveats = (
-            decision is RunSufficiencyDecision.READY_WITH_CAVEATS
-        )
-        ordinary_ready_for_synthesis = (
-            final_allowed
-            and decision
-            in {
-                RunSufficiencyDecision.READY_DIRECT,
-                RunSufficiencyDecision.READY_WITH_CAVEATS,
-            }
-        )
-        direct_entries = list(
-            multicomponent_consumption.get("direct_component_entries") or ()
-        )
-        synthesis_entries = list(
-            multicomponent_consumption.get("admitted_synthesis_entries") or ()
-        )
-        graph_ready = (
-            multicomponent_consumption.get("graph_ready_for_synthesis") is True
-        )
-        query_targets_fulfilled = (
-            multicomponent_consumption.get(
-                "all_required_answer_targets_fulfilled"
+        ordinary_ready_with_caveats = decision is RunSufficiencyDecision.READY_WITH_CAVEATS
+        ordinary_ready_for_synthesis = final_allowed and decision in {
+            RunSufficiencyDecision.READY_DIRECT,
+            RunSufficiencyDecision.READY_WITH_CAVEATS,
+        }
+        direct_entries = list(multicomponent_consumption.get("direct_component_entries") or ())
+        synthesis_entries = list(multicomponent_consumption.get("admitted_synthesis_entries") or ())
+        graph_ready = multicomponent_consumption.get("graph_ready_for_synthesis") is True
+        query_targets_fulfilled = multicomponent_consumption.get("all_required_answer_targets_fulfilled") is True
+        sufficient_with_inference = multicomponent_consumption.get("sufficient_with_admitted_inference") is True
+        query_centered_target_count = int(multicomponent_consumption.get("required_answer_target_count") or 0)
+        unfulfilled_targets = [
+            _mapping(item)
+            for item in multicomponent_consumption.get("answer_target_fulfillments") or ()
+            if _mapping(item).get("fulfillment_status") not in {"fulfilled_direct", "fulfilled_inferred"}
+        ]
+        target_partial_allowed = bool(
+            (direct_entries or synthesis_entries)
+            and unfulfilled_targets
+            and all(
+                _mapping(item.get("component_ref")).get("partial_answer_policy") == "qualify_visible_gap"
+                for item in unfulfilled_targets
             )
-            is True
         )
-        sufficient_with_inference = (
-            multicomponent_consumption.get(
-                "sufficient_with_admitted_inference"
+        recovery_interpretation = clean_token(
+            searchos_recovery_terminal_consumption.get("settled_interpretation")
+            or _mapping(searchos_recovery_terminal_consumption.get("terminal_blocker")).get("interpretation")
+            or {
+                "validation": "structural_or_validation_blocker",
+                "structural_or_validation": ("structural_or_validation_blocker"),
+                "provider_or_acquisition": ("provider_or_acquisition_blocker"),
+                "recovery_exhaustion": ("lawful_recovery_exhaustion"),
+                "recovery_ineligible": ("lawful_recovery_ineligible"),
+            }.get(
+                str(_mapping(searchos_recovery_terminal_consumption.get("terminal_blocker")).get("blocker_class") or "")
             )
-            is True
+            or searchos_required_needs_block_consumption.get("final_blocker_interpretation")
         )
-        query_centered_target_count = int(
-            multicomponent_consumption.get(
-                "required_answer_target_count"
-            )
-            or 0
-        )
-        if (
-            query_centered_target_count
-            and graph_ready
-            and query_targets_fulfilled
-            and sufficient_with_inference
-        ):
-            decision = (
-                RunSufficiencyDecision.READY_WITH_ADMITTED_INFERENCE
-            )
-            posture = (
-                SufficiencyPosture.SUFFICIENT_WITH_ADMITTED_INFERENCE
-            )
+        if query_centered_target_count and graph_ready and query_targets_fulfilled and sufficient_with_inference:
+            decision = RunSufficiencyDecision.READY_WITH_ADMITTED_INFERENCE
+            posture = SufficiencyPosture.SUFFICIENT_WITH_ADMITTED_INFERENCE
             final_allowed = True
             rationale = (
                 "all_required_answer_targets_fulfilled_with_admitted_inference"
@@ -2857,20 +2886,37 @@ def build_deterministic_sufficiency_judgment(
                 decision = RunSufficiencyDecision.READY_DIRECT
                 posture = SufficiencyPosture.DIRECT_ANSWER
                 rationale = "all_required_answer_targets_fulfilled_direct"
-        elif (
-            query_centered_target_count
-            and not query_targets_fulfilled
-        ):
-            decision = RunSufficiencyDecision.BLOCK_FINALIZATION
-            posture = SufficiencyPosture.BLOCKED
-            final_allowed = False
-            rationale = "required_answer_target_unfulfilled"
-            multicomponent_consumption["direct_component_entries"] = []
-            multicomponent_consumption["direct_component_entry_count"] = 0
-            multicomponent_consumption["admitted_synthesis_entries"] = []
-            multicomponent_consumption[
-                "admitted_synthesis_entry_count"
-            ] = 0
+        elif query_centered_target_count and not query_targets_fulfilled:
+            if (
+                recovery_interpretation
+                in {
+                    "lawful_recovery_exhaustion",
+                    "lawful_recovery_ineligible",
+                }
+                and target_partial_allowed
+            ):
+                decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+                posture = SufficiencyPosture.PARTIAL_ANSWER
+                final_allowed = True
+                rationale = (
+                    "required_answer_target_unfulfilled_with_typed_"
+                    + str(recovery_interpretation)
+                    + "_and_policy_authorized_partial"
+                )
+            elif recovery_interpretation == "structural_or_validation_blocker":
+                decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+                posture = SufficiencyPosture.BLOCKED
+                final_allowed = False
+                rationale = "required_answer_target_structural_or_validation_blocked"
+            else:
+                decision = RunSufficiencyDecision.INSUFFICIENT_EVIDENCE
+                posture = SufficiencyPosture.INSUFFICIENT_ANSWER
+                final_allowed = False
+                rationale = "required_answer_target_unfulfilled_and_partial_output_not_authorized"
+                multicomponent_consumption["direct_component_entries"] = []
+                multicomponent_consumption["direct_component_entry_count"] = 0
+                multicomponent_consumption["admitted_synthesis_entries"] = []
+                multicomponent_consumption["admitted_synthesis_entry_count"] = 0
         elif synthesis_entries and ordinary_ready_for_synthesis:
             if not graph_ready:
                 decision = RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
@@ -2956,27 +3002,37 @@ def build_deterministic_sufficiency_judgment(
             multicomponent_consumption["admitted_synthesis_entries"] = []
             multicomponent_consumption["admitted_synthesis_entry_count"] = 0
             multicomponent_consumption["scheduler_required_work_blocked"] = True
-    searchos_terminal_blocker_class = clean_token(
-        _mapping(
-            searchos_recovery_terminal_consumption.get(
-                "terminal_blocker"
-            )
-        ).get("blocker_class")
+    searchos_terminal_blocker = _mapping(searchos_recovery_terminal_consumption.get("terminal_blocker"))
+    searchos_terminal_blocker_class = clean_token(searchos_terminal_blocker.get("blocker_class"))
+    searchos_terminal_interpretation = clean_token(
+        searchos_recovery_terminal_consumption.get("settled_interpretation")
+        or searchos_terminal_blocker.get("interpretation")
+        or {
+            "validation": "structural_or_validation_blocker",
+            "structural_or_validation": ("structural_or_validation_blocker"),
+            "provider_or_acquisition": ("provider_or_acquisition_blocker"),
+            "recovery_exhaustion": "lawful_recovery_exhaustion",
+            "recovery_ineligible": "lawful_recovery_ineligible",
+        }.get(str(searchos_terminal_blocker_class or ""))
     )
-    if (
-        searchos_recovery_terminal_consumption.get("terminal_status")
-        in {"exhausted_insufficient", "failed"}
-        and searchos_terminal_blocker_class
-        in {"provider_or_acquisition", "validation"}
+    if searchos_terminal_interpretation == "structural_or_validation_blocker":
+        decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+        posture = SufficiencyPosture.BLOCKED
+        final_allowed = False
+        rationale = "searchos_recovery_terminal_structural_or_validation_blocked"
+        if multicomponent_consumption:
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption["direct_component_entry_count"] = 0
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption["admitted_synthesis_entry_count"] = 0
+            multicomponent_consumption["searchos_recovery_terminal_blocked"] = True
+    elif searchos_terminal_interpretation == "provider_or_acquisition_blocker" and not (
+        multicomponent_consumption and multicomponent_consumption.get("all_required_answer_targets_fulfilled") is True
     ):
         decision = RunSufficiencyDecision.BLOCK_FINALIZATION
         posture = SufficiencyPosture.BLOCKED
         final_allowed = False
-        rationale = (
-            "searchos_recovery_terminal_"
-            + searchos_terminal_blocker_class
-            + "_blocked"
-        )
+        rationale = "searchos_recovery_terminal_provider_or_acquisition_blocked"
         if multicomponent_consumption:
             multicomponent_consumption["direct_component_entries"] = []
             multicomponent_consumption[
@@ -2996,10 +3052,7 @@ def build_deterministic_sufficiency_judgment(
             "final_blocker_interpretation"
         )
     )
-    if searchos_required_block_interpretation in {
-        "structural_or_validation_blocker",
-        "provider_or_acquisition_blocker",
-    }:
+    if searchos_required_block_interpretation == ("structural_or_validation_blocker"):
         decision = RunSufficiencyDecision.BLOCK_FINALIZATION
         posture = SufficiencyPosture.BLOCKED
         final_allowed = False
@@ -3010,18 +3063,21 @@ def build_deterministic_sufficiency_judgment(
         )
         if multicomponent_consumption:
             multicomponent_consumption["direct_component_entries"] = []
-            multicomponent_consumption[
-                "direct_component_entry_count"
-            ] = 0
-            multicomponent_consumption[
-                "admitted_synthesis_entries"
-            ] = []
-            multicomponent_consumption[
-                "admitted_synthesis_entry_count"
-            ] = 0
-            multicomponent_consumption[
-                "searchos_required_needs_blocked"
-            ] = True
+            multicomponent_consumption["direct_component_entry_count"] = 0
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption["admitted_synthesis_entry_count"] = 0
+            multicomponent_consumption["searchos_required_needs_blocked"] = True
+    elif searchos_required_block_interpretation == ("provider_or_acquisition_blocker"):
+        decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+        posture = SufficiencyPosture.BLOCKED
+        final_allowed = False
+        rationale = "searchos_required_needs_provider_or_acquisition_blocked"
+        if multicomponent_consumption:
+            multicomponent_consumption["direct_component_entries"] = []
+            multicomponent_consumption["direct_component_entry_count"] = 0
+            multicomponent_consumption["admitted_synthesis_entries"] = []
+            multicomponent_consumption["admitted_synthesis_entry_count"] = 0
+            multicomponent_consumption["searchos_required_needs_blocked"] = True
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,

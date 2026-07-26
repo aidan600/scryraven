@@ -17,6 +17,7 @@ from typing import Any, Mapping, Sequence
 
 from core.analyst_query_resolution_proposal import (
     ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
+    PROPOSAL_LIFECYCLE_STATUSES,
     arbitrate_analyst_query_resolution_proposals,
     bind_analyst_query_resolution_proposal,
     selected_proposals_for_role_artifact,
@@ -1432,10 +1433,44 @@ def _record_analyst_query_resolution_candidates(
     known = {str(item.get("proposal_id") or ""): item for item in history}
     for proposal in bound:
         known.setdefault(str(proposal["proposal_id"]), proposal)
-    proposals = list(known.values())
+    proposals = sorted(
+        known.values(),
+        key=lambda item: (
+            str(item.get("proposal_digest") or ""),
+            str(item.get("proposal_id") or ""),
+        ),
+    )
+    lifecycle_history = [
+        _safe_mapping(item) for item in projection.get("proposal_lifecycle_history") or () if isinstance(item, Mapping)
+    ]
+    latest_status = {str(item.get("proposal_id") or ""): str(item.get("status") or "") for item in lifecycle_history}
+    for proposal in proposals:
+        proposal_id = str(proposal.get("proposal_id") or "")
+        if proposal_id not in latest_status:
+            event = _proposal_lifecycle_event(
+                proposal=proposal,
+                status="pending",
+            )
+            lifecycle_history.append(event)
+            latest_status[proposal_id] = "pending"
+    current_contract_ref = _accepted_contract_ref(
+        _safe_mapping(run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract)
+    )
+    for proposal in proposals:
+        proposal_id = str(proposal.get("proposal_id") or "")
+        if latest_status.get(proposal_id) == "pending" and proposal.get("parent_contract_ref") != current_contract_ref:
+            event = _proposal_lifecycle_event(
+                proposal=proposal,
+                status="superseded_stale",
+                reason="parent_contract_is_not_current",
+            )
+            lifecycle_history.append(event)
+            latest_status[proposal_id] = "superseded_stale"
     arbitration_records = []
     scope_groups: dict[str, list[dict[str, Any]]] = {}
     for proposal in proposals:
+        if latest_status.get(str(proposal.get("proposal_id") or "")) != ("pending"):
+            continue
         scope_key = safe_packet_digest(
             {
                 "run_id": proposal.get("run_id"),
@@ -1446,26 +1481,153 @@ def _record_analyst_query_resolution_candidates(
         )
         scope_groups.setdefault(scope_key, []).append(proposal)
     for scope_key, group in sorted(scope_groups.items()):
-        arbitration_records.append(
-            {
-                "scope_key": scope_key,
-                **arbitrate_analyst_query_resolution_proposals(group),
-            }
-        )
-    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = {
-        "schema_version": "analyst_query_resolution_proposal_registry_v1",
+        arbitration = {
+            "scope_key": scope_key,
+            **arbitrate_analyst_query_resolution_proposals(group),
+        }
+        arbitration_records.append(arbitration)
+        if arbitration.get("status") == "ambiguous_resolution_proposals":
+            for proposal in group:
+                proposal_id = str(proposal.get("proposal_id") or "")
+                event = _proposal_lifecycle_event(
+                    proposal=proposal,
+                    status="ambiguous",
+                    reason="nonidentical_current_proposals_for_exact_scope",
+                )
+                lifecycle_history.append(event)
+                latest_status[proposal_id] = "ambiguous"
+    arbitration_history = [
+        _safe_mapping(item) for item in projection.get("arbitration_history") or () if isinstance(item, Mapping)
+    ]
+    known_arbitration_ids = {str(item.get("arbitration_identity") or "") for item in arbitration_history}
+    for arbitration in arbitration_records:
+        identity = str(arbitration.get("arbitration_identity") or "")
+        if identity and identity not in known_arbitration_ids:
+            arbitration_history.append(arbitration)
+            known_arbitration_ids.add(identity)
+    lifecycle_by_proposal = {
+        str(item.get("proposal_id") or ""): item for item in lifecycle_history if item.get("proposal_id")
+    }
+    registry_payload = {
+        "schema_version": "analyst_query_resolution_proposal_registry_v2",
         "owner": "RunKernel.AnalystQueryResolutionProposalRegistry",
         "canonical_state": False,
         "proposal_only": True,
         "run_id": run_kernel.state.run_id,
         "request_id": run_kernel.state.request_id,
         "proposals": proposals,
+        "proposal_lifecycle_history": lifecycle_history,
+        "proposal_lifecycle": lifecycle_by_proposal,
         "arbitrations": arbitration_records,
+        "arbitration_history": arbitration_history,
         "ambiguous_resolution_proposals": any(
             item.get("status") == "ambiguous_resolution_proposals" for item in arbitration_records
         ),
         "raw_private_retained": False,
     }
+    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = registry_payload
+
+
+def _proposal_lifecycle_event(
+    *,
+    proposal: Mapping[str, Any],
+    status: str,
+    downstream_refs: Mapping[str, Any] | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    if status not in PROPOSAL_LIFECYCLE_STATUSES:
+        raise OrdinaryMulticomponentRuntimeError("query-resolution proposal lifecycle status is invalid")
+    core = {
+        "schema_version": "analyst_query_resolution_proposal_lifecycle_v1",
+        "proposal_id": proposal.get("proposal_id"),
+        "proposal_digest": proposal.get("proposal_digest"),
+        "stable_replay_key": proposal.get("stable_replay_key"),
+        "status": status,
+        "downstream_refs": _safe_mapping(downstream_refs),
+        "reason": _clean_text(reason, limit=240),
+        "append_only": True,
+    }
+    digest = safe_packet_digest(core)
+    return {
+        **core,
+        "lifecycle_event_id": f"aqrp-lifecycle:{digest[:24]}",
+        "lifecycle_event_digest": digest,
+    }
+
+
+def _append_proposal_lifecycle_event(
+    *,
+    run_kernel: Any,
+    proposal: Mapping[str, Any],
+    status: str,
+    downstream_refs: Mapping[str, Any] | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    registry = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
+    event = _proposal_lifecycle_event(
+        proposal=proposal,
+        status=status,
+        downstream_refs=downstream_refs,
+        reason=reason,
+    )
+    history = [
+        _safe_mapping(item) for item in registry.get("proposal_lifecycle_history") or () if isinstance(item, Mapping)
+    ]
+    if not any(item.get("lifecycle_event_digest") == event["lifecycle_event_digest"] for item in history):
+        history.append(event)
+    lifecycle = {str(item.get("proposal_id") or ""): item for item in history if item.get("proposal_id")}
+    registry["schema_version"] = "analyst_query_resolution_proposal_registry_v2"
+    registry["proposal_lifecycle_history"] = history
+    registry["proposal_lifecycle"] = lifecycle
+    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = registry
+    return event
+
+
+def record_analyst_query_resolution_candidates(
+    *,
+    run_kernel: Any,
+    artifact: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Publish candidates through the ordinary RunKernel-owned registry."""
+
+    _record_analyst_query_resolution_candidates(
+        run_kernel=run_kernel,
+        artifact=artifact,
+    )
+    return _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
+
+
+def record_analyst_query_resolution_downstream_refs(
+    *,
+    run_kernel: Any,
+    proposal_ref: Mapping[str, Any],
+    downstream_refs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Append exact downstream lineage for a consumed proposal."""
+
+    registry = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
+    proposal = next(
+        (
+            _safe_mapping(item)
+            for item in registry.get("proposals") or ()
+            if _safe_mapping(item).get("proposal_id") == proposal_ref.get("proposal_id")
+            and _safe_mapping(item).get("proposal_digest") == proposal_ref.get("proposal_digest")
+        ),
+        {},
+    )
+    if not proposal:
+        raise OrdinaryMulticomponentRuntimeError("cannot record downstream refs for an unknown Analyst proposal")
+    prior = _safe_mapping(_safe_mapping(registry.get("proposal_lifecycle")).get(str(proposal.get("proposal_id") or "")))
+    merged = {
+        **_safe_mapping(prior.get("downstream_refs")),
+        **_safe_mapping(downstream_refs),
+    }
+    return _append_proposal_lifecycle_event(
+        run_kernel=run_kernel,
+        proposal=proposal,
+        status="consumed",
+        downstream_refs=merged,
+    )
 
 
 def _selected_query_resolution_proposals_for_artifact(
@@ -1482,10 +1644,97 @@ def _selected_query_resolution_proposals_for_artifact(
     )
 
 
+def _current_pending_searched_premise_proposals(
+    *,
+    run_kernel: Any,
+) -> list[dict[str, Any]]:
+    registry = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
+    lifecycle = _safe_mapping(registry.get("proposal_lifecycle"))
+    selected = [
+        _safe_mapping(_safe_mapping(item).get("selected_proposal"))
+        for item in registry.get("arbitrations") or ()
+        if _safe_mapping(item).get("mutation_permitted") is True
+        and _safe_mapping(_safe_mapping(item).get("selected_proposal")).get("classification") == "searched_premise"
+        and _safe_mapping(
+            lifecycle.get(str(_safe_mapping(_safe_mapping(item).get("selected_proposal")).get("proposal_id") or ""))
+        ).get("status")
+        == "pending"
+    ]
+    return sorted(
+        [item for item in selected if item],
+        key=lambda item: (
+            str(item.get("proposal_digest") or ""),
+            str(item.get("proposal_id") or ""),
+        ),
+    )
+
+
+def resolve_next_searched_premise_recovery_posture(
+    *,
+    run_kernel: Any,
+) -> dict[str, Any]:
+    """Resolve whether the sole current proposal may become another generation."""
+
+    from core.searchos_existing_gap_recovery_runtime import (
+        SearchOSExistingGapRecoveryError,
+        validate_searched_premise_generation_prework,
+    )
+
+    selected = _current_pending_searched_premise_proposals(run_kernel=run_kernel)
+    if not selected:
+        return {
+            "status": "no_current_pending_searched_premise",
+            "lawful_selected_recovery_work_remains": False,
+            "proposal_ref": {},
+        }
+    if len(selected) != 1:
+        raise OrdinaryMulticomponentRuntimeError(
+            "ambiguous_resolution_proposals: one recovery generation cannot "
+            "mechanically select among multiple searched-premise proposals"
+        )
+    proposal = selected[0]
+    depth = int(
+        _safe_mapping(_safe_mapping(proposal.get("variant_payload")).get("recovery_generation")).get("depth") or 0
+    )
+    try:
+        eligibility = validate_searched_premise_generation_prework(
+            run_kernel.state.searchos_state,
+            generation_depth=depth,
+        )
+    except SearchOSExistingGapRecoveryError as exc:
+        _append_proposal_lifecycle_event(
+            run_kernel=run_kernel,
+            proposal=proposal,
+            status="rejected",
+            reason=str(exc),
+        )
+        return {
+            "status": "rejected_before_amendment_mutation_or_work",
+            "lawful_selected_recovery_work_remains": False,
+            "proposal_ref": {
+                "proposal_id": proposal.get("proposal_id"),
+                "proposal_digest": proposal.get("proposal_digest"),
+                "stable_replay_key": proposal.get("stable_replay_key"),
+            },
+            "reason": str(exc),
+        }
+    return {
+        "status": "current_pending_generation_eligible",
+        "lawful_selected_recovery_work_remains": True,
+        "proposal_ref": {
+            "proposal_id": proposal.get("proposal_id"),
+            "proposal_digest": proposal.get("proposal_digest"),
+            "stable_replay_key": proposal.get("stable_replay_key"),
+        },
+        "eligibility": eligibility,
+    }
+
+
 def authorize_searched_premise_recovery_from_analyst_proposals(
     *,
     run_kernel: Any,
     requested_mode: str,
+    proposal_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Atomically amend for one selected searched premise and admit its cycle."""
 
@@ -1498,14 +1747,95 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
     from core.run_kernel import Observation, RunStageStatus
 
     registry = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
-    selected = [
-        _safe_mapping(_safe_mapping(item).get("selected_proposal"))
-        for item in registry.get("arbitrations") or ()
-        if _safe_mapping(item).get("mutation_permitted") is True
-        and _safe_mapping(_safe_mapping(item).get("selected_proposal")).get("classification") == "searched_premise"
-    ]
-    selected = [item for item in selected if item]
+    lifecycle = _safe_mapping(registry.get("proposal_lifecycle"))
+    requested_proposal_ref = _safe_mapping(proposal_ref)
+    if requested_proposal_ref:
+        requested = next(
+            (
+                _safe_mapping(item)
+                for item in registry.get("proposals") or ()
+                if _safe_mapping(item).get("proposal_id") == requested_proposal_ref.get("proposal_id")
+                and _safe_mapping(item).get("proposal_digest") == requested_proposal_ref.get("proposal_digest")
+            ),
+            {},
+        )
+        if not requested:
+            raise OrdinaryMulticomponentRuntimeError("requested searched-premise proposal replay is unknown")
+        prior_lifecycle = _safe_mapping(lifecycle.get(str(requested.get("proposal_id") or "")))
+        if prior_lifecycle.get("status") in {
+            "consumed",
+            "exact_replay",
+        }:
+            downstream_refs = _safe_mapping(prior_lifecycle.get("downstream_refs"))
+            amendment_replay = _safe_mapping(
+                run_kernel.contract_amendment_replay_for_analyst_proposal(
+                    proposal_ref={
+                        key: requested.get(key)
+                        for key in (
+                            "proposal_id",
+                            "proposal_digest",
+                            "stable_replay_key",
+                        )
+                    }
+                )
+            )
+            _append_proposal_lifecycle_event(
+                run_kernel=run_kernel,
+                proposal=requested,
+                status="exact_replay",
+                downstream_refs=downstream_refs,
+            )
+            return {
+                "status": "exact_replay",
+                "work_authorized": False,
+                "proposal": requested,
+                "downstream_refs": downstream_refs,
+                **amendment_replay,
+                **downstream_refs,
+            }
+        if prior_lifecycle.get("status") != "pending":
+            raise OrdinaryMulticomponentRuntimeError("requested searched-premise proposal is not executable")
+    selected = _current_pending_searched_premise_proposals(run_kernel=run_kernel)
+    if requested_proposal_ref:
+        selected = [
+            item
+            for item in selected
+            if item.get("proposal_id") == requested_proposal_ref.get("proposal_id")
+            and item.get("proposal_digest") == requested_proposal_ref.get("proposal_digest")
+        ]
     if not selected:
+        consumed = [
+            _safe_mapping(item)
+            for item in registry.get("proposals") or ()
+            if _safe_mapping(item).get("classification") == "searched_premise"
+            and _safe_mapping(lifecycle.get(str(_safe_mapping(item).get("proposal_id") or ""))).get("status")
+            in {"consumed", "exact_replay"}
+        ]
+        if len(consumed) == 1:
+            prior = _safe_mapping(lifecycle.get(str(consumed[0].get("proposal_id") or "")))
+            downstream_refs = _safe_mapping(prior.get("downstream_refs"))
+            amendment_replay = _safe_mapping(
+                run_kernel.contract_amendment_replay_for_analyst_proposal(
+                    proposal_ref={
+                        key: consumed[0].get(key)
+                        for key in (
+                            "proposal_id",
+                            "proposal_digest",
+                            "stable_replay_key",
+                        )
+                    }
+                )
+            )
+            _append_proposal_lifecycle_event(
+                run_kernel=run_kernel,
+                proposal=consumed[0],
+                status="exact_replay",
+                downstream_refs=downstream_refs,
+            )
+            return {
+                **amendment_replay,
+                "proposal": consumed[0],
+            }
         return {
             "status": "no_selected_searched_premise",
             "work_authorized": False,
@@ -1527,9 +1857,42 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         }
     )
     if replay:
+        downstream_refs = _safe_mapping(replay.get("downstream_refs") or replay)
+        _append_proposal_lifecycle_event(
+            run_kernel=run_kernel,
+            proposal=proposal,
+            status="exact_replay",
+            downstream_refs=downstream_refs,
+        )
         return {
             **replay,
             "proposal": proposal,
+        }
+    from core.searchos_existing_gap_recovery_runtime import (
+        SearchOSExistingGapRecoveryError,
+        validate_searched_premise_generation_prework,
+    )
+
+    generation_depth = int(
+        _safe_mapping(_safe_mapping(proposal.get("variant_payload")).get("recovery_generation")).get("depth") or 0
+    )
+    try:
+        validate_searched_premise_generation_prework(
+            run_kernel.state.searchos_state,
+            generation_depth=generation_depth,
+        )
+    except SearchOSExistingGapRecoveryError as exc:
+        _append_proposal_lifecycle_event(
+            run_kernel=run_kernel,
+            proposal=proposal,
+            status="rejected",
+            reason=str(exc),
+        )
+        return {
+            "status": "rejected_before_amendment_mutation_or_work",
+            "work_authorized": False,
+            "proposal": proposal,
+            "reason": str(exc),
         }
     current_contract = _safe_mapping(
         run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
@@ -1546,6 +1909,11 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         for item in source_graph.get("synthesis_nodes") or ()
         if isinstance(item, Mapping)
     )
+    graph_advanced_by_proposal_artifact = _safe_mapping(source_graph.get("selective_cross_component_analyst_ref")).get(
+        "artifact_id"
+    ) == proposal_artifact_ref.get("artifact_id") and _safe_mapping(
+        source_graph.get("selective_cross_component_analyst_ref")
+    ).get("artifact_digest") == proposal_artifact_ref.get("artifact_digest")
     recorded_parent_graph_ref = _safe_mapping(proposal.get("parent_graph_ref"))
     current_source_graph_ref = {
         "graph_id": source_graph.get("graph_id"),
@@ -1565,6 +1933,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
                 and not recorded_parent_graph_ref
                 and graph_created_by_proposal_artifact
             )
+            or graph_advanced_by_proposal_artifact
         )
     ):
         raise OrdinaryMulticomponentRuntimeError(
@@ -1573,17 +1942,11 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
     variant = _safe_mapping(proposal.get("variant_payload"))
     proposal_digest = str(proposal.get("proposal_digest") or "")
     component_id = f"component:searched-premise:{proposal_digest[:16]}"
-    premise_semantics = str(variant.get("premise_semantics") or "")
     record = build_contract_amendment_v2_from_analyst_proposal(
         proposal=proposal,
         current_contract=current_contract,
         new_component_spec={
             "component_id": component_id,
-            "user_facing_label": premise_semantics[:120],
-            "user_facing_question": (f"What direct evidence establishes: {premise_semantics}")[:360],
-            "acceptance_criteria": ("Use one exact current direct source for the searched premise.",),
-            "mandatory_caveats": tuple(variant.get("caveats") or ()),
-            "prohibited_upgrades": tuple(variant.get("prohibited_upgrades") or ()),
         },
         request_digest=safe_packet_digest(
             {
@@ -1674,8 +2037,8 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         source_obligation_id=source_candidate_id,
         source_obligation_descriptor={
             "obligation_id": source_candidate_id,
-            "kind": str(obligation_specification.get("obligation_kind") or "supporting_fact"),
-            "strictness": str(obligation_specification.get("strictness") or "required"),
+            "kind": str(obligation_specification["obligation_kind"]),
+            "strictness": str(obligation_specification["strictness"]),
         },
         component_refs=[
             {
@@ -1694,7 +2057,6 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         "state_id": run_kernel.state.searchos_state.get("state_id"),
         "state_digest": run_kernel.state.searchos_state.get("state_digest"),
     }
-    generation_depth = int(_safe_mapping(variant.get("recovery_generation")).get("depth") or 0)
     terminal_history = [
         _safe_mapping(item) for item in run_kernel.state.searchos_state.get("recovery_cycle_terminal_history") or ()
     ]
@@ -1776,7 +2138,7 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
             )
         )
         cycle_admission = _safe_mapping(run_kernel.state.projections["searchos_recovery_cycle_admission"])
-    return {
+    result = {
         **cycle_admission,
         "proposal": proposal,
         "component_ref": component_ref,
@@ -1789,6 +2151,21 @@ def authorize_searched_premise_recovery_from_analyst_proposals(
         "contract_amendment_admission_ref": admission_ref,
         "contract_amendment_application_ref": application_ref,
     }
+    downstream_refs = {
+        "contract_amendment_record_ref": record_ref,
+        "contract_amendment_admission_ref": admission_ref,
+        "contract_amendment_application_ref": application_ref,
+        "answer_contract_ref": _accepted_contract_ref(amended_contract),
+        "searchos_cycle_admission_ref": _safe_mapping(cycle_admission.get("cycle_admission_ref")),
+        "searchos_recovery_slot_ref": _safe_mapping(cycle_admission.get("recovery_slot_ref")),
+    }
+    _append_proposal_lifecycle_event(
+        run_kernel=run_kernel,
+        proposal=proposal,
+        status="consumed",
+        downstream_refs=downstream_refs,
+    )
+    return result
 
 
 def execute_searchos_recovery_graph_reproof_from_scope(
@@ -3156,4 +3533,7 @@ __all__ = [
     "execute_searchos_recovery_graph_reproof_from_scope",
     "ordinary_multicomponent_path_completed",
     "ordinary_multicomponent_path_selected",
+    "record_analyst_query_resolution_candidates",
+    "record_analyst_query_resolution_downstream_refs",
+    "resolve_next_searched_premise_recovery_posture",
 ]
