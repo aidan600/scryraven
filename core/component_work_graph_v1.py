@@ -432,6 +432,163 @@ def cross_component_input_packet(
     return packet
 
 
+def _current_graph_reconciliation_target_nodes(
+    current: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    nodes_by_id = {
+        str(item.get("node_id") or ""): item
+        for item in [
+            *current.get("component_nodes", ()),
+            *current.get("synthesis_nodes", ()),
+        ]
+    }
+    accepted_by_id = {
+        str(item.get("component_id") or ""): item
+        for item in current.get("accepted_component_refs", ())
+    }
+    targets: list[dict[str, Any]] = []
+    for node in current.get("synthesis_nodes", ()):
+        if node.get("status") not in {
+            "blocked_dependency",
+            "proposed",
+        }:
+            continue
+        inputs = [
+            nodes_by_id.get(
+                str(_safe_mapping(ref).get("node_id") or "")
+            )
+            for ref in node.get("input_node_refs", ())
+        ]
+        all_inputs_admitted = inputs and all(
+            item is not None
+            and item.get("current") is True
+            and item.get("stale") is not True
+            and (
+                item.get("status") or item.get("admission_status")
+            )
+            in {"admitted", "admitted_with_caveats"}
+            for item in inputs
+        )
+        target = accepted_by_id.get(
+            str(node.get("synthesis_key") or ""),
+            {},
+        )
+        premise_component_ids = {
+            str(
+                item.get("component_id")
+                or item.get("answer_target_component_id")
+                or item.get("synthesis_key")
+                or ""
+            )
+            for item in inputs
+            if item is not None
+        }
+        unmapped_inferred_target = bool(
+            target
+            and "inferred"
+            in list(target.get("allowed_support_kinds") or ())
+            and not _safe_mapping(
+                node.get("query_resolution_proposal")
+            )
+            and premise_component_ids
+            == set(target.get("dependency_component_ids") or ())
+        )
+        if all_inputs_admitted and unmapped_inferred_target:
+            targets.append(node)
+    return targets
+
+
+def current_graph_reconciliation_required(
+    graph: Mapping[str, Any],
+) -> bool:
+    """Return whether admitted upstream authority unblocks a fresh Cross pass."""
+
+    current = validate_component_work_graph_v1(graph)
+    return bool(_current_graph_reconciliation_target_nodes(current))
+
+
+def current_graph_reconciliation_input_packet(
+    graph: Mapping[str, Any],
+    *,
+    component_analyst_input_packets: (
+        Mapping[str, Mapping[str, Any]] | None
+    ) = None,
+    requested_mode: str | None = None,
+) -> dict[str, Any]:
+    """Project one fresh whole-case Cross input from exact current Graph V1."""
+
+    current = validate_component_work_graph_v1(graph)
+    if not current_graph_reconciliation_required(current):
+        raise ComponentWorkGraphV1Error(
+            "current graph does not require Cross reconciliation"
+        )
+    packet = cross_component_input_packet(
+        component_nodes=current["component_nodes"],
+        accepted_contract_ref=_safe_mapping(
+            current.get("accepted_contract_ref")
+        ),
+        requested_synthesis_directive=str(
+            current.get("requested_synthesis_directive") or ""
+        ),
+        component_analyst_input_packets=(
+            component_analyst_input_packets
+        ),
+        accepted_component_refs=current.get("accepted_component_refs")
+        or (),
+        requested_mode=(
+            requested_mode
+            or str(
+                _safe_mapping(
+                    current.get("semantic_inference_profile")
+                ).get("requested_mode")
+                or "Balanced"
+            )
+        ),
+    )
+    packet.update(
+        {
+            "graph_ref": {
+                "graph_id": current.get("graph_id"),
+                "graph_revision": current.get("graph_revision"),
+                "graph_digest": current.get("graph_digest"),
+            },
+            "dependency_posture": (
+                "reconcile_current_graph_after_inferred_admission"
+            ),
+            "current_synthesis_nodes": [
+                {
+                    **_input_ref_from_node(node),
+                    "claim_text": node.get("claim_text"),
+                    "relationship_type": node.get(
+                        "relationship_type"
+                    ),
+                    "input_node_refs": list(
+                        node.get("input_node_refs") or ()
+                    ),
+                    "support_kind": node.get("support_kind"),
+                    "semantic_inference_depth": int(
+                        node.get("semantic_inference_depth") or 0
+                    ),
+                    "answer_target_component_id": node.get(
+                        "answer_target_component_id"
+                    ),
+                    "target_fulfillment_status": node.get(
+                        "target_fulfillment_status"
+                    ),
+                }
+                for node in current.get("synthesis_nodes", ())
+            ],
+            "reconciliation_target_node_refs": [
+                _node_ref(node)
+                for node in _current_graph_reconciliation_target_nodes(
+                    current
+                )
+            ],
+        }
+    )
+    return packet
+
+
 def synthesis_dprime_input_packet(
     graph: Mapping[str, Any],
     *,
@@ -4464,6 +4621,8 @@ __all__ = [
     "component_work_graph_v1_resynthesis_from_cross_component_artifact",
     "component_work_graph_v1_selective_resynthesis_from_cross_artifact",
     "cross_component_input_packet",
+    "current_graph_reconciliation_input_packet",
+    "current_graph_reconciliation_required",
     "derive_multicomponent_role_call_accounting",
     "derive_selective_recomputation_closure",
     "expected_graph_after_transition",

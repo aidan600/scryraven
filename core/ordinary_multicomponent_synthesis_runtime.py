@@ -33,6 +33,8 @@ from core.component_work_graph_v1 import (
     component_work_graph_v1_resynthesis_from_cross_component_artifact,
     component_work_graph_v1_selective_resynthesis_from_cross_artifact,
     cross_component_input_packet,
+    current_graph_reconciliation_input_packet,
+    current_graph_reconciliation_required,
     derive_multicomponent_role_call_accounting,
     derive_selective_recomputation_closure,
     finalize_component_work_graph_v1,
@@ -1113,6 +1115,9 @@ def _execute_selective_reconstruction(
         )
     deferred_admission_keys: list[str] = []
     for synthesis_key in closure["affected_topological_order"]:
+        pending_node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
+        if pending_node.get("status") != "proposed":
+            continue
         dprime_input = synthesis_dprime_input_packet(
             current,
             synthesis_key=synthesis_key,
@@ -1155,6 +1160,46 @@ def _execute_selective_reconstruction(
     return current, deferred_admission_keys
 
 
+def _execute_current_graph_reconciliation(
+    *,
+    run_kernel: Any,
+    graph: Mapping[str, Any],
+    role_kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Run one fresh Cross pass and bind only current inferred proposals."""
+
+    current = dict(graph)
+    context = _safe_mapping(run_kernel.state.multicomponent_scheduler_context)
+    packet = current_graph_reconciliation_input_packet(
+        current,
+        component_analyst_input_packets=_safe_mapping(context.get("component_analyst_input_packets")),
+        requested_mode=str(context.get("requested_mode") or "Balanced"),
+    )
+    evaluation_key = f"current-graph-reconciliation:graph-revision:{current['graph_revision']}"
+    artifact = execute_multicomponent_role_call(
+        run_kernel=run_kernel,
+        role=ROLE_CROSS_COMPONENT_ANALYST,
+        input_packet=packet,
+        logical_evaluation_key=evaluation_key,
+        **dict(role_kwargs),
+    )
+    _record_analyst_query_resolution_candidates(
+        run_kernel=run_kernel,
+        artifact=artifact,
+    )
+    for proposal in _selected_query_resolution_proposals_for_artifact(
+        run_kernel=run_kernel,
+        artifact=artifact,
+        classification="inferred_conclusion",
+    ):
+        current = bind_inferred_resolution_proposal_via_runkernel(
+            run_kernel=run_kernel,
+            synthesis_key=str(proposal.get("local_target_key") or ""),
+            proposal=proposal,
+        )
+    return current
+
+
 def _execute_selective_resynthesis(
     *,
     run_kernel: Any,
@@ -1170,6 +1215,57 @@ def _execute_selective_resynthesis(
         closure=closure,
         role_kwargs=role_kwargs,
     )
+    if current_graph_reconciliation_required(current):
+        current = _execute_current_graph_reconciliation(
+            run_kernel=run_kernel,
+            graph=current,
+            role_kwargs=role_kwargs,
+        )
+        for synthesis_key in current.get(
+            "synthesis_topological_order",
+            (),
+        ):
+            node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
+            if node.get("status") != "proposed":
+                continue
+            evaluation_key = f"{synthesis_key}:reconciled:graph-revision:{current['graph_revision']}"
+            dprime_artifact = execute_multicomponent_role_call(
+                run_kernel=run_kernel,
+                role=ROLE_SYNTHESIS_DPRIME,
+                input_packet=synthesis_dprime_input_packet(
+                    current,
+                    synthesis_key=synthesis_key,
+                ),
+                logical_evaluation_key=evaluation_key,
+                **dict(role_kwargs),
+            )
+            current = reduce_component_work_graph_v1(
+                run_kernel=run_kernel,
+                operation="synthesis_validation",
+                synthesis_key=synthesis_key,
+                role_evaluation_key=evaluation_key,
+                graph_candidate=graph_with_synthesis_validation(
+                    current,
+                    synthesis_key=synthesis_key,
+                    dprime_artifact=dprime_artifact,
+                ),
+            )
+            node = next(item for item in current["synthesis_nodes"] if item["synthesis_key"] == synthesis_key)
+            if node.get("status") != "validated":
+                break
+            node_is_upstream = any(
+                ref.get("node_id") == node.get("node_id")
+                for candidate_node in current["synthesis_nodes"]
+                if candidate_node.get("synthesis_key") != synthesis_key
+                for ref in candidate_node.get("input_node_refs") or ()
+            )
+            if node_is_upstream:
+                current = admit_synthesis_node_via_runkernel(
+                    run_kernel=run_kernel,
+                    synthesis_key=synthesis_key,
+                )
+            else:
+                deferred_admission_keys.append(synthesis_key)
     scrutiny_key = f"full-case:selective:graph-revision:{current['graph_revision']}"
     scrutineer_artifact = execute_multicomponent_role_call(
         run_kernel=run_kernel,
@@ -1311,13 +1407,20 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
         elif graph_raw:
             graph = validate_component_work_graph_v1(graph_raw)
             if role == ROLE_CROSS_COMPONENT_ANALYST:
-                closure = validate_selective_recomputation_closure(
-                    _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE))
-                )
-                packet = selective_cross_component_input_packet(
-                    graph,
-                    closure=closure,
-                )
+                if work.get("output_schema_variant") == SELECTIVE_CROSS_COMPONENT_SCHEMA:
+                    closure = validate_selective_recomputation_closure(
+                        _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE))
+                    )
+                    packet = selective_cross_component_input_packet(
+                        graph,
+                        closure=closure,
+                    )
+                else:
+                    packet = current_graph_reconciliation_input_packet(
+                        graph,
+                        component_analyst_input_packets=analyst_inputs,
+                        requested_mode=str(context.get("requested_mode") or "Balanced"),
+                    )
             elif role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
                 specialist_handoff = {}
                 specialist_state = _safe_mapping(run_kernel.state.projections.get("specialist_work_plane"))
@@ -1403,9 +1506,10 @@ def _record_analyst_query_resolution_candidates(
 ) -> None:
     """Bind Analyst candidates and publish fail-closed arbitration state."""
 
-    semantic_output = _safe_mapping(artifact.get("semantic_output"))
+    role_artifact = deepcopy(dict(artifact))
+    semantic_output = deepcopy(_safe_mapping(role_artifact.get("semantic_output")))
     candidates = [
-        _safe_mapping(item)
+        deepcopy(_safe_mapping(item))
         for item in semantic_output.get("query_resolution_proposals") or ()
         if isinstance(item, Mapping)
     ]
@@ -1420,7 +1524,7 @@ def _record_analyst_query_resolution_candidates(
     parent_graph_ref = _safe_mapping(artifact.get("graph_ref"))
     bound = [
         bind_analyst_query_resolution_proposal(
-            role_artifact=artifact,
+            role_artifact=role_artifact,
             local_candidate=candidate,
             question_meaning_record_ref=qmr_ref,
             parent_contract_ref=parent_contract_ref,
@@ -1429,7 +1533,7 @@ def _record_analyst_query_resolution_candidates(
         for candidate in candidates
     ]
     projection = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
-    history = [_safe_mapping(item) for item in projection.get("proposals") or () if isinstance(item, Mapping)]
+    history = [deepcopy(_safe_mapping(item)) for item in projection.get("proposals") or () if isinstance(item, Mapping)]
     known = {str(item.get("proposal_id") or ""): item for item in history}
     for proposal in bound:
         known.setdefault(str(proposal["proposal_id"]), proposal)
@@ -1525,7 +1629,7 @@ def _record_analyst_query_resolution_candidates(
         ),
         "raw_private_retained": False,
     }
-    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = registry_payload
+    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = deepcopy(registry_payload)
 
 
 def _proposal_lifecycle_event(
@@ -2521,6 +2625,17 @@ def _consume_scheduler_selected_artifact(
                 graph_candidate=candidate,
                 role_evaluation_key=evaluation_key,
             )
+        elif evaluation_key.startswith("current-graph-reconciliation:"):
+            for proposal in _selected_query_resolution_proposals_for_artifact(
+                run_kernel=run_kernel,
+                artifact=artifact,
+                classification="inferred_conclusion",
+            ):
+                bind_inferred_resolution_proposal_via_runkernel(
+                    run_kernel=run_kernel,
+                    synthesis_key=str(proposal.get("local_target_key") or ""),
+                    proposal=proposal,
+                )
         else:
             graph = validate_component_work_graph_v1(graph_raw)
             component_packets = _safe_mapping(

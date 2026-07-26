@@ -726,7 +726,7 @@ def selected_proposals_for_role_artifact(
             or (classification is not None and proposal.get("classification") != classification)
         ):
             continue
-        selected.append(dict(proposal))
+        selected.append(deepcopy(dict(proposal)))
     return selected
 
 
