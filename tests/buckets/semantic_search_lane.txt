@@ -30,3 +30,8 @@ tests/test_searchos_slice_a_product_cutover_01.py::test_readable_insufficient_re
 # while the established pure material-equivalence rule blocks redispatch.
 tests/test_searchos_iterative_judgment_cutover_01.py::test_query_plan_admits_exact_model_followup_without_evaluator_or_expander
 tests/test_searchos_iterative_judgment_cutover_01.py::test_searchos_followup_rejects_materially_equivalent_query_before_discover
+
+# Owner: ordinary SearchOS/AnalystOS integration gate. Reason: seven fictional
+# product-path scenarios exercise direct, searched, inferred, limit-discovery,
+# and honest-nonclosure posture through the maintained offline run_pipeline harness.
+tests/test_searchos_analystos_offline_integration_gate_01.py

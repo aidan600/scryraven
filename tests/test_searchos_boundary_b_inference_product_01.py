@@ -15,6 +15,8 @@ from core.component_work_graph_v1 import (
     bind_inferred_resolution_proposal_via_runkernel,
     component_work_graph_v1_from_cross_component_artifact,
     cross_component_input_packet,
+    current_graph_reconciliation_input_packet,
+    current_graph_reconciliation_required,
     finalize_component_work_graph_v1,
     graph_with_scrutineer,
     reduce_component_work_graph_v1,
@@ -478,15 +480,15 @@ def test_deep_depth_two_reuses_inferred_supporting_premise_without_fake_coverage
     premise_b = _direct("component:B")
     premise_d = _direct("component:D")
     inferred_c = _inferred(
-        "component:C",
+        "premise_C",
         purpose=ComponentPurpose.SUPPORTING_PREMISE,
         dependencies=("component:A", "component:B"),
         depth=1,
     )
     target_e = _inferred(
-        "component:E",
+        "target_E",
         purpose=ComponentPurpose.USER_FACING_ANSWER_TARGET,
-        dependencies=("component:C", "component:D"),
+        dependencies=("premise_C", "component:D"),
         depth=2,
     )
     components = [premise_a, premise_b, premise_d, inferred_c, target_e]
@@ -563,6 +565,20 @@ def test_deep_depth_two_reuses_inferred_supporting_premise_without_fake_coverage
         run_kernel=kernel,
         synthesis_key="premise_C",
     )
+    assert current_graph_reconciliation_required(graph) is True
+    reconciliation_packet = current_graph_reconciliation_input_packet(
+        graph,
+        requested_mode="Deep",
+    )
+    assert reconciliation_packet["graph_ref"] == {
+        "graph_id": graph["graph_id"],
+        "graph_revision": graph["graph_revision"],
+        "graph_digest": graph["graph_digest"],
+    }
+    assert reconciliation_packet["requested_synthesis_directive"] == ("Establish premise C and answer target E.")
+    synthesis_by_key = {item["synthesis_key"]: item for item in reconciliation_packet["current_synthesis_nodes"]}
+    assert synthesis_by_key["premise_C"]["status"] == "admitted"
+    assert synthesis_by_key["target_E"]["status"] == "proposed"
     c_node = next(item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "premise_C")
     d_node = next(item for item in graph["component_nodes"] if item["component_id"] == "component:D")
     proposal_e_artifact = deepcopy(cross)
@@ -641,10 +657,10 @@ def test_deep_depth_two_reuses_inferred_supporting_premise_without_fake_coverage
     }
     assert by_key["premise_C"]["semantic_inference_depth"] == 1
     assert by_key["target_E"]["semantic_inference_depth"] == 2
-    assert by_key["premise_C"]["answer_target_component_id"] == "component:C"
-    assert by_key["target_E"]["answer_target_component_id"] == "component:E"
+    assert by_key["premise_C"]["answer_target_component_id"] == "premise_C"
+    assert by_key["target_E"]["answer_target_component_id"] == "target_E"
     assert by_key["premise_C"].get("component_coverage_ref") in (None, {})
     premise_readiness = {item["component_id"]: item for item in consumption["supporting_premise_readiness"]}
-    assert premise_readiness["component:C"]["fulfillment_status"] == ("fulfilled_inferred")
+    assert premise_readiness["premise_C"]["fulfillment_status"] == ("fulfilled_inferred")
     assert consumption["answer_target_fulfillments"][0]["fulfillment_status"] == "fulfilled_inferred"
     assert consumption["sufficient_with_admitted_inference"] is True

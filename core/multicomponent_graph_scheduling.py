@@ -14,6 +14,9 @@ from copy import deepcopy
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.analyst_query_resolution_proposal import (
+    ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
+)
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
@@ -822,6 +825,27 @@ def _component_admissions(state: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def _pending_searched_premise_proposal_exists(state: Any) -> bool:
+    registry = _mapping(
+        state.projections.get(
+            ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
+        )
+    )
+    lifecycle = _mapping(registry.get("proposal_lifecycle"))
+    for arbitration in registry.get("arbitrations") or ():
+        item = _mapping(arbitration)
+        selected = _mapping(item.get("selected_proposal"))
+        proposal_id = str(selected.get("proposal_id") or "")
+        if (
+            item.get("mutation_permitted") is True
+            and selected.get("classification") == "searched_premise"
+            and _mapping(lifecycle.get(proposal_id)).get("status")
+            == "pending"
+        ):
+            return True
+    return False
+
+
 def _work(
     *,
     state: Any,
@@ -1441,6 +1465,8 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
         COMPONENT_WORK_GRAPH_V1_STAGE,
         MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
         cross_component_input_packet,
+        current_graph_reconciliation_input_packet,
+        current_graph_reconciliation_required,
         scrutineer_input_packet,
         selective_cross_component_input_packet,
         synthesis_dprime_input_packet,
@@ -1525,6 +1551,48 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                     ),
                     output_schema_variant=SELECTIVE_CROSS_COMPONENT_SCHEMA,
                     closure=closure,
+                )
+            ]
+
+    if (
+        current_graph_reconciliation_required(graph)
+        and not _pending_searched_premise_proposal_exists(state)
+    ):
+        key = (
+            "current-graph-reconciliation:"
+            f"graph-revision:{graph['graph_revision']}"
+        )
+        if not _completed_artifact(
+            state,
+            ROLE_CROSS_COMPONENT_ANALYST,
+            key,
+        ):
+            packet = current_graph_reconciliation_input_packet(
+                graph,
+                component_analyst_input_packets=packets,
+                requested_mode=str(
+                    context.get("requested_mode") or "Balanced"
+                ),
+            )
+            return [
+                _work(
+                    state=state,
+                    scheduler=scheduler,
+                    role=ROLE_CROSS_COMPONENT_ANALYST,
+                    evaluation_key=key,
+                    input_packet=packet,
+                    target_kind="graph",
+                    graph=graph,
+                    prerequisite_refs=(
+                        _graph_ref(graph),
+                        *tuple(
+                            _mapping(item)
+                            for item in packet.get(
+                                "reconciliation_target_node_refs",
+                                (),
+                            )
+                        ),
+                    ),
                 )
             ]
 
