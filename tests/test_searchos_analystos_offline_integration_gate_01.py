@@ -182,6 +182,12 @@ def _assert_case_5(execution: ScenarioExecution) -> None:
     packet = execution.observation_packet
     assert len(packet["searchos"]["cycle_admissions"]) == 1
     assert packet["searchos"]["cycle_admissions"][0]["generation_depth"] == 1
+    assert len(packet["searchos"]["cycle_terminals"]) == 1
+    assert packet["searchos"]["cycle_terminals"][0]["terminal_status"] == ("recovered")
+    assert packet["searchos"]["cycle_terminals"][0]["expenditure"]["search_queries"] == 1
+    assert packet["searchos"]["cycle_terminals"][0]["expenditure"]["read_operations"] == 1
+    assert packet["searchos"]["terminal_aggregate_ref"]["posture"] == "settled"
+    assert packet["searchos"]["terminal_aggregate_ref"]["settled_interpretation"] == "recovery_completed"
     searched = [
         item for item in packet["proposal_registry"]["proposals"] if item.get("classification") == "searched_premise"
     ]
@@ -190,12 +196,23 @@ def _assert_case_5(execution: ScenarioExecution) -> None:
         item.get("status") for item in packet["proposal_registry"]["lifecycle"].values() if isinstance(item, dict)
     }
     assert {"consumed", "rejected"} <= statuses
+    searched_lifecycle = [packet["proposal_registry"]["lifecycle"][item["proposal_id"]] for item in searched]
+    assert sorted(item["status"] for item in searched_lifecycle) == [
+        "consumed",
+        "rejected",
+    ]
+    assert len(packet["contract_amendment"]["record_refs"]) == 1
+    assert len(packet["contract_amendment"]["admission_refs"]) == 1
+    assert len(packet["contract_amendment"]["application_refs"]) == 1
+    assert "Solace exact registry designation" not in repr(execution.harness.search_calls)
+    assert "solace-registry-designation" not in repr(execution.harness.read_transport_calls)
     assert _target(execution, "solace_route_target")["fulfillment_status"] == ("unfulfilled")
     assert packet["graph_v1"]["runkernel_relationship_admission_refs"] == []
     assert packet["sufficiency"]["final_answer_allowed"] is False
     assert packet["final_answer_packet"]["admitted_synthesis_entries"] == []
     assert packet["author"]["called"] is False
     assert len(packet["searchos"]["cycle_admissions"]) == len(packet["searchos"]["cycle_terminals"])
+    assert set(execution.kernel.state.issued_actions) == (execution.kernel.state.reduced_action_ids)
     assert packet["status"] == BOUNDED_LIMIT
 
 

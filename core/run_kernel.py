@@ -1462,14 +1462,25 @@ class Observation:
             raise ValueError("observation sequence must be positive")
         object.__setattr__(self, "observation_type", ObservationType(self.observation_type))
         object.__setattr__(self, "status", RunStageStatus(self.status))
-        payload = (
-            _acquisition_safe_mapping(self.payload)
-            if self.observation_type.value.startswith("acquisition_")
-            else _graph_safe_mapping(self.payload)
-            if self.observation_type
-            is ObservationType.MULTICOMPONENT_GRAPH_REDUCED
-            else _safe_mapping(self.payload)
-        )
+        semantic_role_observation_types = {
+            ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
+            ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
+            ObservationType.MULTICOMPONENT_CROSS_ANALYST_COMPLETED,
+            ObservationType.MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED,
+            ObservationType.MULTICOMPONENT_SCRUTINEER_COMPLETED,
+        }
+        if self.observation_type.value.startswith("acquisition_"):
+            payload = _acquisition_safe_mapping(self.payload)
+        elif self.observation_type in {
+            ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
+            *semantic_role_observation_types,
+        }:
+            # The observation envelope adds one level around an already-safe
+            # semantic artifact. Preserve its exact nested canonical content
+            # while still taking a defensive, bounded JSON-safe copy.
+            payload = _graph_safe_mapping(self.payload)
+        else:
+            payload = _safe_mapping(self.payload)
         if (
             self.observation_type is ObservationType.SEARCH_PLANNER_REVISED
             and isinstance(self.payload, Mapping)
@@ -16092,13 +16103,14 @@ class RunKernel:
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
 
-        if action.action_type in {
+        semantic_role_transition = action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
-        } and action.inputs.get("lease_id"):
+        }
+        if semantic_role_transition and action.inputs.get("lease_id"):
             from core.multicomponent_graph_scheduling import (
                 validate_role_lease_settlement,
             )
@@ -16119,7 +16131,11 @@ class RunKernel:
             ActionType.ACQUISITION_TERMINAL_REDUCE,
             ActionType.ACQUISITION_CUSTODY_CONSUME,
         }
-        if not authority_supersession and not acquisition_transition:
+        if (
+            not authority_supersession
+            and not acquisition_transition
+            and not semantic_role_transition
+        ):
             self.state.reduced_action_ids.add(action.action_id)
             self.state.action_statuses[action.action_id] = observation.status
             self.state.stage_statuses[action.stage] = observation.status
@@ -23052,6 +23068,10 @@ class RunKernel:
                 }
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
+        if semantic_role_transition and not authority_supersession:
+            self.state.reduced_action_ids.add(action.action_id)
+            self.state.action_statuses[action.action_id] = observation.status
+            self.state.stage_statuses[action.stage] = observation.status
         if acquisition_transition:
             self.state.reduced_action_ids.add(action.action_id)
             self.state.action_statuses[action.action_id] = observation.status

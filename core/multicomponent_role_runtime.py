@@ -1344,7 +1344,31 @@ def execute_multicomponent_role_call(
         status=RunStageStatus.COMPLETED,
         payload={"semantic_role_artifact": artifact},
     )
-    run_kernel.reduce(observation)
+    try:
+        run_kernel.reduce(observation)
+    except Exception:
+        if (
+            action.action_id not in run_kernel.state.reduced_action_ids
+            and run_kernel.state.next_observation_sequence == action.sequence
+        ):
+            run_kernel.reduce(
+                Observation.from_action(
+                    action,
+                    observation_type=action.expected_observation_type,
+                    status=RunStageStatus.FAILED,
+                    payload={
+                        **(
+                            {"lease_settlement": LEASE_FAILED}
+                            if scheduler_active
+                            else {}
+                        ),
+                        "failure_kind": (
+                            "semantic_role_observation_reduction_failure"
+                        ),
+                    },
+                )
+            )
+        raise
     return validate_multicomponent_role_artifact(
         artifact,
         expected_role=normalized_role,

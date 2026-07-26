@@ -1506,9 +1506,10 @@ def _record_analyst_query_resolution_candidates(
 ) -> None:
     """Bind Analyst candidates and publish fail-closed arbitration state."""
 
-    semantic_output = _safe_mapping(artifact.get("semantic_output"))
+    role_artifact = deepcopy(dict(artifact))
+    semantic_output = deepcopy(_safe_mapping(role_artifact.get("semantic_output")))
     candidates = [
-        _safe_mapping(item)
+        deepcopy(_safe_mapping(item))
         for item in semantic_output.get("query_resolution_proposals") or ()
         if isinstance(item, Mapping)
     ]
@@ -1523,7 +1524,7 @@ def _record_analyst_query_resolution_candidates(
     parent_graph_ref = _safe_mapping(artifact.get("graph_ref"))
     bound = [
         bind_analyst_query_resolution_proposal(
-            role_artifact=artifact,
+            role_artifact=role_artifact,
             local_candidate=candidate,
             question_meaning_record_ref=qmr_ref,
             parent_contract_ref=parent_contract_ref,
@@ -1532,7 +1533,7 @@ def _record_analyst_query_resolution_candidates(
         for candidate in candidates
     ]
     projection = _safe_mapping(run_kernel.state.projections.get(ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY))
-    history = [_safe_mapping(item) for item in projection.get("proposals") or () if isinstance(item, Mapping)]
+    history = [deepcopy(_safe_mapping(item)) for item in projection.get("proposals") or () if isinstance(item, Mapping)]
     known = {str(item.get("proposal_id") or ""): item for item in history}
     for proposal in bound:
         known.setdefault(str(proposal["proposal_id"]), proposal)
@@ -1628,7 +1629,7 @@ def _record_analyst_query_resolution_candidates(
         ),
         "raw_private_retained": False,
     }
-    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = registry_payload
+    run_kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY] = deepcopy(registry_payload)
 
 
 def _proposal_lifecycle_event(
