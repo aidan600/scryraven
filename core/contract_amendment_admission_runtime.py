@@ -417,6 +417,31 @@ def _reconstruct_amendment_record(payload: Mapping[str, Any]) -> ContractAmendme
             parent_question_meaning_record_id=payload.get("parent_question_meaning_record_id"),
             parent_question_meaning_record_digest=payload.get("parent_question_meaning_record_digest"),
             accepted_contract_ref=payload.get("accepted_contract_ref"),
+            analyst_query_resolution_proposal_ref=_safe_mapping(
+                payload.get("analyst_query_resolution_proposal_ref")
+            ),
+            originating_role_artifact_ref=_safe_mapping(
+                payload.get("originating_role_artifact_ref")
+            ),
+            parent_graph_ref=_safe_mapping(payload.get("parent_graph_ref")),
+            target_component_refs=tuple(
+                _safe_mapping(item)
+                for item in payload.get("target_component_refs") or ()
+                if isinstance(item, Mapping)
+            ),
+            dependency_component_refs=tuple(
+                _safe_mapping(item)
+                for item in payload.get("dependency_component_refs") or ()
+                if isinstance(item, Mapping)
+            ),
+            material_necessity_rationale=payload.get(
+                "material_necessity_rationale"
+            ),
+            user_query_broadening=bool(payload.get("user_query_broadening")),
+            recovery_generation_parent_ref=payload.get(
+                "recovery_generation_parent_ref"
+            ),
+            recovery_generation_depth=payload.get("recovery_generation_depth"),
             trigger_refs=_reconstruct_trigger_refs(trigger_dict),
             affected_component_refs=affected_components,
             operations=operations,
@@ -988,6 +1013,26 @@ def _admission_digest_payload(state_core: Mapping[str, Any]) -> dict[str, Any]:
         "accepted_contract_version": state_core.get("accepted_contract_version"),
         "accepted_contract_digest": state_core.get("accepted_contract_digest"),
         "accepted_contract_ref": state_core.get("accepted_contract_ref"),
+        "analyst_query_resolution_proposal_ref": state_core.get(
+            "analyst_query_resolution_proposal_ref"
+        ),
+        "originating_role_artifact_ref": state_core.get(
+            "originating_role_artifact_ref"
+        ),
+        "parent_graph_ref": state_core.get("parent_graph_ref"),
+        "target_component_refs": state_core.get("target_component_refs"),
+        "dependency_component_refs": state_core.get(
+            "dependency_component_refs"
+        ),
+        "material_necessity_rationale": state_core.get(
+            "material_necessity_rationale"
+        ),
+        "recovery_generation_parent_ref": state_core.get(
+            "recovery_generation_parent_ref"
+        ),
+        "recovery_generation_depth": state_core.get(
+            "recovery_generation_depth"
+        ),
         "disposition": state_core.get("disposition"),
         "materiality": state_core.get("materiality"),
         "monotonicity": state_core.get("monotonicity"),
@@ -1230,6 +1275,27 @@ def build_contract_amendment_admission_state(
         "accepted_contract_digest": accepted_contract_digest,
         "accepted_contract_ref": record.accepted_contract_ref
         or _expected_accepted_contract_ref(accepted_contract_version),
+        "analyst_query_resolution_proposal_ref": record_safe.get(
+            "analyst_query_resolution_proposal_ref", {}
+        ),
+        "originating_role_artifact_ref": record_safe.get(
+            "originating_role_artifact_ref", {}
+        ),
+        "parent_graph_ref": record_safe.get("parent_graph_ref", {}),
+        "target_component_refs": record_safe.get("target_component_refs", []),
+        "dependency_component_refs": record_safe.get(
+            "dependency_component_refs", []
+        ),
+        "material_necessity_rationale": record_safe.get(
+            "material_necessity_rationale"
+        ),
+        "user_query_broadening": False,
+        "recovery_generation_parent_ref": record_safe.get(
+            "recovery_generation_parent_ref"
+        ),
+        "recovery_generation_depth": record_safe.get(
+            "recovery_generation_depth"
+        ),
         "parent_question_meaning_record_id": parent_qmr_id,
         "parent_question_meaning_record_digest": parent_qmr_digest,
         "disposition": record_safe.get("disposition"),
@@ -1297,6 +1363,29 @@ def build_contract_amendment_admission_projection(
         "accepted_contract_version": admission_state.get("accepted_contract_version"),
         "accepted_contract_digest": admission_state.get("accepted_contract_digest"),
         "accepted_contract_ref": admission_state.get("accepted_contract_ref"),
+        "analyst_query_resolution_proposal_ref": dict(
+            admission_state.get("analyst_query_resolution_proposal_ref") or {}
+        ),
+        "originating_role_artifact_ref": dict(
+            admission_state.get("originating_role_artifact_ref") or {}
+        ),
+        "parent_graph_ref": dict(admission_state.get("parent_graph_ref") or {}),
+        "target_component_refs": list(
+            admission_state.get("target_component_refs") or []
+        ),
+        "dependency_component_refs": list(
+            admission_state.get("dependency_component_refs") or []
+        ),
+        "material_necessity_rationale": admission_state.get(
+            "material_necessity_rationale"
+        ),
+        "user_query_broadening": False,
+        "recovery_generation_parent_ref": admission_state.get(
+            "recovery_generation_parent_ref"
+        ),
+        "recovery_generation_depth": admission_state.get(
+            "recovery_generation_depth"
+        ),
         "disposition": admission_state.get("disposition"),
         "materiality": admission_state.get("materiality"),
         "user_confirmation_posture": admission_state.get("user_confirmation_posture"),

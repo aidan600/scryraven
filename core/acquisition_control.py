@@ -1789,6 +1789,11 @@ def build_acquisition_authority_snapshot(
         raw_component_mapping = _mapping(
             raw_component, "component_mapping_required"
         )
+        if "direct" not in _tokens(
+            raw_component_mapping.get("allowed_support_kinds") or ("direct",),
+            limit=80,
+        ):
+            continue
         component = _component_ref(
             {
                 "component_id": raw_component_mapping.get("component_id"),

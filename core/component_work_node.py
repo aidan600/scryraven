@@ -1113,6 +1113,25 @@ def component_work_node_v1_from_admitted_component(
         "component_id": component_id,
         "component_revision": component_revision,
         "component_digest": component_digest,
+        "accepted_component_ref": component,
+        "component_purpose": (
+            _clean_text(component.get("component_purpose"), limit=80)
+            or "user_facing_answer_target"
+        ),
+        "allowed_support_kinds": list(
+            _text_tuple(
+                component.get("allowed_support_kinds") or ("direct",),
+                limit=40,
+            )
+        ),
+        "max_inference_depth": int(
+            component.get("max_inference_depth") or 0
+        ),
+        "dependency_component_ids": list(
+            _text_tuple(component.get("dependency_component_ids"), limit=180)
+        ),
+        "support_kind": "direct",
+        "semantic_inference_depth": 0,
         "component_label": _clean_text(
             component.get("user_facing_label")
             or component.get("user_facing_question"),
@@ -1178,6 +1197,36 @@ def validate_component_work_node_v1(value: Mapping[str, Any]) -> dict[str, Any]:
         "component_digest",
     ):
         _required_text(node.get(key), key)
+    accepted_component = _safe_mapping(node.get("accepted_component_ref"))
+    if accepted_component:
+        if (
+            accepted_component.get("component_id") != node.get("component_id")
+            or accepted_component.get("component_revision")
+            != node.get("component_revision")
+            or accepted_component.get("component_digest")
+            != node.get("component_digest")
+            or node.get("component_purpose")
+            != (
+                accepted_component.get("component_purpose")
+                or "user_facing_answer_target"
+            )
+            or list(node.get("allowed_support_kinds") or ())
+            != list(accepted_component.get("allowed_support_kinds") or ("direct",))
+            or int(node.get("max_inference_depth") or 0)
+            != int(accepted_component.get("max_inference_depth") or 0)
+            or list(node.get("dependency_component_ids") or ())
+            != list(accepted_component.get("dependency_component_ids") or ())
+        ):
+            raise ComponentWorkNodeError(
+                "ComponentWorkNode V1 accepted component binding mismatch"
+            )
+    if (
+        node.get("support_kind", "direct") != "direct"
+        or int(node.get("semantic_inference_depth") or 0) != 0
+    ):
+        raise ComponentWorkNodeError(
+            "direct ComponentWorkNode V1 must have semantic inference depth zero"
+        )
     if node.get("node_kind") != "component":
         raise ComponentWorkNodeError("ComponentWorkNode V1 kind mismatch")
     if node.get("node_revision") != node.get("component_revision"):

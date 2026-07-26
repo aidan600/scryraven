@@ -6,9 +6,6 @@ from typing import Any, Mapping
 
 from core.analysis_gap_followup_search_packet import build_followup_search_intent_packet
 from core.evidence_relative_analysis_packet import build_evidence_relative_analysis_packet
-from core.followup_search_authorization_loop import (
-    run_fixture_followup_search_reentry_loop,
-)
 from core.followup_search_authorization_runtime import (
     FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
 )
@@ -20,6 +17,10 @@ from core.scrutineer_review_runtime import (
 )
 from core.scrutineer_review_runtime import (
     SCRUTINEER_REVIEW_STAGE as SCRUTINEER_REVIEW_RUNTIME_STAGE,
+)
+from tests.helpers.canonical_answer_contract_fixture import (
+    apply_nonmaterial_current_contract_fixture,
+    run_split_followup_reentry_fixture,
 )
 from tests.test_ag_analysis_gap_followup_search_01 import (
     _analysis_gap_proposal,
@@ -40,6 +41,7 @@ from tests.test_ag_followup_search_authorization_reentry_01 import (
     _fixture_candidate,
     _readable_material,
 )
+from tests.test_ag_search_executor_handoff_01 import _current_contract_kernel
 from tests.test_ag_semantic_observation_admission_bridge_01 import (
     _bridge,
     _bridge_coverage_record,
@@ -78,6 +80,10 @@ def _supported_chain() -> dict[str, Any]:
     admission = _bridge(chain)
     coverage_record = _bridge_coverage_record(chain, admission)
     coverage_projection = _reduce_coverage(kernel, coverage_record)
+    apply_nonmaterial_current_contract_fixture(
+        kernel,
+        fixture_id="ag-search-executor-handoff",
+    )
     return {
         **chain,
         "semantic_admission": admission,
@@ -98,8 +104,10 @@ def _gap_chain(kind: str) -> dict[str, Any]:
         current_answer_contract_ref=contract_ref,
         current_answer_contract_digest=contract_ref["contract_digest"],
     )
-    followup_packet = build_followup_search_intent_packet(
-        evidence_relative_analysis_packet=analysis_packet
+    followup_packet = build_followup_search_intent_packet(evidence_relative_analysis_packet=analysis_packet)
+    apply_nonmaterial_current_contract_fixture(
+        kernel,
+        fixture_id="ag-search-executor-handoff",
     )
     return {
         "kernel": kernel,
@@ -114,12 +122,8 @@ def _review_record(chain: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     kernel = chain["kernel"]
     return build_scrutineer_review_record(
         evidence_relative_analysis_packet=chain["analysis_packet"],
-        semantic_observation_admission_projection=(
-            kernel.state.semantic_observation_admission_projection
-        ),
-        semantic_observation_admission_history=(
-            kernel.state.semantic_observation_admission_history
-        ),
+        semantic_observation_admission_projection=(kernel.state.semantic_observation_admission_projection),
+        semantic_observation_admission_history=(kernel.state.semantic_observation_admission_history),
         component_coverage_projection=kernel.state.component_coverage_projection,
         component_coverage_history=kernel.state.component_coverage_history,
         **kwargs,
@@ -143,6 +147,25 @@ def _compact_reentry_ref(result: Any) -> dict[str, Any]:
         "fixture_reentry_only": True,
         "live_dispatch_allowed": False,
     }
+
+
+def _run_canonical_followup_reentry_fixture(
+    chain: Mapping[str, Any],
+    *,
+    fixture_fetch_read_materials: list[Mapping[str, Any]],
+    analyst_repass_outcome: str,
+) -> tuple[Any, Any]:
+    authorization_kernel = _current_contract_kernel()
+    result = run_split_followup_reentry_fixture(
+        authorization_run_kernel=authorization_kernel,
+        semantic_run_kernel=chain["kernel"],
+        followup_search_intent_packet=chain["followup_packet"],
+        fixture_candidates=[_fixture_candidate()],
+        fixture_fetch_read_materials=fixture_fetch_read_materials,
+        mode="Balanced",
+        analyst_repass_outcome=analyst_repass_outcome,
+    )
+    return result, authorization_kernel
 
 
 def _imports_calls_and_classes(path: Path) -> tuple[set[str], set[str], set[str]]:
@@ -244,9 +267,7 @@ def test_currentness_contradiction_or_scope_issue_references_followup_proposal_o
 
     assert result.review_projection["review_outcome"] == "remediation_required"
     assert issue["issue_kind"] == "currentness_unresolved"
-    assert issue["followup_proposal_ref"]["proposal_id"].startswith(
-        "analysis-gap-search-proposal:"
-    )
+    assert issue["followup_proposal_ref"]["proposal_id"].startswith("analysis-gap-search-proposal:")
     assert issue["followup_proposal_ref"]["authorized"] is False
     assert FOLLOWUP_SEARCH_AUTHORIZATION_STAGE not in kernel.state.projections
     _assert_downstream_closed(kernel)
@@ -262,17 +283,12 @@ def test_remediation_path_final_verification_signs_off_after_separate_followup_l
     )
     _reduce_review(chain, initial)
 
-    assert kernel.state.projections[SCRUTINEER_REVIEW_STAGE]["review_outcome"] == (
-        "remediation_required"
-    )
+    assert kernel.state.projections[SCRUTINEER_REVIEW_STAGE]["review_outcome"] == ("remediation_required")
     assert FOLLOWUP_SEARCH_AUTHORIZATION_STAGE not in kernel.state.projections
 
-    reentry = run_fixture_followup_search_reentry_loop(
-        run_kernel=kernel,
-        followup_search_intent_packet=chain["followup_packet"],
-        fixture_candidates=[_fixture_candidate()],
+    reentry, authorization_kernel = _run_canonical_followup_reentry_fixture(
+        chain,
         fixture_fetch_read_materials=[_readable_material()],
-        mode="Balanced",
         analyst_repass_outcome="support",
     )
     final_chain = {
@@ -284,18 +300,19 @@ def test_remediation_path_final_verification_signs_off_after_separate_followup_l
         mode="Balanced",
         review_pass_kind="final_verification",
         red_flag_context=True,
-        followup_authorization_projection=kernel.state.projections[
-            FOLLOWUP_SEARCH_AUTHORIZATION_STAGE
-        ],
+        followup_authorization_projection=authorization_kernel.state.projections[FOLLOWUP_SEARCH_AUTHORIZATION_STAGE],
         followup_reentry_refs=_compact_reentry_ref(reentry),
     )
     result = _reduce_review(final_chain, final)
 
     assert result.review_projection["review_outcome"] == "signed_off"
     assert result.review_projection["issue_count"] == 0
-    assert kernel.state.projections[FOLLOWUP_SEARCH_AUTHORIZATION_STAGE][
-        "proposal_packet_authorizes_search_by_itself"
-    ] is False
+    assert (
+        authorization_kernel.state.projections[FOLLOWUP_SEARCH_AUTHORIZATION_STAGE][
+            "proposal_packet_authorizes_search_by_itself"
+        ]
+        is False
+    )
     assert kernel.state.final_answer_packet == {}
     assert kernel.state.author_observation == {}
 
@@ -310,12 +327,9 @@ def test_failed_remediation_final_verification_preserves_contested_posture() -> 
     )
     _reduce_review(chain, initial)
 
-    reentry = run_fixture_followup_search_reentry_loop(
-        run_kernel=kernel,
-        followup_search_intent_packet=chain["followup_packet"],
-        fixture_candidates=[_fixture_candidate()],
+    reentry, authorization_kernel = _run_canonical_followup_reentry_fixture(
+        chain,
         fixture_fetch_read_materials=[_failed_material()],
-        mode="Balanced",
         analyst_repass_outcome="insufficient",
     )
     final_chain = {
@@ -327,9 +341,7 @@ def test_failed_remediation_final_verification_preserves_contested_posture() -> 
         mode="Balanced",
         review_pass_kind="final_verification",
         red_flag_context=True,
-        followup_authorization_projection=kernel.state.projections[
-            FOLLOWUP_SEARCH_AUTHORIZATION_STAGE
-        ],
+        followup_authorization_projection=authorization_kernel.state.projections[FOLLOWUP_SEARCH_AUTHORIZATION_STAGE],
         followup_reentry_refs=_compact_reentry_ref(reentry),
         unresolved_component_posture=reentry.unresolved_component_posture,
     )
@@ -354,9 +366,7 @@ def test_fast_balanced_and_deep_mode_posture() -> None:
 
     balanced_without_red_flag = _review_record(chain, mode="Balanced")
     assert balanced_without_red_flag["review_outcome"] == "not_applicable"
-    assert balanced_without_red_flag["mode_policy"][
-        "balanced_requires_red_flag_context"
-    ] is True
+    assert balanced_without_red_flag["mode_policy"]["balanced_requires_red_flag_context"] is True
 
     deep = _review_record(chain, mode="Deep", red_flag_context=True)
     assert deep["review_outcome"] == "signed_off"
@@ -415,9 +425,7 @@ def test_closed_surfaces_static_guards_and_no_packet_sprawl() -> None:
     chain = _supported_chain()
     record = _review_record(chain, mode="Balanced", red_flag_context=True)
     result = _reduce_review(chain, record)
-    assert result.review_projection["review_history"][0]["review_digest"] == (
-        result.review_projection["review_digest"]
-    )
+    assert result.review_projection["review_history"][0]["review_digest"] == (result.review_projection["review_digest"])
     for value in result.review_projection["closed_surface_flags"].values():
         assert value is False
     assert result.review_projection["review_only"] is True

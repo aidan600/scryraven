@@ -5,7 +5,7 @@ Authority: canonical:fap-author-boundary
 Default-read: no
 Applies-to: ordinary FinalAnswerPacket packaging, Author rendering, and blocked FAP terminal behavior
 Does-not-authorize: new claims, evidence interpretation, synthesis creation, citation upgrade, or Author execution when FAP is blocked
-Verified-against-runtime: bba0d16313944b742251298b4fc929b4ceb55d76
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to FAP packaging, Author input, rendering, or blocked terminal behavior
 
 ## Responsibility
@@ -31,6 +31,24 @@ RunKernel-admitted direct and synthesized state
 Sufficiency decides whether admitted state is ready, partial, blocked,
 contested, insufficient, follow-up-required, or not applicable. Graph admission
 alone is not answer readiness.
+
+## Direct And Inferred Packaging
+
+Sufficiency may select one exact current direct fulfillment or one admitted
+inferred fulfillment for an accepted answer target. When both are valid it
+prefers direct. An inferred fulfillment is packaged in
+`admitted_synthesis_entries` with exact target, premise-node,
+ComponentCoverage, relationship/admission, semantic-depth, caveat, and
+prohibited-upgrade lineage. It is never copied into
+`direct_component_entries` or represented as source text that states the
+conclusion verbatim.
+
+The FinalAnswerPacket identity is derived after Boundary B contract/graph
+mutation and therefore binds the current contract and graph rather than the
+pre-recovery state. Author receives only that packet, may render its admitted
+inference, and may not research, add premises, strengthen the relationship,
+upgrade inferred support to direct, or invoke recovery. Exact replay creates no
+second packet or Author invocation.
 
 ## FinalAnswerPacket Contract
 

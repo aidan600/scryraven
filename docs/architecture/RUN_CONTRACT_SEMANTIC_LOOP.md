@@ -5,7 +5,7 @@ Authority: canonical:run-contract-semantic-loop
 Default-read: no
 Applies-to: integrated query-to-answer authority and proposal/reduction flow
 Does-not-authorize: live calls, arbitrary-query claims, direct worker mutation, additional Specialist capabilities, or calculator scope expansion
-Verified-against-runtime: 39573c29bc2394e798e507fc795d70197da20f10
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to the integrated ordinary semantic loop
 
 ## Responsibility
@@ -24,6 +24,29 @@ The durable rule is:
 Workers propose.
 RunKernel authorizes and reduces.
 ```
+
+## Installed Boundary A/B Semantic Loop
+
+Boundary A keeps an unsupported accepted component fixed and routes one exact
+source obligation through the canonical SearchOS lease/cycle and unchanged
+component Analyst/D-prime admission chain. Boundary B begins only from an
+arbitration-selected typed Analyst proposal. A searched premise reuses
+ContractAmendment v2, the same SearchOS lease/cycle, QueryPlan,
+acquisition/custody, component admission, Graph V1 reproof, and selective
+resynthesis. SearchOS searches the premise; it never authors the inference.
+
+RunKernel performs exact replay lookup before currentness rejection at each
+mutation boundary. The shared proposal carries its original contract, graph,
+target, dependency, role-artifact, and stable-replay lineage. Exact applied
+amendment replay returns the prior record, admission, application, new-contract
+projection, and graph-transition ref without new canonical work.
+
+Cross-Component Analyst proposes exact target-mapped relationships, synthesis
+D-prime validates them, and RunKernel admits bounded Graph V1 inference.
+Semantic depth is capped at 1 in Fast/Balanced and 2 in Deep. Sufficiency then
+selects one exact current direct or inferred fulfillment; FAP preserves its
+lineage and Author only renders the packet. Boundary A/B recovery never becomes
+a second stopping or answer authority.
 
 The zero-candidate-URL-transport predecessor remains historically grounded at
 runtime/test commit `48a309124764d813cf27081bf5871d5a9612db79`.

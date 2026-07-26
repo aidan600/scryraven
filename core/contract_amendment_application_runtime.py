@@ -12,6 +12,11 @@ import json
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.semantic_contract_foundation import (
+    AnswerComponentContract,
+    validate_answer_component_contract_set,
+)
+
 CONTRACT_AMENDMENT_APPLICATION_SCHEMA_VERSION = (
     "contract_amendment_application_ag_run_contract_mutation_loop_01_v1"
 )
@@ -310,6 +315,8 @@ def _component_ref_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "component_id": component_id,
         "component_revision": revision,
         "component_digest": digest,
+        "component_purpose": _clean_token(payload.get("component_purpose"))
+        or "user_facing_answer_target",
         "user_facing_label": _clean_text(
             payload.get("user_facing_label"), limit=240
         ),
@@ -331,10 +338,24 @@ def _component_ref_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "source_obligation_candidate_refs": _safe_list(
             payload.get("source_obligation_candidate_refs")
         ),
+        "dependency_component_ids": _token_list(
+            payload.get("dependency_component_ids")
+        ),
+        "normalization_policy": _clean_text(
+            payload.get("normalization_policy"), limit=300
+        ),
+        "calculation_policy": _clean_text(
+            payload.get("calculation_policy"), limit=300
+        ),
+        "partial_answer_policy": _clean_token(
+            payload.get("partial_answer_policy")
+        )
+        or "qualify_visible_gap",
         "mandatory_caveats": _text_list(
             payload.get("mandatory_caveats") or payload.get("required_caveats")
         ),
         "prohibited_upgrades": _text_list(payload.get("prohibited_upgrades")),
+        "metadata": _safe_mapping(payload.get("metadata")),
         "lifecycle_status": "pending",
         "lifecycle_status_authority": "contract_amendment_application_default",
     }
@@ -1181,8 +1202,18 @@ def build_current_answer_contract_projection(
                 "component_id": ref.get("component_id"),
                 "component_revision": ref.get("component_revision"),
                 "component_digest": ref.get("component_digest"),
+                "component_purpose": ref.get("component_purpose"),
                 "requirement_posture": ref.get("requirement_posture"),
                 "materiality": ref.get("materiality"),
+                "allowed_support_kinds": _token_list(
+                    ref.get("allowed_support_kinds")
+                ),
+                "max_inference_depth": int(
+                    ref.get("max_inference_depth") or 0
+                ),
+                "dependency_component_ids": _token_list(
+                    ref.get("dependency_component_ids")
+                ),
                 "lifecycle_status": ref.get("lifecycle_status", "pending"),
                 "source_obligation_candidate_ids": _token_list(
                     ref.get("source_obligation_candidate_ids")
@@ -1309,6 +1340,76 @@ def build_contract_amendment_application_state(
         action_inputs=inputs,
         component_coverage_history=component_coverage_history,
     )
+    try:
+        component_contracts = [
+            AnswerComponentContract(
+                component_id=str(component.get("component_id") or ""),
+                component_revision=str(
+                    component.get("component_revision") or "1"
+                ),
+                component_digest=component.get("component_digest"),
+                component_purpose=component.get("component_purpose")
+                or "user_facing_answer_target",
+                user_facing_label=str(
+                    component.get("user_facing_label") or ""
+                ),
+                user_facing_question=str(
+                    component.get("user_facing_question") or ""
+                ),
+                requirement_posture=component.get("requirement_posture")
+                or "required",
+                acceptance_criteria=tuple(
+                    component.get("acceptance_criteria") or ()
+                ),
+                semantic_slot_ids=tuple(
+                    component.get("semantic_slot_ids") or ()
+                ),
+                source_obligation_candidate_ids=tuple(
+                    component.get("source_obligation_candidate_ids") or ()
+                ),
+                source_obligation_candidate_refs=tuple(
+                    component.get("source_obligation_candidate_refs") or ()
+                ),
+                allowed_support_kinds=tuple(
+                    component.get("allowed_support_kinds") or ("direct",)
+                ),
+                max_inference_depth=int(
+                    component.get("max_inference_depth") or 0
+                ),
+                normalization_policy=component.get("normalization_policy"),
+                calculation_policy=component.get("calculation_policy"),
+                dependency_component_ids=tuple(
+                    component.get("dependency_component_ids") or ()
+                ),
+                partial_answer_policy=component.get("partial_answer_policy")
+                or "qualify_visible_gap",
+                mandatory_caveats=tuple(
+                    component.get("mandatory_caveats") or ()
+                ),
+                prohibited_upgrades=tuple(
+                    component.get("prohibited_upgrades") or ()
+                ),
+                materiality=component.get("materiality") or "material",
+                metadata=_safe_mapping(component.get("metadata")),
+            )
+            for component in components
+        ]
+        matrix = validate_answer_component_contract_set(
+            component_contracts,
+            requested_mode=(
+                parent.get("requested_mode")
+                or _safe_mapping(parent.get("question_meaning_metadata")).get(
+                    "requested_mode"
+                )
+                or action_inputs.get("requested_mode")
+                or "balanced"
+            ),
+        )
+        matrix.raise_for_errors()
+    except (TypeError, ValueError) as exc:
+        raise ContractAmendmentApplicationError(
+            f"applied amendment violates the answer-component contract matrix: {exc}"
+        ) from exc
     parent_version, parent_digest = _contract_version_digest(parent)
     initial_version, initial_digest = _contract_version_digest(initial)
     existing_applied = [

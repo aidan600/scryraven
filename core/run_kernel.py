@@ -606,12 +606,8 @@ SEARCHOS_READ_CUSTODY_ADMISSION_STAGE = "searchos_read_custody_admission"
 SEARCHOS_SEMANTIC_HANDOFF_STAGE = "searchos_semantic_evaluation_handoff"
 SEARCHOS_SLICE_A_READINESS_STAGE = "searchos_slice_a_readiness"
 SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE = "searchos_required_needs_block"
-SEARCHOS_EXISTING_GAP_RECOVERY_ADMISSION_STAGE = (
-    "searchos_existing_gap_recovery_admission"
-)
-SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_STAGE = (
-    "searchos_existing_gap_recovery_terminal"
-)
+SEARCHOS_RECOVERY_ADMISSION_STAGE = "searchos_recovery_cycle_admission"
+SEARCHOS_RECOVERY_TERMINAL_STAGE = "searchos_recovery_cycle_terminal"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -623,25 +619,8 @@ RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE = (
     "component_gap_recovery_semantic_delta_commit"
 )
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE = "semantic_producer_bundle_commit"
-MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE = (
-    "multicomponent_missing_component_recovery_authorization"
-)
-MULTICOMPONENT_RECOVERY_OUTCOME_STAGE = "multicomponent_recovery_outcome"
 MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE = (
     "multicomponent_selective_recomputation_closure"
-)
-_MULTICOMPONENT_RECOVERY_OUTCOME_DISPOSITIONS = frozenset(
-    {
-        "acquired",
-        "blocked_requires_user_confirmation",
-        "blocked_no_candidates",
-        "blocked_no_readable_evidence",
-        "blocked_component_admission",
-        "blocked_resynthesis",
-    }
-)
-_MULTICOMPONENT_RECOVERY_ORDINARY_PROVIDERS = frozenset(
-    {"tavily", "linkup", "exa"}
 )
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON = (
     "ordinary_semantic_producer_atomic_bundle_commit"
@@ -815,8 +794,8 @@ class ActionType(str, Enum):
     SEARCHOS_SEMANTIC_HANDOFF_ADMIT = "searchos_semantic_handoff_admit"
     SEARCHOS_SLICE_A_READINESS_DERIVE = "searchos_slice_a_readiness_derive"
     SEARCHOS_REQUIRED_NEEDS_BLOCK = "searchos_required_needs_block"
-    SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT = "searchos_existing_gap_recovery_admit"
-    SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCE = "searchos_existing_gap_recovery_terminal_reduce"
+    SEARCHOS_RECOVERY_ADMIT = "searchos_recovery_cycle_admit"
+    SEARCHOS_RECOVERY_TERMINAL_REDUCE = "searchos_recovery_cycle_terminal_reduce"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -854,12 +833,6 @@ class ActionType(str, Enum):
         "multicomponent_component_admission_reduce"
     )
     MULTICOMPONENT_GRAPH_REDUCE = "multicomponent_graph_reduce"
-    MULTICOMPONENT_RECOVERY_AUTHORIZE = (
-        "multicomponent_missing_component_recovery_authorize"
-    )
-    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE = (
-        "multicomponent_recovery_outcome_reduce"
-    )
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     CONTRACT_AMENDMENT_APPLY = "contract_amendment_apply"
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = (
@@ -976,8 +949,8 @@ class ObservationType(str, Enum):
     SEARCHOS_SEMANTIC_HANDOFF_ADMITTED = "searchos_semantic_handoff_admitted"
     SEARCHOS_SLICE_A_READINESS_DERIVED = "searchos_slice_a_readiness_derived"
     SEARCHOS_REQUIRED_NEEDS_BLOCKED = "searchos_required_needs_blocked"
-    SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED = "searchos_existing_gap_recovery_admitted"
-    SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCED = "searchos_existing_gap_recovery_terminal_reduced"
+    SEARCHOS_RECOVERY_ADMITTED = "searchos_recovery_cycle_admitted"
+    SEARCHOS_RECOVERY_TERMINAL_REDUCED = "searchos_recovery_cycle_terminal_reduced"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -1015,12 +988,6 @@ class ObservationType(str, Enum):
         "multicomponent_component_admission_reduced"
     )
     MULTICOMPONENT_GRAPH_REDUCED = "multicomponent_graph_reduced"
-    MULTICOMPONENT_RECOVERY_AUTHORIZED = (
-        "multicomponent_missing_component_recovery_authorized"
-    )
-    MULTICOMPONENT_RECOVERY_OUTCOME_REDUCED = (
-        "multicomponent_recovery_outcome_reduced"
-    )
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     CONTRACT_AMENDMENT_APPLIED = "contract_amendment_applied"
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED = (
@@ -1150,9 +1117,13 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
 
 
 def _json_safe(
-    value: Any, *, depth: int = 0, string_limit: int = 800
+    value: Any,
+    *,
+    depth: int = 0,
+    string_limit: int = 800,
+    max_depth: int = 8,
 ) -> Any:
-    if depth > 8:
+    if depth > max_depth:
         return "[redacted]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -1173,6 +1144,7 @@ def _json_safe(
                     item,
                     depth=depth + 1,
                     string_limit=string_limit,
+                    max_depth=max_depth,
                 )
         return out
     if isinstance(value, (list, tuple, set, frozenset)):
@@ -1184,6 +1156,7 @@ def _json_safe(
                 item,
                 depth=depth + 1,
                 string_limit=string_limit,
+                max_depth=max_depth,
             )
             for item in ordered[:80]
         ]
@@ -1192,6 +1165,13 @@ def _json_safe(
 
 def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}))
+    return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _graph_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Preserve the bounded nested proposal/contract lineage carried by Graph V1."""
+
+    safe = _json_safe(dict(value or {}), max_depth=16)
     return dict(safe) if isinstance(safe, Mapping) else {}
 
 
@@ -1209,6 +1189,131 @@ def _stable_packet_safe_json_digest(value: Any) -> str:
         separators=(",", ":"),
     )
     return sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def contract_amendment_graph_transition_authority(
+    *,
+    graph: Mapping[str, Any],
+    amendment_application: Mapping[str, Any],
+    amendment_admission: Mapping[str, Any] | None = None,
+    run_id: str,
+    request_id: str,
+) -> dict[str, Any]:
+    """Derive the sole graph-transition authority from ContractAmendment state."""
+
+    application = _safe_mapping(amendment_application)
+    admission = _safe_mapping(amendment_admission)
+    source = _safe_mapping(graph)
+    if (
+        not application.get("application_digest")
+        or not application.get("amendment_record_id")
+        or not source.get("graph_id")
+        or not source.get("graph_digest")
+    ):
+        return {}
+    target_component_ids: set[str] = set()
+    application_operations = (
+        application.get("applied_operations")
+        or application.get("operations")
+        or ()
+    )
+    for item in application_operations:
+        operation = _safe_mapping(item) if isinstance(item, Mapping) else {}
+        if operation.get("operation_kind") != "revise_component":
+            continue
+        for candidate_id in (
+            operation.get("component_id"),
+            operation.get("revised_component_id"),
+            *(operation.get("target_component_ids") or ()),
+        ):
+            if candidate_id:
+                target_component_ids.add(str(candidate_id))
+    target_component_id_list = sorted(target_component_ids)
+    proposal_ref = _safe_mapping(
+        admission.get("analyst_query_resolution_proposal_ref")
+    )
+    proposal_local_target_key = _clean_text(
+        proposal_ref.get("local_target_key"),
+        limit=160,
+    )
+    target_nodes = [
+            _safe_mapping(item)
+            for item in source.get("synthesis_nodes") or ()
+            if (
+                str(
+                    _safe_mapping(item).get(
+                        "answer_target_component_id"
+                    )
+                    or ""
+                )
+                in target_component_ids
+                or (
+                    proposal_local_target_key
+                    and _safe_mapping(item).get("synthesis_key")
+                    == proposal_local_target_key
+                )
+            )
+    ]
+    target_nodes.sort(key=lambda item: str(item.get("synthesis_key") or ""))
+    target_node = target_nodes[0] if len(target_nodes) == 1 else {}
+    core = {
+        "schema_version": "contract_amendment_graph_transition_authority_v1",
+        "owner": "RunKernel.ContractAmendmentGraphTransition",
+        "canonical_state": True,
+        "run_id": run_id,
+        "request_id": request_id,
+        "graph_id": source.get("graph_id"),
+        "graph_revision": source.get("graph_revision"),
+        "graph_digest": source.get("graph_digest"),
+        "amendment_record_id": application.get("amendment_record_id"),
+        "admission_digest": admission.get("admission_digest"),
+        "application_digest": application.get("application_digest"),
+        "target_kind": (
+            "synthesis" if len(target_nodes) == 1 else "synthesis_set"
+        ),
+        "target_component_ids": target_component_id_list,
+        "proposal_local_target_key": proposal_local_target_key,
+        "target_key": target_node.get("synthesis_key"),
+        "resolved_target": {
+            key: target_node.get(key)
+            for key in (
+                "node_kind",
+                "node_id",
+                "node_revision",
+                "node_digest",
+                "synthesis_key",
+                "status",
+                "current",
+                "stale",
+            )
+        }
+        if target_node
+        else {},
+        "resolved_targets": [
+            {
+                key: node.get(key)
+                for key in (
+                    "node_kind",
+                    "node_id",
+                    "node_revision",
+                    "node_digest",
+                    "synthesis_key",
+                    "status",
+                    "current",
+                    "stale",
+                )
+            }
+            for node in target_nodes
+        ],
+    }
+    digest = _stable_packet_safe_json_digest(core)
+    return {
+        **core,
+        "authorization_id": (
+            f"contract-amendment-graph-transition:{digest[:20]}"
+        ),
+        "authorization_digest": digest,
+    }
 
 
 def _safe_semantic_consumption(value: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -1281,6 +1386,9 @@ class AuthorizedAction:
             (
                 _acquisition_safe_mapping(self.inputs)
                 if self.action_type.value.startswith("acquisition_")
+                else _graph_safe_mapping(self.inputs)
+                if self.action_type
+                is ActionType.MULTICOMPONENT_GRAPH_REDUCE
                 else _safe_mapping(self.inputs)
             ),
         )
@@ -1357,6 +1465,9 @@ class Observation:
         payload = (
             _acquisition_safe_mapping(self.payload)
             if self.observation_type.value.startswith("acquisition_")
+            else _graph_safe_mapping(self.payload)
+            if self.observation_type
+            is ObservationType.MULTICOMPONENT_GRAPH_REDUCED
             else _safe_mapping(self.payload)
         )
         if (
@@ -2948,6 +3059,129 @@ class RunKernel:
     def acquisition_authority_snapshot(self) -> dict[str, Any]:
         """Return the exact current pre-acquisition lineage snapshot."""
 
+        searchos_state = _safe_mapping(self.state.searchos_state)
+        active_recovery_ref = _safe_mapping(
+            searchos_state.get("active_recovery_cycle_ref")
+        )
+        recovery_admission = next(
+            (
+                _safe_mapping(item)
+                for item in searchos_state.get(
+                    "recovery_cycle_admission_history"
+                )
+                or ()
+                if _safe_mapping(item).get("cycle_id")
+                == active_recovery_ref.get("cycle_id")
+                and _safe_mapping(item).get(
+                    "cycle_admission_digest"
+                )
+                == active_recovery_ref.get("cycle_admission_digest")
+            ),
+            {},
+        )
+        if (
+            recovery_admission.get("recovery_classification")
+            == "searched_premise"
+        ):
+            active_contract = (
+                self.state.current_answer_contract
+                or self.state.initial_answer_contract
+            )
+            active_source = (
+                "current_answer_contract"
+                if self.state.current_answer_contract
+                else "initial_answer_contract"
+            )
+            contract_ref = _handoff_contract_ref_from_contract(
+                active_contract,
+                source=active_source,
+            )
+            admission_contract_ref = _safe_mapping(
+                recovery_admission.get("current_contract_ref")
+            )
+            component_ref = _safe_mapping(
+                recovery_admission.get("component_ref")
+            )
+            obligation_ref = _safe_mapping(
+                recovery_admission.get("source_obligation_ref")
+            )
+            component_id = str(
+                component_ref.get("component_id") or ""
+            )
+            obligation_id = str(
+                obligation_ref.get("source_obligation_id") or ""
+            )
+            current_component = next(
+                (
+                    _safe_mapping(item)
+                    for item in _safe_mapping(active_contract).get(
+                        "accepted_answer_component_refs"
+                    )
+                    or ()
+                    if _safe_mapping(item).get("component_id")
+                    == component_id
+                ),
+                {},
+            )
+            compact_component_ref = {
+                key: component_ref.get(key)
+                for key in (
+                    "component_id",
+                    "component_revision",
+                    "component_digest",
+                )
+            }
+            if (
+                not contract_ref
+                or admission_contract_ref.get(
+                    "accepted_contract_digest"
+                )
+                != contract_ref.get("contract_digest")
+                or str(
+                    admission_contract_ref.get(
+                        "accepted_contract_version"
+                    )
+                    or ""
+                )
+                != str(contract_ref.get("contract_version") or "")
+                or not component_id
+                or not obligation_id
+                or {
+                    key: current_component.get(key)
+                    for key in compact_component_ref
+                }
+                != compact_component_ref
+                or component_id
+                not in {
+                    str(value)
+                    for value in obligation_ref.get("component_ids")
+                    or ()
+                }
+            ):
+                raise RunKernelTransitionError(
+                    "searched-premise recovery acquisition authority is stale"
+                )
+            snapshot_core = {
+                "run_id": self.state.run_id,
+                "request_id": self.state.request_id,
+                "answer_contract_ref": contract_ref,
+                "components_by_id": {
+                    component_id: compact_component_ref
+                },
+                "source_obligations_by_id": {
+                    obligation_id: obligation_ref
+                },
+                "lineage_posture": (
+                    "active_searched_premise_recovery_pre_acquisition_only"
+                ),
+                "searchos_recovery_cycle_ref": deepcopy(
+                    active_recovery_ref
+                ),
+            }
+            return {
+                **snapshot_core,
+                "snapshot_digest": stable_json_digest(snapshot_core),
+            }
         try:
             return build_acquisition_authority_snapshot(
                 run_id=self.state.run_id,
@@ -4329,7 +4563,10 @@ class RunKernel:
                 "semantic observation admission requires an accepted initial "
                 "answer contract"
             )
-        accepted = self.state.initial_answer_contract
+        accepted = (
+            self.state.current_answer_contract
+            or self.state.initial_answer_contract
+        )
         resolved_contract_digest = (
             accepted_contract_digest
             or accepted.get("accepted_contract_digest")
@@ -4382,6 +4619,7 @@ class RunKernel:
         specialist_capability_registry: Any | None = None,
         specialist_execution_policy: Any | None = None,
         allow_single_component_direct_admission: bool = False,
+        requested_mode: str = "Balanced",
     ) -> dict[str, Any]:
         """Initialize the qualifying lane's RunKernel-owned V2/V3 scheduler."""
 
@@ -4400,9 +4638,14 @@ class RunKernel:
         contract = _safe_mapping(
             self.state.current_answer_contract or self.state.initial_answer_contract
         )
-        component_refs = [
+        all_component_refs = [
             _safe_mapping(item)
             for item in contract.get("accepted_answer_component_refs") or ()
+        ]
+        component_refs = [
+            item
+            for item in all_component_refs
+            if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
         ]
         component_by_id = {
             str(item.get("component_id") or ""): item for item in component_refs
@@ -4456,6 +4699,7 @@ class RunKernel:
         single_component_direct_admission = (
             allow_single_component_direct_admission
             and len(component_refs) == 1
+            and len(all_component_refs) == 1
             and directive == "single_component_direct_admission"
             and any(
                 _safe_mapping(_safe_mapping(slot).get("slot_ref")).get(
@@ -4501,6 +4745,9 @@ class RunKernel:
             "specialist_registry_projection": deepcopy(registry_projection),
             "specialist_execution_policy_projection": deepcopy(policy_projection),
             "single_component_direct_admission": (single_component_direct_admission),
+            "requested_mode": (
+                _clean_text(requested_mode, limit=40) or "Balanced"
+            ),
         }
         action = self.authorize(
             stage=MULTICOMPONENT_SCHEDULER_STAGE,
@@ -4766,6 +5013,16 @@ class RunKernel:
                             or ""
                         ),
                         component_analyst_input_packets=context_packets,
+                        accepted_component_refs=contract.get(
+                            "accepted_answer_component_refs"
+                        )
+                        or (),
+                        requested_mode=str(
+                            _safe_mapping(
+                                self.state.multicomponent_scheduler_context
+                            ).get("requested_mode")
+                            or "Balanced"
+                        ),
                     )
                     same_artifact_synthesis_keys = tuple(
                         str(_safe_mapping(item).get("synthesis_key") or "")
@@ -5873,137 +6130,6 @@ class RunKernel:
         self.state.action_statuses[action.action_id] = observation.status
         self.state.stage_statuses[action.stage] = observation.status
 
-    def register_multicomponent_recovery_scheduler_context(
-        self,
-        *,
-        component_id: str,
-        analyst_input_packet: Mapping[str, Any],
-        recovery_authorization_ref: Mapping[str, Any],
-        contract_amendment_admission_ref: Mapping[str, Any],
-        contract_amendment_application_ref: Mapping[str, Any],
-    ) -> None:
-        from core.multicomponent_graph_scheduling import (
-            MULTICOMPONENT_SCHEDULER_STAGE,
-        )
-
-        context = _safe_mapping(self.state.multicomponent_scheduler_context)
-        if not context or not self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
-            raise RunKernelTransitionError("recovery requires active scheduler context")
-        packet = _safe_mapping(analyst_input_packet)
-        binding = _safe_mapping(packet.get("run_binding"))
-        component = _safe_mapping(packet.get("component_ref"))
-        contract = _safe_mapping(self.state.current_answer_contract)
-        accepted = next(
-            (
-                _safe_mapping(item)
-                for item in contract.get("accepted_answer_component_refs") or ()
-                if _safe_mapping(item).get("component_id") == component_id
-            ),
-            {},
-        )
-        evidence = _safe_mapping(packet.get("component_evidence"))
-        custody = _safe_mapping(evidence.get("candidate_custody_ref"))
-        ledger_candidate_ids = {
-            str(_safe_mapping(item).get("candidate_id") or "")
-            for item in self.state.evidence_ledger.to_projection().to_dict().get(
-                "candidate_records", ()
-            )
-            if _safe_mapping(item).get("candidate_id")
-        }
-        if (
-            not accepted
-            or binding.get("run_id") != self.state.run_id
-            or binding.get("request_id") != self.state.request_id
-            or binding.get("accepted_contract_digest")
-            != contract.get("accepted_contract_digest")
-            or component.get("component_id") != component_id
-            or component.get("component_digest") != accepted.get("component_digest")
-            or evidence.get("evidence_status") != "available"
-            or evidence.get("evidence_ref_id") not in ledger_candidate_ids
-            or custody.get("candidate_id") != evidence.get("evidence_ref_id")
-        ):
-            raise RunKernelTransitionError(
-                "recovery scheduler context is not current contract authority"
-            )
-        authorization = _safe_mapping(
-            self.state.projections.get(MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE)
-        )
-        amendment_admission = _safe_mapping(
-            self.state.contract_amendment_admission_projection
-        )
-        amendment_application = _safe_mapping(
-            self.state.contract_amendment_application_projection
-        )
-        expected_recovery_authorization_ref = {
-            "authorization_id": authorization.get("authorization_id"),
-            "authorization_digest": authorization.get("authorization_digest"),
-        }
-        expected_contract_amendment_admission_ref = {
-            "amendment_record_id": amendment_admission.get("amendment_record_id"),
-            "amendment_record_digest": amendment_admission.get(
-                "amendment_record_digest"
-            ),
-            "authorized_action_id": amendment_admission.get("authorized_action_id"),
-            "admission_digest": amendment_admission.get("admission_digest"),
-        }
-        expected_contract_amendment_application_ref = {
-            "amendment_record_id": amendment_application.get("amendment_record_id"),
-            "authorized_action_id": amendment_application.get(
-                "authorized_action_id"
-            ),
-            "application_digest": amendment_application.get("application_digest"),
-        }
-        if (
-            not expected_recovery_authorization_ref["authorization_id"]
-            or not expected_recovery_authorization_ref["authorization_digest"]
-            or not expected_contract_amendment_admission_ref["admission_digest"]
-            or not expected_contract_amendment_application_ref["application_digest"]
-            or _safe_mapping(recovery_authorization_ref)
-            != expected_recovery_authorization_ref
-            or _safe_mapping(contract_amendment_admission_ref)
-            != expected_contract_amendment_admission_ref
-            or _safe_mapping(contract_amendment_application_ref)
-            != expected_contract_amendment_application_ref
-        ):
-            raise RunKernelTransitionError(
-                "recovery scheduler context refs must match canonical "
-                "RunKernel projections"
-            )
-        packets = _safe_mapping(context.get("component_analyst_input_packets"))
-        recoveries = _safe_mapping(context.get("recovery_bindings"))
-        proposed_packet = deepcopy(packet)
-        proposed_recovery = {
-            "recovery_authorization_ref": deepcopy(
-                expected_recovery_authorization_ref
-            ),
-            "contract_amendment_admission_ref": deepcopy(
-                expected_contract_amendment_admission_ref
-            ),
-            "contract_amendment_application_ref": deepcopy(
-                expected_contract_amendment_application_ref
-            ),
-        }
-        if component_id in recoveries:
-            if (
-                _safe_mapping(packets.get(component_id)) == proposed_packet
-                and _safe_mapping(recoveries.get(component_id)) == proposed_recovery
-            ):
-                return
-            raise RunKernelTransitionError(
-                "recovery scheduler context rejects changed duplicate "
-                "component registration"
-            )
-        packets[component_id] = proposed_packet
-        recoveries[component_id] = proposed_recovery
-        context["component_analyst_input_packets"] = packets
-        context["recovery_bindings"] = recoveries
-        scheduler = self._scheduler_after_canonical_authority_transition(
-            transition="recovery_scheduler_context_registered",
-            scheduler_context=context,
-        )
-        self.state.multicomponent_scheduler_context = context
-        if scheduler is not None:
-            self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE] = scheduler
 
     def complete_multicomponent_graph_scheduler(self) -> dict[str, Any]:
         from core.multicomponent_graph_scheduling import (
@@ -6150,8 +6276,7 @@ class RunKernel:
         recovery_inputs: dict[str, Any] = {}
         if searchos_recovery_cycle_ref:
             from core.searchos_existing_gap_recovery_runtime import (
-                recovery_cycle_ref,
-                validate_active_searchos_recovery_cycle_ref,
+                validate_active_searchos_generalized_recovery_cycle_ref,
             )
 
             if (
@@ -6165,28 +6290,52 @@ class RunKernel:
                     "SearchOS recovery may execute only unchanged Component Analyst and component D-prime calls"
                 )
             try:
-                cycle = validate_active_searchos_recovery_cycle_ref(
+                cycle = validate_active_searchos_generalized_recovery_cycle_ref(
                     self.state.searchos_state,
                     searchos_recovery_cycle_ref,
                 )
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
-            exact_cycle_ref = recovery_cycle_ref(cycle)
-            recovery_slot_ref = _safe_mapping(exact_cycle_ref.get("recovery_slot_ref"))
-            expected_key = f"{recovery_slot_ref.get('component_id')}@{exact_cycle_ref.get('cycle_id')}"
+            exact_cycle_ref = deepcopy(
+                dict(searchos_recovery_cycle_ref)
+            )
+            recovery_slot_ref = _safe_mapping(
+                cycle.get("recovery_slot_ref")
+            )
+            expected_key = (
+                f"{recovery_slot_ref.get('component_id')}@"
+                f"{exact_cycle_ref.get('cycle_id')}"
+            )
             if evaluation_key != expected_key:
                 raise RunKernelTransitionError("SearchOS same-component role evaluation key is stale")
             recovery_inputs = {
                 "searchos_recovery_cycle_ref": exact_cycle_ref,
-                "searchos_recovery_lease_ref": deepcopy(exact_cycle_ref.get("recovery_lease_ref")),
+                "searchos_recovery_lease_ref": deepcopy(
+                    cycle.get("whole_run_lease_ref")
+                ),
                 "component_id": recovery_slot_ref.get("component_id"),
-                "target_kind": "existing_answer_component",
-                "same_component_reassessment": True,
-                "derived_component_recovery": False,
+                "target_kind": (
+                    "searched_supporting_premise"
+                    if cycle.get("recovery_classification")
+                    == "searched_premise"
+                    else "existing_answer_component"
+                ),
+                "same_component_reassessment": (
+                    cycle.get("recovery_classification")
+                    == "existing_component_gap"
+                ),
+                "derived_component_recovery": (
+                    cycle.get("recovery_classification")
+                    == "searched_premise"
+                ),
                 "scrutineer_recovery_input": False,
             }
-        if scheduler_raw and not recovery_inputs:
+        scheduler_active = False
+        scheduler: dict[str, Any] = {}
+        if scheduler_raw:
             scheduler = validate_scheduler_state(scheduler_raw)
+            scheduler_active = scheduler.get("status") == "active"
+        if scheduler_active and not recovery_inputs:
             lease = next(
                 (
                     _safe_mapping(item)
@@ -6302,22 +6451,22 @@ class RunKernel:
             or self.state.initial_answer_contract
         )
         recovery_ref: dict[str, Any] = {}
+        cycle: dict[str, Any] = {}
         if searchos_recovery_cycle_ref:
             from core.searchos_existing_gap_recovery_runtime import (
-                recovery_cycle_ref,
-                validate_active_searchos_recovery_cycle_ref,
+                validate_active_searchos_generalized_recovery_cycle_ref,
             )
 
             try:
-                cycle = validate_active_searchos_recovery_cycle_ref(
+                cycle = validate_active_searchos_generalized_recovery_cycle_ref(
                     self.state.searchos_state,
                     searchos_recovery_cycle_ref,
                 )
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
-            recovery_ref = recovery_cycle_ref(cycle)
+            recovery_ref = deepcopy(dict(searchos_recovery_cycle_ref))
             recovery_component = _safe_mapping(
-                recovery_ref.get("recovery_slot_ref")
+                cycle.get("recovery_slot_ref")
             ).get("component_id")
             expected_key = (
                 f"{recovery_component}@{recovery_ref.get('cycle_id')}"
@@ -6340,8 +6489,14 @@ class RunKernel:
                     "accepted_contract_digest"
                 ),
                 "searchos_recovery_cycle_ref": recovery_ref,
-                "same_component_reassessment": bool(recovery_ref),
-                "derived_component_recovery": False,
+                "same_component_reassessment": (
+                    cycle.get("recovery_classification")
+                    == "existing_component_gap"
+                ),
+                "derived_component_recovery": (
+                    cycle.get("recovery_classification")
+                    == "searched_premise"
+                ),
                 "scrutineer_recovery_input": False,
             },
             expected_observation_type=(
@@ -6356,6 +6511,7 @@ class RunKernel:
         prior_graph_digest: str | None,
         synthesis_key: str | None = None,
         role_evaluation_key: str | None = None,
+        inferred_resolution_proposal: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
         operation_name = _clean_text(operation, limit=80)
         if operation_name not in {
@@ -6363,9 +6519,9 @@ class RunKernel:
             "synthesis_validation",
             "scrutiny",
             "synthesis_admission",
+            "inferred_resolution_binding",
             "accounting",
             "finalize",
-            "graph_amendment",
             "resynthesis_structure",
             "selective_invalidation",
             "selective_resynthesis_structure",
@@ -6426,6 +6582,23 @@ class RunKernel:
                     "closure_digest": closure.get("closure_digest"),
                 }
             )
+        if operation_name == "inferred_resolution_binding":
+            from core.analyst_query_resolution_proposal import (
+                validate_bound_analyst_query_resolution_proposal,
+            )
+
+            proposal = validate_bound_analyst_query_resolution_proposal(
+                _graph_safe_mapping(inferred_resolution_proposal)
+            )
+            if not synthesis_key:
+                raise RunKernelTransitionError(
+                    "inferred resolution binding requires a synthesis key"
+                )
+            action_inputs["inferred_resolution_proposal"] = proposal
+        elif inferred_resolution_proposal:
+            raise RunKernelTransitionError(
+                "only inferred resolution binding may carry an Analyst proposal"
+            )
         return self.authorize(
             stage="multicomponent_component_work_graph_v1",
             action_type=ActionType.MULTICOMPONENT_GRAPH_REDUCE,
@@ -6450,8 +6623,16 @@ class RunKernel:
         graph = validate_component_work_graph_v1(
             _safe_mapping(self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
         )
-        authorization = _safe_mapping(
-            self.state.projections.get(MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE)
+        authorization = contract_amendment_graph_transition_authority(
+            graph=graph,
+            amendment_application=(
+                self.state.contract_amendment_application_projection
+            ),
+            amendment_admission=(
+                self.state.contract_amendment_admission_projection
+            ),
+            run_id=self.state.run_id,
+            request_id=self.state.request_id,
         )
         if (
             authorization.get("graph_id") != graph.get("graph_id")
@@ -6499,6 +6680,17 @@ class RunKernel:
         if any(
             item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
             and item.inputs.get("operation") == "selective_closure"
+            and _safe_mapping(item.inputs.get("source_graph_ref"))
+            == {
+                "graph_id": graph.get("graph_id"),
+                "graph_revision": graph.get("graph_revision"),
+                "graph_digest": graph.get("graph_digest"),
+            }
+            and _safe_mapping(item.inputs.get("recovery_authorization_ref"))
+            == {
+                "authorization_id": authorization.get("authorization_id"),
+                "authorization_digest": authorization.get("authorization_digest"),
+            }
             for item in self.state.issued_actions.values()
         ):
             raise RunKernelTransitionError(
@@ -6598,8 +6790,16 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "selective invalidation requires the unchanged closure source graph"
             )
-        authorization = _safe_mapping(
-            self.state.projections.get(MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE)
+        authorization = contract_amendment_graph_transition_authority(
+            graph=graph,
+            amendment_application=(
+                self.state.contract_amendment_application_projection
+            ),
+            amendment_admission=(
+                self.state.contract_amendment_admission_projection
+            ),
+            run_id=self.state.run_id,
+            request_id=self.state.request_id,
         )
         contract = _safe_mapping(self.state.current_answer_contract)
         if (
@@ -6619,6 +6819,8 @@ class RunKernel:
         if any(
             item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
             and item.inputs.get("operation") == "selective_invalidation"
+            and item.inputs.get("closure_id") == closure.get("closure_id")
+            and item.inputs.get("closure_digest") == closure.get("closure_digest")
             for item in self.state.issued_actions.values()
         ):
             raise RunKernelTransitionError(
@@ -6661,328 +6863,6 @@ class RunKernel:
             expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
         )
 
-    def authorize_multicomponent_missing_component_recovery(
-        self,
-        *,
-        proposal_key: str,
-    ) -> AuthorizedAction:
-        """Authorize the one bounded Scrutineer-originated recovery round."""
-
-        from core.component_work_graph_v1 import (
-            COMPONENT_WORK_GRAPH_V1_STAGE,
-            MAX_COMPONENT_NODES,
-            validate_component_work_graph_v1,
-        )
-        from core.multicomponent_role_runtime import (
-            ROLE_SCRUTINEER,
-            role_artifact_ref,
-            safe_packet_digest,
-            validate_multicomponent_role_artifact,
-        )
-
-        key = _clean_text(proposal_key, limit=80)
-        if not key:
-            raise RunKernelTransitionError(
-                "multi-component recovery requires a proposal key"
-            )
-        graph = validate_component_work_graph_v1(
-            _safe_mapping(
-                self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-            )
-        )
-        if graph.get("run_id") != self.state.run_id or graph.get(
-            "request_id"
-        ) != self.state.request_id:
-            raise RunKernelTransitionError(
-                "multi-component recovery graph is cross-run"
-            )
-        active_contract = (
-            self.state.current_answer_contract
-            or self.state.initial_answer_contract
-        )
-        contract_ref = _safe_mapping(graph.get("accepted_contract_ref"))
-        if (
-            not active_contract
-            or contract_ref.get("accepted_contract_version")
-            != active_contract.get("accepted_contract_version")
-            or contract_ref.get("accepted_contract_digest")
-            != active_contract.get("accepted_contract_digest")
-        ):
-            raise RunKernelTransitionError(
-                "multi-component recovery requires the current AnswerContract binding"
-            )
-        if len(graph.get("component_nodes") or ()) >= MAX_COMPONENT_NODES:
-            raise RunKernelTransitionError(
-                "multi-component recovery exceeds the component cap"
-            )
-        prior_recovery_actions = [
-            item
-            for item in self.state.issued_actions.values()
-            if item.action_type is ActionType.MULTICOMPONENT_RECOVERY_AUTHORIZE
-        ]
-        if prior_recovery_actions:
-            raise RunKernelTransitionError(
-                "second multi-component recovery round is not authorized"
-            )
-        if self.state.contract_amendment_application_history:
-            raise RunKernelTransitionError(
-                "multi-component recovery amendment budget is exhausted"
-            )
-        if int(graph.get("automatic_recovery_rounds") or 0) != 0 or int(
-            graph.get("graph_amendment_rounds") or 0
-        ) != 0:
-            raise RunKernelTransitionError(
-                "multi-component recovery graph budget is exhausted"
-            )
-
-        scrutineer_ref = _safe_mapping(graph.get("scrutineer_ref"))
-        action_ref = _safe_mapping(
-            scrutineer_ref.get("authorized_action_ref")
-        )
-        completed_stage = _clean_text(action_ref.get("stage"), limit=240)
-        completed = _safe_mapping(
-            self.state.projections.get(completed_stage or "")
-        )
-        completed_action = self.state.issued_actions.get(
-            str(action_ref.get("action_id") or "")
-        )
-        if (
-            completed_action is None
-            or completed_action.action_type
-            is not ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE
-            or completed_action.stage != completed_stage
-            or completed_action.action_id not in self.state.reduced_action_ids
-        ):
-            raise RunKernelTransitionError(
-                "multi-component recovery requires completed Scrutineer action history"
-            )
-        try:
-            completed = validate_multicomponent_role_artifact(
-                completed,
-                expected_role=ROLE_SCRUTINEER,
-            )
-        except Exception as exc:
-            raise RunKernelTransitionError(
-                "multi-component recovery requires the exact completed Scrutineer artifact"
-            ) from exc
-        if role_artifact_ref(completed) != scrutineer_ref:
-            raise RunKernelTransitionError(
-                "multi-component recovery Scrutineer artifact is not canonical"
-            )
-        proposals = [
-            _safe_mapping(item)
-            for item in _safe_mapping(
-                completed.get("semantic_output")
-            ).get("missing_component_proposals", ())
-            if isinstance(item, Mapping)
-        ]
-        matching = [item for item in proposals if item.get("proposal_key") == key]
-        if len(proposals) != 1 or len(matching) != 1:
-            raise RunKernelTransitionError(
-                "multi-component recovery requires exactly one canonical proposal"
-            )
-        proposal = matching[0]
-        scope_posture = proposal.get("scope_posture")
-        if scope_posture not in {
-            "required_to_fulfill_existing_accepted_user_obligation",
-            "new_or_broadened_user_intent",
-        }:
-            raise RunKernelTransitionError(
-                "multi-component recovery proposal scope posture is invalid"
-            )
-        search_authorized = scope_posture == (
-            "required_to_fulfill_existing_accepted_user_obligation"
-        )
-        target_pair = (proposal.get("target_kind"), proposal.get("target_key"))
-        matching_challenges = [
-            _safe_mapping(item)
-            for item in graph.get("challenge_refs") or ()
-            if (item.get("target_kind"), item.get("target_key")) == target_pair
-            and _safe_mapping(item.get("scrutineer_ref")) == scrutineer_ref
-            and item.get("challenge_status") in {"challenged", "blocked"}
-        ]
-        if len(matching_challenges) != 1 or target_pair[0] != "synthesis":
-            raise RunKernelTransitionError(
-                "multi-component recovery requires the resolved current synthesis target"
-            )
-        directive = _clean_text(
-            graph.get("requested_synthesis_directive"), limit=360
-        )
-        relationship = _clean_text(
-            proposal.get("relationship_to_accepted_synthesis_directive"),
-            limit=800,
-        )
-        if not directive or not relationship:
-            raise RunKernelTransitionError(
-                "multi-component recovery proposal lacks accepted directive binding"
-            )
-        proposal_digest = safe_packet_digest(proposal)
-        proposal_id = (
-            f"missing-component-proposal:{self.state.run_id}:"
-            f"{proposal_digest[:16]}"
-        )
-        return self.authorize(
-            stage=MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
-            action_type=ActionType.MULTICOMPONENT_RECOVERY_AUTHORIZE,
-            reason="scrutineer_missing_component_recovery_authorization",
-            inputs={
-                "proposal_id": proposal_id,
-                "proposal_key": key,
-                "proposal_digest": proposal_digest,
-                "proposal": proposal,
-                "scrutineer_artifact_id": completed.get("artifact_id"),
-                "scrutineer_artifact_digest": completed.get("artifact_digest"),
-                "scrutineer_action_id": action_ref.get("action_id"),
-                "target_kind": target_pair[0],
-                "target_key": target_pair[1],
-                "resolved_target": matching_challenges[0].get(
-                    "resolved_target"
-                ),
-                "graph_id": graph.get("graph_id"),
-                "graph_revision": graph.get("graph_revision"),
-                "graph_digest": graph.get("graph_digest"),
-                "accepted_contract_version": active_contract.get(
-                    "accepted_contract_version"
-                ),
-                "accepted_contract_digest": active_contract.get(
-                    "accepted_contract_digest"
-                ),
-                "automatic_amendment_authority_class": (
-                    "required_to_fulfill_existing_accepted_user_obligation"
-                    if search_authorized
-                    else None
-                ),
-                "recovery_scope_posture": scope_posture,
-                "search_authorized": search_authorized,
-                "component_count_before_recovery": len(
-                    graph.get("component_nodes") or ()
-                ),
-                "maximum_component_count": MAX_COMPONENT_NODES,
-                "recovery_round": 1,
-                "amendment_round": 1,
-                "graph_amendment_round": 1,
-                "component_research_reentry_round": 1,
-                "selective_recomputation_round": 1,
-                "whole_graph_resynthesis_round": 0,
-            },
-            expected_observation_type=(
-                ObservationType.MULTICOMPONENT_RECOVERY_AUTHORIZED
-            ),
-        )
-
-    def authorize_multicomponent_recovery_outcome(
-        self,
-        *,
-        disposition: str,
-        observed_provider_identities: Sequence[str] = (),
-        blocker_reason: str | None = None,
-    ) -> AuthorizedAction:
-        """Authorize one canonical terminal outcome for the bounded recovery."""
-
-        clean_disposition = _clean_text(disposition, limit=80)
-        if clean_disposition not in _MULTICOMPONENT_RECOVERY_OUTCOME_DISPOSITIONS:
-            raise RunKernelTransitionError(
-                "multi-component recovery outcome disposition is invalid"
-            )
-        prior = [
-            item
-            for item in self.state.issued_actions.values()
-            if item.action_type
-            is ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE
-        ]
-        if prior:
-            raise RunKernelTransitionError(
-                "multi-component recovery outcome is already authorized"
-            )
-        authorization = _safe_mapping(
-            self.state.projections.get(
-                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-            )
-        )
-        if (
-            authorization.get("owner")
-            != "RunKernel.MulticomponentRecoveryAuthorization"
-            or authorization.get("canonical_state") is not True
-            or authorization.get("run_id") != self.state.run_id
-            or authorization.get("request_id") != self.state.request_id
-        ):
-            raise RunKernelTransitionError(
-                "multi-component recovery outcome requires canonical authorization"
-            )
-        providers = list(
-            dict.fromkeys(
-                item
-                for item in (
-                    _clean_text(value, limit=80)
-                    for value in observed_provider_identities
-                )
-                if item
-            )
-        )
-        if any(
-            provider not in _MULTICOMPONENT_RECOVERY_ORDINARY_PROVIDERS
-            for provider in providers
-        ):
-            raise RunKernelTransitionError(
-                "multi-component recovery outcome provider is not an ordinary provider"
-            )
-        requires_confirmation = (
-            clean_disposition == "blocked_requires_user_confirmation"
-        )
-        if requires_confirmation:
-            if authorization.get("search_authorized") is not False or providers:
-                raise RunKernelTransitionError(
-                    "confirmation-blocked recovery cannot record provider execution"
-                )
-        else:
-            live_state = _safe_mapping(self.state.live_search_validation_state)
-            observed_provider = _clean_text(
-                live_state.get("provider_used"), limit=80
-            )
-            if (
-                authorization.get("search_authorized") is not True
-                or not self.state.search_planner_proposal_state
-                or not self.state.search_executor_handoff_state
-                or not live_state
-                or not observed_provider
-                or observed_provider
-                not in _MULTICOMPONENT_RECOVERY_ORDINARY_PROVIDERS
-                or (providers and observed_provider not in providers)
-            ):
-                raise RunKernelTransitionError(
-                    "recovery outcome requires one canonical ordinary acquisition attempt"
-                )
-            # The adapter may report diagnostics, but executed-provider authority
-            # is rederived from canonical live-search state.
-            providers = [observed_provider]
-        blocker = _clean_text(blocker_reason, limit=300)
-        if clean_disposition == "acquired" and blocker:
-            raise RunKernelTransitionError(
-                "acquired recovery outcome cannot carry a blocker"
-            )
-        if clean_disposition != "acquired" and not blocker:
-            raise RunKernelTransitionError(
-                "blocked recovery outcome requires a bounded blocker reason"
-            )
-        return self.authorize(
-            stage=MULTICOMPONENT_RECOVERY_OUTCOME_STAGE,
-            action_type=ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE,
-            reason="multicomponent_recovery_terminal_outcome",
-            inputs={
-                "disposition": clean_disposition,
-                "observed_provider_identities": providers,
-                "blocker_reason": blocker,
-                "recovery_authorization_id": authorization.get(
-                    "authorization_id"
-                ),
-                "recovery_authorization_digest": authorization.get(
-                    "authorization_digest"
-                ),
-            },
-            expected_observation_type=(
-                ObservationType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCED
-            ),
-        )
 
     def authorize_dprime_current_answer_contract_authority(
         self,
@@ -7069,15 +6949,9 @@ class RunKernel:
                 "component coverage reduction requires at least one admitted "
                 "SemanticObservation"
             )
-        accepted = self.state.initial_answer_contract
-        resolved_contract_digest = (
-            accepted_contract_digest
-            or accepted.get("accepted_contract_digest")
-        )
-        resolved_contract_version = (
-            accepted_contract_version
-            or accepted.get("accepted_contract_version")
-        )
+        accepted = self.state.current_answer_contract or self.state.initial_answer_contract
+        resolved_contract_digest = accepted_contract_digest or accepted.get("accepted_contract_digest")
+        resolved_contract_version = accepted_contract_version or accepted.get("accepted_contract_version")
         for label, value in (
             ("coverage_record_id", coverage_record_id),
             ("coverage_record_digest", coverage_record_digest),
@@ -8020,55 +7894,204 @@ class RunKernel:
         self.state.observations.append(observation)
         self.state.next_observation_sequence += 1
 
-    def _require_multicomponent_recovery_amendment_authority(
+
+    def _contract_amendment_replay_bundle(
         self,
-        inputs: Mapping[str, Any] | None,
+        *,
+        amendment_record_id: str,
+        amendment_record_digest: str,
+        admission_digest: str | None = None,
     ) -> dict[str, Any]:
-        supplied = _safe_mapping(inputs)
-        authority_class = _clean_text(
-            supplied.get("automatic_amendment_authority_class"), limit=160
-        )
-        if not authority_class:
+        """Return the immutable prior amendment chain before currentness checks."""
+
+        matching_admission: dict[str, Any] = {}
+        for item in self.state.contract_amendment_admission_history:
+            candidate = _safe_mapping(item)
+            same_id = (
+                _clean_text(candidate.get("amendment_record_id"))
+                == _clean_text(amendment_record_id)
+            )
+            same_digest = (
+                _clean_text(
+                    candidate.get("amendment_record_digest"),
+                    limit=128,
+                )
+                == _clean_text(amendment_record_digest, limit=128)
+            )
+            if same_id != same_digest:
+                raise RunKernelTransitionError(
+                    "contract amendment replay identity conflict"
+                )
+            if same_id and same_digest:
+                matching_admission = candidate
+                break
+        if not matching_admission:
             return {}
-        if authority_class != (
-            "required_to_fulfill_existing_accepted_user_obligation"
+        if admission_digest and (
+            _clean_text(
+                matching_admission.get("admission_digest"),
+                limit=128,
+            )
+            != _clean_text(admission_digest, limit=128)
         ):
             raise RunKernelTransitionError(
-                "unknown automatic AnswerContract amendment authority class"
+                "contract amendment replay admission identity conflict"
             )
-        authorization = _safe_mapping(
+
+        matching_application: dict[str, Any] = {}
+        for item in self.state.contract_amendment_application_history:
+            candidate = _safe_mapping(item)
+            if (
+                _clean_text(candidate.get("amendment_record_id"))
+                == _clean_text(amendment_record_id)
+                and _clean_text(
+                    candidate.get("amendment_record_digest"),
+                    limit=128,
+                )
+                == _clean_text(amendment_record_digest, limit=128)
+                and _clean_text(
+                    candidate.get("admission_digest"),
+                    limit=128,
+                )
+                == _clean_text(
+                    matching_admission.get("admission_digest"),
+                    limit=128,
+                )
+            ):
+                matching_application = candidate
+                break
+
+        graph_transition_ref: dict[str, Any] = {}
+        closure_history = _safe_mapping(
             self.state.projections.get(
-                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                "multicomponent_selective_recomputation_closure_history"
             )
         )
-        if (
-            authorization.get("owner")
-            != "RunKernel.MulticomponentRecoveryAuthorization"
-            or authorization.get("canonical_state") is not True
-            or authorization.get("run_id") != self.state.run_id
-            or authorization.get("request_id") != self.state.request_id
-            or authorization.get("automatic_amendment_authority_class")
-            != authority_class
-        ):
-            raise RunKernelTransitionError(
-                "automatic AnswerContract amendment requires canonical recovery authorization"
+        application_digest = _clean_text(
+            matching_application.get("application_digest"),
+            limit=128,
+        )
+        for item in closure_history.get("closures") or ():
+            closure = _safe_mapping(item)
+            application_ref = _safe_mapping(
+                closure.get("contract_amendment_application_ref")
             )
-        required_matches = {
-            "recovery_authorization_id": authorization.get("authorization_id"),
-            "recovery_authorization_digest": authorization.get(
-                "authorization_digest"
-            ),
-            "recovery_proposal_id": authorization.get("proposal_id"),
-            "recovery_proposal_digest": authorization.get("proposal_digest"),
+            if (
+                application_digest
+                and _clean_text(
+                    application_ref.get("application_digest"),
+                    limit=128,
+                )
+                == application_digest
+            ):
+                graph_transition_ref = {
+                    **_safe_mapping(
+                        closure.get("recovery_authorization_ref")
+                    ),
+                    "source_graph_ref": _safe_mapping(
+                        closure.get("source_graph_ref")
+                    ),
+                    "closure_ref": {
+                        "closure_id": closure.get("closure_id"),
+                        "closure_digest": closure.get("closure_digest"),
+                    },
+                }
+                break
+
+        record_projection = {
+            key: deepcopy(matching_admission.get(key))
+            for key in (
+                "amendment_record_id",
+                "amendment_record_digest",
+                "analyst_query_resolution_proposal_ref",
+                "originating_role_artifact_ref",
+                "parent_contract_version",
+                "parent_contract_digest",
+                "parent_graph_ref",
+                "target_component_refs",
+                "dependency_component_refs",
+                "operations",
+            )
+            if matching_admission.get(key) is not None
         }
-        if any(
-            supplied.get(key) != value or not value
-            for key, value in required_matches.items()
-        ):
-            raise RunKernelTransitionError(
-                "automatic AnswerContract amendment recovery binding mismatch"
+        record_projection["schema_version"] = "contract_amendment_record_v2"
+        return {
+            "status": "exact_replay",
+            "work_authorized": False,
+            "contract_amendment_record": record_projection,
+            "contract_amendment_record_ref": {
+                "amendment_record_id": matching_admission.get(
+                    "amendment_record_id"
+                ),
+                "amendment_record_digest": matching_admission.get(
+                    "amendment_record_digest"
+                ),
+            },
+            "contract_amendment_admission": deepcopy(matching_admission),
+            "contract_amendment_application": deepcopy(
+                matching_application
+            ),
+            "new_contract_ref": deepcopy(
+                matching_application.get(
+                    "current_answer_contract_projection"
+                )
+                or {}
+            ),
+            "graph_transition_ref": graph_transition_ref,
+        }
+
+    def contract_amendment_replay_for_analyst_proposal(
+        self,
+        *,
+        proposal_ref: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve an exact applied proposal from recorded lineage only."""
+
+        requested = _safe_mapping(proposal_ref)
+        stable_replay_key = _clean_text(
+            requested.get("stable_replay_key"),
+            limit=128,
+        )
+        proposal_digest = _clean_text(
+            requested.get("proposal_digest"),
+            limit=128,
+        )
+        if not stable_replay_key or not proposal_digest:
+            return {}
+        for item in self.state.contract_amendment_admission_history:
+            admission = _safe_mapping(item)
+            recorded = _safe_mapping(
+                admission.get(
+                    "analyst_query_resolution_proposal_ref"
+                )
             )
-        return authorization
+            if (
+                _clean_text(
+                    recorded.get("stable_replay_key"),
+                    limit=128,
+                )
+                != stable_replay_key
+            ):
+                continue
+            if (
+                _clean_text(
+                    recorded.get("proposal_digest"),
+                    limit=128,
+                )
+                != proposal_digest
+            ):
+                raise RunKernelTransitionError(
+                    "Analyst proposal replay identity conflict"
+                )
+            return self._contract_amendment_replay_bundle(
+                amendment_record_id=str(
+                    admission.get("amendment_record_id") or ""
+                ),
+                amendment_record_digest=str(
+                    admission.get("amendment_record_digest") or ""
+                ),
+            )
+        return {}
 
     def authorize_contract_amendment_admission(
         self,
@@ -8082,18 +8105,34 @@ class RunKernel:
         request_id: str | None = None,
         reason: str = CONTRACT_AMENDMENT_ADMISSION_REASON,
         inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        if not self.state.initial_answer_contract_projection:
-            raise RunKernelTransitionError(
-                "contract amendment admission requires an accepted initial answer contract"
+    ) -> AuthorizedAction | dict[str, Any]:
+        replay = self._contract_amendment_replay_bundle(
+            amendment_record_id=amendment_record_id,
+            amendment_record_digest=amendment_record_digest,
+        )
+        if replay:
+            recorded = _safe_mapping(
+                replay.get("contract_amendment_admission")
             )
-        accepted = self.state.initial_answer_contract
-        resolved_contract_digest = (
-            accepted_contract_digest or accepted.get("accepted_contract_digest")
-        )
-        resolved_contract_version = (
-            accepted_contract_version or accepted.get("accepted_contract_version")
-        )
+            for requested, recorded_key in (
+                (parent_contract_digest, "parent_contract_digest"),
+                (parent_contract_version, "parent_contract_version"),
+                (accepted_contract_digest, "accepted_contract_digest"),
+                (accepted_contract_version, "accepted_contract_version"),
+            ):
+                if requested is not None and _clean_text(
+                    requested,
+                    limit=200,
+                ) != _clean_text(recorded.get(recorded_key), limit=200):
+                    raise RunKernelTransitionError(
+                        "contract amendment replay parent identity conflict"
+                    )
+            return replay
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError("contract amendment admission requires an accepted initial answer contract")
+        accepted = self.state.current_answer_contract or self.state.initial_answer_contract
+        resolved_contract_digest = accepted_contract_digest or accepted.get("accepted_contract_digest")
+        resolved_contract_version = accepted_contract_version or accepted.get("accepted_contract_version")
         resolved_parent_digest = parent_contract_digest or resolved_contract_digest
         resolved_parent_version = parent_contract_version or resolved_contract_version
         for label, value in (
@@ -8108,7 +8147,6 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "contract amendment admission requires " f"{label} binding"
                 )
-        self._require_multicomponent_recovery_amendment_authority(inputs)
         merged_inputs = {
             "amendment_record_id": amendment_record_id,
             "amendment_record_digest": amendment_record_digest,
@@ -8138,7 +8176,28 @@ class RunKernel:
         request_id: str | None = None,
         reason: str = CONTRACT_AMENDMENT_APPLICATION_REASON,
         inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
+    ) -> AuthorizedAction | dict[str, Any]:
+        replay = self._contract_amendment_replay_bundle(
+            amendment_record_id=amendment_record_id,
+            amendment_record_digest=amendment_record_digest,
+            admission_digest=admission_digest,
+        )
+        if replay.get("contract_amendment_application"):
+            recorded = _safe_mapping(
+                replay.get("contract_amendment_application")
+            )
+            for requested, recorded_key in (
+                (parent_contract_digest, "parent_contract_digest"),
+                (parent_contract_version, "parent_contract_version"),
+            ):
+                if requested is not None and _clean_text(
+                    requested,
+                    limit=200,
+                ) != _clean_text(recorded.get(recorded_key), limit=200):
+                    raise RunKernelTransitionError(
+                        "contract amendment replay parent identity conflict"
+                    )
+            return replay
         if not self.state.initial_answer_contract_projection:
             raise RunKernelTransitionError(
                 "contract amendment application requires an accepted "
@@ -8167,7 +8226,6 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "contract amendment application requires " f"{label} binding"
                 )
-        self._require_multicomponent_recovery_amendment_authority(inputs)
         merged_inputs = {
             "amendment_record_id": amendment_record_id,
             "amendment_record_digest": amendment_record_digest,
@@ -8645,102 +8703,209 @@ class RunKernel:
         self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(state)
         return reservation
 
-    def authorize_searchos_existing_gap_recovery_admission(
-        self,
-        *,
-        gap_basis: Mapping[str, Any],
-        recovery_purpose: Mapping[str, Any],
-    ) -> AuthorizedAction | dict[str, Any]:
-        """Authorize the exact replay-safe whole-run recovery-cycle admission."""
+
+    def ensure_searchos_whole_run_recovery_lease(self) -> dict[str, Any]:
+        """Create or exactly reuse the immutable whole-run SearchOS lease."""
 
         from core.searchos_existing_gap_recovery_runtime import (
-            admit_searchos_existing_gap_recovery_cycle,
+            ensure_searchos_whole_run_recovery_lease,
         )
 
         if not self.state.searchos_state:
-            raise RunKernelTransitionError("existing-gap recovery requires initialized SearchOS state")
+            raise RunKernelTransitionError(
+                "SearchOS recovery requires initialized SearchOS state"
+            )
         try:
-            candidate, admission = admit_searchos_existing_gap_recovery_cycle(
-                state=self.state.searchos_state,
-                gap_basis=gap_basis,
-                recovery_purpose=recovery_purpose,
+            state, lease, _replayed = (
+                ensure_searchos_whole_run_recovery_lease(
+                    state=self.state.searchos_state
+                )
             )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
-        if admission.get("exact_replay") is True:
-            # Exact replay resolves before generic authorization so the
-            # complete RunState, including action/observation counters and
-            # projections, remains byte-for-byte unchanged.
-            return deepcopy(admission)
-        return self.authorize(
-            stage=SEARCHOS_EXISTING_GAP_RECOVERY_ADMISSION_STAGE,
-            action_type=ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT,
-            reason="admit_exact_existing_gap_recovery_lease",
-            inputs={
-                "slot_id": _safe_mapping(gap_basis.get("prior_terminal_slot_ref")).get("slot_id"),
-                "gap_basis_id": gap_basis.get("gap_basis_id"),
-                "gap_basis_digest": gap_basis.get("gap_basis_digest"),
-                "recovery_purpose_id": recovery_purpose.get("recovery_purpose_id"),
-                "recovery_purpose_digest": recovery_purpose.get("recovery_purpose_digest"),
-                "recovery_admission_observation": {
-                    "status": admission.get("status"),
-                    "exact_replay": admission.get("exact_replay"),
-                    "work_authorized": admission.get("work_authorized"),
-                    "cycle_ref": deepcopy(admission.get("cycle_ref")),
-                    "searchos_state_ref": {
-                        "state_id": candidate.get("state_id"),
-                        "state_digest": candidate.get("state_digest"),
-                    },
-                },
-            },
-            expected_observation_type=(ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMITTED),
-        )
+        self.state.searchos_state = state
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(state)
+        return deepcopy(lease)
 
-    def authorize_searchos_existing_gap_recovery_terminal(
+    def authorize_searchos_recovery_admission(
         self,
         *,
-        recovery_cycle_ref: Mapping[str, Any],
-        component_admission_ref: Mapping[str, Any] | None,
-        failure_reason: str | None = None,
-    ) -> AuthorizedAction:
-        """Authorize one immutable recovery terminal from current expenditure."""
+        stable_replay_key: str,
+        recovery_classification: str,
+        proposal_ref: Mapping[str, Any],
+        current_contract_ref: Mapping[str, Any],
+        current_graph_ref: Mapping[str, Any] | None,
+        component_ref: Mapping[str, Any],
+        source_obligation_ref: Mapping[str, Any],
+        prior_terminal_slot_ref: Mapping[str, Any] | None = None,
+        answer_target_refs: Sequence[Mapping[str, Any]] = (),
+        dependency_component_refs: Sequence[Mapping[str, Any]] = (),
+        generation_parent_ref: Mapping[str, Any] | None = None,
+        generation_depth: int = 0,
+        contract_amendment_record_ref: Mapping[str, Any] | None = None,
+        contract_amendment_admission_ref: Mapping[str, Any] | None = None,
+        contract_amendment_application_ref: Mapping[str, Any] | None = None,
+        expected_parent_state_ref: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction | dict[str, Any]:
+        """Authorize the sole replay-safe SearchOS recovery transition."""
 
         from core.searchos_existing_gap_recovery_runtime import (
-            finalize_searchos_existing_gap_recovery_cycle,
+            admit_searchos_recovery_cycle,
         )
 
+        existing_lease = deepcopy(
+            dict(self.state.searchos_state.get("recovery_lease") or {})
+        )
+        lease = (
+            existing_lease
+            if existing_lease
+            else self.ensure_searchos_whole_run_recovery_lease()
+        )
+        request = {
+            "stable_replay_key": stable_replay_key,
+            "recovery_classification": recovery_classification,
+            "proposal_ref": deepcopy(dict(proposal_ref)),
+            "current_contract_ref": deepcopy(dict(current_contract_ref)),
+            "current_graph_ref": deepcopy(dict(current_graph_ref or {})),
+            "component_ref": deepcopy(dict(component_ref)),
+            "source_obligation_ref": deepcopy(dict(source_obligation_ref)),
+            "prior_terminal_slot_ref": deepcopy(
+                dict(prior_terminal_slot_ref or {})
+            ),
+            "answer_target_refs": [
+                deepcopy(dict(item)) for item in answer_target_refs
+            ],
+            "dependency_component_refs": [
+                deepcopy(dict(item)) for item in dependency_component_refs
+            ],
+            "generation_parent_ref": deepcopy(
+                dict(generation_parent_ref or {})
+            ),
+            "generation_depth": int(generation_depth),
+            "contract_amendment_record_ref": deepcopy(
+                dict(contract_amendment_record_ref or {})
+            ),
+            "contract_amendment_admission_ref": deepcopy(
+                dict(contract_amendment_admission_ref or {})
+            ),
+            "contract_amendment_application_ref": deepcopy(
+                dict(contract_amendment_application_ref or {})
+            ),
+            "expected_parent_state_ref": deepcopy(
+                dict(expected_parent_state_ref or {})
+            ),
+        }
         try:
-            candidate, terminal = finalize_searchos_existing_gap_recovery_cycle(
+            candidate, admission = admit_searchos_recovery_cycle(
                 state=self.state.searchos_state,
-                cycle_ref=recovery_cycle_ref,
-                component_admission_ref=component_admission_ref,
-                evidence_ledger_projection=(
-                    self.state.evidence_ledger.to_projection().to_dict()
-                ),
-                failure_reason=failure_reason,
+                lease=lease,
+                **request,
             )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
-        return self.authorize(
-            stage=SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_STAGE,
-            action_type=(ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCE),
-            reason="close_existing_gap_recovery_lease_honestly",
-            inputs={
-                "cycle_id": recovery_cycle_ref.get("cycle_id"),
-                "cycle_digest": recovery_cycle_ref.get("cycle_digest"),
-                "component_admission_action_id": _safe_mapping(component_admission_ref).get("action_id"),
-                "failure_reason": failure_reason,
-                "recovery_terminal_observation": {
-                    "terminal_aggregate_id": terminal.get("terminal_aggregate_id"),
-                    "terminal_aggregate_digest": terminal.get("terminal_aggregate_digest"),
-                    "terminal_status": terminal.get("terminal_status"),
-                    "searchos_state_ref": {
-                        "state_id": candidate.get("state_id"),
-                        "state_digest": candidate.get("state_digest"),
-                    },
-                },
+        if admission.get("status") == "exact_replay":
+            return deepcopy(admission)
+        expected = {
+            "status": admission.get("status"),
+            "work_authorized": admission.get("work_authorized"),
+            "cycle_admission_ref": deepcopy(
+                admission.get("cycle_admission_ref")
+            ),
+            "recovery_slot_ref": deepcopy(
+                admission.get("recovery_slot_ref")
+            ),
+            "searchos_state_ref": {
+                "state_id": candidate.get("state_id"),
+                "state_digest": candidate.get("state_digest"),
             },
-            expected_observation_type=(ObservationType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCED),
+        }
+        return self.authorize(
+            stage=SEARCHOS_RECOVERY_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_RECOVERY_ADMIT,
+            reason="admit_searchos_recovery_cycle_under_whole_run_lease",
+            inputs={
+                "recovery_request": request,
+                "whole_run_lease": lease,
+                "recovery_admission_observation": expected,
+            },
+            expected_observation_type=ObservationType.SEARCHOS_RECOVERY_ADMITTED,
+        )
+
+    def authorize_searchos_recovery_terminal(
+        self,
+        *,
+        cycle_admission_ref: Mapping[str, Any],
+        terminal_status: str,
+        terminal_reason: str | None,
+        terminal_interpretation: str | None,
+        lawful_selected_recovery_work_remains: bool,
+        expenditure: Mapping[str, Any],
+        component_admission_ref: Mapping[str, Any] | None = None,
+        component_coverage_ref: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction | dict[str, Any]:
+        """Authorize one append-only terminal for an admitted recovery cycle."""
+
+        from core.searchos_existing_gap_recovery_runtime import (
+            terminalize_searchos_recovery_cycle,
+        )
+
+        request = {
+            "cycle_admission_ref": deepcopy(dict(cycle_admission_ref)),
+            "terminal_status": terminal_status,
+            "terminal_reason": terminal_reason,
+            "terminal_interpretation": terminal_interpretation,
+            "lawful_selected_recovery_work_remains": bool(lawful_selected_recovery_work_remains),
+            "expenditure": deepcopy(dict(expenditure)),
+            "component_admission_ref": deepcopy(
+                dict(component_admission_ref or {})
+            ),
+            "component_coverage_ref": deepcopy(
+                dict(component_coverage_ref or {})
+            ),
+        }
+        prior_count = len(
+            self.state.searchos_state.get(
+                "recovery_cycle_terminal_history"
+            )
+            or ()
+        )
+        try:
+            candidate, terminal = terminalize_searchos_recovery_cycle(
+                state=self.state.searchos_state,
+                **request,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        if len(
+            candidate.get("recovery_cycle_terminal_history") or ()
+        ) == prior_count:
+            return {
+                "status": "exact_replay",
+                "work_authorized": False,
+                "cycle_terminal": deepcopy(terminal),
+            }
+        expected = {
+            "cycle_terminal_id": terminal.get("cycle_terminal_id"),
+            "cycle_terminal_digest": terminal.get(
+                "cycle_terminal_digest"
+            ),
+            "terminal_status": terminal.get("terminal_status"),
+            "searchos_state_ref": {
+                "state_id": candidate.get("state_id"),
+                "state_digest": candidate.get("state_digest"),
+            },
+        }
+        return self.authorize(
+            stage=SEARCHOS_RECOVERY_TERMINAL_STAGE,
+            action_type=ActionType.SEARCHOS_RECOVERY_TERMINAL_REDUCE,
+            reason="append_searchos_recovery_cycle_terminal",
+            inputs={
+                "terminal_request": request,
+                "recovery_terminal_observation": expected,
+            },
+            expected_observation_type=(
+                ObservationType.SEARCHOS_RECOVERY_TERMINAL_REDUCED
+            ),
         )
 
     def return_searchos_pre_call_reservation(
@@ -16827,143 +16992,103 @@ class RunKernel:
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(projection)
-        elif action.action_type is ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_ADMIT:
+        elif action.action_type is ActionType.SEARCHOS_RECOVERY_ADMIT:
             from core.searchos_existing_gap_recovery_runtime import (
-                admit_searchos_existing_gap_recovery_cycle,
-                build_searchos_existing_gap_basis,
-                build_searchos_materially_novel_recovery_purpose,
+                admit_searchos_recovery_cycle,
             )
 
-            expected_admission = _safe_mapping(action.inputs.get("recovery_admission_observation"))
-            observed_admission = _safe_mapping(observation.payload)
-            if observed_admission != expected_admission:
-                raise RunKernelTransitionError("SearchOS recovery admission observation differs from authorization")
-            try:
-                if expected_admission.get("exact_replay") is True:
-                    purpose_refs = [
-                        _safe_mapping(item)
-                        for item in self.state.searchos_state.get("existing_gap_recovery_purpose_refs") or ()
-                        if isinstance(item, Mapping)
-                    ]
-                    cycles = [
-                        _safe_mapping(item)
-                        for item in self.state.searchos_state.get("existing_gap_recovery_cycles") or ()
-                        if isinstance(item, Mapping)
-                    ]
-                    replay_cycle_ref = _safe_mapping(expected_admission.get("cycle_ref"))
-                    if (
-                        expected_admission.get("work_authorized") is not False
-                        or not any(
-                            item.get("recovery_purpose_id") == action.inputs.get("recovery_purpose_id")
-                            and item.get("recovery_purpose_digest") == action.inputs.get("recovery_purpose_digest")
-                            for item in purpose_refs
-                        )
-                        or not any(
-                            item.get("cycle_id") == replay_cycle_ref.get("cycle_id")
-                            and item.get("cycle_digest") == replay_cycle_ref.get("cycle_digest")
-                            for item in cycles
-                        )
-                        or _safe_mapping(expected_admission.get("searchos_state_ref"))
-                        != {
-                            "state_id": self.state.searchos_state.get("state_id"),
-                            "state_digest": self.state.searchos_state.get("state_digest"),
-                        }
-                    ):
-                        raise ValueError("SearchOS recovery exact replay is stale")
-                    recovery_admission = deepcopy(expected_admission)
-                else:
-                    gap_basis = build_searchos_existing_gap_basis(
-                        state=self.state.searchos_state,
-                        slot_id=str(action.inputs.get("slot_id") or ""),
-                        component_admission_projection=_safe_mapping(
-                            self.state.projections.get("multicomponent_component_admission")
-                        ),
-                        component_coverage_history=(self.state.component_coverage_history),
-                        evidence_ledger_projection=(self.state.evidence_ledger.to_projection().to_dict()),
-                    )
-                    if gap_basis.get("gap_basis_id") != action.inputs.get("gap_basis_id") or gap_basis.get(
-                        "gap_basis_digest"
-                    ) != action.inputs.get("gap_basis_digest"):
-                        raise ValueError("SearchOS recovery gap basis changed before reduction")
-                    purpose = build_searchos_materially_novel_recovery_purpose(gap_basis)
-                    if purpose.get("recovery_purpose_id") != action.inputs.get("recovery_purpose_id") or purpose.get(
-                        "recovery_purpose_digest"
-                    ) != action.inputs.get("recovery_purpose_digest"):
-                        raise ValueError("SearchOS recovery purpose changed before reduction")
-                    (
-                        self.state.searchos_state,
-                        recovery_admission,
-                    ) = admit_searchos_existing_gap_recovery_cycle(
-                        state=self.state.searchos_state,
-                        gap_basis=gap_basis,
-                        recovery_purpose=purpose,
-                    )
-            except ValueError as exc:
-                raise RunKernelTransitionError(str(exc)) from exc
-            self.state.projections[action.stage] = deepcopy(recovery_admission)
-            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
-        elif action.action_type is ActionType.SEARCHOS_EXISTING_GAP_RECOVERY_TERMINAL_REDUCE:
-            from core.searchos_existing_gap_recovery_runtime import (
-                finalize_searchos_existing_gap_recovery_cycle,
-                validate_searchos_recovery_terminal_aggregate,
+            expected = _safe_mapping(
+                action.inputs.get("recovery_admission_observation")
             )
-
-            expected_terminal = _safe_mapping(action.inputs.get("recovery_terminal_observation"))
-            observed_terminal = _safe_mapping(observation.payload)
-            if observed_terminal != expected_terminal:
-                raise RunKernelTransitionError("SearchOS recovery terminal observation differs from authorization")
+            if _safe_mapping(observation.payload) != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS recovery admission observation differs "
+                    "from authorization"
+                )
             try:
-                active_cycle_ref = _safe_mapping(
-                    self.state.searchos_state.get("active_existing_gap_recovery_cycle_ref")
-                )
-                if active_cycle_ref.get("cycle_id") != action.inputs.get("cycle_id") or active_cycle_ref.get(
-                    "cycle_digest"
-                ) != action.inputs.get("cycle_digest"):
-                    raise ValueError("SearchOS recovery terminal cycle changed before reduction")
-                admission_action_id = action.inputs.get("component_admission_action_id")
-                admission = next(
-                    (
-                        deepcopy(dict(item))
-                        for item in _safe_mapping(self.state.projections.get("multicomponent_component_admission")).get(
-                            "component_admission_refs"
-                        )
-                        or ()
-                        if isinstance(item, Mapping) and item.get("action_id") == admission_action_id
-                    ),
-                    {},
-                )
-                (
-                    self.state.searchos_state,
-                    recovery_terminal,
-                ) = finalize_searchos_existing_gap_recovery_cycle(
+                state, admission = admit_searchos_recovery_cycle(
                     state=self.state.searchos_state,
-                    cycle_ref=active_cycle_ref,
-                    component_admission_ref=admission or None,
-                    evidence_ledger_projection=(
-                        self.state.evidence_ledger.to_projection().to_dict()
+                    lease=_safe_mapping(
+                        action.inputs.get("whole_run_lease")
                     ),
-                    failure_reason=_clean_text(
-                        action.inputs.get("failure_reason"),
-                        limit=240,
+                    **_safe_mapping(
+                        action.inputs.get("recovery_request")
                     ),
                 )
-                validate_searchos_recovery_terminal_aggregate(recovery_terminal)
-                if (
-                    recovery_terminal.get("terminal_aggregate_id") != expected_terminal.get("terminal_aggregate_id")
-                    or recovery_terminal.get("terminal_aggregate_digest")
-                    != expected_terminal.get("terminal_aggregate_digest")
-                    or recovery_terminal.get("terminal_status") != expected_terminal.get("terminal_status")
-                    or {
-                        "state_id": self.state.searchos_state.get("state_id"),
-                        "state_digest": self.state.searchos_state.get("state_digest"),
-                    }
-                    != _safe_mapping(expected_terminal.get("searchos_state_ref"))
-                ):
-                    raise ValueError("SearchOS recovery terminal changed before reduction")
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
-            self.state.projections[action.stage] = deepcopy(recovery_terminal)
-            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+            if admission.get("status") != "admitted":
+                raise RunKernelTransitionError(
+                    "new recovery action reduced as a replay"
+                )
+            actual = {
+                "status": admission.get("status"),
+                "work_authorized": admission.get("work_authorized"),
+                "cycle_admission_ref": _safe_mapping(
+                    admission.get("cycle_admission_ref")
+                ),
+                "recovery_slot_ref": _safe_mapping(
+                    admission.get("recovery_slot_ref")
+                ),
+                "searchos_state_ref": {
+                    "state_id": state.get("state_id"),
+                    "state_digest": state.get("state_digest"),
+                },
+            }
+            if actual != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS recovery admission changed before reduction"
+                )
+            self.state.searchos_state = state
+            self.state.projections[action.stage] = deepcopy(admission)
+            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
+                state
+            )
+        elif (
+            action.action_type
+            is ActionType.SEARCHOS_RECOVERY_TERMINAL_REDUCE
+        ):
+            from core.searchos_existing_gap_recovery_runtime import (
+                terminalize_searchos_recovery_cycle,
+            )
+
+            expected = _safe_mapping(
+                action.inputs.get("recovery_terminal_observation")
+            )
+            if _safe_mapping(observation.payload) != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS recovery terminal observation differs "
+                    "from authorization"
+                )
+            try:
+                state, terminal = terminalize_searchos_recovery_cycle(
+                    state=self.state.searchos_state,
+                    **_safe_mapping(
+                        action.inputs.get("terminal_request")
+                    ),
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            actual = {
+                "cycle_terminal_id": terminal.get("cycle_terminal_id"),
+                "cycle_terminal_digest": terminal.get(
+                    "cycle_terminal_digest"
+                ),
+                "terminal_status": terminal.get("terminal_status"),
+                "searchos_state_ref": {
+                    "state_id": state.get("state_id"),
+                    "state_digest": state.get("state_digest"),
+                },
+            }
+            if actual != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS recovery terminal changed before reduction"
+                )
+            self.state.searchos_state = state
+            self.state.projections[action.stage] = deepcopy(terminal)
+            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
+                state
+            )
         elif action.action_type is ActionType.SEARCHOS_NAVIGATION_SELECT:
             from core.searchos_navigation_runtime import (
                 reduce_navigation_selection_observation,
@@ -17864,7 +17989,10 @@ class RunKernel:
                     action_id=action.action_id,
                     action_inputs=action.inputs,
                     amendment_payload=admission_payload,
-                    accepted_contract=self.state.initial_answer_contract,
+                    accepted_contract=(
+                        self.state.current_answer_contract
+                        or self.state.initial_answer_contract
+                    ),
                     admission_history=self.state.semantic_observation_admission_history,
                     coverage_history=self.state.component_coverage_history,
                     evidence_ledger_projection=(
@@ -17880,45 +18008,6 @@ class RunKernel:
                 )
             except ContractAmendmentAdmissionError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
-            recovery_authority = (
-                self._require_multicomponent_recovery_amendment_authority(
-                    action.inputs
-                )
-            )
-            recovery_posture = (
-                "required_to_fulfill_existing_accepted_user_obligation"
-            )
-            if (
-                amendment_projection.get("user_confirmation_posture")
-                == recovery_posture
-            ) != bool(recovery_authority):
-                raise RunKernelTransitionError(
-                    "automatic recovery amendment posture requires exact recovery authority"
-                )
-            if recovery_authority:
-                operations = [
-                    _safe_mapping(item)
-                    for item in amendment_projection.get("operations") or ()
-                ]
-                trigger_refs = _safe_mapping(
-                    amendment_projection.get("trigger_refs")
-                )
-                if (
-                    len(operations) != 1
-                    or operations[0].get("operation_kind") != "add_component"
-                    or amendment_projection.get("disposition")
-                    != "eligible_for_future_acceptance"
-                    or amendment_projection.get("user_confirmation_posture")
-                    != (
-                        "required_to_fulfill_existing_accepted_user_obligation"
-                    )
-                    or amendment_projection.get("weakening_posture") != "none"
-                    or recovery_authority.get("proposal_id")
-                    not in (trigger_refs.get("gap_refs") or ())
-                ):
-                    raise RunKernelTransitionError(
-                        "automatic recovery amendment exceeds its narrow authority class"
-                    )
             self.state.contract_amendment_admission_state = amendment_state
             self.state.contract_amendment_admission_projection = amendment_projection
             self.state.contract_amendment_admission_history.append(
@@ -17967,30 +18056,6 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "contract amendment application could not find the "
                     "canonical admitted amendment"
-                )
-            recovery_authority = (
-                self._require_multicomponent_recovery_amendment_authority(
-                    action.inputs
-                )
-            )
-            recovery_posture = (
-                "required_to_fulfill_existing_accepted_user_obligation"
-            )
-            if (
-                admitted_amendment.get("user_confirmation_posture")
-                == recovery_posture
-            ) != bool(recovery_authority):
-                raise RunKernelTransitionError(
-                    "automatic recovery amendment application requires exact recovery authority"
-                )
-            if recovery_authority and (
-                admitted_amendment.get("user_confirmation_posture")
-                != "required_to_fulfill_existing_accepted_user_obligation"
-                or admitted_amendment.get("disposition")
-                != "eligible_for_future_acceptance"
-            ):
-                raise RunKernelTransitionError(
-                    "automatic recovery amendment admission lost its authority class"
                 )
             parent_contract = (
                 self.state.current_answer_contract
@@ -20757,628 +20822,6 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_observation_projection
             )
-        elif action.action_type is ActionType.MULTICOMPONENT_RECOVERY_AUTHORIZE:
-            from core.component_work_graph_v1 import (
-                COMPONENT_WORK_GRAPH_V1_STAGE,
-            )
-            from core.multicomponent_role_runtime import safe_packet_digest
-
-            current_graph = _safe_mapping(
-                self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
-            )
-            if (
-                current_graph.get("graph_id") != action.inputs.get("graph_id")
-                or current_graph.get("graph_revision")
-                != action.inputs.get("graph_revision")
-                or current_graph.get("graph_digest")
-                != action.inputs.get("graph_digest")
-            ):
-                raise RunKernelTransitionError(
-                    "multi-component recovery authorization became stale"
-                )
-            active_contract = (
-                self.state.current_answer_contract
-                or self.state.initial_answer_contract
-            )
-            if (
-                active_contract.get("accepted_contract_version")
-                != action.inputs.get("accepted_contract_version")
-                or active_contract.get("accepted_contract_digest")
-                != action.inputs.get("accepted_contract_digest")
-            ):
-                raise RunKernelTransitionError(
-                    "multi-component recovery AnswerContract binding became stale"
-                )
-            recovery_actions = [
-                item
-                for item in self.state.issued_actions.values()
-                if item.action_type
-                is ActionType.MULTICOMPONENT_RECOVERY_AUTHORIZE
-            ]
-            if recovery_actions != [action]:
-                raise RunKernelTransitionError(
-                    "multi-component recovery authorization history is not singular"
-                )
-            recovery_observation_count = 1 + sum(
-                1
-                for item in self.state.observations
-                if self.state.issued_actions.get(item.action_id)
-                and self.state.issued_actions[item.action_id].action_type
-                is ActionType.MULTICOMPONENT_RECOVERY_AUTHORIZE
-            )
-            projection_core = {
-                "schema_version": (
-                    "multicomponent_missing_component_recovery_authorization_v1"
-                ),
-                "owner": "RunKernel.MulticomponentRecoveryAuthorization",
-                "canonical_state": True,
-                "run_id": self.state.run_id,
-                "request_id": self.state.request_id,
-                "authorization_id": (
-                    f"multicomponent-recovery:{action.action_id}"
-                ),
-                "authorized_action_id": action.action_id,
-                "proposal_id": action.inputs.get("proposal_id"),
-                "proposal_key": action.inputs.get("proposal_key"),
-                "proposal_digest": action.inputs.get("proposal_digest"),
-                "proposal": _safe_mapping(action.inputs.get("proposal")),
-                "scrutineer_artifact_id": action.inputs.get(
-                    "scrutineer_artifact_id"
-                ),
-                "scrutineer_artifact_digest": action.inputs.get(
-                    "scrutineer_artifact_digest"
-                ),
-                "scrutineer_action_id": action.inputs.get(
-                    "scrutineer_action_id"
-                ),
-                "target_kind": action.inputs.get("target_kind"),
-                "target_key": action.inputs.get("target_key"),
-                "resolved_target": _safe_mapping(
-                    action.inputs.get("resolved_target")
-                ),
-                "graph_id": action.inputs.get("graph_id"),
-                "graph_revision": action.inputs.get("graph_revision"),
-                "graph_digest": action.inputs.get("graph_digest"),
-                "accepted_contract_version": action.inputs.get(
-                    "accepted_contract_version"
-                ),
-                "accepted_contract_digest": action.inputs.get(
-                    "accepted_contract_digest"
-                ),
-                "automatic_amendment_authority_class": action.inputs.get(
-                    "automatic_amendment_authority_class"
-                ),
-                "recovery_scope_posture": action.inputs.get(
-                    "recovery_scope_posture"
-                ),
-                "component_count_before_recovery": action.inputs.get(
-                    "component_count_before_recovery"
-                ),
-                "maximum_component_count": action.inputs.get(
-                    "maximum_component_count"
-                ),
-                "recovery_authorization_action_count": len(recovery_actions),
-                "recovery_authorization_observation_count": (
-                    recovery_observation_count
-                ),
-                "contract_amendment_application_action_count": sum(
-                    item.action_type is ActionType.CONTRACT_AMENDMENT_APPLY
-                    for item in self.state.issued_actions.values()
-                ),
-                "graph_amendment_action_count": sum(
-                    item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
-                    and item.inputs.get("operation") == "graph_amendment"
-                    for item in self.state.issued_actions.values()
-                ),
-                "recovery_round": action.inputs.get("recovery_round"),
-                "amendment_round": action.inputs.get("amendment_round"),
-                "graph_amendment_round": action.inputs.get(
-                    "graph_amendment_round"
-                ),
-                "component_research_reentry_round": action.inputs.get(
-                    "component_research_reentry_round"
-                ),
-                "whole_graph_resynthesis_round": action.inputs.get(
-                    "whole_graph_resynthesis_round"
-                ),
-                "selective_recomputation_round": action.inputs.get(
-                    "selective_recomputation_round"
-                ),
-                "search_authorized": action.inputs.get("search_authorized")
-                is True,
-                "provider_selected": False,
-                "component_admitted": False,
-                "contract_amendment_applied": False,
-            }
-            projection = {
-                **projection_core,
-                "authorization_digest": safe_packet_digest(projection_core),
-            }
-            self.state.projections[action.stage] = projection
-        elif (
-            action.action_type
-            is ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE
-        ):
-            from core.component_work_graph_v1 import (
-                COMPONENT_WORK_GRAPH_V1_STAGE,
-                GRAPH_STATUS_READY,
-                GRAPH_STATUS_READY_WITH_CAVEATS,
-                MULTICOMPONENT_CARRY_FORWARD_STAGE,
-                MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
-                validate_component_work_graph_v1,
-            )
-            from core.multicomponent_component_admission import (
-                MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
-            )
-            from core.multicomponent_role_runtime import safe_packet_digest
-            from core.search_executor_handoff_runtime import (
-                handoff_ref_from_handoff_state,
-                planner_ref_from_search_planner_state,
-            )
-            from core.search_result_candidate_packet import (
-                build_search_result_candidate_packet_from_live_validation_state,
-                search_result_candidate_packet_ref_from_packet,
-                validate_search_result_candidate_packet,
-            )
-
-            if observation.payload:
-                raise RunKernelTransitionError(
-                    "recovery outcome observation cannot supply authority fields"
-                )
-            authorization = _safe_mapping(
-                self.state.projections.get(
-                    MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-                )
-            )
-            if (
-                authorization.get("authorization_id")
-                != action.inputs.get("recovery_authorization_id")
-                or authorization.get("authorization_digest")
-                != action.inputs.get("recovery_authorization_digest")
-                or authorization.get("run_id") != self.state.run_id
-                or authorization.get("request_id") != self.state.request_id
-            ):
-                raise RunKernelTransitionError(
-                    "recovery outcome authorization binding became stale"
-                )
-            disposition = str(action.inputs.get("disposition") or "")
-            providers = list(
-                action.inputs.get("observed_provider_identities") or ()
-            )
-            active_contract = _safe_mapping(
-                self.state.current_answer_contract
-                or self.state.initial_answer_contract
-            )
-            graph = validate_component_work_graph_v1(
-                _safe_mapping(
-                    self.state.projections.get(
-                        COMPONENT_WORK_GRAPH_V1_STAGE
-                    )
-                )
-            )
-            graph_contract = _safe_mapping(graph.get("accepted_contract_ref"))
-            amendment_admission = _safe_mapping(
-                self.state.contract_amendment_admission_projection
-            )
-            amendment_application = _safe_mapping(
-                self.state.contract_amendment_application_projection
-            )
-            planner_ref = planner_ref_from_search_planner_state(
-                self.state.search_planner_proposal_state
-            )
-            handoff_ref = handoff_ref_from_handoff_state(
-                self.state.search_executor_handoff_state
-            )
-            live_state = _safe_mapping(self.state.live_search_validation_state)
-            selected_task_refs = [
-                {
-                    "search_task_id": item.get("search_task_id"),
-                    "query_intent_id": item.get("query_intent_id"),
-                    "component_id": item.get("component_id"),
-                    "source_obligation_candidate_ids": list(
-                        item.get("source_obligation_candidate_ids") or ()
-                    ),
-                }
-                for item in self.state.search_executor_handoff_state.get(
-                    "search_task_records", ()
-                )
-                if isinstance(item, Mapping)
-                and item.get("search_task_id")
-                in set(live_state.get("selected_search_task_ids") or ())
-            ]
-            candidate_packet_ref: dict[str, Any] = {}
-            if live_state:
-                candidate_packet = validate_search_result_candidate_packet(
-                    build_search_result_candidate_packet_from_live_validation_state(
-                        live_state
-                    )
-                )
-                candidate_packet_ref = (
-                    search_result_candidate_packet_ref_from_packet(
-                        candidate_packet
-                    )
-                )
-                if live_state.get("provider_used") not in providers:
-                    raise RunKernelTransitionError(
-                        "recovery outcome lost actual ordinary provider identity"
-                    )
-            authorization_action = self.state.issued_actions.get(
-                str(authorization.get("authorized_action_id") or "")
-            )
-            authorization_sequence = (
-                authorization_action.sequence
-                if authorization_action is not None
-                else -1
-            )
-            recovery_ledger_actions = [
-                item
-                for item in self.state.issued_actions.values()
-                if item.action_type is ActionType.EVIDENCE_LEDGER_REDUCE
-                and item.action_id in self.state.reduced_action_ids
-                and item.sequence > authorization_sequence
-            ]
-            fetch_actions = [
-                item
-                for item in recovery_ledger_actions
-                if item.inputs.get("fetch_read_content_packet_id")
-            ]
-            fetch_action = fetch_actions[-1] if fetch_actions else None
-            fetch_packet_ref = (
-                {
-                    "packet_id": fetch_action.inputs.get(
-                        "fetch_read_content_packet_id"
-                    ),
-                    "packet_digest": fetch_action.inputs.get(
-                        "fetch_read_content_packet_digest"
-                    ),
-                }
-                if fetch_action is not None
-                else {}
-            )
-            ledger_action = (
-                recovery_ledger_actions[-1]
-                if recovery_ledger_actions
-                else None
-            )
-            ledger_observation = next(
-                (
-                    item
-                    for item in reversed(self.state.observations)
-                    if ledger_action is not None
-                    and item.action_id == ledger_action.action_id
-                ),
-                None,
-            )
-            ledger_ref = (
-                {
-                    "action_id": ledger_action.action_id,
-                    "observation_id": (
-                        ledger_observation.observation_id
-                        if ledger_observation is not None
-                        else None
-                    ),
-                }
-                if ledger_action is not None
-                else {}
-            )
-            component_id = (
-                f"component:recovered:"
-                f"{str(authorization.get('proposal_digest') or '')[:16]}"
-            )
-            component_projection = _safe_mapping(
-                self.state.projections.get(
-                    MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
-                )
-            )
-            matching_admissions = [
-                _safe_mapping(item)
-                for item in component_projection.get(
-                    "component_admission_refs", ()
-                )
-                if isinstance(item, Mapping)
-                and item.get("component_id") == component_id
-            ]
-            component_admission_ref = (
-                matching_admissions[-1] if matching_admissions else {}
-            )
-            candidate_count = int(live_state.get("candidate_count") or 0)
-            graph_ready = graph.get("graph_status") in {
-                GRAPH_STATUS_READY,
-                GRAPH_STATUS_READY_WITH_CAVEATS,
-            }
-            admitted = component_admission_ref.get("admission_status") in {
-                "admitted",
-                "admitted_with_caveats",
-            }
-            selective_closure = _safe_mapping(
-                self.state.projections.get(MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE)
-            )
-            carry_forward = _safe_mapping(
-                self.state.projections.get(MULTICOMPONENT_CARRY_FORWARD_STAGE)
-            )
-            if disposition == "blocked_requires_user_confirmation":
-                if (
-                    authorization.get("search_authorized") is not False
-                    or planner_ref
-                    or handoff_ref
-                    or live_state
-                    or amendment_application
-                ):
-                    raise RunKernelTransitionError(
-                        "confirmation-blocked recovery outcome has execution state"
-                    )
-            elif disposition == "blocked_no_candidates":
-                if (
-                    candidate_count != 0
-                    or component_admission_ref
-                    or fetch_packet_ref
-                    or ledger_ref
-                ):
-                    raise RunKernelTransitionError(
-                        "no-candidate recovery outcome conflicts with canonical state"
-                    )
-            elif disposition == "blocked_no_readable_evidence":
-                if (
-                    candidate_count <= 0
-                    or component_admission_ref
-                    or not fetch_packet_ref
-                    or not ledger_ref
-                ):
-                    raise RunKernelTransitionError(
-                        "no-readable recovery outcome conflicts with canonical state"
-                    )
-            elif disposition == "blocked_component_admission":
-                if not component_admission_ref or admitted:
-                    raise RunKernelTransitionError(
-                        "component-blocked recovery outcome conflicts with admission"
-                    )
-            elif disposition == "blocked_resynthesis":
-                if not admitted or graph_ready:
-                    raise RunKernelTransitionError(
-                        "resynthesis-blocked recovery outcome conflicts with graph"
-                    )
-            elif disposition == "acquired":
-                if not admitted or not graph_ready:
-                    raise RunKernelTransitionError(
-                        "acquired recovery outcome requires admitted component and ready graph"
-                    )
-                if (
-                    int(graph.get("selective_recomputation_rounds") or 0) != 1
-                    or int(graph.get("whole_graph_resynthesis_rounds") or 0) != 0
-                    or _safe_mapping(graph.get("selective_closure_ref"))
-                    != {
-                        "closure_id": selective_closure.get("closure_id"),
-                        "closure_digest": selective_closure.get("closure_digest"),
-                    }
-                    or _safe_mapping(carry_forward.get("final_graph_ref")).get(
-                        "graph_id"
-                    )
-                    != graph.get("graph_id")
-                    or int(
-                        _safe_mapping(carry_forward.get("final_graph_ref")).get(
-                            "graph_revision"
-                        )
-                        or 0
-                    )
-                    >= int(graph.get("graph_revision") or 0)
-                    or not _safe_mapping(carry_forward.get("final_graph_ref")).get(
-                        "graph_digest"
-                    )
-                    or int(carry_forward.get("carry_forward_count") or 0)
-                    != int(graph.get("carry_forward_count") or 0)
-                ):
-                    raise RunKernelTransitionError(
-                        "acquired recovery outcome lacks exact selective recomputation authority"
-                    )
-            pre_recovery_synthesis_suppressed = bool(
-                graph.get("pre_recovery_synthesis_authority_invalidated")
-                or graph.get("graph_output_suppressed")
-                or not graph_ready
-                or graph_contract.get("accepted_contract_digest")
-                != active_contract.get("accepted_contract_digest")
-            )
-            if not pre_recovery_synthesis_suppressed:
-                raise RunKernelTransitionError(
-                    "recovery outcome requires pre-recovery synthesis suppression"
-                )
-            outcome_actions = [
-                item
-                for item in self.state.issued_actions.values()
-                if item.action_type
-                is ActionType.MULTICOMPONENT_RECOVERY_OUTCOME_REDUCE
-            ]
-            if outcome_actions != [action]:
-                raise RunKernelTransitionError(
-                    "recovery outcome action history is not singular"
-                )
-            projection_core = {
-                "schema_version": "multicomponent_recovery_outcome_v1",
-                "owner": "RunKernel.MulticomponentRecoveryOutcome",
-                "canonical_state": True,
-                "trace_only": False,
-                "final_answer_authority": True,
-                "run_id": self.state.run_id,
-                "request_id": self.state.request_id,
-                "outcome_id": f"multicomponent-recovery-outcome:{action.action_id}",
-                "authorized_action_id": action.action_id,
-                "recovery_disposition": disposition,
-                "bounded_blocker_reason": action.inputs.get("blocker_reason"),
-                "recovery_authorization_id": authorization.get(
-                    "authorization_id"
-                ),
-                "recovery_authorization_digest": authorization.get(
-                    "authorization_digest"
-                ),
-                "proposal_id": authorization.get("proposal_id"),
-                "proposal_digest": authorization.get("proposal_digest"),
-                "scrutineer_artifact_id": authorization.get(
-                    "scrutineer_artifact_id"
-                ),
-                "scrutineer_artifact_digest": authorization.get(
-                    "scrutineer_artifact_digest"
-                ),
-                "current_answer_contract_version": active_contract.get(
-                    "accepted_contract_version"
-                ),
-                "current_answer_contract_digest": active_contract.get(
-                    "accepted_contract_digest"
-                ),
-                "graph_id": graph.get("graph_id"),
-                "graph_revision": graph.get("graph_revision"),
-                "graph_digest": graph.get("graph_digest"),
-                "graph_answer_contract_version": graph_contract.get(
-                    "accepted_contract_version"
-                ),
-                "graph_answer_contract_digest": graph_contract.get(
-                    "accepted_contract_digest"
-                ),
-                "ordinary_acquisition_attempt_count": (
-                    0
-                    if disposition
-                    == "blocked_requires_user_confirmation"
-                    else 1
-                ),
-                "observed_provider_identities": providers,
-                "pre_recovery_synthesis_suppressed": (
-                    pre_recovery_synthesis_suppressed
-                ),
-                "direct_semantic_producer_used": False,
-                "runtime_parallelism": False,
-                "recovery_outcome_action_count": len(outcome_actions),
-                "recovery_outcome_observation_count": 1,
-            }
-            if selective_closure:
-                projection_core.update(
-                    {
-                        "selective_recomputation_rounds": int(
-                            graph.get("selective_recomputation_rounds") or 0
-                        ),
-                        "whole_graph_resynthesis_rounds": int(
-                            graph.get("whole_graph_resynthesis_rounds") or 0
-                        ),
-                        "affected_synthesis_count": int(
-                            graph.get("affected_synthesis_count") or 0
-                        ),
-                        "preserved_synthesis_count": int(
-                            graph.get("preserved_synthesis_count") or 0
-                        ),
-                        "recomputed_synthesis_count": int(
-                            graph.get("recomputed_synthesis_count") or 0
-                        ),
-                        "carry_forward_count": int(
-                            graph.get("carry_forward_count") or 0
-                        ),
-                        "selective_closure_ref": {
-                            "closure_id": selective_closure.get("closure_id"),
-                            "closure_digest": selective_closure.get(
-                                "closure_digest"
-                            ),
-                        },
-                        "fresh_affected_synthesis_refs": [
-                            {
-                                "node_kind": item.get("node_kind"),
-                                "node_id": item.get("node_id"),
-                                "node_revision": item.get("node_revision"),
-                                "node_digest": item.get("node_digest"),
-                                "synthesis_key": item.get("synthesis_key"),
-                                "status": item.get("status"),
-                                "current": item.get("current") is True,
-                                "stale": item.get("stale") is True,
-                            }
-                            for item in graph.get("synthesis_nodes") or ()
-                            if item.get("synthesis_key")
-                            in set(
-                                selective_closure.get(
-                                    "affected_synthesis_keys", ()
-                                )
-                            )
-                        ],
-                        "fresh_full_case_scrutineer_ref": _safe_mapping(
-                            graph.get("scrutineer_ref")
-                        ),
-                        "logical_role_accounting": _safe_mapping(
-                            graph.get("logical_accounting")
-                        ),
-                        "physical_role_call_accounting": _safe_mapping(
-                            graph.get("physical_call_accounting")
-                        ),
-                    }
-                )
-            if carry_forward:
-                projection_core["carry_forward_projection_ref"] = {
-                    "carry_forward_projection_digest": carry_forward.get(
-                        "carry_forward_projection_digest"
-                    ),
-                    "runkernel_carry_forward_action_ref": _safe_mapping(
-                        carry_forward.get("runkernel_carry_forward_action_ref")
-                    ),
-                    "final_graph_ref": _safe_mapping(
-                        carry_forward.get("final_graph_ref")
-                    ),
-                    "carry_forward_count": carry_forward.get(
-                        "carry_forward_count"
-                    ),
-                }
-            if amendment_admission:
-                projection_core.update(
-                    {
-                        "amendment_record_id": amendment_admission.get(
-                            "amendment_record_id"
-                        ),
-                        "amendment_record_digest": amendment_admission.get(
-                            "amendment_record_digest"
-                        ),
-                        "amendment_admission_action_id": amendment_admission.get(
-                            "authorized_action_id"
-                        ),
-                        "amendment_admission_digest": amendment_admission.get(
-                            "admission_digest"
-                        ),
-                    }
-                )
-            if amendment_application:
-                projection_core.update(
-                    {
-                        "amendment_application_action_id": (
-                            amendment_application.get("authorized_action_id")
-                        ),
-                        "amendment_application_digest": (
-                            amendment_application.get("application_digest")
-                        ),
-                        "recovered_component_id": component_id,
-                    }
-                )
-            if planner_ref:
-                projection_core["ordinary_search_planner_ref"] = planner_ref
-            if handoff_ref:
-                projection_core[
-                    "ordinary_search_executor_handoff_ref"
-                ] = handoff_ref
-            if selected_task_refs:
-                projection_core["selected_search_task_refs"] = selected_task_refs
-            if candidate_packet_ref:
-                projection_core[
-                    "search_result_candidate_packet_ref"
-                ] = candidate_packet_ref
-            if fetch_packet_ref:
-                projection_core["fetch_read_content_packet_ref"] = fetch_packet_ref
-            if ledger_ref:
-                projection_core["evidence_ledger_reduction_ref"] = ledger_ref
-            if component_admission_ref:
-                projection_core["component_admission_ref"] = component_admission_ref
-            outcome_projection = {
-                **projection_core,
-                "outcome_digest": safe_packet_digest(projection_core),
-            }
-            self.state.projections[action.stage] = outcome_projection
-            self.state.projections[f"{action.stage}_history"] = {
-                "schema_version": "multicomponent_recovery_outcome_history_v1",
-                "owner": "RunKernel.MulticomponentRecoveryOutcome",
-                "canonical_state": True,
-                "trace_only": False,
-                "outcome_count": 1,
-                "outcomes": [deepcopy(outcome_projection)],
-            }
         elif action.action_type is ActionType.SPECIALIST_PROPOSAL_BIND:
             from core.multicomponent_graph_scheduling import (
                 MULTICOMPONENT_SCHEDULER_STAGE,
@@ -22380,7 +21823,7 @@ class RunKernel:
                     "owner": (
                         "RunKernel.MulticomponentGraphScheduler"
                         if scheduler_active
-                        else "RunKernel.SearchOSExistingGapRecovery"
+                        else "RunKernel.SearchOSRecovery"
                     ),
                     "canonical_state": True,
                     "role": action.inputs.get("role"),
@@ -22739,7 +22182,7 @@ class RunKernel:
                 derive_multicomponent_role_call_accounting,
                 derive_selective_recomputation_closure,
                 expected_graph_after_transition,
-                graph_with_recovered_component,
+                graph_with_inferred_resolution_proposal,
                 graph_with_selective_invalidation,
                 validate_component_work_graph_v1,
                 validate_selective_recomputation_closure,
@@ -22852,10 +22295,16 @@ class RunKernel:
                         self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
                     )
                 )
-                authorization = _safe_mapping(
-                    self.state.projections.get(
-                        MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-                    )
+                authorization = contract_amendment_graph_transition_authority(
+                    graph=source_graph,
+                    amendment_application=(
+                        self.state.contract_amendment_application_projection
+                    ),
+                    amendment_admission=(
+                        self.state.contract_amendment_admission_projection
+                    ),
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
                 )
                 contract = _safe_mapping(self.state.current_answer_contract)
                 amendment_admission = _safe_mapping(
@@ -22996,24 +22445,31 @@ class RunKernel:
                 )
                 self.state.projections[action.stage] = deepcopy(expected)
                 if scheduler is not None:
-                    self.state.projections[
-                        "multicomponent_graph_scheduler"
-                    ] = scheduler
-                self.state.projections[f"{action.stage}_history"] = {
-                    "schema_version": (
-                        "multicomponent_selective_recomputation_closure_history_v1"
-                    ),
+                    self.state.projections["multicomponent_graph_scheduler"] = scheduler
+                history_key = f"{action.stage}_history"
+                prior_closures = [
+                    deepcopy(_safe_mapping(item))
+                    for item in _safe_mapping(self.state.projections.get(history_key)).get("closures") or ()
+                    if isinstance(item, Mapping)
+                ]
+                if any(item.get("closure_digest") == expected.get("closure_digest") for item in prior_closures):
+                    raise RunKernelTransitionError("selective closure history rejects a duplicate canonical closure")
+                closures = [*prior_closures, deepcopy(expected)]
+                self.state.projections[history_key] = {
+                    "schema_version": ("multicomponent_selective_recomputation_closure_history_v1"),
                     "owner": expected["owner"],
                     "canonical_state": True,
-                    "closure_count": 1,
-                    "closures": [deepcopy(expected)],
+                    "closure_count": len(closures),
+                    "closures": closures,
                 }
                 self.state.observations.append(observation)
                 self.state.next_observation_sequence += 1
                 return self.state
 
             graph = validate_component_work_graph_v1(
-                _safe_mapping(observation.payload.get("component_work_graph_v1"))
+                _graph_safe_mapping(
+                    observation.payload.get("component_work_graph_v1")
+                )
             )
             if (
                 graph.get("owner") != COMPONENT_WORK_GRAPH_V1_OWNER
@@ -23078,6 +22534,11 @@ class RunKernel:
                         "accepted_answer_component_refs",
                         [],
                     )
+                    if "direct"
+                    in list(
+                        _safe_mapping(item).get("allowed_support_kinds")
+                        or ("direct",)
+                    )
                 }
                 admission_refs = [
                     _safe_mapping(item)
@@ -23109,7 +22570,16 @@ class RunKernel:
                         component_nodes=expected_component_nodes,
                         requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
                     )
-                    if len(expected_component_nodes) == 1:
+                    if (
+                        len(expected_component_nodes) == 1
+                        and len(
+                            self.state.initial_answer_contract.get(
+                                "accepted_answer_component_refs",
+                                [],
+                            )
+                        )
+                        == 1
+                    ):
                         structure_graph = component_work_graph_v1_from_single_component_admission(
                             run_id=self.state.run_id,
                             request_id=self.state.request_id,
@@ -23118,6 +22588,17 @@ class RunKernel:
                             component_node=expected_component_nodes[0],
                         )
                     else:
+                        from core.analyst_query_resolution_proposal import (
+                            ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
+                            CLASS_INFERRED_CONCLUSION,
+                            selected_proposals_for_role_artifact,
+                        )
+
+                        inference_registry = _safe_mapping(
+                            self.state.projections.get(
+                                ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY
+                            )
+                        )
                         structure_graph = component_work_graph_v1_from_cross_component_artifact(
                             run_id=self.state.run_id,
                             request_id=self.state.request_id,
@@ -23126,6 +22607,27 @@ class RunKernel:
                             component_nodes=expected_component_nodes,
                             cross_component_artifact=current_cross_artifact,
                             component_analyst_input_packets=component_packets,
+                            accepted_component_refs=(
+                                self.state.initial_answer_contract.get(
+                                    "accepted_answer_component_refs",
+                                    [],
+                                )
+                            ),
+                            requested_mode=str(
+                                _safe_mapping(
+                                    self.state.multicomponent_scheduler_context
+                                ).get("requested_mode")
+                                or "Balanced"
+                            ),
+                            inferred_resolution_proposals=(
+                                selected_proposals_for_role_artifact(
+                                    registry=inference_registry,
+                                    role_artifact=current_cross_artifact,
+                                    classification=(
+                                        CLASS_INFERRED_CONCLUSION
+                                    ),
+                                )
+                            ),
                             additional_scrutineer_trigger_reasons=tuple(
                                 reason
                                 for reason in graph.get("scrutineer_trigger_reasons") or ()
@@ -23295,6 +22797,14 @@ class RunKernel:
                             "accepted_answer_component_refs", []
                         )
                         if isinstance(item, Mapping)
+                        and "direct"
+                        in {
+                            str(value)
+                            for value in item.get(
+                                "allowed_support_kinds"
+                            )
+                            or ()
+                        }
                         and item.get("component_id") not in current_component_ids
                     ]
                     component_admission = _safe_mapping(
@@ -23315,7 +22825,8 @@ class RunKernel:
                     ]
                     if len(added_components) != 1 or len(matching_admissions) != 1:
                         raise RunKernelTransitionError(
-                            "selective invalidation requires the exact recovered component"
+                            "selective invalidation requires the exact "
+                            "recovered component"
                         )
                     recovered_node = component_work_node_v1_from_admitted_component(
                         run_id=self.state.run_id,
@@ -23349,9 +22860,17 @@ class RunKernel:
                             )
                         ),
                     }
-                    recovery_ref = _safe_mapping(
-                        self.state.projections.get(
-                            MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                    recovery_ref = (
+                        contract_amendment_graph_transition_authority(
+                            graph=current_graph,
+                            amendment_application=(
+                                self.state.contract_amendment_application_projection
+                            ),
+                            amendment_admission=(
+                                self.state.contract_amendment_admission_projection
+                            ),
+                            run_id=self.state.run_id,
+                            request_id=self.state.request_id,
                         )
                     )
                     application_ref = _safe_mapping(
@@ -23369,111 +22888,26 @@ class RunKernel:
                         contract_amendment_admission_ref=amendment_admission_ref,
                         amendment_application_ref=application_ref,
                         carry_forward_action_ref=action_ref,
-                    )
-                elif operation == "graph_amendment":
-                    accepted_contract = _safe_mapping(
-                        self.state.current_answer_contract
-                    )
-                    if not accepted_contract:
-                        raise RunKernelTransitionError(
-                            "Graph V1 amendment requires current AnswerContract"
-                        )
-                    current_component_ids = {
-                        item.get("component_id")
-                        for item in current_graph.get("component_nodes") or ()
-                        if isinstance(item, Mapping)
-                    }
-                    added_components = [
-                        _safe_mapping(item)
-                        for item in accepted_contract.get(
-                            "accepted_answer_component_refs", []
-                        )
-                        if isinstance(item, Mapping)
-                        and item.get("component_id") not in current_component_ids
-                    ]
-                    component_admission = _safe_mapping(
-                        self.state.projections.get(
-                            MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
-                        )
-                    )
-                    if len(added_components) != 1:
-                        raise RunKernelTransitionError(
-                            "Graph V1 amendment requires exactly one added component"
-                        )
-                    added_component = added_components[0]
-                    matching_admissions = [
-                        _safe_mapping(item)
-                        for item in component_admission.get(
-                            "component_admission_refs", []
-                        )
-                        if isinstance(item, Mapping)
-                        and item.get("component_id")
-                        == added_component.get("component_id")
-                        and item.get("accepted_contract_digest")
-                        == accepted_contract.get("accepted_contract_digest")
-                    ]
-                    if len(matching_admissions) != 1:
-                        raise RunKernelTransitionError(
-                            "Graph V1 amendment requires exact recovered component admission"
-                        )
-                    recovered_node = component_work_node_v1_from_admitted_component(
-                        run_id=self.state.run_id,
-                        request_id=self.state.request_id,
-                        accepted_component_ref=added_component,
-                        component_admission_ref=matching_admissions[0],
-                    )
-                    contract_ref = {
-                        "owner": accepted_contract.get("owner"),
-                        "canonical_state": accepted_contract.get("canonical_state"),
-                        "run_id": self.state.run_id,
-                        "request_id": self.state.request_id,
-                        "accepted_contract_version": accepted_contract.get(
-                            "accepted_contract_version"
-                        ),
-                        "accepted_contract_digest": accepted_contract.get(
-                            "accepted_contract_digest"
-                        ),
-                        "parent_question_meaning_record_id": accepted_contract.get(
-                            "parent_question_meaning_record_id"
-                        ),
-                        "parent_question_meaning_record_digest": accepted_contract.get(
-                            "parent_question_meaning_record_digest"
-                        ),
-                        "accepted_answer_component_count": accepted_contract.get(
-                            "accepted_answer_component_count"
-                        )
-                        or len(
+                        accepted_component_refs=(
                             accepted_contract.get(
-                                "accepted_answer_component_refs", []
+                                "accepted_answer_component_refs",
+                                [],
                             )
                         ),
-                    }
-                    recovery_ref = _safe_mapping(
-                        self.state.projections.get(
-                            MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                    )
+                elif operation == "inferred_resolution_binding":
+                    proposal = _graph_safe_mapping(
+                        action.inputs.get(
+                            "inferred_resolution_proposal"
                         )
                     )
-                    application = _safe_mapping(
-                        self.state.contract_amendment_application_projection
-                    )
-                    application_ref = {
-                        "owner": application.get("owner"),
-                        "application_digest": application.get(
-                            "application_digest"
-                        ),
-                        "authorized_action_id": application.get(
-                            "authorized_action_id"
-                        ),
-                        "amendment_record_id": application.get(
-                            "amendment_record_id"
-                        ),
-                    }
-                    transition_graph = graph_with_recovered_component(
-                        current_graph,
-                        recovered_component_node=recovered_node,
-                        current_contract_ref=contract_ref,
-                        recovery_authorization_ref=recovery_ref,
-                        amendment_application_ref=application_ref,
+                    transition_graph = (
+                        graph_with_inferred_resolution_proposal(
+                            current_graph,
+                            synthesis_key=str(synthesis_key or ""),
+                            proposal=proposal,
+                            action_ref=action_ref,
+                        )
                     )
                 elif operation == "resynthesis_structure":
                     evaluation_key = _clean_text(
@@ -24269,8 +23703,6 @@ __all__ = [
     "OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE",
     "COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE",
     "MAIN_RETRIEVAL_STAGE",
-    "MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE",
-    "MULTICOMPONENT_RECOVERY_OUTCOME_STAGE",
     "MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",

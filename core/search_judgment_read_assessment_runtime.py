@@ -11,6 +11,7 @@ citation, sufficiency, answer, or author authority.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
@@ -465,25 +466,91 @@ def derive_selected_candidate_material_need_bindings(
     ):
         raise SearchJudgmentReadAssessmentError("candidate_packet_contributors_stale")
 
+    searchos_state = _mapping(run_kernel.state.searchos_state)
+    active_recovery_ref = _mapping(
+        searchos_state.get("active_recovery_cycle_ref")
+    )
+    recovery_admission = next(
+        (
+            _mapping(item)
+            for item in _sequence(
+                searchos_state.get("recovery_cycle_admission_history")
+            )
+            if _mapping(item).get("cycle_id")
+            == active_recovery_ref.get("cycle_id")
+            and _mapping(item).get("cycle_admission_digest")
+            == active_recovery_ref.get("cycle_admission_digest")
+        ),
+        {},
+    )
+    searched_premise_recovery = bool(
+        recovery_admission
+        and recovery_admission.get("recovery_classification")
+        == "searched_premise"
+    )
     search_work_plan = _mapping(run_kernel.state.search_work_plan)
     if not search_work_plan:
         raise SearchJudgmentReadAssessmentError("search_work_plan_missing")
-    accepted_ref = _mapping(
-        _mapping(search_work_plan.get("metadata")).get("accepted_contract_ref")
-    )
-    if not _search_work_plan_contract_ref_matches(
-        accepted_ref,
-        active_contract_ref=active_contract_ref,
-    ):
-        raise SearchJudgmentReadAssessmentError("search_work_plan_contract_stale")
-    search_work_plan_ref = _search_work_plan_ref(search_work_plan)
-    try:
-        authority_snapshot = run_kernel.acquisition_authority_snapshot()
-    except RunKernelTransitionError as exc:
-        raise SearchJudgmentReadAssessmentError(str(exc)) from exc
-    canonical_obligations = _mapping(
-        authority_snapshot.get("source_obligations_by_id")
-    )
+    if searched_premise_recovery:
+        recovery_contract_ref = _mapping(
+            recovery_admission.get("current_contract_ref")
+        )
+        if (
+            recovery_contract_ref.get("accepted_contract_digest")
+            != active_contract_ref.get("contract_digest")
+            or str(
+                recovery_contract_ref.get("accepted_contract_version")
+                or ""
+            )
+            != str(active_contract_ref.get("contract_version") or "")
+            or active_recovery_ref.get("cycle_id")
+            != _mapping(
+                recovery_admission.get("recovery_slot_ref")
+            ).get("recovery_cycle_id")
+        ):
+            raise SearchJudgmentReadAssessmentError(
+                "searched_recovery_authority_stale"
+            )
+        search_work_plan_ref = {
+            "search_work_plan_id": (
+                "searchos-recovery-work:"
+                + str(recovery_admission["cycle_id"])
+            ),
+            "search_work_plan_digest": str(
+                recovery_admission["cycle_admission_digest"]
+            ),
+            "authority_kind": "searchos_recovery_cycle_admission",
+        }
+        recovery_obligation_ref = _mapping(
+            recovery_admission.get("source_obligation_ref")
+        )
+        canonical_obligations = {
+            str(
+                recovery_obligation_ref.get("source_obligation_id")
+                or ""
+            ): recovery_obligation_ref
+        }
+    else:
+        accepted_ref = _mapping(
+            _mapping(search_work_plan.get("metadata")).get(
+                "accepted_contract_ref"
+            )
+        )
+        if not _search_work_plan_contract_ref_matches(
+            accepted_ref,
+            active_contract_ref=active_contract_ref,
+        ):
+            raise SearchJudgmentReadAssessmentError(
+                "search_work_plan_contract_stale"
+            )
+        search_work_plan_ref = _search_work_plan_ref(search_work_plan)
+        try:
+            authority_snapshot = run_kernel.acquisition_authority_snapshot()
+        except RunKernelTransitionError as exc:
+            raise SearchJudgmentReadAssessmentError(str(exc)) from exc
+        canonical_obligations = _mapping(
+            authority_snapshot.get("source_obligations_by_id")
+        )
 
     contract_components = {
         str(_mapping(item).get("component_id")): _mapping(item)
@@ -495,6 +562,70 @@ def derive_selected_candidate_material_need_bindings(
         for item in _sequence(search_work_plan.get("components"))
         if _mapping(item).get("component_id")
     }
+    if searched_premise_recovery:
+        recovery_component_ref = _mapping(
+            recovery_admission.get("component_ref")
+        )
+        recovery_component_id = str(
+            recovery_component_ref.get("component_id") or ""
+        )
+        contract_component = contract_components.get(
+            recovery_component_id,
+            {},
+        )
+        recovery_obligation_id = str(
+            _mapping(
+                recovery_admission.get("source_obligation_ref")
+            ).get("source_obligation_id")
+            or ""
+        )
+        source_specification = _mapping(
+            _mapping(contract_component.get("metadata")).get(
+                "source_obligation_specification"
+            )
+        )
+        recovery_requirement = {
+            "requirement_id": (
+                "searchos-recovery-requirement:"
+                + str(recovery_admission["cycle_id"])
+            ),
+            "component_id": recovery_component_id,
+            "requirement_summary": (
+                str(contract_component.get("user_facing_question") or "")
+            ),
+            "source_obligation_candidate_ids": [
+                recovery_obligation_id
+            ],
+            "preferred_source_kinds": [
+                str(
+                    source_specification.get("obligation_kind")
+                    or "supporting_fact"
+                )
+            ],
+            "searchos_recovery_cycle_ref": deepcopy(
+                active_recovery_ref
+            ),
+        }
+        work_components[recovery_component_id] = {
+            "component_id": recovery_component_id,
+            "source_obligations": [
+                {
+                    "obligation_id": recovery_obligation_id,
+                    "kind": str(
+                        source_specification.get("obligation_kind")
+                        or "supporting_fact"
+                    ),
+                    "strictness": str(
+                        source_specification.get("strictness")
+                        or "required"
+                    ),
+                }
+            ],
+            "metadata": {
+                "accepted_component_ref": recovery_component_ref,
+                "search_requirement_refs": [recovery_requirement],
+            },
+        }
     current_items = {
         str(item.to_ref(query_plan.plan_id).get("query_plan_item_id")): item
         for item in query_plan.items
@@ -716,11 +847,14 @@ def derive_selected_candidate_material_need_bindings(
                     )
                 if (
                     not obligation_ref
-                    or component_id
+                    or (
+                        not searched_premise_recovery
+                        and component_id
                     not in {
                         str(value)
                         for value in _sequence(obligation_ref.get("component_ids"))
                     }
+                    )
                 ):
                     raise SearchJudgmentReadAssessmentError(
                         "binding_source_obligation_snapshot_stale"
@@ -1703,6 +1837,9 @@ def _execute_one_acquisition_to_custody(
         semantic_requirement_id = (
             "searchos_semantic_requirement:"
             + source_obligation_id.split(":", 1)[-1]
+            .casefold()
+            .replace("-", "_")
+            .replace(" ", "_")
             + ":"
             + stable_json_digest(
                 {

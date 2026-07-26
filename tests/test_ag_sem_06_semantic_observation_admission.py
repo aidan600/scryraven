@@ -52,6 +52,7 @@ REQUEST_ID = "request:sem-06"
 # Deliberately not an aircraft example; nothing here is doctrine.
 COMPONENT_ID = "component:reported-total"
 EVIDENCE_ID = "evidence:public-record-notice"
+SOURCE_OBLIGATION_ID = "obligation:reported-total-primary-source"
 
 
 def _slot() -> SemanticSlot:
@@ -73,6 +74,7 @@ def _component() -> AnswerComponentContract:
         requirement_posture=RequirementPosture.REQUIRED,
         acceptance_criteria=("state the bounded value", "bind it to evidence"),
         semantic_slot_ids=("slot:reporting-period",),
+        source_obligation_candidate_ids=(SOURCE_OBLIGATION_ID,),
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         materiality=Materiality.MATERIAL,

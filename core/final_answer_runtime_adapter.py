@@ -176,15 +176,25 @@ def _origin_evidence_ref_from_ledger_candidate(
         if identity
     }
 
-    for candidate in candidates:
-        candidate_id = _clean_token(candidate.get("candidate_id"), limit=200)
-        if not candidate_id or not _candidate_record_is_bindable(
+    bindable_candidates = [
+        candidate
+        for candidate in candidates
+        if _clean_token(candidate.get("candidate_id"), limit=200)
+        and _candidate_record_is_bindable(
             candidate,
             passage=passage,
-        ):
-            continue
+        )
+    ]
+    for candidate in bindable_candidates:
+        candidate_id = _clean_token(
+            candidate.get("candidate_id"),
+            limit=200,
+        )
         if candidate_id in passage_candidate_keys:
             return candidate_id, _ORIGIN_EVIDENCE_REF_KIND
+
+    for candidate in bindable_candidates:
+        candidate_id = _clean_token(candidate.get("candidate_id"), limit=200)
         candidate_identities = {
             identity
             for identity in (

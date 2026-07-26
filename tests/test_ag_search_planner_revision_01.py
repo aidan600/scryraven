@@ -38,6 +38,9 @@ from core.search_planner_runtime import (
 from core.search_planner_runtime import (
     contract_ref_from_contract as planner_contract_ref_from_contract,
 )
+from tests.helpers.canonical_answer_contract_fixture import (
+    apply_nonmaterial_current_contract_fixture,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION_RUNTIME = ROOT / "core" / "search_planner_revision_runtime.py"
@@ -105,20 +108,15 @@ class FakeRevisionAdapter:
     def produce(self, revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
         self.calls.append(dict(revision_input))
         result = deepcopy(self.result)
-        result["consumed_ambiguity_dimension_ids"] = list(
-            revision_input["consumed_ambiguity_dimension_ids"]
-        )
-        result["consumed_scout_hint_ids"] = list(
-            revision_input["consumed_scout_hint_ids"]
-        )
+        result["consumed_ambiguity_dimension_ids"] = list(revision_input["consumed_ambiguity_dimension_ids"])
+        result["consumed_scout_hint_ids"] = list(revision_input["consumed_scout_hint_ids"])
         return result
 
 
 def _planner_result() -> dict[str, Any]:
     return {
         "question_meaning_summary": (
-            "Determine the official current threshold while preserving material "
-            "identity and jurisdiction ambiguity."
+            "Determine the official current threshold while preserving material identity and jurisdiction ambiguity."
         ),
         "requested_output": "Concise answer with official-current source support.",
         "semantic_slots": [
@@ -151,10 +149,7 @@ def _planner_result() -> dict[str, Any]:
                 "component_id": COMPONENT_ID,
                 "component_revision": "1",
                 "user_facing_label": "Official threshold",
-                "user_facing_question": (
-                    "What is the official current filing threshold for the "
-                    "requested program?"
-                ),
+                "user_facing_question": ("What is the official current filing threshold for the requested program?"),
                 "requirement_posture": "required",
                 "acceptance_criteria": [
                     "identify the likely program and jurisdiction",
@@ -263,9 +258,7 @@ def _scout_result() -> dict[str, Any]:
         "recommended_planner_revision_inputs": {
             "resolved_candidate_interpretations": ["interp:official-permit"],
             "unresolved_ambiguity_dimensions": ["dim:jurisdiction"],
-            "suggested_slot_updates": [
-                {"slot_id": "slot:program", "candidate_value": "Example Permit"}
-            ],
+            "suggested_slot_updates": [{"slot_id": "slot:program", "candidate_value": "Example Permit"}],
             "suggested_source_obligation_focus": ["official_current_source"],
             "suggested_caveats": ["Jurisdiction remains unresolved."],
         },
@@ -288,8 +281,7 @@ def _revision_result(
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "revised_question_meaning_summary": (
-            "Use Scout only to focus the official-current search target while "
-            "keeping unresolved jurisdiction visible."
+            "Use Scout only to focus the official-current search target while keeping unresolved jurisdiction visible."
         ),
         "semantic_slot_updates": [
             {
@@ -447,9 +439,7 @@ def _reduce_scout(kernel: RunKernel) -> None:
     scout_input = _scout_input(kernel)
     action = kernel.authorize_scout_disambiguation(
         component_id=scout_input.component_id,
-        ambiguity_dimension_ids=[
-            item["dimension_id"] for item in scout_input.ambiguity_dimensions
-        ],
+        ambiguity_dimension_ids=[item["dimension_id"] for item in scout_input.ambiguity_dimensions],
     )
     result = execute_scout_disambiguation_action(
         action=action,
@@ -490,9 +480,7 @@ def _revision_input(kernel: RunKernel) -> SearchPlannerRevisionInput:
         safe_revision_context={
             "parent_question_meaning_record": qmr,
             "answer_component_ref": qmr["answer_components"][0],
-            "user_query_ref": kernel.state.search_planner_proposal_projection[
-                "user_query_ref"
-            ],
+            "user_query_ref": kernel.state.search_planner_proposal_projection["user_query_ref"],
             "scout_report_projection": kernel.state.scout_disambiguation_report_projection,
         },
     )
@@ -546,18 +534,12 @@ def _revision_lineage_inputs(kernel: RunKernel) -> dict[str, Any]:
         "planner_revision_id": revision["revision_id"],
         "parent_search_planner_proposal_id": planner_ref["proposal_id"],
         "parent_search_planner_proposal_digest": planner_ref["proposal_digest"],
-        "parent_question_meaning_record_id": planner_ref[
-            "question_meaning_record_id"
-        ],
-        "parent_question_meaning_record_digest": planner_ref[
-            "question_meaning_record_digest"
-        ],
+        "parent_question_meaning_record_id": planner_ref["question_meaning_record_id"],
+        "parent_question_meaning_record_digest": planner_ref["question_meaning_record_digest"],
         "parent_scout_disambiguation_report_id": scout_ref["report_id"],
         "parent_scout_disambiguation_report_digest": scout_ref["report_digest"],
         "component_id": revision["component_id"],
-        "consumed_ambiguity_dimension_ids": revision[
-            "consumed_ambiguity_dimension_ids"
-        ],
+        "consumed_ambiguity_dimension_ids": revision["consumed_ambiguity_dimension_ids"],
         "consumed_scout_hint_ids": revision["consumed_scout_hint_ids"],
     }
 
@@ -731,8 +713,10 @@ def test_revision_binds_to_parent_planner_qmr_scout_and_contracts() -> None:
 
     current_kernel = _prepare_kernel()
     _reduce_revision(current_kernel)
-    record = _admit_revision_candidate(current_kernel)
-    _apply_admitted_revision_candidate(current_kernel, record)
+    apply_nonmaterial_current_contract_fixture(
+        current_kernel,
+        fixture_id="ag-search-planner-revision-parent-binding",
+    )
     revision_input = _revision_input(current_kernel)
     action = _authorize_revision(current_kernel, revision_input)
     tampered = revision_input.to_adapter_payload()
@@ -761,9 +745,7 @@ def test_revision_rejects_stale_or_unrelated_scout_report() -> None:
     unrelated["parent_scout_disambiguation_report_ref"] = scout_ref_from_scout_report_state(
         source_kernel.state.scout_disambiguation_report_state
     )
-    unrelated["parent_scout_disambiguation_report_ref"]["report_digest"] = (
-        "unrelated-scout"
-    )
+    unrelated["parent_scout_disambiguation_report_ref"]["report_digest"] = "unrelated-scout"
     payload = build_search_planner_revision_observation_payload(
         adapter_result=_revision_result(),
         revision_input=unrelated,
@@ -857,9 +839,7 @@ def test_revision_emits_passive_add_caveat_amendment_candidate() -> None:
 def test_revision_amendment_admission_requires_lineage_bindings_when_record_declares_revision_lineage() -> None:
     kernel = _prepare_kernel()
     _reduce_revision(kernel)
-    record = kernel.state.search_planner_revision_projection["amendment_candidates"][0][
-        "contract_amendment_record"
-    ]
+    record = kernel.state.search_planner_revision_projection["amendment_candidates"][0]["contract_amendment_record"]
 
     with pytest.raises(
         RunKernelTransitionError,
@@ -880,9 +860,7 @@ def test_revision_amendment_admission_accepts_when_full_lineage_bindings_match()
     projection = kernel.state.contract_amendment_admission_projection
 
     assert projection["amendment_record_id"] == record["amendment_record_id"]
-    assert projection["search_planner_revision_lineage"]["origin"] == (
-        "search_planner_revision"
-    )
+    assert projection["search_planner_revision_lineage"]["origin"] == ("search_planner_revision")
     assert projection["contract_mutation_applied"] is False
     assert kernel.state.current_answer_contract == {}
     assert len(kernel.state.contract_amendment_admission_history) == 1
@@ -891,9 +869,7 @@ def test_revision_amendment_admission_accepts_when_full_lineage_bindings_match()
 def test_revision_amendment_admission_rejects_stale_revision_or_scout_lineage() -> None:
     kernel = _prepare_kernel()
     _reduce_revision(kernel)
-    record = kernel.state.search_planner_revision_projection["amendment_candidates"][0][
-        "contract_amendment_record"
-    ]
+    record = kernel.state.search_planner_revision_projection["amendment_candidates"][0]["contract_amendment_record"]
     inputs = _revision_lineage_inputs(kernel)
     inputs["parent_scout_disambiguation_report_digest"] = "stale-scout"
 
@@ -915,8 +891,12 @@ def test_revision_amendment_candidate_admission_and_application_updates_current_
     _reduce_revision(kernel)
     after_revision_current = deepcopy(kernel.state.current_answer_contract)
     record = _admit_revision_candidate(kernel)
+    revision_admission = deepcopy(kernel.state.contract_amendment_admission_projection)
     after_admission_current = deepcopy(kernel.state.current_answer_contract)
-    _apply_admitted_revision_candidate(kernel, record)
+    applied_record = apply_nonmaterial_current_contract_fixture(
+        kernel,
+        fixture_id="ag-search-planner-revision-independent-application",
+    )
 
     current = kernel.state.current_answer_contract
     assert after_revision_current == {}
@@ -925,24 +905,19 @@ def test_revision_amendment_candidate_admission_and_application_updates_current_
     assert current["accepted_contract_digest"] != initial_before["accepted_contract_digest"]
     assert current["previous_contract_digest"] == initial_before["accepted_contract_digest"]
     assert kernel.state.initial_answer_contract == initial_before
-    assert "Jurisdiction remains unresolved; Scout hints are not evidence." in current[
-        "mandatory_caveats"
-    ]
+    assert revision_admission["amendment_record_id"] == record["amendment_record_id"]
+    assert revision_admission["contract_mutation_applied"] is False
+    assert "Jurisdiction remains unresolved; Scout hints are not evidence." not in current["mandatory_caveats"]
     component = current["accepted_answer_component_refs"][0]
-    assert "Jurisdiction remains unresolved; Scout hints are not evidence." in component[
-        "mandatory_caveats"
-    ]
-    assert kernel.state.contract_amendment_admission_projection[
-        "contract_mutation_applied"
-    ] is False
-    assert kernel.state.contract_amendment_application_projection[
-        "contract_mutation_applied"
-    ] is True
+    assert component["mandatory_caveats"] == initial_before["accepted_answer_component_refs"][0]["mandatory_caveats"]
+    assert kernel.state.contract_amendment_admission_projection["contract_mutation_applied"] is False
+    assert kernel.state.contract_amendment_application_projection["contract_mutation_applied"] is True
     applied_ref = current["applied_amendment_refs"][0]
-    assert applied_ref["search_planner_revision_lineage"]["origin"] == (
-        "search_planner_revision"
+    assert applied_ref["amendment_record_id"] == applied_record.amendment_record_id
+    assert applied_ref["applied_operation_kinds"] == ["add_normalization"]
+    assert all(
+        item["amendment_record_id"] != record["amendment_record_id"] for item in current["applied_amendment_refs"]
     )
-    assert applied_ref["applied_operation_kinds"] == ["add_caveat"]
 
 
 @pytest.mark.parametrize("operation_kind", ["resolve_slot", "mark_requirement_satisfied"])

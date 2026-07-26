@@ -43,11 +43,11 @@ from core.ordinary_multicomponent_synthesis_runtime import (
     _execute_selective_reconstruction,
 )
 from core.run_kernel import (
-    MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
     Observation,
     RunKernel,
     RunKernelTransitionError,
     RunStageStatus,
+    contract_amendment_graph_transition_authority,
 )
 from core.strict_one_shot_model_transport import (
     wrap_text_callable_as_strict_one_shot_transport,
@@ -60,6 +60,10 @@ from tests.test_multicomponent_component_work_graph_v1 import (
     _seed_component_admission,
     _seed_role_artifact,
     _validate_synthesis,
+)
+
+GRAPH_TRANSITION_AUTHORITY_STAGE = (
+    "contract_amendment_graph_transition_authority"
 )
 
 
@@ -187,28 +191,33 @@ def _node_ref(node: dict) -> dict:
 
 def _closure_fixture() -> tuple[RunKernel, dict, dict]:
     kernel, graph = _selective_source_graph()
-    filing = next(
-        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
+    amendment_admission = {
+        "amendment_record_id": "amendment:test",
+        "amendment_record_digest": "amendment-record-digest",
+        "authorized_action_id": "amendment-admission-action:test",
+        "admission_digest": "amendment-admission-digest",
+        "analyst_query_resolution_proposal_ref": {
+            "local_target_key": "filing_route",
+        },
+    }
+    amendment_application = {
+        "amendment_record_id": "amendment:test",
+        "authorized_action_id": "amendment-application-action:test",
+        "application_digest": "amendment-application-digest",
+        "operations": [
+                {
+                    "operation_kind": "revise_component",
+                    "component_id": "component:component-4",
+                }
+            ],
+        }
+    authorization = contract_amendment_graph_transition_authority(
+        graph=graph,
+        amendment_application=amendment_application,
+        amendment_admission=amendment_admission,
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
     )
-    authorization_core = {
-        "schema_version": "multicomponent_missing_component_recovery_authorization_v1",
-        "owner": "RunKernel.MulticomponentRecoveryAuthorization",
-        "canonical_state": True,
-        "run_id": RUN_ID,
-        "request_id": REQUEST_ID,
-        "authorization_id": "recovery-authorization:test",
-        "authorized_action_id": "recovery-action:test",
-        "target_kind": "synthesis",
-        "target_key": "synthesis_02",
-        "resolved_target": _node_ref(filing),
-        "graph_id": graph["graph_id"],
-        "graph_revision": graph["graph_revision"],
-        "graph_digest": graph["graph_digest"],
-    }
-    authorization = {
-        **authorization_core,
-        "authorization_digest": safe_packet_digest(authorization_core),
-    }
     recovered_node = _component_node(
         5,
         admission_overrides={
@@ -221,8 +230,14 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
             "component_id": item["component_id"],
             "component_revision": item["component_revision"],
             "component_digest": item["component_digest"],
+            "component_purpose": "user_facing_answer_target",
             "user_facing_label": item["component_label"],
             "user_facing_question": item["component_question"],
+            "allowed_support_kinds": ["direct"],
+            "max_inference_depth": 0,
+            "source_obligation_candidate_ids": [
+                f"obligation:{item['component_id']}:direct"
+            ],
         }
         for item in [*graph["component_nodes"], recovered_node]
     ]
@@ -237,17 +252,6 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
         "parent_question_meaning_record_digest": None,
         "accepted_answer_component_refs": accepted_refs,
         "accepted_answer_component_count": len(accepted_refs),
-    }
-    amendment_admission = {
-        "amendment_record_id": "amendment:test",
-        "amendment_record_digest": "amendment-record-digest",
-        "authorized_action_id": "amendment-admission-action:test",
-        "admission_digest": "amendment-admission-digest",
-    }
-    amendment_application = {
-        "amendment_record_id": "amendment:test",
-        "authorized_action_id": "amendment-application-action:test",
-        "application_digest": "amendment-application-digest",
     }
     recovered_admission = {
         "schema_version": "multicomponent_component_admission_ref_v1",
@@ -276,7 +280,7 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
         "preserved_nonclaims": recovered_node["preserved_nonclaims"],
         "blocker_refs": recovered_node["blocker_refs"],
     }
-    kernel.state.projections[MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE] = authorization
+    kernel.state.projections[GRAPH_TRANSITION_AUTHORITY_STAGE] = authorization
     kernel.state.current_answer_contract = current_contract
     kernel.state.contract_amendment_admission_projection = amendment_admission
     kernel.state.contract_amendment_application_projection = amendment_application
@@ -299,8 +303,23 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
             )
         }
         | {"accepted_answer_component_count": len(accepted_refs)},
-        contract_amendment_admission_ref=amendment_admission,
-        contract_amendment_application_ref=amendment_application,
+        contract_amendment_admission_ref={
+            key: amendment_admission[key]
+            for key in (
+                "amendment_record_id",
+                "amendment_record_digest",
+                "authorized_action_id",
+                "admission_digest",
+            )
+        },
+        contract_amendment_application_ref={
+            key: amendment_application[key]
+            for key in (
+                "amendment_record_id",
+                "authorized_action_id",
+                "application_digest",
+            )
+        },
         recovered_component_admission_ref=recovered_admission,
     )
     return kernel, graph, closure
@@ -323,13 +342,16 @@ def _transition_inputs(kernel: RunKernel, closure: dict) -> dict:
         ),
         "current_contract_ref": closure["current_contract_ref"],
         "recovery_authorization_ref": kernel.state.projections[
-            MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+            GRAPH_TRANSITION_AUTHORITY_STAGE
         ],
         "contract_amendment_admission_ref": closure[
             "contract_amendment_admission_ref"
         ],
         "amendment_application_ref": closure[
             "contract_amendment_application_ref"
+        ],
+        "accepted_component_refs": kernel.state.current_answer_contract[
+            "accepted_answer_component_refs"
         ],
     }
 
@@ -496,17 +518,30 @@ def test_selective_closure_rejects_forged_digest() -> None:
 
 
 def test_selective_closure_rejects_wrong_source_graph_binding() -> None:
-    kernel, _graph, _closure = _closure_fixture()
-    authorization = kernel.state.projections[
-        MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-    ]
+    kernel, graph, closure = _closure_fixture()
+    authorization = deepcopy(kernel.state.projections[
+        GRAPH_TRANSITION_AUTHORITY_STAGE
+    ])
     authorization["graph_revision"] += 1
 
     with pytest.raises(
-        RunKernelTransitionError,
-        match="authorization-bound graph snapshot",
+        ComponentWorkGraphV1Error,
+        match="authorization-bound source graph",
     ):
-        kernel.authorize_multicomponent_selective_recomputation_closure()
+        derive_selective_recomputation_closure(
+            graph,
+            recovery_authorization_ref=authorization,
+            current_contract_ref=closure["current_contract_ref"],
+            contract_amendment_admission_ref=closure[
+                "contract_amendment_admission_ref"
+            ],
+            contract_amendment_application_ref=closure[
+                "contract_amendment_application_ref"
+            ],
+            recovered_component_admission_ref=closure[
+                "recovered_component_admission_ref"
+            ],
+        )
 
 
 def test_selective_invalidation_carries_only_unaffected_synthesis() -> None:
@@ -976,7 +1011,7 @@ def test_selective_reconstruction_calls_cross_and_dprime_only_for_affected_keys(
     assert all(not item.startswith("benefit_summary:") for item in dprime_keys)
 
 
-def test_five_component_northstar_product_path_selectively_recovers_and_finalizes(
+def test_boundary_b_product_path_selectively_reproves_and_finalizes(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -991,10 +1026,11 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
         HANDOFF_SUFFICIENCY,
         install_handoff_capture,
         offline_balanced_run_config,
+        scrub_offline_runtime,
     )
-    from tests.test_multicomponent_dynamic_graph_recovery_01 import (
-        DynamicNorthstarHarness,
-        _forbid_direct_semantic_producer,
+    from tests.test_searchos_boundary_b_ordinary_product_01 import (
+        UNIQUE_RECOVERED_RESULT,
+        BoundaryBOrdinaryHarness,
     )
 
     def forbidden_whole_graph_rebuild(**_kwargs):
@@ -1005,8 +1041,19 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
         "_execute_fresh_resynthesis",
         forbidden_whole_graph_rebuild,
     )
-    _forbid_direct_semantic_producer(monkeypatch)
-    harness = DynamicNorthstarHarness(tmp_path)
+    scrub_offline_runtime(monkeypatch)
+
+    def forbidden_direct_semantic_producer(*_args, **_kwargs):
+        raise AssertionError(
+            "qualifying multicomponent run cannot use direct semantic authority"
+        )
+
+    monkeypatch.setattr(
+        runtime,
+        "execute_ordinary_semantic_producer_handoff_from_scope",
+        forbidden_direct_semantic_producer,
+    )
+    harness = BoundaryBOrdinaryHarness(tmp_path)
     captured = install_handoff_capture(
         monkeypatch,
         capture_stages=(
@@ -1033,16 +1080,10 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
     closure = kernel.state.projections[MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE]
     carry = kernel.state.projections[MULTICOMPONENT_CARRY_FORWARD_STAGE]
-    recovery_outcome = kernel.state.projections["multicomponent_recovery_outcome"]
-    assert closure["directly_affected_synthesis_keys"] == ["filing_route"]
-    assert closure["transitively_affected_synthesis_keys"] == [
-        "applicant_guidance"
-    ]
-    assert closure["affected_synthesis_keys"] == [
-        "filing_route",
-        "applicant_guidance",
-    ]
-    assert closure["unaffected_active_synthesis_keys"] == ["benefit_summary"]
+    assert closure["directly_affected_synthesis_keys"] == ["target_E"]
+    assert closure["transitively_affected_synthesis_keys"] == []
+    assert closure["affected_synthesis_keys"] == ["target_E"]
+    assert closure["unaffected_active_synthesis_keys"] == []
     closure_action = next(
         item
         for item in kernel.state.issued_actions.values()
@@ -1055,34 +1096,31 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     )
     assert closure_action.sequence < invalidation_action.sequence
     by_key = {item["synthesis_key"]: item for item in graph["synthesis_nodes"]}
-    carried = by_key["benefit_summary"]
-    carry_record = carry["carry_forward_records"][0]
-    assert carried["node_id"] == carry_record["prior_node_ref"]["node_id"]
-    assert carried["node_revision"] != carry_record["prior_node_ref"][
-        "node_revision"
-    ]
-    assert carried["node_digest"] != carry_record["prior_node_ref"]["node_digest"]
-    assert carry_record["new_node_ref"]["node_digest"] == carried["node_digest"]
-    assert carried["dprime_validation_ref"] == {}
-    assert carried["runkernel_admission_ref"] == {}
-    assert carried["carried_semantic_lineage"]["prior_synthesis_dprime_ref"]
-    assert carried["carried_semantic_lineage"]["prior_synthesis_admission_ref"]
+    assert set(by_key) == {"target_E"}
+    assert carry["carry_forward_count"] == 0
+    assert carry["carry_forward_records"] == []
     assert carry["final_graph_ref"]["graph_digest"] != graph["graph_digest"]
-    assert carry["runkernel_carry_forward_action_ref"] == carried[
-        "current_node_authority"
-    ]["runkernel_carry_forward_action_ref"]
     stale_keys = {
         item["superseded_node_ref"]["synthesis_key"]
         for item in graph["stale_synthesis_history"]
     }
-    assert stale_keys == {"filing_route", "applicant_guidance"}
-    assert by_key["filing_route"]["superseded_node_ref"]["synthesis_key"] == (
-        "filing_route"
+    assert stale_keys == {"target_E"}
+    assert by_key["target_E"]["superseded_node_ref"]["synthesis_key"] == (
+        "target_E"
     )
-    assert by_key["applicant_guidance"]["input_namespaces"] == {
-        "component_inputs": [],
-        "affected_synthesis_inputs": ["filing_route"],
-        "preserved_synthesis_inputs": ["benefit_summary"],
+    recovered_component_ids = {
+        item["component_id"]
+        for item in graph["component_nodes"]
+        if item["component_id"] != "premise_D"
+    }
+    assert len(recovered_component_ids) == 1
+    assert by_key["target_E"]["input_namespaces"] == {
+        "component_inputs": [
+            *sorted(recovered_component_ids),
+            "premise_D",
+        ],
+        "affected_synthesis_inputs": [],
+        "preserved_synthesis_inputs": [],
     }
     selective_cross = next(
         item
@@ -1092,20 +1130,17 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     assert [
         item["synthesis_key"]
         for item in selective_cross["semantic_output"]["synthesis_proposals"]
-    ] == ["filing_route", "applicant_guidance"]
+    ] == ["target_E"]
     selective_dprime_actions = [
         item
         for item in kernel.state.issued_actions.values()
         if item.inputs.get("role") == "synthesis_dprime"
         and ":selective:" in str(item.inputs.get("logical_evaluation_key"))
     ]
-    assert len(selective_dprime_actions) == 2
-    assert all(
-        not str(item.inputs["logical_evaluation_key"]).startswith(
-            "benefit_summary:"
-        )
-        for item in selective_dprime_actions
-    )
+    assert len(selective_dprime_actions) == 1
+    assert str(
+        selective_dprime_actions[0].inputs["logical_evaluation_key"]
+    ).startswith("target_E:")
     scrutineer_actions = [
         item
         for item in kernel.state.issued_actions.values()
@@ -1119,36 +1154,24 @@ def test_five_component_northstar_product_path_selectively_recovers_and_finalize
     assert graph["whole_graph_resynthesis_rounds"] == 0
     assert graph["selective_recomputation_rounds"] == 1
     assert graph["logical_accounting"] == {
-        "component_analyst_evaluations": 5,
-        "component_dprime_evaluations": 5,
+        "component_analyst_evaluations": 2,
+        "component_dprime_evaluations": 2,
         "cross_component_analyst_evaluations": 2,
-        "synthesis_dprime_evaluations": 5,
+        "synthesis_dprime_evaluations": 2,
         "scrutineer_evaluations": 2,
     }
-    assert recovery_outcome["affected_synthesis_count"] == 2
-    assert recovery_outcome["preserved_synthesis_count"] == 1
-    assert recovery_outcome["recomputed_synthesis_count"] == 2
-    assert recovery_outcome["fresh_full_case_scrutineer_ref"] == graph[
-        "scrutineer_ref"
-    ]
     sufficiency = captured["sufficiency_projection"]
     assert sufficiency["final_answer_allowed"] is True
     packet = captured["packet_handoff"].packet
-    assert len(packet.direct_component_entries) == 5
+    assert len(packet.direct_component_entries) == 2
     assert {
         item["synthesis_key"] for item in packet.admitted_synthesis_entries
-    } == {"benefit_summary", "filing_route", "applicant_guidance"}
+    } == {"target_E"}
     assert captured["author_handoff_called"] is True
     normalized = " ".join(outcome.report.split())
-    assert "$1,200" in normalized
-    assert "at or below $60,000" in normalized
-    assert "paper application" in normalized
-    assert "account number" in normalized
-    assert "verified two-part Northstar benefit" in selective_cross[
-        "semantic_output"
-    ]["synthesis_proposals"][1]["claim_text"]
+    assert UNIQUE_RECOVERED_RESULT in normalized
     assert any(
-        "verified two-part Northstar benefit" in str(item.get("claim_text") or "")
+        UNIQUE_RECOVERED_RESULT in str(item.get("claim_text") or "")
         for item in packet.admitted_synthesis_entries
     )
     assert harness.forbidden_live_calls == []
@@ -1164,7 +1187,7 @@ def test_closure_cannot_be_derived_after_selective_topology_replacement() -> Non
         derive_selective_recomputation_closure(
             amended,
             recovery_authorization_ref=kernel.state.projections[
-                MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                GRAPH_TRANSITION_AUTHORITY_STAGE
             ],
             current_contract_ref=closure["current_contract_ref"],
             contract_amendment_admission_ref=closure[
@@ -1410,28 +1433,33 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         synthesis_key="unrelated_note",
     )
 
-    filing = next(
-        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "filing_route"
+    amendment_admission = {
+        "amendment_record_id": "amendment:unrelated",
+        "amendment_record_digest": "amendment-record-digest-unrelated",
+        "authorized_action_id": "amendment-admission-action:unrelated",
+        "admission_digest": "amendment-admission-digest-unrelated",
+        "analyst_query_resolution_proposal_ref": {
+            "local_target_key": "filing_route",
+        },
+    }
+    amendment_application = {
+        "amendment_record_id": "amendment:unrelated",
+        "authorized_action_id": "amendment-application-action:unrelated",
+        "application_digest": "amendment-application-digest-unrelated",
+        "operations": [
+                {
+                    "operation_kind": "revise_component",
+                    "component_id": "component:component-4",
+                }
+            ],
+        }
+    authorization = contract_amendment_graph_transition_authority(
+        graph=graph,
+        amendment_application=amendment_application,
+        amendment_admission=amendment_admission,
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
     )
-    authorization_core = {
-        "schema_version": "multicomponent_missing_component_recovery_authorization_v1",
-        "owner": "RunKernel.MulticomponentRecoveryAuthorization",
-        "canonical_state": True,
-        "run_id": RUN_ID,
-        "request_id": REQUEST_ID,
-        "authorization_id": "recovery-authorization:unrelated",
-        "authorized_action_id": "recovery-action:unrelated",
-        "target_kind": "synthesis",
-        "target_key": "synthesis_02",
-        "resolved_target": _node_ref(filing),
-        "graph_id": graph["graph_id"],
-        "graph_revision": graph["graph_revision"],
-        "graph_digest": graph["graph_digest"],
-    }
-    authorization = {
-        **authorization_core,
-        "authorization_digest": safe_packet_digest(authorization_core),
-    }
     recovered_node = _component_node(
         5,
         admission_overrides={
@@ -1444,8 +1472,14 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
             "component_id": item["component_id"],
             "component_revision": item["component_revision"],
             "component_digest": item["component_digest"],
+            "component_purpose": "user_facing_answer_target",
             "user_facing_label": item["component_label"],
             "user_facing_question": item["component_question"],
+            "allowed_support_kinds": ["direct"],
+            "max_inference_depth": 0,
+            "source_obligation_candidate_ids": [
+                f"obligation:{item['component_id']}:direct"
+            ],
         }
         for item in [*graph["component_nodes"], recovered_node]
     ]
@@ -1460,17 +1494,6 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         "parent_question_meaning_record_digest": None,
         "accepted_answer_component_refs": accepted_refs,
         "accepted_answer_component_count": len(accepted_refs),
-    }
-    amendment_admission = {
-        "amendment_record_id": "amendment:unrelated",
-        "amendment_record_digest": "amendment-record-digest-unrelated",
-        "authorized_action_id": "amendment-admission-action:unrelated",
-        "admission_digest": "amendment-admission-digest-unrelated",
-    }
-    amendment_application = {
-        "amendment_record_id": "amendment:unrelated",
-        "authorized_action_id": "amendment-application-action:unrelated",
-        "application_digest": "amendment-application-digest-unrelated",
     }
     recovered_admission = {
         "schema_version": "multicomponent_component_admission_ref_v1",
@@ -1497,7 +1520,7 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         "preserved_nonclaims": recovered_node["preserved_nonclaims"],
         "blocker_refs": recovered_node["blocker_refs"],
     }
-    kernel.state.projections[MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE] = authorization
+    kernel.state.projections[GRAPH_TRANSITION_AUTHORITY_STAGE] = authorization
     kernel.state.current_answer_contract = current_contract
     kernel.state.contract_amendment_admission_projection = amendment_admission
     kernel.state.contract_amendment_application_projection = amendment_application
@@ -1520,8 +1543,23 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
             )
         }
         | {"accepted_answer_component_count": len(accepted_refs)},
-        contract_amendment_admission_ref=amendment_admission,
-        contract_amendment_application_ref=amendment_application,
+        contract_amendment_admission_ref={
+            key: amendment_admission[key]
+            for key in (
+                "amendment_record_id",
+                "amendment_record_digest",
+                "authorized_action_id",
+                "admission_digest",
+            )
+        },
+        contract_amendment_application_ref={
+            key: amendment_application[key]
+            for key in (
+                "amendment_record_id",
+                "authorized_action_id",
+                "application_digest",
+            )
+        },
         recovered_component_admission_ref=recovered_admission,
     )
     canonical_closure = reduce_selective_recomputation_closure(
@@ -1604,13 +1642,14 @@ def test_selective_failure_blocks_without_whole_graph_fallback(
     from core.cost_accounting import CostAccumulator
     from core.protocols import NullStatusWriter
     from tests.helpers.offline_ordinary_pipeline import (
+        HANDOFF_AUTHOR,
         HANDOFF_SEMANTIC,
         install_handoff_capture,
         offline_balanced_run_config,
+        scrub_offline_runtime,
     )
-    from tests.test_multicomponent_dynamic_graph_recovery_01 import (
-        DynamicNorthstarHarness,
-        _forbid_direct_semantic_producer,
+    from tests.test_searchos_boundary_b_ordinary_product_01 import (
+        BoundaryBOrdinaryHarness,
     )
 
     whole_graph_called = False
@@ -1629,28 +1668,39 @@ def test_selective_failure_blocks_without_whole_graph_fallback(
         fail_selective,
     )
     monkeypatch.setattr(runtime, "_execute_fresh_resynthesis", observe_whole_graph)
-    _forbid_direct_semantic_producer(monkeypatch)
-    harness = DynamicNorthstarHarness(tmp_path)
+    scrub_offline_runtime(monkeypatch)
+
+    def forbid_direct_semantic_producer(*_args, **_kwargs):
+        raise AssertionError("direct semantic fallback is forbidden")
+
+    monkeypatch.setattr(
+        runtime,
+        "execute_ordinary_semantic_producer_handoff_from_scope",
+        forbid_direct_semantic_producer,
+    )
+    harness = BoundaryBOrdinaryHarness(tmp_path)
     captured = install_handoff_capture(
         monkeypatch,
-        capture_stages=(HANDOFF_SEMANTIC,),
+        capture_stages=(HANDOFF_SEMANTIC, HANDOFF_AUTHOR),
     )
 
-    with pytest.raises(Exception):
-        orchestrator.run_pipeline(
-            offline_balanced_run_config(
-                query=harness.query,
-                current_date="2026-07-11",
-                session_id="selective-failure-session",
-                run_id="selective-failure-run",
-            ),
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-07-11",
+            session_id="selective-failure-session",
+            run_id="selective-failure-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
 
     kernel = captured["semantic_run_kernel"]
-    recovery = kernel.state.projections["multicomponent_dynamic_recovery"]
-    assert recovery["status"] == "blocked"
-    assert recovery["whole_graph_fallback_invoked"] is False
+    terminals = kernel.state.searchos_state["recovery_cycle_terminal_history"]
+    assert len(terminals) == 1
+    assert terminals[0]["terminal_status"] == "failed"
+    assert "multicomponent_dynamic_recovery" not in kernel.state.projections
     assert whole_graph_called is False
+    assert captured["author_handoff_called"] is False
+    assert "could not produce a supported answer" in outcome.report.casefold()

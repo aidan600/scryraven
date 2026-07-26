@@ -536,6 +536,20 @@ def construct_contract_bound_search_work_plan(
         raise ValueError(
             "contract-bound SearchWorkPlan requires accepted answer components"
         )
+    direct_search_components = [
+        component
+        for component in accepted_components
+        if "direct"
+        in {
+            _clean_token(item)
+            for item in component.get("allowed_support_kinds") or ("direct",)
+        }
+    ]
+    if not direct_search_components:
+        raise ValueError(
+            "contract-bound SearchWorkPlan requires at least one direct-support "
+            "accepted component"
+        )
 
     qmr = _safe_mapping(planner.get("question_meaning_record"))
     qmr_source_refs = {
@@ -565,7 +579,7 @@ def construct_contract_bound_search_work_plan(
 
     components: list[SearchWorkComponent] = []
     provider_jobs: list[ProviderJob] = []
-    for rank, accepted in enumerate(accepted_components, start=1):
+    for rank, accepted in enumerate(direct_search_components, start=1):
         component_id = _clean_token(accepted.get("component_id"))
         if not component_id:
             raise ValueError("accepted SearchWork component requires component_id")
@@ -664,7 +678,7 @@ def construct_contract_bound_search_work_plan(
 
     required_component_count = sum(
         1
-        for item in accepted_components
+        for item in direct_search_components
         if _clean_token(item.get("requirement_posture")) == "required"
     )
     contract_ref = {
@@ -804,6 +818,9 @@ def construct_contract_bound_search_work_plan(
             },
             "allocation_policy": policy.to_dict(),
             "required_component_count": required_component_count,
+            "inferred_only_component_count": (
+                len(accepted_components) - len(direct_search_components)
+            ),
             "runtime_consumed": True,
             "runtime_consumer": "QueryPlan initial admission",
             "full_executable_query_text_stored": False,

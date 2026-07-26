@@ -75,9 +75,9 @@ EXECUTOR_REGISTERED_DETERMINISTIC = "registered_deterministic_capability"
 MULTICOMPONENT_ROLE_CALL_LIMITS: Mapping[str, int] = {
     ROLE_COMPONENT_ANALYST: 5,
     ROLE_COMPONENT_DPRIME: 5,
-    ROLE_CROSS_COMPONENT_ANALYST: 2,
+    ROLE_CROSS_COMPONENT_ANALYST: 3,
     ROLE_SYNTHESIS_DPRIME: 8,
-    ROLE_SCRUTINEER: 2,
+    ROLE_SCRUTINEER: 3,
 }
 
 LEASE_GRANTED = "granted_reserved"
@@ -1293,8 +1293,13 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
     }
     recovery_bindings = _mapping(context.get("recovery_bindings"))
     contract = state.current_answer_contract or state.initial_answer_contract
-    component_refs = [
+    all_component_refs = [
         _mapping(item) for item in contract.get("accepted_answer_component_refs") or ()
+    ]
+    component_refs = [
+        item
+        for item in all_component_refs
+        if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
     ]
     admissions = _component_admissions(state)
     specialist_state = _mapping(
@@ -1447,7 +1452,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
     if not graph_raw:
         if len(admissions) != len(component_refs):
             return []
-        if len(component_refs) == 1:
+        if len(component_refs) == 1 and len(all_component_refs) == 1:
             # The installed N-component receiver terminates N=1 directly from
             # its admitted component; no cross-component relation exists to
             # schedule or synthesize.
@@ -1470,6 +1475,8 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                 context.get("requested_synthesis_directive") or ""
             ),
             component_analyst_input_packets=packets,
+            accepted_component_refs=all_component_refs,
+            requested_mode=str(context.get("requested_mode") or "Balanced"),
         )
         work = _work(
             state=state,

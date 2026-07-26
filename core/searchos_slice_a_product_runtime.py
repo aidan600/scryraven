@@ -367,7 +367,7 @@ def execute_searchos_slice_a_iterative_judgment(
         locator_store.discard_all()
 
 
-def execute_searchos_existing_gap_recovery_cycle(
+def execute_searchos_recovery_cycle(
     *,
     prior_result: SearchOSSliceAProductResult,
     recovery_cycle_ref: Mapping[str, Any],
@@ -466,14 +466,24 @@ def _execute_searchos_slice_a_iterative_judgment(
         if prior_result is not None
         else []
     )
-    working_packet = prior_packets[-1] if prior_packets else initial_packet
-    initial_binding_state = derive_selected_candidate_material_need_bindings(
-        run_kernel=run_kernel,
-        candidate_packet=working_packet,
-        query_plan=query_authority.plan,
-        discovery_result_store=discovery_result_store,
-    )
-    bindings = _bindings_from_state(initial_binding_state)
+    if prior_result is None:
+        initial_binding_state = derive_selected_candidate_material_need_bindings(
+            run_kernel=run_kernel,
+            candidate_packet=initial_packet,
+            query_plan=query_authority.plan,
+            discovery_result_store=discovery_result_store,
+        )
+        bindings = _bindings_from_state(initial_binding_state)
+    else:
+        # An admitted recovery cycle starts with an empty candidate window.
+        # In particular, a searched-premise amendment changes the active
+        # contract, so replaying the parent cycle's candidate packet would be
+        # stale authority as well as non-novel recovery input.
+        initial_binding_state = {
+            "schema_version": "searchos_recovery_empty_binding_state_v1",
+            "bindings": [],
+        }
+        bindings = []
     revision_1 = (
         deepcopy(dict(prior_result.revision_1))
         if prior_result is not None
@@ -533,14 +543,14 @@ def _execute_searchos_slice_a_iterative_judgment(
         )
     else:
         from core.searchos_existing_gap_recovery_runtime import (
-            validate_active_searchos_recovery_cycle_ref,
+            validate_active_searchos_generalized_recovery_cycle_ref,
         )
 
         if recovery_cycle_ref is None:
             raise SearchOSRuntimeError(
                 "recovery execution requires its exact admitted cycle"
             )
-        validate_active_searchos_recovery_cycle_ref(
+        validate_active_searchos_generalized_recovery_cycle_ref(
             run_kernel.state.searchos_state,
             recovery_cycle_ref,
         )
@@ -905,16 +915,16 @@ def _execute_searchos_slice_a_iterative_judgment(
                     continue
                 iteration = len(iteration_sets) + 2
                 try:
+                    query_admission = query_authority.admit_searchos_followup_query(
+                        judgment_decision=decision,
+                        iteration=iteration,
+                    )
                     query_plan_action = run_kernel.authorize_query_plan_admission(
                         inputs={
                             "authority": "SearchOSJudgment",
                             "judgment_decision_ref": _decision_ref(decision),
                             "iteration": iteration,
                         }
-                    )
-                    query_admission = query_authority.admit_searchos_followup_query(
-                        judgment_decision=decision,
-                        iteration=iteration,
                     )
                     run_kernel.reduce(
                         Observation.from_action(
@@ -927,7 +937,10 @@ def _execute_searchos_slice_a_iterative_judgment(
                 except Exception as exc:
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
-                        reason=f"followup_query_admission_rejected:{type(exc).__name__}",
+                        reason=(
+                            "followup_query_admission_rejected:"
+                            f"{type(exc).__name__}:" + " ".join(str(exc).strip().split())[:120]
+                        ),
                     )
                     continue
                 before_identities = list(discovery_result_store.identities())
@@ -1028,6 +1041,7 @@ def _execute_searchos_slice_a_iterative_judgment(
     new_semantic_material = _semantic_passages(
         semantic_handoffs=semantic_handoffs[prior_handoff_count:],
         packet_by_custody_id=packet_by_custody_id,
+        discovery_result_store=discovery_result_store,
     )
     semantic_material = [
         *(
@@ -1083,10 +1097,10 @@ def _execute_searchos_slice_a_iterative_judgment(
         "ag92b_full_search_judgment_invoked": False,
         "provider_calls_attempted": provider_calls[0],
         "provider_calls_completed": provider_calls[1],
-        "existing_gap_recovery_cycle_ref": deepcopy(
+        "recovery_cycle_admission_ref": deepcopy(
             dict(recovery_cycle_ref or {})
         ),
-        "existing_gap_recovery_executed": prior_result is not None,
+        "searchos_recovery_executed": prior_result is not None,
     }
     return SearchOSSliceAProductResult(
         revision_1=revision_1,
@@ -1307,9 +1321,16 @@ def _candidate_option_inputs(
 
 
 def _binding_source_slot_id(slot: Mapping[str, Any]) -> str:
+    slot_ref = dict(slot.get("slot_ref") or {})
+    if slot.get("prior_slot_absent") is True:
+        return (
+            "search-judgment-read-slot:"
+            f"{slot_ref.get('component_id')}:"
+            f"{slot_ref.get('source_obligation_id')}"
+        )
     return str(
         dict(slot.get("prior_terminal_slot_ref") or {}).get("slot_id")
-        or dict(slot.get("slot_ref") or {}).get("slot_id")
+        or slot_ref.get("slot_id")
         or ""
     )
 
@@ -1521,12 +1542,6 @@ def _build_active_need_projection(
     ):
         raise SearchOSRuntimeError("active slot need lineage is internally stale")
 
-    authority = run_kernel.acquisition_authority_snapshot()
-    if dict(dict(authority.get("components_by_id") or {}).get(component_id) or {}) != component_ref:
-        raise SearchOSRuntimeError("active component ref is stale")
-    if dict(dict(authority.get("source_obligations_by_id") or {}).get(obligation_id) or {}) != obligation_ref:
-        raise SearchOSRuntimeError("active source-obligation ref is stale")
-
     contract = dict(
         run_kernel.state.current_answer_contract
         or run_kernel.state.initial_answer_contract
@@ -1536,7 +1551,8 @@ def _build_active_need_projection(
         (
             dict(item)
             for item in contract.get("accepted_answer_component_refs") or ()
-            if isinstance(item, Mapping) and item.get("component_id") == component_id
+            if isinstance(item, Mapping)
+            and item.get("component_id") == component_id
         ),
         {},
     )
@@ -1545,8 +1561,163 @@ def _build_active_need_projection(
         "component_revision": accepted.get("component_revision"),
         "component_digest": accepted.get("component_digest"),
     }
-    if accepted_ref != component_ref:
-        raise SearchOSRuntimeError("accepted component digest does not match active slot")
+    if accepted_ref != {
+        key: component_ref.get(key)
+        for key in (
+            "component_id",
+            "component_revision",
+            "component_digest",
+        )
+    }:
+        raise SearchOSRuntimeError(
+            "accepted component digest does not match active slot"
+        )
+
+    searchos_state = dict(run_kernel.state.searchos_state)
+    active_recovery_ref = dict(
+        searchos_state.get("active_recovery_cycle_ref") or {}
+    )
+    recovery_admission = next(
+        (
+            dict(item)
+            for item in searchos_state.get(
+                "recovery_cycle_admission_history"
+            )
+            or ()
+            if isinstance(item, Mapping)
+            and item.get("cycle_id")
+            == active_recovery_ref.get("cycle_id")
+            and item.get("cycle_admission_digest")
+            == active_recovery_ref.get("cycle_admission_digest")
+        ),
+        {},
+    )
+    if (
+        recovery_admission.get("recovery_classification")
+        == "searched_premise"
+        and slot_ref.get("recovery_cycle_id")
+        == recovery_admission.get("cycle_id")
+    ):
+        if (
+            dict(recovery_admission.get("component_ref") or {})
+            != component_ref
+            or dict(
+                recovery_admission.get("source_obligation_ref") or {}
+            )
+            != obligation_ref
+            or dict(recovery_admission.get("current_contract_ref") or {})
+            != dict(searchos_state.get("answer_contract_ref") or {})
+        ):
+            raise SearchOSRuntimeError(
+                "searched recovery active-need authority is stale"
+            )
+        component_metadata = dict(accepted.get("metadata") or {})
+        source_specification = dict(
+            component_metadata.get(
+                "source_obligation_specification"
+            )
+            or {}
+        )
+        requirement = {
+            "requirement_id": (
+                "searchos-recovery-requirement:"
+                + str(recovery_admission["cycle_id"])
+            ),
+            "component_id": component_id,
+            "requirement_summary": _bounded_judgment_text(
+                accepted.get("user_facing_question"),
+                320,
+            ),
+            "source_obligation_candidate_ids": [obligation_id],
+            "preferred_source_kinds": [
+                str(
+                    source_specification.get("obligation_kind")
+                    or "supporting_fact"
+                )
+            ],
+            "searchos_recovery_cycle_ref": active_recovery_ref,
+        }
+        return {
+            "schema_version": "searchos_active_need_projection_v1",
+            "component": {
+                "component_ref": component_ref,
+                "component_id": component_id,
+                "user_facing_question": _bounded_judgment_text(
+                    accepted.get("user_facing_question"),
+                    500,
+                ),
+                "user_facing_label": _bounded_judgment_text(
+                    accepted.get("user_facing_label"),
+                    220,
+                ),
+                "acceptance_criteria": [
+                    _bounded_judgment_text(item, 300)
+                    for item in accepted.get("acceptance_criteria") or ()
+                    if _bounded_judgment_text(item, 300)
+                ],
+            },
+            "source_obligation": {
+                "source_obligation_ref": obligation_ref,
+                "obligation_id": obligation_id,
+                "kind": str(
+                    source_specification.get("obligation_kind")
+                    or "supporting_fact"
+                ),
+                "strictness": str(
+                    source_specification.get("strictness")
+                    or "required"
+                ),
+                "currentness_requirement": _bounded_judgment_text(
+                    source_specification.get("currentness_requirement"),
+                    220,
+                ),
+                "satisfaction_rule": _bounded_judgment_text(
+                    source_specification.get("satisfaction_rule")
+                    or requirement["requirement_summary"],
+                    320,
+                ),
+                "requirement_summary": requirement[
+                    "requirement_summary"
+                ],
+                "search_constraint": _bounded_judgment_text(
+                    source_specification.get("search_constraint"),
+                    240,
+                ),
+            },
+            "search_work": {
+                "search_work_plan_ref": {
+                    "search_work_plan_id": (
+                        "searchos-recovery-work:"
+                        + str(recovery_admission["cycle_id"])
+                    ),
+                    "search_work_plan_digest": str(
+                        recovery_admission["cycle_admission_digest"]
+                    ),
+                    "authority_kind": (
+                        "searchos_recovery_cycle_admission"
+                    ),
+                },
+                "search_requirement_ref": requirement,
+                "answer_contract_ref": dict(
+                    searchos_state["answer_contract_ref"]
+                ),
+            },
+            "slot": {
+                "slot_ref": slot_ref,
+                "requirement_posture": slot.get(
+                    "requirement_posture"
+                ),
+                "recovery_cycle_ref": active_recovery_ref,
+            },
+            "bounded_transient_projection": True,
+            "retention_allowed": False,
+        }
+
+    authority = run_kernel.acquisition_authority_snapshot()
+    if dict(dict(authority.get("components_by_id") or {}).get(component_id) or {}) != component_ref:
+        raise SearchOSRuntimeError("active component ref is stale")
+    if dict(dict(authority.get("source_obligations_by_id") or {}).get(obligation_id) or {}) != obligation_ref:
+        raise SearchOSRuntimeError("active source-obligation ref is stale")
 
     search_work_plan = dict(run_kernel.state.search_work_plan or {})
     work_component = next(
@@ -1992,7 +2163,7 @@ def build_searchos_semantic_outcomes_by_slot(
                 admission.get("searchos_recovery_cycle_ref") or {}
             )
             recovery_slot_ref = dict(
-                recovery_cycle_ref.get("recovery_slot_ref") or {}
+                slot.get("slot_ref") or {}
             )
             recovery_slot_id = str(
                 recovery_slot_ref.get("slot_id")
@@ -2228,55 +2399,31 @@ def _recovery_admission_matches_slot(
     slot: Mapping[str, Any],
 ) -> bool:
     slot_ref = dict(slot.get("slot_ref") or {})
-    component_ref = dict(slot.get("component_ref") or {})
-    source_obligation_ref = dict(
-        slot.get("source_obligation_ref") or {}
-    )
     cycle_ref = dict(admission.get("searchos_recovery_cycle_ref") or {})
-    cycle_component_ref = dict(cycle_ref.get("component_ref") or {})
-    cycle_source_obligation_ref = dict(
-        cycle_ref.get("source_obligation_ref") or {}
-    )
-    prior_slot_ref = dict(
-        cycle_ref.get("prior_terminal_slot_ref") or {}
-    )
-    recovery_slot_ref = dict(cycle_ref.get("recovery_slot_ref") or {})
-    exact_target_slot = (
-        slot_ref == prior_slot_ref
-        or slot_ref == recovery_slot_ref
-    )
+    slot_cycle = dict(slot.get("recovery_cycle_ref") or {})
     return bool(
         admission.get("admission_status")
         in {"admitted", "admitted_with_caveats"}
-        and admission.get("same_component_reassessment") is True
+        and (
+            admission.get("same_component_reassessment") is True
+            or admission.get("derived_component_recovery") is True
+        )
         and _coverage_ref_matches_slot(
             admission=admission,
             slot=slot,
         )
         and cycle_ref
         and cycle_ref.get("cycle_id")
-        == recovery_slot_ref.get("recovery_cycle_id")
-        and exact_target_slot
-        and recovery_slot_ref.get("component_id")
-        == slot_ref.get("component_id")
-        and recovery_slot_ref.get("source_obligation_id")
-        == slot_ref.get("source_obligation_id")
-        and cycle_component_ref == component_ref
+        == slot_cycle.get("cycle_id")
+        == slot_ref.get("recovery_cycle_id")
         and admission.get("component_id")
-        == component_ref.get("component_id")
+        == dict(slot.get("component_ref") or {}).get("component_id")
         and admission.get("component_revision")
-        == component_ref.get("component_revision")
+        == dict(slot.get("component_ref") or {}).get(
+            "component_revision"
+        )
         and admission.get("component_digest")
-        == component_ref.get("component_digest")
-        and (
-            cycle_source_obligation_ref.get("source_obligation_id")
-            or cycle_source_obligation_ref.get("candidate_id")
-        )
-        == (
-            source_obligation_ref.get("source_obligation_id")
-            or source_obligation_ref.get("candidate_id")
-        )
-        == slot_ref.get("source_obligation_id")
+        == dict(slot.get("component_ref") or {}).get("component_digest")
         and bool(admission.get("evidence_refs"))
     )
 
@@ -2331,6 +2478,7 @@ def _semantic_passages(
     *,
     semantic_handoffs: Sequence[Mapping[str, Any]],
     packet_by_custody_id: Mapping[str, Mapping[str, Any]],
+    discovery_result_store: Any,
 ) -> list[dict[str, Any]]:
     passages: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -2368,12 +2516,25 @@ def _semantic_passages(
                 )
                 if navigation_origin:
                     url = normalize_discovery_result_url(url)
-                read_source_facts: dict[str, str] = {}
+                read_source_facts: dict[str, Any] = {}
+                source_result_ref = discovery_result_store.ref_for_url(
+                    str(url)
+                )
+                source_material = discovery_result_store.material_for_ref(
+                    source_result_ref
+                )
+                if source_material is not None:
+                    read_source_facts.update(
+                        dict(source_material.source_facts)
+                    )
                 tier = classify_source(
                     str(url), str(reference.get("content_title") or "")
                 )
-                if tier != "unknown":
-                    read_source_facts = {"source_tier": tier}
+                if (
+                    tier != "unknown"
+                    and not read_source_facts.get("source_tier")
+                ):
+                    read_source_facts["source_tier"] = tier
                 qualification_lineage: dict[str, Any] = {
                     "navigation_origin": navigation_origin,
                     "canonical_candidate_id": source_id,

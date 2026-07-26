@@ -14,7 +14,19 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
-CONTRACT_AMENDMENT_RECORD_SCHEMA_VERSION = "contract_amendment_record_ag_sem_04_v1"
+from core.analyst_query_resolution_proposal import (
+    CLASS_INFERRED_CONCLUSION,
+    CLASS_SEARCHED_PREMISE,
+    validate_bound_analyst_query_resolution_proposal,
+)
+from core.semantic_contract_foundation import (
+    AnswerComponentContract,
+    ComponentPurpose,
+    SupportKind,
+    validate_answer_component_contract_set,
+)
+
+CONTRACT_AMENDMENT_RECORD_SCHEMA_VERSION = "contract_amendment_record_v2"
 CONTRACT_AMENDMENT_RECORD_TRACE_KEY = "contract_amendment_record"
 REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION = (
     "required_to_fulfill_existing_accepted_user_obligation"
@@ -386,6 +398,17 @@ class ContractAmendmentRecord:
     parent_contract_digest: str
     trigger_refs: AmendmentTriggerRefs
     operations: tuple[AmendmentOperation, ...]
+    analyst_query_resolution_proposal_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
+    originating_role_artifact_ref: Mapping[str, Any] = field(default_factory=dict)
+    parent_graph_ref: Mapping[str, Any] = field(default_factory=dict)
+    target_component_refs: tuple[Mapping[str, Any], ...] = ()
+    dependency_component_refs: tuple[Mapping[str, Any], ...] = ()
+    material_necessity_rationale: str | None = None
+    user_query_broadening: bool = False
+    recovery_generation_parent_ref: str | None = None
+    recovery_generation_depth: int | None = None
     parent_question_meaning_record_id: str | None = None
     parent_question_meaning_record_digest: str | None = None
     accepted_contract_ref: str | None = None
@@ -426,6 +449,46 @@ class ContractAmendmentRecord:
             _clean_token(self.parent_contract_digest, limit=128) or "",
         )
         object.__setattr__(self, "operations", tuple(self.operations or ()))
+        object.__setattr__(
+            self,
+            "analyst_query_resolution_proposal_ref",
+            _json_safe(self.analyst_query_resolution_proposal_ref),
+        )
+        object.__setattr__(
+            self,
+            "originating_role_artifact_ref",
+            _json_safe(self.originating_role_artifact_ref),
+        )
+        object.__setattr__(self, "parent_graph_ref", _json_safe(self.parent_graph_ref))
+        object.__setattr__(
+            self,
+            "target_component_refs",
+            tuple(_json_safe(item) for item in self.target_component_refs or ()),
+        )
+        object.__setattr__(
+            self,
+            "dependency_component_refs",
+            tuple(
+                _json_safe(item) for item in self.dependency_component_refs or ()
+            ),
+        )
+        object.__setattr__(
+            self,
+            "material_necessity_rationale",
+            _clean_text(self.material_necessity_rationale, limit=800),
+        )
+        object.__setattr__(self, "user_query_broadening", bool(self.user_query_broadening))
+        object.__setattr__(
+            self,
+            "recovery_generation_parent_ref",
+            _clean_token(self.recovery_generation_parent_ref, limit=200),
+        )
+        if self.recovery_generation_depth is not None:
+            object.__setattr__(
+                self,
+                "recovery_generation_depth",
+                int(self.recovery_generation_depth),
+            )
         object.__setattr__(self, "affected_component_refs", tuple(self.affected_component_refs or ()))
         object.__setattr__(
             self,
@@ -522,6 +585,73 @@ class ContractAmendmentRecord:
                 errors.append(f"amendment operation {operation.operation_id} requires typed before/after or payload")
         if not self.trigger_refs.has_trigger:
             errors.append("contract amendment record requires at least one trigger ref")
+
+        proposal_ref = self.analyst_query_resolution_proposal_ref
+        if proposal_ref:
+            if proposal_ref.get("schema_version") != (
+                "analyst_query_resolution_proposal_v1"
+            ):
+                errors.append(
+                    "ContractAmendment v2 requires an exact AnalystQueryResolutionProposalV1 ref"
+                )
+            if not all(
+                _clean_token(proposal_ref.get(key), limit=180)
+                for key in (
+                    "proposal_id",
+                    "proposal_digest",
+                    "stable_replay_key",
+                    "classification",
+                )
+            ):
+                errors.append(
+                    "ContractAmendment v2 Analyst proposal ref is incomplete"
+                )
+            if not all(
+                _clean_token(self.originating_role_artifact_ref.get(key), limit=180)
+                for key in (
+                    "artifact_id",
+                    "artifact_digest",
+                    "input_packet_digest",
+                    "logical_evaluation_key",
+                )
+            ):
+                errors.append(
+                    "ContractAmendment v2 requires the exact originating role artifact ref"
+                )
+            if not self.material_necessity_rationale:
+                errors.append(
+                    "ContractAmendment v2 requires material necessity rationale"
+                )
+            if self.user_query_broadening:
+                errors.append(
+                    "ContractAmendment v2 cannot broaden the accepted user query"
+                )
+            classification = proposal_ref.get("classification")
+            kinds = [operation.operation_kind.value for operation in self.operations]
+            if classification == "searched_premise":
+                if kinds.count("add_component") != 1 or "revise_component" not in kinds:
+                    errors.append(
+                        "searched-premise amendment must atomically add one component and revise its answer target"
+                    )
+                if (
+                    not self.recovery_generation_parent_ref
+                    or self.recovery_generation_depth not in {1, 2, 3}
+                ):
+                    errors.append(
+                        "searched-premise amendment requires a bounded recovery generation parent/depth"
+                    )
+            if classification == "inferred_conclusion":
+                encoded_operations = _collect_keys(
+                    [operation.to_dict() for operation in self.operations]
+                )
+                if {
+                    "source_obligation_candidate_ids",
+                    "source_obligation_candidate_refs",
+                    "recovery_generation",
+                } & encoded_operations:
+                    errors.append(
+                        "inferred-conclusion amendment cannot create source obligations or searched generations"
+                    )
 
         if any(operation.changes_component for operation in self.operations):
             incomplete = [ref for ref in self.affected_component_refs if not ref.complete]
@@ -628,6 +758,15 @@ class ContractAmendmentRecord:
                 limit=128,
             ),
             "accepted_contract_ref": _clean_token(self.accepted_contract_ref),
+            "analyst_query_resolution_proposal_ref": self.analyst_query_resolution_proposal_ref,
+            "originating_role_artifact_ref": self.originating_role_artifact_ref,
+            "parent_graph_ref": self.parent_graph_ref,
+            "target_component_refs": list(self.target_component_refs),
+            "dependency_component_refs": list(self.dependency_component_refs),
+            "material_necessity_rationale": self.material_necessity_rationale,
+            "user_query_broadening": self.user_query_broadening,
+            "recovery_generation_parent_ref": self.recovery_generation_parent_ref,
+            "recovery_generation_depth": self.recovery_generation_depth,
             "trigger_refs": self.trigger_refs.to_dict(),
             "affected_component_refs": [ref.to_dict() for ref in self.affected_component_refs],
             "operations": [operation.to_dict() for operation in self.operations],
@@ -676,6 +815,327 @@ class ContractAmendmentRecord:
 
     def to_trace_fragment(self) -> dict[str, Any]:
         return {CONTRACT_AMENDMENT_RECORD_TRACE_KEY: self.to_dict()}
+
+
+def _component_from_contract_ref(value: Mapping[str, Any]) -> AnswerComponentContract:
+    return AnswerComponentContract(
+        component_id=str(value.get("component_id") or ""),
+        component_revision=str(value.get("component_revision") or "1"),
+        component_digest=value.get("component_digest"),
+        component_purpose=value.get("component_purpose")
+        or ComponentPurpose.USER_FACING_ANSWER_TARGET,
+        user_facing_label=str(value.get("user_facing_label") or ""),
+        user_facing_question=str(value.get("user_facing_question") or ""),
+        requirement_posture=value.get("requirement_posture") or "required",
+        acceptance_criteria=tuple(value.get("acceptance_criteria") or ()),
+        semantic_slot_ids=tuple(value.get("semantic_slot_ids") or ()),
+        source_obligation_candidate_ids=tuple(
+            value.get("source_obligation_candidate_ids") or ()
+        ),
+        source_obligation_candidate_refs=tuple(
+            value.get("source_obligation_candidate_refs") or ()
+        ),
+        allowed_support_kinds=tuple(
+            value.get("allowed_support_kinds") or ("direct",)
+        ),
+        max_inference_depth=int(value.get("max_inference_depth") or 0),
+        normalization_policy=value.get("normalization_policy"),
+        calculation_policy=value.get("calculation_policy"),
+        dependency_component_ids=tuple(
+            value.get("dependency_component_ids") or ()
+        ),
+        partial_answer_policy=value.get("partial_answer_policy")
+        or "qualify_visible_gap",
+        mandatory_caveats=tuple(value.get("mandatory_caveats") or ()),
+        prohibited_upgrades=tuple(value.get("prohibited_upgrades") or ()),
+        materiality=value.get("materiality") or "material",
+        metadata=value.get("metadata") if isinstance(value.get("metadata"), Mapping) else {},
+    )
+
+
+def build_contract_amendment_v2_from_analyst_proposal(
+    *,
+    proposal: Mapping[str, Any],
+    current_contract: Mapping[str, Any],
+    new_component_spec: Mapping[str, Any],
+    request_digest: str,
+    requested_mode: str,
+    coverage_invalidation_candidates: Sequence[
+        CoverageInvalidationCandidateRef
+    ] = (),
+) -> ContractAmendmentRecord:
+    """Build one atomic amendment from an independently bound Analyst proposal."""
+
+    bound = validate_bound_analyst_query_resolution_proposal(proposal)
+    classification = str(bound["classification"])
+    if classification not in {
+        CLASS_SEARCHED_PREMISE,
+        CLASS_INFERRED_CONCLUSION,
+    }:
+        raise ValueError(
+            "existing_component_gap proposals route to Boundary A and do not create an amendment"
+        )
+    parent_version = _clean_token(
+        current_contract.get("accepted_contract_version")
+    )
+    parent_digest = _clean_token(
+        current_contract.get("accepted_contract_digest"),
+        limit=128,
+    )
+    if not parent_version or not parent_digest:
+        raise ValueError("ContractAmendment v2 requires a current accepted contract")
+    recorded_parent = bound.get("parent_contract_ref") or {}
+    if (
+        recorded_parent.get("accepted_contract_version") != parent_version
+        or recorded_parent.get("accepted_contract_digest") != parent_digest
+    ):
+        raise ValueError(
+            "Analyst proposal recorded parent contract is not the current accepted contract"
+        )
+
+    current_components = [
+        _component_from_contract_ref(item)
+        for item in current_contract.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    current_by_id = {item.component_id: item for item in current_components}
+    variant = bound["variant_payload"]
+    operations: list[AmendmentOperation] = []
+    affected_refs: list[AffectedComponentRef] = []
+    target_refs: list[Mapping[str, Any]] = []
+    dependency_refs: list[Mapping[str, Any]] = []
+    generation_parent_ref: str | None = None
+    generation_depth: int | None = None
+
+    component_kwargs = dict(new_component_spec)
+    component_kwargs.pop("component_digest", None)
+    if classification == CLASS_SEARCHED_PREMISE:
+        nonmechanical_overrides = set(component_kwargs) - {
+            "component_id",
+            "component_revision",
+            "metadata",
+        }
+        if nonmechanical_overrides:
+            raise ValueError(
+                "searched-premise component semantics must come from the Analyst proposal, not amendment machinery"
+            )
+        source_spec = variant["source_obligation_specification"]
+        source_candidate_id = _clean_token(
+            source_spec.get("candidate_id")
+            or source_spec.get("source_obligation_candidate_id")
+        )
+        if not source_candidate_id:
+            raise ValueError(
+                "searched premise source-obligation specification requires candidate_id"
+            )
+        generation = variant["recovery_generation"]
+        generation_parent_ref = str(generation["parent_ref"])
+        generation_depth = int(generation["depth"])
+        component_kwargs.update(
+            {
+                "component_purpose": ComponentPurpose.SUPPORTING_PREMISE,
+                "user_facing_label": variant["user_facing_label"],
+                "user_facing_question": variant["user_facing_question"],
+                "acceptance_criteria": tuple(variant["acceptance_criteria"]),
+                "requirement_posture": variant["requirement_posture"],
+                "materiality": variant["materiality"],
+                "partial_answer_policy": variant["partial_answer_policy"],
+                "mandatory_caveats": tuple(variant["mandatory_caveats"]),
+                "prohibited_upgrades": tuple(variant["prohibited_upgrades"]),
+                "allowed_support_kinds": (SupportKind.DIRECT,),
+                "max_inference_depth": 0,
+                "source_obligation_candidate_ids": (source_candidate_id,),
+                "metadata": {
+                    **dict(component_kwargs.get("metadata") or {}),
+                    "searched_premise": True,
+                    "source_obligation_specification": dict(source_spec),
+                    "normalized_premise_identity": variant["normalized_premise_identity"],
+                    "premise_semantics": variant["premise_semantics"],
+                    "recovery_generation_parent_ref": generation_parent_ref,
+                    "recovery_generation_depth": generation_depth,
+                },
+            }
+        )
+    else:
+        if component_kwargs.get("source_obligation_candidate_ids") or component_kwargs.get(
+            "source_obligation_candidate_refs"
+        ):
+            raise ValueError(
+                "inferred-conclusion target amendment cannot create source obligations"
+            )
+
+    new_component = AnswerComponentContract(**component_kwargs)
+    if new_component.component_id in current_by_id:
+        raise ValueError("ContractAmendment v2 cannot add a duplicate component")
+    operations.append(
+        AmendmentOperation(
+            operation_id=f"add:{new_component.component_id}",
+            operation_kind=AmendmentOperationKind.ADD_COMPONENT,
+            operation_payload={
+                "normalized_operation_kind": "add_component",
+                "component": new_component.to_dict(),
+            },
+            component_revision_changed=True,
+            component_digest_changed=True,
+        )
+    )
+
+    revised_components: dict[str, AnswerComponentContract] = {}
+    if classification == CLASS_SEARCHED_PREMISE:
+        for target_ref in variant["answer_target_refs"]:
+            target_id = _clean_token(target_ref.get("component_id"))
+            if not target_id or target_id not in current_by_id:
+                raise ValueError(
+                    "searched-premise proposal target is absent from the current contract"
+                )
+            current = current_by_id[target_id]
+            if (
+                target_ref.get("component_revision") != current.component_revision
+                or target_ref.get("component_digest") != current.component_digest
+            ):
+                raise ValueError(
+                    f"searched-premise proposal target {target_id} is stale"
+                )
+            dependencies = tuple(
+                sorted(
+                    {
+                        *current.dependency_component_ids,
+                        new_component.component_id,
+                    }
+                )
+            )
+            if SupportKind.INFERRED not in current.allowed_support_kinds or current.max_inference_depth < 1:
+                raise ValueError("searched-premise target must already permit inferred support before amendment")
+            current_payload = current.to_dict()
+            current_payload.pop("component_digest", None)
+            current_payload.update(
+                {
+                    "component_revision": (
+                        f"{current.component_revision}+"
+                        f"{bound['proposal_digest'][:8]}"
+                    ),
+                    "dependency_component_ids": dependencies,
+                }
+            )
+            revised = AnswerComponentContract(**current_payload)
+            revised_components[target_id] = revised
+            target_refs.append(target_ref)
+            affected_refs.append(
+                AffectedComponentRef(
+                    component_id=current.component_id,
+                    component_revision=current.component_revision,
+                    component_digest=str(current.component_digest),
+                    relationship="answer_target_revised_for_searched_premise",
+                )
+            )
+            operations.append(
+                AmendmentOperation(
+                    operation_id=f"revise:{target_id}",
+                    operation_kind=AmendmentOperationKind.REVISE_COMPONENT,
+                    before_payload={"component": current.to_dict()},
+                    after_payload={"component": revised.to_dict()},
+                    component_revision_changed=True,
+                    component_digest_changed=True,
+                )
+            )
+        dependency_refs = list(variant["current_dependency_component_refs"])
+    else:
+        dependency_refs = list(variant["current_admitted_premise_node_refs"])
+
+    candidate_components = [
+        revised_components.get(component.component_id, component)
+        for component in current_components
+    ]
+    candidate_components.append(new_component)
+    matrix = validate_answer_component_contract_set(
+        candidate_components,
+        requested_mode=requested_mode,
+    )
+    matrix.raise_for_errors()
+
+    proposal_ref = {
+        "schema_version": bound["schema_version"],
+        "proposal_id": bound["proposal_id"],
+        "proposal_digest": bound["proposal_digest"],
+        "stable_replay_key": bound["stable_replay_key"],
+        "classification": bound["classification"],
+        "local_target_key": bound["local_target_key"],
+    }
+    record_identity = {
+        "proposal_ref": proposal_ref,
+        "parent_contract_version": parent_version,
+        "parent_contract_digest": parent_digest,
+        "operations": [operation.to_dict() for operation in operations],
+    }
+    record_id = "contract-amendment:" + _digest_json(record_identity)[:24]
+    record = ContractAmendmentRecord(
+        amendment_record_id=record_id,
+        run_id=str(bound["run_id"]),
+        request_id=str(bound["request_id"]),
+        request_digest=request_digest,
+        parent_contract_version=parent_version,
+        parent_contract_digest=parent_digest,
+        parent_question_meaning_record_id=_clean_token(
+            current_contract.get("parent_question_meaning_record_id")
+        ),
+        parent_question_meaning_record_digest=_clean_token(
+            current_contract.get("parent_question_meaning_record_digest"),
+            limit=128,
+        ),
+        accepted_contract_ref=f"contract:{parent_version}:accepted",
+        analyst_query_resolution_proposal_ref=proposal_ref,
+        originating_role_artifact_ref=dict(bound["role_artifact_ref"]),
+        parent_graph_ref=dict(bound.get("parent_graph_ref") or {}),
+        target_component_refs=tuple(target_refs),
+        dependency_component_refs=tuple(dependency_refs),
+        material_necessity_rationale=str(
+            variant.get("necessity_rationale")
+            or "Required to fulfill the existing accepted user obligation."
+        ),
+        user_query_broadening=False,
+        recovery_generation_parent_ref=generation_parent_ref,
+        recovery_generation_depth=generation_depth,
+        trigger_refs=AmendmentTriggerRefs(
+            gap_refs=(str(bound["proposal_id"]),),
+            metadata={
+                "analyst_query_resolution_proposal_digest": bound[
+                    "proposal_digest"
+                ]
+            },
+        ),
+        affected_component_refs=tuple(affected_refs),
+        operations=tuple(operations),
+        materiality=MaterialityPosture.MATERIAL,
+        user_confirmation_posture=(
+            UserConfirmationPosture.REQUIRED_TO_FULFILL_EXISTING_ACCEPTED_USER_OBLIGATION
+        ),
+        monotonicity=MonotonicityPosture.STRENGTHENS,
+        weakening_posture=WeakeningPosture.NONE,
+        mode_permission_posture=ModePermissionPosture.WITHIN_MODE,
+        disposition=ProposalDisposition.ELIGIBLE_FOR_FUTURE_ACCEPTANCE,
+        candidate_invalidated_coverage_refs=tuple(
+            coverage_invalidation_candidates
+        ),
+        stale_coverage_candidate_posture=(
+            StaleCoverageCandidatePosture.CANDIDATE_INVALIDATION_REQUIRED
+        ),
+        required_caveats=tuple(variant.get("caveats") or ()),
+        prohibited_upgrades=tuple(variant.get("prohibited_upgrades") or ()),
+        lineage=AmendmentLineage(
+            created_by="RunKernel.ContractAmendmentV2",
+            created_from=(
+                "analyst_query_resolution_proposal_v1",
+                "current_answer_contract",
+            ),
+            parent_record_digest=str(bound["proposal_digest"]),
+        ),
+        metadata={
+            "atomic_component_and_dependency_mutation": True,
+            "analyst_semantics_preserved": True,
+            "runkernel_assigned_identifiers_and_digests": True,
+        },
+    )
+    return record.require_valid()
 
 
 def _clean_text(value: Any, *, limit: int = 500) -> str | None:
@@ -787,6 +1247,7 @@ __all__ = [
     "AmendmentOperationKind",
     "AmendmentTriggerRefs",
     "ContractAmendmentRecord",
+    "build_contract_amendment_v2_from_analyst_proposal",
     "ContractAmendmentValidationResult",
     "CoverageInvalidationCandidateRef",
     "MaterialityPosture",

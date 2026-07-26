@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 import core.multicomponent_graph_scheduling as scheduling
+import core.ordinary_multicomponent_synthesis_runtime as multicomponent_runtime
 import core.pipeline_orchestrator as orchestrator
 from core.component_work_graph_v1 import (
     finalize_component_work_graph_v1,
@@ -56,7 +57,6 @@ from core.multicomponent_role_runtime import (
 )
 from core.protocols import NullStatusWriter
 from core.run_kernel import (
-    MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE,
     ActionType,
     Observation,
     RunKernel,
@@ -78,10 +78,6 @@ from tests.helpers.offline_ordinary_pipeline import (
 from tests.test_multicomponent_component_work_graph_v1 import (
     _structured_graph,
 )
-from tests.test_multicomponent_dynamic_graph_recovery_01 import (
-    DynamicNorthstarHarness,
-    _forbid_direct_semantic_producer,
-)
 from tests.test_multicomponent_ordinary_end_to_end_synthesis_01 import (
     NORTHSTAR_REPORT,
     NorthstarHarness,
@@ -89,19 +85,32 @@ from tests.test_multicomponent_ordinary_end_to_end_synthesis_01 import (
 from tests.test_multicomponent_selective_recomputation_01 import (
     _closure_fixture,
 )
+from tests.test_searchos_boundary_b_ordinary_product_01 import (
+    BoundaryBOrdinaryHarness,
+)
 
 
 def _run_product(tmp_path: Path, *, dynamic: bool = False, total: int | None = None):
     monkeypatch = pytest.MonkeyPatch()
     scrub_offline_runtime(monkeypatch)
-    _forbid_direct_semantic_producer(monkeypatch)
+
+    def forbidden_direct_semantic_producer(*_args, **_kwargs):
+        raise AssertionError(
+            "qualifying multicomponent run cannot use direct semantic authority"
+        )
+
+    monkeypatch.setattr(
+        multicomponent_runtime,
+        "execute_ordinary_semantic_producer_handoff_from_scope",
+        forbidden_direct_semantic_producer,
+    )
     if total is not None:
         monkeypatch.setattr(
             scheduling,
             "derive_multicomponent_compatibility_envelope",
             lambda: total,
         )
-    harness = DynamicNorthstarHarness(tmp_path) if dynamic else NorthstarHarness(tmp_path)
+    harness = BoundaryBOrdinaryHarness(tmp_path) if dynamic else NorthstarHarness(tmp_path)
     captured = install_handoff_capture(
         monkeypatch,
         capture_stages=(
@@ -334,12 +343,19 @@ def test_05_full_product_path_lease_coverage(dynamic_product) -> None:
     assert captured["author_handoff_called"] is True
     works = [lease["work"] for lease in _scheduler(kernel)["lease_history"]]
     assert {work["role"] for work in works} == set(MULTICOMPONENT_ROLE_CALL_LIMITS)
-    assert any(work.get("recovery_authorization_ref") for work in works)
-    assert any(work.get("selective_closure_ref") for work in works)
-    assert any(work.get("output_schema_variant") == SELECTIVE_CROSS_COMPONENT_SCHEMA for work in works)
+    assert not any(work.get("recovery_authorization_ref") for work in works)
+    assert not any(work.get("selective_closure_ref") for work in works)
+    assert len(
+        kernel.state.searchos_state["recovery_cycle_admission_history"]
+    ) == 1
+    assert len(
+        kernel.state.searchos_state["recovery_cycle_terminal_history"]
+    ) == 1
     assert any(
-        work["role"] == ROLE_SCRUTINEER and work.get("selective_closure_ref")
-        for work in works
+        stage.startswith(
+            "multicomponent_role:cross_component_analyst:selective:"
+        )
+        for stage in kernel.state.projections
     )
 
 
@@ -520,18 +536,34 @@ def test_13_wrong_and_caller_authored_bindings_are_rejected() -> None:
         )
 
 
-def test_14_selective_recovery_schedules_only_affected_branches(dynamic_product) -> None:
+def test_14_selective_recovery_reproves_only_affected_branches(dynamic_product) -> None:
     _outcome, kernel, _captured, _harness = dynamic_product
     works = [lease["work"] for lease in _scheduler(kernel)["lease_history"]]
-    selective = [work for work in works if work.get("selective_closure_ref")]
-    assert {work.get("synthesis_key") for work in selective if work["role"] == ROLE_SYNTHESIS_DPRIME} == {
-        "filing_route",
-        "applicant_guidance",
-    }
-    benefit = [work for work in works if work.get("synthesis_key") == "benefit_summary"]
-    assert len(benefit) == 1
-    assert not benefit[0].get("selective_closure_ref")
-    assert any(work["role"] == ROLE_SCRUTINEER for work in selective)
+    assert not [work for work in works if work.get("selective_closure_ref")]
+    closure = kernel.state.projections[
+        "multicomponent_selective_recomputation_closure"
+    ]
+    assert closure["affected_synthesis_keys"] == ["target_E"]
+    assert closure["unaffected_active_synthesis_keys"] == []
+    selective_dprime_actions = [
+        action
+        for action in kernel.state.issued_actions.values()
+        if action.inputs.get("role") == ROLE_SYNTHESIS_DPRIME
+        and ":selective:" in str(
+            action.inputs.get("logical_evaluation_key")
+        )
+    ]
+    assert len(selective_dprime_actions) == 1
+    assert str(
+        selective_dprime_actions[0].inputs["logical_evaluation_key"]
+    ).startswith("target_E:")
+    assert any(
+        action.inputs.get("role") == ROLE_SCRUTINEER
+        and ":selective:" in str(
+            action.inputs.get("logical_evaluation_key")
+        )
+        for action in kernel.state.issued_actions.values()
+    )
 
 
 def test_15_early_exhaustion_returns_safe_blocked_runoutcome(tmp_path: Path) -> None:
@@ -717,7 +749,6 @@ def test_23_selected_product_path_does_not_consume_legacy_semantic_loops(
         "_execute_fresh_resynthesis",
         "_execute_selective_reconstruction",
         "_execute_selective_resynthesis",
-        "_attempt_dynamic_recovery",
     ):
         monkeypatch.setattr(runtime, name, forbidden)
     outcome, kernel, _captured, _harness = _run_product(tmp_path, dynamic=True)
@@ -947,12 +978,6 @@ def test_32_recovery_and_selective_transitions_record_canonical_bindings(
     dynamic_product,
 ) -> None:
     _outcome, kernel, _captured, _harness = dynamic_product
-    transitions = _scheduler(kernel)["transition_history"]
-    contract_transition = next(
-        item
-        for item in transitions
-        if item["transition"] == "contract_amendment_applied"
-    )
     assert (
         kernel.state.current_answer_contract["accepted_contract_digest"]
         != kernel.state.initial_answer_contract["accepted_contract_digest"]
@@ -962,322 +987,115 @@ def test_32_recovery_and_selective_transitions_record_canonical_bindings(
     ]["accepted_contract_digest"] == kernel.state.current_answer_contract[
         "accepted_contract_digest"
     ]
-    assert contract_transition["authority_ref"]["contract_ref"][
-        "accepted_contract_digest"
-    ] == kernel.state.current_answer_contract["accepted_contract_digest"]
     closure = kernel.state.projections[
         "multicomponent_selective_recomputation_closure"
     ]
-    closure_transition = next(
-        item
-        for item in transitions
-        if item["transition"] == "selective_closure_installed"
-    )
-    assert closure_transition["authority_ref"]["selective_closure_ref"] == {
-        "closure_id": closure["closure_id"],
-        "closure_digest": closure["closure_digest"],
-    }
     graph = kernel.state.projections["multicomponent_component_work_graph_v1"]
-    graph_transitions = [
-        item
-        for item in transitions
-        if item["transition"] == "component_work_graph_reduced"
-    ]
-    assert graph_transitions[-1]["authority_ref"]["graph_ref"][
-        "graph_digest"
-    ] == graph["graph_digest"]
-    assert any(
-        item["transition"] == "recovery_scheduler_context_registered"
-        for item in transitions
+    admission = kernel.state.contract_amendment_admission_projection
+    application = kernel.state.contract_amendment_application_projection
+    expected_admission_ref = {
+        "amendment_record_id": admission["amendment_record_id"],
+        "amendment_record_digest": admission["amendment_record_digest"],
+        "authorized_action_id": admission["authorized_action_id"],
+        "admission_digest": admission["admission_digest"],
+    }
+    expected_application_ref = {
+        "amendment_record_id": application["amendment_record_id"],
+        "authorized_action_id": application["authorized_action_id"],
+        "application_digest": application["application_digest"],
+    }
+    assert closure["contract_amendment_admission_ref"] == (
+        expected_admission_ref
     )
-    recovery_work = [
-        lease["work"]
-        for lease in _scheduler(kernel)["lease_history"]
+    assert closure["contract_amendment_application_ref"] == (
+        expected_application_ref
+    )
+    terminal = kernel.state.projections[
+        "searchos_recovery_cycle_terminal"
+    ]
+    admission_history = kernel.state.searchos_state[
+        "recovery_cycle_admission_history"
+    ]
+    assert len(admission_history) == 1
+    assert terminal["cycle_admission_ref"] == {
+        key: admission_history[0][key]
+        for key in (
+            "schema_version",
+            "cycle_id",
+            "cycle_admission_id",
+            "cycle_admission_digest",
+            "stable_replay_key",
+            "recovery_classification",
+            "generation_depth",
+        )
+    }
+    assert graph["graph_status"] == "ready"
+    assert graph["selective_recomputation_rounds"] == 1
+    assert graph["whole_graph_resynthesis_rounds"] == 0
+    assert not any(
+        item["transition"] == "recovery_scheduler_context_registered"
+        for item in _scheduler(kernel)["transition_history"]
+    )
+
+
+def test_33_legacy_recovery_scheduler_authority_is_absent() -> None:
+    assert not hasattr(
+        RunKernel,
+        "register_multicomponent_recovery_scheduler_context",
+    )
+    assert not hasattr(
+        RunKernel,
+        "authorize_multicomponent_dynamic_recovery",
+    )
+
+
+def test_34_searchos_recovery_does_not_register_scheduler_work(
+    dynamic_product,
+) -> None:
+    _outcome, kernel, _captured, _harness = dynamic_product
+    scheduler = _scheduler(kernel)
+    assert not [
+        lease
+        for lease in scheduler["lease_history"]
         if lease["work"].get("recovery_authorization_ref")
     ]
-    selective_work = [
-        lease["work"]
-        for lease in _scheduler(kernel)["lease_history"]
-        if lease["work"].get("selective_closure_ref")
-    ]
-    assert recovery_work
-    assert selective_work
-    authorization = kernel.state.projections[
-        MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
-    ]
-    admission = kernel.state.contract_amendment_admission_projection
-    application = kernel.state.contract_amendment_application_projection
-    expected_recovery = {
-        "recovery_authorization_id": authorization["authorization_id"],
-        "recovery_authorization_digest": authorization["authorization_digest"],
-    }
-    expected_admission = {
-        "amendment_record_id": admission["amendment_record_id"],
-        "amendment_record_digest": admission["amendment_record_digest"],
-        "authorized_action_id": admission["authorized_action_id"],
-        "admission_digest": admission["admission_digest"],
-    }
-    expected_application = {
-        "amendment_record_id": application["amendment_record_id"],
-        "authorized_action_id": application["authorized_action_id"],
-        "application_digest": application["application_digest"],
-    }
-    assert all(
-        work["recovery_authorization_ref"] == expected_recovery
-        and work["contract_amendment_admission_ref"] == expected_admission
-        and work["contract_amendment_application_ref"] == expected_application
-        for work in recovery_work
-    )
-    assert all(
-        work["selective_closure_ref"]["closure_digest"]
-        == closure["closure_digest"]
-        for work in selective_work
-    )
-
-
-def _recovery_registration_fixture() -> tuple[
-    RunKernel,
-    str,
-    dict[str, Any],
-    dict[str, Any],
-    dict[str, Any],
-    dict[str, Any],
-]:
-    kernel, graph, _closure = _closure_fixture()
-    packets = _initialize_existing_graph_scheduler(
-        kernel,
-        requested_synthesis_directive=str(graph["requested_synthesis_directive"]),
-    )
-    recovered = next(
+    assert not [
         item
-        for item in kernel.state.current_answer_contract[
-            "accepted_answer_component_refs"
-        ]
-        if item["component_id"] not in {
-            node["component_id"] for node in graph["component_nodes"]
-        }
-    )
-    component_id = str(recovered["component_id"])
-    packet = packets[component_id]
-    authorization = kernel.state.projections[
-        MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+        for item in scheduler["transition_history"]
+        if "recovery" in str(item.get("transition") or "")
     ]
-    admission = kernel.state.contract_amendment_admission_projection
-    application = kernel.state.contract_amendment_application_projection
-    recovery_ref = {
-        "authorization_id": authorization["authorization_id"],
-        "authorization_digest": authorization["authorization_digest"],
-    }
-    admission_ref = {
-        "amendment_record_id": admission["amendment_record_id"],
-        "amendment_record_digest": admission["amendment_record_digest"],
-        "authorized_action_id": admission["authorized_action_id"],
-        "admission_digest": admission["admission_digest"],
-    }
-    application_ref = {
-        "amendment_record_id": application["amendment_record_id"],
-        "authorized_action_id": application["authorized_action_id"],
-        "application_digest": application["application_digest"],
-    }
-    kernel.register_multicomponent_recovery_scheduler_context(
-        component_id=component_id,
-        analyst_input_packet=packet,
-        recovery_authorization_ref=recovery_ref,
-        contract_amendment_admission_ref=admission_ref,
-        contract_amendment_application_ref=application_ref,
-    )
-    return (
-        kernel,
-        component_id,
-        packet,
-        recovery_ref,
-        admission_ref,
-        application_ref,
-    )
+    assert len(
+        kernel.state.searchos_state["recovery_cycle_admission_history"]
+    ) == 1
 
 
-def _snapshot_recovery_registration_state(kernel: RunKernel) -> dict[str, Any]:
-    return {
-        "scheduler": deepcopy(_scheduler(kernel)),
-        "scheduler_context": deepcopy(kernel.state.multicomponent_scheduler_context),
-    }
-
-
-@pytest.mark.parametrize(
-    ("forged_field", "forged_value"),
-    [
-        ("recovery", {"authorization_id": "forged-auth", "authorization_digest": "forged-digest"}),
-        (
-            "admission",
-            {
-                "amendment_record_id": "forged-amendment",
-                "amendment_record_digest": "forged-amendment-digest",
-                "authorized_action_id": "forged-admission-action",
-                "admission_digest": "forged-admission-digest",
-            },
-        ),
-        (
-            "application",
-            {
-                "amendment_record_id": "forged-amendment",
-                "authorized_action_id": "forged-application-action",
-                "application_digest": "forged-application-digest",
-            },
-        ),
-    ],
-)
-def test_33_forged_recovery_context_refs_are_rejected_without_mutation(
-    forged_field: str,
-    forged_value: dict[str, Any],
+def test_35_recovery_admission_and_terminal_are_immutable_records(
+    dynamic_product,
 ) -> None:
-    (
-        kernel,
-        component_id,
-        packet,
-        recovery_ref,
-        admission_ref,
-        application_ref,
-    ) = _recovery_registration_fixture()
-    before = _snapshot_recovery_registration_state(kernel)
-    kwargs = {
-        "component_id": component_id,
-        "analyst_input_packet": packet,
-        "recovery_authorization_ref": recovery_ref,
-        "contract_amendment_admission_ref": admission_ref,
-        "contract_amendment_application_ref": application_ref,
-    }
-    if forged_field == "recovery":
-        kwargs["recovery_authorization_ref"] = forged_value
-    elif forged_field == "admission":
-        kwargs["contract_amendment_admission_ref"] = forged_value
-    else:
-        kwargs["contract_amendment_application_ref"] = forged_value
-    with pytest.raises(
-        RunKernelTransitionError,
-        match="recovery scheduler context refs must match canonical",
-    ):
-        kernel.register_multicomponent_recovery_scheduler_context(**kwargs)
-    after = _snapshot_recovery_registration_state(kernel)
-    assert after == before
-
-
-def test_34_exact_duplicate_recovery_registration_is_idempotent() -> None:
-    (
-        kernel,
-        component_id,
-        packet,
-        recovery_ref,
-        admission_ref,
-        application_ref,
-    ) = _recovery_registration_fixture()
-    before = _snapshot_recovery_registration_state(kernel)
-    kernel.register_multicomponent_recovery_scheduler_context(
-        component_id=component_id,
-        analyst_input_packet=packet,
-        recovery_authorization_ref=recovery_ref,
-        contract_amendment_admission_ref=admission_ref,
-        contract_amendment_application_ref=application_ref,
-    )
-    after = _snapshot_recovery_registration_state(kernel)
-    assert after == before
-    assert (
-        after["scheduler"]["transition_history"]
-        == before["scheduler"]["transition_history"]
-    )
-    assert after["scheduler"]["lease_history"] == before["scheduler"]["lease_history"]
-    assert (
-        after["scheduler"]["compatibility_envelope"]
-        == before["scheduler"]["compatibility_envelope"]
-    )
-    assert after["scheduler"]["scheduler_revision"] == before["scheduler"][
-        "scheduler_revision"
+    _outcome, kernel, _captured, _harness = dynamic_product
+    admissions = kernel.state.searchos_state[
+        "recovery_cycle_admission_history"
     ]
+    terminals = kernel.state.searchos_state[
+        "recovery_cycle_terminal_history"
+    ]
+    assert len(admissions) == len(terminals) == 1
+    assert admissions[0]["immutable_admission_record"] is True
+    assert terminals[0]["admission_record_rewritten"] is False
+    assert terminals[0]["cycle_admission_ref"]["cycle_admission_digest"] == (
+        admissions[0]["cycle_admission_digest"]
+    )
 
 
-def test_35_changed_duplicate_recovery_registration_is_rejected_without_mutation() -> None:
-    (
-        kernel,
-        component_id,
-        packet,
-        recovery_ref,
-        admission_ref,
-        application_ref,
-    ) = _recovery_registration_fixture()
-    before = _snapshot_recovery_registration_state(kernel)
-    changed_packet = deepcopy(packet)
-    changed_packet["component_evidence"] = {
-        **changed_packet["component_evidence"],
-        "bounded_text": "A changed recovery packet body.",
-    }
-    with pytest.raises(
-        RunKernelTransitionError,
-        match="rejects changed duplicate component registration",
-    ):
-        kernel.register_multicomponent_recovery_scheduler_context(
-            component_id=component_id,
-            analyst_input_packet=changed_packet,
-            recovery_authorization_ref=recovery_ref,
-            contract_amendment_admission_ref=admission_ref,
-            contract_amendment_application_ref=application_ref,
-        )
-    assert _snapshot_recovery_registration_state(kernel) == before
-
-
-@pytest.mark.parametrize("dispatched", [False, True])
-def test_36_recovery_reregistration_cannot_settle_active_lease(
-    dispatched: bool,
+def test_36_searchos_recovery_preserves_completed_graph_scheduler(
+    dynamic_product,
 ) -> None:
-    (
-        kernel,
-        component_id,
-        packet,
-        recovery_ref,
-        admission_ref,
-        application_ref,
-    ) = _recovery_registration_fixture()
-    lease = kernel.grant_next_multicomponent_work_lease()
-    work = lease["work"]
-    if dispatched:
-        kernel.prepare_multicomponent_role_dispatch(
-            lease_id=lease["lease_id"],
-            role=work["role"],
-            input_packet_digest=str(work["input_packet_digest"]),
-            logical_evaluation_key=work["logical_evaluation_key"],
-        )
-    expected_status = LEASE_EXECUTION_STARTED if dispatched else LEASE_GRANTED
-    before = _snapshot_recovery_registration_state(kernel)
-    forged_recovery = {
-        "authorization_id": "forged-auth",
-        "authorization_digest": "forged-digest",
-    }
-    with pytest.raises(
-        RunKernelTransitionError,
-        match="recovery scheduler context refs must match canonical",
-    ):
-        kernel.register_multicomponent_recovery_scheduler_context(
-            component_id=component_id,
-            analyst_input_packet=packet,
-            recovery_authorization_ref=forged_recovery,
-            contract_amendment_admission_ref=admission_ref,
-            contract_amendment_application_ref=application_ref,
-        )
-    after = _snapshot_recovery_registration_state(kernel)
-    assert after == before
-    assert after["scheduler"]["lease_history"][-1]["status"] == expected_status
-    assert after["scheduler"]["lease_history"][-1]["status"] not in {
-        LEASE_CANCELLED,
-        LEASE_STALE,
-    }
-    kernel.register_multicomponent_recovery_scheduler_context(
-        component_id=component_id,
-        analyst_input_packet=packet,
-        recovery_authorization_ref=recovery_ref,
-        contract_amendment_admission_ref=admission_ref,
-        contract_amendment_application_ref=application_ref,
+    _outcome, kernel, _captured, _harness = dynamic_product
+    scheduler = _scheduler(kernel)
+    assert scheduler["status"] == "completed"
+    assert scheduler["active_physical_lease_count"] == 0
+    assert all(
+        lease["status"] == LEASE_COMPLETED
+        for lease in scheduler["lease_history"]
     )
-    idempotent = _snapshot_recovery_registration_state(kernel)
-    assert idempotent == before
-    assert idempotent["scheduler"]["lease_history"][-1]["status"] == expected_status
-    assert idempotent["scheduler"]["compatibility_envelope"] == before["scheduler"][
-        "compatibility_envelope"
-    ]
+    assert kernel.state.searchos_state["active_recovery_cycle_ref"] == {}

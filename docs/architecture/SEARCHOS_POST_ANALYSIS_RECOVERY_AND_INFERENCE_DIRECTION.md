@@ -1,15 +1,15 @@
 # SearchOS Post-Analysis Recovery And Inference Direction
 
-Status: current approved direction
+Status: current installed convergence doctrine
 Authority: canonical:searchos-post-analysis-recovery-and-inference-direction
 Default-read: no
 Applies-to: post-analysis SearchOS recovery, derived-component recovery, stopping convergence, inference direction, and legacy recovery convergence
-Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities
-Verified-against-runtime: 323ed6982aa131cda0dfe7c9bded9aad68f327a1
+Does-not-authorize: live calls, provider claims, recursive navigation, or roadmap execution
+Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Durability: the North Star and authority invariants survive the current checkpoint
 Update-trigger: maintainer changes recovery authority, inference authority, cycle invariants, stopping ownership, or steady-state architecture
 Non-trigger: implementation that conforms to this direction
-Checkpoint-appendix expiry: completion of SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
+Checkpoint-appendix expiry: completed with SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01
 
 ## Durable North Star
 
@@ -78,11 +78,13 @@ premises and inference admitted
    do not search merely for a verbatim conclusion
 ```
 
-General nonzero inference remains deferred at the current baseline. Any future
-activation must extend the same component fields, graph, admission path, and
-authority chain. Recovery generation depth is distinct from semantic inference
-depth: the former limits generations of newly admitted recovery components;
-the latter records the longest support relationship chain for one component.
+Bounded query-centered inference is installed through the same component
+fields, Graph V1, admission path, and authority chain. Fast and Balanced admit
+semantic depth 1; Deep admits semantic depth 2, including a supporting premise
+that is itself inference-supported. Recovery generation depth is distinct from
+semantic inference depth: the former limits generations of newly admitted
+searched premises; the latter records the longest admitted support relationship
+chain for one component.
 
 ## Status Classification
 
@@ -90,18 +92,17 @@ This document uses the following status classes:
 
 - **INSTALLED**: ordinary runtime behavior or retained executable legacy
   behavior exists at the verified baseline.
-- **NEXT BUILD**: Internal PR A of the current parent checkpoint.
-- **NEAR-TERM DIRECTION**: Internal PR B, which follows and consumes Internal
-  PR A.
+- **COMPLETED BUILD**: one of the two installed internal builds in the parent
+  convergence outcome.
+- **NEXT CHECKPOINT**: the offline SearchOS integration gate.
 - **DEFERRED**: direction intentionally outside both internal PRs.
 - **RETIRED AFTER REPLACEMENT**: authority or machinery that may be removed
   only after its canonical replacement is proved.
 
 The parent roadmap checkpoint is
-`SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01`. It contains exactly two
-ordered internal implementation PRs. Those PR boundaries are not separate
-roadmap phases, and this governance document is not a product phase or an
-installed capability.
+`SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01`. Its exactly two ordered
+internal implementation PRs are complete. Those PR boundaries were not
+separate roadmap phases; the next checkpoint is the offline integration gate.
 
 ## 1. Scope And Non-Goals
 
@@ -115,19 +116,21 @@ This document governs:
 - semantic inference preservation; and
 - legacy authority retirement.
 
-It explicitly excludes general nonzero inferred-component admission, recursive
-navigation, provider/depth calibration, new providers, Map or Crawl, social
-specialization, conversation, UI, compatibility rename, and live validation.
-Those exclusions receive no implementation or live-call authority here.
+It explicitly excludes inference beyond the installed profile ceilings,
+recursive navigation, provider/depth calibration, new providers, Map or Crawl,
+social specialization, conversation, UI, compatibility rename, and live
+validation. Those exclusions receive no implementation or live-call authority
+here.
 
 ## 2. Installed Current State
 
 **INSTALLED:** first-wave SearchOS, initial and iterative SearchJudgment,
-candidate READ, one-hop breadcrumb navigation, and the SearchOS semantic
-handoff are ordinary product behavior. Component Analyst and component
-D-prime, synthesis D-prime, ComponentCoverage, EvidenceLedger, Sufficiency,
-FinalAnswerPacket, Author, ContractAmendment, and the component graph are also
-installed owners or mechanics.
+candidate READ, one-hop breadcrumb navigation, the SearchOS semantic handoff,
+Boundary A existing-gap recovery, Boundary B searched-premise recovery, and
+bounded query-centered inference are ordinary product behavior. Component
+Analyst and component D-prime, synthesis D-prime, ComponentCoverage,
+EvidenceLedger, Sufficiency, FinalAnswerPacket, Author, ContractAmendment v2,
+and ComponentWorkGraph V1 are the reused owners.
 
 The installed path can retain SearchOS slots, action and query histories,
 custody, local action budgets, and terminal reasons. SearchJudgment can select
@@ -135,11 +138,12 @@ current semantic handoff, exact candidate READ, an admitted QueryPlan follow-up,
 one bounded breadcrumb, or unresolved handoff. READ and navigation custody may
 reach the existing component Analyst / D-prime / RunKernel admission path.
 
-**NOT INSTALLED:** canonical post-analysis SearchOS recovery cycles, a
-whole-run recovery lease, and `recovery_generation_depth` policy. In
-particular, the installed state does not yet represent recovery-purpose
-identity, cycle ordinal, immutable prior-slot linkage to a new recovery slot,
-or cumulative recovery expenditure across cycles.
+The installed state represents recovery-purpose identity, cycle ordinal,
+immutable prior-slot linkage, cumulative expenditure, one active-cycle maximum,
+profile-bounded recovery generation, replay-before-currentness, and typed
+terminal aggregates. SearchOS searches premises but does not author inference.
+Semantic inference is admitted separately at depth 1 in Fast/Balanced and depth
+2 in Deep.
 
 ## 3. Installed Legacy And Parallel Surfaces
 
@@ -154,12 +158,10 @@ The installed legacy reality has distinct classifications:
   recovery surfaces retain compatibility, test, state, or isolated executable
   mechanics. They are forward-dead or gated on the ordinary SearchOS path, but
   they have not all been physically removed.
-- **INSTALLED LEGACY / EXECUTABLE:** one bounded dynamic derived-component
-  recovery remains executable. It begins with a Scrutineer missing-component
-  proposal, deterministically constructs a component and ContractAmendment,
-  and uses a separate recovery planner/acquisition lane. Its amendment,
-  graph-reentry, selective-recomputation, and downstream mechanics are useful;
-  its proposal and recovery authority are not the approved future model.
+- **RETIRED / DELETED:** the bounded ordinary dynamic derived-component
+  recovery runtime and its Scrutineer-authored proposal/acquisition authority
+  are deleted. The installed Boundary B path reuses the useful amendment,
+  graph-reproof, and selective-resynthesis owners without a legacy fallback.
 
 Existing source hierarchy and currentness belong to EvidenceLedger, query
 nonredundancy belongs to QueryPlan, and final partial, insufficient, exhausted,
@@ -351,24 +353,20 @@ Balanced: 1
 Deep:     2
 ```
 
-**NEAR-TERM DIRECTION:** this policy is not installed. Internal PR B must add a
-narrow mode-bound extension to the existing SearchOS policy owner.
+**INSTALLED:** the existing SearchOS policy owner enforces this mode-bound
+generation policy.
 
 Recovery generation depth is independent from semantic
 `max_inference_depth`, which measures the longest premise relationship chain
-supporting one component. During Internal PR B, newly recovered components are
-limited to direct support: allowed support is direct,
-`max_inference_depth` is zero, and actual observation `inference_depth` is
-zero. That is a temporary activation boundary, not permanent architecture.
+supporting one component. Newly recovered searched premises require direct
+support: allowed support is direct, `max_inference_depth` is zero, and actual
+observation `inference_depth` is zero. They may then serve as exact premises in
+a separately admitted bounded inference chain.
 
 ## Current Checkpoint Implementation Appendix
 
-This appendix governs the current implementation checkpoint. It is not the
-durable identity of the subsystem.
-
-When `SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01` completes, the roadmap
-owns completion history and this appendix must be removed, archived, or reduced
-to a compact installed-state summary.
+This appendix records the completed implementation boundaries. It is not the
+durable identity of the subsystem. The roadmap owns completion history.
 
 The Durable North Star, authority doctrine, recovery-cycle invariants,
 inference direction, stopping ownership, and anti-duplication constitution
@@ -388,7 +386,7 @@ Internal PR A working name:
 SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01
 ```
 
-**NEXT BUILD:** Internal PR A implements:
+**COMPLETED BUILD:** Internal PR A implements:
 
 ```text
 existing admitted component remains unsupported
@@ -427,7 +425,7 @@ Internal PR B working name:
 SEARCHOS-DERIVED-COMPONENT-RECOVERY-AND-AUTHORITY-CONVERGENCE-01
 ```
 
-**NEAR-TERM DIRECTION:** Internal PR B follows and consumes Internal PR A:
+**COMPLETED BUILD:** Internal PR B follows and consumes Internal PR A:
 
 ```text
 parent cannot be established
@@ -442,11 +440,10 @@ parent cannot be established
 ```
 
 Internal PR B owns the Analyst proposal connection, recovery-generation-depth
-policy, direct-support-only recovered-child boundary, Scrutineer authority
-correction, dynamic planner/builder retirement, and remaining legacy
-convergence. It replaces the active Scrutineer/deterministic
-derived-component authority after the Analyst-originated replacement product
-chain succeeds.
+policy, direct-support-only recovered-child boundary, bounded inference,
+Scrutineer authority correction, dynamic runtime deletion, and remaining
+legacy convergence. The Analyst-originated replacement product chain is now
+the sole ordinary Boundary B route.
 
 Reverting Internal PR B must leave Internal PR A useful and intact. No third
 implementation PR may be created merely for convenience. A later
@@ -492,16 +489,14 @@ authority convergence.
 
 ### 15. Required Proof Classes
 
-The two internal PRs must select concrete checks from these proof classes
-without inventing test filenames in advance:
+The completed internal PRs use concrete checks from these proof classes:
 
 - `PRODUCT_PROOF`: the ordinary CLI/backend consumer completes the named
   product chain and the final result changes through canonical owners.
 - `OWNER_CONTRACT`: each proposal, admission, custody, coverage, query, lease,
   stopping, and packaging decision is made by its named owner.
-- `CONTAINMENT_GUARD`: closed surfaces remain closed, especially Internal PR
-  A's Analyst/amendment/graph boundary and Internal PR B's direct-support-only
-  boundary.
+- `CONTAINMENT_GUARD`: closed surfaces remain closed, including direct-only
+  searched premises and the Fast/Balanced/Deep inference ceilings.
 - `REPLAY_OR_IDEMPOTENCY`: repeated purpose, action, observation, amendment, or
   reduction input cannot duplicate work or canonical mutation.
 - `HONEST_TERMINAL`: exhaustion, blockers, partial posture, insufficiency, and
@@ -511,15 +506,15 @@ without inventing test filenames in advance:
 
 ## 16. Deferred Work
 
-**DEFERRED:** general depth-one inferred-component admission, depth-two semantic
-inference, permanent mode/provider policy, and live calibration. Comparative
-provider/query calibration, permanent mode/provider selection, recursive
-navigation, provider Deep/Research, Map, Crawl, social specialization,
-conversation, and UI remain separately sequenced or optional work.
+**DEFERRED:** inference beyond the installed depth/profile boundary, permanent
+mode/provider policy, and live calibration. Comparative provider/query
+calibration, permanent mode/provider selection, recursive navigation, provider
+Deep/Research, Map, Crawl, social specialization, conversation, and UI remain
+separately sequenced or optional work.
 
-Internal PR B's directly supported recovered child is not proof of general
-nonzero inferred support. Nothing here licenses provider, model, search, READ,
-navigation, retrieval, database, secrets-backed, or other live validation.
+Offline Fast/Balanced/Deep proofs establish only the bounded named query class.
+Nothing here licenses provider, model, search, READ, navigation, retrieval,
+database, secrets-backed, or other live validation.
 
 ## 17. Anti-Duplication Constitution
 

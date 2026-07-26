@@ -124,6 +124,12 @@ def build_multicomponent_graph_consumption(
                     "component_id": node.get("component_id"),
                     "component_label": node.get("component_label"),
                     "component_question": node.get("component_question"),
+                    "component_purpose": node.get("component_purpose"),
+                    "accepted_component_ref": _mapping(
+                        node.get("accepted_component_ref")
+                    ),
+                    "support_kind": "direct",
+                    "semantic_inference_depth": 0,
                     "claim_id": claim.get("claim_id"),
                     "claim_text": claim.get("claim_text"),
                     "claim_digest": claim.get("claim_digest"),
@@ -212,6 +218,69 @@ def build_multicomponent_graph_consumption(
                     "preserved_nonclaims": list(
                         node.get("preserved_nonclaims") or ()
                     ),
+                    **(
+                        {
+                            "support_kind": "inferred",
+                            "semantic_inference_depth": int(
+                                node.get("semantic_inference_depth")
+                                or 0
+                            ),
+                            "answer_target_component_id": node.get(
+                                "answer_target_component_id"
+                            ),
+                            "answer_target_ref": _mapping(
+                                node.get("answer_target_ref")
+                            ),
+                            "premise_node_refs": list(
+                                node.get("premise_node_refs") or ()
+                            ),
+                            "premise_component_coverage_refs": list(
+                                node.get(
+                                    "premise_component_coverage_refs"
+                                )
+                                or ()
+                            ),
+                            "premise_citation_refs": list(
+                                node.get("premise_citation_refs")
+                                or ()
+                            ),
+                            "relationship_type": node.get(
+                                "relationship_type"
+                            ),
+                            "inferred_relationship_admission_ref": _mapping(
+                                node.get(
+                                    "inferred_relationship_admission_ref"
+                                )
+                            ),
+                            "query_resolution_proposal_ref": _mapping(
+                                node.get(
+                                    "query_resolution_proposal_ref"
+                                )
+                            ),
+                            "assumptions": list(
+                                node.get("inference_assumptions") or ()
+                            ),
+                            "caveats": list(
+                                node.get("inference_caveats") or ()
+                            ),
+                            "prohibited_upgrades": list(
+                                node.get(
+                                    "inference_prohibited_upgrades"
+                                )
+                                or ()
+                            ),
+                            "target_fulfillment_status": node.get(
+                                "target_fulfillment_status"
+                            ),
+                            "target_local_semantic_observation_ref": {},
+                            "target_local_component_coverage_ref": {},
+                        }
+                        if node.get("support_kind") == "inferred"
+                        else {
+                            "support_kind": "synthesis",
+                            "semantic_inference_depth": None,
+                        }
+                    ),
                 }
             )
             caveats.extend(node.get("required_caveats") or ())
@@ -240,6 +309,83 @@ def build_multicomponent_graph_consumption(
             f"Only unaffected admitted synthesis remains available under Graph V1 "
             f"posture {graph.get('graph_status')}.",
         )
+    direct_by_component = {
+        str(item.get("component_id") or ""): item
+        for item in direct_entries
+    }
+    inferred_by_target = {
+        str(item.get("answer_target_component_id") or ""): item
+        for item in synthesis_entries
+        if item.get("support_kind") == "inferred"
+        and item.get("target_fulfillment_status") == "admitted_inferred"
+        and _mapping(
+            item.get("inferred_relationship_admission_ref")
+        )
+    }
+    answer_target_fulfillments: list[dict[str, Any]] = []
+    supporting_premise_readiness: list[dict[str, Any]] = []
+    for component_ref in graph.get("accepted_component_refs") or ():
+        component = _mapping(component_ref)
+        component_id = str(component.get("component_id") or "")
+        purpose = component.get("component_purpose")
+        if purpose not in {
+            "user_facing_answer_target",
+            "supporting_premise",
+        }:
+            # Compatibility contracts that predate query-centered component
+            # purpose cannot be safely reclassified as answer targets.
+            continue
+        direct = direct_by_component.get(component_id)
+        inferred_entry = inferred_by_target.get(component_id)
+        selected = direct or inferred_entry
+        readiness = {
+            "component_id": component_id,
+            "component_ref": component,
+            "component_purpose": purpose,
+            "fulfillment_status": (
+                "fulfilled_direct"
+                if direct
+                else (
+                    "fulfilled_inferred"
+                    if inferred_entry
+                    else "unfulfilled"
+                )
+            ),
+            "selected_support_kind": (
+                "direct"
+                if direct
+                else ("inferred" if inferred_entry else None)
+            ),
+            "direct_fulfillment_ref": direct or {},
+            "inferred_fulfillment_ref": inferred_entry or {},
+            "direct_preferred": bool(direct and inferred_entry),
+            "current": bool(selected),
+        }
+        if purpose == "user_facing_answer_target":
+            answer_target_fulfillments.append(readiness)
+        else:
+            supporting_premise_readiness.append(readiness)
+    required_targets = [
+        item
+        for item in answer_target_fulfillments
+        if _mapping(item.get("component_ref")).get(
+            "requirement_posture", "required"
+        )
+        == "required"
+        and _mapping(item.get("component_ref")).get(
+            "materiality", "material"
+        )
+        == "material"
+    ]
+    all_required_targets_fulfilled = bool(required_targets) and all(
+        item.get("fulfillment_status")
+        in {"fulfilled_direct", "fulfilled_inferred"}
+        for item in required_targets
+    )
+    inference_selected = any(
+        item.get("selected_support_kind") == "inferred"
+        for item in required_targets
+    )
     return {
         "schema_version": "multicomponent_sufficiency_consumption_v1",
         "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
@@ -263,6 +409,29 @@ def build_multicomponent_graph_consumption(
         "admitted_synthesis_entry_count": len(synthesis_entries),
         "omitted_synthesis_entry_count": len(graph["synthesis_nodes"])
         - len(synthesis_entries),
+        "answer_target_fulfillments": answer_target_fulfillments,
+        "supporting_premise_readiness": supporting_premise_readiness,
+        "required_answer_target_count": len(required_targets),
+        "fulfilled_required_answer_target_count": sum(
+            1
+            for item in required_targets
+            if item.get("fulfillment_status")
+            in {"fulfilled_direct", "fulfilled_inferred"}
+        ),
+        "all_required_answer_targets_fulfilled": (
+            all_required_targets_fulfilled
+        ),
+        "selected_inferred_answer_target_count": sum(
+            1
+            for item in required_targets
+            if item.get("selected_support_kind") == "inferred"
+        ),
+        "sufficient_with_admitted_inference": bool(
+            all_required_targets_fulfilled and inference_selected
+        ),
+        "query_centered_fulfillment_owner": (
+            "RunKernel.RunAuthoritySufficiencyJudgment"
+        ),
         "ordinary_sufficiency_decision_created": True,
         "final_answer_packet_created": False,
         "author_output_created": False,

@@ -114,6 +114,11 @@ class SupportKind(str, Enum):
     COMPUTED = "computed"
 
 
+class ComponentPurpose(str, Enum):
+    USER_FACING_ANSWER_TARGET = "user_facing_answer_target"
+    SUPPORTING_PREMISE = "supporting_premise"
+
+
 class PartialAnswerPolicy(str, Enum):
     QUALIFY_VISIBLE_GAP = "qualify_visible_gap"
     BLOCK_IF_REQUIRED_UNSATISFIED = "block_if_required_unsatisfied"
@@ -295,6 +300,7 @@ class AnswerComponentContract:
     component_id: str
     user_facing_label: str
     user_facing_question: str
+    component_purpose: ComponentPurpose | str = ComponentPurpose.USER_FACING_ANSWER_TARGET
     component_revision: str = "1"
     component_digest: str | None = None
     requirement_posture: RequirementPosture | str = RequirementPosture.REQUIRED
@@ -323,6 +329,15 @@ class AnswerComponentContract:
                 RequirementPosture,
                 self.requirement_posture,
                 RequirementPosture.REQUIRED,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "component_purpose",
+            _coerce_enum(
+                ComponentPurpose,
+                self.component_purpose,
+                ComponentPurpose.USER_FACING_ANSWER_TARGET,
             ),
         )
         object.__setattr__(
@@ -378,13 +393,17 @@ class AnswerComponentContract:
             "prohibited_upgrades",
             _text_tuple(self.prohibited_upgrades, limit=260),
         )
-        digest = _clean_token(self.component_digest, limit=96) or _digest_json(self._digest_payload())
-        object.__setattr__(self, "component_digest", digest)
+        supplied_digest = _clean_token(self.component_digest, limit=96)
+        computed_digest = _digest_json(self._digest_payload())
+        if supplied_digest is not None and supplied_digest != computed_digest:
+            raise ValueError(f"answer component {self.component_id} component_digest does not match payload content")
+        object.__setattr__(self, "component_digest", supplied_digest or computed_digest)
 
     def _digest_payload(self) -> dict[str, Any]:
         return {
             "component_id": _clean_token(self.component_id),
             "component_revision": self.component_revision,
+            "component_purpose": self.component_purpose.value,
             "user_facing_label": _clean_text(self.user_facing_label, limit=180),
             "user_facing_question": _clean_text(self.user_facing_question, limit=400),
             "requirement_posture": self.requirement_posture.value,
@@ -411,6 +430,120 @@ class AnswerComponentContract:
                 "component_digest": self.component_digest,
             }
         )
+
+
+def inference_depth_ceiling_for_mode(requested_mode: Any) -> int:
+    """Return the constitutional semantic-inference ceiling for a run profile."""
+
+    normalized = str(requested_mode or "").strip().casefold()
+    if normalized in {"fast", "balanced"}:
+        return 1
+    if normalized == "deep":
+        return 2
+    # Unknown profiles cannot obtain a larger inference grant.
+    return 1
+
+
+def validate_answer_component_contract_set(
+    components: Sequence[AnswerComponentContract],
+    *,
+    requested_mode: Any,
+) -> SemanticContractValidationResult:
+    """Validate the one AnswerContract component matrix and dependency graph."""
+
+    errors: list[str] = []
+    items = tuple(components or ())
+    component_ids = [component.component_id for component in items]
+    component_id_set = set(component_ids)
+    _add_duplicate_errors(errors, "answer component_id", component_ids)
+    if not items:
+        errors.append("at least one answer component contract is required")
+        return SemanticContractValidationResult(errors=tuple(errors))
+    if len(items) > 5:
+        errors.append("answer component contract count cannot exceed 5")
+
+    profile_ceiling = inference_depth_ceiling_for_mode(requested_mode)
+    target_count = 0
+    for component in items:
+        if component.component_purpose is ComponentPurpose.USER_FACING_ANSWER_TARGET:
+            target_count += 1
+        supports = tuple(kind.value for kind in component.allowed_support_kinds)
+        source_ids = component.source_obligation_candidate_ids
+        source_refs = component.source_obligation_candidate_refs
+        dependencies = component.dependency_component_ids
+        prefix = f"answer component {component.component_id}"
+
+        if supports == (SupportKind.DIRECT.value,):
+            if component.max_inference_depth != 0:
+                errors.append(f"{prefix} direct-only support requires max_inference_depth 0")
+            if len(source_ids) != 1:
+                errors.append(f"{prefix} direct support requires exactly one source obligation candidate")
+        elif supports == (SupportKind.INFERRED.value,):
+            if component.max_inference_depth < 1:
+                errors.append(f"{prefix} inferred-only support requires max_inference_depth at least 1")
+            if not dependencies:
+                errors.append(f"{prefix} inferred-only support requires dependency components")
+            if source_ids or source_refs:
+                errors.append(f"{prefix} inferred-only support cannot own a direct source obligation")
+        elif supports == (SupportKind.DIRECT.value, SupportKind.INFERRED.value):
+            if component.max_inference_depth < 1:
+                errors.append(f"{prefix} direct-or-inferred support requires max_inference_depth at least 1")
+            if not dependencies:
+                errors.append(f"{prefix} direct-or-inferred support requires dependency components")
+            if len(source_ids) != 1:
+                errors.append(
+                    f"{prefix} direct-or-inferred support requires exactly one direct-route source obligation candidate"
+                )
+        else:
+            errors.append(f"{prefix} allowed_support_kinds must be [direct], [inferred], or [direct, inferred]")
+
+        if component.max_inference_depth > profile_ceiling:
+            errors.append(f"{prefix} max_inference_depth exceeds {requested_mode!s} profile ceiling {profile_ceiling}")
+        if len(set(dependencies)) != len(dependencies):
+            errors.append(f"{prefix} contains duplicate dependency components")
+        for dependency in dependencies:
+            if dependency not in component_id_set:
+                errors.append(f"{prefix} depends on missing component {dependency}")
+            if dependency == component.component_id:
+                errors.append(f"{prefix} cannot depend on itself")
+
+        searched_premise = bool(component.metadata.get("searched_premise"))
+        if searched_premise:
+            if component.component_purpose is not ComponentPurpose.SUPPORTING_PREMISE:
+                errors.append(f"{prefix} searched premise must have supporting_premise purpose")
+            if supports != (SupportKind.DIRECT.value,):
+                errors.append(f"{prefix} searched premise must be direct-only")
+            if component.max_inference_depth != 0:
+                errors.append(f"{prefix} searched premise must have max_inference_depth 0")
+            if len(source_ids) != 1:
+                errors.append(f"{prefix} searched premise requires one dedicated source obligation candidate")
+
+    if target_count < 1:
+        errors.append("answer contract requires at least one user_facing_answer_target component")
+
+    adjacency = {
+        component.component_id: tuple(
+            dependency for dependency in component.dependency_component_ids if dependency in component_id_set
+        )
+        for component in items
+    }
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(component_id: str) -> bool:
+        if component_id in visiting:
+            return True
+        if component_id in visited:
+            return False
+        visiting.add(component_id)
+        found_cycle = any(visit(dependency) for dependency in adjacency.get(component_id, ()))
+        visiting.remove(component_id)
+        visited.add(component_id)
+        return found_cycle
+
+    if any(visit(component_id) for component_id in component_ids if component_id not in visited):
+        errors.append("answer component dependency graph cannot contain a cycle")
+    return SemanticContractValidationResult(errors=tuple(errors))
 
 
 @dataclass(frozen=True, slots=True)
@@ -873,6 +1006,7 @@ __all__ = [
     "QUESTION_MEANING_TRACE_KEY",
     "SEMANTIC_CONTRACT_FOUNDATION_SCHEMA_VERSION",
     "AnswerComponentContract",
+    "ComponentPurpose",
     "ContractLineage",
     "Materiality",
     "MaterialityPolicy",
@@ -888,4 +1022,6 @@ __all__ = [
     "SemanticSlotStatus",
     "SourceObligationCandidateRef",
     "SupportKind",
+    "inference_depth_ceiling_for_mode",
+    "validate_answer_component_contract_set",
 ]

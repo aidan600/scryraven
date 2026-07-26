@@ -12,11 +12,13 @@ from core.followup_search_authorization_loop import (
     FOLLOWUP_SEARCH_AUTHORIZATION_LOOP_HELPER,
     FollowupSearchAuthorizationLoopError,
     authorize_followup_search_work,
-    run_fixture_followup_search_reentry_loop,
 )
 from core.followup_search_authorization_runtime import (
     FOLLOWUP_SEARCH_AUTHORIZATION_OWNER,
     FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
+)
+from tests.helpers.canonical_answer_contract_fixture import (
+    run_split_followup_reentry_fixture,
 )
 from tests.test_ag_analysis_gap_followup_search_01 import (
     _analysis_gap_proposal,
@@ -28,6 +30,7 @@ from tests.test_ag_component_coverage_reliability_proof_01 import (
     _assert_downstream_closed,
     _chain_fixture,
 )
+from tests.test_ag_search_executor_handoff_01 import _current_contract_kernel
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_MODULE = ROOT / "core" / "followup_search_authorization_runtime.py"
@@ -61,10 +64,7 @@ def _fixture_candidate() -> dict[str, Any]:
 
 
 def _readable_material() -> dict[str, Any]:
-    bounded_text = (
-        "Bounded sanitized follow-up evidence confirms the permit threshold "
-        "for the requested component."
-    )
+    bounded_text = "Bounded sanitized follow-up evidence confirms the permit threshold for the requested component."
     return {
         "fetch_read_status": "readable",
         "content_title": "Official Follow-up Permit Threshold",
@@ -88,9 +88,7 @@ def _packet_with_source_class(source_class: str) -> tuple[Any, dict[str, Any]]:
     proposal = _analysis_gap_proposal(record, "missing_fact")
     proposal["required_source_class_hint"] = source_class
     analysis_packet = _build_analysis_packet(projection, [proposal])
-    return kernel, build_followup_search_intent_packet(
-        evidence_relative_analysis_packet=analysis_packet
-    )
+    return kernel, build_followup_search_intent_packet(evidence_relative_analysis_packet=analysis_packet)
 
 
 def _packet_without_contract_lineage() -> tuple[Any, dict[str, Any]]:
@@ -100,9 +98,7 @@ def _packet_without_contract_lineage() -> tuple[Any, dict[str, Any]]:
         include_contract=False,
     )
     projection_without_ref = deepcopy(projection)
-    for record in projection_without_ref["fetch_read_candidate_custody"][
-        "fetch_read_candidate_custody_records"
-    ]:
+    for record in projection_without_ref["fetch_read_candidate_custody"]["fetch_read_candidate_custody_records"]:
         record.pop("current_answer_contract_ref", None)
     record = _records_by_status(projection, "readable")[0]
     analysis_packet = _build_analysis_packet(
@@ -110,9 +106,7 @@ def _packet_without_contract_lineage() -> tuple[Any, dict[str, Any]]:
         [_analysis_gap_proposal(record, "missing_fact")],
         include_contract=False,
     )
-    return kernel, build_followup_search_intent_packet(
-        evidence_relative_analysis_packet=analysis_packet
-    )
+    return kernel, build_followup_search_intent_packet(evidence_relative_analysis_packet=analysis_packet)
 
 
 def _imports_calls_and_classes(path: Path) -> tuple[set[str], set[str], set[str]]:
@@ -138,7 +132,7 @@ def _imports_calls_and_classes(path: Path) -> tuple[set[str], set[str], set[str]
 
 def test_valid_followup_intent_authorizes_bounded_query_bundle_without_self_authorizing() -> None:
     chain = _chain_fixture()
-    kernel = chain["kernel"]
+    kernel = _current_contract_kernel()
     followup_packet = chain["followup_packet"]
     proposal = _ready_proposal(followup_packet)
     handoff_before = deepcopy(kernel.state.search_executor_handoff_state)
@@ -169,7 +163,7 @@ def test_valid_followup_intent_authorizes_bounded_query_bundle_without_self_auth
 
 def test_followup_authorization_rejects_budget_duplicates_lineage_source_and_depth() -> None:
     chain = _chain_fixture()
-    kernel = chain["kernel"]
+    kernel = _current_contract_kernel()
     packet = chain["followup_packet"]
     proposal = _ready_proposal(packet)
 
@@ -218,7 +212,8 @@ def test_followup_authorization_rejects_budget_duplicates_lineage_source_and_dep
             mode="Balanced",
         )
 
-    unsupported_kernel, unsupported_packet = _packet_with_source_class("social_media")
+    _unsupported_fixture_kernel, unsupported_packet = _packet_with_source_class("social_media")
+    unsupported_kernel = _current_contract_kernel()
     with pytest.raises(FollowupSearchAuthorizationLoopError, match="unsupported_source_class"):
         authorize_followup_search_work(
             run_kernel=unsupported_kernel,
@@ -227,18 +222,20 @@ def test_followup_authorization_rejects_budget_duplicates_lineage_source_and_dep
         )
 
     depth_chain = _chain_fixture()
+    depth_kernel = _current_contract_kernel()
     with pytest.raises(FollowupSearchAuthorizationLoopError, match="logical_depth"):
         authorize_followup_search_work(
-            run_kernel=depth_chain["kernel"],
+            run_kernel=depth_kernel,
             followup_search_intent_packet=depth_chain["followup_packet"],
             mode="Balanced",
             logical_depth=2,
         )
 
     no_new_chain = _chain_fixture()
+    no_new_kernel = _current_contract_kernel()
     with pytest.raises(FollowupSearchAuthorizationLoopError, match="no_new_evidence"):
         authorize_followup_search_work(
-            run_kernel=no_new_chain["kernel"],
+            run_kernel=no_new_kernel,
             followup_search_intent_packet=no_new_chain["followup_packet"],
             mode="Balanced",
             new_evidence_expected=False,
@@ -250,8 +247,9 @@ def test_authorized_fixture_reentry_updates_coverage_through_existing_chain() ->
     kernel = chain["kernel"]
     current_contract_before = deepcopy(kernel.state.current_answer_contract)
 
-    result = run_fixture_followup_search_reentry_loop(
-        run_kernel=kernel,
+    result = run_split_followup_reentry_fixture(
+        authorization_run_kernel=_current_contract_kernel(),
+        semantic_run_kernel=kernel,
         followup_search_intent_packet=chain["followup_packet"],
         fixture_candidates=[_fixture_candidate()],
         fixture_fetch_read_materials=[_readable_material()],
@@ -260,9 +258,7 @@ def test_authorized_fixture_reentry_updates_coverage_through_existing_chain() ->
     )
 
     assert result.candidate_packet["candidate_count"] == 1
-    assert result.candidate_packet["candidate_records"][0]["candidate_id"].startswith(
-        "followup-search-candidate:"
-    )
+    assert result.candidate_packet["candidate_records"][0]["candidate_id"].startswith("followup-search-candidate:")
     assert result.fetch_read_packet["reference_count"] == 1
     assert result.fetch_read_packet["reference_records"][0]["fetch_read_status"] == "readable"
     assert result.ledger_projection["fetch_read_candidate_custody"]["custody_record_count"] >= 1
@@ -284,8 +280,9 @@ def test_unresolved_fixture_reentry_remains_blocked_or_contested_without_support
     chain = _chain_fixture()
     kernel = chain["kernel"]
 
-    result = run_fixture_followup_search_reentry_loop(
-        run_kernel=kernel,
+    result = run_split_followup_reentry_fixture(
+        authorization_run_kernel=_current_contract_kernel(),
+        semantic_run_kernel=kernel,
         followup_search_intent_packet=chain["followup_packet"],
         fixture_candidates=[_fixture_candidate()],
         fixture_fetch_read_materials=[_failed_material()],
@@ -351,9 +348,7 @@ def test_authorization_and_reentry_keep_closed_surfaces_and_avoid_packet_sprawl(
     run_kernel_source = RUN_KERNEL_MODULE.read_text(encoding="utf-8")
     assert "FOLLOWUP_SEARCH_AUTHORIZE" in run_kernel_source
     assert "FOLLOWUP_AUTHORIZATION_CONSUME" in run_kernel_source
-    assert FOLLOWUP_SEARCH_AUTHORIZATION_LOOP_HELPER in LOOP_MODULE.read_text(
-        encoding="utf-8"
-    )
+    assert FOLLOWUP_SEARCH_AUTHORIZATION_LOOP_HELPER in LOOP_MODULE.read_text(encoding="utf-8")
 
 
 def test_docs_record_followup_search_authorization_reentry_posture() -> None:

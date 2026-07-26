@@ -73,6 +73,7 @@ REQUEST_ID = "request:sem-07"
 COMPONENT_ID = "component:reported-total"
 EVIDENCE_ID = "evidence:public-record-notice"
 COVERAGE_RECORD_ID = "coverage:reported-total"
+SOURCE_OBLIGATION_ID = "obligation:reported_total_primary_source"
 
 
 def _slot() -> SemanticSlot:
@@ -87,7 +88,9 @@ def _slot() -> SemanticSlot:
 
 def _component(
     *,
-    source_obligation_candidate_ids: tuple[str, ...] = (),
+    source_obligation_candidate_ids: tuple[str, ...] = (
+        SOURCE_OBLIGATION_ID,
+    ),
 ) -> AnswerComponentContract:
     return AnswerComponentContract(
         component_id=COMPONENT_ID,
@@ -106,7 +109,9 @@ def _component(
 
 def _qmr(
     *,
-    source_obligation_candidate_ids: tuple[str, ...] = (),
+    source_obligation_candidate_ids: tuple[str, ...] = (
+        SOURCE_OBLIGATION_ID,
+    ),
 ) -> QuestionMeaningRecord:
     return QuestionMeaningRecord(
         record_id="qmr:reported-total",
@@ -129,7 +134,9 @@ def _qmr(
 def _accept_contract(
     kernel: RunKernel,
     *,
-    source_obligation_candidate_ids: tuple[str, ...] = (),
+    source_obligation_candidate_ids: tuple[str, ...] = (
+        SOURCE_OBLIGATION_ID,
+    ),
 ) -> dict[str, object]:
     qmr = _qmr(source_obligation_candidate_ids=source_obligation_candidate_ids)
     action = kernel.authorize_initial_answer_contract_acceptance(
@@ -189,6 +196,39 @@ def _seed_evidence_ledger(
         or kernel.state.initial_answer_contract
         or {}
     )
+    accepted_component = dict(
+        (accepted.get("accepted_answer_component_refs") or [{}])[0]
+    )
+    if (
+        SOURCE_OBLIGATION_ID
+        in (
+            accepted_component.get("source_obligation_candidate_ids")
+            or ()
+        )
+        and requirement_id is None
+        and not requirements
+    ):
+        requirement_id = SOURCE_OBLIGATION_ID
+        candidate["requirement_id"] = requirement_id
+        requirements = (
+            {
+                "requirement_id": requirement_id,
+                "requirement_kind": "supporting_fact",
+                "component_id": COMPONENT_ID,
+                "source_obligation_id": requirement_id,
+                "required_source_class": "primary_source_documents",
+                "required_source_tier": "primary",
+                "required_currentness": "current",
+            },
+        )
+        requirement_links = (
+            {
+                "requirement_id": requirement_id,
+                "candidate_id": candidate_id,
+                "link_reason": "offline_fixture_exact_component_obligation",
+                "link_status": "accepted",
+            },
+        )
     requirement_rows = [
         {
             **(
@@ -304,7 +344,9 @@ def _admit(
 
 def _start_admitted_kernel(
     *,
-    source_obligation_candidate_ids: tuple[str, ...] = (),
+    source_obligation_candidate_ids: tuple[str, ...] = (
+        SOURCE_OBLIGATION_ID,
+    ),
     seed_kwargs: dict[str, object] | None = None,
 ) -> tuple[RunKernel, dict[str, object], SemanticObservation, SanitizedContentReference]:
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
@@ -322,7 +364,9 @@ def _start_admitted_kernel(
 def _ledger_binding(
     kernel: RunKernel,
     *,
-    source_requirement_ids: tuple[str, ...] = (),
+    source_requirement_ids: tuple[str, ...] = (
+        SOURCE_OBLIGATION_ID,
+    ),
 ) -> EvidenceLedgerSnapshotBinding:
     projection = kernel.state.evidence_ledger.to_projection().to_dict()
     digest = evidence_ledger_projection_digest(projection)
@@ -350,7 +394,9 @@ def _coverage_record(
     *,
     coverage_state: CoverageState = CoverageState.SATISFIED,
     semantic_support_status: SemanticSupportStatus = SemanticSupportStatus.SUPPORTED,
-    source_obligation_status: SourceObligationStatus = SourceObligationStatus.NOT_APPLICABLE,
+    source_obligation_status: SourceObligationStatus = (
+        SourceObligationStatus.SATISFIED
+    ),
     content_availability_status: ContentAvailabilityStatus = ContentAvailabilityStatus.AVAILABLE,
     evidence_custody_status: EvidenceCustodyStatus = EvidenceCustodyStatus.CUSTODIED,
     evidence_basis: tuple[EvidenceBasis, ...] | None = None,
@@ -363,7 +409,9 @@ def _coverage_record(
     conflict_posture: ConflictPosture = ConflictPosture.NONE,
     currentness_posture: CurrentnessPosture = CurrentnessPosture.CURRENT,
     stale: bool = False,
-    source_requirement_ids: tuple[str, ...] = (),
+    source_requirement_ids: tuple[str, ...] = (
+        SOURCE_OBLIGATION_ID,
+    ),
 ) -> ComponentCoverageRecord:
     component_ref = accepted["accepted_answer_component_refs"][0]
     obs_ref = SemanticObservationCoverageRef(
@@ -915,6 +963,7 @@ def test_satisfied_coverage_rejects_not_applicable_when_component_has_source_obl
         content_ref,
         kernel,
         source_obligation_status=SourceObligationStatus.NOT_APPLICABLE,
+        source_requirement_ids=(),
     )
 
     with pytest.raises(

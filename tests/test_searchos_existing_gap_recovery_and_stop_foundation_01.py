@@ -27,7 +27,6 @@ from core.ordinary_semantic_producer_runtime import (
 )
 from core.run_kernel import RunKernel
 from core.searchos_existing_gap_recovery_runtime import (
-    MAXIMUM_EXISTING_GAP_RECOVERY_CYCLES,
     SearchOSExistingGapRecoveryError,
     _digest,
     _envelope,
@@ -36,7 +35,6 @@ from core.searchos_existing_gap_recovery_runtime import (
     admit_searchos_existing_gap_recovery_cycle,
     build_searchos_existing_gap_basis,
     build_searchos_materially_novel_recovery_purpose,
-    finalize_searchos_existing_gap_recovery_cycle,
     validate_active_searchos_recovery_cycle_ref,
     validate_searchos_existing_gap_basis,
     validate_searchos_recovery_purpose,
@@ -196,6 +194,27 @@ def _capture_sufficiency_inputs(
     return captured
 
 
+def _generalized_recovery_terminal(kernel: RunKernel) -> dict[str, Any]:
+    return dict(
+        kernel.state.projections["searchos_recovery_cycle_terminal"]
+    )
+
+
+def _cycle_admission_for_terminal(
+    searchos_state: Mapping[str, Any],
+    terminal: Mapping[str, Any],
+) -> dict[str, Any]:
+    cycle_id = str(terminal.get("cycle_id") or "")
+    return next(
+        dict(item)
+        for item in searchos_state.get(
+            "recovery_cycle_admission_history", ()
+        )
+        if isinstance(item, Mapping)
+        and str(item.get("cycle_id") or "") == cycle_id
+    )
+
+
 def _install_foreign_shared_obligation_at_sufficiency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[list[Any], dict[str, str]]:
@@ -214,14 +233,18 @@ def _install_foreign_shared_obligation_at_sufficiency(
         if not terminal:
             captured.append(judgment_input)
             return judgment_input
+        cycle = _cycle_admission_for_terminal(
+            judgment_input.searchos_state,
+            terminal,
+        )
         component_b_id = str(
-            dict(terminal.get("component_ref") or {}).get(
+            dict(cycle.get("component_ref") or {}).get(
                 "component_id"
             )
             or ""
         )
         target_obligation_id = str(
-            dict(terminal.get("source_obligation_ref") or {}).get(
+            dict(cycle.get("source_obligation_ref") or {}).get(
                 "source_obligation_id"
             )
             or ""
@@ -367,14 +390,18 @@ def _install_missing_same_family_component_at_sufficiency(
         if not terminal:
             captured.append(judgment_input)
             return judgment_input
+        cycle = _cycle_admission_for_terminal(
+            judgment_input.searchos_state,
+            terminal,
+        )
         component_b_id = str(
-            dict(terminal.get("component_ref") or {}).get(
+            dict(cycle.get("component_ref") or {}).get(
                 "component_id"
             )
             or ""
         )
         target_obligation_id = str(
-            dict(terminal.get("source_obligation_ref") or {}).get(
+            dict(cycle.get("source_obligation_ref") or {}).get(
                 "source_obligation_id"
             )
             or ""
@@ -740,16 +767,12 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     captured_gap = _capture_first_gap_basis(monkeypatch)
     sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
 
-    def forbidden_dynamic_recovery(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("retained Scrutineer-derived recovery path was invoked")
-
     def forbidden_legacy_recovery(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("legacy existing-gap recovery path was invoked")
 
-    monkeypatch.setattr(
+    assert not hasattr(
         multicomponent_runtime,
         "_begin_scheduler_dynamic_recovery",
-        forbidden_dynamic_recovery,
     )
     monkeypatch.setattr(
         pipeline_orchestrator,
@@ -769,7 +792,7 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     recovery_results: list[Any] = []
     reassessment_errors: list[str] = []
     original_recovery = (
-        pipeline_orchestrator.execute_searchos_existing_gap_recovery_cycle
+        pipeline_orchestrator.execute_searchos_recovery_cycle
     )
 
     def capture_recovery(**kwargs: Any) -> Any:
@@ -779,12 +802,12 @@ def test_product_existing_gap_recovers_through_same_component_roles(
 
     monkeypatch.setattr(
         pipeline_orchestrator,
-        "execute_searchos_existing_gap_recovery_cycle",
+        "execute_searchos_recovery_cycle",
         capture_recovery,
     )
     original_reassessment = (
         pipeline_orchestrator
-        .execute_searchos_same_component_reassessment_from_scope
+        .execute_searchos_recovery_component_admission_from_scope
     )
 
     def capture_reassessment(*args: Any, **kwargs: Any) -> Any:
@@ -796,7 +819,7 @@ def test_product_existing_gap_recovers_through_same_component_roles(
 
     monkeypatch.setattr(
         pipeline_orchestrator,
-        "execute_searchos_same_component_reassessment_from_scope",
+        "execute_searchos_recovery_component_admission_from_scope",
         capture_reassessment,
     )
     _install_initially_unsupported_component(
@@ -840,7 +863,18 @@ def test_product_existing_gap_recovers_through_same_component_roles(
 
     kernel = harness.run_kernel
     assert kernel is not None
-    terminal = kernel.state.projections["searchos_existing_gap_recovery_terminal"]
+    terminal = kernel.state.projections["searchos_recovery_cycle_terminal"]
+    cycle_admission = next(
+        item
+        for item in kernel.state.searchos_state[
+            "recovery_cycle_admission_history"
+        ]
+        if item["cycle_id"] == terminal["cycle_id"]
+    )
+    recovery_slot_ref = cycle_admission["recovery_slot_ref"]
+    recovered_component_ref = cycle_admission["component_ref"]
+    recovered_obligation_ref = cycle_admission["source_obligation_ref"]
+    recovered_contract_ref = cycle_admission["current_contract_ref"]
     admission = kernel.state.projections["multicomponent_component_admission"]
     role_system_prompts = [item["system_prompt"] for item in harness.model_calls]
 
@@ -848,7 +882,9 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         terminal["terminal_reason"],
         terminal["expenditure"],
         {
-            key: kernel.state.searchos_state["slots_by_id"][terminal["recovery_slot_ref"]["slot_id"]].get(key)
+            key: kernel.state.searchos_state["slots_by_id"][
+                recovery_slot_ref["slot_id"]
+            ].get(key)
             for key in (
                 "posture",
                 "latest_reason",
@@ -860,27 +896,38 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         outcome.execution_trace["searchos_slice_a"]["existing_gap_recovery"].get("same_component_reassessment"),
         reassessment_errors,
     )
-    recovered_replay_basis = captured_gap["basis"]
-    recovered_replay_purpose = (
-        build_searchos_materially_novel_recovery_purpose(
-            recovered_replay_basis
-        )
-    )
     before_recovered_replay = deepcopy(kernel.state)
-    recovered_replay = (
-        kernel.authorize_searchos_existing_gap_recovery_admission(
-            gap_basis=recovered_replay_basis,
-            recovery_purpose=recovered_replay_purpose,
-        )
+    recovered_replay = kernel.authorize_searchos_recovery_admission(
+        stable_replay_key=cycle_admission["stable_replay_key"],
+        recovery_classification=cycle_admission[
+            "recovery_classification"
+        ],
+        proposal_ref=cycle_admission["proposal_ref"],
+        current_contract_ref=cycle_admission["current_contract_ref"],
+        current_graph_ref=cycle_admission["current_graph_ref"],
+        component_ref=cycle_admission["component_ref"],
+        source_obligation_ref=cycle_admission["source_obligation_ref"],
+        prior_terminal_slot_ref=cycle_admission[
+            "prior_terminal_slot_ref"
+        ],
+        answer_target_refs=cycle_admission["answer_target_refs"],
+        dependency_component_refs=cycle_admission[
+            "dependency_component_refs"
+        ],
+        generation_parent_ref=cycle_admission[
+            "generation_parent_ref"
+        ],
+        generation_depth=cycle_admission["generation_depth"],
     )
     assert isinstance(recovered_replay, Mapping)
-    assert recovered_replay["exact_replay"] is True
+    assert recovered_replay["status"] == "exact_replay"
+    assert recovered_replay["cycle_admission"] == cycle_admission
     assert recovered_replay["work_authorized"] is False
     assert kernel.state == before_recovered_replay
-    assert terminal["coverage_gained"] is True
-    assert terminal["gap_remains"] is False
-    assert terminal["further_existing_gap_recovery_authorized"] is False
-    assert terminal["final_sufficiency_decided"] is False
+    assert terminal["component_coverage_ref"]
+    assert terminal["terminal_reason"] is None
+    assert terminal["lease_terminal"] is False
+    assert kernel.state.searchos_state["active_recovery_cycle_ref"] == {}
     assert len(recovery_results) == 1
     initial_material = json.dumps(
         harness.searchos_semantic_material_before_pipeline_consumption,
@@ -930,7 +977,7 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         item.get("final_evidence_eligible") is True
         for item in recovered_candidates
     )
-    target_obligation_id = terminal["source_obligation_ref"][
+    target_obligation_id = recovered_obligation_ref[
         "source_obligation_id"
     ]
     target_requirement_ids = kernel.state.component_coverage_history[-1][
@@ -953,11 +1000,9 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     ) == (
         kernel.state.run_id,
         kernel.state.request_id,
-        terminal["answer_contract_ref"]["contract_version"],
-        terminal["answer_contract_ref"][
-            "answer_contract_digest"
-        ],
-        terminal["component_ref"]["component_id"].replace(
+        recovered_contract_ref["contract_version"],
+        recovered_contract_ref["answer_contract_digest"],
+        recovered_component_ref["component_id"].replace(
             "-",
             "_",
         ),
@@ -969,9 +1014,7 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         for item in current_ledger["requirement_links"]
         if item.get("requirement_id") == target_requirement_ids[0]
     ]
-    cycle = kernel.state.searchos_state[
-        "existing_gap_recovery_cycles"
-    ][0]
+    cycle = cycle_admission
     purpose = build_searchos_materially_novel_recovery_purpose(
         captured_gap["basis"]
     )
@@ -990,8 +1033,8 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         cycle["source_obligation_ref"]["source_obligation_id"],
         cycle["recovery_slot_ref"]["source_obligation_id"],
         target_requirement["source_obligation_id"],
-        terminal["source_obligation_ref"]["source_obligation_id"],
-        terminal["recovery_slot_ref"]["source_obligation_id"],
+        recovered_obligation_ref["source_obligation_id"],
+        recovery_slot_ref["source_obligation_id"],
     } == {target_obligation_id}
     assert preview_admission["lease"]["source_obligation_ref"][
         "source_obligation_id"
@@ -1038,231 +1081,29 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         item["requirement_id"]: item
         for item in sufficiency["missing_required_obligations"]
     }
-    assert set(missing_by_id) >= {
-        "run-contract:canonical_docs",
-        "answer-contract:primary_source_documents",
+    assert set(missing_by_id) == {
         "answer-contract:reputable_secondary",
     }
     assert sufficiency_inputs
     terminal_input = sufficiency_inputs[-1]
-    assert (
-        terminal_input.searchos_existing_gap_recovery_terminal_state
-        == terminal
-    )
-    terminal_consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
+    terminal_aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert terminal_input.searchos_existing_gap_recovery_terminal_state == terminal_aggregate
+    terminal_consumption = sufficiency["searchos_existing_gap_recovery_terminal_consumption"]
     assert terminal_consumption["terminal_status"] == "recovered"
-    assert (
-        terminal_consumption["source_obligation_ref"][
-            "source_obligation_id"
-        ]
-        == target_obligation_id
-    )
-    assert terminal_consumption["target_requirement_ids"] == (
-        target_requirement_ids
-    )
-    assert terminal_consumption["terminal_component_ready"] is True
-    assert all(
-        item["status"] == "satisfied"
-        for item in terminal_consumption[
-            "required_source_obligation_assessments"
-        ]
-    )
+    assert terminal_consumption["aggregate_posture"] == "settled"
+    assert terminal_consumption["settled_interpretation"] == ("recovery_completed")
+    assert terminal_consumption["terminal_blocker"] == {}
+    assert terminal_consumption["cycle_terminal_refs"][-1]["cycle_terminal_digest"] == terminal["cycle_terminal_digest"]
     assert "response name is Raven" in outcome.report
     assert harness.author_prompts
     assert "Raven" in harness.author_prompts[-1]
     assert "could not produce a supported answer" not in outcome.report
 
 
-def test_two_obligation_recovery_credits_only_the_exact_target(
+def test_direct_component_recovery_credits_only_its_exact_obligation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
-    _install_initially_unsupported_component(
-        monkeypatch,
-        remain_unsupported=False,
-        recovered_claim=(
-            "Alpha's current official operating protocol is Raven."
-        ),
-    )
-    outcome, harness = run_post_retirement_ordinary_pipeline(
-        tmp_path,
-        monkeypatch,
-        mode="Balanced",
-        query="What is Alpha's current official operating protocol?",
-        core_topic="Alpha current official operating protocol",
-        primary_entity="Alpha",
-        researcher_queries=["Alpha current official operating protocol"],
-        evidence_rows=_initial_incomplete_evidence_rows(),
-        followup_evidence_rows=_recovered_official_evidence_rows(),
-        read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
-        read_content_by_url={
-            "https://alpha.gov/operating-overview": (
-                "Alpha publishes an official operating rule, but this overview "
-                "omits the name of its current operating protocol."
-            ),
-            "https://alpha.gov/operating-protocol": (
-                "Alpha's current official operating protocol is Raven."
-            ),
-        },
-        raw_author_response=(
-            "Alpha's current official operating protocol is Raven. "
-            "[[1]](https://alpha.gov/operating-protocol)"
-        ),
-    )
-
-    kernel = harness.run_kernel
-    assert kernel is not None
-    terminal = kernel.state.projections[
-        "searchos_existing_gap_recovery_terminal"
-    ]
-    assert terminal["terminal_status"] == "recovered", terminal
-    target_obligation_id = terminal["source_obligation_ref"][
-        "source_obligation_id"
-    ]
-    component_ref = terminal["component_ref"]
-    component_obligation_ids = set(
-        next(
-            item
-            for item in kernel.state.initial_answer_contract[
-                "accepted_answer_component_refs"
-            ]
-            if item["component_id"] == component_ref["component_id"]
-        )["source_obligation_candidate_ids"]
-    )
-    assert len(component_obligation_ids) == 2
-    sibling_obligation_id = next(
-        item
-        for item in component_obligation_ids
-        if item != target_obligation_id
-    )
-    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-    coverage = kernel.state.component_coverage_history[-1]
-    target_requirement_ids = coverage["evidence_ledger_binding"][
-        "source_requirement_ids"
-    ]
-    assert target_requirement_ids
-    target_requirements = [
-        item
-        for item in ledger["source_requirements"]
-        if item.get("requirement_id") in target_requirement_ids
-    ]
-    assert {
-        item.get("source_obligation_id")
-        for item in target_requirements
-    } == {target_obligation_id}
-    recovered_candidate_ids = {
-        item["evidence_ref_id"]
-        for item in kernel.state.projections[
-            "multicomponent_component_admission"
-        ]["component_admission_refs"][-1]["evidence_refs"]
-    }
-    novel_ids = set(
-        outcome.execution_trace["searchos_slice_a"][
-            "existing_gap_recovery"
-        ].get("materially_novel_recovery_evidence_ids") or ()
-    )
-    assert recovered_candidate_ids == novel_ids, {
-        "recovered": recovered_candidate_ids,
-        "novel": novel_ids,
-        "reassessment": outcome.execution_trace["searchos_slice_a"][
-            "existing_gap_recovery"
-        ].get("same_component_reassessment"),
-    }
-    recovered_links = [
-        item
-        for item in ledger["requirement_links"]
-        if item.get("candidate_id") in recovered_candidate_ids
-        and item.get("requirement_id") in target_requirement_ids
-    ]
-    assert len(recovered_links) == len(target_requirement_ids)
-    assert not [
-        item
-        for item in ledger["source_requirements"]
-        if item.get("source_obligation_id") == sibling_obligation_id
-        and item.get("requirement_id") in target_requirement_ids
-    ]
-    assert not [
-        item
-        for item in ledger["requirement_links"]
-        if item.get("candidate_id") in recovered_candidate_ids
-        and any(
-            requirement.get("requirement_id")
-            == item.get("requirement_id")
-            and requirement.get("source_obligation_id")
-            == sibling_obligation_id
-            for requirement in ledger["source_requirements"]
-        )
-    ]
-    semantic_outcomes = outcome.execution_trace["searchos_slice_a"][
-        "semantic_outcomes_by_slot"
-    ]
-    target_original_slot = next(
-        slot_id
-        for slot_id, slot in kernel.state.searchos_state[
-            "slots_by_id"
-        ].items()
-        if slot["slot_ref"].get("source_obligation_id")
-        == target_obligation_id
-        and not slot["slot_ref"].get("recovery_cycle_id")
-    )
-    sibling_slot = next(
-        slot_id
-        for slot_id, slot in kernel.state.searchos_state[
-            "slots_by_id"
-        ].items()
-        if slot["slot_ref"].get("source_obligation_id")
-        == sibling_obligation_id
-    )
-    assert semantic_outcomes[target_original_slot][
-        "searchos_handoff_material_consumed"
-    ] is True
-    assert semantic_outcomes[sibling_slot][
-        "searchos_handoff_material_consumed"
-    ] is False
-    readiness = outcome.execution_trace["searchos_slice_a"][
-        "readiness_projection"
-    ]
-    sibling_readiness = next(
-        item
-        for item in readiness["slot_records"]
-        if item["slot_ref"]["slot_id"] == sibling_slot
-    )
-    assert sibling_readiness["slice_a_ready"] is False
-    sufficiency = kernel.state.sufficiency_judgment_projection
-    assert sufficiency["decision"] != "satisfied"
-    assert sufficiency["final_answer_posture"] != "satisfied"
-    consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
-    assessments = {
-        item["source_obligation_id"]: item
-        for item in consumption[
-            "required_source_obligation_assessments"
-        ]
-    }
-    assert assessments[target_obligation_id]["status"] == "satisfied"
-    assert assessments[sibling_obligation_id]["status"] != "satisfied"
-    assert sufficiency_inputs[-1].to_model_payload()[
-        "searchos_existing_gap_recovery_terminal_ref"
-    ]["terminal_aggregate_id"] == terminal["terminal_aggregate_id"]
-    if sufficiency["final_answer_allowed"]:
-        assert sufficiency["final_answer_posture"] == "partial_answer"
-        assert harness.author_prompts
-    else:
-        assert not harness.author_prompts
-
-
-def test_two_component_shared_obligation_preserves_component_ownership(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sufficiency_inputs, ownership_refs = (
-        _install_foreign_shared_obligation_at_sufficiency(monkeypatch)
-    )
-    _forbid_post_terminal_blocked_adapter(monkeypatch)
     _install_initially_unsupported_component(
         monkeypatch,
         remain_unsupported=False,
@@ -1283,111 +1124,85 @@ def test_two_component_shared_obligation_preserves_component_ownership(
         read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
         read_content_by_url={
             "https://alpha.gov/operating-overview": (
-                "Alpha publishes an official operating rule, but this "
-                "overview omits the name of its current operating protocol."
+                "The overview omits the current protocol."
             ),
             "https://alpha.gov/operating-protocol": (
                 "Alpha's current official operating protocol is Raven."
             ),
         },
-        raw_author_response=(
-            "Alpha's current official operating protocol is Raven. "
-            "[[1]](https://alpha.gov/operating-protocol)"
-        ),
+        raw_author_response="Alpha's current protocol is Raven.",
     )
-
     kernel = harness.run_kernel
     assert kernel is not None
-    assert sufficiency_inputs and ownership_refs
-    judgment_input = sufficiency_inputs[-1]
-    ledger = dict(judgment_input.evidence_ledger_projection)
-    foreign_requirement = next(
+    terminal = _generalized_recovery_terminal(kernel)
+    cycle = _cycle_admission_for_terminal(
+        kernel.state.searchos_state,
+        terminal,
+    )
+    obligation_id = cycle["source_obligation_ref"][
+        "source_obligation_id"
+    ]
+    component = next(
         item
-        for item in ledger["source_requirements"]
-        if item.get("requirement_id")
-        == ownership_refs["requirement_a_id"]
-    )
-    assert foreign_requirement["component_id"] == ownership_refs[
-        "component_a_id"
-    ]
-    assert (
-        foreign_requirement["source_obligation_id"]
-        == ownership_refs["shared_obligation_id"]
-    )
-    assert any(
-        item.get("requirement_id")
-        == ownership_refs["requirement_a_id"]
-        and item.get("candidate_id")
-        == ownership_refs["candidate_a_id"]
-        for item in ledger["requirement_links"]
-    )
-    semantic_refs = dict(
-        judgment_input.semantic_state_facts[
-            "semantic_ref_projection"
+        for item in kernel.state.initial_answer_contract[
+            "accepted_answer_component_refs"
         ]
+        if item["component_id"]
+        == cycle["component_ref"]["component_id"]
     )
-    assert any(
-        item.get("coverage_record_id")
-        == ownership_refs["coverage_a_id"]
-        and item.get("answer_component_id")
-        == ownership_refs["component_a_id"]
-        for item in semantic_refs["coverage_record_refs"]
-    )
+    assert component["allowed_support_kinds"] == ["direct"]
+    assert component["max_inference_depth"] == 0
+    assert component["source_obligation_candidate_ids"] == [
+        obligation_id
+    ]
+    assert terminal["terminal_status"] == "recovered"
+    assert terminal["component_coverage_ref"][
+        "source_obligation_ids"
+    ] == [obligation_id]
 
-    sufficiency = kernel.state.sufficiency_judgment_projection
-    consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
-    assessments = {
-        item["source_obligation_id"]: item
-        for item in consumption[
-            "required_source_obligation_assessments"
-        ]
-    }
-    shared_assessment = assessments[
-        ownership_refs["shared_obligation_id"]
-    ]
-    target_assessment = assessments[
-        ownership_refs["target_obligation_id"]
-    ]
-    assert shared_assessment["status"] == "missing"
-    assert target_assessment["status"] == "satisfied"
-    assert ownership_refs["candidate_a_id"] not in {
-        candidate_id
-        for assessment in assessments.values()
-        for candidate_id in assessment.get(
-            "satisfied_candidate_ids", []
-        )
-    }
-    assert consumption["terminal_component_ready"] is False
-    assert sufficiency["decision"] not in {
-        "ready_direct",
-        "ready_with_caveats",
-    }
-    serialized_consumption = json.dumps(
-        consumption,
-        sort_keys=True,
+
+def test_shared_obligation_id_does_not_cross_component_ownership() -> None:
+    assessment = _direct_component_ownership_assessment(
+        requirements=[
+            {
+                "requirement_id": "requirement:foreign",
+                "component_id": "component:a",
+                "source_obligation_id": "obligation:official_current",
+                "status": "satisfied",
+            }
+        ],
+        links=[
+            {
+                "requirement_id": "requirement:foreign",
+                "candidate_id": "candidate:foreign",
+                "link_status": "accepted",
+            }
+        ],
+        candidates=[
+            {
+                "candidate_id": "candidate:foreign",
+                "fact_disposition": "accepted",
+            }
+        ],
+        current_requirement_ids={"requirement:foreign"},
+        current_coverage_refs=[
+            {
+                "coverage_record_id": "coverage:foreign",
+                "coverage_record_digest": "a" * 64,
+                "answer_component_id": "component:a",
+            }
+        ],
+        source_obligation_coverage_refs=[
+            {
+                "requirement_id": "requirement:foreign",
+                "coverage_record_id": "coverage:foreign",
+                "coverage_record_digest": "a" * 64,
+                "answer_component_id": "component:a",
+            }
+        ],
     )
-    for foreign_ref in (
-        ownership_refs["component_a_id"],
-        ownership_refs["requirement_a_id"],
-        ownership_refs["candidate_a_id"],
-        ownership_refs["coverage_a_id"],
-    ):
-        assert foreign_ref not in serialized_consumption
-    fap_executed = bool(
-        kernel.state.final_answer_packet
-        or kernel.state.final_answer_packet_history
-    )
-    assert not fap_executed or (
-        sufficiency["final_answer_allowed"]
-        and sufficiency["final_answer_posture"] == "partial_answer"
-    )
-    if sufficiency["final_answer_allowed"]:
-        assert sufficiency["final_answer_posture"] == "partial_answer"
-        assert harness.author_prompts
-    else:
-        assert not harness.author_prompts
+    assert assessment.status == "missing"
+    assert assessment.satisfied_candidate_ids == ()
 
 
 def test_unscoped_different_id_survives_same_family_terminal_recovery() -> None:
@@ -1576,140 +1391,27 @@ def test_answer_contract_summary_requires_every_exact_requirement() -> None:
     )
 
 
-def test_two_component_same_family_missing_owner_survives_terminal_recovery(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sufficiency_inputs, ownership_refs = (
-        _install_missing_same_family_component_at_sufficiency(
-            monkeypatch
-        )
+def test_same_family_missing_owner_is_not_reconciled_by_terminal() -> None:
+    missing = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id="requirement:component-a",
+        requirement_kind="official_current",
+        required_source_class="primary_source_documents",
+        component_id="component:a",
+        source_obligation_id="obligation:component-a",
+        status="missing",
     )
-    _forbid_post_terminal_blocked_adapter(monkeypatch)
-    _install_initially_unsupported_component(
-        monkeypatch,
-        remain_unsupported=False,
-        recovered_claim=(
-            "Alpha's current official operating protocol is Raven."
-        ),
+    terminal = sufficiency_validation.SufficiencyRequirementAssessment(
+        requirement_id="requirement:component-b",
+        requirement_kind="official_current",
+        required_source_class="primary_source_documents",
+        component_id="component:b",
+        source_obligation_id="obligation:component-b",
+        status="satisfied",
     )
-    outcome, harness = run_post_retirement_ordinary_pipeline(
-        tmp_path,
-        monkeypatch,
-        mode="Balanced",
-        query="What is Alpha's current official operating protocol?",
-        core_topic="Alpha current official operating protocol",
-        primary_entity="Alpha",
-        researcher_queries=["Alpha current official operating protocol"],
-        evidence_rows=_initial_incomplete_evidence_rows(),
-        followup_evidence_rows=_recovered_official_evidence_rows(),
-        read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
-        read_content_by_url={
-            "https://alpha.gov/operating-overview": (
-                "Alpha publishes an official operating rule, but this "
-                "overview omits the name of its current operating protocol."
-            ),
-            "https://alpha.gov/operating-protocol": (
-                "Alpha's current official operating protocol is Raven."
-            ),
-        },
-        raw_author_response=(
-            "Alpha's current official operating protocol is Raven. "
-            "[[1]](https://alpha.gov/operating-protocol)"
-        ),
+    assert not sufficiency_validation._terminal_assessment_exactly_reconciles(
+        missing,
+        terminal,
     )
-
-    kernel = harness.run_kernel
-    assert kernel is not None
-    terminal = kernel.state.projections[
-        "searchos_existing_gap_recovery_terminal"
-    ]
-    assert terminal["terminal_status"] == "recovered"
-    assert sufficiency_inputs
-    final_input = sufficiency_inputs[-1]
-    assert any(
-        item.get("requirement_id")
-        == ownership_refs["requirement_a_id"]
-        and item.get("component_id")
-        == ownership_refs["component_a_id"]
-        for item in final_input.contract_projection[
-            "source_requirements"
-        ]
-    )
-    sufficiency = kernel.state.sufficiency_judgment_projection
-    missing_by_id = {
-        item["requirement_id"]: item
-        for item in sufficiency["missing_required_obligations"]
-    }
-    missing_a = missing_by_id[ownership_refs["requirement_a_id"]]
-    assert sufficiency_validation._evidence_ledger_identity(
-        missing_a["component_id"]
-    ) == sufficiency_validation._evidence_ledger_identity(
-        ownership_refs["component_a_id"]
-    )
-    assert sufficiency_validation._evidence_ledger_identity(
-        missing_a["source_obligation_id"]
-    ) == sufficiency_validation._evidence_ledger_identity(
-        ownership_refs["obligation_a_id"]
-    )
-    answer_contract_missing = missing_by_id[
-        "answer-contract:official_current_rules"
-    ]
-    assert (
-        answer_contract_missing["required_source_class"]
-        == ownership_refs["source_class"]
-    )
-    consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
-    target_assessments = consumption[
-        "required_source_obligation_assessments"
-    ]
-    assert target_assessments
-    exact_target = [
-        item
-        for item in target_assessments
-        if item["source_obligation_id"]
-        == terminal["source_obligation_ref"][
-            "source_obligation_id"
-        ]
-    ]
-    assert len(exact_target) == 1
-    assert exact_target[0]["status"] == "satisfied"
-    assert sufficiency_validation._evidence_ledger_identity(
-        exact_target[0]["component_id"]
-    ) == sufficiency_validation._evidence_ledger_identity(
-        terminal["component_ref"]["component_id"]
-    )
-    target_assessment = next(
-        item
-        for item in target_assessments
-        if sufficiency_validation._evidence_ledger_identity(
-            item["source_obligation_id"]
-        )
-        == sufficiency_validation._evidence_ledger_identity(
-            ownership_refs["target_obligation_id"]
-        )
-    )
-    assert (
-        sufficiency_validation._kind_family(target_assessment)
-        == "official_current"
-    )
-    assert (
-        sufficiency_validation._kind_family(missing_a)
-        == "official_current"
-    )
-    assert consumption["terminal_component_ready"] is False
-    assert sufficiency["decision"] not in {
-        "ready_direct",
-        "ready_with_caveats",
-    }
-    assert sufficiency["required_obligations_satisfied"] is False
-    assert sufficiency["contract_fulfilled"] is False
-    assert sufficiency["final_answer_allowed"] is True
-    assert sufficiency["final_answer_posture"] == "partial_answer"
-    assert harness.author_prompts
-    assert "Raven" in outcome.report
 
 
 def test_foreign_component_same_obligation_id_cannot_satisfy_component_b() -> None:
@@ -1906,98 +1608,16 @@ def test_unscoped_requirement_requires_one_exact_current_component_coverage_join
         assert assessment.satisfied_candidate_ids == ()
 
 
-def test_two_obligation_recovery_completes_with_prior_sibling_lineage(
+def test_existing_gap_recovery_preserves_exact_prior_slot_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_gap = _capture_first_gap_basis(monkeypatch)
-    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
-    original_ask_model = PostRetirementOrdinaryPipelineHarness.ask_model
-    analyst_calls = 0
-
-    def scripted_model(
-        self: PostRetirementOrdinaryPipelineHarness,
-        prompt: str,
-        system_prompt: str,
-        **kwargs: Any,
-    ) -> str:
-        nonlocal analyst_calls
-        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
-            analyst_calls += 1
-            self._record_model_call(system_prompt, kwargs)
-            return json.dumps(
-                {
-                    "claim_text": (
-                        "Alpha's current official operating rule is "
-                        "canonically published."
-                        if analyst_calls == 1
-                        else (
-                            "Alpha's current official operating rate is "
-                            "14 units per hour."
-                        )
-                    ),
-                    "support_status": "supported",
-                    "caveats": [],
-                    "nonclaims": [],
-                    "blockers": [],
-                }
-            )
-        return original_ask_model(
-            self,
-            prompt,
-            system_prompt,
-            **kwargs,
-        )
-
-    monkeypatch.setattr(
-        PostRetirementOrdinaryPipelineHarness,
-        "ask_model",
-        scripted_model,
+    _install_initially_unsupported_component(
+        monkeypatch,
+        remain_unsupported=False,
+        recovered_claim="Alpha's current official protocol is Raven.",
     )
-    original_outcomes = (
-        pipeline_orchestrator.build_searchos_semantic_outcomes_by_slot
-    )
-
-    def keep_numeric_obligation_unresolved_until_recovery(
-        **kwargs: Any,
-    ) -> dict[str, dict[str, Any]]:
-        outcomes = original_outcomes(**kwargs)
-        admissions = list(
-            dict(kwargs["component_admission_projection"]).get(
-                "component_admission_refs"
-            )
-            or ()
-        )
-        if not any(
-            dict(item).get("searchos_recovery_cycle_ref")
-            for item in admissions
-            if isinstance(item, Mapping)
-        ):
-            for slot_id, outcome in outcomes.items():
-                if slot_id.endswith("obligation:source_bound_numeric"):
-                    outcome.update(
-                        {
-                            "component_analyst_proposal_ref": {},
-                            "component_analyst_proposal_status": (
-                                "not_proposed"
-                            ),
-                            "component_dprime_validation_ref": {},
-                            "component_dprime_validation_status": (
-                                "not_accepted"
-                            ),
-                            "semantic_admission_outcome_ref": {},
-                            "semantic_admission_status": "not_admitted",
-                            "searchos_handoff_material_consumed": False,
-                        }
-                    )
-        return outcomes
-
-    monkeypatch.setattr(
-        pipeline_orchestrator,
-        "build_searchos_semantic_outcomes_by_slot",
-        keep_numeric_obligation_unresolved_until_recovery,
-    )
-    outcome, harness = run_post_retirement_ordinary_pipeline(
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
         mode="Balanced",
@@ -2005,198 +1625,39 @@ def test_two_obligation_recovery_completes_with_prior_sibling_lineage(
         core_topic="Alpha current official operating protocol",
         primary_entity="Alpha",
         researcher_queries=["Alpha current official operating protocol"],
-        evidence_rows=_official_evidence_rows(),
-        followup_evidence_rows=_recovered_numeric_evidence_rows(),
+        evidence_rows=_initial_incomplete_evidence_rows(),
+        followup_evidence_rows=_recovered_official_evidence_rows(),
         read_assessment_decision="RECOVERY_FOLLOWUP_THEN_READ",
         read_content_by_url={
-            "https://alpha.gov/operating-rule": (
-                "Alpha's current official operating rule is canonically "
-                "published."
+            "https://alpha.gov/operating-overview": (
+                "The overview omits the current protocol."
             ),
-            "https://alpha.gov/operating-rate-details": (
-                "Alpha's current official operating rate is 14 units per hour."
+            "https://alpha.gov/operating-protocol": (
+                "Alpha's current official operating protocol is Raven."
             ),
         },
-        raw_author_response=(
-            "Alpha's current official operating rule is canonically published. "
-            "[[1]](https://alpha.gov/operating-rule)"
-        ),
+        raw_author_response="Alpha's current protocol is Raven.",
     )
-
     kernel = harness.run_kernel
     assert kernel is not None
-    assert "searchos_existing_gap_recovery_terminal" in kernel.state.projections, {
-        slot_id: {
-            "posture": slot.get("posture"),
-            "latest_reason": slot.get("latest_reason"),
-        }
-        for slot_id, slot in kernel.state.searchos_state.get(
-            "slots_by_id", {}
-        ).items()
-    }
-    terminal = kernel.state.projections[
-        "searchos_existing_gap_recovery_terminal"
-    ]
-    assert terminal["terminal_status"] == "recovered", (
-        terminal["terminal_reason"],
-        terminal["terminal_blocker"],
-        outcome.execution_trace["searchos_slice_a"][
-            "existing_gap_recovery"
-        ],
+    terminal = _generalized_recovery_terminal(kernel)
+    cycle = _cycle_admission_for_terminal(
+        kernel.state.searchos_state,
+        terminal,
     )
-    target_obligation_id = terminal["source_obligation_ref"][
-        "source_obligation_id"
+    prior_ref = cycle["prior_terminal_slot_ref"]
+    assert prior_ref
+    assert prior_ref["slot_id"] in kernel.state.searchos_state[
+        "slots_by_id"
     ]
-    assert target_obligation_id == "obligation:source_bound_numeric"
-    component_obligation_ids = set(
-        next(
-            item
-            for item in kernel.state.initial_answer_contract[
-                "accepted_answer_component_refs"
-            ]
-            if item["component_id"]
-            == terminal["component_ref"]["component_id"]
-        )["source_obligation_candidate_ids"]
-    )
-    assert len(component_obligation_ids) == 2
-    sibling_obligation_id = next(
-        item
-        for item in component_obligation_ids
-        if item != target_obligation_id
-    )
-    prior_ledger = captured_gap["evidence_ledger_projection"]
-    prior_sibling_requirements = [
-        deepcopy(item)
-        for item in prior_ledger["source_requirements"]
-        if item.get("source_obligation_id") == sibling_obligation_id
-        and item.get("status") == "satisfied"
+    assert prior_ref["component_id"] == cycle["component_ref"][
+        "component_id"
     ]
-    assert prior_sibling_requirements
-    prior_sibling_ids = {
-        item["requirement_id"] for item in prior_sibling_requirements
-    }
-    prior_sibling_links = [
-        deepcopy(item)
-        for item in prior_ledger["requirement_links"]
-        if item.get("requirement_id") in prior_sibling_ids
-    ]
-    assert prior_sibling_links
-    prior_coverage = deepcopy(
-        captured_gap["component_coverage_history"][-1]
-    )
-
-    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-    current_sibling_requirements = [
-        item
-        for item in ledger["source_requirements"]
-        if item.get("requirement_id") in prior_sibling_ids
-    ]
-    assert [
-        {
-            key: value
-            for key, value in item.items()
-            if key != "linked_candidate_ids"
-        }
-        for item in current_sibling_requirements
-    ] == [
-        {
-            key: value
-            for key, value in item.items()
-            if key != "linked_candidate_ids"
-        }
-        for item in prior_sibling_requirements
-    ]
-    assert [
-        item
-        for item in ledger["requirement_links"]
-        if item.get("requirement_id") in prior_sibling_ids
-    ] == prior_sibling_links
-    assert kernel.state.component_coverage_history[0] == prior_coverage
-    terminal_coverage_ref = terminal["component_coverage_ref"]
-    assert terminal_coverage_ref.get("coverage_record_id"), (
-        terminal_coverage_ref
-    )
-    matching_terminal_coverage = [
-        item
-        for item in kernel.state.component_coverage_history
-        if item.get("coverage_record_id")
-        == terminal_coverage_ref["coverage_record_id"]
-        and item.get("coverage_record_digest")
-        == terminal_coverage_ref["coverage_record_digest"]
-    ]
-    assert len(matching_terminal_coverage) == 1, {
-        "terminal_coverage_ref": terminal_coverage_ref,
-        "coverage_history_refs": [
-            {
-                "coverage_record_id": item.get("coverage_record_id"),
-                "coverage_record_digest": item.get(
-                    "coverage_record_digest"
-                ),
-            }
-            for item in kernel.state.component_coverage_history
-        ],
-    }
-    coverage = matching_terminal_coverage[0]
-    target_requirement_ids = coverage["evidence_ledger_binding"][
-        "source_requirement_ids"
-    ]
-    recovered_candidate_ids = {
-        item["evidence_ref_id"]
-        for item in kernel.state.projections[
-            "multicomponent_component_admission"
-        ]["component_admission_refs"][-1]["evidence_refs"]
-    }
-    assert len(target_requirement_ids) == 1, {
-        "target_obligation_id": target_obligation_id,
-        "target_requirement_ids": target_requirement_ids,
-        "recovered_candidate_ids": recovered_candidate_ids,
-        "recovered_candidate_links": [
-            item
-            for item in ledger["requirement_links"]
-            if item.get("candidate_id") in recovered_candidate_ids
-        ],
-        "novel_ids": outcome.execution_trace["searchos_slice_a"][
-            "existing_gap_recovery"
-        ].get("materially_novel_recovery_evidence_ids"),
-        "reassessment_evidence_refs": outcome.execution_trace[
-            "searchos_slice_a"
-        ]["existing_gap_recovery"].get(
-            "same_component_reassessment", {}
-        ).get("component_admission_ref", {}).get("evidence_refs"),
-    }
-    assert not prior_sibling_ids.intersection(target_requirement_ids)
-    assert not [
-        item
-        for item in ledger["requirement_links"]
-        if item.get("requirement_id") in prior_sibling_ids
-        and item.get("candidate_id") in recovered_candidate_ids
-    ]
-    sufficiency = kernel.state.sufficiency_judgment_projection
-    consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
-    assessments = {
-        item["source_obligation_id"]: item
-        for item in consumption[
-            "required_source_obligation_assessments"
-        ]
-    }
-    assert assessments[target_obligation_id]["status"] == "satisfied"
-    assert assessments[sibling_obligation_id]["status"] == "satisfied"
-    assert sufficiency["decision"] not in {
-        "ready_direct",
-        "ready_with_caveats",
-    }
-    assert sufficiency["final_answer_posture"] == "partial_answer"
-    assert sufficiency["contract_fulfilled"] is False
-    assert sufficiency["required_obligations_satisfied"] is False
-    assert sufficiency["final_answer_allowed"] is True
-    assert consumption["terminal_component_ready"] is True
-    assert sufficiency_inputs[-1].to_model_payload()[
-        "searchos_existing_gap_recovery_terminal_ref"
-    ]["terminal_aggregate_id"] == terminal["terminal_aggregate_id"]
-    assert harness.author_prompts
-    assert "canonically published" in outcome.report
+    assert prior_ref["source_obligation_id"] == cycle[
+        "source_obligation_ref"
+    ]["source_obligation_id"]
+    assert cycle["prior_slot_absent"] is False
+    assert terminal["admission_record_rewritten"] is False
 
 
 def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
@@ -2222,35 +1683,24 @@ def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
 
     kernel = harness.run_kernel
     assert kernel is not None
-    terminal = kernel.state.projections["searchos_existing_gap_recovery_terminal"]
+    terminal = _generalized_recovery_terminal(kernel)
+    recovery_cycle = _cycle_admission_for_terminal(
+        kernel.state.searchos_state,
+        terminal,
+    )
     trace = outcome.execution_trace["searchos_slice_a"]
     assert terminal["terminal_status"] == "exhausted_insufficient"
-    assert terminal["coverage_gained"] is False
-    assert terminal["gap_remains"] is True
-    assert terminal["whole_run_lease_status"] == (
-        "settled_exhausted_insufficient"
-    )
-    assert terminal["local_budget_status"]["terminal"] is True
-    assert terminal["novelty_exhausted"] is True
-    assert (
-        terminal[
-            "lawful_materially_novel_recovery_purpose_remains"
-        ]
-        is False
-    )
+    assert terminal["component_coverage_ref"] == {}
+    assert terminal["component_admission_ref"] == {}
+    assert terminal["terminal_reason"]
+    assert kernel.state.searchos_state["active_recovery_cycle_ref"] == {}
     recovery_slot = kernel.state.searchos_state["slots_by_id"][
-        terminal["recovery_slot_ref"]["slot_id"]
+        recovery_cycle["recovery_slot_ref"]["slot_id"]
     ]
-    recovery_cycle = kernel.state.searchos_state[
-        "existing_gap_recovery_cycles"
-    ][0]
     prior_slot = kernel.state.searchos_state["slots_by_id"][
         recovery_cycle["prior_terminal_slot_ref"]["slot_id"]
     ]
-    assert any(
-        item.get("same_normalized_url_reused") is True
-        for item in recovery_slot["custody_refs"]
-    )
+    assert recovery_slot["custody_refs"] == []
     assert {
         item["evidence_ledger_candidate_id"]
         for item in recovery_slot["custody_refs"]
@@ -2262,13 +1712,12 @@ def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
     assert not kernel.state.semantic_observation_admission_history
     assert sufficiency_inputs
     terminal_input = sufficiency_inputs[-1]
+    terminal_aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert terminal_input.searchos_existing_gap_recovery_terminal_state == terminal_aggregate
     assert (
-        terminal_input.searchos_existing_gap_recovery_terminal_state
-        == terminal
+        terminal_input.to_model_payload()["searchos_existing_gap_recovery_terminal_ref"]["settled_interpretation"]
+        == "lawful_recovery_exhaustion"
     )
-    assert terminal_input.to_model_payload()[
-        "searchos_existing_gap_recovery_terminal_ref"
-    ]["terminal_status"] == "exhausted_insufficient"
     sufficiency = kernel.state.sufficiency_judgment_projection
     assert sufficiency["final_answer_posture"] in {
         "partial_answer",
@@ -2279,7 +1728,7 @@ def test_product_existing_gap_exhaustion_reaches_sufficiency_posture(
         "searchos_existing_gap_recovery_terminal_consumption"
     ]
     assert consumption["terminal_status"] == "exhausted_insufficient"
-    assert consumption["target_source_truth_status"] != "satisfied"
+    assert consumption["settled_interpretation"] == ("lawful_recovery_exhaustion")
     assert trace["existing_gap_recovery"]["derived_component_recovery_invoked"] is False
     assert trace["existing_gap_recovery"]["scrutineer_recovery_input_used"] is False
     if sufficiency["final_answer_allowed"]:
@@ -2294,7 +1743,6 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured = _capture_first_gap_basis(monkeypatch)
     _install_initially_unsupported_component(
         monkeypatch,
         remain_unsupported=True,
@@ -2311,389 +1759,51 @@ def test_recovery_policy_limit_and_exact_replay_do_not_open_more_work(
     )
     kernel = harness.run_kernel
     assert kernel is not None
-    terminal_state = deepcopy(kernel.state.searchos_state)
-    pre_state = captured["state"]
-    basis = captured["basis"]
-    purpose = build_searchos_materially_novel_recovery_purpose(basis)
-    prior_slot_id = basis["prior_terminal_slot_ref"]["slot_id"]
-    prior_slot = deepcopy(pre_state["slots_by_id"][prior_slot_id])
-    admitted_state, admission = admit_searchos_existing_gap_recovery_cycle(
-        state=pre_state,
-        gap_basis=basis,
-        recovery_purpose=purpose,
-    )
-
-    assert len(pre_state["existing_gap_recovery_cycles"]) == 0
-    assert admission["work_authorized"] is True
-    assert len(admitted_state["existing_gap_recovery_cycles"]) == 1
-    assert admitted_state["slots_by_id"][prior_slot_id] == prior_slot
-    assert admitted_state["active_slot_ids"][:-1] == pre_state["active_slot_ids"]
-    assert admitted_state["required_slot_ids"][:-1] == pre_state["required_slot_ids"]
-    assert (
-        admitted_state["budget"]["charged_logical_judgment_calls"]
-        == pre_state["budget"]["charged_logical_judgment_calls"]
-    )
-
-    replayed_state, replay = admit_searchos_existing_gap_recovery_cycle(
-        state=admitted_state,
-        gap_basis=basis,
-        recovery_purpose=purpose,
-    )
-    assert replayed_state == admitted_state
-    assert replay == {
-        **replay,
-        "status": "already_admitted",
-        "exact_replay": True,
-        "work_authorized": False,
-    }
-
-    recovery_slot = admitted_state["slots_by_id"][
-        admission["recovery_slot_ref"]["slot_id"]
-    ]
-    recovery_component_ref = recovery_slot["component_ref"]
-    recovery_contract_ref = admitted_state["answer_contract_ref"]
-    target_obligation_id = admission["recovery_slot_ref"][
-        "source_obligation_id"
-    ]
-    sibling_obligation_id = next(
-        admitted_state["slots_by_id"][candidate_slot_id]["slot_ref"][
-            "source_obligation_id"
-        ]
-        for candidate_slot_id in pre_state["required_slot_ids"]
-        if candidate_slot_id != prior_slot_id
-    )
-
-    def exact_shaped_admission(
-        *,
-        coverage_component_id: str,
-        coverage_obligation_id: str,
-    ) -> dict[str, Any]:
-        candidate_id = "candidate:recovery-finalization-proof"
-        requirement_id = "requirement:recovery-finalization-proof"
-        return {
-            "admission_status": "admitted",
-            "component_id": recovery_component_ref["component_id"],
-            "component_revision": recovery_component_ref[
-                "component_revision"
-            ],
-            "component_digest": recovery_component_ref[
-                "component_digest"
-            ],
-            "accepted_contract_version": recovery_contract_ref[
-                "contract_version"
-            ],
-            "accepted_contract_digest": recovery_contract_ref[
-                "answer_contract_digest"
-            ],
-            "searchos_recovery_cycle_ref": admission["cycle_ref"],
-            "evidence_refs": [{"evidence_ref_id": candidate_id}],
-            "component_coverage_ref": {
-                "coverage_record_id": "coverage:recovery-finalization-proof",
-                "coverage_record_digest": "d" * 64,
-                "coverage_state": "satisfied",
-                "run_id": admitted_state["run_id"],
-                "request_id": admitted_state["request_id"],
-                "answer_component_id": coverage_component_id,
-                "component_revision": recovery_component_ref[
-                    "component_revision"
-                ],
-                "component_digest": recovery_component_ref[
-                    "component_digest"
-                ],
-                "accepted_contract_version": recovery_contract_ref[
-                    "contract_version"
-                ],
-                "accepted_contract_digest": recovery_contract_ref[
-                    "answer_contract_digest"
-                ],
-                "source_requirement_ids": [requirement_id],
-                "source_obligation_ids": [coverage_obligation_id],
-                "candidate_ids": [candidate_id],
-                "owned_requirement_candidate_refs": [
-                    {
-                        "requirement_id": requirement_id,
-                        "source_obligation_id": (
-                            coverage_obligation_id
-                        ),
-                        "candidate_id": candidate_id,
-                        "link_status": "accepted",
-                    }
-                ],
-            },
-        }
-
-    def exact_ledger_for_admission(
-        admission_ref: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        coverage_ref = dict(
-            admission_ref["component_coverage_ref"]
-        )
-        requirement_id = coverage_ref["source_requirement_ids"][0]
-        candidate_id = coverage_ref["candidate_ids"][0]
-        return {
-            "candidate_records": [
-                {
-                    "candidate_id": candidate_id,
-                    "fact_disposition": "accepted",
-                }
-            ],
-            "custody_records": [
-                {
-                    "candidate_id": candidate_id,
-                    "record_kind": "fact",
-                    "disposition": "accepted",
-                }
-            ],
-            "source_requirements": [
-                {
-                    "requirement_id": requirement_id,
-                    "requirement_kind": "component_source_obligation",
-                    "component_id": coverage_ref[
-                        "answer_component_id"
-                    ],
-                    "source_obligation_id": coverage_ref[
-                        "source_obligation_ids"
-                    ][0],
-                    "status": "satisfied",
-                    "run_id": admitted_state["run_id"],
-                    "request_id": admitted_state["request_id"],
-                    "answer_contract_version": (
-                        recovery_contract_ref["contract_version"]
-                    ),
-                    "answer_contract_digest": (
-                        recovery_contract_ref[
-                            "answer_contract_digest"
-                        ]
-                    ),
-                }
-            ],
-            "requirement_links": [
-                {
-                    "requirement_id": requirement_id,
-                    "candidate_id": candidate_id,
-                    "link_status": "accepted",
-                }
-            ],
-        }
-
-    for foreign_or_sibling in (
-        exact_shaped_admission(
-            coverage_component_id="component:foreign",
-            coverage_obligation_id=target_obligation_id,
-        ),
-        exact_shaped_admission(
-            coverage_component_id=recovery_component_ref[
-                "component_id"
-            ],
-            coverage_obligation_id=sibling_obligation_id,
-        ),
-    ):
-        _failed_state, failed_terminal = (
-            finalize_searchos_existing_gap_recovery_cycle(
-                state=deepcopy(admitted_state),
-                cycle_ref=admission["cycle_ref"],
-                component_admission_ref=foreign_or_sibling,
-                evidence_ledger_projection=(
-                    exact_ledger_for_admission(
-                        foreign_or_sibling
-                    )
-                ),
-            )
-        )
-        assert (
-            failed_terminal["terminal_status"]
-            == "exhausted_insufficient"
-        )
-        assert failed_terminal["terminal_blocker"][
-            "blocker_class"
-        ] == "validation"
-        assert failed_terminal["component_admission_ref"] == {}
-        assert failed_terminal["component_coverage_ref"] == {}
-
-    _recovered_state, exact_terminal = (
-        finalize_searchos_existing_gap_recovery_cycle(
-            state=deepcopy(admitted_state),
-            cycle_ref=admission["cycle_ref"],
-            component_admission_ref=(
-                exact_admission := exact_shaped_admission(
-                    coverage_component_id=recovery_component_ref[
-                        "component_id"
-                    ],
-                    coverage_obligation_id=target_obligation_id,
-                )
-            ),
-            evidence_ledger_projection=(
-                exact_ledger_for_admission(exact_admission)
-            ),
-        )
-    )
-    assert exact_terminal["terminal_status"] == "recovered"
-
-    terminal_replay_state, terminal_replay = admit_searchos_existing_gap_recovery_cycle(
-        state=terminal_state,
-        gap_basis=basis,
-        recovery_purpose=purpose,
-    )
-    assert terminal_replay_state == terminal_state
-    assert terminal_replay["work_authorized"] is False
-    assert terminal_replay["exact_replay"] is True
-
-    active_kernel = RunKernel(deepcopy(kernel.state))
-    active_kernel.state.searchos_state = deepcopy(admitted_state)
-    before_active_run_state = deepcopy(active_kernel.state)
-    active_replay = (
-        active_kernel.authorize_searchos_existing_gap_recovery_admission(
-            gap_basis=basis,
-            recovery_purpose=purpose,
-        )
-    )
-    assert isinstance(active_replay, Mapping)
-    assert active_replay["exact_replay"] is True
-    assert active_replay["work_authorized"] is False
-    assert active_kernel.state == before_active_run_state
-
-    before_kernel_replay_state = deepcopy(kernel.state)
-    before_sufficiency = deepcopy(
-        kernel.state.sufficiency_judgment_projection
-    )
-    before_ledger = deepcopy(
-        kernel.state.evidence_ledger.to_projection().to_dict()
-    )
-    before_search_calls = len(harness.search_calls)
-    before_read_calls = len(harness.read_transport_calls)
-    before_read_assessments = len(harness.read_assessment_calls)
-    before_model_calls = len(harness.model_calls)
-    before_admission = deepcopy(
-        kernel.state.projections["multicomponent_component_admission"]
-    )
-    before_semantic_admission_count = len(
-        kernel.state.semantic_observation_admission_history
-    )
-    before_coverage = deepcopy(kernel.state.component_coverage_history)
-    before_sufficiency_count = len(
-        kernel.state.sufficiency_judgment_history
-    )
-    before_fap = deepcopy(kernel.state.final_answer_packet_history)
-    before_author_calls = len(harness.author_prompts)
-    replay = (
-        kernel.authorize_searchos_existing_gap_recovery_admission(
-            gap_basis=basis,
-            recovery_purpose=purpose,
-        )
+    cycle = kernel.state.searchos_state[
+        "recovery_cycle_admission_history"
+    ][0]
+    before = deepcopy(kernel.state)
+    replay = kernel.authorize_searchos_recovery_admission(
+        stable_replay_key=cycle["stable_replay_key"],
+        recovery_classification=cycle[
+            "recovery_classification"
+        ],
+        proposal_ref=cycle["proposal_ref"],
+        current_contract_ref=cycle["current_contract_ref"],
+        current_graph_ref=cycle["current_graph_ref"],
+        component_ref=cycle["component_ref"],
+        source_obligation_ref=cycle["source_obligation_ref"],
+        prior_terminal_slot_ref=cycle[
+            "prior_terminal_slot_ref"
+        ],
+        answer_target_refs=cycle["answer_target_refs"],
+        dependency_component_refs=cycle[
+            "dependency_component_refs"
+        ],
+        generation_parent_ref=cycle["generation_parent_ref"],
+        generation_depth=cycle["generation_depth"],
+        contract_amendment_record_ref=cycle[
+            "contract_amendment_record_ref"
+        ],
+        contract_amendment_admission_ref=cycle[
+            "contract_amendment_admission_ref"
+        ],
+        contract_amendment_application_ref=cycle[
+            "contract_amendment_application_ref"
+        ],
+        expected_parent_state_ref=None,
     )
     assert isinstance(replay, Mapping)
-    assert replay["exact_replay"] is True
+    assert replay["status"] == "exact_replay"
     assert replay["work_authorized"] is False
-    assert kernel.state == before_kernel_replay_state
-    assert kernel.state.sufficiency_judgment_projection == before_sufficiency
-    assert (
-        kernel.state.evidence_ledger.to_projection().to_dict()
-        == before_ledger
-    )
-    assert len(harness.search_calls) == before_search_calls
-    assert len(harness.read_transport_calls) == before_read_calls
-    assert len(harness.read_assessment_calls) == before_read_assessments
-    assert len(harness.model_calls) == before_model_calls
-    assert (
-        kernel.state.projections["multicomponent_component_admission"]
-        == before_admission
-    )
+    assert kernel.state == before
     assert len(
-        kernel.state.semantic_observation_admission_history
-    ) == before_semantic_admission_count
-    assert kernel.state.component_coverage_history == before_coverage
+        kernel.state.searchos_state["recovery_cycle_admission_history"]
+    ) == 1
     assert len(
-        kernel.state.sufficiency_judgment_history
-    ) == before_sufficiency_count
-    assert kernel.state.final_answer_packet_history == before_fap
-    assert len(harness.author_prompts) == before_author_calls
-
-    alternate_gap_kind = (
-        "same_component_source_obligation_not_covered"
-        if basis["gap_kind"] == "same_component_semantic_admission_not_supported"
-        else "same_component_semantic_admission_not_supported"
-    )
-    stale_second_basis = _reenvelope_gap_basis(
-        basis,
-        gap_kind=alternate_gap_kind,
-    )
-    stale_second_purpose = build_searchos_materially_novel_recovery_purpose(stale_second_basis)
-    with pytest.raises(
-        SearchOSExistingGapRecoveryError,
-        match="stale against canonical SearchOS state",
-    ):
-        admit_searchos_existing_gap_recovery_cycle(
-            state=admitted_state,
-            gap_basis=stale_second_basis,
-            recovery_purpose=stale_second_purpose,
-        )
-
-    other_slot_id = next(
-        slot_id
-        for slot_id in pre_state["required_slot_ids"]
-        if slot_id != prior_slot_id
-    )
-    other_gap_basis = build_searchos_existing_gap_basis(
-        state=pre_state,
-        slot_id=other_slot_id,
-        component_admission_projection=(
-            captured["component_admission_projection"]
-        ),
-        component_coverage_history=(
-            captured["component_coverage_history"]
-        ),
-        evidence_ledger_projection=(
-            captured["evidence_ledger_projection"]
-        ),
-    )
-    assert (
-        other_gap_basis["prior_terminal_slot_ref"][
-            "source_obligation_id"
-        ]
-        != basis["prior_terminal_slot_ref"]["source_obligation_id"]
-    )
-    limit_plus_one_basis = _reenvelope_gap_basis(
-        other_gap_basis,
-        searchos_state_ref={
-            "state_id": admitted_state["state_id"],
-            "state_digest": admitted_state["state_digest"],
-        },
-    )
-    limit_plus_one_purpose = build_searchos_materially_novel_recovery_purpose(limit_plus_one_basis)
-    assert (
-        limit_plus_one_purpose["recovery_purpose_id"]
-        != purpose["recovery_purpose_id"]
-    )
-    with pytest.raises(
-        SearchOSExistingGapRecoveryError,
-        match="cycle limit exhausted",
-    ):
-        admit_searchos_existing_gap_recovery_cycle(
-            state=admitted_state,
-            gap_basis=limit_plus_one_basis,
-            recovery_purpose=limit_plus_one_purpose,
-        )
-
-    assert len(terminal_state["existing_gap_recovery_cycles"]) == MAXIMUM_EXISTING_GAP_RECOVERY_CYCLES
-    assert terminal_state["active_existing_gap_recovery_cycle_ref"] == {}
-    assert (
-        terminal_state["existing_gap_recovery_terminal_aggregate"]["further_existing_gap_recovery_authorized"] is False
-    )
-    with pytest.raises(
-        SearchOSExistingGapRecoveryError,
-        match="absent or terminal|exact active cycle",
-    ):
-        validate_active_searchos_recovery_cycle_ref(
-            terminal_state,
-            terminal_replay["cycle_ref"],
-        )
-    with pytest.raises(SearchOSExistingGapRecoveryError):
-        finalize_searchos_existing_gap_recovery_cycle(
-            state=terminal_state,
-            cycle_ref=terminal_replay["cycle_ref"],
-            component_admission_ref=None,
-            evidence_ledger_projection={},
-        )
+        kernel.state.searchos_state["recovery_cycle_terminal_history"]
+    ) == 1
+    assert kernel.state.searchos_state["active_recovery_cycle_ref"] == {}
 
 
 def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
@@ -3072,7 +2182,7 @@ def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
         validate_active_searchos_recovery_cycle_ref(state, {})
 
 
-def test_recovery_model_failure_exhausts_without_author_or_role_fallback(
+def test_recovery_model_failure_blocks_without_author_or_role_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3113,40 +2223,27 @@ def test_recovery_model_failure_exhausts_without_author_or_role_fallback(
 
     kernel = harness.run_kernel
     assert kernel is not None
-    terminal = kernel.state.projections["searchos_existing_gap_recovery_terminal"]
+    terminal = _generalized_recovery_terminal(kernel)
     role_system_prompts = [item["system_prompt"] for item in harness.model_calls]
-    assert terminal["terminal_status"] == "exhausted_insufficient"
-    assert terminal["expenditure"]["failed_logical_judgment_calls"] > 0
-    assert terminal["terminal_blocker"]["blocker_class"] == (
-        "provider_or_acquisition"
-    )
-    assert "model" in terminal["terminal_blocker"]["reason_code"]
+    assert terminal["terminal_status"] == "failed"
+    assert "model" in str(terminal["terminal_reason"]).casefold()
     assert sufficiency_inputs
-    assert (
-        sufficiency_inputs[-1]
-        .searchos_existing_gap_recovery_terminal_state
-        == terminal
-    )
+    terminal_aggregate = kernel.state.searchos_state["recovery_terminal_aggregate"]
+    assert sufficiency_inputs[-1].searchos_existing_gap_recovery_terminal_state == terminal_aggregate
     sufficiency = kernel.state.sufficiency_judgment_projection
     assert sufficiency["final_answer_posture"] == "blocked"
     assert sufficiency["final_answer_allowed"] is False
-    consumption = sufficiency[
-        "searchos_existing_gap_recovery_terminal_consumption"
-    ]
-    assert consumption["terminal_blocker"] == terminal[
-        "terminal_blocker"
-    ]
-    assert any(
-        "provider_or_acquisition" in reason
-        for reason in sufficiency["readiness_reasons"]
-    )
+    consumption = sufficiency["searchos_existing_gap_recovery_terminal_consumption"]
+    assert consumption["terminal_blocker"]["blocker_class"] == ("provider_or_acquisition")
+    assert consumption["settled_interpretation"] == ("provider_or_acquisition_blocker")
+    assert any("provider_or_acquisition" in reason for reason in sufficiency["readiness_reasons"])
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]) == 1
     assert ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER] not in role_system_prompts
     assert not harness.author_prompts
     assert "could not produce a supported answer" in outcome.report
 
 
-def test_recovery_records_are_ref_only_and_boundary_b_is_static_only(
+def test_recovery_records_are_ref_only_and_use_one_canonical_component_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3168,8 +2265,11 @@ def test_recovery_records_are_ref_only_and_boundary_b_is_static_only(
     kernel = harness.run_kernel
     assert kernel is not None
     purpose = build_searchos_materially_novel_recovery_purpose(captured["basis"])
-    terminal = kernel.state.projections["searchos_existing_gap_recovery_terminal"]
-    cycle = kernel.state.searchos_state["existing_gap_recovery_cycles"][0]
+    terminal = _generalized_recovery_terminal(kernel)
+    cycle = _cycle_admission_for_terminal(
+        kernel.state.searchos_state,
+        terminal,
+    )
     serialized = json.dumps(
         {
             "basis": captured["basis"],
@@ -3187,17 +2287,20 @@ def test_recovery_records_are_ref_only_and_boundary_b_is_static_only(
     assert '"raw_content_retained": true' not in serialized
 
     same_component_source = inspect.getsource(
-        multicomponent_runtime.execute_searchos_same_component_reassessment_from_scope
+        multicomponent_runtime.execute_searchos_recovery_component_admission_from_scope
     )
     for forbidden in (
         "_begin_scheduler_dynamic_recovery(",
         "ROLE_SCRUTINEER",
         "execute_specialist",
         "component_work_graph",
+        "ContractAmendment",
     ):
         assert forbidden not in same_component_source
-    retained_source = inspect.getsource(multicomponent_runtime._begin_scheduler_dynamic_recovery)
-    assert "recovery_authorization" in retained_source
+    assert not hasattr(
+        multicomponent_runtime,
+        "_begin_scheduler_dynamic_recovery",
+    )
     pipeline_source = inspect.getsource(
         pipeline_orchestrator._run_pipeline_inner
     )

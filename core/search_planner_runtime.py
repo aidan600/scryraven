@@ -26,6 +26,7 @@ from core.search_work_query_shape_runtime import (
 )
 from core.semantic_contract_foundation import (
     AnswerComponentContract,
+    ComponentPurpose,
     Materiality,
     MaterialityPolicy,
     PartialAnswerPolicy,
@@ -327,7 +328,32 @@ class DeterministicSearchPlannerAdapter:
         requirements: list[dict[str, Any]] = []
         for rank, candidate in enumerate(assessment.component_candidates, start=1):
             component_id = candidate.component_id
-            obligation_ids = list(localized_obligation_ids.get(component_id, ()))
+            obligation_ids = list(
+                localized_obligation_ids.get(component_id, ())
+            )[:1]
+            if not obligation_ids:
+                fallback_obligation_id = (
+                    f"obligation:{component_id}:direct-source"
+                )
+                obligation_ids = [fallback_obligation_id]
+                source_kind_by_id[fallback_obligation_id] = (
+                    "primary_source_documents"
+                )
+                source_candidates.append(
+                    {
+                        "candidate_id": fallback_obligation_id,
+                        "obligation_kind": "primary_source_documents",
+                        "component_candidate_ids": [component_id],
+                        "strictness": "required",
+                        "metadata": {
+                            "provider_name_neutral": True,
+                            "component_binding_posture": (
+                                "deterministic_component_local_reproof"
+                            ),
+                            "deterministic_fallback_obligation": True,
+                        },
+                    }
+                )
             subquestion = candidate.user_facing_subquestion
             strategy = _deterministic_primary_query_strategy(
                 component_id=component_id,
@@ -344,6 +370,7 @@ class DeterministicSearchPlannerAdapter:
                 {
                     "component_id": component_id,
                     "component_revision": "1",
+                    "component_purpose": "user_facing_answer_target",
                     "user_facing_label": f"Required component {rank}",
                     "user_facing_question": subquestion,
                     "requirement_posture": "required",
@@ -1048,6 +1075,13 @@ def _question_meaning_record_from_adapter_result(
         "component_search_requirements_subordinate": True,
         "component_search_requirements_executed": False,
         "contract_amendment_candidates_deferred": bool(_safe_list(adapter_result.get("contract_amendment_candidates"))),
+        "relationship_hypotheses": _safe_list(
+            adapter_result.get("relationship_hypotheses")
+        ),
+        "relationship_hypotheses_proposal_only": True,
+        "relationship_hypotheses_canonical_state": False,
+        "relationship_hypotheses_supporting_authority": False,
+        "relationship_hypotheses_construct_search_work": False,
         "closed_surface_flags": dict(_CLOSED_SURFACE_FLAGS),
         **query_shape_metadata,
         "semantic_planning_owner": (
@@ -1234,6 +1268,8 @@ def _answer_components(value: Any) -> list[AnswerComponentContract]:
                 component_id=component_id,
                 user_facing_label=label,
                 user_facing_question=question,
+                component_purpose=mapping.get("component_purpose")
+                or ComponentPurpose.USER_FACING_ANSWER_TARGET,
                 component_revision=_clean_token(mapping.get("component_revision")) or "1",
                 requirement_posture=mapping.get("requirement_posture") or RequirementPosture.REQUIRED,
                 acceptance_criteria=tuple(_text_list(mapping.get("acceptance_criteria"), limit=320)),
@@ -1388,9 +1424,17 @@ def initial_query_strategies_from_planner_state(
         component
         for component in accepted_components
         if _clean_token(component.get("requirement_posture")) == "required"
+        and "direct"
+        in {
+            _clean_token(item)
+            for item in component.get("allowed_support_kinds") or ()
+        }
     ]
     if not required_components:
-        raise SearchPlannerRuntimeError("initial query strategy requires at least one accepted required component")
+        raise SearchPlannerRuntimeError(
+            "initial query strategy requires at least one direct-capable "
+            "accepted required component"
+        )
 
     strategies: list[dict[str, Any]] = []
     seen_strategy_ids: set[str] = set()
