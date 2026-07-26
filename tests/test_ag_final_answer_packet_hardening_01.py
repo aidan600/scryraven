@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import ast
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
 import pytest
 
+import tests.test_ag_sem_09_sufficiency_semantic_consumption as semantic_fixture
+from core.component_coverage_record import (
+    ConflictPosture,
+    CoverageState,
+    FollowupNeed,
+    SemanticSupportStatus,
+    SourceObligationStatus,
+)
 from core.final_answer_packet_hardening_runtime import (
     FAP_STATUSES,
     READINESS_TO_FAP_STATUS,
@@ -21,27 +30,13 @@ from core.run_kernel import (
     RunKernelTransitionError,
     RunStageStatus,
 )
-from core.specialist_source_bound_calculation_runtime import (
-    reduce_specialist_source_bound_calculation,
+from core.semantic_contract_foundation import (
+    AnswerComponentContract,
+    Materiality,
+    RequirementPosture,
+    SupportKind,
 )
 from core.sufficiency_readiness_runtime import reduce_sufficiency_readiness
-from tests.test_ag_analyst_evidence_relative_report_01 import _analysis_fixture
-from tests.test_ag_scrutineer_review_01 import (
-    _gap_chain,
-    _reduce_review,
-    _review_record,
-    _supported_chain,
-)
-from tests.test_ag_specialist_source_bound_calculation_01 import (
-    _input as _specialist_input,
-)
-from tests.test_ag_specialist_source_bound_calculation_01 import (
-    _record as _specialist_record,
-)
-from tests.test_ag_sufficiency_partial_answer_readiness_01 import (
-    _add_component,
-    _component_id,
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_MODULE = ROOT / "core" / "final_answer_packet_hardening_runtime.py"
@@ -53,6 +48,95 @@ DOCS = (
     ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
 )
+
+
+def _component_id(kernel: Any) -> str:
+    accepted = kernel.state.current_answer_contract or kernel.state.initial_answer_contract
+    return accepted["accepted_answer_component_refs"][0]["component_id"]
+
+
+def _semantic_kernel(
+    *,
+    coverage_kwargs: dict[str, Any] | None = None,
+    include_semantic: bool = True,
+    include_coverage: bool = True,
+    unresolved_component_id: str | None = None,
+    unresolved_required: bool = False,
+) -> RunKernel:
+    kernel = RunKernel.start(
+        run_id=semantic_fixture.RUN_ID,
+        request_id=semantic_fixture.REQUEST_ID,
+    )
+    qmr = semantic_fixture._qmr()
+    if unresolved_component_id is not None:
+        unresolved_component = AnswerComponentContract(
+            component_id=unresolved_component_id,
+            component_revision="1",
+            user_facing_label="Unresolved fixture component",
+            user_facing_question="What remains unresolved for this answer?",
+            requirement_posture=(RequirementPosture.REQUIRED if unresolved_required else RequirementPosture.OPTIONAL),
+            acceptance_criteria=("state the bounded value", "bind it to evidence"),
+            source_obligation_candidate_ids=(f"source-obligation:{unresolved_component_id}",),
+            allowed_support_kinds=(SupportKind.DIRECT,),
+            max_inference_depth=0,
+            mandatory_caveats=(f"Component {unresolved_component_id} is unresolved.",),
+            prohibited_upgrades=(f"Do not upgrade component {unresolved_component_id} beyond supported readiness.",),
+            materiality=(Materiality.MATERIAL if unresolved_required else Materiality.NON_MATERIAL),
+        )
+        qmr = replace(
+            qmr,
+            answer_components=(*qmr.answer_components, unresolved_component),
+        )
+    action = kernel.authorize_initial_answer_contract_acceptance(
+        parent_question_meaning_record_id=qmr.record_id,
+        parent_proposal_digest=qmr.record_digest,
+    )
+    kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
+            status=RunStageStatus.COMPLETED,
+            payload={"question_meaning_record": qmr.to_dict()},
+        )
+    )
+    accepted = kernel.state.initial_answer_contract
+    if not include_semantic:
+        return kernel
+    semantic_fixture._seed_evidence_ledger(kernel)
+    content_ref = semantic_fixture._content_ref(accepted)
+    observation = replace(
+        semantic_fixture._observation(accepted),
+        claim_or_value="The reported total is supported by the public record.",
+    )
+    component_ref = accepted["accepted_answer_component_refs"][0]
+    admission_action = kernel.authorize_semantic_observation_admission(
+        semantic_observation_id=observation.observation_id,
+        semantic_observation_digest=observation.observation_digest,
+        answer_component_id=component_ref["component_id"],
+        component_revision=component_ref["component_revision"],
+        component_digest=component_ref["component_digest"],
+    )
+    kernel.reduce(
+        Observation.from_action(
+            admission_action,
+            observation_type=ObservationType.SEMANTIC_OBSERVATION_ADMITTED,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "semantic_observation": observation.to_dict(),
+                "sanitized_content_references": [content_ref.to_dict()],
+            },
+        )
+    )
+    if include_coverage:
+        coverage = semantic_fixture._coverage_record(
+            accepted,
+            observation,
+            content_ref,
+            kernel,
+            **(coverage_kwargs or {}),
+        )
+        semantic_fixture._reduce_coverage(kernel, accepted, coverage)
+    return kernel
 
 
 def _decide(kernel: Any, *, mode: str = "Balanced") -> dict[str, Any]:
@@ -69,92 +153,57 @@ def _harden(kernel: Any) -> dict[str, Any]:
 
 
 def _full_ready_chain() -> dict[str, Any]:
-    chain = _supported_chain()
-    kernel = chain["kernel"]
-    calculation = _specialist_record(chain)
-    reduce_specialist_source_bound_calculation(
-        run_kernel=kernel,
-        specialist_source_bound_calculation_record=calculation,
-    )
-    review = _review_record(
-        chain,
-        mode="Balanced",
-        red_flag_context=True,
-        specialist_source_bound_calculation_projection=(
-            kernel.state.specialist_source_bound_calculation_projection
-        ),
-        specialist_source_bound_calculation_history=(
-            kernel.state.specialist_source_bound_calculation_history
-        ),
-    )
-    _reduce_review(chain, review)
+    kernel = _semantic_kernel()
     _decide(kernel)
-    return chain
+    return {"kernel": kernel}
 
 
 def _partial_ready_kernel() -> Any:
-    chain = _supported_chain()
-    _add_component(
-        chain["kernel"],
-        component_id="component:optional-context",
-        required=False,
+    kernel = _semantic_kernel(
+        unresolved_component_id="component:optional-context",
+        unresolved_required=False,
     )
-    _decide(chain["kernel"])
-    return chain["kernel"]
+    _decide(kernel)
+    return kernel
 
 
 def _blocked_kernel() -> Any:
-    chain = _supported_chain()
-    _add_component(
-        chain["kernel"],
-        component_id="component:required-gap",
-        required=True,
+    kernel = _semantic_kernel(
+        unresolved_component_id="component:required-gap",
+        unresolved_required=True,
     )
-    _decide(chain["kernel"])
-    return chain["kernel"]
+    _decide(kernel)
+    return kernel
 
 
 def _followup_required_kernel() -> Any:
-    chain = _gap_chain("currentness_concern")
-    review = _review_record(
-        chain,
-        mode="Balanced",
-        followup_search_intent_packet=chain["followup_packet"],
+    kernel = _semantic_kernel(
+        coverage_kwargs={
+            "coverage_state": CoverageState.PARTIAL,
+            "semantic_support_status": SemanticSupportStatus.PARTIAL,
+            "source_obligation_status": SourceObligationStatus.PARTIAL,
+            "followup_need": FollowupNeed.REQUIRED,
+            "remaining_unknowns": ("Currentness requires follow-up.",),
+        },
     )
-    _reduce_review(chain, review)
-    _decide(chain["kernel"])
-    return chain["kernel"]
+    _decide(kernel)
+    return kernel
 
 
 def _contested_kernel() -> Any:
-    chain = _supported_chain()
-    contested = _specialist_record(
-        chain,
-        calculation_kind="sum",
-        inputs=[
-            _specialist_input(chain, label="current", value=10),
-            _specialist_input(
-                chain,
-                label="stale",
-                value=15,
-                currentness="unknown",
-                source_class="weak_secondary",
-            ),
-        ],
+    kernel = _semantic_kernel(
+        coverage_kwargs={
+            "coverage_state": CoverageState.CONFLICTED,
+            "conflict_posture": ConflictPosture.PRESENT,
+            "remaining_unknowns": ("Conflicting source treatment is unresolved.",),
+        },
     )
-    reduce_specialist_source_bound_calculation(
-        run_kernel=chain["kernel"],
-        specialist_source_bound_calculation_record=contested,
-    )
-    _decide(chain["kernel"])
-    return chain["kernel"]
+    _decide(kernel)
+    return kernel
 
 
 def _insufficient_kernel() -> Any:
-    kernel, _fetch_read_packet, _ledger_projection = _analysis_fixture(
-        readable_count=1,
-        failed_count=0,
-    )
+    kernel = _semantic_kernel(include_semantic=False, include_coverage=False)
     _decide(kernel)
     return kernel
 
@@ -231,9 +280,7 @@ def test_case_a_full_answer_fap_preserves_supported_treatment_and_closes_author(
     assert projection["owner"] == "RunKernel.FinalAnswerPacket"
     assert projection["packet_created"] is True
     assert projection["fap_status"] == "full_answer_packet_ready"
-    assert kernel.state.final_answer_packet["packet_kind"] == (
-        "hardened_final_answer_packet"
-    )
+    assert kernel.state.final_answer_packet["packet_kind"] == ("hardened_final_answer_packet")
     assert entry["component_readiness_status"] == "full_answer_ready"
     assert entry["fap_component_status"] == "supported_component"
     assert entry["allowed_author_treatment"] in {
@@ -243,12 +290,8 @@ def test_case_a_full_answer_fap_preserves_supported_treatment_and_closes_author(
     assert entry["supported_claim_allowed"] is True
     assert projection["mandatory_caveats"]
     assert projection["source_support_refs"]
-    assert projection["citation_posture"] == (
-        "requirements_preserved_eligibility_deferred"
-    )
-    assert projection["source_obligation_posture"] == (
-        "requirements_preserved_not_satisfied_by_fap"
-    )
+    assert projection["citation_posture"] == ("requirements_preserved_eligibility_deferred")
+    assert projection["source_obligation_posture"] == ("requirements_preserved_not_satisfied_by_fap")
     assert kernel.state.projections[FINAL_ANSWER_PACKET_STAGE] == projection
     assert kernel.state.final_answer_packet_history == [projection]
     _assert_no_author_or_citation_surface(kernel, projection)
@@ -262,20 +305,14 @@ def test_case_b_partial_answer_fap_keeps_unresolved_components_visible() -> None
     unresolved_entry = _entry_by_component(projection, unresolved_id)
 
     assert projection["fap_status"] == "partial_answer_packet_ready"
-    assert projection["readiness_ref"]["final_readiness_status"] == (
-        "partial_answer_ready"
-    )
+    assert projection["readiness_ref"]["final_readiness_status"] == ("partial_answer_ready")
     assert projection["missing_component_refs"]
     assert unresolved_entry["component_readiness_status"] == "insufficient_evidence"
     assert unresolved_entry["allowed_author_treatment"] == "must_state_as_unresolved"
     assert unresolved_entry["must_not_answer"] is True
     assert projection["author_handoff_constraints"]["must_not_imply_full_answer"] is True
-    assert projection["author_allowed_response_posture"][
-        "full_answer_implication_allowed"
-    ] is False
-    assert "Do not imply full-answer readiness." in projection[
-        "author_prohibited_claims"
-    ]
+    assert projection["author_allowed_response_posture"]["full_answer_implication_allowed"] is False
+    assert "Do not imply full-answer readiness." in projection["author_prohibited_claims"]
     _assert_no_author_or_citation_surface(kernel, projection)
 
 
@@ -286,15 +323,9 @@ def test_case_c_blocked_fap_allows_blocker_explanation_only() -> None:
 
     assert projection["fap_status"] == "blocked_answer_packet"
     assert projection["blocked_component_refs"] or projection["missing_component_refs"]
-    assert projection["author_handoff_constraints"]["allowed_scope"] == (
-        "blocker_explanation_only"
-    )
-    assert projection["author_handoff_constraints"][
-        "must_not_answer_unsupported_components"
-    ] is True
-    assert "Do not answer blocked or unsupported components." in projection[
-        "author_prohibited_claims"
-    ]
+    assert projection["author_handoff_constraints"]["allowed_scope"] == ("blocker_explanation_only")
+    assert projection["author_handoff_constraints"]["must_not_answer_unsupported_components"] is True
+    assert "Do not answer blocked or unsupported components." in projection["author_prohibited_claims"]
     for entry in projection["component_packet_entries"]:
         if entry["component_readiness_status"] != "full_answer_ready":
             assert entry["must_not_answer"] is True
@@ -308,17 +339,11 @@ def test_case_d_followup_required_fap_preserves_remediation_without_authorizing(
 
     assert projection["fap_status"] == "followup_required_packet"
     assert projection["followup_required_component_refs"]
-    assert projection["author_handoff_constraints"]["allowed_scope"] == (
-        "remediation_required_explanation_only"
-    )
-    assert projection["author_handoff_constraints"]["followup_authorized_by_fap"] is (
-        False
-    )
+    assert projection["author_handoff_constraints"]["allowed_scope"] == ("remediation_required_explanation_only")
+    assert projection["author_handoff_constraints"]["followup_authorized_by_fap"] is (False)
     assert projection["followup_authorized"] is False
     assert projection["followup_search_authorized"] is False
-    assert "Do not authorize follow-up or imply remediation completed." in projection[
-        "author_prohibited_claims"
-    ]
+    assert "Do not authorize follow-up or imply remediation completed." in projection["author_prohibited_claims"]
     _assert_no_author_or_citation_surface(kernel, projection)
 
 
@@ -331,15 +356,9 @@ def test_case_e_contested_fap_preserves_contested_refs_and_forbids_smoothing() -
     assert projection["fap_status"] == "contested_answer_packet"
     assert projection["contested_component_refs"]
     assert contested_entry["allowed_author_treatment"] == "must_state_as_contested"
-    assert "must_not_present_as_fact" in contested_entry[
-        "author_treatment_constraints"
-    ]
-    assert projection["author_handoff_constraints"][
-        "must_not_smooth_disagreement_into_fact"
-    ] is True
-    assert "Do not smooth contested disagreement into fact." in projection[
-        "author_prohibited_claims"
-    ]
+    assert "must_not_present_as_fact" in contested_entry["author_treatment_constraints"]
+    assert projection["author_handoff_constraints"]["must_not_smooth_disagreement_into_fact"] is True
+    assert "Do not smooth contested disagreement into fact." in projection["author_prohibited_claims"]
     _assert_no_author_or_citation_surface(kernel, projection)
 
 
@@ -351,12 +370,8 @@ def test_case_f_insufficient_evidence_fap_allows_no_supported_claims() -> None:
     assert projection["fap_status"] == "insufficient_evidence_packet"
     assert projection["supported_component_refs"] == []
     assert projection["source_support_refs"] == []
-    assert projection["author_handoff_constraints"]["supported_claims_allowed"] is (
-        False
-    )
-    assert projection["author_allowed_response_posture"][
-        "supported_claims_allowed"
-    ] is False
+    assert projection["author_handoff_constraints"]["supported_claims_allowed"] is (False)
+    assert projection["author_allowed_response_posture"]["supported_claims_allowed"] is False
     for entry in projection["component_packet_entries"]:
         assert entry["supported_claim_allowed"] is False
         assert entry["allowed_author_treatment"] == "must_not_answer"
@@ -390,9 +405,7 @@ def test_case_h_stale_readiness_digest_or_projection_is_rejected() -> None:
         action_id=action.action_id,
         action_inputs=action.inputs,
     )
-    kernel.state.sufficiency_readiness_projection = deepcopy(
-        kernel.state.sufficiency_readiness_projection
-    )
+    kernel.state.sufficiency_readiness_projection = deepcopy(kernel.state.sufficiency_readiness_projection)
     kernel.state.sufficiency_readiness_projection["readiness_count"] = 99
 
     with pytest.raises(RunKernelTransitionError, match="stale"):
@@ -485,18 +498,12 @@ def test_case_k_no_packet_laundering_across_non_full_statuses() -> None:
         expected_fap = READINESS_TO_FAP_STATUS[readiness_status]
 
         assert projection["fap_status"] == expected_fap
-        assert projection["readiness_ref"]["final_readiness_status"] == (
-            readiness_status
-        )
-        assert projection["author_handoff_constraints"][
-            "must_preserve_readiness_status"
-        ] == readiness_status
+        assert projection["readiness_ref"]["final_readiness_status"] == (readiness_status)
+        assert projection["author_handoff_constraints"]["must_preserve_readiness_status"] == readiness_status
         assert projection["fap_status"] != "full_answer_packet_ready"
         assert projection["fap_status"] in FAP_STATUSES
         if readiness_status != "partial_answer_ready":
-            assert not projection["author_allowed_response_posture"][
-                "full_answer_implication_allowed"
-            ]
+            assert not projection["author_allowed_response_posture"]["full_answer_implication_allowed"]
         for entry in projection["component_packet_entries"]:
             if entry["component_readiness_status"] != "full_answer_ready":
                 assert entry["supported_claim_allowed"] is False
