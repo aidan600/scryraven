@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -35,6 +37,23 @@ from scripts.provider_execution_contract import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_broker_server_entrypoint_executes_as_a_tracked_script() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "provider_execution_broker.py"),
+            "--help",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert "provider broker" in completed.stdout
 
 
 def _search_request(

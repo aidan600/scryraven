@@ -11,11 +11,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Mapping
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from scripts.provider_execution_contract import (
     BROKER_DEFAULT_PORT,
