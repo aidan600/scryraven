@@ -170,7 +170,7 @@ def test_fake_dprime_review_is_consumed_by_existing_product_path(
     assert CONFIRM_LIVE_DPRIME_REVIEW_FLAG in result.packet["command_harness_used"]
     assert (
         result.packet["provider_broker_posture"]
-        == "private_broker_sanitized_provider_proxy_to_retained_artifacts_"
+        == "generic_broker_sanitized_provider_execution_to_retained_artifacts_"
         "with_explicit_dprime_review"
     )
 

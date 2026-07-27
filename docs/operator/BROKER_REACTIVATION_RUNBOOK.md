@@ -1,266 +1,125 @@
-# Broker Reactivation Runbook
+# Provider-Execution Broker Activation Runbook
 
-Status: local operator guidance for the private ScryRaven provider-proxy broker.
-This is documentation only; it does not authorize committing private broker
-files, tokens, provider keys, `.env` contents, raw prompts, raw provider
-payloads, raw model responses, private logs, DB rows, cache rows, or full traces.
+Status: current operator guidance for the tracked loopback-only broker. This
+document does not authorize live provider contact by itself.
 
-The durable broker doctrine is intentionally small:
-
-- The broker is not ScryRaven authority.
-- The broker is not a validation-profile governor.
-- The broker is not job-id policy.
-- The broker is a tiny private key-holding provider proxy.
-
-Known local broker script:
+## Installed Components
 
 ```text
-C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py
-```
-
-Known local broker URL:
-
-```text
-http://127.0.0.1:8765/run
-```
-
-Tracked generic provider-proxy client:
-
-```text
+scripts/provider_execution_contract.py
+scripts/provider_execution_broker.py
 scripts/request_provider_proxy_broker.py
-```
-
-Preferred one-run local operator helper:
-
-```text
 scripts/run_provider_proxy_broker_once.py
+scripts/evaluation/brokered_model_origination_transport.py
 ```
 
-Detailed reusable flow:
+The active doctrine is one explicit-route mechanical broker:
 
 ```text
-docs/operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md
+caller resolves exact provider/model route
+-> tracked loopback broker
+-> mechanical provider adapter
+-> transient normalized response
+-> caller-owned interpretation and durable sanitization
 ```
 
-Public non-secret private-broker template:
+The broker does not own jobs, phases, profiles, commands, aliases,
+fast/smart/embed selection, semantic roles, capability judgment, provider
+preference, query strategy, ranking, source admission, retrieval recovery,
+Sufficiency, citation, FAP, Author, or dollar policy.
 
-```text
-docs/examples/scryraven_live_broker_private_template.py
-```
+## Preferred One-Session Activation
 
-Required local environment variable for the client shell:
+Use the helper command shape in
+[Generic Provider-Execution Broker Operator Flow](GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md).
+The helper:
 
-```text
-SCRYRAVEN_BROKER_TOKEN
-```
+1. preflights the sanitized output path;
+2. normalizes and stats the private environment-file path without opening it;
+3. generates a temporary session token;
+4. starts `scripts/provider_execution_broker.py` on loopback with the
+   environment-file path and token supplied only through the broker-child
+   environment;
+5. waits for bounded readiness;
+6. starts the tracked client with the token supplied only through the
+   client-child environment;
+7. stops the broker in every path; and
+8. emits only sanitized status and proof output.
 
-The one-run helper generates this token automatically for the private broker
-subprocess and the tracked client. The token is temporary, is not a permanent
-secret, and must not be pasted into chat or committed.
+No private broker script copy, `--private-broker-path`, or `--token` argument is
+part of the active flow.
 
-## Broker Contract
+## Contract
 
-The tracked client posts a generic provider request:
+Every authenticated POST to `/run` uses:
 
 ```json
 {
-  "request_kind": "generic_provider_proxy_request",
+  "schema_version": "1",
+  "request_kind": "scryraven_provider_execution_request_v1",
   "provider": "serper",
-  "operation": "search",
-  "query": "<string>",
-  "max_results": 5,
+  "operation": "search.query",
+  "query": "<bounded query>",
+  "max_results": 3,
+  "timeout_seconds": 30,
+  "retry_cap": 0,
   "raw_provider_payload_retained": false,
+  "raw_request_material_retained": false,
+  "raw_response_material_retained": false,
   "raw_search_response_retained": false
 }
 ```
 
-The private broker may enforce only durable generic safety:
+`model.generate` replaces search fields with exact model, bounded system/input
+text, optional authorized reasoning effort, maximum output tokens, and
+`store=false`. The only accepted provider base URL in this first phase is the
+bounded canonical OpenAI API base.
 
-- local token required;
-- loopback only;
-- supported provider;
-- supported operation;
-- bounded `max_results`;
-- no raw payload return;
-- no shell commands;
-- no arbitrary file access;
-- no secrets printed.
+Optional `requested_route_alias` and `resolved_route_config_digest` fields are
+echo-only attestation. They never select or modify the exact provider/model
+route.
 
-The private broker must not require or govern:
+Every response uses
+`scryraven_provider_execution_response_v1`, exact route attestation, physical
+attempt count, false-retention flags, and exactly one operation member:
+sanitized `results` for search or transient `output_text` plus exact `usage` for
+model generation.
 
-- job-id allowlists;
-- AG phase names;
-- validation profiles;
-- ScryRaven roadmap awareness;
-- RunKernel awareness;
-- EvidenceLedger awareness;
-- citation, Sufficiency, FAP, or Author awareness.
+## Manual Broker Process
 
-The broker response must contain only sanitized provider results with these
-fields:
+The one-session helper is preferred. A separately licensed private operator may
+start the tracked broker manually only by supplying the temporary session token,
+private environment-file path, and maximum-request fuse through that broker
+process's environment. None may appear in argv or be pasted into chat,
+documentation, issues, commits, or pull requests.
 
-```text
-title
-url or link
-domain
-snippet
-date or published_or_observed_date
-rank or result_rank
-call_index or provider_call_index
-provider_extracted_text
-provider_extracted_text_sanitized
-provider_extracted_text_bounded
-provider_extracted_text_char_count
-provider_extracted_text_digest
-provider_extracted_content_type
-raw_provider_payload_retained: false
-raw_search_response_retained: false
-```
+The client process receives only the temporary token through its own process
+environment. It does not receive the environment-file path or credentials.
 
-Broker output is not source custody, evidence, citation eligible, or
-source-obligation satisfaction. Bounded `provider_extracted_text`, when present,
-is sanitized provider record material only. Only a downstream product path, under
-its own licensed custody, readability, and candidate-fit gates, may convert that
-material into source-bound custody.
+## Retired Paths
 
-For Tavily, provider-extracted page material may cross the private
-broker-to-client boundary only as bounded provider record material and must be
-written by the tracked client as `provider_extracted_text`, not `raw_content`.
+- `scripts/request_live_validation_broker.py` is a fail-closed compatibility
+  tombstone. It performs no POST, provider dispatch, child command, job lookup,
+  or validation-profile lookup.
+- The former external private broker implementation and public private-copy
+  template are not preferred or active.
+- The direct OpenAI AnalystOS transport is deprecated and unlicensed by
+  default. New addenda select the brokered transport.
 
-## Preferred One-Run Helper
+Historical records under `docs/history/` remain unchanged and
+nonauthoritative.
 
-For a separately licensed trusted-local provider call, prefer the reusable
-helper. It starts the private broker on `127.0.0.1:8765`, generates a temporary
-broker token, loads the selected provider key, currently `SERPER_API_KEY` or
-`TAVILY_API_KEY`, from the current process or explicit local operator env files
-without printing it, delegates to the generic client, writes sanitized output
-under `output/`, and stops the broker subprocess afterward.
+## Failure Handling
 
-```powershell
-py scripts\run_provider_proxy_broker_once.py `
-  --provider serper `
-  --operation search `
-  --query "<trusted-local approved query>" `
-  --max-results 5 `
-  --output output\<sanitized-provider-proxy-response>.json `
-  --broker-url http://127.0.0.1:8765/run `
-  --private-broker-path C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py `
-  --env-file C:\Users\aidan\ScryRavenLiveBroker\.env `
-  --confirm-provider-call
-```
-
-Use the lower-level client command only when the private broker is already
-running in a token-loaded shell.
-
-## Manual Restart Broker
-
-Run from a private PowerShell shell that already has the broker token and
-provider credentials loaded. Do not paste tokens or provider keys into chat or
-commit them.
-
-```powershell
-Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue |
-  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-
-py C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py
-```
-
-If the broker runs in a separate terminal, keep that terminal open while making
-the provider-proxy request.
-
-## Lower-Level Broker Client Command Shape
-
-Run from the repository root in a shell that can see `SCRYRAVEN_BROKER_TOKEN`:
-
-```powershell
-py scripts\request_provider_proxy_broker.py `
-  --broker-url http://127.0.0.1:8765/run `
-  --provider serper `
-  --operation search `
-  --query "<trusted-local approved query>" `
-  --max-results 5 `
-  --confirm-provider-call `
-  --output output\<sanitized-provider-proxy-response>.json
-```
-
-The tracked client refuses non-loopback broker URLs, missing tokens, missing
-confirmation, unsupported provider/operation values, unbounded `max_results`,
-output paths outside `output/`, raw/private response fields, and raw-retention
-flags set to true.
-
-Use only sanitized broker output under `output/`. Do not paste or commit tokens,
-secrets, `.env` contents, provider keys, raw prompts, raw provider payloads, raw
-model responses, private logs, DB rows, cache rows, or full traces.
-
-Future task-specific harnesses must transform sanitized broker output after the
-broker returns. Do not add task-specific mapping, reduction, job ids, validation
-profiles, or answer policy to the broker.
-
-## Codex Acknowledgement Template
-
-Paste this shape to Codex after the private broker has been manually updated and
-restarted for an explicitly licensed trusted-local run:
+On missing requested-provider configuration, make no direct call and expose no
+credential name or value. Report only:
 
 ```text
-Broker acknowledgement for generic provider-proxy run:
-
-The private broker is running locally at:
-http://127.0.0.1:8765/run
-
-Broker script:
-C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py
-
-Use only the tracked client:
-py scripts\request_provider_proxy_broker.py --broker-url http://127.0.0.1:8765/run --provider serper --operation search --query "<trusted-local approved query>" --max-results 5 --confirm-provider-call --output output\<sanitized-provider-proxy-response>.json
-
-Budget:
-- max broker requests: operator-owned local fuse
-- provider operation: serper search
-- max_results: bounded by the tracked client and private broker
-- retries: none unless a later phase explicitly licenses a generic retry cap
-
-Rules:
-- Do not read `.env`.
-- Do not print or request secrets.
-- Do not call provider APIs directly.
-- Do not run search/fetch/retrieval outside the brokered provider operation.
-- Do not accept arbitrary commands from the tracked client.
-- Do not require job ids, AG phase names, validation profiles, RunKernel, EvidenceLedger, citation, Sufficiency, FAP, or Author state.
-- Use only sanitized broker output under `output/`.
-- If the broker returns token error, missing config, max-runs exhausted, unsupported provider/operation, max-results error, raw/private field error, or any provider error, fail closed and do not retry.
+requested provider
+missing_configuration
+private operator action: ensure the broker environment file contains
+configuration for the requested provider
 ```
 
-## Obsolete Pattern
-
-The old phase/job-specific broker allowlist pattern is obsolete as durable
-broker guidance. A private broker may still keep a local one-shot fuse or run
-counter, but it should not key durable safety on `job_id`, AG phase names,
-validation profiles, ScryRaven roadmap state, RunKernel, EvidenceLedger,
-citation, Sufficiency, FAP, or Author concepts.
-
-## Fail Closed Rules
-
-Fail closed and do not retry when any of these are true:
-
-- `SCRYRAVEN_BROKER_TOKEN` is missing from the shell running the tracked client.
-- The broker URL is not loopback HTTP.
-- The requested provider or operation is unsupported.
-- `max_results` is out of bounds.
-- The output path is outside `output/`.
-- The broker returns token error, missing config, max-runs exhausted,
-  unsupported provider/operation, or any provider error.
-- The tracked sanitized output returns or implies raw provider payload
-  retention, raw search response retention, raw/private fields, secrets, logs,
-  DB/cache rows, prompts, full traces, or headers.
-- The requested action would require direct provider API calls from Codex.
-- The requested action would require reading `.env`, secrets, provider keys,
-  private logs, DB/cache rows, raw prompts, raw provider payloads, raw model
-  responses, or full traces.
-
-Codex may not see `SCRYRAVEN_BROKER_TOKEN` if it runs in a different shell from
-the broker or the operator terminal. If Codex cannot see the token, either run
-the broker client manually from the token-loaded shell or relaunch Codex from
-that shell. Do not paste the token into chat.
-
-Private broker files are local/private operational files and should not be
-committed to the ScryRaven repository.
+Do not repair authentication, inspect the environment file, request secrets,
+fall back to direct provider contact, or retry outside the exact live license.

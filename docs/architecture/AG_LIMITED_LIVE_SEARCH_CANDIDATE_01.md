@@ -33,10 +33,10 @@ task unless a phase explicitly passes a separately licensed cap.
 - max search tasks: 1
 - max provider search calls total: 1
 - provider: serper
-- operation: search
+- operation: search.query
 - max results: 5
 - model calls: 0
-- broker calls: max 1 trusted-local generic provider-proxy call
+- broker calls: max 1 tracked loopback generic provider-execution call
 - fetch/read calls: 0
 - retrieval calls: 0
 - EvidenceLedger admissions from live content: 0
@@ -63,13 +63,15 @@ provider call:
 ```powershell
 py scripts\run_provider_proxy_broker_once.py `
   --provider serper `
-  --operation search `
+  --operation search.query `
   --query "current adult U.S. passport book renewal fee official" `
   --max-results 5 `
+  --timeout-seconds 30 `
+  --retry-cap 0 `
+  --cost-ceiling-usd 0.05 `
   --output output\ag_limited_live_search_candidate_01\sanitized_provider_results.json `
   --broker-url http://127.0.0.1:8765/run `
-  --private-broker-path C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py `
-  --env-file C:\Users\aidan\ScryRavenLiveBroker\.env `
+  --env-file <PRIVATE-ENV-FILE> `
   --confirm-provider-call
 ```
 
@@ -93,7 +95,7 @@ fetch/read:
 
 ```powershell
 py scripts\ag_limited_live_search_candidate_01.py preflight-retained-artifacts `
-  --repo-root C:\Users\aidan\ScryRaven
+  --repo-root <REPOSITORY-ROOT>
 ```
 
 The preflight checks only:

@@ -199,7 +199,7 @@ def test_alias_attestation_never_changes_exact_route() -> None:
     for alias in ("fast", "smart", "embed"):
         response = broker.execute_provider_request(
             _search_request(requested_route_alias=alias),
-            credentials={"SERPER_API_KEY": "opaque"},
+            credentials={"SERPER_API_KEY": "opaque"},  # pragma: allowlist secret
             adapters={("serper", SEARCH_QUERY_OPERATION): fake_adapter},
         )
         assert response["requested_route_alias"] == alias
@@ -222,7 +222,7 @@ def test_openai_model_generate_normalizes_exact_usage_and_discards_raw() -> None
     request_payload = _model_request()
     response = broker.execute_provider_request(
         request_payload,
-        credentials={"OPENAI_API_KEY": "opaque"},
+        credentials={"OPENAI_API_KEY": "opaque"},  # pragma: allowlist secret
         adapters={("openai", MODEL_GENERATE_OPERATION): fake_adapter},
     )
     assert response["provider"] == "openai"
@@ -252,7 +252,7 @@ def test_zero_retry_and_physical_attempt_accounting() -> None:
     with pytest.raises(broker.BrokerExecutionError) as zero:
         broker.execute_provider_request(
             _search_request(retry_cap=0),
-            credentials={"SERPER_API_KEY": "opaque"},
+            credentials={"SERPER_API_KEY": "opaque"},  # pragma: allowlist secret
             adapters={("serper", SEARCH_QUERY_OPERATION): failing},
         )
     assert calls == 1
@@ -262,7 +262,7 @@ def test_zero_retry_and_physical_attempt_accounting() -> None:
     with pytest.raises(broker.BrokerExecutionError) as retried:
         broker.execute_provider_request(
             _search_request(retry_cap=1),
-            credentials={"SERPER_API_KEY": "opaque"},
+            credentials={"SERPER_API_KEY": "opaque"},  # pragma: allowlist secret
             adapters={("serper", SEARCH_QUERY_OPERATION): failing},
         )
     assert calls == 2
@@ -608,9 +608,9 @@ def test_environment_file_parser_is_owned_only_by_tracked_broker(tmp_path: Path)
     )
     values = broker.load_private_environment_file(env_file)
     assert values == {
-        "OPENAI_API_KEY": "one",
-        "SERPER_API_KEY": "two",
-        "TAVILY_API_KEY": "three",
+        "OPENAI_API_KEY": "one",  # pragma: allowlist secret
+        "SERPER_API_KEY": "two",  # pragma: allowlist secret
+        "TAVILY_API_KEY": "three",  # pragma: allowlist secret
     }
     helper_source = (ROOT / "scripts" / "run_provider_proxy_broker_once.py").read_text()
     client_source = (ROOT / "scripts" / "request_provider_proxy_broker.py").read_text()

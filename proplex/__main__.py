@@ -119,7 +119,6 @@ from proplex.mvp_friend_shareable_output import (  # noqa: E402
 from proplex.mvp_live_dogfood_run import (  # noqa: E402
     CONFIRM_LIVE_DOGFOOD_FLAG,
     DEFAULT_BROKER_URL,
-    DEFAULT_PRIVATE_BROKER_PATH,
     build_mvp_live_dogfood_run_output,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (  # noqa: E402
@@ -334,7 +333,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="mvp_live_dogfood_run",
         help=(
             "Run one explicitly confirmed live MVP dogfood attempt through the "
-            "private broker boundary and retained-artifact status consumer."
+            "tracked generic provider-execution broker boundary and "
+            "retained-artifact status consumer."
         ),
     )
     p.add_argument(
@@ -456,19 +456,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Loopback provider-proxy broker URL for --mvp-live-dogfood-run.",
     )
     p.add_argument(
-        "--mvp-live-private-broker-path",
-        default=str(DEFAULT_PRIVATE_BROKER_PATH),
-        metavar="PATH",
-        help="Private broker helper path for --mvp-live-dogfood-run.",
-    )
-    p.add_argument(
         "--mvp-live-env-file",
         action="append",
         default=None,
         metavar="PATH",
         help=(
-            "Env file path passed to the private broker helper for "
-            "--mvp-live-dogfood-run. May be provided more than once."
+            "Private env-file path passed only to the tracked broker child for "
+            "--mvp-live-dogfood-run. At most one path is accepted."
         ),
     )
     p.add_argument(
@@ -709,7 +703,6 @@ def _run_mvp_live_dogfood_run(
             confirm_live_dogfood=args.confirm_live_dogfood,
             confirm_live_dprime_review=args.confirm_live_dprime_review,
             broker_url=args.mvp_live_broker_url,
-            private_broker_path=args.mvp_live_private_broker_path,
             env_file_paths=args.mvp_live_env_file,
             smart_provider=args.smart_provider,
             smart_model=args.smart_model,
