@@ -56,6 +56,23 @@ def test_broker_server_entrypoint_executes_as_a_tracked_script() -> None:
     assert "provider broker" in completed.stdout
 
 
+def test_broker_client_entrypoint_executes_as_a_tracked_script() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "request_provider_proxy_broker.py"),
+            "--help",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0
+    assert "local provider broker" in completed.stdout
+
+
 def _search_request(
     provider: str = "serper",
     *,

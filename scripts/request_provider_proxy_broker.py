@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib import error, parse, request
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from scripts.provider_execution_contract import (
     BROKER_DEFAULT_PORT,
     BROKER_HOST,
