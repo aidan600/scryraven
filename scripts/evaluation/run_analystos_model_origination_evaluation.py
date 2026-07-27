@@ -1863,7 +1863,7 @@ class BoundaryInjectionController:
                 self.total_retries += 1
                 self.budget_ledger.retries += 1
         if last_exc is not None:
-            if isinstance(last_exc, EvaluationRouteAttestationError):
+            if isinstance(last_exc, EvaluationTransportError):
                 raise last_exc
             raise EvaluationTransportError(
                 f"injected model transport failed closed: {type(last_exc).__name__}"
