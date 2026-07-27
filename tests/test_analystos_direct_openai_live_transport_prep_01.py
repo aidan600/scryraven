@@ -135,7 +135,7 @@ class FakeOpenAIConstructor:
 def _authorization(
     *,
     provider: str = transport_module.SUPPORTED_PROVIDER,
-    model: str = transport_module.SUPPORTED_MODEL,
+    model: str = transport_module.GPT54_MODEL_ID,
     retry_cap: int = 0,
     maximum_input_tokens: int = 16_000,
     maximum_output_tokens: int = 8_000,
@@ -226,6 +226,7 @@ def test_direct_transport_uses_exact_client_and_responses_contract(
     assert Decimal(str(result.cost)) == transport_module.conservative_cost_decimal(
         123,
         45,
+        policy=transport.policy,
     )
     assert result.canonical_provider_used == "openai"
     assert result.canonical_model_used == "gpt-5.4-2026-03-05"
@@ -233,6 +234,9 @@ def test_direct_transport_uses_exact_client_and_responses_contract(
     assert result.credentials_accessed is True
     assert result.raw_material_retained is False
     assert transport.credentials_accessed is True
+    assert transport.policy == transport_module.resolve_openai_model_policy(
+        authorization.model
+    )
     gc.collect()
     assert responses.response_ref is not None
     assert responses.response_ref() is None
@@ -240,11 +244,115 @@ def test_direct_transport_uses_exact_client_and_responses_contract(
     assert "exact installed system prompt" not in repr(transport)
 
 
+def test_generic_transport_uses_test_only_injected_model_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synthetic_model = "synthetic-openai-responses-model"
+    synthetic_policy = transport_module.OpenAIResponsesModelPolicy(
+        provider="openai",
+        model=synthetic_model,
+        reasoning_effort="low",
+        input_price_usd_per_million=Decimal("1.25"),
+        output_price_usd_per_million=Decimal("9.50"),
+    )
+    responses = FakeResponses(response=FakeResponse(input_tokens=80, output_tokens=20))
+    constructor = FakeOpenAIConstructor(responses)
+    monkeypatch.setattr(
+        transport_module,
+        "_load_openai_sdk",
+        lambda: (constructor, FakeTimeoutError),
+    )
+    authorization = _authorization(model=synthetic_model)
+    transport = transport_module._create_openai_responses_transport(  # noqa: SLF001
+        authorization,
+        model_policies={synthetic_model: synthetic_policy},
+    )
+    result = transport(
+        role=ROLE_SEARCH_PLANNER,
+        prompt="synthetic exact prompt",
+        system_prompt="synthetic exact instructions",
+        provider=synthetic_policy.provider,
+        model=synthetic_policy.model,
+        maximum_input_tokens=authorization.maximum_input_tokens,
+        maximum_output_tokens=authorization.maximum_output_tokens,
+    )
+
+    assert tuple(transport_module.OPENAI_MODEL_POLICIES) == (
+        transport_module.GPT54_MODEL_ID,
+    )
+    assert synthetic_model not in transport_module.OPENAI_MODEL_POLICIES
+    assert transport.policy is synthetic_policy
+    assert responses.calls == [
+        {
+            "model": synthetic_model,
+            "instructions": "synthetic exact instructions",
+            "input": "synthetic exact prompt",
+            "reasoning": {"effort": "low"},
+            "max_output_tokens": 8_000,
+            "store": False,
+        }
+    ]
+    assert result.canonical_provider_used == synthetic_policy.provider
+    assert result.canonical_model_used == synthetic_policy.model
+    assert Decimal(str(result.cost)) == transport_module.conservative_cost_decimal(
+        80,
+        20,
+        policy=synthetic_policy,
+    )
+
+
+def test_gpt54_is_the_only_production_policy_and_binds_exact_values() -> None:
+    assert tuple(transport_module.OPENAI_MODEL_POLICIES) == (
+        "gpt-5.4-2026-03-05",
+    )
+    policy = transport_module.resolve_openai_model_policy(
+        transport_module.GPT54_MODEL_ID
+    )
+    assert policy == transport_module.OpenAIResponsesModelPolicy(
+        provider="openai",
+        model="gpt-5.4-2026-03-05",
+        reasoning_effort="medium",
+        input_price_usd_per_million=Decimal("2.50"),
+        output_price_usd_per_million=Decimal("15.00"),
+    )
+    assert preparation.GPT54_MODEL_POLICY is policy
+    assert transport_module.conservative_cost_decimal(
+        16_000,
+        8_000,
+        policy=policy,
+    ) == Decimal("0.16")
+
+
+def test_unknown_model_fails_before_openai_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdk_loads = 0
+
+    def forbidden_sdk_load() -> tuple[Any, Any]:
+        nonlocal sdk_loads
+        sdk_loads += 1
+        raise AssertionError("unknown model must fail before SDK construction")
+
+    monkeypatch.setattr(
+        transport_module,
+        "_load_openai_sdk",
+        forbidden_sdk_load,
+    )
+    with pytest.raises(
+        EvaluationConfigurationError,
+        match="no OpenAI Responses policy",
+    ):
+        transport_module.create_openai_responses_transport(
+            _authorization(model="unknown-openai-model")
+        )
+    assert sdk_loads == 0
+
+
 @pytest.mark.parametrize(
     ("field_name", "value", "message"),
     (
         ("provider", "OpenAI", "only provider openai"),
-        ("model", "gpt-5.4", "only model gpt-5.4-2026-03-05"),
+        ("model", "gpt-5.4", "no OpenAI Responses policy"),
         ("retry_cap", 1, "retry cap 0"),
     ),
 )
@@ -358,7 +466,7 @@ def test_timeout_is_one_attempt_typed_constant_and_writes_no_packet(
         reference="synthetic-timeout-proof",
         repository_sha=repository_sha,
         provider=transport_module.SUPPORTED_PROVIDER,
-        model=transport_module.SUPPORTED_MODEL,
+        model=transport_module.GPT54_MODEL_ID,
         allowed_evaluation_pass=request.evaluation_pass,
         allowed_model_roles=request.selected_model_roles,
         allowed_scenario_ids=request.scenario_ids,
@@ -604,6 +712,7 @@ def test_plan_only_does_not_load_sdk_or_access_credentials(
 def test_transport_source_has_no_credential_or_environment_reader() -> None:
     source = Path(transport_module.__file__).read_text(encoding="utf-8")
     for forbidden in (
+        "SUPPORTED_MODEL",
         "os.getenv",
         "os.environ",
         "load_dotenv",

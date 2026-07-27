@@ -26,12 +26,12 @@ from core.multicomponent_role_runtime import (  # noqa: E402
     ROLE_CROSS_COMPONENT_ANALYST,
 )
 from scripts.evaluation.openai_responses_origination_transport import (  # noqa: E402
+    GPT54_MODEL_ID,
     REQUEST_TIMEOUT_SECONDS,
     SDK_MAX_RETRIES,
-    SUPPORTED_MODEL,
-    SUPPORTED_PROVIDER,
     TRANSPORT_FACTORY_SPEC,
     conservative_cost_decimal,
+    resolve_openai_model_policy,
 )
 from scripts.evaluation.run_analystos_model_origination_evaluation import (  # noqa: E402
     LIVE_ADDENDUM_SCHEMA_VERSION,
@@ -55,6 +55,7 @@ MAXIMUM_INPUT_TOKENS = 16_000
 MAXIMUM_OUTPUT_TOKENS = 8_000
 PER_CALL_COST_CEILING = Decimal("0.16")
 WHOLE_PHASE_COST_CEILING = Decimal("3.20")
+GPT54_MODEL_POLICY = resolve_openai_model_policy(GPT54_MODEL_ID)
 
 FINAL_DECISION_VOCABULARY = (
     "ACCEPT_ORIGINATION_BASELINE, MODEL_ORIGINATION_LIMITATION, "
@@ -239,8 +240,8 @@ def _packet_for(
             f"stage-{definition.label}:{repository_sha}"
         ),
         "repository_sha": repository_sha,
-        "provider": SUPPORTED_PROVIDER,
-        "model": SUPPORTED_MODEL,
+        "provider": GPT54_MODEL_POLICY.provider,
+        "model": GPT54_MODEL_POLICY.model,
         "allowed_evaluation_pass": request.evaluation_pass,
         "allowed_model_roles": list(request.selected_model_roles),
         "allowed_scenario_ids": list(request.scenario_ids),
@@ -275,6 +276,7 @@ def prepare_live_addenda(
     if conservative_cost_decimal(
         MAXIMUM_INPUT_TOKENS,
         MAXIMUM_OUTPUT_TOKENS,
+        policy=GPT54_MODEL_POLICY,
     ) != PER_CALL_COST_CEILING:
         raise EvaluationConfigurationError(
             "fixed per-call Decimal cost ceiling is inconsistent"
@@ -433,8 +435,8 @@ def main() -> int:
     prepared = prepare_live_addenda()
     summary = {
         "repository_sha": prepared[0].authorization.repository_sha,
-        "provider": SUPPORTED_PROVIDER,
-        "model": SUPPORTED_MODEL,
+        "provider": GPT54_MODEL_POLICY.provider,
+        "model": GPT54_MODEL_POLICY.model,
         "request_timeout_seconds": REQUEST_TIMEOUT_SECONDS,
         "retry_cap": SDK_MAX_RETRIES,
         "total_maximum_model_calls": sum(
@@ -467,6 +469,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "GPT54_MODEL_POLICY",
     "MAXIMUM_INPUT_TOKENS",
     "MAXIMUM_OUTPUT_TOKENS",
     "OUTPUT_ROOT",

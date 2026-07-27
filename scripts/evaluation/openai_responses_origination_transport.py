@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Callable
+from types import MappingProxyType
+from typing import Any, Callable, Mapping
 
 from core.cost_accounting import extract_usage_tokens
 from scripts.evaluation.run_analystos_model_origination_evaluation import (
@@ -25,13 +26,10 @@ TRANSPORT_FACTORY_SPEC = (
     "create_openai_responses_transport"
 )
 SUPPORTED_PROVIDER = "openai"
-SUPPORTED_MODEL = "gpt-5.4-2026-03-05"
-REASONING_EFFORT = "medium"
+GPT54_MODEL_ID = "gpt-5.4-2026-03-05"
 REQUEST_TIMEOUT_SECONDS = 600.0
 SDK_MAX_RETRIES = 0
 
-INPUT_PRICE_USD_PER_MILLION = Decimal("2.50")
-OUTPUT_PRICE_USD_PER_MILLION = Decimal("15.00")
 TOKENS_PER_MILLION = Decimal("1000000")
 
 TIMEOUT_ERROR_MESSAGE = (
@@ -45,15 +43,71 @@ OUTPUT_ERROR_MESSAGE = "OpenAI Responses request returned no output text."
 OpenAIConstructor = Callable[..., Any]
 
 
+@dataclass(frozen=True, slots=True)
+class OpenAIResponsesModelPolicy:
+    """Exact route and accounting policy for one authorized OpenAI model."""
+
+    provider: str
+    model: str
+    reasoning_effort: str
+    input_price_usd_per_million: Decimal
+    output_price_usd_per_million: Decimal
+
+
+OPENAI_MODEL_POLICIES: Mapping[str, OpenAIResponsesModelPolicy] = MappingProxyType(
+    {
+        GPT54_MODEL_ID: OpenAIResponsesModelPolicy(
+            provider=SUPPORTED_PROVIDER,
+            model=GPT54_MODEL_ID,
+            reasoning_effort="medium",
+            input_price_usd_per_million=Decimal("2.50"),
+            output_price_usd_per_million=Decimal("15.00"),
+        )
+    }
+)
+
+
+def resolve_openai_model_policy(
+    model: str,
+    *,
+    model_policies: Mapping[str, OpenAIResponsesModelPolicy] | None = None,
+) -> OpenAIResponsesModelPolicy:
+    """Resolve and validate one exact authorized OpenAI Responses policy."""
+
+    policies = OPENAI_MODEL_POLICIES if model_policies is None else model_policies
+    policy = policies.get(model)
+    if policy is None:
+        raise EvaluationConfigurationError(
+            "no OpenAI Responses policy exists for the exact authorized model"
+        )
+    if (
+        policy.provider != SUPPORTED_PROVIDER
+        or policy.model != model
+        or not policy.reasoning_effort
+        or policy.input_price_usd_per_million < 0
+        or policy.output_price_usd_per_million < 0
+    ):
+        raise EvaluationConfigurationError(
+            "OpenAI Responses model policy is invalid"
+        )
+    return policy
+
+
 def conservative_cost_decimal(
     input_tokens: int | Decimal,
     output_tokens: int | Decimal,
+    *,
+    policy: OpenAIResponsesModelPolicy,
 ) -> Decimal:
-    """Return conservative uncached cost at the phase-fixed token prices."""
+    """Return conservative uncached cost at the resolved policy prices."""
 
     return (
-        Decimal(input_tokens) * INPUT_PRICE_USD_PER_MILLION / TOKENS_PER_MILLION
-        + Decimal(output_tokens) * OUTPUT_PRICE_USD_PER_MILLION / TOKENS_PER_MILLION
+        Decimal(input_tokens)
+        * policy.input_price_usd_per_million
+        / TOKENS_PER_MILLION
+        + Decimal(output_tokens)
+        * policy.output_price_usd_per_million
+        / TOKENS_PER_MILLION
     )
 
 
@@ -71,6 +125,7 @@ class _OpenAIResponsesTransport:
 
     _responses_create: Callable[..., Any] = field(repr=False, compare=False)
     _timeout_error_type: type[BaseException] = field(repr=False, compare=False)
+    policy: OpenAIResponsesModelPolicy
     _maximum_input_tokens: int
     _maximum_output_tokens: int
     credentials_accessed: bool = field(default=True, init=False)
@@ -88,7 +143,7 @@ class _OpenAIResponsesTransport:
     ) -> EvaluationTransportResponse:
         del role
         failure_message: str | None = None
-        if provider != SUPPORTED_PROVIDER or model != SUPPORTED_MODEL:
+        if provider != self.policy.provider or model != self.policy.model:
             failure_message = (
                 "OpenAI Responses transport rejected a route outside its exact "
                 "authorization."
@@ -112,7 +167,7 @@ class _OpenAIResponsesTransport:
                 model=model,
                 instructions=system_prompt,
                 input=prompt,
-                reasoning={"effort": REASONING_EFFORT},
+                reasoning={"effort": self.policy.reasoning_effort},
                 max_output_tokens=maximum_output_tokens,
                 store=False,
             )
@@ -159,14 +214,15 @@ class _OpenAIResponsesTransport:
         observed_cost = conservative_cost_decimal(
             input_tokens,
             output_tokens,
+            policy=self.policy,
         )
         result = EvaluationTransportResponse(
             output=output,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost=float(observed_cost),
-            canonical_provider_used=SUPPORTED_PROVIDER,
-            canonical_model_used=SUPPORTED_MODEL,
+            canonical_provider_used=self.policy.provider,
+            canonical_model_used=self.policy.model,
             provider_request_attempt_count=1,
             raw_material_retained=False,
             credentials_accessed=True,
@@ -175,19 +231,21 @@ class _OpenAIResponsesTransport:
         return result
 
 
-def create_openai_responses_transport(
+def _create_openai_responses_transport(
     authorization: LiveAuthorization,
+    *,
+    model_policies: Mapping[str, OpenAIResponsesModelPolicy],
 ) -> _OpenAIResponsesTransport:
-    """Construct the exact phase-specific direct Responses transport."""
+    """Construct a direct Responses transport from one explicit policy map."""
 
     if authorization.provider != SUPPORTED_PROVIDER:
         raise EvaluationConfigurationError(
             "direct origination transport supports only provider openai"
         )
-    if authorization.model != SUPPORTED_MODEL:
-        raise EvaluationConfigurationError(
-            f"direct origination transport supports only model {SUPPORTED_MODEL}"
-        )
+    policy = resolve_openai_model_policy(
+        authorization.model,
+        model_policies=model_policies,
+    )
     if authorization.retry_cap != SDK_MAX_RETRIES:
         raise EvaluationConfigurationError(
             "direct origination transport requires retry cap 0"
@@ -231,11 +289,23 @@ def create_openai_responses_transport(
     transport = _OpenAIResponsesTransport(
         _responses_create=responses_create,
         _timeout_error_type=timeout_error_type,
+        policy=policy,
         _maximum_input_tokens=authorization.maximum_input_tokens,
         _maximum_output_tokens=authorization.maximum_output_tokens,
     )
     client = None
     return transport
+
+
+def create_openai_responses_transport(
+    authorization: LiveAuthorization,
+) -> _OpenAIResponsesTransport:
+    """Construct the licensed direct Responses transport."""
+
+    return _create_openai_responses_transport(
+        authorization,
+        model_policies=OPENAI_MODEL_POLICIES,
+    )
 
 
 setattr(
@@ -246,15 +316,15 @@ setattr(
 
 
 __all__ = [
-    "INPUT_PRICE_USD_PER_MILLION",
-    "OUTPUT_PRICE_USD_PER_MILLION",
-    "REASONING_EFFORT",
+    "GPT54_MODEL_ID",
+    "OPENAI_MODEL_POLICIES",
+    "OpenAIResponsesModelPolicy",
     "REQUEST_TIMEOUT_SECONDS",
     "SDK_MAX_RETRIES",
-    "SUPPORTED_MODEL",
     "SUPPORTED_PROVIDER",
     "TIMEOUT_ERROR_MESSAGE",
     "TRANSPORT_FACTORY_SPEC",
     "conservative_cost_decimal",
     "create_openai_responses_transport",
+    "resolve_openai_model_policy",
 ]
