@@ -1421,6 +1421,120 @@ def test_cli_transport_failure_is_nonzero_and_writes_no_result_packet(
     assert not output.exists()
 
 
+def test_direct_script_accepts_package_typed_transport_response(
+    tmp_path: Path,
+) -> None:
+    module_stem = "analystos_cli_package_response_" + "".join(
+        character if character.isalnum() else "_" for character in tmp_path.name
+    )
+    module_path = Path("output") / f"{module_stem}.py"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    factory_spec = f"output.{module_stem}:package_typed_transport_factory"
+    planner_output = json.dumps(
+        _planner_output(CASE_1),
+        separators=(",", ":"),
+    )
+    module_path.write_text(
+        "\n".join(
+            (
+                "from scripts.evaluation.run_analystos_model_origination_evaluation import EvaluationTransportResponse",
+                "",
+                "",
+                "class PackageTypedTransport:",
+                "    credentials_accessed = False",
+                "",
+                "    def __call__(self, **kwargs):",
+                "        return EvaluationTransportResponse(",
+                f"            output={planner_output!r},",
+                "            input_tokens=10,",
+                "            output_tokens=10,",
+                "            cost=0.0,",
+                "            canonical_provider_used=str(kwargs['provider']),",
+                "            canonical_model_used=str(kwargs['model']),",
+                "            credentials_accessed=False,",
+                "        )",
+                "",
+                "",
+                "def package_typed_transport_factory(_authorization):",
+                "    return PackageTypedTransport()",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    request, _, identity, _ = _write_cli_addendum(
+        tmp_path,
+        transport_factory_spec=factory_spec,
+    )
+    assert request.output_packet_path is not None
+    output = Path(request.output_packet_path)
+    output.unlink(missing_ok=True)
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, *identity.canonical_argv],
+            cwd=Path.cwd(),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        module_path.unlink(missing_ok=True)
+
+    assert completed.returncode == 0, completed.stderr
+    packet = json.loads(completed.stdout)
+    assert packet["primary_failure_attribution"] == "PASS"
+    assert packet["call_counts"]["model_calls"] == 1
+    assert output.exists()
+
+
+def test_direct_script_catches_package_typed_factory_failure(
+    tmp_path: Path,
+) -> None:
+    module_stem = "analystos_cli_package_failure_" + "".join(
+        character if character.isalnum() else "_" for character in tmp_path.name
+    )
+    module_path = Path("output") / f"{module_stem}.py"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    factory_spec = f"output.{module_stem}:package_typed_failure_factory"
+    module_path.write_text(
+        "\n".join(
+            (
+                "from scripts.evaluation.run_analystos_model_origination_evaluation import EvaluationTransportError",
+                "",
+                "",
+                "def package_typed_failure_factory(_authorization):",
+                "    raise EvaluationTransportError('sanitized construction failure')",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    request, _, identity, _ = _write_cli_addendum(
+        tmp_path,
+        transport_factory_spec=factory_spec,
+    )
+    assert request.output_packet_path is not None
+    output = Path(request.output_packet_path)
+    output.unlink(missing_ok=True)
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, *identity.canonical_argv],
+            cwd=Path.cwd(),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        module_path.unlink(missing_ok=True)
+
+    assert completed.returncode == 2
+    assert completed.stdout == ""
+    assert completed.stderr == "ERROR: sanitized construction failure\n"
+    assert not output.exists()
+
+
 def test_different_transport_factory_fails_before_import_or_construction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
