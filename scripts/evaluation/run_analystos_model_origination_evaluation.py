@@ -51,6 +51,7 @@ from core.multicomponent_role_runtime import (  # noqa: E402
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYSTEM_PROMPTS,
     SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
+    SELECTIVE_CROSS_COMPONENT_SCHEMA,
 )
 from core.search_planner_model_adapter import (  # noqa: E402
     SearchPlannerModelAdapter,
@@ -74,8 +75,8 @@ from tests.fixtures.searchos_analystos_offline_scenarios import (  # noqa: E402
 )
 
 PLANNED_PACKET_SCHEMA_VERSION = "analystos_model_origination_planned_packet_v1"
-RESULT_PACKET_SCHEMA_VERSION = "analystos_model_origination_result_packet_v1"
-LIVE_ADDENDUM_SCHEMA_VERSION = "analystos_model_origination_live_addendum_v1"
+RESULT_PACKET_SCHEMA_VERSION = "analystos_model_origination_result_packet_v2"
+LIVE_ADDENDUM_SCHEMA_VERSION = "analystos_model_origination_live_addendum_v2"
 
 EVALUATION_PASSES = frozenset({"planner_only", "analyst_only", "combined"})
 EXECUTION_MODES = frozenset({"plan_only", "execute"})
@@ -103,6 +104,7 @@ DETERMINISTIC_DOWNSTREAM_OWNERS = (
     "author",
 )
 ALL_LIVE_LICENSE_FIELDS = (
+    "schema_version",
     "reference",
     "repository_sha",
     "provider",
@@ -120,6 +122,9 @@ ALL_LIVE_LICENSE_FIELDS = (
     "decision",
     "stop_condition",
     "raw_retention_posture",
+    "transport_factory_spec",
+    "canonical_operator_command",
+    "canonical_operator_command_digest",
 )
 FORBIDDEN_PACKET_KEYS = frozenset(
     {
@@ -172,6 +177,10 @@ class EvaluationTransportError(RuntimeError):
     """Raised when an injected transport violates the licensed call envelope."""
 
 
+class EvaluationRouteAttestationError(EvaluationTransportError):
+    """Raised when a transport reports a route other than the licensed route."""
+
+
 class EvaluationTransport(Protocol):
     """Provider-neutral callable constructed only after license validation."""
 
@@ -196,6 +205,8 @@ class EvaluationTransportResponse:
     input_tokens: int
     output_tokens: int
     cost: float
+    canonical_provider_used: str
+    canonical_model_used: str
     provider_request_attempt_count: int = 1
     raw_material_retained: bool = False
     credentials_accessed: bool | None = None
@@ -229,6 +240,9 @@ class LiveAuthorization:
     decision: str
     stop_condition: str
     raw_retention_posture: str
+    transport_factory_spec: str
+    canonical_operator_command: str
+    canonical_operator_command_digest: str
     schema_version: str = LIVE_ADDENDUM_SCHEMA_VERSION
 
     @classmethod
@@ -236,9 +250,12 @@ class LiveAuthorization:
         missing = [field for field in ALL_LIVE_LICENSE_FIELDS if field not in value]
         if missing:
             raise EvaluationConfigurationError("live addendum is incomplete: " + ", ".join(missing))
+        unknown = sorted(set(value) - set(ALL_LIVE_LICENSE_FIELDS))
+        if unknown:
+            raise EvaluationConfigurationError("live addendum contains unknown fields: " + ", ".join(unknown))
         try:
-            return cls(
-                schema_version=str(value.get("schema_version") or ""),
+            authorization = cls(
+                schema_version=str(value["schema_version"] or ""),
                 reference=str(value["reference"] or ""),
                 repository_sha=str(value["repository_sha"] or ""),
                 provider=str(value["provider"] or ""),
@@ -256,9 +273,35 @@ class LiveAuthorization:
                 decision=str(value["decision"] or ""),
                 stop_condition=str(value["stop_condition"] or ""),
                 raw_retention_posture=str(value["raw_retention_posture"] or ""),
+                transport_factory_spec=str(value["transport_factory_spec"] or ""),
+                canonical_operator_command=str(value["canonical_operator_command"] or ""),
+                canonical_operator_command_digest=str(value["canonical_operator_command_digest"] or ""),
             )
         except (TypeError, ValueError) as exc:
             raise EvaluationConfigurationError("live addendum contains a field with an invalid type") from exc
+        if len(set(authorization.allowed_model_roles)) != len(authorization.allowed_model_roles):
+            raise EvaluationConfigurationError("live addendum model roles contain duplicates")
+        if len(set(authorization.allowed_scenario_ids)) != len(authorization.allowed_scenario_ids):
+            raise EvaluationConfigurationError("live addendum scenario IDs contain duplicates")
+        return authorization
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionIdentity:
+    """Exact safe identity of one licensed evaluator invocation."""
+
+    repository_sha: str
+    evaluation_pass: str
+    execution_mode: str
+    selected_model_roles: tuple[str, ...]
+    scenario_ids: tuple[str, ...]
+    live_addendum_path: str
+    transport_factory_spec: str
+    output_packet_path: str
+    canonical_argv: tuple[str, ...] = field(repr=False)
+    canonical_operator_command: str
+    canonical_operator_command_digest: str
+    execution_identity_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,18 +382,29 @@ class ScoreCard:
 
 @dataclass(frozen=True, slots=True)
 class PairedProbeEvidence:
+    execution_identity_digest: str
+    evaluation_id: str
     scenario_id: str
+    call_id: str
+    model_role: str
     provider: str
     model: str
     semantic_input_facts_digest: str
     instruction_difference: str
+    controlled_instruction_dimension: str
     control_instruction_digest: str
     variant_instruction_digest: str
     control_semantic_status: str
     variant_semantic_status: str
     maximum_physical_calls_each: int
-    retry_allowance_each: int
+    maximum_input_tokens_each: int
+    maximum_output_tokens_each: int
+    retry_cap_each: int
     deterministic_comparison_criteria: tuple[str, ...]
+    same_scenario: bool
+    same_route: bool
+    same_semantic_facts: bool
+    exactly_one_controlled_instruction_dimension_differs: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,14 +415,25 @@ class ClassificationEvidence:
     semantic_status: str
     operating_system_transition_reached: bool
     paired_probe: PairedProbeEvidence | None = None
+    authority_boundary_respected: bool = True
+    boundary_observation: "BoundaryCallObservation | None" = None
     not_run_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class BoundaryCallObservation:
+    execution_identity_digest: str
+    evaluation_id: str
+    scenario_id: str
     call_id: str
     role: str
+    provider: str
+    model: str
     safe_input_packet_digest: str
+    licensed_maximum_physical_calls: int
+    licensed_maximum_input_tokens: int
+    licensed_maximum_output_tokens: int
+    licensed_retry_cap: int
     physical_calls: int
     retries: int
     packet_complete: bool
@@ -381,9 +446,18 @@ class BoundaryCallObservation:
 
     def to_packet(self) -> dict[str, Any]:
         return {
+            "execution_identity_digest": self.execution_identity_digest,
+            "evaluation_id": self.evaluation_id,
+            "scenario_id": self.scenario_id,
             "call_id": self.call_id,
             "role": self.role,
+            "provider": self.provider,
+            "model": self.model,
             "safe_input_packet_digest": self.safe_input_packet_digest,
+            "licensed_maximum_physical_calls": self.licensed_maximum_physical_calls,
+            "licensed_maximum_input_tokens": self.licensed_maximum_input_tokens,
+            "licensed_maximum_output_tokens": self.licensed_maximum_output_tokens,
+            "licensed_retry_cap": self.licensed_retry_cap,
             "physical_calls": self.physical_calls,
             "retries": self.retries,
             "packet_complete": self.packet_complete,
@@ -403,6 +477,7 @@ class ScenarioRunResult:
     operating_system_transition_reached: bool
     safe_output_artifact_refs: tuple[Mapping[str, Any], ...] = ()
     deterministic_fixture_call_counts: Mapping[str, int] = field(default_factory=dict)
+    evaluation_only_mapping_metadata: Mapping[str, Any] | None = None
     execution: Any | None = field(default=None, repr=False, compare=False)
 
 
@@ -491,6 +566,149 @@ def resolve_request(request: EvaluationRequest) -> EvaluationRequest:
         scenario_ids=scenario_ids,
         selected_model_roles=roles,
         output_packet_path=request.output_packet_path,
+    )
+
+
+def _normalize_repository_relative_path(
+    value: str,
+    *,
+    label: str,
+    repository_root: Path = ROOT,
+) -> str:
+    """Return one normalized repository-relative POSIX path."""
+
+    text = _nonempty(value, label)
+    root = repository_root.resolve()
+    candidate = Path(text)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        relative = candidate.resolve(strict=False).relative_to(root)
+    except ValueError as exc:
+        raise EvaluationConfigurationError(f"{label} must remain inside the repository") from exc
+    normalized = relative.as_posix()
+    if not normalized or normalized == ".":
+        raise EvaluationConfigurationError(f"{label} must name a repository file")
+    return normalized
+
+
+def _validate_transport_factory_spec(spec: str) -> str:
+    normalized = _nonempty(spec, "transport factory spec")
+    if not re.fullmatch(
+        r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*",
+        normalized,
+    ):
+        raise EvaluationConfigurationError("transport factory spec must be one exact module.path:callable")
+    return normalized
+
+
+def build_execution_identity(
+    request: EvaluationRequest,
+    *,
+    repository_sha: str,
+    live_addendum_path: str,
+    transport_factory_spec: str,
+    repository_root: Path = ROOT,
+) -> ExecutionIdentity:
+    """Derive the sole canonical execute command and its safe identity."""
+
+    resolved = resolve_request(request)
+    if resolved.execution_mode != "execute":
+        raise EvaluationConfigurationError("execution identity applies only to execute")
+    sha = _nonempty(repository_sha, "repository SHA")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise EvaluationConfigurationError("repository SHA must be one exact lowercase Git object ID")
+    addendum_path = _normalize_repository_relative_path(
+        live_addendum_path,
+        label="live addendum path",
+        repository_root=repository_root,
+    )
+    if not resolved.output_packet_path:
+        raise EvaluationConfigurationError("execute requires an explicit output packet path")
+    output_path = _normalize_repository_relative_path(
+        resolved.output_packet_path,
+        label="output packet path",
+        repository_root=repository_root,
+    )
+    factory_spec = _validate_transport_factory_spec(transport_factory_spec)
+    argv: list[str] = [
+        "scripts/evaluation/run_analystos_model_origination_evaluation.py",
+        "--repository-sha",
+        sha,
+        "--evaluation-pass",
+        resolved.evaluation_pass,
+        "--execution-mode",
+        "execute",
+    ]
+    for role in resolved.selected_model_roles:
+        argv.extend(("--role", role))
+    for scenario_id in resolved.scenario_ids:
+        argv.extend(("--scenario", scenario_id))
+    argv.extend(
+        (
+            "--live-addendum",
+            addendum_path,
+            "--transport-factory",
+            factory_spec,
+            "--output",
+            output_path,
+        )
+    )
+    canonical_command = json.dumps(argv, ensure_ascii=True, separators=(",", ":"))
+    command_digest = sha256(canonical_command.encode("utf-8")).hexdigest()
+    identity_material = {
+        "repository_sha": sha,
+        "evaluation_pass": resolved.evaluation_pass,
+        "execution_mode": resolved.execution_mode,
+        "selected_model_roles": resolved.selected_model_roles,
+        "scenario_ids": resolved.scenario_ids,
+        "live_addendum_path": addendum_path,
+        "transport_factory_spec": factory_spec,
+        "output_packet_path": output_path,
+        "canonical_operator_command_digest": command_digest,
+    }
+    return ExecutionIdentity(
+        repository_sha=sha,
+        evaluation_pass=resolved.evaluation_pass,
+        execution_mode=resolved.execution_mode,
+        selected_model_roles=resolved.selected_model_roles,
+        scenario_ids=resolved.scenario_ids,
+        live_addendum_path=addendum_path,
+        transport_factory_spec=factory_spec,
+        output_packet_path=output_path,
+        canonical_argv=tuple(argv),
+        canonical_operator_command=canonical_command,
+        canonical_operator_command_digest=command_digest,
+        execution_identity_digest=_digest(identity_material),
+    )
+
+
+def validate_canonical_cli_invocation(
+    execution_identity: ExecutionIdentity,
+    actual_argv: Sequence[str],
+) -> None:
+    """Reject any reordered, omitted, duplicated, changed, or added CLI token."""
+
+    if tuple(actual_argv) != execution_identity.canonical_argv:
+        raise EvaluationConfigurationError("actual CLI invocation differs from the licensed canonical command")
+
+
+def evaluation_id_for(
+    *,
+    authorization: LiveAuthorization,
+    execution_identity: ExecutionIdentity,
+    manifest: CallManifest,
+) -> str:
+    """Bind one evaluation ID to execution identity, route, license, and calls."""
+
+    return _digest(
+        {
+            "execution_identity_digest": execution_identity.execution_identity_digest,
+            "license_reference": authorization.reference,
+            "provider": authorization.provider,
+            "model": authorization.model,
+            "call_manifest": manifest.to_packet(),
+        }
     )
 
 
@@ -773,6 +991,7 @@ def validate_live_authorization(
     authorization: LiveAuthorization | None,
     *,
     repository_sha: str,
+    execution_identity: ExecutionIdentity | None = None,
 ) -> CallManifest:
     """Validate every licensed dimension before transport construction."""
 
@@ -781,6 +1000,8 @@ def validate_live_authorization(
         raise EvaluationConfigurationError("live authorization applies only to execute")
     if authorization is None:
         raise EvaluationConfigurationError("execute is unavailable without an exact live addendum")
+    if execution_identity is None:
+        raise EvaluationConfigurationError("execute is unavailable without an exact execution identity")
     if authorization.schema_version != LIVE_ADDENDUM_SCHEMA_VERSION:
         raise EvaluationConfigurationError("live addendum schema_version is invalid")
     for label, value in (
@@ -793,6 +1014,9 @@ def validate_live_authorization(
         ("decision", authorization.decision),
         ("stop condition", authorization.stop_condition),
         ("raw-retention posture", authorization.raw_retention_posture),
+        ("transport factory spec", authorization.transport_factory_spec),
+        ("canonical operator command", authorization.canonical_operator_command),
+        ("canonical operator command digest", authorization.canonical_operator_command_digest),
     ):
         _nonempty(value, label)
     if authorization.repository_sha != repository_sha:
@@ -815,8 +1039,37 @@ def validate_live_authorization(
         raise EvaluationConfigurationError("raw-retention posture must be exactly sanitized_only")
     if not resolved.output_packet_path:
         raise EvaluationConfigurationError("execute requires an explicit output packet path")
-    if authorization.output_packet_path != resolved.output_packet_path:
-        raise EvaluationConfigurationError("live addendum output packet path must exactly match the request")
+    normalized_output_path = _normalize_repository_relative_path(
+        resolved.output_packet_path,
+        label="output packet path",
+    )
+    if authorization.output_packet_path != normalized_output_path:
+        raise EvaluationConfigurationError("live addendum output packet path must be normalized and exact")
+    if execution_identity.repository_sha != repository_sha:
+        raise EvaluationConfigurationError("execution identity repository SHA does not match the exact checkout")
+    if execution_identity.evaluation_pass != resolved.evaluation_pass:
+        raise EvaluationConfigurationError("execution identity evaluation_pass does not match the request")
+    if execution_identity.execution_mode != resolved.execution_mode:
+        raise EvaluationConfigurationError("execution identity execution_mode does not match the request")
+    if execution_identity.selected_model_roles != resolved.selected_model_roles:
+        raise EvaluationConfigurationError("execution identity roles do not match the exact ordered request")
+    if execution_identity.scenario_ids != resolved.scenario_ids:
+        raise EvaluationConfigurationError("execution identity scenarios do not match the exact ordered request")
+    if execution_identity.output_packet_path != normalized_output_path:
+        raise EvaluationConfigurationError("execution identity output path does not match the request")
+    if authorization.output_packet_path != execution_identity.output_packet_path:
+        raise EvaluationConfigurationError("live addendum output path is not normalized or execution-bound")
+    if authorization.transport_factory_spec != execution_identity.transport_factory_spec:
+        raise EvaluationConfigurationError("transport factory spec differs from the exact live addendum")
+    if authorization.canonical_operator_command != execution_identity.canonical_operator_command:
+        raise EvaluationConfigurationError("canonical operator command differs from the exact live addendum")
+    if authorization.canonical_operator_command_digest != execution_identity.canonical_operator_command_digest:
+        raise EvaluationConfigurationError("canonical operator command digest differs from the exact live addendum")
+    if (
+        authorization.canonical_operator_command_digest
+        != sha256(authorization.canonical_operator_command.encode("utf-8")).hexdigest()
+    ):
+        raise EvaluationConfigurationError("canonical operator command digest does not cover the licensed command")
     manifest = build_call_manifest(
         resolved,
         retry_allowance=authorization.retry_cap,
@@ -830,25 +1083,38 @@ def validate_live_authorization(
 
 def paired_probe_demonstrates_prompt_causality(
     evidence: PairedProbeEvidence | None,
+    *,
+    observation: BoundaryCallObservation | None,
 ) -> bool:
-    """Return true only for an exact controlled counterfactual."""
+    """Return true only for a controlled probe bound to one exact call."""
 
-    if evidence is None:
+    if evidence is None or observation is None:
         return False
     return bool(
-        evidence.scenario_id
-        and evidence.provider
-        and evidence.model
-        and evidence.semantic_input_facts_digest
+        evidence.execution_identity_digest == observation.execution_identity_digest
+        and evidence.evaluation_id == observation.evaluation_id
+        and evidence.scenario_id == observation.scenario_id
+        and evidence.call_id == observation.call_id
+        and evidence.model_role == observation.role
+        and evidence.provider == observation.provider
+        and evidence.model == observation.model
+        and evidence.semantic_input_facts_digest == observation.safe_input_packet_digest
         and evidence.instruction_difference
+        and evidence.controlled_instruction_dimension
         and evidence.control_instruction_digest
         and evidence.variant_instruction_digest
         and evidence.control_instruction_digest != evidence.variant_instruction_digest
         and evidence.control_semantic_status == "wrong"
         and evidence.variant_semantic_status == "met"
-        and evidence.maximum_physical_calls_each > 0
-        and evidence.retry_allowance_each >= 0
+        and evidence.maximum_physical_calls_each == observation.licensed_maximum_physical_calls
+        and evidence.maximum_input_tokens_each == observation.licensed_maximum_input_tokens
+        and evidence.maximum_output_tokens_each == observation.licensed_maximum_output_tokens
+        and evidence.retry_cap_each == observation.licensed_retry_cap
         and evidence.deterministic_comparison_criteria
+        and evidence.same_scenario is True
+        and evidence.same_route is True
+        and evidence.same_semantic_facts is True
+        and evidence.exactly_one_controlled_instruction_dimension_differs is True
     )
 
 
@@ -859,12 +1125,21 @@ def classify_result(evidence: ClassificationEvidence) -> str:
         return "NOT_RUN"
     if not evidence.packet_complete:
         return "PACKET"
+    if not evidence.authority_boundary_respected:
+        return "MODEL"
+    if not evidence.parser_consumable:
+        return "PARSER_CONTRACT"
     if evidence.semantic_status == "ambiguous":
         return "REVIEW_REQUIRED"
-    if not evidence.parser_consumable:
-        return "PARSER_CONTRACT" if evidence.semantic_status == "met" else "REVIEW_REQUIRED"
     if evidence.semantic_status == "wrong":
-        return "PROMPT" if paired_probe_demonstrates_prompt_causality(evidence.paired_probe) else "MODEL"
+        return (
+            "PROMPT"
+            if paired_probe_demonstrates_prompt_causality(
+                evidence.paired_probe,
+                observation=evidence.boundary_observation,
+            )
+            else "MODEL"
+        )
     if evidence.semantic_status != "met":
         return "REVIEW_REQUIRED"
     if not evidence.operating_system_transition_reached:
@@ -880,7 +1155,10 @@ def _alias_matches(
     matches = {
         concept
         for concept, candidates in aliases.items()
-        if any(_normalize_text(candidate) and _normalize_text(candidate) in normalized for candidate in candidates)
+        if any(
+            _normalize_text(candidate) and f" {_normalize_text(candidate)} " in f" {normalized} "
+            for candidate in candidates
+        )
     }
     return matches, len(matches) > 1
 
@@ -901,18 +1179,25 @@ def _planner_semantic_projection(
         if exact_component_id in expected_components:
             matches, overlaps = {exact_component_id}, False
         else:
-            candidate_text = " ".join(
-                str(item.get(key) or "")
-                for key in (
-                    "component_id",
-                    "user_facing_label",
-                    "user_facing_question",
-                )
-            )
-            matches, overlaps = _alias_matches(
-                candidate_text,
+            label_matches, label_overlap = _alias_matches(
+                str(item.get("user_facing_label") or ""),
                 expectation.concept_aliases,
             )
+            if len(label_matches) == 1 and not label_overlap:
+                matches, overlaps = label_matches, False
+            else:
+                candidate_text = " ".join(
+                    str(item.get(key) or "")
+                    for key in (
+                        "component_id",
+                        "user_facing_label",
+                        "user_facing_question",
+                    )
+                )
+                matches, overlaps = _alias_matches(
+                    candidate_text,
+                    expectation.concept_aliases,
+                )
         matches &= set(expected_components)
         ambiguous = ambiguous or overlaps or len(matches) > 1
         if len(matches) == 1:
@@ -921,6 +1206,11 @@ def _planner_semantic_projection(
                 ambiguous = True
             concept_to_observed[concept] = item
 
+    current_id_to_concept = {
+        str(observed.get("component_id") or ""): concept
+        for concept, observed in concept_to_observed.items()
+        if str(observed.get("component_id") or "")
+    }
     checks: dict[str, bool | None] = {}
     for concept, expected in expected_components.items():
         observed = concept_to_observed.get(concept)
@@ -938,7 +1228,9 @@ def _planner_semantic_projection(
         observed_dependencies: set[str] = set()
         for dependency in observed.get("dependency_component_ids") or ():
             dependency_text = str(dependency)
-            if dependency_text in expected_components:
+            if dependency_text in current_id_to_concept:
+                matches, overlaps = {current_id_to_concept[dependency_text]}, False
+            elif dependency_text in expected_components:
                 matches, overlaps = {dependency_text}, False
             else:
                 matches, overlaps = _alias_matches(
@@ -963,7 +1255,9 @@ def _planner_semantic_projection(
         expectation.concept_aliases,
     )
     del root_overlap
-    checks["root_query_interpretation"] = bool(root_matches & target_concepts)
+    checks["root_query_interpretation"] = bool(root_matches & target_concepts) or (
+        _normalize_text(normalized.get("requested_output")) == _normalize_text(scenario.root_query)
+    )
     normalized_output_text = _normalize_text(json.dumps(normalized, sort_keys=True, default=str))
     distractor_hits = [
         concept for concept in expectation.distractor_concepts if _normalize_text(concept) in normalized_output_text
@@ -978,6 +1272,10 @@ def _planner_semantic_projection(
     safe_projection = {
         "matched_component_concepts": sorted(concept_to_observed),
         "expected_component_concepts": sorted(expected_components),
+        "semantic_concept_to_observed_component_id": {
+            concept: str(observed.get("component_id") or "")
+            for concept, observed in sorted(concept_to_observed.items())
+        },
         "root_target_concepts_matched": sorted(root_matches & target_concepts),
         "distractor_concepts_matched": distractor_hits,
         "checks": checks,
@@ -1025,6 +1323,7 @@ def _cross_candidate_projection(
     expected: CrossCallExpectation,
     *,
     aliases: Mapping[str, tuple[str, ...]],
+    input_identifier_concepts: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], str]:
     candidates = [dict(item) for item in normalized.get("query_resolution_proposals") or ()]
     matching = [item for item in candidates if item.get("classification") == expected.classification]
@@ -1038,16 +1337,13 @@ def _cross_candidate_projection(
             "wrong",
         )
     item = matching[0]
-    target_text = " ".join(
-        str(item.get(key) or "")
-        for key in (
-            "local_target_key",
-            "premise_semantics",
-            "proposed_conclusion",
-        )
-    )
-    target_matches, target_overlap = _alias_matches(target_text, aliases)
+    target_key = str(item.get("local_target_key") or "")
+    if target_key in aliases:
+        target_matches, target_overlap = {target_key}, False
+    else:
+        target_matches, target_overlap = _alias_matches(target_key, aliases)
     target_ok = expected.target_concept in target_matches
+    dependencies: set[str] = set()
     dependency_texts: list[str] = []
     for key in (
         "current_dependency_component_refs",
@@ -1055,12 +1351,21 @@ def _cross_candidate_projection(
     ):
         for ref in item.get(key) or ():
             if isinstance(ref, Mapping):
+                identifier = str(ref.get("component_id") or ref.get("synthesis_key") or "")
+                if identifier in (input_identifier_concepts or {}):
+                    dependencies.add(str((input_identifier_concepts or {})[identifier]))
+                    continue
+                if identifier in aliases:
+                    dependencies.add(identifier)
+                    continue
                 dependency_texts.append(
                     " ".join(
                         str(ref.get(name) or "")
                         for name in (
                             "component_id",
                             "synthesis_key",
+                            "component_label",
+                            "component_question",
                             "user_facing_label",
                             "user_facing_question",
                         )
@@ -1068,7 +1373,6 @@ def _cross_candidate_projection(
                 )
             else:
                 dependency_texts.append(str(ref))
-    dependencies: set[str] = set()
     dependency_overlap = False
     for text in dependency_texts:
         matches, overlap = _alias_matches(text, aliases)
@@ -1119,6 +1423,7 @@ def project_and_score_role_output(
     normalized: Mapping[str, Any],
     *,
     call: PlannedCall,
+    input_identifier_concepts: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Produce only a safe semantic projection and deterministic score."""
 
@@ -1140,6 +1445,7 @@ def project_and_score_role_output(
             normalized,
             expected,
             aliases=expectation_for(call.scenario_id).concept_aliases,
+            input_identifier_concepts=input_identifier_concepts,
         )
     raise EvaluationConfigurationError(f"unsupported evaluation role: {role}")
 
@@ -1203,9 +1509,7 @@ def _input_packet_complete(
     if not isinstance(payload, Mapping):
         return False
     if role == ROLE_COMPONENT_ANALYST:
-        return bool(
-            payload.get("component_ref") and payload.get("accepted_contract_ref") and payload.get("component_evidence")
-        )
+        return bool(payload.get("component_ref") and payload.get("run_binding") and payload.get("component_evidence"))
     if role == ROLE_CROSS_COMPONENT_ANALYST:
         current_nodes = any(
             payload.get(key)
@@ -1215,14 +1519,122 @@ def _input_packet_complete(
                 "licensed_current_component_refs",
                 "current_synthesis_nodes",
                 "preserved_boundary_synthesis_catalog",
+                "current_recovered_component_ref",
             )
         )
         return bool(
             current_nodes
-            and payload.get("graph_ref")
+            and (payload.get("accepted_contract_ref") or payload.get("current_contract_ref"))
             and payload.get("requested_synthesis_directive") == scenario.root_query
         )
     return False
+
+
+def _safe_input_packet_field_presence(
+    role: str,
+    prompt: str,
+    *,
+    scenario_id: str | None = None,
+) -> dict[str, bool]:
+    """Retain only required-field presence, never packet contents."""
+
+    if role == ROLE_SEARCH_PLANNER:
+        return {
+            "sanitized_planner_marker": ("Sanitized planner input JSON:" in prompt),
+        }
+    try:
+        payload = json.loads(prompt)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {"json_object": False}
+    if not isinstance(payload, Mapping):
+        return {"json_object": False}
+    fields = (
+        (
+            "component_ref",
+            "run_binding",
+            "component_evidence",
+        )
+        if role == ROLE_COMPONENT_ANALYST
+        else (
+            "accepted_component_refs",
+            "component_nodes",
+            "licensed_current_component_refs",
+            "current_synthesis_nodes",
+            "preserved_boundary_synthesis_catalog",
+            "current_recovered_component_ref",
+            "accepted_contract_ref",
+            "current_contract_ref",
+            "graph_ref",
+            "requested_synthesis_directive",
+        )
+    )
+    presence = {
+        "json_object": True,
+        **{field: bool(payload.get(field)) for field in fields},
+    }
+    if role == ROLE_CROSS_COMPONENT_ANALYST and scenario_id:
+        presence["requested_synthesis_directive_matches_root"] = (
+            payload.get("requested_synthesis_directive") == SCENARIO_BY_ID[scenario_id].root_query
+        )
+    return presence
+
+
+def _semantic_input_identifier_concepts(
+    prompt: str,
+    *,
+    scenario_id: str,
+) -> dict[str, str]:
+    """Resolve only current input identifiers to scenario-bounded concepts."""
+
+    try:
+        payload = json.loads(prompt)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    aliases = expectation_for(scenario_id).concept_aliases
+    resolved: dict[str, str] = {}
+    conflicts: set[str] = set()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, Mapping):
+            identifier = str(value.get("component_id") or value.get("synthesis_key") or "")
+            if identifier:
+                if identifier in aliases:
+                    matches = {identifier}
+                else:
+                    matches, _ = _alias_matches(
+                        " ".join(
+                            str(value.get(key) or "")
+                            for key in (
+                                "component_id",
+                                "synthesis_key",
+                                "component_label",
+                                "component_question",
+                                "user_facing_label",
+                                "user_facing_question",
+                                "claim_text",
+                            )
+                        ),
+                        aliases,
+                    )
+                if len(matches) == 1:
+                    concept = next(iter(matches))
+                    prior = resolved.get(identifier)
+                    if prior is not None and prior != concept:
+                        conflicts.add(identifier)
+                    else:
+                        resolved[identifier] = concept
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+
+    visit(payload)
+    for identifier in conflicts:
+        resolved.pop(identifier, None)
+    return dict(sorted(resolved.items()))
 
 
 @dataclass(slots=True)
@@ -1235,6 +1647,7 @@ class ExecutionBudgetLedger:
     output_tokens: int = 0
     cost: float = 0.0
     credentials_accessed: bool | None = None
+    route_attested_responses: int = 0
 
 
 class BoundaryInjectionController:
@@ -1246,12 +1659,16 @@ class BoundaryInjectionController:
         manifest: CallManifest,
         scenario_id: str,
         authorization: LiveAuthorization,
+        execution_identity: ExecutionIdentity,
+        evaluation_id: str,
         transport: EvaluationTransport,
         budget_ledger: ExecutionBudgetLedger | None = None,
     ) -> None:
         self.manifest = manifest
         self.scenario_id = scenario_id
         self.authorization = authorization
+        self.execution_identity = execution_identity
+        self.evaluation_id = evaluation_id
         self.transport = transport
         self.budget_ledger = budget_ledger or ExecutionBudgetLedger(
             credentials_accessed=getattr(
@@ -1303,6 +1720,14 @@ class BoundaryInjectionController:
         if not _installed_system_prompt_matches(role, system_prompt):
             raise EvaluationTransportError("selected role did not reach its exact installed system prompt")
         prompt_digest = sha256(prompt.encode("utf-8")).hexdigest()
+        input_identifier_concepts = (
+            _semantic_input_identifier_concepts(
+                prompt,
+                scenario_id=self.scenario_id,
+            )
+            if role == ROLE_CROSS_COMPONENT_ANALYST
+            else {}
+        )
         if not _input_packet_complete(
             role,
             prompt,
@@ -1310,9 +1735,18 @@ class BoundaryInjectionController:
         ):
             self.observations.append(
                 BoundaryCallObservation(
+                    execution_identity_digest=self.execution_identity.execution_identity_digest,
+                    evaluation_id=self.evaluation_id,
+                    scenario_id=self.scenario_id,
                     call_id=call.call_id,
                     role=role,
+                    provider=self.authorization.provider,
+                    model=self.authorization.model,
                     safe_input_packet_digest=prompt_digest,
+                    licensed_maximum_physical_calls=call.maximum_physical_calls,
+                    licensed_maximum_input_tokens=self.authorization.maximum_input_tokens,
+                    licensed_maximum_output_tokens=self.authorization.maximum_output_tokens,
+                    licensed_retry_cap=self.authorization.retry_cap,
                     physical_calls=0,
                     retries=0,
                     packet_complete=False,
@@ -1321,6 +1755,13 @@ class BoundaryInjectionController:
                     safe_semantic_projection={
                         "packet_complete": False,
                         "expected_input_packet_owner": call.expected_input_packet_owner,
+                        "safe_required_field_presence": (
+                            _safe_input_packet_field_presence(
+                                role,
+                                prompt,
+                                scenario_id=self.scenario_id,
+                            )
+                        ),
                     },
                     proposal_only=False,
                     authority_boundary_respected=False,
@@ -1349,6 +1790,13 @@ class BoundaryInjectionController:
                 )
                 if not isinstance(response, EvaluationTransportResponse):
                     raise EvaluationTransportError("transport response omitted required safe accounting")
+                if response.canonical_provider_used != self.authorization.provider:
+                    raise EvaluationRouteAttestationError(
+                        "transport attested a provider outside the exact live addendum"
+                    )
+                if response.canonical_model_used != self.authorization.model:
+                    raise EvaluationRouteAttestationError("transport attested a model outside the exact live addendum")
+                self.budget_ledger.route_attested_responses += 1
                 if (
                     response.provider_request_attempt_count != 1
                     or response.input_tokens < 0
@@ -1385,6 +1833,8 @@ class BoundaryInjectionController:
                 self.total_retries += 1
                 self.budget_ledger.retries += 1
         if last_exc is not None:
+            if isinstance(last_exc, EvaluationRouteAttestationError):
+                raise last_exc
             raise EvaluationTransportError(
                 f"injected model transport failed closed: {type(last_exc).__name__}"
             ) from last_exc
@@ -1412,11 +1862,20 @@ class BoundaryInjectionController:
                         parsed,
                         clean_json_response=None,
                     ),
+                    output_schema_variant=(
+                        SELECTIVE_CROSS_COMPONENT_SCHEMA
+                        if (
+                            role == ROLE_CROSS_COMPONENT_ANALYST
+                            and system_prompt == SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT
+                        )
+                        else None
+                    ),
                 )
             safe_projection, semantic_status = project_and_score_role_output(
                 role,
                 normalized,
                 call=call,
+                input_identifier_concepts=input_identifier_concepts,
             )
             if not authority_boundary_respected:
                 semantic_status = "wrong"
@@ -1457,6 +1916,7 @@ class BoundaryInjectionController:
                         role,
                         parsed,
                         call=call,
+                        input_identifier_concepts=input_identifier_concepts,
                     )
                 except Exception:
                     fallback_projection = {}
@@ -1469,9 +1929,18 @@ class BoundaryInjectionController:
             }
         self.observations.append(
             BoundaryCallObservation(
+                execution_identity_digest=self.execution_identity.execution_identity_digest,
+                evaluation_id=self.evaluation_id,
+                scenario_id=self.scenario_id,
                 call_id=call.call_id,
                 role=role,
+                provider=self.authorization.provider,
+                model=self.authorization.model,
                 safe_input_packet_digest=prompt_digest,
+                licensed_maximum_physical_calls=call.maximum_physical_calls,
+                licensed_maximum_input_tokens=self.authorization.maximum_input_tokens,
+                licensed_maximum_output_tokens=self.authorization.maximum_output_tokens,
+                licensed_retry_cap=self.authorization.retry_cap,
                 physical_calls=attempts,
                 retries=max(0, attempts - 1),
                 packet_complete=True,
@@ -1501,6 +1970,94 @@ def _role_for_system_prompt(system_prompt: str) -> str | None:
     return None
 
 
+def _replace_exact_identifier_values(
+    value: Any,
+    replacements: Mapping[str, str],
+) -> Any:
+    """Replace only exact identifier values in an evaluation-only packet copy."""
+
+    if isinstance(value, Mapping):
+        return {key: _replace_exact_identifier_values(child, replacements) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_replace_exact_identifier_values(child, replacements) for child in value]
+    if isinstance(value, tuple):
+        return tuple(_replace_exact_identifier_values(child, replacements) for child in value)
+    if isinstance(value, str):
+        return replacements.get(value, value)
+    return deepcopy(value)
+
+
+def _accepted_planner_component_bridge(
+    *,
+    scenario_id: str,
+    controller: BoundaryInjectionController,
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind semantic concepts to accepted model-local IDs after acceptance."""
+
+    planner_observations = [item for item in controller.observations if item.role == ROLE_SEARCH_PLANNER]
+    if len(planner_observations) != 1:
+        raise EvaluationTransportError("evaluation-only planner bridge requires one exact planner observation")
+    observation = planner_observations[0]
+    if not (
+        observation.packet_complete
+        and observation.parser_consumable
+        and observation.semantic_status == "met"
+        and observation.authority_boundary_respected
+    ):
+        raise EvaluationTransportError("evaluation-only planner bridge cannot translate a rejected planner output")
+    contract_ref = dict(payload.get("accepted_contract_ref") or payload.get("current_contract_ref") or {})
+    if not contract_ref:
+        raise EvaluationTransportError("evaluation-only planner bridge requires accepted AnswerContract identity")
+    mapping_value = observation.safe_semantic_projection.get("semantic_concept_to_observed_component_id")
+    if not isinstance(mapping_value, Mapping):
+        raise EvaluationTransportError("planner semantic projection omitted concept identity matches")
+    concept_to_current = {
+        str(concept): str(current_id)
+        for concept, current_id in mapping_value.items()
+        if str(concept) and str(current_id)
+    }
+    accepted_refs = [
+        dict(item)
+        for item in (
+            list(payload.get("accepted_component_refs") or ())
+            + list(payload.get("component_nodes") or ())
+            + list(payload.get("licensed_current_component_refs") or ())
+        )
+        if isinstance(item, Mapping)
+    ]
+    accepted_ids = {
+        str(item.get("component_id") or "") for item in accepted_refs if str(item.get("component_id") or "")
+    }
+    if (
+        not concept_to_current
+        or len(set(concept_to_current.values())) != len(concept_to_current)
+        or not set(concept_to_current.values()) <= accepted_ids
+    ):
+        raise EvaluationTransportError(
+            "evaluation-only planner bridge cannot manufacture missing accepted component refs"
+        )
+    expectation = expectation_for(scenario_id)
+    if not set(concept_to_current) <= set(expectation.concept_aliases):
+        raise EvaluationTransportError("evaluation-only planner bridge escaped the scenario semantic boundary")
+    safe_mapping = dict(sorted(concept_to_current.items()))
+    metadata = {
+        "schema_version": "analystos_evaluation_only_component_id_bridge_v1",
+        "scenario_id": scenario_id,
+        "concept_to_current_component_id": safe_mapping,
+        "derived_after_installed_parser": True,
+        "derived_after_answer_contract_acceptance": True,
+        "scenario_bounded": True,
+        "canonical": False,
+        "production_available": False,
+        "manufactures_missing_semantics_or_refs": False,
+    }
+    return {
+        **metadata,
+        "mapping_digest": _digest(metadata),
+    }
+
+
 def _run_ordinary_fixture_scenario(
     *,
     scenario_id: str,
@@ -1517,6 +2074,11 @@ def _run_ordinary_fixture_scenario(
     authorization = controller.authorization
 
     class EvaluationHarness(base_harness):
+        evaluation_only_bridge_metadata: dict[str, Any] | None = None
+        evaluation_boundary_dispatches = 0
+        evaluation_selected_role_dispatches = 0
+        evaluation_boundary_roles: Counter[str]
+
         def deps(self):
             dependencies = super().deps()
             if ROLE_SEARCH_PLANNER not in controller.selected_roles:
@@ -1536,7 +2098,41 @@ def _run_ordinary_fixture_scenario(
 
         def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
             role = _role_for_system_prompt(system_prompt)
+            self.evaluation_boundary_dispatches += 1
+            if not hasattr(self, "evaluation_boundary_roles"):
+                self.evaluation_boundary_roles = Counter()
+            self.evaluation_boundary_roles[str(role or "other")] += 1
+            if role in controller.selected_roles:
+                self.evaluation_selected_role_dispatches += 1
             if role not in controller.selected_roles:
+                if role == ROLE_CROSS_COMPONENT_ANALYST and ROLE_SEARCH_PLANNER in controller.selected_roles:
+                    payload = json.loads(prompt)
+                    if self.evaluation_only_bridge_metadata is None:
+                        self.evaluation_only_bridge_metadata = _accepted_planner_component_bridge(
+                            scenario_id=scenario_id,
+                            controller=controller,
+                            payload=payload,
+                        )
+                    concept_to_current = dict(self.evaluation_only_bridge_metadata["concept_to_current_component_id"])
+                    current_to_concept = {current_id: concept for concept, current_id in concept_to_current.items()}
+                    deterministic_prompt = json.dumps(
+                        _replace_exact_identifier_values(
+                            payload,
+                            current_to_concept,
+                        )
+                    )
+                    deterministic_output = super().ask_model(
+                        deterministic_prompt,
+                        system_prompt,
+                        **kwargs,
+                    )
+                    output_value = json.loads(deterministic_output)
+                    return json.dumps(
+                        _replace_exact_identifier_values(
+                            output_value,
+                            concept_to_current,
+                        )
+                    )
                 return super().ask_model(prompt, system_prompt, **kwargs)
             if role == ROLE_COMPONENT_ANALYST:
                 payload = json.loads(prompt)
@@ -1600,8 +2196,8 @@ def _run_ordinary_fixture_scenario(
                 role=role,
                 prompt=prompt,
                 system_prompt=system_prompt,
-                provider=str(kwargs.get("provider") or authorization.provider),
-                model=str(kwargs.get("model") or authorization.model),
+                provider=authorization.provider,
+                model=authorization.model,
             )
 
     with tempfile.TemporaryDirectory(prefix="analystos-evaluation-") as tmp:
@@ -1617,6 +2213,10 @@ def _run_ordinary_fixture_scenario(
                 tmp_path=Path(tmp),
                 monkeypatch=monkeypatch,
             )
+            if not isinstance(execution.harness, EvaluationHarness):
+                raise EvaluationTransportError(
+                    "default runner did not enter the exact evaluation-bound ordinary fixture"
+                )
             packet = deepcopy(execution.observation_packet)
         finally:
             monkeypatch.undo()
@@ -1637,9 +2237,45 @@ def _run_ordinary_fixture_scenario(
         operating_system_transition_reached=reached,
         safe_output_artifact_refs=tuple(refs),
         deterministic_fixture_call_counts={
+            "ordinary_fixture_runs": 1,
             "fictional_search_operations": len(execution.harness.search_calls),
             "fictional_read_operations": len(execution.harness.read_transport_calls),
+            "deterministic_component_dprime_calls": sum(
+                item.get("system_prompt") == ROLE_SYSTEM_PROMPTS["component_dprime"]
+                for item in execution.harness.model_calls
+            ),
+            "deterministic_synthesis_dprime_calls": sum(
+                item.get("system_prompt") == ROLE_SYSTEM_PROMPTS["synthesis_dprime"]
+                for item in execution.harness.model_calls
+            ),
+            "deterministic_component_analyst_calls": sum(
+                item.get("system_prompt") == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+                for item in execution.harness.model_calls
+            ),
+            "deterministic_cross_component_analyst_calls": sum(
+                item.get("system_prompt")
+                in {
+                    ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST],
+                    SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT,
+                }
+                for item in execution.harness.model_calls
+            ),
+            "ordinary_model_boundary_dispatches": (execution.harness.evaluation_boundary_dispatches),
+            "ordinary_component_analyst_dispatches": (
+                execution.harness.evaluation_boundary_roles.get(
+                    ROLE_COMPONENT_ANALYST,
+                    0,
+                )
+            ),
+            "ordinary_cross_component_analyst_dispatches": (
+                execution.harness.evaluation_boundary_roles.get(
+                    ROLE_CROSS_COMPONENT_ANALYST,
+                    0,
+                )
+            ),
+            "ordinary_selected_role_dispatches": (execution.harness.evaluation_selected_role_dispatches),
         },
+        evaluation_only_mapping_metadata=deepcopy(execution.harness.evaluation_only_bridge_metadata),
         execution=execution,
     )
 
@@ -1667,57 +2303,63 @@ def _classification_from_observations(
     *,
     operating_system_transition_reached: bool,
     runner_failed: bool,
-    paired_probe: PairedProbeEvidence | None = None,
-) -> str:
+    paired_probes_by_call_id: Mapping[str, PairedProbeEvidence],
+) -> tuple[str, tuple[dict[str, Any], ...]]:
     if not observations:
-        return "PACKET" if runner_failed else "NOT_RUN"
-    if any(not item.packet_complete for item in observations):
-        return "PACKET"
-    if any(not item.authority_boundary_respected for item in observations):
-        return classify_result(
+        return ("PACKET" if runner_failed else "NOT_RUN"), ()
+    per_call: list[dict[str, Any]] = []
+    for observation in observations:
+        probe = paired_probes_by_call_id.get(observation.call_id)
+        classification = classify_result(
             ClassificationEvidence(
                 call_ran=True,
-                packet_complete=True,
-                parser_consumable=True,
-                semantic_status="wrong",
-                operating_system_transition_reached=False,
-                paired_probe=paired_probe,
+                packet_complete=observation.packet_complete,
+                parser_consumable=observation.parser_consumable,
+                semantic_status=observation.semantic_status,
+                operating_system_transition_reached=True,
+                paired_probe=probe,
+                authority_boundary_respected=(observation.authority_boundary_respected),
+                boundary_observation=observation,
             )
         )
-    parser_failures = [item for item in observations if not item.parser_consumable]
-    if parser_failures:
-        semantic_statuses = {item.semantic_status for item in parser_failures}
-        return classify_result(
-            ClassificationEvidence(
-                call_ran=True,
-                packet_complete=True,
-                parser_consumable=False,
-                semantic_status=("met" if semantic_statuses == {"met"} else "ambiguous"),
-                operating_system_transition_reached=False,
-            )
+        per_call.append(
+            {
+                "call_id": observation.call_id,
+                "primary_failure_attribution": classification,
+                "paired_probe_supplied": probe is not None,
+                "paired_probe_exact_match": paired_probe_demonstrates_prompt_causality(
+                    probe,
+                    observation=observation,
+                ),
+                "paired_probe_identity_digest": (_digest(asdict(probe)) if probe is not None else None),
+            }
         )
-    if any(item.semantic_status == "ambiguous" for item in observations):
-        return "REVIEW_REQUIRED"
-    if any(item.semantic_status == "wrong" for item in observations):
-        return classify_result(
-            ClassificationEvidence(
-                call_ran=True,
-                packet_complete=True,
-                parser_consumable=True,
-                semantic_status="wrong",
-                operating_system_transition_reached=False,
-                paired_probe=paired_probe,
-            )
-        )
-    return classify_result(
-        ClassificationEvidence(
-            call_ran=True,
-            packet_complete=True,
-            parser_consumable=True,
-            semantic_status="met",
-            operating_system_transition_reached=(operating_system_transition_reached and not runner_failed),
-        )
-    )
+    classifications = {item["primary_failure_attribution"] for item in per_call}
+    for classification in (
+        "PACKET",
+        "PARSER_CONTRACT",
+        "MODEL",
+        "REVIEW_REQUIRED",
+        "PROMPT",
+    ):
+        if classification in classifications:
+            return classification, tuple(per_call)
+    if runner_failed or not operating_system_transition_reached:
+        return "OPERATING_SYSTEM", tuple(per_call)
+    return "PASS", tuple(per_call)
+
+
+def _index_paired_probes(
+    values: Sequence[PairedProbeEvidence],
+) -> dict[str, PairedProbeEvidence]:
+    by_call_id: dict[str, PairedProbeEvidence] = {}
+    for value in values:
+        if not isinstance(value, PairedProbeEvidence):
+            raise EvaluationConfigurationError("paired-probe evidence has an invalid type")
+        if value.call_id in by_call_id:
+            raise EvaluationConfigurationError("paired-probe evidence must be unique per exact call ID")
+        by_call_id[value.call_id] = value
+    return by_call_id
 
 
 def _write_packet(path: str, packet: Mapping[str, Any]) -> None:
@@ -1735,9 +2377,10 @@ def run_evaluation(
     *,
     repository_sha: str | None = None,
     authorization: LiveAuthorization | None = None,
+    execution_identity: ExecutionIdentity | None = None,
     transport_factory: Callable[[LiveAuthorization], EvaluationTransport] | None = None,
     scenario_runner: Callable[..., ScenarioRunResult] | None = None,
-    paired_probe: PairedProbeEvidence | None = None,
+    paired_probes: Sequence[PairedProbeEvidence] = (),
 ) -> dict[str, Any]:
     """Plan or execute one exact evaluation without implicit authority."""
 
@@ -1753,10 +2396,27 @@ def run_evaluation(
         resolved,
         authorization,
         repository_sha=exact_sha,
+        execution_identity=execution_identity,
     )
     if transport_factory is None:
         raise EvaluationConfigurationError("execute requires an injected transport factory")
     assert authorization is not None
+    assert execution_identity is not None
+    factory_identity = getattr(
+        transport_factory,
+        "transport_factory_spec",
+        None,
+    )
+    if factory_identity != execution_identity.transport_factory_spec:
+        raise EvaluationConfigurationError(
+            "injected transport factory implementation is not bound to the execution identity"
+        )
+    exact_evaluation_id = evaluation_id_for(
+        authorization=authorization,
+        execution_identity=execution_identity,
+        manifest=manifest,
+    )
+    probes_by_call_id = _index_paired_probes(paired_probes)
     # This is the first point at which construction is permitted.
     transport = transport_factory(authorization)
     if not callable(transport):
@@ -1779,6 +2439,8 @@ def run_evaluation(
             manifest=manifest,
             scenario_id=scenario_id,
             authorization=authorization,
+            execution_identity=execution_identity,
+            evaluation_id=exact_evaluation_id,
             transport=transport,
             budget_ledger=budget_ledger,
         )
@@ -1790,6 +2452,8 @@ def run_evaluation(
                 controller=controller,
             )
         except Exception as exc:
+            if isinstance(exc, EvaluationRouteAttestationError):
+                raise
             runner_failed = True
             error_type = type(exc).__name__
             result = ScenarioRunResult(
@@ -1807,11 +2471,11 @@ def run_evaluation(
                     else "ordinary deterministic path did not require the conditional call"
                 )
         structural_score, semantic_score = _aggregate_scores(observations)
-        classification = _classification_from_observations(
+        classification, per_call_attribution = _classification_from_observations(
             observations,
             operating_system_transition_reached=(result.operating_system_transition_reached),
             runner_failed=runner_failed,
-            paired_probe=paired_probe,
+            paired_probes_by_call_id=probes_by_call_id,
         )
         scenario_packet = {
             "scenario_id": scenario_id,
@@ -1821,8 +2485,10 @@ def run_evaluation(
             "structural_score": structural_score.to_packet(),
             "semantic_score": semantic_score.to_packet(),
             "primary_failure_attribution": classification,
+            "per_call_failure_attribution": list(per_call_attribution),
             "ordinary_downstream_terminal_posture": (result.ordinary_downstream_terminal_posture),
             "safe_output_artifact_refs": [deepcopy(dict(item)) for item in result.safe_output_artifact_refs],
+            "evaluation_only_mapping_metadata": deepcopy(result.evaluation_only_mapping_metadata),
             "runner_failure_type": error_type,
         }
         scenario_packets.append(scenario_packet)
@@ -1835,14 +2501,13 @@ def run_evaluation(
     classifications = {item["primary_failure_attribution"] for item in scenario_packets}
     if classifications == {"PASS"}:
         primary = "PASS"
-    elif "REVIEW_REQUIRED" in classifications:
-        primary = "REVIEW_REQUIRED"
     else:
         priority = (
             "PACKET",
             "PARSER_CONTRACT",
-            "PROMPT",
             "MODEL",
+            "REVIEW_REQUIRED",
+            "PROMPT",
             "OPERATING_SYSTEM",
             "NOT_RUN",
         )
@@ -1853,15 +2518,10 @@ def run_evaluation(
     structural_score, semantic_score = _aggregate_scores(all_observations)
     packet = {
         "schema_version": RESULT_PACKET_SCHEMA_VERSION,
-        "evaluation_id": _digest(
-            {
-                "repository_sha": exact_sha,
-                "license_reference": authorization.reference,
-                "evaluation_pass": resolved.evaluation_pass,
-                "scenario_ids": resolved.scenario_ids,
-                "roles": resolved.selected_model_roles,
-            }
-        ),
+        "evaluation_id": exact_evaluation_id,
+        "execution_identity_digest": execution_identity.execution_identity_digest,
+        "canonical_operator_command_digest": (execution_identity.canonical_operator_command_digest),
+        "transport_factory_spec": execution_identity.transport_factory_spec,
         "repository_sha": exact_sha,
         "scenario_ids": list(resolved.scenario_ids),
         "scryraven_modes": {scenario_id: SCENARIO_BY_ID[scenario_id].mode for scenario_id in resolved.scenario_ids},
@@ -1906,6 +2566,42 @@ def run_evaluation(
                 "fictional_read_operations",
                 0,
             ),
+            "ordinary_fixture_runs": deterministic_fixture_counts.get(
+                "ordinary_fixture_runs",
+                0,
+            ),
+            "deterministic_component_dprime_calls": deterministic_fixture_counts.get(
+                "deterministic_component_dprime_calls",
+                0,
+            ),
+            "deterministic_synthesis_dprime_calls": deterministic_fixture_counts.get(
+                "deterministic_synthesis_dprime_calls",
+                0,
+            ),
+            "deterministic_component_analyst_calls": deterministic_fixture_counts.get(
+                "deterministic_component_analyst_calls",
+                0,
+            ),
+            "deterministic_cross_component_analyst_calls": deterministic_fixture_counts.get(
+                "deterministic_cross_component_analyst_calls",
+                0,
+            ),
+            "ordinary_model_boundary_dispatches": deterministic_fixture_counts.get(
+                "ordinary_model_boundary_dispatches",
+                0,
+            ),
+            "ordinary_component_analyst_dispatches": deterministic_fixture_counts.get(
+                "ordinary_component_analyst_dispatches",
+                0,
+            ),
+            "ordinary_cross_component_analyst_dispatches": deterministic_fixture_counts.get(
+                "ordinary_cross_component_analyst_dispatches",
+                0,
+            ),
+            "ordinary_selected_role_dispatches": deterministic_fixture_counts.get(
+                "ordinary_selected_role_dispatches",
+                0,
+            ),
         },
         "retry_counts": {"total": budget_ledger.retries},
         "token_counts": {
@@ -1927,6 +2623,12 @@ def run_evaluation(
             "reasoning_traces_retained": False,
         },
         "live_license_reference": authorization.reference,
+        "transport_route_attestation": {
+            "canonical_provider_used": authorization.provider,
+            "canonical_model_used": authorization.model,
+            "attested_call_count": budget_ledger.route_attested_responses,
+            "all_responses_matched_license": (budget_ledger.route_attested_responses == budget_ledger.physical_calls),
+        },
         "transport_created": True,
         "credentials_accessed": budget_ledger.credentials_accessed,
         "symbolic_cost_formula": (
@@ -2010,11 +2712,9 @@ def proposed_live_addendum_template(
         "maximum_input_tokens": "<EXACT-INPUT-TOKEN-CAP>",
         "maximum_output_tokens": "<EXACT-OUTPUT-TOKEN-CAP>",
         "cost_ceiling": "<EXACT-COST-CEILING>",
-        "operator_command": (
-            "python scripts/evaluation/"
-            "run_analystos_model_origination_evaluation.py "
-            "--execution-mode execute <EXACT-SELECTORS>"
-        ),
+        "transport_factory_spec": "<EXACT-MODULE.PATH:CALLABLE>",
+        "canonical_operator_command": "<EXACT-CANONICAL-JSON-ARGV>",
+        "canonical_operator_command_digest": "<SHA256-OF-EXACT-CANONICAL-COMMAND>",
         "output_packet_path": output_packet_path,
         "raw_retention_posture": "sanitized_only",
         "decision": "<EXACT-DECISION-THE-RUN-WILL-MAKE>",
@@ -2023,9 +2723,8 @@ def proposed_live_addendum_template(
 
 
 def _load_transport_factory(spec: str) -> Callable[[LiveAuthorization], EvaluationTransport]:
-    module_name, separator, attribute = spec.partition(":")
-    if not separator or not module_name or not attribute:
-        raise EvaluationConfigurationError("transport factory must use module.path:callable syntax")
+    normalized_spec = _validate_transport_factory_spec(spec)
+    module_name, _, attribute = normalized_spec.partition(":")
     module = importlib.import_module(module_name)
     factory = getattr(module, attribute, None)
     if not callable(factory):
@@ -2043,6 +2742,7 @@ def _lazy_transport_factory(
     ) -> EvaluationTransport:
         return _load_transport_factory(spec)(authorization)
 
+    setattr(construct, "transport_factory_spec", _validate_transport_factory_spec(spec))
     return construct
 
 
@@ -2058,6 +2758,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=sorted(EXECUTION_MODES),
         default="plan_only",
     )
+    parser.add_argument("--repository-sha")
     parser.add_argument(
         "--scenario",
         action="append",
@@ -2077,7 +2778,20 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parse_args(argv)
+    actual_argv = (
+        tuple(argv)
+        if argv is not None
+        else (
+            _normalize_repository_relative_path(
+                sys.argv[0],
+                label="evaluator entrypoint",
+            ),
+            *sys.argv[1:],
+        )
+    )
+    if not actual_argv:
+        raise EvaluationConfigurationError("CLI invocation must include the evaluator entrypoint")
+    args = _parse_args(actual_argv[1:])
     request = EvaluationRequest(
         evaluation_pass=args.evaluation_pass,
         execution_mode=args.execution_mode,
@@ -2086,8 +2800,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_packet_path=args.output_packet_path,
     )
     authorization = None
+    execution_identity = None
     transport_factory = None
     if args.execution_mode == "execute":
+        if not args.repository_sha:
+            raise EvaluationConfigurationError("execute requires --repository-sha")
         if not args.live_addendum:
             raise EvaluationConfigurationError("execute requires --live-addendum")
         if not args.transport_factory:
@@ -2096,12 +2813,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not isinstance(addendum_value, Mapping):
             raise EvaluationConfigurationError("live addendum must contain one JSON object")
         authorization = LiveAuthorization.from_mapping(addendum_value)
+        execution_identity = build_execution_identity(
+            request,
+            repository_sha=args.repository_sha,
+            live_addendum_path=args.live_addendum,
+            transport_factory_spec=args.transport_factory,
+        )
+        validate_canonical_cli_invocation(
+            execution_identity,
+            actual_argv,
+        )
+        validate_live_authorization(
+            request,
+            authorization,
+            repository_sha=current_repository_sha(),
+            execution_identity=execution_identity,
+        )
         transport_factory = _lazy_transport_factory(args.transport_factory)
-    elif args.live_addendum or args.transport_factory:
+    elif args.repository_sha or args.live_addendum or args.transport_factory:
         raise EvaluationConfigurationError("plan_only rejects execute-only live addendum and transport options")
     packet = run_evaluation(
         request,
         authorization=authorization,
+        execution_identity=execution_identity,
         transport_factory=transport_factory,
     )
     print(json.dumps(packet, indent=2, sort_keys=True))
@@ -2127,17 +2861,22 @@ __all__ = [
     "ClassificationEvidence",
     "EvaluationConfigurationError",
     "EvaluationRequest",
+    "EvaluationRouteAttestationError",
     "EvaluationTransportResponse",
     "EvaluationTransportError",
     "ExecutionBudgetLedger",
+    "ExecutionIdentity",
     "LiveAuthorization",
     "PairedProbeEvidence",
     "PlannedCall",
     "ScenarioRunResult",
     "ScoreCard",
     "build_call_manifest",
+    "build_execution_identity",
     "build_planned_packet",
     "classify_result",
+    "current_repository_sha",
+    "evaluation_id_for",
     "paired_probe_demonstrates_prompt_causality",
     "project_and_score_role_output",
     "proposed_live_addendum_template",
@@ -2145,5 +2884,6 @@ __all__ = [
     "resolve_request",
     "run_evaluation",
     "sample_classification_packet",
+    "validate_canonical_cli_invocation",
     "validate_live_authorization",
 ]
