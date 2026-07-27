@@ -1,3 +1,10 @@
+"""Start, use, and stop one tracked provider-execution broker session.
+
+The helper validates but never opens the private environment file.  The file
+path is supplied only to the broker child.  The temporary session token is
+supplied only through separate broker/client child environments and never argv.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -8,118 +15,128 @@ import sys
 import time
 from pathlib import Path
 from typing import Mapping
+from urllib import error, parse, request
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import request_provider_proxy_broker as client  # noqa: E402
-
-SERPER_KEY_ENV_VAR = "SERPER_API_KEY"
-TAVILY_KEY_ENV_VAR = "TAVILY_API_KEY"
-DEFAULT_PRIVATE_BROKER_PATH = (
-    Path.home() / "ScryRavenLiveBroker" / "scryraven_live_broker.py"
+from scripts.provider_execution_contract import (  # noqa: E402
+    BROKER_ENV_FILE_PATH_ENV_VAR,
+    BROKER_HEALTH_PATH,
+    BROKER_MAX_REQUESTS_ENV_VAR,
+    BROKER_RUN_PATH,
+    BROKER_TOKEN_ENV_VAR,
 )
-PROVIDER_KEY_ENV_VAR = {
-    "serper": SERPER_KEY_ENV_VAR,
-    "tavily": TAVILY_KEY_ENV_VAR,
-}
-LOCAL_PROVIDER_ENV_NAMES = frozenset(PROVIDER_KEY_ENV_VAR.values())
+
+TRACKED_BROKER_PATH = ROOT / "scripts" / "provider_execution_broker.py"
+TRACKED_CLIENT_PATH = ROOT / "scripts" / "request_provider_proxy_broker.py"
+READINESS_TIMEOUT_SECONDS = 10.0
 
 
-class ProviderProxyOperatorError(ValueError):
-    """Raised when the local provider-proxy operator flow must fail closed."""
+class ProviderExecutionOperatorError(ValueError):
+    """Raised when the local one-session operator flow must fail closed."""
+
+
+ProviderProxyOperatorError = ProviderExecutionOperatorError
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     broker_process: subprocess.Popen[bytes] | None = None
+    token: str | None = None
     try:
         if not args.confirm_provider_call:
-            raise ProviderProxyOperatorError(
-                "pass --confirm-provider-call to acknowledge a live provider call"
+            raise ProviderExecutionOperatorError(
+                "provider_call_confirmation_required"
             )
-        client.prepare_output_path_for_sanitized_write(
-            client._resolve_output_path(args.output)
-        )
+        if not client._is_loopback_broker_url(args.broker_url):
+            raise ProviderExecutionOperatorError(
+                "broker_url_must_be_loopback_http"
+            )
+        output_path = client._resolve_output_path(args.output)
+        client.prepare_output_path_for_sanitized_write(output_path)
+        env_file_path = normalize_environment_file_path(args.env_file)
         token = generate_temporary_broker_token()
-        env = broker_environment(
-            provider=args.provider,
-            token=token,
-            env_file_paths=args.env_file,
-            process_env=os.environ,
+        broker_process = start_tracked_broker(
+            broker_env=broker_environment(
+                token=token,
+                env_file_path=env_file_path,
+                maximum_requests=args.maximum_requests,
+                process_env=os.environ,
+            ),
+            port=_broker_port(args.broker_url),
         )
-        broker_path = _private_broker_path(args.private_broker_path)
-        broker_process = start_private_broker(
-            broker_path=broker_path,
-            broker_env=env,
-            python_executable=args.python_executable,
-        )
-        time.sleep(args.startup_wait_seconds)
-        rc = run_generic_provider_client(
+        wait_for_broker_readiness(
+            broker_process,
             broker_url=args.broker_url,
-            provider=args.provider,
-            operation=args.operation,
-            query=args.query,
-            max_results=args.max_results,
-            output=args.output,
-            token=token,
+            timeout_seconds=args.readiness_timeout_seconds,
+        )
+        rc = run_generic_provider_client(
+            client_argv=_client_argv(args),
+            client_env=client_environment(
+                token=token,
+                process_env=os.environ,
+            ),
+            timeout_seconds=args.timeout_seconds
+            + args.readiness_timeout_seconds
+            + 30.0,
         )
     except client.OutputHygieneError as exc:
         client.print_output_hygiene_failure_summary(exc)
         return 2
-    except (ProviderProxyOperatorError, client.ProviderProxyClientError) as exc:
-        print(f"refusing provider-proxy broker operator run: {exc}", file=sys.stderr)
+    except (
+        ProviderExecutionOperatorError,
+        client.ProviderExecutionClientError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as exc:
+        failure_class = (
+            str(exc)
+            if isinstance(
+                exc,
+                (ProviderExecutionOperatorError, client.ProviderExecutionClientError),
+            )
+            else "broker_child_process_failed"
+        )
+        print(
+            f"provider-execution broker session failed closed: {failure_class}",
+            file=sys.stderr,
+        )
         return 2
     finally:
         if broker_process is not None:
-            stop_private_broker(broker_process)
+            stop_tracked_broker(broker_process)
+        token = None
 
     if rc == 0:
-        print("provider-proxy broker operator run completed; sanitized output written")
+        print("provider-execution broker session completed")
     return rc
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Run one local generic provider-proxy broker request with a temporary "
-            "broker token and sanitized output."
-        )
-    )
-    parser.add_argument("--provider", required=True, choices=sorted(client.SUPPORTED_PROVIDERS))
-    parser.add_argument(
-        "--operation",
-        default="search",
-        choices=sorted(client.SUPPORTED_OPERATIONS),
-    )
-    parser.add_argument("--query", required=True)
-    parser.add_argument("--max-results", type=int, default=5)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--broker-url", default=client.DEFAULT_BROKER_URL)
-    parser.add_argument(
-        "--private-broker-path",
-        default=str(DEFAULT_PRIVATE_BROKER_PATH),
-        help="Local private broker Python file outside this repository.",
+    parser = client._parser()
+    parser.description = (
+        "Start the tracked loopback broker for one explicit provider execution."
     )
     parser.add_argument(
         "--env-file",
-        action="append",
-        default=[],
-        help="Optional local operator env file to read for provider credentials.",
+        required=True,
+        help="Private environment-file path passed only to the broker child.",
     )
     parser.add_argument(
-        "--python-executable",
-        default=sys.executable,
-        help="Python executable used to start the private broker.",
+        "--maximum-requests",
+        type=int,
+        default=1,
+        choices=(1, 2),
+        help="Mechanical broker-session request fuse.",
     )
     parser.add_argument(
-        "--startup-wait-seconds",
+        "--readiness-timeout-seconds",
         type=float,
-        default=1.5,
-        help="Small local wait before the generic client posts to the broker.",
+        default=READINESS_TIMEOUT_SECONDS,
     )
-    parser.add_argument("--confirm-provider-call", action="store_true")
     return parser
 
 
@@ -127,38 +144,81 @@ def generate_temporary_broker_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def normalize_environment_file_path(path: str | Path) -> Path:
+    """Normalize and stat the path without opening or parsing the file."""
+
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise ProviderExecutionOperatorError("environment_file_unavailable")
+    return resolved
+
+
 def broker_environment(
     *,
-    provider: str,
     token: str,
-    env_file_paths: list[str],
+    env_file_path: Path,
+    maximum_requests: int,
     process_env: Mapping[str, str],
 ) -> dict[str, str]:
-    provider_key = _provider_api_key(provider, env_file_paths, process_env)
-    provider_env_var = _provider_env_var(provider)
-    env: dict[str, str] = {
-        client.TOKEN_ENV_VAR: token,
-        provider_env_var: provider_key,
-        "PYTHONIOENCODING": "utf-8",
-    }
-    for name in ("PATH", "SystemRoot", "TEMP", "TMP"):
+    if not token:
+        raise ProviderExecutionOperatorError("invalid_broker_session")
+    if maximum_requests not in {1, 2}:
+        raise ProviderExecutionOperatorError("maximum_requests_out_of_bounds")
+    env = _minimal_child_environment(process_env)
+    env.update(
+        {
+            BROKER_TOKEN_ENV_VAR: token,
+            BROKER_ENV_FILE_PATH_ENV_VAR: str(env_file_path),
+            BROKER_MAX_REQUESTS_ENV_VAR: str(maximum_requests),
+        }
+    )
+    return env
+
+
+def client_environment(
+    *,
+    token: str,
+    process_env: Mapping[str, str],
+) -> dict[str, str]:
+    if not token:
+        raise ProviderExecutionOperatorError("invalid_broker_session")
+    env = _minimal_child_environment(process_env)
+    env[BROKER_TOKEN_ENV_VAR] = token
+    return env
+
+
+def _minimal_child_environment(process_env: Mapping[str, str]) -> dict[str, str]:
+    env = {"PYTHONIOENCODING": "utf-8"}
+    for name in (
+        "PATH",
+        "Path",
+        "SystemRoot",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "LOCALAPPDATA",
+    ):
         value = process_env.get(name)
         if value:
             env[name] = value
     return env
 
 
-def start_private_broker(
+def start_tracked_broker(
     *,
-    broker_path: Path,
     broker_env: Mapping[str, str],
-    python_executable: str,
+    port: int,
 ) -> subprocess.Popen[bytes]:
-    if not broker_path.is_file():
-        raise ProviderProxyOperatorError("private broker path does not exist")
+    if not TRACKED_BROKER_PATH.is_file():
+        raise ProviderExecutionOperatorError("tracked_broker_unavailable")
     return subprocess.Popen(
-        [python_executable, str(broker_path)],
-        cwd=str(broker_path.parent),
+        [
+            sys.executable,
+            str(TRACKED_BROKER_PATH),
+            "--port",
+            str(port),
+        ],
+        cwd=str(ROOT),
         env=dict(broker_env),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -166,7 +226,30 @@ def start_private_broker(
     )
 
 
-def stop_private_broker(process: subprocess.Popen[bytes]) -> None:
+def wait_for_broker_readiness(
+    process: subprocess.Popen[bytes],
+    *,
+    broker_url: str,
+    timeout_seconds: float,
+) -> None:
+    if timeout_seconds <= 0 or timeout_seconds > 30:
+        raise ProviderExecutionOperatorError("readiness_timeout_out_of_bounds")
+    deadline = time.monotonic() + timeout_seconds
+    health_url = _health_url(broker_url)
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise ProviderExecutionOperatorError("broker_startup_failed")
+        try:
+            with request.urlopen(health_url, timeout=0.25) as response:
+                if response.status == 200:
+                    return
+        except (error.URLError, TimeoutError):
+            pass
+        time.sleep(0.05)
+    raise ProviderExecutionOperatorError("broker_readiness_timeout")
+
+
+def stop_tracked_broker(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
     process.terminate()
@@ -179,94 +262,102 @@ def stop_private_broker(process: subprocess.Popen[bytes]) -> None:
 
 def run_generic_provider_client(
     *,
-    broker_url: str,
-    provider: str,
-    operation: str,
-    query: str,
-    max_results: int,
-    output: str,
-    token: str,
+    client_argv: list[str],
+    client_env: Mapping[str, str],
+    timeout_seconds: float,
 ) -> int:
-    return client.main(
-        [
-            "--broker-url",
-            broker_url,
-            "--provider",
-            provider,
-            "--operation",
-            operation,
-            "--query",
-            query,
-            "--max-results",
-            str(max_results),
-            "--output",
-            output,
-            "--token",
-            token,
-            "--confirm-provider-call",
-        ]
+    if not TRACKED_CLIENT_PATH.is_file():
+        raise ProviderExecutionOperatorError("tracked_client_unavailable")
+    completed = subprocess.run(
+        [sys.executable, str(TRACKED_CLIENT_PATH), *client_argv],
+        cwd=ROOT,
+        env=dict(client_env),
+        check=False,
+        timeout=timeout_seconds,
     )
+    return completed.returncode
 
 
-def load_env_file_values(path: str | Path) -> dict[str, str]:
-    resolved = Path(path).expanduser()
-    try:
-        text = resolved.read_text(encoding="utf-8-sig")
-    except OSError as exc:
-        raise ProviderProxyOperatorError("could not read operator env file") from exc
-    values: dict[str, str] = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
+def _client_argv(args: argparse.Namespace) -> list[str]:
+    values: list[tuple[str, object | None]] = [
+        ("--broker-url", args.broker_url),
+        ("--provider", args.provider),
+        ("--operation", args.operation),
+        ("--model", args.model),
+        ("--base-url", args.base_url),
+        ("--query", args.query),
+        ("--max-results", args.max_results),
+        ("--system-instructions", args.system_instructions),
+        ("--input-prompt", args.input_prompt),
+        ("--reasoning-effort", args.reasoning_effort),
+        ("--max-output-tokens", args.max_output_tokens),
+        ("--maximum-input-tokens", args.maximum_input_tokens),
+        ("--timeout-seconds", args.timeout_seconds),
+        ("--retry-cap", args.retry_cap),
+        ("--correlation-id", args.correlation_id),
+        ("--requested-route-alias", args.requested_route_alias),
+        (
+            "--resolved-route-config-digest",
+            args.resolved_route_config_digest,
+        ),
+        (
+            "--input-price-usd-per-million",
+            args.input_price_usd_per_million,
+        ),
+        (
+            "--output-price-usd-per-million",
+            args.output_price_usd_per_million,
+        ),
+        ("--cost-ceiling-usd", args.cost_ceiling_usd),
+        ("--expected-json-status", args.expected_json_status),
+        ("--output", args.output),
+    ]
+    argv: list[str] = []
+    for flag, value in values:
+        if value is None:
             continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        key, separator, value = line.partition("=")
-        if not separator:
-            continue
-        key = key.strip()
-        if key in LOCAL_PROVIDER_ENV_NAMES:
-            values[key] = _strip_env_value(value)
-    return values
+        argv.extend([flag, str(value)])
+    argv.append("--confirm-provider-call")
+    return argv
 
 
-def _provider_api_key(
-    provider: str,
-    env_file_paths: list[str],
-    process_env: Mapping[str, str],
-) -> str:
-    env_var = PROVIDER_KEY_ENV_VAR.get(provider)
-    if env_var is None:
-        raise ProviderProxyOperatorError("provider is not supported by the local operator")
-    existing = process_env.get(env_var)
-    if existing:
-        return existing
-    for env_file_path in env_file_paths:
-        value = load_env_file_values(env_file_path).get(env_var)
-        if value:
-            return value
-    raise ProviderProxyOperatorError(
-        f"{env_var} must be present in the operator process or explicit env file"
+def _broker_port(broker_url: str) -> int:
+    parsed = parse.urlparse(broker_url)
+    if parsed.path != BROKER_RUN_PATH or parsed.port is None:
+        raise ProviderExecutionOperatorError("invalid_broker_url")
+    return parsed.port
+
+
+def _health_url(broker_url: str) -> str:
+    parsed = parse.urlparse(broker_url)
+    return parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            BROKER_HEALTH_PATH,
+            "",
+            "",
+            "",
+        )
     )
-
-
-def _provider_env_var(provider: str) -> str:
-    env_var = PROVIDER_KEY_ENV_VAR.get(provider)
-    if env_var is None:
-        raise ProviderProxyOperatorError("provider is not supported by the local operator")
-    return env_var
-
-
-def _private_broker_path(path: str) -> Path:
-    return Path(path).expanduser().resolve()
-
-
-def _strip_env_value(value: str) -> str:
-    stripped = value.strip()
-    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
-        return stripped[1:-1]
-    return stripped
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+__all__ = [
+    "ProviderExecutionOperatorError",
+    "ProviderProxyOperatorError",
+    "TRACKED_BROKER_PATH",
+    "TRACKED_CLIENT_PATH",
+    "broker_environment",
+    "client_environment",
+    "generate_temporary_broker_token",
+    "main",
+    "normalize_environment_file_path",
+    "run_generic_provider_client",
+    "start_tracked_broker",
+    "stop_tracked_broker",
+    "wait_for_broker_readiness",
+]

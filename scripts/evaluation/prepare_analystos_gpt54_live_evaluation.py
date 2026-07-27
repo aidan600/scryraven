@@ -25,13 +25,13 @@ from core.multicomponent_role_runtime import (  # noqa: E402
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
 )
-from scripts.evaluation.openai_responses_origination_transport import (  # noqa: E402
-    GPT54_MODEL_ID,
-    REQUEST_TIMEOUT_SECONDS,
-    SDK_MAX_RETRIES,
+from scripts.evaluation.brokered_model_origination_transport import (  # noqa: E402
     TRANSPORT_FACTORY_SPEC,
+)
+from scripts.evaluation.model_cost_policy import (  # noqa: E402
+    GPT54_MODEL_ID,
     conservative_cost_decimal,
-    resolve_openai_model_policy,
+    resolve_model_cost_policy,
 )
 from scripts.evaluation.run_analystos_model_origination_evaluation import (  # noqa: E402
     LIVE_ADDENDUM_SCHEMA_VERSION,
@@ -51,11 +51,13 @@ from tests.fixtures.analystos_model_origination_expectations import (  # noqa: E
 )
 
 OUTPUT_ROOT = Path("output/local/analystos-live-origination-01")
+REQUEST_TIMEOUT_SECONDS = 600.0
+SDK_MAX_RETRIES = 0
 MAXIMUM_INPUT_TOKENS = 16_000
 MAXIMUM_OUTPUT_TOKENS = 8_000
 PER_CALL_COST_CEILING = Decimal("0.16")
 WHOLE_PHASE_COST_CEILING = Decimal("3.20")
-GPT54_MODEL_POLICY = resolve_openai_model_policy(GPT54_MODEL_ID)
+GPT54_MODEL_POLICY = resolve_model_cost_policy("openai", GPT54_MODEL_ID)
 
 FINAL_DECISION_VOCABULARY = (
     "ACCEPT_ORIGINATION_BASELINE, MODEL_ORIGINATION_LIMITATION, "
@@ -236,7 +238,7 @@ def _packet_for(
     return {
         "schema_version": LIVE_ADDENDUM_SCHEMA_VERSION,
         "reference": (
-            "ANALYSTOS-DIRECT-OPENAI-LIVE-TRANSPORT-AND-ADDENDUM-PREP-01:"
+            "ANALYSTOS-BROKERED-MODEL-ORIGINATION-TRANSPORT-AND-ADDENDUM-PREP-01:"
             f"stage-{definition.label}:{repository_sha}"
         ),
         "repository_sha": repository_sha,
@@ -248,6 +250,7 @@ def _packet_for(
         "maximum_model_calls": maximum_model_calls,
         "maximum_scryraven_runs": maximum_scryraven_runs,
         "retry_cap": SDK_MAX_RETRIES,
+        "timeout_seconds": REQUEST_TIMEOUT_SECONDS,
         "maximum_input_tokens": MAXIMUM_INPUT_TOKENS,
         "maximum_output_tokens": MAXIMUM_OUTPUT_TOKENS,
         "cost_ceiling": float(cost_ceiling),

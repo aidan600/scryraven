@@ -35,6 +35,7 @@ from typing import Any
 import pytest
 
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
+from scripts.evaluation import brokered_model_origination_transport as brokered_transport_module
 from scripts.evaluation import openai_responses_origination_transport as transport_module
 from scripts.evaluation import prepare_analystos_gpt54_live_evaluation as preparation
 from scripts.evaluation.run_analystos_model_origination_evaluation import (
@@ -152,6 +153,7 @@ def _authorization(
         maximum_model_calls=1,
         maximum_scryraven_runs=1,
         retry_cap=retry_cap,
+        timeout_seconds=transport_module.REQUEST_TIMEOUT_SECONDS,
         maximum_input_tokens=maximum_input_tokens,
         maximum_output_tokens=maximum_output_tokens,
         cost_ceiling=0.16,
@@ -473,6 +475,7 @@ def test_timeout_is_one_attempt_typed_constant_and_writes_no_packet(
         maximum_model_calls=manifest.total_maximum_physical_model_calls,
         maximum_scryraven_runs=manifest.maximum_scryraven_runs,
         retry_cap=0,
+        timeout_seconds=transport_module.REQUEST_TIMEOUT_SECONDS,
         maximum_input_tokens=16_000,
         maximum_output_tokens=8_000,
         cost_ceiling=0.16,
@@ -609,11 +612,12 @@ def test_preparation_derives_and_validates_all_three_current_head_addenda(
         assert parsed.allowed_model_roles == roles
         assert parsed.allowed_scenario_ids == scenarios
         assert parsed.retry_cap == 0
+        assert parsed.timeout_seconds == 600.0
         assert parsed.maximum_input_tokens == 16_000
         assert parsed.maximum_output_tokens == 8_000
         assert parsed.raw_retention_posture == "sanitized_only"
         assert parsed.transport_factory_spec == (
-            transport_module.TRANSPORT_FACTORY_SPEC
+            brokered_transport_module.TRANSPORT_FACTORY_SPEC
         )
         manifest = validate_live_authorization(
             item.request,
