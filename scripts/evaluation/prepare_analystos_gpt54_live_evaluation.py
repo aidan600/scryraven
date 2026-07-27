@@ -97,13 +97,29 @@ class PreparedAddendum:
     addendum_digest: str
 
     def to_summary(self) -> dict[str, Any]:
+        manifest_census = {
+            key: self.manifest_packet[key]
+            for key in (
+                "evaluation_pass",
+                "execution_mode",
+                "selected_model_roles",
+                "scenario_ids",
+                "maximum_scryraven_runs",
+                "total_maximum_physical_model_calls",
+                "retry_allowance",
+                "calls_by_role",
+                "calls_by_scenario",
+                "calls_by_pass",
+                "conditional_call_ids",
+            )
+        }
         return {
             "stage": self.definition.label,
             "addendum_path": self.addendum_path,
             "addendum_digest": self.addendum_digest,
             "result_path": self.authorization.output_packet_path,
             "resolved_request": asdict(self.request),
-            "manifest": dict(self.manifest_packet),
+            "manifest_census": manifest_census,
             "execution_identity": {
                 "digest": self.execution_identity.execution_identity_digest,
                 "canonical_operator_command": (

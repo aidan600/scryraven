@@ -412,6 +412,7 @@ def test_timeout_is_one_attempt_typed_constant_and_writes_no_packet(
     assert str(raised.value) == transport_module.TIMEOUT_ERROR_MESSAGE
     assert raw_exception_text not in str(raised.value)
     assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
     assert constructor.calls == [{"max_retries": 0, "timeout": 600.0}]
     assert len(responses.calls) == 1
     assert "timeout" not in responses.calls[0]
@@ -561,6 +562,10 @@ def test_preparation_main_labels_branch_packets_nonauthoritative(
         "3.20"
     )
     assert len(summary["stages"]) == 3
+    assert all(
+        "manifest_census" in stage and "manifest" not in stage
+        for stage in summary["stages"]
+    )
     assert "Regenerate" in summary["notice"]
 
 
@@ -594,3 +599,15 @@ def test_plan_only_does_not_load_sdk_or_access_credentials(
     assert packet["transport_created"] is False
     assert packet["credentials_accessed"] is False
     assert packet["call_counts"]["external_calls"] == 0
+
+
+def test_transport_source_has_no_credential_or_environment_reader() -> None:
+    source = Path(transport_module.__file__).read_text(encoding="utf-8")
+    for forbidden in (
+        "os.getenv",
+        "os.environ",
+        "load_dotenv",
+        "dotenv_values",
+        "api_key=",
+    ):
+        assert forbidden not in source

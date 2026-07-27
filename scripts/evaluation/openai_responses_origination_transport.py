@@ -87,17 +87,24 @@ class _OpenAIResponsesTransport:
         maximum_output_tokens: int,
     ) -> EvaluationTransportResponse:
         del role
+        failure_message: str | None = None
         if provider != SUPPORTED_PROVIDER or model != SUPPORTED_MODEL:
-            raise EvaluationTransportError(
-                "OpenAI Responses transport rejected a route outside its exact authorization."
+            failure_message = (
+                "OpenAI Responses transport rejected a route outside its exact "
+                "authorization."
             )
-        if (
+        elif (
             maximum_input_tokens != self._maximum_input_tokens
             or maximum_output_tokens != self._maximum_output_tokens
         ):
-            raise EvaluationTransportError(
-                "OpenAI Responses transport rejected token caps outside its exact authorization."
+            failure_message = (
+                "OpenAI Responses transport rejected token caps outside its "
+                "exact authorization."
             )
+        if failure_message is not None:
+            prompt = ""
+            system_prompt = ""
+            raise EvaluationTransportError(failure_message)
 
         response: Any = None
         try:
@@ -110,39 +117,62 @@ class _OpenAIResponsesTransport:
                 store=False,
             )
         except self._timeout_error_type:
-            raise EvaluationTransportError(TIMEOUT_ERROR_MESSAGE) from None
+            failure_message = TIMEOUT_ERROR_MESSAGE
         except Exception:
-            raise EvaluationTransportError(TRANSPORT_ERROR_MESSAGE) from None
+            failure_message = TRANSPORT_ERROR_MESSAGE
+        if failure_message is not None:
+            response = None
+            prompt = ""
+            system_prompt = ""
+            raise EvaluationTransportError(failure_message)
 
+        output: Any = None
+        input_tokens: int | None = None
+        output_tokens: int | None = None
         try:
             output = getattr(response, "output_text", None)
             if not isinstance(output, str) or not output:
-                raise EvaluationTransportError(OUTPUT_ERROR_MESSAGE)
-            input_tokens, output_tokens = extract_usage_tokens(response)
-            if (
-                input_tokens is None
-                or output_tokens is None
-                or input_tokens < 0
-                or output_tokens < 0
-            ):
-                raise EvaluationTransportError(USAGE_ERROR_MESSAGE)
-            observed_cost = conservative_cost_decimal(
-                input_tokens,
-                output_tokens,
-            )
-            return EvaluationTransportResponse(
-                output=output,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cost=float(observed_cost),
-                canonical_provider_used=SUPPORTED_PROVIDER,
-                canonical_model_used=SUPPORTED_MODEL,
-                provider_request_attempt_count=1,
-                raw_material_retained=False,
-                credentials_accessed=True,
-            )
-        finally:
+                failure_message = OUTPUT_ERROR_MESSAGE
+            else:
+                input_tokens, output_tokens = extract_usage_tokens(response)
+                if (
+                    input_tokens is None
+                    or output_tokens is None
+                    or input_tokens < 0
+                    or output_tokens < 0
+                ):
+                    failure_message = USAGE_ERROR_MESSAGE
+        except Exception:
+            failure_message = USAGE_ERROR_MESSAGE
+        if failure_message is not None:
             response = None
+            output = None
+            input_tokens = None
+            output_tokens = None
+            prompt = ""
+            system_prompt = ""
+            raise EvaluationTransportError(failure_message)
+
+        assert isinstance(output, str)
+        assert input_tokens is not None
+        assert output_tokens is not None
+        observed_cost = conservative_cost_decimal(
+            input_tokens,
+            output_tokens,
+        )
+        result = EvaluationTransportResponse(
+            output=output,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=float(observed_cost),
+            canonical_provider_used=SUPPORTED_PROVIDER,
+            canonical_model_used=SUPPORTED_MODEL,
+            provider_request_attempt_count=1,
+            raw_material_retained=False,
+            credentials_accessed=True,
+        )
+        response = None
+        return result
 
 
 def create_openai_responses_transport(
@@ -175,21 +205,37 @@ def create_openai_responses_transport(
         )
 
     openai_constructor, timeout_error_type = _load_openai_sdk()
+    client: Any = None
+    construction_failed = False
     try:
         client = openai_constructor(
             max_retries=SDK_MAX_RETRIES,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
     except Exception:
+        construction_failed = True
+    if construction_failed:
         raise EvaluationTransportError(
             "OpenAI Responses client construction failed closed."
-        ) from None
-    return _OpenAIResponsesTransport(
-        _responses_create=client.responses.create,
+        )
+    responses_create: Callable[..., Any] | None = None
+    try:
+        responses_create = client.responses.create
+    except Exception:
+        construction_failed = True
+    if construction_failed or responses_create is None:
+        client = None
+        raise EvaluationTransportError(
+            "OpenAI Responses client construction failed closed."
+        )
+    transport = _OpenAIResponsesTransport(
+        _responses_create=responses_create,
         _timeout_error_type=timeout_error_type,
         _maximum_input_tokens=authorization.maximum_input_tokens,
         _maximum_output_tokens=authorization.maximum_output_tokens,
     )
+    client = None
+    return transport
 
 
 setattr(
