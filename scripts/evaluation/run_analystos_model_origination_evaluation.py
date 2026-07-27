@@ -44,6 +44,12 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+# The canonical live argv executes this file by path. Keep dynamically loaded
+# transport contracts on the same module identity as the CLI.
+if __name__ == "__main__":
+    sys.modules[
+        "scripts.evaluation.run_analystos_model_origination_evaluation"
+    ] = sys.modules[__name__]
 
 from core import multicomponent_role_runtime as role_runtime  # noqa: E402
 from core.multicomponent_role_runtime import (  # noqa: E402
