@@ -23,6 +23,8 @@ sentinel.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from copy import deepcopy
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -45,6 +47,7 @@ from scripts.evaluation.run_analystos_model_origination_evaluation import (
     EvaluationTransportError,
     EvaluationTransportResponse,
     ExecutionIdentity,
+    IncompleteModelBoundaryPacketError,
     LiveAuthorization,
     PairedProbeEvidence,
     ScenarioRunResult,
@@ -94,16 +97,24 @@ class FakeTransport:
         self.credentials_accessed = False
         self.canonical_provider_used: str | None = None
         self.canonical_model_used: str | None = None
+        self.input_tokens = 10
+        self.output_tokens = 10
+        self.cost = 0.0
+        self.provider_request_attempt_count = 1
+        self.failure: Exception | None = None
 
     def __call__(self, **kwargs: Any) -> EvaluationTransportResponse:
         self.calls.append({key: value for key, value in kwargs.items() if key not in {"prompt", "system_prompt"}})
+        if self.failure is not None:
+            raise self.failure
         return EvaluationTransportResponse(
             output=dict(self.next_output),
-            input_tokens=10,
-            output_tokens=10,
-            cost=0.0,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            cost=self.cost,
             canonical_provider_used=(self.canonical_provider_used or str(kwargs["provider"])),
             canonical_model_used=(self.canonical_model_used or str(kwargs["model"])),
+            provider_request_attempt_count=self.provider_request_attempt_count,
             credentials_accessed=False,
         )
 
@@ -749,7 +760,7 @@ def test_unmanifested_extra_call_is_blocked_before_transport(
             controller=controller,
         )
         calls_before = len(factory.transport.calls)
-        with pytest.raises(EvaluationTransportError, match="unmanifested"):
+        with pytest.raises(EvaluationTransportError) as local_error:
             controller.invoke(
                 role=ROLE_SEARCH_PLANNER,
                 prompt="{}",
@@ -757,18 +768,162 @@ def test_unmanifested_extra_call_is_blocked_before_transport(
                 provider=authorization.provider,
                 model=authorization.model,
             )
+        assert not isinstance(
+            local_error.value,
+            IncompleteModelBoundaryPacketError,
+        )
         assert len(factory.transport.calls) == calls_before
         return result
 
-    packet = run_evaluation(
-        request,
-        repository_sha=REPOSITORY_SHA,
-        authorization=authorization,
-        execution_identity=_execution_identity(request),
-        transport_factory=factory,
-        scenario_runner=runner,
+    Path(output).unlink(missing_ok=True)
+    with pytest.raises(EvaluationTransportError) as raised:
+        run_evaluation(
+            request,
+            repository_sha=REPOSITORY_SHA,
+            authorization=authorization,
+            execution_identity=_execution_identity(request),
+            transport_factory=factory,
+            scenario_runner=runner,
+        )
+    assert not isinstance(raised.value, IncompleteModelBoundaryPacketError)
+    assert len(factory.transport.calls) == 1
+    assert not Path(output).exists()
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    (
+        "first_call_provider_failure",
+        "input_token_cap",
+        "output_token_cap",
+        "cost_ceiling",
+        "provider_retry_accounting",
+    ),
+)
+def test_execution_envelope_failure_propagates_without_result_packet(
+    tmp_path: Path,
+    failure_kind: str,
+) -> None:
+    output = _repo_output_path(tmp_path, f"{failure_kind}.json")
+    request = _request(
+        "planner_only",
+        execution_mode="execute",
+        output=output,
     )
-    assert packet["call_counts"]["model_calls"] == 1
+    authorization = _authorization(request, output=output)
+    transport = FakeTransport()
+    transport.next_output = {
+        "private_transient_provider_material": "must never reach a packet",
+    }
+    if failure_kind == "first_call_provider_failure":
+        transport.failure = RuntimeError("synthetic provider failure")
+    elif failure_kind == "input_token_cap":
+        transport.input_tokens = authorization.maximum_input_tokens + 1
+    elif failure_kind == "output_token_cap":
+        transport.output_tokens = authorization.maximum_output_tokens + 1
+    elif failure_kind == "cost_ceiling":
+        transport.cost = authorization.cost_ceiling + 0.01
+    else:
+        transport.provider_request_attempt_count = 2
+    factory = FactoryCensus(transport=transport)
+
+    Path(output).unlink(missing_ok=True)
+    with pytest.raises(EvaluationTransportError) as raised:
+        run_evaluation(
+            request,
+            repository_sha=REPOSITORY_SHA,
+            authorization=authorization,
+            execution_identity=_execution_identity(request),
+            transport_factory=factory,
+            scenario_runner=_synthetic_scenario_runner,
+        )
+
+    assert not isinstance(raised.value, IncompleteModelBoundaryPacketError)
+    assert factory.calls == 1
+    assert len(transport.calls) == 1
+    assert not Path(output).exists()
+
+
+def test_retry_exhaustion_propagates_without_result_packet(
+    tmp_path: Path,
+) -> None:
+    output = _repo_output_path(tmp_path, "retry-exhaustion.json")
+    request = _request(
+        "planner_only",
+        execution_mode="execute",
+        output=output,
+    )
+    authorization = _authorization(
+        request,
+        output=output,
+        retry_cap=1,
+    )
+    transport = FakeTransport()
+    transport.failure = RuntimeError("synthetic retryable provider failure")
+
+    Path(output).unlink(missing_ok=True)
+    with pytest.raises(EvaluationTransportError):
+        run_evaluation(
+            request,
+            repository_sha=REPOSITORY_SHA,
+            authorization=authorization,
+            execution_identity=_execution_identity(request),
+            transport_factory=FactoryCensus(transport=transport),
+            scenario_runner=_synthetic_scenario_runner,
+        )
+
+    assert len(transport.calls) == 2
+    assert not Path(output).exists()
+
+
+def test_call_budget_exhaustion_propagates_without_result_packet(
+    tmp_path: Path,
+) -> None:
+    output = _repo_output_path(tmp_path, "call-budget-exhaustion.json")
+    request = _request(
+        "planner_only",
+        execution_mode="execute",
+        output=output,
+    )
+    authorization = _authorization(request, output=output)
+    transport = FakeTransport()
+
+    def runner(
+        *,
+        scenario_id: str,
+        controller: BoundaryInjectionController,
+    ) -> ScenarioRunResult:
+        controller.budget_ledger.physical_calls = authorization.maximum_model_calls
+        controller.invoke(
+            role=ROLE_SEARCH_PLANNER,
+            prompt=(
+                "Sanitized planner input JSON: "
+                + json.dumps(
+                    {
+                        "scenario_id": scenario_id,
+                        "root_query": SCENARIO_BY_ID[scenario_id].root_query,
+                    }
+                )
+            ),
+            system_prompt=SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
+            provider=authorization.provider,
+            model=authorization.model,
+        )
+        pytest.fail("exhausted call budget returned to the scenario runner")
+
+    Path(output).unlink(missing_ok=True)
+    with pytest.raises(EvaluationTransportError):
+        run_evaluation(
+            request,
+            repository_sha=REPOSITORY_SHA,
+            authorization=authorization,
+            execution_identity=_execution_identity(request),
+            transport_factory=FactoryCensus(transport=transport),
+            scenario_runner=runner,
+        )
+
+    assert transport.calls == []
+    assert not Path(output).exists()
 
 
 def test_incomplete_boundary_packet_is_classified_before_transport(
@@ -809,6 +964,10 @@ def test_incomplete_boundary_packet_is_classified_before_transport(
     assert packet["primary_failure_attribution"] == "PACKET"
     assert packet["call_counts"]["model_calls"] == 0
     assert factory.transport.calls == []
+    scenario_packet = packet["observed_safe_semantic_projection"][0]
+    assert scenario_packet["runner_failure_type"] == "IncompleteModelBoundaryPacketError"
+    assert scenario_packet["observed_safe_semantic_projection"][0]["physical_calls"] == 0
+    assert Path(output).is_file()
 
 
 def test_semantic_scorer_checks_root_retention_and_distractor_resistance() -> None:
@@ -1092,6 +1251,7 @@ def _write_cli_addendum(
     evaluation_pass: str = "planner_only",
     scenario_ids: tuple[str, ...] = (CASE_1,),
     roles: tuple[str, ...] = (),
+    transport_factory_spec: str = SYNTHETIC_TRANSPORT_FACTORY_SPEC,
 ) -> tuple[EvaluationRequest, LiveAuthorization, ExecutionIdentity, Path]:
     output = _repo_output_path(tmp_path, "canonical-result.json")
     addendum_path = Path(_repo_output_path(tmp_path, "live-addendum.json"))
@@ -1108,11 +1268,13 @@ def _write_cli_addendum(
         output=output,
         repository_sha=repository_sha,
         live_addendum_path=str(addendum_path),
+        transport_factory_spec=transport_factory_spec,
     )
     identity = _execution_identity(
         request,
         repository_sha=repository_sha,
         live_addendum_path=str(addendum_path),
+        transport_factory_spec=transport_factory_spec,
     )
     addendum_path.parent.mkdir(parents=True, exist_ok=True)
     addendum_path.write_text(
@@ -1204,6 +1366,59 @@ def test_canonical_licensed_cli_and_factory_succeed_with_fake_transport(
     assert packet["canonical_operator_command_digest"] == identity.canonical_operator_command_digest
     assert packet["transport_factory_spec"] == SYNTHETIC_TRANSPORT_FACTORY_SPEC
     assert packet["primary_failure_attribution"] == "PASS"
+
+
+def test_cli_transport_failure_is_nonzero_and_writes_no_result_packet(
+    tmp_path: Path,
+) -> None:
+    module_stem = "analystos_cli_failure_" + "".join(
+        character if character.isalnum() else "_" for character in tmp_path.name
+    )
+    module_path = Path("output") / f"{module_stem}.py"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    factory_spec = f"output.{module_stem}:provider_failure_factory"
+    private_sentinel = "PRIVATE_TRANSIENT_PROVIDER_FAILURE_MATERIAL"
+    module_path.write_text(
+        "\n".join(
+            (
+                "class ProviderFailureTransport:",
+                "    credentials_accessed = False",
+                "",
+                "    def __call__(self, **_kwargs):",
+                f"        raise RuntimeError({private_sentinel!r})",
+                "",
+                "",
+                "def provider_failure_factory(_authorization):",
+                "    return ProviderFailureTransport()",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    request, _, identity, _ = _write_cli_addendum(
+        tmp_path,
+        transport_factory_spec=factory_spec,
+    )
+    assert request.output_packet_path is not None
+    output = Path(request.output_packet_path)
+    output.unlink(missing_ok=True)
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, *identity.canonical_argv],
+            cwd=Path.cwd(),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        module_path.unlink(missing_ok=True)
+
+    assert completed.returncode == 2, completed.stdout
+    assert completed.stdout == ""
+    assert completed.stderr.startswith("ERROR: ")
+    assert private_sentinel not in completed.stderr
+    assert not output.exists()
 
 
 def test_different_transport_factory_fails_before_import_or_construction(
@@ -1313,6 +1528,7 @@ def test_transport_route_attestation_mismatch_fails_closed(
     transport.next_output = _planner_output(CASE_1)
     setattr(transport, attestation_field, wrong_value)
     factory = FactoryCensus(transport=transport)
+    Path(output).unlink(missing_ok=True)
     with pytest.raises(EvaluationRouteAttestationError, match="attested"):
         run_evaluation(
             request,
@@ -1324,6 +1540,7 @@ def test_transport_route_attestation_mismatch_fails_closed(
         )
     assert factory.calls == 1
     assert len(transport.calls) == 1
+    assert not Path(output).exists()
 
 
 @pytest.mark.parametrize(
@@ -1378,7 +1595,13 @@ def test_inexact_paired_probe_cannot_reclassify_model_failure_as_prompt(
     ("changes", "expected"),
     (
         ({"packet_complete": False}, "PACKET"),
-        ({"parser_consumable": False}, "PARSER_CONTRACT"),
+        (
+            {
+                "parser_consumable": False,
+                "semantic_status": "met",
+            },
+            "PARSER_CONTRACT",
+        ),
         ({"authority_boundary_respected": False}, "MODEL"),
         (
             {
@@ -1406,6 +1629,74 @@ def test_attribution_precedence_cannot_be_overridden_by_probe(
     }
     values.update(changes)
     assert classify_result(ClassificationEvidence(**values)) == expected
+
+
+@pytest.mark.parametrize(
+    ("semantic_status", "expected"),
+    (
+        ("met", "PARSER_CONTRACT"),
+        ("wrong", "MODEL"),
+        ("ambiguous", "REVIEW_REQUIRED"),
+    ),
+)
+def test_parser_attribution_uses_the_semantic_status_matrix(
+    semantic_status: str,
+    expected: str,
+) -> None:
+    observation = replace(
+        _probe_observation(),
+        parser_consumable=False,
+        semantic_status=semantic_status,
+    )
+    assert (
+        classify_result(
+            ClassificationEvidence(
+                call_ran=True,
+                packet_complete=True,
+                parser_consumable=False,
+                semantic_status=semantic_status,
+                operating_system_transition_reached=False,
+                paired_probe=_matching_probe(observation),
+                authority_boundary_respected=True,
+                boundary_observation=observation,
+            )
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "semantic_status",
+    (
+        "met",
+        "wrong",
+        "ambiguous",
+    ),
+)
+def test_authority_violation_remains_model_with_any_parser_posture(
+    semantic_status: str,
+) -> None:
+    observation = replace(
+        _probe_observation(),
+        parser_consumable=False,
+        semantic_status=semantic_status,
+        authority_boundary_respected=False,
+    )
+    assert (
+        classify_result(
+            ClassificationEvidence(
+                call_ran=True,
+                packet_complete=True,
+                parser_consumable=False,
+                semantic_status=semantic_status,
+                operating_system_transition_reached=False,
+                paired_probe=_matching_probe(observation),
+                authority_boundary_respected=False,
+                boundary_observation=observation,
+            )
+        )
+        == "MODEL"
+    )
 
 
 def test_only_fully_matching_probe_produces_prompt() -> None:

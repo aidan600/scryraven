@@ -181,6 +181,10 @@ class EvaluationRouteAttestationError(EvaluationTransportError):
     """Raised when a transport reports a route other than the licensed route."""
 
 
+class IncompleteModelBoundaryPacketError(EvaluationTransportError):
+    """Raised for the sole publishable zero-call boundary-packet failure."""
+
+
 class EvaluationTransport(Protocol):
     """Provider-neutral callable constructed only after license validation."""
 
@@ -1128,7 +1132,11 @@ def classify_result(evidence: ClassificationEvidence) -> str:
     if not evidence.authority_boundary_respected:
         return "MODEL"
     if not evidence.parser_consumable:
-        return "PARSER_CONTRACT"
+        return {
+            "met": "PARSER_CONTRACT",
+            "wrong": "MODEL",
+            "ambiguous": "REVIEW_REQUIRED",
+        }.get(evidence.semantic_status, "REVIEW_REQUIRED")
     if evidence.semantic_status == "ambiguous":
         return "REVIEW_REQUIRED"
     if evidence.semantic_status == "wrong":
@@ -1688,6 +1696,7 @@ class BoundaryInjectionController:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_cost = 0.0
+        self.execution_envelope_error: EvaluationTransportError | None = None
 
     @property
     def credentials_accessed(self) -> bool | None:
@@ -1706,6 +1715,27 @@ class BoundaryInjectionController:
         return calls[index]
 
     def invoke(
+        self,
+        *,
+        role: str,
+        prompt: str,
+        system_prompt: str,
+        provider: str,
+        model: str,
+    ) -> Any:
+        try:
+            return self._invoke(
+                role=role,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                provider=provider,
+                model=model,
+            )
+        except EvaluationTransportError as exc:
+            self.execution_envelope_error = exc
+            raise
+
+    def _invoke(
         self,
         *,
         role: str,
@@ -1768,7 +1798,7 @@ class BoundaryInjectionController:
                     parser_failure_kind="incomplete_model_boundary_packet",
                 )
             )
-            raise EvaluationTransportError("required model-boundary packet context is incomplete")
+            raise IncompleteModelBoundaryPacketError("required model-boundary packet context is incomplete")
         raw: Any = None
         attempts = 0
         last_exc: Exception | None = None
@@ -2447,13 +2477,30 @@ def run_evaluation(
         runner_failed = False
         error_type: str | None = None
         try:
-            result = runner(
-                scenario_id=scenario_id,
-                controller=controller,
-            )
-        except Exception as exc:
-            if isinstance(exc, EvaluationRouteAttestationError):
+            try:
+                result = runner(
+                    scenario_id=scenario_id,
+                    controller=controller,
+                )
+            except Exception as exc:
+                if controller.execution_envelope_error is not None:
+                    if controller.execution_envelope_error is exc:
+                        raise
+                    raise controller.execution_envelope_error from exc
                 raise
+            if controller.execution_envelope_error is not None:
+                raise controller.execution_envelope_error
+        except IncompleteModelBoundaryPacketError as exc:
+            runner_failed = True
+            error_type = type(exc).__name__
+            result = ScenarioRunResult(
+                scenario_id=scenario_id,
+                ordinary_downstream_terminal_posture="fail_closed_before_terminal",
+                operating_system_transition_reached=False,
+            )
+        except EvaluationTransportError:
+            raise
+        except Exception as exc:
             runner_failed = True
             error_type = type(exc).__name__
             result = ScenarioRunResult(
@@ -2866,6 +2913,7 @@ __all__ = [
     "EvaluationTransportError",
     "ExecutionBudgetLedger",
     "ExecutionIdentity",
+    "IncompleteModelBoundaryPacketError",
     "LiveAuthorization",
     "PairedProbeEvidence",
     "PlannedCall",
