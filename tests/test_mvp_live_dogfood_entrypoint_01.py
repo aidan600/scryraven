@@ -337,6 +337,7 @@ def _official_proxy_runner(request: ProviderProxyRunRequest) -> ProviderProxyRun
             }
         ],
         "physical_attempt_count": 1,
+        "provider_elapsed_milliseconds_total": 5,
         "caller_authorized_cost_ceiling_usd": "0.05",
         "raw_provider_payload_retained": False,
         "raw_request_material_retained": False,

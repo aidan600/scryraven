@@ -24,6 +24,7 @@ from scripts.provider_execution_contract import (
     MODEL_GENERATE_OPERATION,
     ProviderExecutionContractError,
     build_model_request,
+    digest_text,
     validate_provider_execution_response,
 )
 
@@ -158,6 +159,19 @@ class _BrokeredModelOriginationTransport:
                     "brokered transport response omitted output posture"
                 )
             output_text = output_text_value
+            output_token_utilization = (
+                format(
+                    Decimal(output_tokens) / Decimal(maximum_output_tokens),
+                    "f",
+                )
+                if usage_observed
+                else None
+            )
+            reasoning_token_share = (
+                format(Decimal(reasoning_tokens) / Decimal(output_tokens), "f")
+                if usage_observed and output_tokens
+                else None
+            )
             result = EvaluationTransportResponse(
                 output=output_text,
                 reasoning_effort=self._authorization.reasoning_effort,
@@ -169,6 +183,8 @@ class _BrokeredModelOriginationTransport:
                     "max_output_tokens_reached"
                 ],
                 output_text_present=response["output_text_present"],
+                output_text_character_count=len(output_text),
+                output_text_digest=digest_text(output_text),
                 usage_observed=usage_observed,
                 input_tokens=input_tokens,
                 cached_input_tokens=cached_input_tokens,
@@ -181,6 +197,8 @@ class _BrokeredModelOriginationTransport:
                     format(cost, "f") if cost is not None else None
                 ),
                 cost_posture="exact" if cost is not None else "unknown",
+                output_token_utilization=output_token_utilization,
+                reasoning_token_share=reasoning_token_share,
                 provider_elapsed_milliseconds_total=response[
                     "provider_elapsed_milliseconds_total"
                 ],

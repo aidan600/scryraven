@@ -23,6 +23,7 @@ from scripts.evaluation.run_analystos_model_origination_evaluation import (
     EvaluationTransportResponse,
     LiveAuthorization,
 )
+from scripts.provider_execution_contract import digest_text
 
 TRANSPORT_FACTORY_SPEC = (
     "scripts.evaluation.openai_responses_origination_transport:"
@@ -234,6 +235,8 @@ class _OpenAIResponsesTransport:
             generation_incomplete_reason=None,
             max_output_tokens_reached=False,
             output_text_present=True,
+            output_text_character_count=len(output),
+            output_text_digest=digest_text(output),
             usage_observed=True,
             input_tokens=input_tokens,
             cached_input_tokens=cached_input_tokens,
@@ -247,6 +250,16 @@ class _OpenAIResponsesTransport:
                 "f",
             ),
             cost_posture="exact",
+            output_token_utilization=format(
+                Decimal(output_tokens)
+                / Decimal(self._authorization.maximum_output_tokens),
+                "f",
+            ),
+            reasoning_token_share=(
+                format(Decimal(reasoning_tokens) / Decimal(output_tokens), "f")
+                if output_tokens
+                else None
+            ),
             provider_elapsed_milliseconds_total=0,
             canonical_provider_used=self.policy.provider,
             canonical_model_used=self.policy.model,

@@ -204,6 +204,7 @@ ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
         "result_count",
         "results",
         "physical_attempt_count",
+        "provider_elapsed_milliseconds_total",
         "caller_authorized_cost_ceiling_usd",
         "raw_provider_payload_retained",
         "raw_request_material_retained",
@@ -1263,6 +1264,15 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
     if operation != DEFAULT_OPERATION:
         raise LimitedLiveSearchCandidateError("provider results operation mismatch")
     result_count = _bounded_int(raw.get("result_count"), default=0)
+    provider_elapsed = raw.get("provider_elapsed_milliseconds_total")
+    if (
+        not isinstance(provider_elapsed, int)
+        or isinstance(provider_elapsed, bool)
+        or not 0 <= provider_elapsed <= 2_000_000
+    ):
+        raise LimitedLiveSearchCandidateError(
+            "provider results envelope elapsed telemetry is invalid"
+        )
     return {
         "schema_version": EXPECTED_SEARCH_SCHEMA_VERSION,
         "proof_kind": EXPECTED_SEARCH_PROOF_KIND,
@@ -1271,6 +1281,7 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
         "status": "ok",
         "result_count": result_count,
         "physical_attempt_count": 1,
+        "provider_elapsed_milliseconds_total": provider_elapsed,
         "caller_authorized_cost_ceiling_usd": EXPECTED_SEARCH_COST_CEILING_USD,
         "raw_provider_payload_retained": False,
         "raw_request_material_retained": False,

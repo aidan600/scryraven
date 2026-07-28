@@ -119,6 +119,10 @@ class FakeTransport:
             generation_incomplete_reason=self.generation_incomplete_reason,
             max_output_tokens_reached=self.max_output_tokens_reached,
             output_text_present=self.output_text_present,
+            output_text_character_count=len(
+                json.dumps(self.next_output, sort_keys=True)
+            ),
+            output_text_digest="d" * 64,
             usage_observed=self.usage_observed,
             input_tokens=(self.input_tokens if self.usage_observed else None),
             cached_input_tokens=(0 if self.usage_observed else None),
@@ -139,6 +143,14 @@ class FakeTransport:
                 str(self.cost) if self.usage_observed else None
             ),
             cost_posture="exact" if self.usage_observed else "unknown",
+            output_token_utilization=(
+                str(self.output_tokens / kwargs["maximum_output_tokens"])
+                if self.usage_observed
+                else None
+            ),
+            reasoning_token_share=(
+                "0" if self.usage_observed and self.output_tokens else None
+            ),
             provider_elapsed_milliseconds_total=1,
             canonical_provider_used=(self.canonical_provider_used or str(kwargs["provider"])),
             canonical_model_used=(self.canonical_model_used or str(kwargs["model"])),
@@ -291,6 +303,8 @@ def _probe_observation() -> BoundaryCallObservation:
         generation_incomplete_reason=None,
         max_output_tokens_reached=False,
         output_text_present=True,
+        output_text_character_count=1,
+        output_text_digest="d" * 64,
         usage_observed=True,
         input_tokens=10,
         cached_input_tokens=0,
@@ -301,6 +315,8 @@ def _probe_observation() -> BoundaryCallObservation:
         total_tokens=20,
         caller_calculated_route_priced_cost_usd="0.0",
         cost_posture="exact",
+        output_token_utilization="0.005",
+        reasoning_token_share="0",
         provider_elapsed_milliseconds_total=1,
         packet_complete=True,
         parser_consumable=True,
@@ -420,6 +436,8 @@ class OrdinaryFixtureFakeTransport:
             generation_incomplete_reason=None,
             max_output_tokens_reached=False,
             output_text_present=True,
+            output_text_character_count=len(json.dumps(output, sort_keys=True)),
+            output_text_digest="d" * 64,
             usage_observed=True,
             input_tokens=10,
             cached_input_tokens=0,
@@ -430,6 +448,8 @@ class OrdinaryFixtureFakeTransport:
             total_tokens=20,
             caller_calculated_route_priced_cost_usd="0.0",
             cost_posture="exact",
+            output_token_utilization="0.005",
+            reasoning_token_share="0",
             provider_elapsed_milliseconds_total=1,
             canonical_provider_used=str(kwargs["provider"]),
             canonical_model_used=str(kwargs["model"]),
@@ -810,7 +830,7 @@ def test_incomplete_generation_records_safe_observation_and_publishes_stop(
     request = _request(
         "combined",
         execution_mode="execute",
-        scenario_ids=(CASE_3,),
+        scenario_ids=(CASE_3, CASE_4),
         output=output,
     )
     authorization = _authorization(request, output=output)
@@ -1569,6 +1589,8 @@ def test_direct_script_accepts_package_typed_transport_response(
                     "            generation_incomplete_reason=None,",
                     "            max_output_tokens_reached=False,",
                     "            output_text_present=True,",
+                    f"            output_text_character_count={len(planner_output)},",
+                    "            output_text_digest='d' * 64,",
                     "            usage_observed=True,",
                     "            input_tokens=10,",
                     "            cached_input_tokens=0,",
@@ -1579,6 +1601,8 @@ def test_direct_script_accepts_package_typed_transport_response(
                     "            total_tokens=20,",
                     "            caller_calculated_route_priced_cost_usd='0.0',",
                     "            cost_posture='exact',",
+                    "            output_token_utilization='0.005',",
+                    "            reasoning_token_share='0',",
                     "            provider_elapsed_milliseconds_total=1,",
                 "            canonical_provider_used=str(kwargs['provider']),",
                 "            canonical_model_used=str(kwargs['model']),",

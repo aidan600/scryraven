@@ -226,6 +226,8 @@ class EvaluationTransportResponse:
     generation_incomplete_reason: str | None
     max_output_tokens_reached: bool
     output_text_present: bool
+    output_text_character_count: int
+    output_text_digest: str
     usage_observed: bool
     input_tokens: int | None
     cached_input_tokens: int | None
@@ -236,6 +238,8 @@ class EvaluationTransportResponse:
     total_tokens: int | None
     caller_calculated_route_priced_cost_usd: str | None
     cost_posture: str
+    output_token_utilization: str | None
+    reasoning_token_share: str | None
     provider_elapsed_milliseconds_total: int
     canonical_provider_used: str
     canonical_model_used: str
@@ -482,6 +486,8 @@ class BoundaryCallObservation:
     generation_incomplete_reason: str | None
     max_output_tokens_reached: bool
     output_text_present: bool
+    output_text_character_count: int
+    output_text_digest: str | None
     usage_observed: bool
     input_tokens: int | None
     cached_input_tokens: int | None
@@ -492,6 +498,8 @@ class BoundaryCallObservation:
     total_tokens: int | None
     caller_calculated_route_priced_cost_usd: str | None
     cost_posture: str
+    output_token_utilization: str | None
+    reasoning_token_share: str | None
     provider_elapsed_milliseconds_total: int
     packet_complete: bool
     parser_consumable: bool
@@ -522,6 +530,8 @@ class BoundaryCallObservation:
             "generation_incomplete_reason": self.generation_incomplete_reason,
             "max_output_tokens_reached": self.max_output_tokens_reached,
             "output_text_present": self.output_text_present,
+            "output_text_character_count": self.output_text_character_count,
+            "output_text_digest": self.output_text_digest,
             "usage_observed": self.usage_observed,
             "input_tokens": self.input_tokens,
             "cached_input_tokens": self.cached_input_tokens,
@@ -534,6 +544,11 @@ class BoundaryCallObservation:
                 self.caller_calculated_route_priced_cost_usd
             ),
             "cost_posture": self.cost_posture,
+            "request_may_still_be_billable": (
+                self.cost_posture == "unknown"
+            ),
+            "output_token_utilization": self.output_token_utilization,
+            "reasoning_token_share": self.reasoning_token_share,
             "provider_elapsed_milliseconds_total": (
                 self.provider_elapsed_milliseconds_total
             ),
@@ -544,6 +559,11 @@ class BoundaryCallObservation:
             "proposal_only": self.proposal_only,
             "authority_boundary_respected": self.authority_boundary_respected,
             "parser_failure_kind": self.parser_failure_kind,
+            "raw_provider_payload_retained": False,
+            "raw_request_material_retained": False,
+            "raw_response_material_retained": False,
+            "raw_search_response_retained": False,
+            "output_text_retained": False,
         }
 
 
@@ -1903,6 +1923,8 @@ class BoundaryInjectionController:
                     generation_incomplete_reason=None,
                     max_output_tokens_reached=False,
                     output_text_present=False,
+                    output_text_character_count=0,
+                    output_text_digest=None,
                     usage_observed=False,
                     input_tokens=None,
                     cached_input_tokens=None,
@@ -1913,6 +1935,8 @@ class BoundaryInjectionController:
                     total_tokens=None,
                     caller_calculated_route_priced_cost_usd=None,
                     cost_posture="not_applicable",
+                    output_token_utilization=None,
+                    reasoning_token_share=None,
                     provider_elapsed_milliseconds_total=0,
                     packet_complete=False,
                     parser_consumable=False,
@@ -2093,6 +2117,8 @@ class BoundaryInjectionController:
                     generation_incomplete_reason=safe_response.generation_incomplete_reason,
                     max_output_tokens_reached=safe_response.max_output_tokens_reached,
                     output_text_present=safe_response.output_text_present,
+                    output_text_character_count=safe_response.output_text_character_count,
+                    output_text_digest=safe_response.output_text_digest,
                     usage_observed=safe_response.usage_observed,
                     input_tokens=safe_response.input_tokens,
                     cached_input_tokens=safe_response.cached_input_tokens,
@@ -2105,6 +2131,8 @@ class BoundaryInjectionController:
                         safe_response.caller_calculated_route_priced_cost_usd
                     ),
                     cost_posture=safe_response.cost_posture,
+                    output_token_utilization=safe_response.output_token_utilization,
+                    reasoning_token_share=safe_response.reasoning_token_share,
                     provider_elapsed_milliseconds_total=(
                         safe_response.provider_elapsed_milliseconds_total
                     ),
@@ -2237,6 +2265,8 @@ class BoundaryInjectionController:
                 generation_incomplete_reason=safe_response.generation_incomplete_reason,
                 max_output_tokens_reached=safe_response.max_output_tokens_reached,
                 output_text_present=safe_response.output_text_present,
+                output_text_character_count=safe_response.output_text_character_count,
+                output_text_digest=safe_response.output_text_digest,
                 usage_observed=safe_response.usage_observed,
                 input_tokens=safe_response.input_tokens,
                 cached_input_tokens=safe_response.cached_input_tokens,
@@ -2249,6 +2279,8 @@ class BoundaryInjectionController:
                     safe_response.caller_calculated_route_priced_cost_usd
                 ),
                 cost_posture=safe_response.cost_posture,
+                output_token_utilization=safe_response.output_token_utilization,
+                reasoning_token_share=safe_response.reasoning_token_share,
                 provider_elapsed_milliseconds_total=(
                     safe_response.provider_elapsed_milliseconds_total
                 ),
@@ -2744,6 +2776,7 @@ def run_evaluation(
     all_output_refs: list[Mapping[str, Any]] = []
     skipped: dict[str, str] = {}
     generation_outcomes: dict[str, str] = {}
+    publishable_generation_stop = False
     for scenario_id in resolved.scenario_ids:
         controller = BoundaryInjectionController(
             manifest=manifest,
@@ -2772,6 +2805,7 @@ def run_evaluation(
                 raise controller.execution_envelope_error
         except IncompleteModelGenerationError as exc:
             runner_failed = True
+            publishable_generation_stop = True
             error_type = type(exc).__name__
             generation_outcomes[scenario_id] = (
                 "INCOMPLETE_GENERATION"
@@ -2839,6 +2873,14 @@ def run_evaluation(
         all_observations.extend(observations)
         all_output_refs.extend(result.safe_output_artifact_refs)
         deterministic_fixture_counts.update(result.deterministic_fixture_call_counts)
+        if publishable_generation_stop:
+            already_observed = {item.call_id for item in all_observations}
+            for call in manifest.calls:
+                if call.call_id not in already_observed:
+                    skipped[call.call_id] = (
+                        "skipped after publishable generation stop"
+                    )
+            break
 
     if budget_ledger.physical_calls > authorization.maximum_model_calls:
         raise EvaluationTransportError("observed model calls exceeded the exact cap")

@@ -491,6 +491,7 @@ def _write_demo_retained_artifacts(
             "result_count": 1,
             "results": [provider_result],
             "physical_attempt_count": 1,
+            "provider_elapsed_milliseconds_total": 0,
             "caller_authorized_cost_ceiling_usd": "0.00",
             "raw_provider_payload_retained": False,
             "raw_request_material_retained": False,
