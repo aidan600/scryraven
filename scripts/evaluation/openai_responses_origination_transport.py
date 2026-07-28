@@ -252,7 +252,7 @@ class _OpenAIResponsesTransport:
             cost_posture="exact",
             output_token_utilization=format(
                 Decimal(output_tokens)
-                / Decimal(self._authorization.maximum_output_tokens),
+                / Decimal(self._maximum_output_tokens),
                 "f",
             ),
             reasoning_token_share=(
