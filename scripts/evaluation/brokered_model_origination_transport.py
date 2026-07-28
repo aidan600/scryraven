@@ -220,9 +220,10 @@ class _BrokeredModelOriginationTransport:
                 "brokered model origination transport failed closed: "
                 f"{exc.failure_class}"
             ) from None
-        except broker_client.ProviderExecutionClientError:
+        except broker_client.ProviderExecutionClientError as exc:
             raise EvaluationTransportError(
-                "brokered model origination transport failed closed"
+                "brokered model origination transport failed closed: "
+                f"{exc.failure_class}"
             ) from None
         finally:
             response = None

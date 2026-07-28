@@ -18,6 +18,7 @@ from typing import Any, Mapping
 import pytest
 
 from scripts import provider_execution_broker as broker
+from scripts import request_provider_proxy_broker as broker_client
 from scripts.evaluation import brokered_model_origination_transport
 from scripts.evaluation.model_cost_policy import (
     GPT54_MODEL_ID,
@@ -38,9 +39,12 @@ from scripts.provider_execution_contract import (
     SCHEMA_VERSION,
     SEARCH_PROOF_KIND,
     ProviderExecutionContractError,
+    build_failure_response,
     build_model_proof,
     build_model_request,
+    build_search_request,
     build_success_response,
+    validate_provider_execution_response,
 )
 
 
@@ -417,6 +421,162 @@ def test_reasoning_effort_is_exact_authorization_not_cost_policy() -> None:
             maximum_input_tokens=512,
             maximum_output_tokens=512,
         )
+
+
+@pytest.mark.parametrize(
+    ("failure_class", "physical_attempt_count", "elapsed_milliseconds"),
+    (
+        ("missing_configuration", 0, 0),
+        ("provider_timeout", 1, 17),
+    ),
+)
+def test_model_failure_attestation_survives_broker_client_and_evaluator(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_class: str,
+    physical_attempt_count: int,
+    elapsed_milliseconds: int,
+) -> None:
+    request_payload = _request()
+    failure = build_failure_response(
+        request_payload=request_payload,
+        failure_class=failure_class,
+        physical_attempt_count=physical_attempt_count,
+        provider_elapsed_milliseconds_total=elapsed_milliseconds,
+    )
+    assert failure["provider"] == "openai"
+    assert failure["operation"] == "model.generate"
+    assert failure["model"] == GPT54_MODEL_ID
+    assert failure["reasoning_effort"] == "medium"
+    assert failure["failure_class"] == failure_class
+    assert failure["physical_attempt_count"] == physical_attempt_count
+    assert (
+        failure["provider_elapsed_milliseconds_total"]
+        == elapsed_milliseconds
+    )
+    assert validate_provider_execution_response(
+        failure,
+        request_payload=request_payload,
+    )["failure_class"] == failure_class
+
+    def fake_post(
+        _broker_url: str,
+        _token: str,
+        observed_request: Mapping[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
+        return 502, build_failure_response(
+            request_payload=observed_request,
+            failure_class=failure_class,
+            physical_attempt_count=physical_attempt_count,
+            provider_elapsed_milliseconds_total=elapsed_milliseconds,
+        )
+
+    monkeypatch.setattr(broker_client, "_post_broker_json", fake_post)
+    with pytest.raises(
+        broker_client.ProviderExecutionClientError,
+        match=f"^{failure_class}$",
+    ) as client_error:
+        broker_client.request_provider_execution(
+            broker_url=broker_client.DEFAULT_BROKER_URL,
+            token="temporary",
+            request_payload=request_payload,
+        )
+    assert client_error.value.failure_class == failure_class
+
+    authorization = _authorization()
+
+    def evaluator_request(
+        broker_url: str,
+        token: str,
+        observed_request: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        return broker_client.request_provider_execution(
+            broker_url=broker_url,
+            token=token,
+            request_payload=observed_request,
+        )
+
+    transport = (
+        brokered_model_origination_transport
+        ._create_brokered_model_origination_transport(
+            authorization,
+            broker_url=broker_client.DEFAULT_BROKER_URL,
+            session_token="temporary",
+            request_function=evaluator_request,
+        )
+    )
+    with pytest.raises(
+        EvaluationTransportError,
+        match=f"failed closed: {failure_class}$",
+    ) as evaluator_error:
+        transport(
+            role="search_planner",
+            prompt="transient prompt material",
+            system_prompt="transient system material",
+            provider="openai",
+            model=GPT54_MODEL_ID,
+            maximum_input_tokens=512,
+            maximum_output_tokens=512,
+        )
+    assert str(evaluator_error.value) == (
+        "brokered model origination transport failed closed: "
+        f"{failure_class}"
+    )
+
+    rendered = (
+        json.dumps(failure, sort_keys=True)
+        + str(evaluator_error.value)
+    ).casefold()
+    for forbidden in (
+        "return json",
+        "return one bounded object",
+        "transient prompt material",
+        "transient system material",
+        "api_key",
+        "authorization",
+        "provider error",
+        "output_text",
+        "raw_payload",
+        "reasoning_content",
+    ):
+        assert forbidden not in rendered
+
+
+def test_failure_reasoning_attestation_tamper_fails_exactly() -> None:
+    request_payload = _request()
+    failure = build_failure_response(
+        request_payload=request_payload,
+        failure_class="provider_timeout",
+        physical_attempt_count=1,
+        provider_elapsed_milliseconds_total=17,
+    )
+    with pytest.raises(
+        ProviderExecutionContractError,
+        match="^route_attestation_mismatch$",
+    ):
+        validate_provider_execution_response(
+            {**failure, "reasoning_effort": "high"},
+            request_payload=request_payload,
+        )
+
+
+def test_search_failure_envelope_omits_reasoning_effort_and_remains_valid() -> None:
+    request_payload = build_search_request(
+        provider="serper",
+        query="bounded search failure proof",
+        max_results=1,
+        timeout_seconds=30,
+        retry_cap=0,
+    )
+    failure = build_failure_response(
+        request_payload=request_payload,
+        failure_class="missing_configuration",
+        physical_attempt_count=0,
+    )
+    assert "reasoning_effort" not in failure
+    assert validate_provider_execution_response(
+        failure,
+        request_payload=request_payload,
+    )["failure_class"] == "missing_configuration"
 
 
 def test_broker_source_contains_no_pricing_or_dollar_policy() -> None:

@@ -436,6 +436,7 @@ def test_failure_response_sanitizes_malformed_route_attestation() -> None:
         request_payload={
             "provider": ["invalid"],
             "operation": {"invalid": True},
+            "reasoning_effort": ["private", "reasoning"],
             "correlation_id": "c" * 1_000,
             "resolved_route_config_digest": "not-a-digest",
         },
@@ -446,6 +447,7 @@ def test_failure_response_sanitizes_malformed_route_attestation() -> None:
     assert response["failure_class"] == "invalid_request"
     assert "provider" not in response
     assert "operation" not in response
+    assert "reasoning_effort" not in response
     assert "correlation_id" not in response
     assert "resolved_route_config_digest" not in response
 

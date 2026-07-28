@@ -502,6 +502,7 @@ def build_failure_response(
                 "provider",
                 "operation",
                 "model",
+                "reasoning_effort",
                 "correlation_id",
                 "requested_route_alias",
                 "resolved_route_config_digest",
@@ -527,6 +528,7 @@ def build_failure_response(
         "provider": safe_optional_token("provider", 80),
         "operation": safe_optional_token("operation", 80),
         "model": safe_optional_token("model", 200),
+        "reasoning_effort": safe_optional_token("reasoning_effort", 16),
         "status": "failed",
         "failure_class": _clean_failure_class(failure_class),
         "physical_attempt_count": _bounded_int(
