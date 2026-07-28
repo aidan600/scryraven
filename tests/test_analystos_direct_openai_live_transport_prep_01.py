@@ -77,6 +77,8 @@ class FakeResponse:
         output_text: str | None = '{"status":"ok"}',
         input_tokens: int | None = 123,
         output_tokens: int | None = 45,
+        cached_input_tokens: int | None = 0,
+        reasoning_tokens: int | None = 0,
     ) -> None:
         self.output_text = output_text
         self.usage = type(
@@ -84,7 +86,25 @@ class FakeResponse:
             (),
             {
                 "input_tokens": input_tokens,
+                "input_tokens_details": type(
+                    "InputDetails",
+                    (),
+                    {"cached_tokens": cached_input_tokens},
+                )(),
                 "output_tokens": output_tokens,
+                "output_tokens_details": type(
+                    "OutputDetails",
+                    (),
+                    {"reasoning_tokens": reasoning_tokens},
+                )(),
+                "total_tokens": (
+                    input_tokens + output_tokens
+                    if (
+                        isinstance(input_tokens, int)
+                        and isinstance(output_tokens, int)
+                    )
+                    else None
+                ),
             },
         )()
 
@@ -147,6 +167,7 @@ def _authorization(
         repository_sha="a" * 40,
         provider=provider,
         model=model,
+        reasoning_effort="medium",
         allowed_evaluation_pass="planner_only",
         allowed_model_roles=(ROLE_SEARCH_PLANNER,),
         allowed_scenario_ids=(CASE_3,),
@@ -225,7 +246,9 @@ def test_direct_transport_uses_exact_client_and_responses_contract(
     assert result.output == '{"status":"ok"}'
     assert result.input_tokens == 123
     assert result.output_tokens == 45
-    assert Decimal(str(result.cost)) == transport_module.conservative_cost_decimal(
+    assert Decimal(
+        result.caller_calculated_route_priced_cost_usd
+    ) == transport_module.conservative_cost_decimal(
         123,
         45,
         policy=transport.policy,
@@ -253,8 +276,8 @@ def test_generic_transport_uses_test_only_injected_model_policy(
     synthetic_policy = transport_module.OpenAIResponsesModelPolicy(
         provider="openai",
         model=synthetic_model,
-        reasoning_effort="low",
-        input_price_usd_per_million=Decimal("1.25"),
+        ordinary_input_price_usd_per_million=Decimal("1.25"),
+        cached_input_price_usd_per_million=Decimal("0.10"),
         output_price_usd_per_million=Decimal("9.50"),
     )
     responses = FakeResponses(response=FakeResponse(input_tokens=80, output_tokens=20))
@@ -264,7 +287,10 @@ def test_generic_transport_uses_test_only_injected_model_policy(
         "_load_openai_sdk",
         lambda: (constructor, FakeTimeoutError),
     )
-    authorization = _authorization(model=synthetic_model)
+    authorization = replace(
+        _authorization(model=synthetic_model),
+        reasoning_effort="low",
+    )
     transport = transport_module._create_openai_responses_transport(  # noqa: SLF001
         authorization,
         model_policies={synthetic_model: synthetic_policy},
@@ -296,7 +322,9 @@ def test_generic_transport_uses_test_only_injected_model_policy(
     ]
     assert result.canonical_provider_used == synthetic_policy.provider
     assert result.canonical_model_used == synthetic_policy.model
-    assert Decimal(str(result.cost)) == transport_module.conservative_cost_decimal(
+    assert Decimal(
+        result.caller_calculated_route_priced_cost_usd
+    ) == transport_module.conservative_cost_decimal(
         80,
         20,
         policy=synthetic_policy,
@@ -313,8 +341,8 @@ def test_gpt54_is_the_only_production_policy_and_binds_exact_values() -> None:
     assert policy == transport_module.OpenAIResponsesModelPolicy(
         provider="openai",
         model="gpt-5.4-2026-03-05",
-        reasoning_effort="medium",
-        input_price_usd_per_million=Decimal("2.50"),
+        ordinary_input_price_usd_per_million=Decimal("2.50"),
+        cached_input_price_usd_per_million=Decimal("0.25"),
         output_price_usd_per_million=Decimal("15.00"),
     )
     assert preparation.GPT54_MODEL_POLICY is policy
@@ -452,6 +480,7 @@ def test_timeout_is_one_attempt_typed_constant_and_writes_no_packet(
             execution_mode="execute",
             scenario_ids=(CASE_3,),
             selected_model_roles=(ROLE_SEARCH_PLANNER,),
+            reasoning_effort="medium",
             output_packet_path=output_path,
         )
     )
@@ -469,6 +498,7 @@ def test_timeout_is_one_attempt_typed_constant_and_writes_no_packet(
         repository_sha=repository_sha,
         provider=transport_module.SUPPORTED_PROVIDER,
         model=transport_module.GPT54_MODEL_ID,
+        reasoning_effort="medium",
         allowed_evaluation_pass=request.evaluation_pass,
         allowed_model_roles=request.selected_model_roles,
         allowed_scenario_ids=request.scenario_ids,
@@ -609,6 +639,7 @@ def test_preparation_derives_and_validates_all_three_current_head_addenda(
         assert parsed.repository_sha == repository_sha
         assert parsed.provider == "openai"
         assert parsed.model == "gpt-5.4-2026-03-05"
+        assert parsed.reasoning_effort == "medium"
         assert parsed.allowed_model_roles == roles
         assert parsed.allowed_scenario_ids == scenarios
         assert parsed.retry_cap == 0
@@ -627,6 +658,14 @@ def test_preparation_derives_and_validates_all_three_current_head_addenda(
         )
         assert manifest.to_packet() == item.manifest_packet
         canonical_argv = json.loads(parsed.canonical_operator_command)
+        reasoning_index = canonical_argv.index("--reasoning-effort")
+        assert canonical_argv[reasoning_index + 1] == "medium"
+        assert item.execution_identity.reasoning_effort == "medium"
+        assert item.manifest_packet["reasoning_effort"] == "medium"
+        assert all(
+            call["reasoning_effort"] == "medium"
+            for call in item.manifest_packet["calls"]
+        )
         validate_canonical_cli_invocation(
             item.execution_identity,
             canonical_argv,

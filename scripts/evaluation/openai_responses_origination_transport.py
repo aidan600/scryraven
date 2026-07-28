@@ -10,15 +10,12 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Callable, Mapping
 
-from core.cost_accounting import extract_usage_tokens
 from scripts.evaluation.model_cost_policy import (
     GPT54_MODEL_ID,
     MODEL_COST_POLICIES,
     SUPPORTED_PROVIDER,
     ModelCostPolicy,
-)
-from scripts.evaluation.model_cost_policy import (
-    conservative_cost_decimal as _conservative_cost_decimal,
+    route_priced_cost_decimal,
 )
 from scripts.evaluation.run_analystos_model_origination_evaluation import (
     EvaluationConfigurationError,
@@ -67,8 +64,8 @@ def resolve_openai_model_policy(
     if (
         policy.provider != SUPPORTED_PROVIDER
         or policy.model != model
-        or not policy.reasoning_effort
-        or policy.input_price_usd_per_million < 0
+        or policy.ordinary_input_price_usd_per_million < 0
+        or policy.cached_input_price_usd_per_million < 0
         or policy.output_price_usd_per_million < 0
     ):
         raise EvaluationConfigurationError(
@@ -85,8 +82,9 @@ def conservative_cost_decimal(
 ) -> Decimal:
     """Return conservative uncached cost at the resolved policy prices."""
 
-    return _conservative_cost_decimal(
+    return route_priced_cost_decimal(
         input_tokens,
+        0,
         output_tokens,
         policy=policy,
     )
@@ -109,6 +107,7 @@ class _OpenAIResponsesTransport:
     policy: OpenAIResponsesModelPolicy
     _maximum_input_tokens: int
     _maximum_output_tokens: int
+    _reasoning_effort: str
     credentials_accessed: bool = field(default=True, init=False)
 
     def __call__(
@@ -148,7 +147,7 @@ class _OpenAIResponsesTransport:
                 model=model,
                 instructions=system_prompt,
                 input=prompt,
-                reasoning={"effort": self.policy.reasoning_effort},
+                reasoning={"effort": self._reasoning_effort},
                 max_output_tokens=maximum_output_tokens,
                 store=False,
             )
@@ -170,12 +169,40 @@ class _OpenAIResponsesTransport:
             if not isinstance(output, str) or not output:
                 failure_message = OUTPUT_ERROR_MESSAGE
             else:
-                input_tokens, output_tokens = extract_usage_tokens(response)
+                usage = getattr(response, "usage", None)
+                input_tokens = getattr(usage, "input_tokens", None)
+                input_details = getattr(usage, "input_tokens_details", None)
+                cached_input_tokens = getattr(
+                    input_details,
+                    "cached_tokens",
+                    None,
+                )
+                output_tokens = getattr(usage, "output_tokens", None)
+                output_details = getattr(
+                    usage,
+                    "output_tokens_details",
+                    None,
+                )
+                reasoning_tokens = getattr(
+                    output_details,
+                    "reasoning_tokens",
+                    None,
+                )
+                total_tokens = getattr(usage, "total_tokens", None)
                 if (
-                    input_tokens is None
-                    or output_tokens is None
-                    or input_tokens < 0
-                    or output_tokens < 0
+                    any(
+                        not isinstance(value, int) or value < 0
+                        for value in (
+                            input_tokens,
+                            cached_input_tokens,
+                            output_tokens,
+                            reasoning_tokens,
+                            total_tokens,
+                        )
+                    )
+                    or cached_input_tokens > input_tokens
+                    or reasoning_tokens > output_tokens
+                    or total_tokens != input_tokens + output_tokens
                 ):
                     failure_message = USAGE_ERROR_MESSAGE
         except Exception:
@@ -192,16 +219,35 @@ class _OpenAIResponsesTransport:
         assert isinstance(output, str)
         assert input_tokens is not None
         assert output_tokens is not None
-        observed_cost = conservative_cost_decimal(
-            input_tokens,
+        uncached_input_tokens = input_tokens - cached_input_tokens
+        non_reasoning_output_tokens = output_tokens - reasoning_tokens
+        observed_cost = route_priced_cost_decimal(
+            uncached_input_tokens,
+            cached_input_tokens,
             output_tokens,
             policy=self.policy,
         )
         result = EvaluationTransportResponse(
             output=output,
+            reasoning_effort=self._reasoning_effort,
+            generation_status="completed",
+            generation_incomplete_reason=None,
+            max_output_tokens_reached=False,
+            output_text_present=True,
+            usage_observed=True,
             input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            uncached_input_tokens=uncached_input_tokens,
             output_tokens=output_tokens,
-            cost=float(observed_cost),
+            reasoning_tokens=reasoning_tokens,
+            non_reasoning_output_tokens=non_reasoning_output_tokens,
+            total_tokens=total_tokens,
+            caller_calculated_route_priced_cost_usd=format(
+                observed_cost,
+                "f",
+            ),
+            cost_posture="exact",
+            provider_elapsed_milliseconds_total=0,
             canonical_provider_used=self.policy.provider,
             canonical_model_used=self.policy.model,
             provider_request_attempt_count=1,
@@ -246,6 +292,10 @@ def _create_openai_responses_transport(
         raise EvaluationConfigurationError(
             "direct origination transport requires sanitized_only retention"
         )
+    if not authorization.reasoning_effort:
+        raise EvaluationConfigurationError(
+            "direct origination transport requires exact reasoning effort"
+        )
 
     openai_constructor, timeout_error_type = _load_openai_sdk()
     client: Any = None
@@ -277,6 +327,7 @@ def _create_openai_responses_transport(
         policy=policy,
         _maximum_input_tokens=authorization.maximum_input_tokens,
         _maximum_output_tokens=authorization.maximum_output_tokens,
+        _reasoning_effort=authorization.reasoning_effort,
     )
     client = None
     return transport

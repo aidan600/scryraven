@@ -30,8 +30,8 @@ from scripts.evaluation.brokered_model_origination_transport import (  # noqa: E
 )
 from scripts.evaluation.model_cost_policy import (  # noqa: E402
     GPT54_MODEL_ID,
-    conservative_cost_decimal,
     resolve_model_cost_policy,
+    route_priced_cost_decimal,
 )
 from scripts.evaluation.run_analystos_model_origination_evaluation import (  # noqa: E402
     LIVE_ADDENDUM_SCHEMA_VERSION,
@@ -58,6 +58,7 @@ MAXIMUM_OUTPUT_TOKENS = 8_000
 PER_CALL_COST_CEILING = Decimal("0.16")
 WHOLE_PHASE_COST_CEILING = Decimal("3.20")
 GPT54_MODEL_POLICY = resolve_model_cost_policy("openai", GPT54_MODEL_ID)
+REASONING_EFFORT = "medium"
 
 FINAL_DECISION_VOCABULARY = (
     "ACCEPT_ORIGINATION_BASELINE, MODEL_ORIGINATION_LIMITATION, "
@@ -106,6 +107,7 @@ class PreparedAddendum:
                 "evaluation_pass",
                 "execution_mode",
                 "selected_model_roles",
+                "reasoning_effort",
                 "scenario_ids",
                 "maximum_scryraven_runs",
                 "total_maximum_physical_model_calls",
@@ -123,6 +125,7 @@ class PreparedAddendum:
             "result_path": self.authorization.output_packet_path,
             "resolved_request": asdict(self.request),
             "manifest_census": manifest_census,
+            "reasoning_effort": self.authorization.reasoning_effort,
             "execution_identity": {
                 "digest": self.execution_identity.execution_identity_digest,
                 "canonical_operator_command": (
@@ -244,6 +247,7 @@ def _packet_for(
         "repository_sha": repository_sha,
         "provider": GPT54_MODEL_POLICY.provider,
         "model": GPT54_MODEL_POLICY.model,
+        "reasoning_effort": request.reasoning_effort,
         "allowed_evaluation_pass": request.evaluation_pass,
         "allowed_model_roles": list(request.selected_model_roles),
         "allowed_scenario_ids": list(request.scenario_ids),
@@ -276,8 +280,9 @@ def prepare_live_addenda(
     exact_root = repository_root.resolve()
     repository_sha = current_repository_sha(exact_root)
     definitions = _stage_definitions(output_root)
-    if conservative_cost_decimal(
+    if route_priced_cost_decimal(
         MAXIMUM_INPUT_TOKENS,
+        0,
         MAXIMUM_OUTPUT_TOKENS,
         policy=GPT54_MODEL_POLICY,
     ) != PER_CALL_COST_CEILING:
@@ -302,6 +307,7 @@ def prepare_live_addenda(
             execution_mode="execute",
             scenario_ids=definition.scenarios,
             selected_model_roles=definition.roles,
+            reasoning_effort=REASONING_EFFORT,
             output_packet_path=(
                 output_root / definition.result_filename
             ).as_posix(),
@@ -440,6 +446,7 @@ def main() -> int:
         "repository_sha": prepared[0].authorization.repository_sha,
         "provider": GPT54_MODEL_POLICY.provider,
         "model": GPT54_MODEL_POLICY.model,
+        "reasoning_effort": REASONING_EFFORT,
         "request_timeout_seconds": REQUEST_TIMEOUT_SECONDS,
         "retry_cap": SDK_MAX_RETRIES,
         "total_maximum_model_calls": sum(

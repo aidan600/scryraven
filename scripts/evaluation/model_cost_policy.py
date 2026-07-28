@@ -16,8 +16,8 @@ TOKENS_PER_MILLION = Decimal("1000000")
 class ModelCostPolicy:
     provider: str
     model: str
-    reasoning_effort: str
-    input_price_usd_per_million: Decimal
+    ordinary_input_price_usd_per_million: Decimal
+    cached_input_price_usd_per_million: Decimal
     output_price_usd_per_million: Decimal
 
 
@@ -26,8 +26,8 @@ MODEL_COST_POLICIES: Mapping[tuple[str, str], ModelCostPolicy] = MappingProxyTyp
         (SUPPORTED_PROVIDER, GPT54_MODEL_ID): ModelCostPolicy(
             provider=SUPPORTED_PROVIDER,
             model=GPT54_MODEL_ID,
-            reasoning_effort="medium",
-            input_price_usd_per_million=Decimal("2.50"),
+            ordinary_input_price_usd_per_million=Decimal("2.50"),
+            cached_input_price_usd_per_million=Decimal("0.25"),
             output_price_usd_per_million=Decimal("15.00"),
         )
     }
@@ -41,26 +41,30 @@ def resolve_model_cost_policy(provider: str, model: str) -> ModelCostPolicy:
     if (
         policy.provider != provider
         or policy.model != model
-        or not policy.reasoning_effort
-        or policy.input_price_usd_per_million < 0
+        or policy.ordinary_input_price_usd_per_million < 0
+        or policy.cached_input_price_usd_per_million < 0
         or policy.output_price_usd_per_million < 0
     ):
         raise ValueError("caller-owned model cost policy is invalid")
     return policy
 
 
-def conservative_cost_decimal(
-    input_tokens: int | Decimal,
+def route_priced_cost_decimal(
+    uncached_input_tokens: int | Decimal,
+    cached_input_tokens: int | Decimal,
     output_tokens: int | Decimal,
     *,
     policy: ModelCostPolicy,
 ) -> Decimal:
     return (
-        Decimal(input_tokens)
-        * policy.input_price_usd_per_million
-        / TOKENS_PER_MILLION
-        + Decimal(output_tokens)
-        * policy.output_price_usd_per_million
+        (
+            Decimal(uncached_input_tokens)
+            * policy.ordinary_input_price_usd_per_million
+            + Decimal(cached_input_tokens)
+            * policy.cached_input_price_usd_per_million
+            + Decimal(output_tokens)
+            * policy.output_price_usd_per_million
+        )
         / TOKENS_PER_MILLION
     )
 
@@ -70,6 +74,6 @@ __all__ = [
     "MODEL_COST_POLICIES",
     "ModelCostPolicy",
     "SUPPORTED_PROVIDER",
-    "conservative_cost_decimal",
+    "route_priced_cost_decimal",
     "resolve_model_cost_policy",
 ]

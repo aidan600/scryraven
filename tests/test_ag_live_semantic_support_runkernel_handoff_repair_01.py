@@ -67,8 +67,8 @@ def _provider_results(name: str) -> Path:
     return _write_json(
         _provider_results_path(name),
         {
-            "schema_version": "1",
-            "proof_kind": "scryraven_search_query_proof_v1",
+            "schema_version": "2",
+            "proof_kind": "scryraven_search_query_proof_v2",
             "provider": "serper",
             "operation": "search.query",
             "status": "ok",

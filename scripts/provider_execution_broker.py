@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -64,9 +65,18 @@ ProviderAdapter = Callable[[Mapping[str, Any], str], Mapping[str, Any]]
 class BrokerExecutionError(ValueError):
     """Sanitized provider execution failure with exact attempt posture."""
 
-    def __init__(self, failure_class: str, *, physical_attempt_count: int = 0) -> None:
+    def __init__(
+        self,
+        failure_class: str,
+        *,
+        physical_attempt_count: int = 0,
+        provider_elapsed_milliseconds_total: int = 0,
+    ) -> None:
         self.failure_class = failure_class
         self.physical_attempt_count = physical_attempt_count
+        self.provider_elapsed_milliseconds_total = (
+            provider_elapsed_milliseconds_total
+        )
         super().__init__(failure_class)
 
 
@@ -167,6 +177,9 @@ class ProviderExecutionHandler(BaseHTTPRequestHandler):
                     request_payload=request_payload,
                     failure_class=exc.failure_class,
                     physical_attempt_count=exc.physical_attempt_count,
+                    provider_elapsed_milliseconds_total=(
+                        exc.provider_elapsed_milliseconds_total
+                    ),
                 ),
             )
         except Exception:
@@ -235,11 +248,18 @@ def execute_provider_request(
     )
     maximum_attempts = validated["retry_cap"] + 1
     attempts = 0
+    elapsed_milliseconds_total = 0
     last_failure = "provider_execution_failed"
     while attempts < maximum_attempts:
         attempts += 1
+        attempt_started = time.monotonic_ns()
+        elapsed_recorded = False
         try:
             adapter_result = adapter(validated, credential)
+            elapsed_milliseconds_total += (
+                time.monotonic_ns() - attempt_started
+            ) // 1_000_000
+            elapsed_recorded = True
             if validated["operation"] == SEARCH_QUERY_OPERATION:
                 raw_results = adapter_result.get("results")
                 if not isinstance(raw_results, list):
@@ -264,31 +284,86 @@ def execute_provider_request(
                 return build_success_response(
                     validated,
                     physical_attempt_count=attempts,
+                    provider_elapsed_milliseconds_total=(
+                        elapsed_milliseconds_total
+                    ),
                     results=normalized_results,
                 )
 
             output_text = adapter_result.get("output_text")
+            generation_status = adapter_result.get("generation_status")
+            generation_incomplete_reason = adapter_result.get(
+                "generation_incomplete_reason"
+            )
+            usage_observed = adapter_result.get("usage_observed")
             input_tokens = adapter_result.get("input_tokens")
+            cached_input_tokens = adapter_result.get("cached_input_tokens")
             output_tokens = adapter_result.get("output_tokens")
+            reasoning_tokens = adapter_result.get("reasoning_tokens")
+            total_tokens = adapter_result.get("total_tokens")
             adapter_result = {}
             return build_success_response(
                 validated,
                 physical_attempt_count=attempts,
+                provider_elapsed_milliseconds_total=(
+                    elapsed_milliseconds_total
+                ),
                 output_text=output_text if isinstance(output_text, str) else None,
+                generation_status=(
+                    generation_status
+                    if isinstance(generation_status, str)
+                    else None
+                ),
+                generation_incomplete_reason=(
+                    generation_incomplete_reason
+                    if isinstance(generation_incomplete_reason, str)
+                    else None
+                ),
+                usage_observed=(
+                    usage_observed
+                    if isinstance(usage_observed, bool)
+                    else None
+                ),
                 input_tokens=input_tokens if isinstance(input_tokens, int) else None,
+                cached_input_tokens=(
+                    cached_input_tokens
+                    if isinstance(cached_input_tokens, int)
+                    else None
+                ),
                 output_tokens=output_tokens if isinstance(output_tokens, int) else None,
+                reasoning_tokens=(
+                    reasoning_tokens
+                    if isinstance(reasoning_tokens, int)
+                    else None
+                ),
+                total_tokens=(
+                    total_tokens if isinstance(total_tokens, int) else None
+                ),
             )
         except BrokerExecutionError as exc:
+            if not elapsed_recorded:
+                elapsed_milliseconds_total += (
+                    time.monotonic_ns() - attempt_started
+                ) // 1_000_000
             last_failure = exc.failure_class
             if exc.physical_attempt_count == 0:
                 raise
         except ProviderExecutionContractError as exc:
+            if not elapsed_recorded:
+                elapsed_milliseconds_total += (
+                    time.monotonic_ns() - attempt_started
+                ) // 1_000_000
             last_failure = exc.failure_class
         except Exception:
+            if not elapsed_recorded:
+                elapsed_milliseconds_total += (
+                    time.monotonic_ns() - attempt_started
+                ) // 1_000_000
             last_failure = "provider_execution_failed"
     raise BrokerExecutionError(
         last_failure,
         physical_attempt_count=attempts,
+        provider_elapsed_milliseconds_total=elapsed_milliseconds_total,
     )
 
 
@@ -433,30 +508,66 @@ def _call_openai_model(
                 physical_attempt_count=1,
             ) from exc
         raise BrokerExecutionError("provider_request_failed", physical_attempt_count=1) from exc
+    generation_status = getattr(response, "status", None)
+    incomplete_details = getattr(response, "incomplete_details", None)
+    generation_incomplete_reason = getattr(
+        incomplete_details,
+        "reason",
+        None,
+    )
     output_text = getattr(response, "output_text", None)
     usage = getattr(response, "usage", None)
     input_tokens = getattr(usage, "input_tokens", None)
+    input_token_details = getattr(usage, "input_tokens_details", None)
+    cached_input_tokens = getattr(
+        input_token_details,
+        "cached_tokens",
+        None,
+    )
     output_tokens = getattr(usage, "output_tokens", None)
-    if (
-        not isinstance(output_text, str)
-        or not output_text
-        or not isinstance(input_tokens, int)
-        or not isinstance(output_tokens, int)
-        or input_tokens < 0
-        or output_tokens < 0
-    ):
-        response = None
-        output_text = None
-        raise BrokerExecutionError(
-            "provider_response_usage_or_output_missing",
-            physical_attempt_count=1,
+    output_token_details = getattr(usage, "output_tokens_details", None)
+    reasoning_tokens = getattr(
+        output_token_details,
+        "reasoning_tokens",
+        None,
+    )
+    total_tokens = getattr(usage, "total_tokens", None)
+    usage_observed = bool(
+        usage is not None
+        and input_token_details is not None
+        and output_token_details is not None
+        and all(
+            isinstance(value, int) and not isinstance(value, bool)
+            for value in (
+                input_tokens,
+                cached_input_tokens,
+                output_tokens,
+                reasoning_tokens,
+                total_tokens,
+            )
         )
+    )
     normalized = {
-        "output_text": output_text,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
+        "generation_status": generation_status,
+        "generation_incomplete_reason": generation_incomplete_reason,
+        "output_text": output_text if isinstance(output_text, str) else "",
+        "usage_observed": usage_observed,
     }
+    if usage_observed:
+        normalized.update(
+            {
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "output_tokens": output_tokens,
+                "reasoning_tokens": reasoning_tokens,
+                "total_tokens": total_tokens,
+            }
+        )
     response = None
+    incomplete_details = None
+    usage = None
+    input_token_details = None
+    output_token_details = None
     return normalized
 
 

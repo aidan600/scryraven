@@ -58,8 +58,8 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _generic_provider_output(results: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "schema_version": "1",
-        "proof_kind": "scryraven_search_query_proof_v1",
+        "schema_version": "2",
+        "proof_kind": "scryraven_search_query_proof_v2",
         "provider": "serper",
         "operation": "search.query",
         "status": "ok",

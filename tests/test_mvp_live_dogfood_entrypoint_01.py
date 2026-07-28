@@ -311,8 +311,8 @@ def _recording_proxy_runner(
 
 def _official_proxy_runner(request: ProviderProxyRunRequest) -> ProviderProxyRunResult:
     payload = {
-        "schema_version": "1",
-        "proof_kind": "scryraven_search_query_proof_v1",
+        "schema_version": "2",
+        "proof_kind": "scryraven_search_query_proof_v2",
         "provider": "serper",
         "operation": "search.query",
         "status": "ok",

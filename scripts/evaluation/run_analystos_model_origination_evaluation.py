@@ -37,6 +37,7 @@ import tempfile
 from collections import Counter
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
+from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
@@ -83,6 +84,8 @@ from tests.fixtures.searchos_analystos_offline_scenarios import (  # noqa: E402
 PLANNED_PACKET_SCHEMA_VERSION = "analystos_model_origination_planned_packet_v1"
 RESULT_PACKET_SCHEMA_VERSION = "analystos_model_origination_result_packet_v2"
 LIVE_ADDENDUM_SCHEMA_VERSION = "analystos_model_origination_live_addendum_v2"
+GPT54_MODEL_ID = "gpt-5.4-2026-03-05"
+GPT54_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh"})
 
 EVALUATION_PASSES = frozenset({"planner_only", "analyst_only", "combined"})
 EXECUTION_MODES = frozenset({"plan_only", "execute"})
@@ -115,6 +118,7 @@ ALL_LIVE_LICENSE_FIELDS = (
     "repository_sha",
     "provider",
     "model",
+    "reasoning_effort",
     "allowed_evaluation_pass",
     "allowed_model_roles",
     "allowed_scenario_ids",
@@ -192,6 +196,10 @@ class IncompleteModelBoundaryPacketError(EvaluationTransportError):
     """Raised for the sole publishable zero-call boundary-packet failure."""
 
 
+class IncompleteModelGenerationError(EvaluationTransportError):
+    """Publishable stop raised after safe generation telemetry is recorded."""
+
+
 class EvaluationTransport(Protocol):
     """Provider-neutral callable constructed only after license validation."""
 
@@ -213,9 +221,22 @@ class EvaluationTransportResponse:
     """Transient output plus bounded safe accounting from one physical call."""
 
     output: Any = field(repr=False, compare=False)
-    input_tokens: int
-    output_tokens: int
-    cost: float
+    reasoning_effort: str
+    generation_status: str
+    generation_incomplete_reason: str | None
+    max_output_tokens_reached: bool
+    output_text_present: bool
+    usage_observed: bool
+    input_tokens: int | None
+    cached_input_tokens: int | None
+    uncached_input_tokens: int | None
+    output_tokens: int | None
+    reasoning_tokens: int | None
+    non_reasoning_output_tokens: int | None
+    total_tokens: int | None
+    caller_calculated_route_priced_cost_usd: str | None
+    cost_posture: str
+    provider_elapsed_milliseconds_total: int
     canonical_provider_used: str
     canonical_model_used: str
     provider_request_attempt_count: int = 1
@@ -229,6 +250,7 @@ class EvaluationRequest:
     execution_mode: str = "plan_only"
     scenario_ids: tuple[str, ...] = ()
     selected_model_roles: tuple[str, ...] = ()
+    reasoning_effort: str | None = None
     output_packet_path: str | None = None
 
 
@@ -238,6 +260,7 @@ class LiveAuthorization:
     repository_sha: str
     provider: str
     model: str
+    reasoning_effort: str
     allowed_evaluation_pass: str
     allowed_model_roles: tuple[str, ...]
     allowed_scenario_ids: tuple[str, ...]
@@ -272,6 +295,7 @@ class LiveAuthorization:
                 repository_sha=str(value["repository_sha"] or ""),
                 provider=str(value["provider"] or ""),
                 model=str(value["model"] or ""),
+                reasoning_effort=str(value["reasoning_effort"] or ""),
                 allowed_evaluation_pass=str(value["allowed_evaluation_pass"] or ""),
                 allowed_model_roles=tuple(str(item) for item in value["allowed_model_roles"]),
                 allowed_scenario_ids=tuple(str(item) for item in value["allowed_scenario_ids"]),
@@ -306,6 +330,7 @@ class ExecutionIdentity:
     repository_sha: str
     evaluation_pass: str
     execution_mode: str
+    reasoning_effort: str
     selected_model_roles: tuple[str, ...]
     scenario_ids: tuple[str, ...]
     live_addendum_path: str
@@ -325,6 +350,7 @@ class PlannedCall:
     scenario_id: str
     scryraven_mode: str
     model_role: str
+    reasoning_effort: str
     logical_call_purpose: str
     maximum_physical_calls: int
     retry_allowance: int
@@ -344,6 +370,7 @@ class CallManifest:
     evaluation_pass: str
     execution_mode: str
     selected_model_roles: tuple[str, ...]
+    reasoning_effort: str
     scenario_ids: tuple[str, ...]
     calls: tuple[PlannedCall, ...]
     deterministic_roles: tuple[str, ...]
@@ -360,6 +387,7 @@ class CallManifest:
             "evaluation_pass": self.evaluation_pass,
             "execution_mode": self.execution_mode,
             "selected_model_roles": list(self.selected_model_roles),
+            "reasoning_effort": self.reasoning_effort,
             "scenario_ids": list(self.scenario_ids),
             "calls": [item.to_packet() for item in self.calls],
             "deterministic_roles": list(self.deterministic_roles),
@@ -447,8 +475,24 @@ class BoundaryCallObservation:
     licensed_maximum_input_tokens: int
     licensed_maximum_output_tokens: int
     licensed_retry_cap: int
+    reasoning_effort: str
     physical_calls: int
     retries: int
+    generation_status: str | None
+    generation_incomplete_reason: str | None
+    max_output_tokens_reached: bool
+    output_text_present: bool
+    usage_observed: bool
+    input_tokens: int | None
+    cached_input_tokens: int | None
+    uncached_input_tokens: int | None
+    output_tokens: int | None
+    reasoning_tokens: int | None
+    non_reasoning_output_tokens: int | None
+    total_tokens: int | None
+    caller_calculated_route_priced_cost_usd: str | None
+    cost_posture: str
+    provider_elapsed_milliseconds_total: int
     packet_complete: bool
     parser_consumable: bool
     semantic_status: str
@@ -471,8 +515,28 @@ class BoundaryCallObservation:
             "licensed_maximum_input_tokens": self.licensed_maximum_input_tokens,
             "licensed_maximum_output_tokens": self.licensed_maximum_output_tokens,
             "licensed_retry_cap": self.licensed_retry_cap,
+            "reasoning_effort": self.reasoning_effort,
             "physical_calls": self.physical_calls,
             "retries": self.retries,
+            "generation_status": self.generation_status,
+            "generation_incomplete_reason": self.generation_incomplete_reason,
+            "max_output_tokens_reached": self.max_output_tokens_reached,
+            "output_text_present": self.output_text_present,
+            "usage_observed": self.usage_observed,
+            "input_tokens": self.input_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
+            "uncached_input_tokens": self.uncached_input_tokens,
+            "output_tokens": self.output_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "non_reasoning_output_tokens": self.non_reasoning_output_tokens,
+            "total_tokens": self.total_tokens,
+            "caller_calculated_route_priced_cost_usd": (
+                self.caller_calculated_route_priced_cost_usd
+            ),
+            "cost_posture": self.cost_posture,
+            "provider_elapsed_milliseconds_total": (
+                self.provider_elapsed_milliseconds_total
+            ),
             "packet_complete": self.packet_complete,
             "parser_consumable": self.parser_consumable,
             "semantic_status": self.semantic_status,
@@ -573,11 +637,21 @@ def resolve_request(request: EvaluationRequest) -> EvaluationRequest:
         ROLE_CROSS_COMPONENT_ANALYST,
     )
     roles = tuple(role for role in canonical_role_order if role in roles)
+    reasoning_effort = (
+        str(request.reasoning_effort or "").strip() or None
+    )
+    if execution_mode == "execute" and reasoning_effort is None:
+        raise EvaluationConfigurationError(
+            "execute requires an explicit reasoning_effort"
+        )
+    if reasoning_effort is not None and reasoning_effort not in GPT54_REASONING_EFFORTS:
+        raise EvaluationConfigurationError("reasoning_effort is unsupported")
     return EvaluationRequest(
         evaluation_pass=evaluation_pass,
         execution_mode=execution_mode,
         scenario_ids=scenario_ids,
         selected_model_roles=roles,
+        reasoning_effort=reasoning_effort,
         output_packet_path=request.output_packet_path,
     )
 
@@ -652,6 +726,8 @@ def build_execution_identity(
         resolved.evaluation_pass,
         "--execution-mode",
         "execute",
+        "--reasoning-effort",
+        str(resolved.reasoning_effort),
     ]
     for role in resolved.selected_model_roles:
         argv.extend(("--role", role))
@@ -673,6 +749,7 @@ def build_execution_identity(
         "repository_sha": sha,
         "evaluation_pass": resolved.evaluation_pass,
         "execution_mode": resolved.execution_mode,
+        "reasoning_effort": resolved.reasoning_effort,
         "selected_model_roles": resolved.selected_model_roles,
         "scenario_ids": resolved.scenario_ids,
         "live_addendum_path": addendum_path,
@@ -684,6 +761,7 @@ def build_execution_identity(
         repository_sha=sha,
         evaluation_pass=resolved.evaluation_pass,
         execution_mode=resolved.execution_mode,
+        reasoning_effort=str(resolved.reasoning_effort),
         selected_model_roles=resolved.selected_model_roles,
         scenario_ids=resolved.scenario_ids,
         live_addendum_path=addendum_path,
@@ -720,6 +798,7 @@ def evaluation_id_for(
             "license_reference": authorization.reference,
             "provider": authorization.provider,
             "model": authorization.model,
+            "reasoning_effort": authorization.reasoning_effort,
             "call_manifest": manifest.to_packet(),
         }
     )
@@ -749,6 +828,7 @@ def build_call_manifest(
                     scenario_id=scenario_id,
                     scryraven_mode=scenario.mode,
                     model_role=ROLE_SEARCH_PLANNER,
+                    reasoning_effort=str(resolved.reasoning_effort),
                     logical_call_purpose="originate root-query meaning, components, dependencies, and search needs",
                     maximum_physical_calls=physical_per_logical,
                     retry_allowance=retry_allowance,
@@ -781,6 +861,7 @@ def build_call_manifest(
                         scenario_id=scenario_id,
                         scryraven_mode=scenario.mode,
                         model_role=ROLE_COMPONENT_ANALYST,
+                        reasoning_effort=str(resolved.reasoning_effort),
                         logical_call_purpose=(
                             f"originate direct support posture for {concept}"
                             if not recovery
@@ -814,6 +895,7 @@ def build_call_manifest(
                         scenario_id=scenario_id,
                         scryraven_mode=scenario.mode,
                         model_role=ROLE_CROSS_COMPONENT_ANALYST,
+                        reasoning_effort=str(resolved.reasoning_effort),
                         logical_call_purpose=cross.purpose,
                         maximum_physical_calls=physical_per_logical,
                         retry_allowance=retry_allowance,
@@ -846,6 +928,7 @@ def build_call_manifest(
         evaluation_pass=resolved.evaluation_pass,
         execution_mode=resolved.execution_mode,
         selected_model_roles=resolved.selected_model_roles,
+        reasoning_effort=str(resolved.reasoning_effort),
         scenario_ids=resolved.scenario_ids,
         calls=tuple(calls),
         deterministic_roles=tuple(sorted(deterministic)),
@@ -1022,6 +1105,7 @@ def validate_live_authorization(
         ("repository SHA", authorization.repository_sha),
         ("provider", authorization.provider),
         ("model", authorization.model),
+        ("reasoning effort", authorization.reasoning_effort),
         ("allowed evaluation_pass", authorization.allowed_evaluation_pass),
         ("output packet path", authorization.output_packet_path),
         ("decision", authorization.decision),
@@ -1036,6 +1120,17 @@ def validate_live_authorization(
         raise EvaluationConfigurationError("live addendum repository SHA does not match the exact checkout")
     if authorization.allowed_evaluation_pass != resolved.evaluation_pass:
         raise EvaluationConfigurationError("live addendum does not license the requested evaluation_pass")
+    if authorization.reasoning_effort != resolved.reasoning_effort:
+        raise EvaluationConfigurationError(
+            "live addendum reasoning effort does not match the request"
+        )
+    if (
+        authorization.model == GPT54_MODEL_ID
+        and authorization.reasoning_effort not in GPT54_REASONING_EFFORTS
+    ):
+        raise EvaluationConfigurationError(
+            "GPT-5.4 reasoning effort is unsupported"
+        )
     if tuple(authorization.allowed_model_roles) != resolved.selected_model_roles:
         raise EvaluationConfigurationError("live addendum role set/order must exactly match the selected roles")
     if tuple(authorization.allowed_scenario_ids) != resolved.scenario_ids:
@@ -1068,6 +1163,10 @@ def validate_live_authorization(
         raise EvaluationConfigurationError("execution identity evaluation_pass does not match the request")
     if execution_identity.execution_mode != resolved.execution_mode:
         raise EvaluationConfigurationError("execution identity execution_mode does not match the request")
+    if execution_identity.reasoning_effort != resolved.reasoning_effort:
+        raise EvaluationConfigurationError(
+            "execution identity reasoning effort does not match the request"
+        )
     if execution_identity.selected_model_roles != resolved.selected_model_roles:
         raise EvaluationConfigurationError("execution identity roles do not match the exact ordered request")
     if execution_identity.scenario_ids != resolved.scenario_ids:
@@ -1665,8 +1764,15 @@ class ExecutionBudgetLedger:
     physical_calls: int = 0
     retries: int = 0
     input_tokens: int = 0
+    cached_input_tokens: int = 0
+    uncached_input_tokens: int = 0
     output_tokens: int = 0
-    cost: float = 0.0
+    reasoning_tokens: int = 0
+    non_reasoning_output_tokens: int = 0
+    total_tokens: int = 0
+    usage_observed_for_all_calls: bool = True
+    cost: Decimal = Decimal("0")
+    provider_elapsed_milliseconds_total: int = 0
     credentials_accessed: bool | None = None
     route_attested_responses: int = 0
 
@@ -1790,8 +1896,24 @@ class BoundaryInjectionController:
                     licensed_maximum_input_tokens=self.authorization.maximum_input_tokens,
                     licensed_maximum_output_tokens=self.authorization.maximum_output_tokens,
                     licensed_retry_cap=self.authorization.retry_cap,
+                    reasoning_effort=self.authorization.reasoning_effort,
                     physical_calls=0,
                     retries=0,
+                    generation_status=None,
+                    generation_incomplete_reason=None,
+                    max_output_tokens_reached=False,
+                    output_text_present=False,
+                    usage_observed=False,
+                    input_tokens=None,
+                    cached_input_tokens=None,
+                    uncached_input_tokens=None,
+                    output_tokens=None,
+                    reasoning_tokens=None,
+                    non_reasoning_output_tokens=None,
+                    total_tokens=None,
+                    caller_calculated_route_priced_cost_usd=None,
+                    cost_posture="not_applicable",
+                    provider_elapsed_milliseconds_total=0,
                     packet_complete=False,
                     parser_consumable=False,
                     semantic_status="ambiguous",
@@ -1813,6 +1935,7 @@ class BoundaryInjectionController:
             )
             raise IncompleteModelBoundaryPacketError("required model-boundary packet context is incomplete")
         raw: Any = None
+        safe_response: EvaluationTransportResponse | None = None
         attempts = 0
         last_exc: Exception | None = None
         while attempts <= self.authorization.retry_cap:
@@ -1839,31 +1962,93 @@ class BoundaryInjectionController:
                     )
                 if response.canonical_model_used != self.authorization.model:
                     raise EvaluationRouteAttestationError("transport attested a model outside the exact live addendum")
+                if response.reasoning_effort != self.authorization.reasoning_effort:
+                    raise EvaluationRouteAttestationError(
+                        "transport attested reasoning effort outside the exact live addendum"
+                    )
                 self.budget_ledger.route_attested_responses += 1
                 if (
                     response.provider_request_attempt_count != 1
-                    or response.input_tokens < 0
-                    or response.output_tokens < 0
-                    or response.cost < 0
                     or response.raw_material_retained
+                    or response.provider_elapsed_milliseconds_total < 0
                 ):
                     raise EvaluationTransportError("transport response safe accounting is invalid")
-                if response.input_tokens > self.authorization.maximum_input_tokens:
-                    raise EvaluationTransportError("input-token cap exceeded; stopping after the exact call")
-                if response.output_tokens > self.authorization.maximum_output_tokens:
-                    raise EvaluationTransportError("output-token cap exceeded; stopping after the exact call")
-                self.total_input_tokens += response.input_tokens
-                self.total_output_tokens += response.output_tokens
-                self.total_cost += response.cost
-                self.budget_ledger.input_tokens += response.input_tokens
-                self.budget_ledger.output_tokens += response.output_tokens
-                self.budget_ledger.cost += response.cost
-                if self.budget_ledger.cost > self.authorization.cost_ceiling:
+                if response.usage_observed:
+                    counts = (
+                        response.input_tokens,
+                        response.cached_input_tokens,
+                        response.uncached_input_tokens,
+                        response.output_tokens,
+                        response.reasoning_tokens,
+                        response.non_reasoning_output_tokens,
+                        response.total_tokens,
+                    )
+                    if any(
+                        not isinstance(value, int) or value < 0
+                        for value in counts
+                    ):
+                        raise EvaluationTransportError(
+                            "transport response exact usage is invalid"
+                        )
+                    assert response.input_tokens is not None
+                    assert response.output_tokens is not None
+                    if response.input_tokens > self.authorization.maximum_input_tokens:
+                        raise EvaluationTransportError("input-token cap exceeded; stopping after the exact call")
+                    if response.output_tokens > self.authorization.maximum_output_tokens:
+                        raise EvaluationTransportError("output-token cap exceeded; stopping after the exact call")
+                    if (
+                        response.cost_posture != "exact"
+                        or response.caller_calculated_route_priced_cost_usd is None
+                    ):
+                        raise EvaluationTransportError(
+                            "transport response exact cost posture is invalid"
+                        )
+                    call_cost = Decimal(
+                        response.caller_calculated_route_priced_cost_usd
+                    )
+                    self.total_input_tokens += response.input_tokens
+                    self.total_output_tokens += response.output_tokens
+                    self.total_cost += float(call_cost)
+                    self.budget_ledger.input_tokens += response.input_tokens
+                    self.budget_ledger.cached_input_tokens += int(
+                        response.cached_input_tokens
+                    )
+                    self.budget_ledger.uncached_input_tokens += int(
+                        response.uncached_input_tokens
+                    )
+                    self.budget_ledger.output_tokens += response.output_tokens
+                    self.budget_ledger.reasoning_tokens += int(
+                        response.reasoning_tokens
+                    )
+                    self.budget_ledger.non_reasoning_output_tokens += int(
+                        response.non_reasoning_output_tokens
+                    )
+                    self.budget_ledger.total_tokens += int(
+                        response.total_tokens
+                    )
+                    self.budget_ledger.cost += call_cost
+                else:
+                    if (
+                        response.cost_posture != "unknown"
+                        or response.caller_calculated_route_priced_cost_usd
+                        is not None
+                    ):
+                        raise EvaluationTransportError(
+                            "transport response unknown usage posture is invalid"
+                        )
+                    self.budget_ledger.usage_observed_for_all_calls = False
+                self.budget_ledger.provider_elapsed_milliseconds_total += (
+                    response.provider_elapsed_milliseconds_total
+                )
+                if self.budget_ledger.cost > Decimal(
+                    str(self.authorization.cost_ceiling)
+                ):
                     raise EvaluationTransportError("cost ceiling exceeded; stopping after the exact call")
                 if response.credentials_accessed is not None:
                     self.budget_ledger.credentials_accessed = bool(self.budget_ledger.credentials_accessed) or bool(
                         response.credentials_accessed
                     )
+                safe_response = response
                 raw = response.output
                 last_exc = None
                 break
@@ -1881,6 +2066,67 @@ class BoundaryInjectionController:
             raise EvaluationTransportError(
                 f"injected model transport failed closed: {type(last_exc).__name__}"
             ) from last_exc
+
+        assert safe_response is not None
+        if (
+            safe_response.generation_status == "incomplete"
+            or safe_response.usage_observed is False
+        ):
+            self.observations.append(
+                BoundaryCallObservation(
+                    execution_identity_digest=self.execution_identity.execution_identity_digest,
+                    evaluation_id=self.evaluation_id,
+                    scenario_id=self.scenario_id,
+                    call_id=call.call_id,
+                    role=role,
+                    provider=self.authorization.provider,
+                    model=self.authorization.model,
+                    safe_input_packet_digest=prompt_digest,
+                    licensed_maximum_physical_calls=call.maximum_physical_calls,
+                    licensed_maximum_input_tokens=self.authorization.maximum_input_tokens,
+                    licensed_maximum_output_tokens=self.authorization.maximum_output_tokens,
+                    licensed_retry_cap=self.authorization.retry_cap,
+                    reasoning_effort=self.authorization.reasoning_effort,
+                    physical_calls=attempts,
+                    retries=max(0, attempts - 1),
+                    generation_status=safe_response.generation_status,
+                    generation_incomplete_reason=safe_response.generation_incomplete_reason,
+                    max_output_tokens_reached=safe_response.max_output_tokens_reached,
+                    output_text_present=safe_response.output_text_present,
+                    usage_observed=safe_response.usage_observed,
+                    input_tokens=safe_response.input_tokens,
+                    cached_input_tokens=safe_response.cached_input_tokens,
+                    uncached_input_tokens=safe_response.uncached_input_tokens,
+                    output_tokens=safe_response.output_tokens,
+                    reasoning_tokens=safe_response.reasoning_tokens,
+                    non_reasoning_output_tokens=safe_response.non_reasoning_output_tokens,
+                    total_tokens=safe_response.total_tokens,
+                    caller_calculated_route_priced_cost_usd=(
+                        safe_response.caller_calculated_route_priced_cost_usd
+                    ),
+                    cost_posture=safe_response.cost_posture,
+                    provider_elapsed_milliseconds_total=(
+                        safe_response.provider_elapsed_milliseconds_total
+                    ),
+                    packet_complete=True,
+                    parser_consumable=False,
+                    semantic_status="ambiguous",
+                    safe_semantic_projection={
+                        "generation_outcome": (
+                            "INCOMPLETE_GENERATION"
+                            if safe_response.generation_status == "incomplete"
+                            else "USAGE_UNAVAILABLE"
+                        )
+                    },
+                    proposal_only=False,
+                    authority_boundary_respected=True,
+                    parser_failure_kind=None,
+                )
+            )
+            raw = None
+            raise IncompleteModelGenerationError(
+                "generation cannot continue to parser or semantic scoring"
+            )
 
         parser_consumable = True
         parser_failure_kind: str | None = None
@@ -1984,8 +2230,28 @@ class BoundaryInjectionController:
                 licensed_maximum_input_tokens=self.authorization.maximum_input_tokens,
                 licensed_maximum_output_tokens=self.authorization.maximum_output_tokens,
                 licensed_retry_cap=self.authorization.retry_cap,
+                reasoning_effort=self.authorization.reasoning_effort,
                 physical_calls=attempts,
                 retries=max(0, attempts - 1),
+                generation_status=safe_response.generation_status,
+                generation_incomplete_reason=safe_response.generation_incomplete_reason,
+                max_output_tokens_reached=safe_response.max_output_tokens_reached,
+                output_text_present=safe_response.output_text_present,
+                usage_observed=safe_response.usage_observed,
+                input_tokens=safe_response.input_tokens,
+                cached_input_tokens=safe_response.cached_input_tokens,
+                uncached_input_tokens=safe_response.uncached_input_tokens,
+                output_tokens=safe_response.output_tokens,
+                reasoning_tokens=safe_response.reasoning_tokens,
+                non_reasoning_output_tokens=safe_response.non_reasoning_output_tokens,
+                total_tokens=safe_response.total_tokens,
+                caller_calculated_route_priced_cost_usd=(
+                    safe_response.caller_calculated_route_priced_cost_usd
+                ),
+                cost_posture=safe_response.cost_posture,
+                provider_elapsed_milliseconds_total=(
+                    safe_response.provider_elapsed_milliseconds_total
+                ),
                 packet_complete=True,
                 parser_consumable=parser_consumable,
                 semantic_status=semantic_status,
@@ -2477,6 +2743,7 @@ def run_evaluation(
     all_observations: list[BoundaryCallObservation] = []
     all_output_refs: list[Mapping[str, Any]] = []
     skipped: dict[str, str] = {}
+    generation_outcomes: dict[str, str] = {}
     for scenario_id in resolved.scenario_ids:
         controller = BoundaryInjectionController(
             manifest=manifest,
@@ -2503,6 +2770,22 @@ def run_evaluation(
                 raise
             if controller.execution_envelope_error is not None:
                 raise controller.execution_envelope_error
+        except IncompleteModelGenerationError as exc:
+            runner_failed = True
+            error_type = type(exc).__name__
+            generation_outcomes[scenario_id] = (
+                "INCOMPLETE_GENERATION"
+                if any(
+                    item.generation_status == "incomplete"
+                    for item in controller.observations
+                )
+                else "USAGE_UNAVAILABLE"
+            )
+            result = ScenarioRunResult(
+                scenario_id=scenario_id,
+                ordinary_downstream_terminal_posture="fail_closed_before_terminal",
+                operating_system_transition_reached=False,
+            )
         except IncompleteModelBoundaryPacketError as exc:
             runner_failed = True
             error_type = type(exc).__name__
@@ -2550,6 +2833,7 @@ def run_evaluation(
             "safe_output_artifact_refs": [deepcopy(dict(item)) for item in result.safe_output_artifact_refs],
             "evaluation_only_mapping_metadata": deepcopy(result.evaluation_only_mapping_metadata),
             "runner_failure_type": error_type,
+            "generation_outcome": generation_outcomes.get(scenario_id),
         }
         scenario_packets.append(scenario_packet)
         all_observations.extend(observations)
@@ -2589,6 +2873,7 @@ def run_evaluation(
         "execution_mode": resolved.execution_mode,
         "selected_provider": authorization.provider,
         "selected_model": authorization.model,
+        "reasoning_effort": authorization.reasoning_effort,
         "selected_model_roles": list(resolved.selected_model_roles),
         "exact_role_call_manifest": manifest.to_packet(),
         "safe_input_packet_digests": [
@@ -2664,11 +2949,43 @@ def run_evaluation(
             ),
         },
         "retry_counts": {"total": budget_ledger.retries},
-        "token_counts": {
-            "input": budget_ledger.input_tokens,
-            "output": budget_ledger.output_tokens,
-        },
-        "observed_cost": budget_ledger.cost,
+        "usage_observed": budget_ledger.usage_observed_for_all_calls,
+        "token_counts": (
+            {
+                "input_tokens": budget_ledger.input_tokens,
+                "cached_input_tokens": budget_ledger.cached_input_tokens,
+                "uncached_input_tokens": budget_ledger.uncached_input_tokens,
+                "output_tokens": budget_ledger.output_tokens,
+                "reasoning_tokens": budget_ledger.reasoning_tokens,
+                "non_reasoning_output_tokens": (
+                    budget_ledger.non_reasoning_output_tokens
+                ),
+                "total_tokens": budget_ledger.total_tokens,
+            }
+            if budget_ledger.usage_observed_for_all_calls
+            else None
+        ),
+        "caller_calculated_route_priced_cost_usd": (
+            format(budget_ledger.cost, "f")
+            if budget_ledger.usage_observed_for_all_calls
+            else None
+        ),
+        "cost_posture": (
+            "exact"
+            if budget_ledger.usage_observed_for_all_calls
+            else "unknown"
+        ),
+        "request_may_still_be_billable": (
+            not budget_ledger.usage_observed_for_all_calls
+        ),
+        "provider_elapsed_milliseconds_total": (
+            budget_ledger.provider_elapsed_milliseconds_total
+        ),
+        "generation_outcome": (
+            next(iter(generation_outcomes.values()))
+            if generation_outcomes
+            else None
+        ),
         "skipped_call_reasons": skipped,
         "redaction_posture": {
             "sanitized_only": True,
@@ -2821,6 +3138,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--repository-sha")
     parser.add_argument(
+        "--reasoning-effort",
+        choices=sorted(GPT54_REASONING_EFFORTS),
+    )
+    parser.add_argument(
         "--scenario",
         action="append",
         choices=tuple(item.scenario_id for item in SCENARIOS),
@@ -2858,6 +3179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         execution_mode=args.execution_mode,
         scenario_ids=tuple(args.scenario_ids or ()),
         selected_model_roles=tuple(args.selected_model_roles or ()),
+        reasoning_effort=args.reasoning_effort,
         output_packet_path=args.output_packet_path,
     )
     authorization = None

@@ -55,8 +55,8 @@ Every authenticated POST to `/run` uses:
 
 ```json
 {
-  "schema_version": "1",
-  "request_kind": "scryraven_provider_execution_request_v1",
+  "schema_version": "2",
+  "request_kind": "scryraven_provider_execution_request_v2",
   "provider": "serper",
   "operation": "search.query",
   "query": "<bounded query>",
@@ -80,10 +80,13 @@ echo-only attestation. They never select or modify the exact provider/model
 route.
 
 Every response uses
-`scryraven_provider_execution_response_v1`, exact route attestation, physical
-attempt count, false-retention flags, and exactly one operation member:
-sanitized `results` for search or transient `output_text` plus exact `usage` for
-model generation.
+`scryraven_provider_execution_response_v2`, exact route/reasoning attestation,
+physical-attempt count, monotonic elapsed-millisecond total, false-retention
+flags, and exactly one operation member: sanitized `results` for search or
+transient `output_text` plus normalized completion and usage posture for model
+generation. Exact observed usage includes cached/uncached input,
+reasoning/non-reasoning output, and total-token invariants. Missing required
+usage detail produces `usage_observed=false`; no count is estimated.
 
 ## Manual Broker Process
 
