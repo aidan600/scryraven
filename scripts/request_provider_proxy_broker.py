@@ -120,7 +120,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(durable, indent=2, sort_keys=True))
         print("sanitized provider-execution output written")
+        publishable_stop = bool(
+            payload["operation"] == MODEL_GENERATE_OPERATION
+            and (
+                durable.get("generation_status") != "completed"
+                or durable.get("usage_observed") is not True
+            )
+        )
         durable = {}
+        if publishable_stop:
+            print(
+                "provider execution stopped after one publishable generation "
+                "observation",
+                file=sys.stderr,
+            )
+            return 2
         return 0
     except OutputHygieneError as exc:
         print_output_hygiene_failure_summary(exc)
@@ -168,7 +182,8 @@ def _parser() -> argparse.ArgumentParser:
         choices=("fast", "smart", "embed"),
     )
     parser.add_argument("--resolved-route-config-digest")
-    parser.add_argument("--input-price-usd-per-million")
+    parser.add_argument("--ordinary-input-price-usd-per-million")
+    parser.add_argument("--cached-input-price-usd-per-million")
     parser.add_argument("--output-price-usd-per-million")
     parser.add_argument("--cost-ceiling-usd", required=True)
     parser.add_argument("--expected-json-status")
@@ -193,7 +208,8 @@ def _request_from_args(args: argparse.Namespace) -> dict[str, Any]:
             or args.input_prompt is not None
             or args.max_output_tokens is not None
             or args.maximum_input_tokens is not None
-            or args.input_price_usd_per_million is not None
+            or args.ordinary_input_price_usd_per_million is not None
+            or args.cached_input_price_usd_per_million is not None
             or args.output_price_usd_per_million is not None
             or args.expected_json_status is not None
         ):
@@ -207,7 +223,8 @@ def _request_from_args(args: argparse.Namespace) -> dict[str, Any]:
         args.query is not None
         or args.max_results is not None
         or args.maximum_input_tokens is None
-        or args.input_price_usd_per_million is None
+        or args.ordinary_input_price_usd_per_million is None
+        or args.cached_input_price_usd_per_million is None
         or args.output_price_usd_per_million is None
     ):
         raise ProviderExecutionClientError("model_operation_argument_mismatch")
@@ -233,7 +250,12 @@ def _durable_projection(
             response,
             request_payload=request_payload,
             maximum_input_tokens=args.maximum_input_tokens,
-            input_price_usd_per_million=args.input_price_usd_per_million,
+            ordinary_input_price_usd_per_million=(
+                args.ordinary_input_price_usd_per_million
+            ),
+            cached_input_price_usd_per_million=(
+                args.cached_input_price_usd_per_million
+            ),
             output_price_usd_per_million=args.output_price_usd_per_million,
             cost_ceiling_usd=args.cost_ceiling_usd,
             expected_json_status=args.expected_json_status,
@@ -251,6 +273,9 @@ def _durable_projection(
         "result_count": len(normalized["results"]),
         "results": normalized["results"],
         "physical_attempt_count": normalized["physical_attempt_count"],
+        "provider_elapsed_milliseconds_total": normalized[
+            "provider_elapsed_milliseconds_total"
+        ],
         "caller_authorized_cost_ceiling_usd": args.cost_ceiling_usd,
         **{flag: False for flag in FALSE_RETENTION_FLAGS},
     }

@@ -100,6 +100,11 @@ class FakeTransport:
         self.input_tokens = 10
         self.output_tokens = 10
         self.cost = 0.0
+        self.generation_status = "completed"
+        self.generation_incomplete_reason: str | None = None
+        self.max_output_tokens_reached = False
+        self.output_text_present = True
+        self.usage_observed = True
         self.provider_request_attempt_count = 1
         self.failure: Exception | None = None
 
@@ -109,9 +114,44 @@ class FakeTransport:
             raise self.failure
         return EvaluationTransportResponse(
             output=dict(self.next_output),
-            input_tokens=self.input_tokens,
-            output_tokens=self.output_tokens,
-            cost=self.cost,
+            reasoning_effort="medium",
+            generation_status=self.generation_status,
+            generation_incomplete_reason=self.generation_incomplete_reason,
+            max_output_tokens_reached=self.max_output_tokens_reached,
+            output_text_present=self.output_text_present,
+            output_text_character_count=len(
+                json.dumps(self.next_output, sort_keys=True)
+            ),
+            output_text_digest="d" * 64,
+            usage_observed=self.usage_observed,
+            input_tokens=(self.input_tokens if self.usage_observed else None),
+            cached_input_tokens=(0 if self.usage_observed else None),
+            uncached_input_tokens=(
+                self.input_tokens if self.usage_observed else None
+            ),
+            output_tokens=(self.output_tokens if self.usage_observed else None),
+            reasoning_tokens=(0 if self.usage_observed else None),
+            non_reasoning_output_tokens=(
+                self.output_tokens if self.usage_observed else None
+            ),
+            total_tokens=(
+                self.input_tokens + self.output_tokens
+                if self.usage_observed
+                else None
+            ),
+            caller_calculated_route_priced_cost_usd=(
+                str(self.cost) if self.usage_observed else None
+            ),
+            cost_posture="exact" if self.usage_observed else "unknown",
+            output_token_utilization=(
+                str(self.output_tokens / kwargs["maximum_output_tokens"])
+                if self.usage_observed
+                else None
+            ),
+            reasoning_token_share=(
+                "0" if self.usage_observed and self.output_tokens else None
+            ),
+            provider_elapsed_milliseconds_total=1,
             canonical_provider_used=(self.canonical_provider_used or str(kwargs["provider"])),
             canonical_model_used=(self.canonical_model_used or str(kwargs["model"])),
             provider_request_attempt_count=self.provider_request_attempt_count,
@@ -168,6 +208,7 @@ def _request(
         execution_mode=execution_mode,
         scenario_ids=scenario_ids,
         selected_model_roles=roles,
+        reasoning_effort=("medium" if execution_mode == "execute" else None),
         output_packet_path=output,
     )
 
@@ -203,6 +244,7 @@ def _authorization(
         repository_sha=repository_sha,
         provider="synthetic-provider",
         model="synthetic-model",
+        reasoning_effort="medium",
         allowed_evaluation_pass=resolved.evaluation_pass,
         allowed_model_roles=resolved.selected_model_roles,
         allowed_scenario_ids=resolved.scenario_ids,
@@ -254,8 +296,28 @@ def _probe_observation() -> BoundaryCallObservation:
         licensed_maximum_input_tokens=4_000,
         licensed_maximum_output_tokens=2_000,
         licensed_retry_cap=0,
+        reasoning_effort="medium",
         physical_calls=1,
         retries=0,
+        generation_status="completed",
+        generation_incomplete_reason=None,
+        max_output_tokens_reached=False,
+        output_text_present=True,
+        output_text_character_count=1,
+        output_text_digest="d" * 64,
+        usage_observed=True,
+        input_tokens=10,
+        cached_input_tokens=0,
+        uncached_input_tokens=10,
+        output_tokens=10,
+        reasoning_tokens=0,
+        non_reasoning_output_tokens=10,
+        total_tokens=20,
+        caller_calculated_route_priced_cost_usd="0.0",
+        cost_posture="exact",
+        output_token_utilization="0.005",
+        reasoning_token_share="0",
+        provider_elapsed_milliseconds_total=1,
         packet_complete=True,
         parser_consumable=True,
         semantic_status="wrong",
@@ -369,9 +431,26 @@ class OrdinaryFixtureFakeTransport:
             )
         return EvaluationTransportResponse(
             output=output,
+            reasoning_effort="medium",
+            generation_status="completed",
+            generation_incomplete_reason=None,
+            max_output_tokens_reached=False,
+            output_text_present=True,
+            output_text_character_count=len(json.dumps(output, sort_keys=True)),
+            output_text_digest="d" * 64,
+            usage_observed=True,
             input_tokens=10,
+            cached_input_tokens=0,
+            uncached_input_tokens=10,
             output_tokens=10,
-            cost=0.0,
+            reasoning_tokens=0,
+            non_reasoning_output_tokens=10,
+            total_tokens=20,
+            caller_calculated_route_priced_cost_usd="0.0",
+            cost_posture="exact",
+            output_token_utilization="0.005",
+            reasoning_token_share="0",
+            provider_elapsed_milliseconds_total=1,
             canonical_provider_used=str(kwargs["provider"]),
             canonical_model_used=str(kwargs["model"]),
             credentials_accessed=False,
@@ -737,6 +816,64 @@ def test_synthetic_execute_invokes_only_selected_model_boundaries(
     assert packet["retry_counts"] == {"total": 0}
     assert packet["credentials_accessed"] is False
     assert Path(output).is_file()
+
+
+@pytest.mark.parametrize("usage_observed", (True, False))
+def test_incomplete_generation_records_safe_observation_and_publishes_stop(
+    tmp_path: Path,
+    usage_observed: bool,
+) -> None:
+    output = _repo_output_path(
+        tmp_path,
+        f"incomplete-generation-{usage_observed}.json",
+    )
+    request = _request(
+        "combined",
+        execution_mode="execute",
+        scenario_ids=(CASE_3, CASE_4),
+        output=output,
+    )
+    authorization = _authorization(request, output=output)
+    transport = FakeTransport()
+    transport.next_output = {"partial_private_output": "must-not-persist"}
+    transport.generation_status = "incomplete"
+    transport.generation_incomplete_reason = "max_output_tokens"
+    transport.max_output_tokens_reached = True
+    transport.usage_observed = usage_observed
+    packet = run_evaluation(
+        request,
+        repository_sha=REPOSITORY_SHA,
+        authorization=authorization,
+        execution_identity=_execution_identity(request),
+        transport_factory=FactoryCensus(transport=transport),
+        scenario_runner=_synthetic_scenario_runner,
+    )
+
+    assert packet["primary_failure_attribution"] == "REVIEW_REQUIRED"
+    assert packet["generation_outcome"] == "INCOMPLETE_GENERATION"
+    assert packet["call_counts"]["model_calls"] == 1
+    assert packet["retry_counts"]["total"] == 0
+    assert packet["usage_observed"] is usage_observed
+    scenario = packet["observed_safe_semantic_projection"][0]
+    observation = scenario["observed_safe_semantic_projection"][0]
+    assert observation["generation_status"] == "incomplete"
+    assert observation["generation_incomplete_reason"] == "max_output_tokens"
+    assert observation["parser_consumable"] is False
+    assert observation["semantic_status"] == "ambiguous"
+    assert observation["cost_posture"] == (
+        "exact" if usage_observed else "unknown"
+    )
+    assert len(packet["skipped_call_reasons"]) == (
+        packet["exact_role_call_manifest"][
+            "total_maximum_physical_model_calls"
+        ]
+        - 1
+    )
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "partial_private_output" not in rendered
+    assert "must-not-persist" not in rendered
+    assert packet["primary_failure_attribution"] != "MODEL"
+    assert "PASS" not in scenario["per_call_failure_attribution"]
 
 
 def test_unmanifested_extra_call_is_blocked_before_transport(
@@ -1446,10 +1583,27 @@ def test_direct_script_accepts_package_typed_transport_response(
                 "",
                 "    def __call__(self, **kwargs):",
                 "        return EvaluationTransportResponse(",
-                f"            output={planner_output!r},",
-                "            input_tokens=10,",
-                "            output_tokens=10,",
-                "            cost=0.0,",
+                    f"            output={planner_output!r},",
+                    "            reasoning_effort='medium',",
+                    "            generation_status='completed',",
+                    "            generation_incomplete_reason=None,",
+                    "            max_output_tokens_reached=False,",
+                    "            output_text_present=True,",
+                    f"            output_text_character_count={len(planner_output)},",
+                    "            output_text_digest='d' * 64,",
+                    "            usage_observed=True,",
+                    "            input_tokens=10,",
+                    "            cached_input_tokens=0,",
+                    "            uncached_input_tokens=10,",
+                    "            output_tokens=10,",
+                    "            reasoning_tokens=0,",
+                    "            non_reasoning_output_tokens=10,",
+                    "            total_tokens=20,",
+                    "            caller_calculated_route_priced_cost_usd='0.0',",
+                    "            cost_posture='exact',",
+                    "            output_token_utilization='0.005',",
+                    "            reasoning_token_share='0',",
+                    "            provider_elapsed_milliseconds_total=1,",
                 "            canonical_provider_used=str(kwargs['provider']),",
                 "            canonical_model_used=str(kwargs['model']),",
                 "            credentials_accessed=False,",

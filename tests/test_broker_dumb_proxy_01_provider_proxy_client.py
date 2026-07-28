@@ -38,6 +38,7 @@ def _sample_broker_response(provider: str = "serper") -> dict[str, Any]:
     return build_success_response(
         _request(provider),
         physical_attempt_count=1,
+        provider_elapsed_milliseconds_total=5,
         results=[
             {
                 "title": "Example Result",
@@ -98,8 +99,10 @@ def _model_client_args(output: str) -> list[str]:
         "120",
         "--retry-cap",
         "0",
-        "--input-price-usd-per-million",
+        "--ordinary-input-price-usd-per-million",
         "2.50",
+        "--cached-input-price-usd-per-million",
+        "0.25",
         "--output-price-usd-per-million",
         "15.00",
         "--cost-ceiling-usd",
@@ -242,9 +245,15 @@ def test_model_client_never_prints_or_persists_transient_output(
         return 200, build_success_response(
             payload,
             physical_attempt_count=1,
+            provider_elapsed_milliseconds_total=5,
             output_text=output_text,
+            generation_status="completed",
+            usage_observed=True,
             input_tokens=20,
+            cached_input_tokens=0,
             output_tokens=8,
+            reasoning_tokens=0,
+            total_tokens=28,
         )
 
     monkeypatch.setattr(client, "_post_broker_json", fake_post)

@@ -129,8 +129,8 @@ BLOCKED_MVP_LIVE_CAP_EXHAUSTED = "BLOCKED_MVP_LIVE_CAP_EXHAUSTED"
 
 DEFAULT_PROVIDER = "serper"
 DEFAULT_OPERATION = "search.query"
-EXPECTED_SEARCH_SCHEMA_VERSION = "1"
-EXPECTED_SEARCH_PROOF_KIND = "scryraven_search_query_proof_v1"
+EXPECTED_SEARCH_SCHEMA_VERSION = "2"
+EXPECTED_SEARCH_PROOF_KIND = "scryraven_search_query_proof_v2"
 EXPECTED_SEARCH_COST_CEILING_USD = "0.05"
 DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
 SANITIZED_PROVIDER_PROXY_RESPONSE_NAME = "sanitized-provider-proxy-response.json"
@@ -188,6 +188,7 @@ _ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
         "result_count",
         "results",
         "physical_attempt_count",
+        "provider_elapsed_milliseconds_total",
         "caller_authorized_cost_ceiling_usd",
         "raw_provider_payload_retained",
         "raw_request_material_retained",
@@ -1394,6 +1395,16 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             BLOCKED_MVP_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING,
             "sanitized provider result_count does not match results length.",
         )
+    provider_elapsed = raw.get("provider_elapsed_milliseconds_total")
+    if (
+        not isinstance(provider_elapsed, int)
+        or isinstance(provider_elapsed, bool)
+        or not 0 <= provider_elapsed <= 2_000_000
+    ):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING,
+            "sanitized provider response elapsed telemetry is invalid.",
+        )
     normalized = [_normalize_provider_result(item, index=i) for i, item in enumerate(results, 1)]
     return {
         "schema_version": EXPECTED_SEARCH_SCHEMA_VERSION,
@@ -1404,6 +1415,7 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "result_count": len(normalized),
         "results": normalized,
         "physical_attempt_count": 1,
+        "provider_elapsed_milliseconds_total": provider_elapsed,
         "caller_authorized_cost_ceiling_usd": EXPECTED_SEARCH_COST_CEILING_USD,
         "raw_provider_payload_retained": False,
         "raw_request_material_retained": False,

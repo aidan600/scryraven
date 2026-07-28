@@ -12,11 +12,11 @@ import json
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
-SCHEMA_VERSION = "1"
-REQUEST_KIND = "scryraven_provider_execution_request_v1"
-RESPONSE_KIND = "scryraven_provider_execution_response_v1"
-MODEL_PROOF_KIND = "scryraven_model_generation_proof_v1"
-SEARCH_PROOF_KIND = "scryraven_search_query_proof_v1"
+SCHEMA_VERSION = "2"
+REQUEST_KIND = "scryraven_provider_execution_request_v2"
+RESPONSE_KIND = "scryraven_provider_execution_response_v2"
+MODEL_PROOF_KIND = "scryraven_model_generation_proof_v2"
+SEARCH_PROOF_KIND = "scryraven_search_query_proof_v2"
 BROKER_HOST = "127.0.0.1"
 BROKER_DEFAULT_PORT = 8765
 BROKER_RUN_PATH = "/run"
@@ -28,6 +28,7 @@ BROKER_MAX_REQUESTS_ENV_VAR = "SCRYRAVEN_BROKER_MAX_REQUESTS"
 
 SEARCH_QUERY_OPERATION = "search.query"
 MODEL_GENERATE_OPERATION = "model.generate"
+GPT54_MODEL_ID = "gpt-5.4-2026-03-05"
 SUPPORTED_ROUTES = frozenset(
     {
         ("serper", SEARCH_QUERY_OPERATION),
@@ -47,7 +48,10 @@ MAX_OUTPUT_TOKENS = 32_000
 MAX_TIMEOUT_SECONDS = 600.0
 MAX_RETRY_CAP = 2
 MAX_PROVIDER_EXTRACTED_TEXT_CHARS = 2_000
-ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh"})
+MAX_PROVIDER_ELAPSED_MILLISECONDS_TOTAL = 2_000_000
+ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh"})
+ALLOWED_GENERATION_STATUSES = frozenset({"completed", "incomplete"})
+ALLOWED_INCOMPLETE_REASONS = frozenset({"max_output_tokens", "content_filter"})
 ALLOWED_ROUTE_ALIASES = frozenset({"fast", "smart", "embed"})
 
 COMMON_REQUEST_KEYS = frozenset(
@@ -84,11 +88,17 @@ COMMON_RESPONSE_KEYS = frozenset(
         "provider",
         "operation",
         "model",
+        "reasoning_effort",
         "status",
         "failure_class",
         "physical_attempt_count",
+        "provider_elapsed_milliseconds_total",
         "results",
         "output_text",
+        "generation_status",
+        "generation_incomplete_reason",
+        "max_output_tokens_reached",
+        "output_text_present",
         "usage",
         "correlation_id",
         "requested_route_alias",
@@ -157,8 +167,10 @@ FORBIDDEN_RESPONSE_KEYS = frozenset(
         "env_file",
         "full_trace",
         "headers",
+        "id",
         "log",
         "logs",
+        "output_items",
         "prompt",
         "raw_content",
         "raw_page",
@@ -168,6 +180,11 @@ FORBIDDEN_RESPONSE_KEYS = frozenset(
         "raw_request",
         "raw_response",
         "raw_search_response",
+        "reasoning",
+        "reasoning_items",
+        "reasoning_summary",
+        "reasoning_text",
+        "response_id",
         "secret",
         "token",
     }
@@ -334,6 +351,8 @@ def validate_provider_execution_request(payload: Mapping[str, Any]) -> dict[str,
         and reasoning_effort not in ALLOWED_REASONING_EFFORTS
     ):
         raise ProviderExecutionContractError("unsupported_reasoning_effort")
+    if model == GPT54_MODEL_ID and reasoning_effort is None:
+        raise ProviderExecutionContractError("missing_reasoning_effort")
     if raw.get("store") is not False:
         raise ProviderExecutionContractError("store_must_be_false")
     normalized.update(
@@ -367,10 +386,17 @@ def build_success_response(
     request_payload: Mapping[str, Any],
     *,
     physical_attempt_count: int,
+    provider_elapsed_milliseconds_total: int,
     results: list[Mapping[str, Any]] | None = None,
     output_text: str | None = None,
+    generation_status: str | None = None,
+    generation_incomplete_reason: str | None = None,
+    usage_observed: bool | None = None,
     input_tokens: int | None = None,
+    cached_input_tokens: int | None = None,
     output_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    total_tokens: int | None = None,
 ) -> dict[str, Any]:
     request_value = validate_provider_execution_request(request_payload)
     operation = request_value["operation"]
@@ -378,9 +404,23 @@ def build_success_response(
         request_value,
         status="ok",
         physical_attempt_count=physical_attempt_count,
+        provider_elapsed_milliseconds_total=provider_elapsed_milliseconds_total,
     )
     if operation == SEARCH_QUERY_OPERATION:
-        if output_text is not None or input_tokens is not None or output_tokens is not None:
+        if any(
+            value is not None
+            for value in (
+                output_text,
+                generation_status,
+                generation_incomplete_reason,
+                usage_observed,
+                input_tokens,
+                cached_input_tokens,
+                output_tokens,
+                reasoning_tokens,
+                total_tokens,
+            )
+        ):
             raise ProviderExecutionContractError("search_response_union_mismatch")
         response["results"] = [
             validate_search_result(
@@ -393,25 +433,57 @@ def build_success_response(
     else:
         if results is not None:
             raise ProviderExecutionContractError("model_response_union_mismatch")
-        response["output_text"] = _required_text(
-            output_text,
-            "missing_output_text",
-            MAX_OUTPUT_TEXT_CHARS,
+        if (
+            usage_observed is True
+            and isinstance(input_tokens, int)
+            and isinstance(cached_input_tokens, int)
+            and cached_input_tokens > input_tokens
+        ):
+            raise ProviderExecutionContractError(
+                "cached_input_tokens_exceed_input_tokens"
+            )
+        if (
+            usage_observed is True
+            and isinstance(output_tokens, int)
+            and isinstance(reasoning_tokens, int)
+            and reasoning_tokens > output_tokens
+        ):
+            raise ProviderExecutionContractError(
+                "reasoning_tokens_exceed_output_tokens"
+            )
+        response.update(
+            _normalize_generation_telemetry(
+                generation_status=generation_status,
+                generation_incomplete_reason=generation_incomplete_reason,
+                output_text=output_text,
+            )
         )
-        response["usage"] = {
-            "input_tokens": _bounded_int(
-                input_tokens,
-                "missing_or_invalid_input_tokens",
-                minimum=0,
-                maximum=10**9,
+        response["usage"] = _normalize_usage(
+            usage_observed=usage_observed,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            uncached_input_tokens=(
+                input_tokens - cached_input_tokens
+                if (
+                    usage_observed is True
+                    and isinstance(input_tokens, int)
+                    and isinstance(cached_input_tokens, int)
+                )
+                else None
             ),
-            "output_tokens": _bounded_int(
-                output_tokens,
-                "missing_or_invalid_output_tokens",
-                minimum=0,
-                maximum=10**9,
+            output_tokens=output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            non_reasoning_output_tokens=(
+                output_tokens - reasoning_tokens
+                if (
+                    usage_observed is True
+                    and isinstance(output_tokens, int)
+                    and isinstance(reasoning_tokens, int)
+                )
+                else None
             ),
-        }
+            total_tokens=total_tokens,
+        )
     return validate_provider_execution_response(response, request_payload=request_value)
 
 
@@ -420,6 +492,7 @@ def build_failure_response(
     request_payload: Mapping[str, Any] | None,
     failure_class: str,
     physical_attempt_count: int,
+    provider_elapsed_milliseconds_total: int = 0,
 ) -> dict[str, Any]:
     safe_request: dict[str, Any] = {}
     if isinstance(request_payload, Mapping):
@@ -429,6 +502,7 @@ def build_failure_response(
                 "provider",
                 "operation",
                 "model",
+                "reasoning_effort",
                 "correlation_id",
                 "requested_route_alias",
                 "resolved_route_config_digest",
@@ -454,6 +528,7 @@ def build_failure_response(
         "provider": safe_optional_token("provider", 80),
         "operation": safe_optional_token("operation", 80),
         "model": safe_optional_token("model", 200),
+        "reasoning_effort": safe_optional_token("reasoning_effort", 16),
         "status": "failed",
         "failure_class": _clean_failure_class(failure_class),
         "physical_attempt_count": _bounded_int(
@@ -461,6 +536,12 @@ def build_failure_response(
             "invalid_physical_attempt_count",
             minimum=0,
             maximum=MAX_RETRY_CAP + 1,
+        ),
+        "provider_elapsed_milliseconds_total": _bounded_int(
+            provider_elapsed_milliseconds_total,
+            "invalid_provider_elapsed_milliseconds_total",
+            minimum=0,
+            maximum=MAX_PROVIDER_ELAPSED_MILLISECONDS_TOTAL,
         ),
         "correlation_id": safe_optional_token("correlation_id", 128),
         "requested_route_alias": safe_optional_token("requested_route_alias", 16),
@@ -494,6 +575,7 @@ def validate_provider_execution_response(
         "provider",
         "operation",
         "model",
+        "reasoning_effort",
         "correlation_id",
         "requested_route_alias",
         "resolved_route_config_digest",
@@ -505,6 +587,12 @@ def validate_provider_execution_response(
         "invalid_physical_attempt_count",
         minimum=0,
         maximum=request_value["retry_cap"] + 1,
+    )
+    elapsed_milliseconds = _bounded_int(
+        raw.get("provider_elapsed_milliseconds_total"),
+        "invalid_provider_elapsed_milliseconds_total",
+        minimum=0,
+        maximum=MAX_PROVIDER_ELAPSED_MILLISECONDS_TOTAL,
     )
     status = raw.get("status")
     if status == "failed":
@@ -521,6 +609,7 @@ def validate_provider_execution_response(
                     request_value,
                     status="failed",
                     physical_attempt_count=attempt_count,
+                    provider_elapsed_milliseconds_total=elapsed_milliseconds,
                 ),
                 "failure_class": failure,
             }
@@ -534,9 +623,20 @@ def validate_provider_execution_response(
         request_value,
         status="ok",
         physical_attempt_count=attempt_count,
+        provider_elapsed_milliseconds_total=elapsed_milliseconds,
     )
     if request_value["operation"] == SEARCH_QUERY_OPERATION:
-        if raw.get("output_text") is not None or raw.get("usage") is not None:
+        if any(
+            raw.get(key) is not None
+            for key in (
+                "output_text",
+                "usage",
+                "generation_status",
+                "generation_incomplete_reason",
+                "max_output_tokens_reached",
+                "output_text_present",
+            )
+        ):
             raise ProviderExecutionContractError("search_response_union_mismatch")
         results = raw.get("results")
         if not isinstance(results, list):
@@ -552,31 +652,23 @@ def validate_provider_execution_response(
     else:
         if raw.get("results") is not None:
             raise ProviderExecutionContractError("model_response_union_mismatch")
-        normalized["output_text"] = _required_text(
-            raw.get("output_text"),
-            "missing_output_text",
-            MAX_OUTPUT_TEXT_CHARS,
+        normalized.update(
+            _normalize_generation_telemetry(
+                generation_status=raw.get("generation_status"),
+                generation_incomplete_reason=raw.get(
+                    "generation_incomplete_reason"
+                ),
+                output_text=raw.get("output_text"),
+                max_output_tokens_reached=raw.get(
+                    "max_output_tokens_reached"
+                ),
+                output_text_present=raw.get("output_text_present"),
+            )
         )
         usage = raw.get("usage")
-        if not isinstance(usage, Mapping) or set(usage) != {
-            "input_tokens",
-            "output_tokens",
-        }:
+        if not isinstance(usage, Mapping):
             raise ProviderExecutionContractError("missing_or_invalid_usage")
-        normalized["usage"] = {
-            "input_tokens": _bounded_int(
-                usage.get("input_tokens"),
-                "missing_or_invalid_input_tokens",
-                minimum=0,
-                maximum=10**9,
-            ),
-            "output_tokens": _bounded_int(
-                usage.get("output_tokens"),
-                "missing_or_invalid_output_tokens",
-                minimum=0,
-                maximum=10**9,
-            ),
-        }
+        normalized["usage"] = _normalize_usage(**dict(usage))
     return normalized
 
 
@@ -722,7 +814,8 @@ def build_model_proof(
     *,
     request_payload: Mapping[str, Any],
     maximum_input_tokens: int,
-    input_price_usd_per_million: str,
+    ordinary_input_price_usd_per_million: str,
+    cached_input_price_usd_per_million: str,
     output_price_usd_per_million: str,
     cost_ceiling_usd: str,
     expected_json_status: str | None = None,
@@ -745,24 +838,35 @@ def build_model_proof(
         minimum=1,
         maximum=10**9,
     )
-    if usage["input_tokens"] > maximum_input:
+    if usage["usage_observed"] and usage["input_tokens"] > maximum_input:
         raise ProviderExecutionContractError("input_token_cap_exceeded")
     try:
-        input_price = Decimal(input_price_usd_per_million)
+        ordinary_input_price = Decimal(ordinary_input_price_usd_per_million)
+        cached_input_price = Decimal(cached_input_price_usd_per_million)
         output_price = Decimal(output_price_usd_per_million)
         ceiling = Decimal(cost_ceiling_usd)
     except Exception as exc:
         raise ProviderExecutionContractError("invalid_caller_cost_policy") from exc
-    if min(input_price, output_price, ceiling) < 0 or ceiling <= 0:
+    if (
+        min(ordinary_input_price, cached_input_price, output_price, ceiling) < 0
+        or ceiling <= 0
+    ):
         raise ProviderExecutionContractError("invalid_caller_cost_policy")
-    cost = (
-        Decimal(usage["input_tokens"]) * input_price
-        + Decimal(usage["output_tokens"]) * output_price
-    ) / Decimal(1_000_000)
-    if cost > ceiling:
-        raise ProviderExecutionContractError("caller_cost_ceiling_exceeded")
+    cost: Decimal | None = None
+    if usage["usage_observed"]:
+        cost = (
+            Decimal(usage["uncached_input_tokens"]) * ordinary_input_price
+            + Decimal(usage["cached_input_tokens"]) * cached_input_price
+            + Decimal(usage["output_tokens"]) * output_price
+        ) / Decimal(1_000_000)
+        if cost > ceiling:
+            raise ProviderExecutionContractError("caller_cost_ceiling_exceeded")
     parsed_status: str | None = None
     if expected_json_status is not None:
+        if normalized["generation_status"] != "completed":
+            raise ProviderExecutionContractError(
+                "model_output_json_status_unavailable"
+            )
         try:
             parsed = json.loads(output_text)
         except json.JSONDecodeError as exc:
@@ -784,21 +888,188 @@ def build_model_proof(
         "provider": normalized["provider"],
         "operation": normalized["operation"],
         "model": normalized["model"],
+        "reasoning_effort": normalized["reasoning_effort"],
         "status": "ok",
+        "generation_status": normalized["generation_status"],
+        "generation_incomplete_reason": normalized.get(
+            "generation_incomplete_reason"
+        ),
+        "max_output_tokens_reached": normalized[
+            "max_output_tokens_reached"
+        ],
+        "usage_observed": usage["usage_observed"],
+        "requested_maximum_output_tokens": request_payload[
+            "max_output_tokens"
+        ],
+        "output_text_present": normalized["output_text_present"],
         "output_digest": digest_text(output_text),
         "output_character_count": len(output_text),
-        "input_tokens": usage["input_tokens"],
-        "output_tokens": usage["output_tokens"],
+        "provider_elapsed_milliseconds_total": normalized[
+            "provider_elapsed_milliseconds_total"
+        ],
         "physical_attempt_count": normalized["physical_attempt_count"],
-        "caller_calculated_conservative_cost_usd": format(cost, "f"),
+        "retry_count": max(0, normalized["physical_attempt_count"] - 1),
+        "cost_posture": "exact" if cost is not None else "unknown",
+        "request_may_still_be_billable": cost is None,
         "caller_cost_ceiling_usd": format(ceiling, "f"),
         "correlation_id": normalized.get("correlation_id"),
         "parsed_status": parsed_status,
         **{flag: False for flag in FALSE_RETENTION_FLAGS},
         "output_text_retained": False,
     }
+    if usage["usage_observed"]:
+        proof.update(
+            {
+                key: usage[key]
+                for key in (
+                    "input_tokens",
+                    "cached_input_tokens",
+                    "uncached_input_tokens",
+                    "output_tokens",
+                    "reasoning_tokens",
+                    "non_reasoning_output_tokens",
+                    "total_tokens",
+                )
+            }
+        )
+        proof["output_token_utilization"] = format(
+            Decimal(usage["output_tokens"])
+            / Decimal(request_payload["max_output_tokens"]),
+            "f",
+        )
+        proof["reasoning_token_share"] = (
+            format(
+                Decimal(usage["reasoning_tokens"])
+                / Decimal(usage["output_tokens"]),
+                "f",
+            )
+            if usage["output_tokens"] > 0
+            else None
+        )
+        assert cost is not None
+        proof["caller_calculated_route_priced_cost_usd"] = format(cost, "f")
     output_text = ""
     return _without_none(proof)
+
+
+def _normalize_generation_telemetry(
+    *,
+    generation_status: Any,
+    generation_incomplete_reason: Any,
+    output_text: Any,
+    max_output_tokens_reached: Any | None = None,
+    output_text_present: Any | None = None,
+) -> dict[str, Any]:
+    status = _required_token(
+        generation_status,
+        "invalid_generation_status",
+        32,
+    )
+    if status not in ALLOWED_GENERATION_STATUSES:
+        raise ProviderExecutionContractError("invalid_generation_status")
+    reason = _optional_token(generation_incomplete_reason, 32)
+    if status == "completed":
+        if reason is not None:
+            raise ProviderExecutionContractError(
+                "completed_generation_has_incomplete_reason"
+            )
+    elif reason not in ALLOWED_INCOMPLETE_REASONS:
+        raise ProviderExecutionContractError(
+            "unsupported_generation_incomplete_reason"
+        )
+    text = _bounded_text(
+        output_text if output_text is not None else "",
+        "invalid_output_text",
+        MAX_OUTPUT_TEXT_CHARS,
+        allow_empty=True,
+    )
+    present = bool(text)
+    exhausted = reason == "max_output_tokens"
+    if output_text_present is not None and output_text_present is not present:
+        raise ProviderExecutionContractError("output_text_present_mismatch")
+    if (
+        max_output_tokens_reached is not None
+        and max_output_tokens_reached is not exhausted
+    ):
+        raise ProviderExecutionContractError(
+            "max_output_tokens_reached_mismatch"
+        )
+    if status == "completed" and not present:
+        raise ProviderExecutionContractError(
+            "completed_generation_requires_output_text"
+        )
+    return {
+        "generation_status": status,
+        "generation_incomplete_reason": reason,
+        "max_output_tokens_reached": exhausted,
+        "output_text_present": present,
+        "output_text": text,
+    }
+
+
+def _normalize_usage(
+    *,
+    usage_observed: Any,
+    input_tokens: Any = None,
+    cached_input_tokens: Any = None,
+    uncached_input_tokens: Any = None,
+    output_tokens: Any = None,
+    reasoning_tokens: Any = None,
+    non_reasoning_output_tokens: Any = None,
+    total_tokens: Any = None,
+) -> dict[str, Any]:
+    if not isinstance(usage_observed, bool):
+        raise ProviderExecutionContractError("invalid_usage_observed")
+    supplied = {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "uncached_input_tokens": uncached_input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "non_reasoning_output_tokens": non_reasoning_output_tokens,
+        "total_tokens": total_tokens,
+    }
+    if not usage_observed:
+        if any(value is not None for value in supplied.values()):
+            raise ProviderExecutionContractError(
+                "unobserved_usage_must_not_include_counts"
+            )
+        return {"usage_observed": False}
+    required = {
+        key: _bounded_int(
+            value,
+            f"missing_or_invalid_{key}",
+            minimum=0,
+            maximum=10**9,
+        )
+        for key, value in supplied.items()
+    }
+    if required["cached_input_tokens"] > required["input_tokens"]:
+        raise ProviderExecutionContractError(
+            "cached_input_tokens_exceed_input_tokens"
+        )
+    expected_uncached = (
+        required["input_tokens"] - required["cached_input_tokens"]
+    )
+    if required["uncached_input_tokens"] != expected_uncached:
+        raise ProviderExecutionContractError("uncached_input_tokens_mismatch")
+    if required["reasoning_tokens"] > required["output_tokens"]:
+        raise ProviderExecutionContractError(
+            "reasoning_tokens_exceed_output_tokens"
+        )
+    expected_non_reasoning = (
+        required["output_tokens"] - required["reasoning_tokens"]
+    )
+    if required["non_reasoning_output_tokens"] != expected_non_reasoning:
+        raise ProviderExecutionContractError(
+            "non_reasoning_output_tokens_mismatch"
+        )
+    if (
+        required["total_tokens"]
+        != required["input_tokens"] + required["output_tokens"]
+    ):
+        raise ProviderExecutionContractError("total_tokens_mismatch")
+    return {"usage_observed": True, **required}
 
 
 def digest_text(text: str) -> str:
@@ -845,6 +1116,7 @@ def _base_response(
     *,
     status: str,
     physical_attempt_count: int,
+    provider_elapsed_milliseconds_total: int,
 ) -> dict[str, Any]:
     return _without_none(
         {
@@ -853,8 +1125,12 @@ def _base_response(
             "provider": request_payload.get("provider"),
             "operation": request_payload.get("operation"),
             "model": request_payload.get("model"),
+            "reasoning_effort": request_payload.get("reasoning_effort"),
             "status": status,
             "physical_attempt_count": physical_attempt_count,
+            "provider_elapsed_milliseconds_total": (
+                provider_elapsed_milliseconds_total
+            ),
             "correlation_id": request_payload.get("correlation_id"),
             "requested_route_alias": request_payload.get("requested_route_alias"),
             "resolved_route_config_digest": request_payload.get(
@@ -971,15 +1247,11 @@ def _bounded_int(
     minimum: int,
     maximum: int,
 ) -> int:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ProviderExecutionContractError(failure_class)
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ProviderExecutionContractError(failure_class) from exc
-    if parsed < minimum or parsed > maximum:
+    if value < minimum or value > maximum:
         raise ProviderExecutionContractError(failure_class)
-    return parsed
+    return value
 
 
 def _bounded_float(
@@ -1035,6 +1307,8 @@ __all__ = [
     "BROKER_TOKEN_ENV_VAR",
     "BROKER_TOKEN_HEADER",
     "FALSE_RETENTION_FLAGS",
+    "GPT54_MODEL_ID",
+    "MAX_PROVIDER_ELAPSED_MILLISECONDS_TOTAL",
     "MAX_RETRY_CAP",
     "MODEL_GENERATE_OPERATION",
     "MODEL_PROOF_KIND",

@@ -301,8 +301,12 @@ def _client_argv(args: argparse.Namespace) -> list[str]:
             args.resolved_route_config_digest,
         ),
         (
-            "--input-price-usd-per-million",
-            args.input_price_usd_per_million,
+            "--ordinary-input-price-usd-per-million",
+            args.ordinary_input_price_usd_per_million,
+        ),
+        (
+            "--cached-input-price-usd-per-million",
+            args.cached_input_price_usd_per_million,
         ),
         (
             "--output-price-usd-per-million",

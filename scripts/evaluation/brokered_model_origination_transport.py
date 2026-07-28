@@ -10,8 +10,8 @@ from typing import Any, Callable, Mapping
 from scripts import request_provider_proxy_broker as broker_client
 from scripts.evaluation.model_cost_policy import (
     ModelCostPolicy,
-    conservative_cost_decimal,
     resolve_model_cost_policy,
+    route_priced_cost_decimal,
 )
 from scripts.evaluation.run_analystos_model_origination_evaluation import (
     EvaluationConfigurationError,
@@ -24,6 +24,7 @@ from scripts.provider_execution_contract import (
     MODEL_GENERATE_OPERATION,
     ProviderExecutionContractError,
     build_model_request,
+    digest_text,
     validate_provider_execution_response,
 )
 
@@ -87,7 +88,7 @@ class _BrokeredModelOriginationTransport:
             model=model,
             system_instructions=system_prompt,
             input_prompt=prompt,
-            reasoning_effort=self._cost_policy.reasoning_effort,
+            reasoning_effort=self._authorization.reasoning_effort,
             max_output_tokens=maximum_output_tokens,
             timeout_seconds=self._authorization.timeout_seconds,
             retry_cap=self._authorization.retry_cap,
@@ -111,6 +112,8 @@ class _BrokeredModelOriginationTransport:
                 response.get("provider") != provider
                 or response.get("operation") != MODEL_GENERATE_OPERATION
                 or response.get("model") != model
+                or response.get("reasoning_effort")
+                != self._authorization.reasoning_effort
                 or response.get("physical_attempt_count") != 1
             ):
                 raise EvaluationTransportError(
@@ -119,46 +122,86 @@ class _BrokeredModelOriginationTransport:
             usage = response.get("usage")
             if not isinstance(usage, Mapping):
                 raise EvaluationTransportError(
-                    "brokered transport response omitted exact usage"
+                    "brokered transport response omitted usage posture"
                 )
+            usage_observed = usage.get("usage_observed") is True
             input_tokens = usage.get("input_tokens")
+            cached_input_tokens = usage.get("cached_input_tokens")
+            uncached_input_tokens = usage.get("uncached_input_tokens")
             output_tokens = usage.get("output_tokens")
-            if (
-                not isinstance(input_tokens, int)
-                or not isinstance(output_tokens, int)
-                or input_tokens < 0
-                or output_tokens < 0
-            ):
-                raise EvaluationTransportError(
-                    "brokered transport response omitted exact usage"
+            reasoning_tokens = usage.get("reasoning_tokens")
+            non_reasoning_output_tokens = usage.get(
+                "non_reasoning_output_tokens"
+            )
+            total_tokens = usage.get("total_tokens")
+            cost: Decimal | None = None
+            if usage_observed:
+                if (
+                    input_tokens > maximum_input_tokens
+                    or output_tokens > maximum_output_tokens
+                ):
+                    raise EvaluationTransportError(
+                        "brokered transport response exceeded authorized token caps"
+                    )
+                cost = route_priced_cost_decimal(
+                    uncached_input_tokens,
+                    cached_input_tokens,
+                    output_tokens,
+                    policy=self._cost_policy,
                 )
-            if (
-                input_tokens > maximum_input_tokens
-                or output_tokens > maximum_output_tokens
-            ):
-                raise EvaluationTransportError(
-                    "brokered transport response exceeded authorized token caps"
-                )
+                if cost > Decimal(str(self._authorization.cost_ceiling)):
+                    raise EvaluationTransportError(
+                        "brokered transport response exceeded authorized cost ceiling"
+                    )
             output_text_value = response.get("output_text")
-            if not isinstance(output_text_value, str) or not output_text_value:
+            if not isinstance(output_text_value, str):
                 raise EvaluationTransportError(
-                    "brokered transport response omitted model output"
+                    "brokered transport response omitted output posture"
                 )
             output_text = output_text_value
-            cost = conservative_cost_decimal(
-                input_tokens,
-                output_tokens,
-                policy=self._cost_policy,
-            )
-            if cost > Decimal(str(self._authorization.cost_ceiling)):
-                raise EvaluationTransportError(
-                    "brokered transport response exceeded authorized cost ceiling"
+            output_token_utilization = (
+                format(
+                    Decimal(output_tokens) / Decimal(maximum_output_tokens),
+                    "f",
                 )
+                if usage_observed
+                else None
+            )
+            reasoning_token_share = (
+                format(Decimal(reasoning_tokens) / Decimal(output_tokens), "f")
+                if usage_observed and output_tokens
+                else None
+            )
             result = EvaluationTransportResponse(
                 output=output_text,
+                reasoning_effort=self._authorization.reasoning_effort,
+                generation_status=response["generation_status"],
+                generation_incomplete_reason=response.get(
+                    "generation_incomplete_reason"
+                ),
+                max_output_tokens_reached=response[
+                    "max_output_tokens_reached"
+                ],
+                output_text_present=response["output_text_present"],
+                output_text_character_count=len(output_text),
+                output_text_digest=digest_text(output_text),
+                usage_observed=usage_observed,
                 input_tokens=input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                uncached_input_tokens=uncached_input_tokens,
                 output_tokens=output_tokens,
-                cost=float(cost),
+                reasoning_tokens=reasoning_tokens,
+                non_reasoning_output_tokens=non_reasoning_output_tokens,
+                total_tokens=total_tokens,
+                caller_calculated_route_priced_cost_usd=(
+                    format(cost, "f") if cost is not None else None
+                ),
+                cost_posture="exact" if cost is not None else "unknown",
+                output_token_utilization=output_token_utilization,
+                reasoning_token_share=reasoning_token_share,
+                provider_elapsed_milliseconds_total=response[
+                    "provider_elapsed_milliseconds_total"
+                ],
                 canonical_provider_used=provider,
                 canonical_model_used=model,
                 provider_request_attempt_count=1,
@@ -177,9 +220,10 @@ class _BrokeredModelOriginationTransport:
                 "brokered model origination transport failed closed: "
                 f"{exc.failure_class}"
             ) from None
-        except broker_client.ProviderExecutionClientError:
+        except broker_client.ProviderExecutionClientError as exc:
             raise EvaluationTransportError(
-                "brokered model origination transport failed closed"
+                "brokered model origination transport failed closed: "
+                f"{exc.failure_class}"
             ) from None
         finally:
             response = None
@@ -228,6 +272,10 @@ def _create_brokered_model_origination_transport(
     if authorization.raw_retention_posture != "sanitized_only":
         raise EvaluationConfigurationError(
             "brokered origination transport requires sanitized_only retention"
+        )
+    if not authorization.reasoning_effort:
+        raise EvaluationConfigurationError(
+            "brokered origination transport requires exact reasoning effort"
         )
     if not broker_client._is_loopback_broker_url(broker_url):
         raise EvaluationConfigurationError(

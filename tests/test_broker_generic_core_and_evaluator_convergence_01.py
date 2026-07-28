@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -110,6 +111,7 @@ def _authorization(**updates: Any) -> LiveAuthorization:
         repository_sha="a" * 40,
         provider="openai",
         model=GPT54_MODEL_ID,
+        reasoning_effort="medium",
         allowed_evaluation_pass="planner_only",
         allowed_model_roles=("search_planner",),
         allowed_scenario_ids=("case_03_pure_depth_two",),
@@ -129,6 +131,34 @@ def _authorization(**updates: Any) -> LiveAuthorization:
         canonical_operator_command_digest="b" * 64,
     )
     return replace(authorization, **updates)
+
+
+def _completed_response(
+    request_payload: Mapping[str, Any],
+    *,
+    output_text: str,
+    input_tokens: int,
+    output_tokens: int,
+    cached_input_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    physical_attempt_count: int = 1,
+    provider_elapsed_milliseconds_total: int = 7,
+) -> dict[str, Any]:
+    return build_success_response(
+        request_payload,
+        physical_attempt_count=physical_attempt_count,
+        provider_elapsed_milliseconds_total=(
+            provider_elapsed_milliseconds_total
+        ),
+        output_text=output_text,
+        generation_status="completed",
+        usage_observed=True,
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_tokens=reasoning_tokens,
+        total_tokens=input_tokens + output_tokens,
+    )
 
 
 def test_one_versioned_operation_tagged_request_response_family() -> None:
@@ -250,8 +280,13 @@ def test_openai_model_generate_normalizes_exact_usage_and_discards_raw() -> None
         assert credential == "opaque"
         return {
             "output_text": '{"status":"ok"}',
+            "generation_status": "completed",
+            "usage_observed": True,
             "input_tokens": 12,
+            "cached_input_tokens": 2,
             "output_tokens": 5,
+            "reasoning_tokens": 3,
+            "total_tokens": 17,
             "raw_ignored_by_adapter": "never returned",
         }
 
@@ -263,7 +298,16 @@ def test_openai_model_generate_normalizes_exact_usage_and_discards_raw() -> None
     )
     assert response["provider"] == "openai"
     assert response["model"] == GPT54_MODEL_ID
-    assert response["usage"] == {"input_tokens": 12, "output_tokens": 5}
+    assert response["usage"] == {
+        "usage_observed": True,
+        "input_tokens": 12,
+        "cached_input_tokens": 2,
+        "uncached_input_tokens": 10,
+        "output_tokens": 5,
+        "reasoning_tokens": 3,
+        "non_reasoning_output_tokens": 2,
+        "total_tokens": 17,
+    }
     assert response["physical_attempt_count"] == 1
     assert response["output_text"] == '{"status":"ok"}'
     assert observed["timeout_seconds"] == 120.0
@@ -336,7 +380,7 @@ def test_broker_session_mechanical_request_fuse_is_policy_free() -> None:
 
 def test_model_proof_retains_digest_length_usage_cost_but_not_output() -> None:
     request_payload = _model_request()
-    response = build_success_response(
+    response = _completed_response(
         request_payload,
         physical_attempt_count=1,
         output_text='{"status":"BROKER_MODEL_OK"}',
@@ -347,7 +391,8 @@ def test_model_proof_retains_digest_length_usage_cost_but_not_output() -> None:
         response,
         request_payload=request_payload,
         maximum_input_tokens=1_000,
-        input_price_usd_per_million="2.50",
+        ordinary_input_price_usd_per_million="2.50",
+        cached_input_price_usd_per_million="0.25",
         output_price_usd_per_million="15.00",
         cost_ceiling_usd="0.01",
         expected_json_status="BROKER_MODEL_OK",
@@ -363,7 +408,7 @@ def test_model_proof_retains_digest_length_usage_cost_but_not_output() -> None:
 
 def test_model_proof_rejects_non_exact_json_status_without_retaining_output() -> None:
     request_payload = _model_request()
-    response = build_success_response(
+    response = _completed_response(
         request_payload,
         physical_attempt_count=1,
         output_text='{"status":"wrong","extra":true}',
@@ -378,7 +423,8 @@ def test_model_proof_rejects_non_exact_json_status_without_retaining_output() ->
             response,
             request_payload=request_payload,
             maximum_input_tokens=1_000,
-            input_price_usd_per_million="2.50",
+            ordinary_input_price_usd_per_million="2.50",
+            cached_input_price_usd_per_million="0.25",
             output_price_usd_per_million="15.00",
             cost_ceiling_usd="0.01",
             expected_json_status="BROKER_MODEL_OK",
@@ -390,6 +436,7 @@ def test_failure_response_sanitizes_malformed_route_attestation() -> None:
         request_payload={
             "provider": ["invalid"],
             "operation": {"invalid": True},
+            "reasoning_effort": ["private", "reasoning"],
             "correlation_id": "c" * 1_000,
             "resolved_route_config_digest": "not-a-digest",
         },
@@ -400,6 +447,7 @@ def test_failure_response_sanitizes_malformed_route_attestation() -> None:
     assert response["failure_class"] == "invalid_request"
     assert "provider" not in response
     assert "operation" not in response
+    assert "reasoning_effort" not in response
     assert "correlation_id" not in response
     assert "resolved_route_config_digest" not in response
 
@@ -414,7 +462,7 @@ def test_brokered_evaluator_transport_interoperability_and_cost() -> None:
         request_payload: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         observed.update(url=broker_url, token=token, request=dict(request_payload))
-        return build_success_response(
+        return _completed_response(
             request_payload,
             physical_attempt_count=1,
             output_text='{"proposal":"bounded"}',
@@ -440,7 +488,11 @@ def test_brokered_evaluator_transport_interoperability_and_cost() -> None:
     assert response.output == '{"proposal":"bounded"}'
     assert response.input_tokens == 100
     assert response.output_tokens == 20
-    assert response.cost == pytest.approx(0.00055)
+    assert Decimal(
+        response.caller_calculated_route_priced_cost_usd
+    ) == Decimal("0.00055")
+    assert response.reasoning_effort == "medium"
+    assert response.generation_status == "completed"
     assert response.canonical_provider_used == "openai"
     assert response.canonical_model_used == GPT54_MODEL_ID
     assert response.provider_request_attempt_count == 1
@@ -512,7 +564,7 @@ def test_brokered_evaluator_requires_usage_attempt_and_retention_posture() -> No
         _token: str,
         request_payload: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        response = build_success_response(
+        response = _completed_response(
             request_payload,
             physical_attempt_count=1,
             output_text="{}",
@@ -548,7 +600,7 @@ def test_brokered_evaluator_enforces_observed_token_and_cost_caps() -> None:
         _token: str,
         request_payload: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        return build_success_response(
+        return _completed_response(
             request_payload,
             physical_attempt_count=1,
             output_text="{}",
@@ -580,7 +632,7 @@ def test_brokered_evaluator_enforces_observed_token_and_cost_caps() -> None:
         _token: str,
         request_payload: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        return build_success_response(
+        return _completed_response(
             request_payload,
             physical_attempt_count=1,
             output_text="{}",
@@ -608,7 +660,7 @@ def test_brokered_evaluator_enforces_observed_token_and_cost_caps() -> None:
 
 def test_broker_response_validator_rejects_credential_header_and_route_drift() -> None:
     request_payload = _model_request()
-    response = build_success_response(
+    response = _completed_response(
         request_payload,
         physical_attempt_count=1,
         output_text="{}",
@@ -621,7 +673,7 @@ def test_broker_response_validator_rejects_credential_header_and_route_drift() -
             response,
             request_payload=request_payload,
         )
-    response = build_success_response(
+    response = _completed_response(
         request_payload,
         physical_attempt_count=1,
         output_text="{}",

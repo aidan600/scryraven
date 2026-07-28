@@ -58,14 +58,15 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _generic_provider_output(results: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "schema_version": "1",
-        "proof_kind": "scryraven_search_query_proof_v1",
+        "schema_version": "2",
+        "proof_kind": "scryraven_search_query_proof_v2",
         "provider": "serper",
         "operation": "search.query",
         "status": "ok",
         "result_count": len(results),
         "results": results,
         "physical_attempt_count": 1,
+        "provider_elapsed_milliseconds_total": 5,
         "caller_authorized_cost_ceiling_usd": "0.05",
         "raw_provider_payload_retained": False,
         "raw_request_material_retained": False,

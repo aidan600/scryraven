@@ -77,14 +77,15 @@ def _generic_provider_output(results: list[dict[str, Any]]) -> dict[str, Any]:
         for result in results
     ]
     return {
-        "schema_version": "1",
-        "proof_kind": "scryraven_search_query_proof_v1",
+        "schema_version": "2",
+        "proof_kind": "scryraven_search_query_proof_v2",
         "provider": "serper",
         "operation": "search.query",
         "status": "ok",
         "result_count": len(normalized_results),
         "results": normalized_results,
         "physical_attempt_count": 1,
+        "provider_elapsed_milliseconds_total": 5,
         "caller_authorized_cost_ceiling_usd": "0.05",
         "raw_provider_payload_retained": False,
         "raw_request_material_retained": False,
@@ -778,6 +779,7 @@ def test_retained_artifact_preflight_summary_omits_full_artifact_contents(
         "physical_attempt_count",
         "proof_kind",
         "provider",
+        "provider_elapsed_milliseconds_total",
         "raw_provider_payload_retained",
         "raw_request_material_retained",
         "raw_response_material_retained",

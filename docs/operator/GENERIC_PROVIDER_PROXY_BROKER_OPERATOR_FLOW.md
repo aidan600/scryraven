@@ -26,8 +26,8 @@ scripts/request_provider_proxy_broker.py
 ```
 
 The versioned request and response families are
-`scryraven_provider_execution_request_v1` and
-`scryraven_provider_execution_response_v1`. Every request supplies an exact
+`scryraven_provider_execution_request_v2` and
+`scryraven_provider_execution_response_v2`. Every request supplies an exact
 provider and exact operation; `model.generate` also supplies the exact model.
 No alias-only route is accepted.
 
@@ -37,7 +37,7 @@ The first-phase matrix is:
 | --- | --- | --- |
 | Serper | `search.query` | sanitized ranked search results |
 | Tavily | `search.query` | sanitized ranked results and bounded provider-extracted text |
-| OpenAI | `model.generate` | bounded output text plus exact input/output usage |
+| OpenAI | `model.generate` | bounded output text plus completion, cache, reasoning, usage, and elapsed telemetry |
 
 OpenRouter, LM Studio, Exa, LinkUp, Tavily extract/map/crawl, embeddings, and
 alias-only routing remain pending.
@@ -97,7 +97,8 @@ py scripts\run_provider_proxy_broker_once.py `
   --max-output-tokens <CALLER-CAP> `
   --timeout-seconds <LICENSED-TIMEOUT> `
   --retry-cap 0 `
-  --input-price-usd-per-million <CALLER-POLICY> `
+  --ordinary-input-price-usd-per-million <CALLER-POLICY> `
+  --cached-input-price-usd-per-million <CALLER-POLICY> `
   --output-price-usd-per-million <CALLER-POLICY> `
   --cost-ceiling-usd <CALLER-CEILING> `
   --expected-json-status <OPTIONAL-EXACT-STATUS-PROJECTION> `
@@ -108,10 +109,28 @@ py scripts\run_provider_proxy_broker_once.py `
 
 The transient broker HTTP response may contain bounded `output_text`. The broker
 and generic client do not log, print, cache, or persist it. The durable model
-proof retains only output digest and character count, exact usage, exact
-provider/model attestation, physical attempt count, caller-calculated
-conservative cost, caller ceiling, an optional caller-requested parsed status
-projection, and false-retention flags.
+proof retains only output digest and character count, exact completion and
+usage telemetry, exact provider/model/reasoning-effort attestation, elapsed
+milliseconds, physical attempt count, caller-calculated route-priced cost,
+caller ceiling, an optional caller-requested parsed status projection, and
+false-retention flags.
+
+For `openai / gpt-5.4-2026-03-05`, caller pricing is USD 2.50 per million
+uncached input tokens, USD 0.25 per million cached input tokens, and USD 15.00
+per million output tokens. Exact cost is:
+
+```text
+(
+  uncached_input_tokens * ordinary_input_price_usd_per_million
+  + cached_input_tokens * cached_input_price_usd_per_million
+  + output_tokens * output_price_usd_per_million
+) / 1_000_000
+```
+
+If exact usage or either required usage-detail object is absent, the proof
+records `usage_observed=false`, `cost_posture=unknown`, and that the request may
+still be billable. No token count is invented and no later live call is
+permitted.
 
 The broker returns usage and attestation only. Pricing and dollar ceilings
 remain caller/evaluator owned.
@@ -124,9 +143,10 @@ New AnalystOS addenda select:
 scripts.evaluation.brokered_model_origination_transport:create_brokered_model_origination_transport
 ```
 
-The transport consumes exact `LiveAuthorization`, communicates only with the
-loopback broker, requires exact usage and one-attempt attestation, calculates
-cost through caller-owned policy, returns `EvaluationTransportResponse`, and
+The transport consumes exact `LiveAuthorization`, including reasoning effort,
+communicates only with the loopback broker, requires one-attempt attestation,
+calculates cost through caller-owned policy when exact usage is observed,
+returns `EvaluationTransportResponse`, and
 discards the broker envelope after transiently transferring model output to the
 evaluator. The direct OpenAI transport is deprecated, unlicensed by default,
 and has no active preparation/operator callsite.

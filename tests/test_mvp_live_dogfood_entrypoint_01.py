@@ -311,8 +311,8 @@ def _recording_proxy_runner(
 
 def _official_proxy_runner(request: ProviderProxyRunRequest) -> ProviderProxyRunResult:
     payload = {
-        "schema_version": "1",
-        "proof_kind": "scryraven_search_query_proof_v1",
+        "schema_version": "2",
+        "proof_kind": "scryraven_search_query_proof_v2",
         "provider": "serper",
         "operation": "search.query",
         "status": "ok",
@@ -337,6 +337,7 @@ def _official_proxy_runner(request: ProviderProxyRunRequest) -> ProviderProxyRun
             }
         ],
         "physical_attempt_count": 1,
+        "provider_elapsed_milliseconds_total": 5,
         "caller_authorized_cost_ceiling_usd": "0.05",
         "raw_provider_payload_retained": False,
         "raw_request_material_retained": False,

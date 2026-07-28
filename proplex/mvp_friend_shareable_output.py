@@ -483,14 +483,15 @@ def _write_demo_retained_artifacts(
     _write_json(
         search_dir / SANITIZED_PROVIDER_RESULTS_NAME,
         {
-            "schema_version": "1",
-            "proof_kind": "scryraven_search_query_proof_v1",
+            "schema_version": "2",
+            "proof_kind": "scryraven_search_query_proof_v2",
             "provider": "serper",
             "operation": "search.query",
             "status": "ok",
             "result_count": 1,
             "results": [provider_result],
             "physical_attempt_count": 1,
+            "provider_elapsed_milliseconds_total": 0,
             "caller_authorized_cost_ceiling_usd": "0.00",
             "raw_provider_payload_retained": False,
             "raw_request_material_retained": False,
