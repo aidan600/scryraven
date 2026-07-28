@@ -80,7 +80,10 @@ REQUIRED_SOURCE_CLASS = (
     "the U.S. State Department or official passport agency"
 )
 DEFAULT_PROVIDER = "serper"
-DEFAULT_OPERATION = "search"
+DEFAULT_OPERATION = "search.query"
+EXPECTED_SEARCH_SCHEMA_VERSION = "1"
+EXPECTED_SEARCH_PROOF_KIND = "scryraven_search_query_proof_v1"
+EXPECTED_SEARCH_COST_CEILING_USD = "0.05"
 MAX_SEARCH_TASKS = 1
 MAX_PROVIDER_CALLS = 1
 MAX_RESULTS = 5
@@ -185,18 +188,26 @@ ALLOWED_PROVIDER_RESULT_KEYS = frozenset(
         "result_rank",
         "call_index",
         "provider_call_index",
+        "provider",
+        "operation",
         "raw_provider_payload_retained",
         "raw_search_response_retained",
     }
 )
 ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
     {
-        "request_kind",
+        "schema_version",
+        "proof_kind",
         "provider",
         "operation",
+        "status",
         "result_count",
         "results",
+        "physical_attempt_count",
+        "caller_authorized_cost_ceiling_usd",
         "raw_provider_payload_retained",
+        "raw_request_material_retained",
+        "raw_response_material_retained",
         "raw_search_response_retained",
     }
 )
@@ -672,21 +683,12 @@ def _decode_sanitized_provider_results(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     envelope: dict[str, Any]
     raw_results: Any
-    if isinstance(decoded, list):
-        envelope = {
-            "provider": DEFAULT_PROVIDER,
-            "operation": DEFAULT_OPERATION,
-            "result_count": len(decoded),
-            "raw_provider_payload_retained": False,
-            "raw_search_response_retained": False,
-        }
-        raw_results = decoded
-    elif isinstance(decoded, Mapping):
+    if isinstance(decoded, Mapping):
         envelope = _validate_provider_results_envelope(decoded)
         raw_results = decoded.get("results")
     else:
         raise LimitedLiveSearchCandidateError(
-            "sanitized provider results must be a list or generic sanitized object"
+            "sanitized provider results must use the versioned search proof object"
         )
 
     if not isinstance(raw_results, list):
@@ -722,6 +724,13 @@ def normalize_provider_result(
             "provider result contains unsupported fields: " + ", ".join(unknown)
         )
     _validate_false_retention(raw, context="provider result")
+    if (
+        raw.get("provider") != DEFAULT_PROVIDER
+        or raw.get("operation") != DEFAULT_OPERATION
+    ):
+        raise LimitedLiveSearchCandidateError(
+            "provider result route attestation mismatch"
+        )
     title = _required_token(raw.get("title"), "provider result requires title", 220)
     url = _required_url(raw.get("url") or raw.get("link"))
     domain = _clean_domain(raw.get("domain")) or _domain_from_url(url)
@@ -1228,13 +1237,24 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
             + ", ".join(unknown)
         )
     _validate_false_retention(raw, context="provider results envelope")
+    if (
+        raw.get("schema_version") != EXPECTED_SEARCH_SCHEMA_VERSION
+        or raw.get("proof_kind") != EXPECTED_SEARCH_PROOF_KIND
+        or raw.get("status") != "ok"
+        or raw.get("physical_attempt_count") != 1
+        or raw.get("caller_authorized_cost_ceiling_usd")
+        != EXPECTED_SEARCH_COST_CEILING_USD
+    ):
+        raise LimitedLiveSearchCandidateError(
+            "provider results envelope proof attestation mismatch"
+        )
     provider = _required_token(
-        raw.get("provider") or DEFAULT_PROVIDER,
+        raw.get("provider"),
         "provider results envelope requires provider",
         80,
     )
     operation = _required_token(
-        raw.get("operation") or DEFAULT_OPERATION,
+        raw.get("operation"),
         "provider results envelope requires operation",
         80,
     )
@@ -1244,11 +1264,17 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
         raise LimitedLiveSearchCandidateError("provider results operation mismatch")
     result_count = _bounded_int(raw.get("result_count"), default=0)
     return {
-        "request_kind": raw.get("request_kind"),
+        "schema_version": EXPECTED_SEARCH_SCHEMA_VERSION,
+        "proof_kind": EXPECTED_SEARCH_PROOF_KIND,
         "provider": provider,
         "operation": operation,
+        "status": "ok",
         "result_count": result_count,
+        "physical_attempt_count": 1,
+        "caller_authorized_cost_ceiling_usd": EXPECTED_SEARCH_COST_CEILING_USD,
         "raw_provider_payload_retained": False,
+        "raw_request_material_retained": False,
+        "raw_response_material_retained": False,
         "raw_search_response_retained": False,
     }
 
@@ -1295,13 +1321,15 @@ def _operator_command() -> str:
         [
             "py scripts\\run_provider_proxy_broker_once.py `",
             "  --provider serper `",
-            "  --operation search `",
+            "  --operation search.query `",
             f'  --query "{DEFAULT_QUERY}" `',
             "  --max-results 5 `",
+            "  --timeout-seconds 30 `",
+            "  --retry-cap 0 `",
+            "  --cost-ceiling-usd 0.05 `",
             "  --output output\\ag_limited_live_search_candidate_01\\sanitized_provider_results.json `",
             "  --broker-url http://127.0.0.1:8765/run `",
-            "  --private-broker-path C:\\Users\\aidan\\ScryRavenLiveBroker\\scryraven_live_broker.py `",
-            "  --env-file C:\\Users\\aidan\\ScryRavenLiveBroker\\.env `",
+            "  --env-file <PRIVATE-ENV-FILE> `",
             "  --confirm-provider-call",
         ]
     )
@@ -1432,7 +1460,12 @@ def _ordinary_query_digest(query: str) -> str:
 
 
 def _validate_false_retention(value: Mapping[str, Any], *, context: str) -> None:
-    for key in ("raw_provider_payload_retained", "raw_search_response_retained"):
+    for key in (
+        "raw_provider_payload_retained",
+        "raw_request_material_retained",
+        "raw_response_material_retained",
+        "raw_search_response_retained",
+    ):
         if key in value and value.get(key) is not False:
             raise LimitedLiveSearchCandidateError(f"{context} must keep {key} false")
 
@@ -1448,6 +1481,8 @@ def _reject_forbidden_material(value: Any, *, context: str) -> None:
     )
     for allowed_false_flag in (
         "raw_provider_payload_retained",
+        "raw_request_material_retained",
+        "raw_response_material_retained",
         "raw_search_response_retained",
     ):
         if allowed_false_flag in forbidden:

@@ -68,13 +68,27 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _generic_provider_output(results: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized_results = [
+        {
+            **result,
+            "provider": "serper",
+            "operation": "search.query",
+        }
+        for result in results
+    ]
     return {
-        "request_kind": "generic_provider_proxy_request",
+        "schema_version": "1",
+        "proof_kind": "scryraven_search_query_proof_v1",
         "provider": "serper",
-        "operation": "search",
-        "result_count": len(results),
-        "results": results,
+        "operation": "search.query",
+        "status": "ok",
+        "result_count": len(normalized_results),
+        "results": normalized_results,
+        "physical_attempt_count": 1,
+        "caller_authorized_cost_ceiling_usd": "0.05",
         "raw_provider_payload_retained": False,
+        "raw_request_material_retained": False,
+        "raw_response_material_retained": False,
         "raw_search_response_retained": False,
     }
 
@@ -357,6 +371,29 @@ def test_reducer_rejects_raw_retention_flags_true() -> None:
             provider_results_path=provider_results,
             output_dir=_output_dir("raw-retention-result"),
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_version", "old"),
+        ("proof_kind", "legacy"),
+        ("status", "failed"),
+        ("physical_attempt_count", 0),
+        ("caller_authorized_cost_ceiling_usd", "0.06"),
+    ],
+)
+def test_reducer_rejects_nonexact_search_proof_attestation(
+    field: str,
+    value: object,
+) -> None:
+    payload = _generic_provider_output([_official_result()])
+    payload[field] = value
+    with pytest.raises(
+        harness.LimitedLiveSearchCandidateError,
+        match="proof attestation",
+    ):
+        harness._decode_sanitized_provider_results(payload)
 
 
 def test_downstream_surfaces_remain_explicitly_closed_false() -> None:
@@ -736,13 +773,19 @@ def test_retained_artifact_preflight_summary_omits_full_artifact_contents(
     assert result["artifact_metadata"]["sanitized_provider_results.json"][
         "top_level_keys"
     ] == [
+        "caller_authorized_cost_ceiling_usd",
         "operation",
+        "physical_attempt_count",
+        "proof_kind",
         "provider",
         "raw_provider_payload_retained",
+        "raw_request_material_retained",
+        "raw_response_material_retained",
         "raw_search_response_retained",
-        "request_kind",
         "result_count",
         "results",
+        "schema_version",
+        "status",
     ]
 
 

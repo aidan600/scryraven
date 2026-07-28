@@ -211,6 +211,7 @@ def _authorization(
         ),
         maximum_scryraven_runs=manifest.maximum_scryraven_runs,
         retry_cap=retry_cap,
+        timeout_seconds=600.0,
         maximum_input_tokens=4_000,
         maximum_output_tokens=2_000,
         cost_ceiling=1.0,

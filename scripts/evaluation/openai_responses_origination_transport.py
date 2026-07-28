@@ -1,19 +1,25 @@
-"""Evaluation-only direct OpenAI Responses transport for AnalystOS origination.
+"""Deprecated direct OpenAI Responses fallback for AnalystOS origination.
 
-This adapter is deliberately narrower than the product-owned model routes.  It
-supports one provider, one model snapshot, one reasoning posture, and one
-physical Responses API attempt per invocation.  Authentication is delegated to
-the OpenAI SDK's process authentication; this module never reads a credential.
+No active preparation or operator path selects this adapter.  It remains
+unlicensed by default as a last-resort private-shell compatibility fallback.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from core.cost_accounting import extract_usage_tokens
+from scripts.evaluation.model_cost_policy import (
+    GPT54_MODEL_ID,
+    MODEL_COST_POLICIES,
+    SUPPORTED_PROVIDER,
+    ModelCostPolicy,
+)
+from scripts.evaluation.model_cost_policy import (
+    conservative_cost_decimal as _conservative_cost_decimal,
+)
 from scripts.evaluation.run_analystos_model_origination_evaluation import (
     EvaluationConfigurationError,
     EvaluationTransportError,
@@ -25,12 +31,8 @@ TRANSPORT_FACTORY_SPEC = (
     "scripts.evaluation.openai_responses_origination_transport:"
     "create_openai_responses_transport"
 )
-SUPPORTED_PROVIDER = "openai"
-GPT54_MODEL_ID = "gpt-5.4-2026-03-05"
 REQUEST_TIMEOUT_SECONDS = 600.0
 SDK_MAX_RETRIES = 0
-
-TOKENS_PER_MILLION = Decimal("1000000")
 
 TIMEOUT_ERROR_MESSAGE = (
     "OpenAI Responses request timed out; billing is unknown and explicit "
@@ -43,28 +45,10 @@ OUTPUT_ERROR_MESSAGE = "OpenAI Responses request returned no output text."
 OpenAIConstructor = Callable[..., Any]
 
 
-@dataclass(frozen=True, slots=True)
-class OpenAIResponsesModelPolicy:
-    """Exact route and accounting policy for one authorized OpenAI model."""
-
-    provider: str
-    model: str
-    reasoning_effort: str
-    input_price_usd_per_million: Decimal
-    output_price_usd_per_million: Decimal
-
-
-OPENAI_MODEL_POLICIES: Mapping[str, OpenAIResponsesModelPolicy] = MappingProxyType(
-    {
-        GPT54_MODEL_ID: OpenAIResponsesModelPolicy(
-            provider=SUPPORTED_PROVIDER,
-            model=GPT54_MODEL_ID,
-            reasoning_effort="medium",
-            input_price_usd_per_million=Decimal("2.50"),
-            output_price_usd_per_million=Decimal("15.00"),
-        )
-    }
-)
+OpenAIResponsesModelPolicy = ModelCostPolicy
+OPENAI_MODEL_POLICIES: Mapping[str, OpenAIResponsesModelPolicy] = {
+    GPT54_MODEL_ID: MODEL_COST_POLICIES[(SUPPORTED_PROVIDER, GPT54_MODEL_ID)]
+}
 
 
 def resolve_openai_model_policy(
@@ -101,13 +85,10 @@ def conservative_cost_decimal(
 ) -> Decimal:
     """Return conservative uncached cost at the resolved policy prices."""
 
-    return (
-        Decimal(input_tokens)
-        * policy.input_price_usd_per_million
-        / TOKENS_PER_MILLION
-        + Decimal(output_tokens)
-        * policy.output_price_usd_per_million
-        / TOKENS_PER_MILLION
+    return _conservative_cost_decimal(
+        input_tokens,
+        output_tokens,
+        policy=policy,
     )
 
 
@@ -249,6 +230,10 @@ def _create_openai_responses_transport(
     if authorization.retry_cap != SDK_MAX_RETRIES:
         raise EvaluationConfigurationError(
             "direct origination transport requires retry cap 0"
+        )
+    if authorization.timeout_seconds != REQUEST_TIMEOUT_SECONDS:
+        raise EvaluationConfigurationError(
+            "direct origination transport requires its fixed timeout"
         )
     if (
         authorization.maximum_input_tokens <= 0

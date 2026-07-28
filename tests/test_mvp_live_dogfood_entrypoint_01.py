@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 
 from core.product_model_route_config import MVP_LIVE_DOGFOOD_RUN_FLAG
+from proplex import mvp_live_dogfood_run as mvp
 from proplex.live_acquisition_readability_status import (
     FETCH_READ_ARTIFACT_DIR,
     FETCH_READ_CONTENT_PACKET_NAME,
@@ -122,7 +123,7 @@ def test_fake_broker_and_fetch_feed_existing_status_consumer(tmp_path: Path) -> 
     )
 
     assert result.return_code == 2
-    assert result.decision == BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING
+    assert result.decision == BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING, result.output
     assert result.packet["status_decision"] == "BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED"
     assert result.packet["mvp_live_status_consumed_retained_artifacts"] is True
     assert result.packet["ordinary_product_path_consumed"] is True
@@ -235,6 +236,33 @@ def test_false_raw_retention_posture_is_allowed_but_true_is_rejected(
     assert excinfo.value.blocker == BLOCKED_MVP_LIVE_OUTPUT_HYGIENE
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_version", "old"),
+        ("proof_kind", "legacy"),
+        ("status", "failed"),
+        ("physical_attempt_count", 0),
+        ("caller_authorized_cost_ceiling_usd", "0.06"),
+    ],
+)
+def test_provider_payload_rejects_nonexact_generic_broker_attestation(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    request = ProviderProxyRunRequest(
+        repo_root=tmp_path,
+        output_path=tmp_path / "output" / "proof.json",
+        query=DEFAULT_MVP_QUERY,
+    )
+    _official_proxy_runner(request)
+    payload = json.loads(request.output_path.read_text(encoding="utf-8"))
+    payload[field] = value
+    with pytest.raises(MvpLiveDogfoodRunError, match="proof attestation"):
+        mvp._validate_provider_payload(payload)
+
+
 def test_live_flag_uses_default_query_and_skips_model_key_validation(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -283,9 +311,11 @@ def _recording_proxy_runner(
 
 def _official_proxy_runner(request: ProviderProxyRunRequest) -> ProviderProxyRunResult:
     payload = {
-        "request_kind": "provider_proxy_search",
+        "schema_version": "1",
+        "proof_kind": "scryraven_search_query_proof_v1",
         "provider": "serper",
-        "operation": "search",
+        "operation": "search.query",
+        "status": "ok",
         "result_count": 1,
         "results": [
             {
@@ -302,11 +332,15 @@ def _official_proxy_runner(request: ProviderProxyRunRequest) -> ProviderProxyRun
                 "published_or_observed_date": "2026-07-03",
                 "result_rank": 1,
                 "provider_call_index": 1,
-                "raw_provider_payload_retained": False,
-                "raw_search_response_retained": False,
+                "provider": "serper",
+                "operation": "search.query",
             }
         ],
+        "physical_attempt_count": 1,
+        "caller_authorized_cost_ceiling_usd": "0.05",
         "raw_provider_payload_retained": False,
+        "raw_request_material_retained": False,
+        "raw_response_material_retained": False,
         "raw_search_response_retained": False,
     }
     request.output_path.parent.mkdir(parents=True, exist_ok=True)

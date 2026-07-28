@@ -517,17 +517,20 @@ PR A useful and intact.
 ### Immediate Acceptance Slice
 
 ```text
-ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01
+BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
 -> separately licensed bounded live-model origination evaluation
 ```
 
-Preparation is offline and no-live. The later bounded live evaluation requires
-its own exact addendum and measures SearchPlanner origination and Analyst
-origination separately before combined runs. This acceptance slice preserves
-the installed `Fast 0 / Balanced 1 / Deep 2` searched-generation limits and
-does not reopen sibling, branching, parallel-child, or multi-premise recovery.
-It is an acceptance checkpoint, not a new durable architecture layer, and the
-evaluation harness is not installed model capability.
+The broker convergence slice installs the tracked explicit-route generic broker,
+migrates Serper/Tavily search, adds OpenAI model generation, retires the
+job/profile bouncer, and moves new AnalystOS addenda to the provider-neutral
+brokered transport. Its licensed live proof is only one OpenAI smoke and one
+Serper smoke; it does not run AnalystOS Stage A/B/C. The later bounded live
+evaluation still requires its own exact addendum and measures SearchPlanner
+origination and Analyst origination separately before combined runs. This
+acceptance slice preserves the installed `Fast 0 / Balanced 1 / Deep 2`
+searched-generation limits and does not reopen sibling, branching,
+parallel-child, or multi-premise recovery.
 
 ### Durable Sequence After Acceptance
 
@@ -535,7 +538,8 @@ evaluation harness is not installed model capability.
 Internal PR A (complete)
 -> Internal PR B (complete)
 -> SEARCHOS-OFFLINE-INTEGRATION-GATE-01 (complete)
--> ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01
+-> ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01 (complete)
+-> BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
 -> separately licensed bounded live-model origination evaluation
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01

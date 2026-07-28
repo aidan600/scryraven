@@ -123,7 +123,8 @@ bounded ordinary product run:
 | Surface | Classification | Readiness finding |
 | --- | --- | --- |
 | `python -m proplex` | ordinary product path candidate | Real product path, but not capped or packetized for AG-LIVE-BOUND-01. |
-| `scripts/request_live_validation_broker.py` | broker client | Sanitized local broker client only; no product command is visible here. |
+| `scripts/request_live_validation_broker.py` | retired tombstone | Fails closed; cannot POST, dispatch, execute a child, or interpret a job/profile. |
+| `scripts/request_provider_proxy_broker.py` | generic broker client | Explicit provider/operation/model only; no product command or semantic policy is visible here. |
 | `scripts/ag96i3e_brokered_provider_neutral_discovery_validation.py` | provider discovery component | Can spend one provider/search call, but has no fetch/read, Author, FAP, or final citation path. |
 | `scripts/ag96i3b_live_followup_validation.py` | follow-up provider-job harness | Uses a fixture spine and `max_fetch_read_attempts: 0`; not ordinary product path. |
 | `scripts/ag96i3af6a_brokered_author_lane_smoke.py` | Author component harness | Tests Author/model custody only; no search/fetch/product recovery path. |
@@ -138,7 +139,7 @@ This is not the immediate post-#330 bridge. The immediate bridge is
 `current_answer_contract` and `SearchExecutorHandoff` and emits sanitized
 `SearchResultCandidate` records only. LIVE-RUN-01 prepares the request packet
 and broker envelope only; actual provider contact remains separately licensed
-and trusted-local or broker-private. Product-run bridge work resumes later,
+and trusted-local through the tracked loopback broker. Product-run bridge work resumes later,
 after candidate packets, fetch/read content references, EvidenceLedger custody,
 evidence-relative analysis, Scrutineer/Specialist review as needed,
 Sufficiency, and FAP prerequisites exist.
@@ -173,23 +174,27 @@ would require provider routing/depth/query/citation/Author changes.
 
 ## Broker Boundary
 
-The durable repo-visible broker path is a generic provider-proxy request and
-sanitized response boundary. It is no longer a phase/job-specific allowlist or
-validation-profile governor. Private broker implementation remains outside the
-repo.
+The durable repo-visible broker path is the tracked generic provider-execution
+request/response boundary. It is not a phase/job-specific allowlist or
+validation-profile governor.
 
-- The tracked provider-proxy client does not accept arbitrary commands and does
-  not load `.env`.
-- A private broker may hold provider credentials privately, enforce loopback,
-  token, supported provider, supported operation, bounded `max_results`, and a
-  local run fuse, then return sanitized provider results only.
+- The tracked client does not accept arbitrary commands, tokens in argv, or
+  environment-file paths and does not load `.env`.
+- `scripts/provider_execution_broker.py` alone parses the private environment
+  file, holds provider credentials transiently, and enforces loopback, session
+  token, explicit route, bounded operation payload, timeout/retry posture, and a
+  mechanical request fuse.
+- `scripts/run_provider_proxy_broker_once.py` starts and stops the tracked
+  broker, passes the environment-file path only to the broker child, and passes
+  the session token to broker/client children only through separate child
+  environments.
 - The broker must not own provider policy, provider routing/depth/order, query
   generation, retrieval ranking/filtering, citation policy, semantic
   sufficiency, Author behavior, or product answer policy.
 - Codex/tool-side live invocation should use the broker path, not direct `.env`
   or provider credential access.
-- Direct human/private-shell runs remain trusted-local-operator only and must
-  target the same profile/cap/packet schema.
+- Direct provider fallback is not part of this doctrine. Trusted-local runs use
+  the same generic envelope and caller-owned caps.
 
 ## Query Candidates
 
@@ -341,7 +346,7 @@ Stop before or during AG-LIVE-BOUND-01 if any of these are true:
 - no cap-enforced ordinary product entrypoint exists;
 - the bridge would invoke a component harness while claiming product proof;
 - a live call would be needed to finish planning;
-- broker/private adapter access is needed for Codex planning;
+- private adapter or direct-provider access is needed for Codex planning;
 - `.env`, credentials, private logs, DB/cache rows, raw prompts, raw provider
   payloads, raw model responses, or full traces would need inspection;
 - provider routing, provider depth, provider selection, query generation,
@@ -357,7 +362,7 @@ Stop before or during AG-LIVE-BOUND-01 if any of these are true:
 | Bucket | Meaning | Next likely surface |
 | --- | --- | --- |
 | No safe live entrypoint | No cap-enforced ordinary product command exists. | AG-LIVE-BRIDGE-01 runner/broker job. |
-| Broker/adapter unsuitable | Broker can only run component/discovery jobs or would expose private state. | Private broker allowlist plus sanitized product job. |
+| Broker/adapter unsuitable | The generic broker lacks the exact explicit provider operation or would expose private state. | A separately scoped generic broker capability phase; never a job/profile allowlist. |
 | Provider/search failure | Search provider errors, auth/config missing, timeout, or no canonical result. | Provider configuration or query fit; no retry in live phase. |
 | Fetch/read failure | Canonical URL found but page text cannot be read under cap. | Fetch/read adapter/cap wrapper. |
 | Evidence custody failure | Recovered source is not admitted as bounded evidence. | EvidenceLedger/provider-job bridge. |

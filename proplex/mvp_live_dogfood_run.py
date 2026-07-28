@@ -94,8 +94,8 @@ BLOCKED_MVP_LIVE_DOGFOOD_QUERY_NOT_SUPPORTED = (
     "BLOCKED_MVP_LIVE_DOGFOOD_QUERY_NOT_SUPPORTED"
 )
 BLOCKED_MVP_LIVE_TEST_OR_CI_GUARD = "BLOCKED_MVP_LIVE_TEST_OR_CI_GUARD"
-BLOCKED_MVP_LIVE_PRIVATE_BROKER_UNAVAILABLE = (
-    "BLOCKED_MVP_LIVE_PRIVATE_BROKER_UNAVAILABLE"
+BLOCKED_MVP_LIVE_GENERIC_BROKER_UNAVAILABLE = (
+    "BLOCKED_MVP_LIVE_GENERIC_BROKER_UNAVAILABLE"
 )
 BLOCKED_MVP_LIVE_PROVIDER_PROXY_HELPER_MISSING = (
     "BLOCKED_MVP_LIVE_PROVIDER_PROXY_HELPER_MISSING"
@@ -128,12 +128,11 @@ BLOCKED_MVP_LIVE_OUTPUT_HYGIENE = "BLOCKED_MVP_LIVE_OUTPUT_HYGIENE"
 BLOCKED_MVP_LIVE_CAP_EXHAUSTED = "BLOCKED_MVP_LIVE_CAP_EXHAUSTED"
 
 DEFAULT_PROVIDER = "serper"
-DEFAULT_OPERATION = "search"
+DEFAULT_OPERATION = "search.query"
+EXPECTED_SEARCH_SCHEMA_VERSION = "1"
+EXPECTED_SEARCH_PROOF_KIND = "scryraven_search_query_proof_v1"
+EXPECTED_SEARCH_COST_CEILING_USD = "0.05"
 DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
-DEFAULT_PRIVATE_BROKER_PATH = (
-    Path.home() / "ScryRavenLiveBroker" / "scryraven_live_broker.py"
-)
-DEFAULT_PRIVATE_BROKER_ENV_FILE = Path.home() / "ScryRavenLiveBroker" / ".env"
 SANITIZED_PROVIDER_PROXY_RESPONSE_NAME = "sanitized-provider-proxy-response.json"
 LIVE_DOGFOOD_PACKET_NAME = "live_dogfood_packet.json"
 
@@ -181,12 +180,18 @@ EXPLICIT_NON_PROOFS = (
 )
 _ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
     {
-        "request_kind",
+        "schema_version",
+        "proof_kind",
         "provider",
         "operation",
+        "status",
         "result_count",
         "results",
+        "physical_attempt_count",
+        "caller_authorized_cost_ceiling_usd",
         "raw_provider_payload_retained",
+        "raw_request_material_retained",
+        "raw_response_material_retained",
         "raw_search_response_retained",
     }
 )
@@ -203,6 +208,8 @@ _ALLOWED_PROVIDER_RESULT_KEYS = frozenset(
         "result_rank",
         "call_index",
         "provider_call_index",
+        "provider",
+        "operation",
         "raw_provider_payload_retained",
         "raw_search_response_retained",
     }
@@ -267,6 +274,8 @@ _ALLOWED_RAW_FALSE_KEYS = frozenset(
         "raw_prompt_retention",
         "raw_prompt_retained",
         "raw_provider_payload_retained",
+        "raw_request_material_retained",
+        "raw_response_material_retained",
         "raw_search_response_retained",
         "raw_source_text_retained",
     }
@@ -312,8 +321,7 @@ class ProviderProxyRunRequest:
     operation: str = DEFAULT_OPERATION
     max_results: int = MAX_PROVIDER_RESULTS
     broker_url: str = DEFAULT_BROKER_URL
-    private_broker_path: Path = DEFAULT_PRIVATE_BROKER_PATH
-    env_file_paths: tuple[Path, ...] = (DEFAULT_PRIVATE_BROKER_ENV_FILE,)
+    env_file_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,7 +361,6 @@ def build_mvp_live_dogfood_run_output(
     confirm_live_dogfood: bool = False,
     confirm_live_dprime_review: bool = False,
     broker_url: str = DEFAULT_BROKER_URL,
-    private_broker_path: str | Path = DEFAULT_PRIVATE_BROKER_PATH,
     env_file_paths: Sequence[str | Path] | None = None,
     provider_proxy_runner: ProviderProxyRunner | None = None,
     fetch_read_runner: FetchReadRunner | None = None,
@@ -410,7 +417,6 @@ def build_mvp_live_dogfood_run_output(
                 output_path=provider_output_path,
                 query=normalized_query,
                 broker_url=broker_url,
-                private_broker_path=Path(private_broker_path),
                 env_file_paths=_env_file_paths(env_file_paths),
             )
         )
@@ -418,8 +424,8 @@ def build_mvp_live_dogfood_run_output(
         counts["provider_calls_completed"] = proxy_result.provider_calls_completed
         if proxy_result.return_code != 0:
             raise MvpLiveDogfoodRunError(
-                BLOCKED_MVP_LIVE_PRIVATE_BROKER_UNAVAILABLE,
-                "private broker/operator provider call did not complete.",
+                BLOCKED_MVP_LIVE_GENERIC_BROKER_UNAVAILABLE,
+                "tracked broker/operator provider call did not complete.",
             )
 
         provider_payload = _load_sanitized_provider_output(proxy_result.output_path)
@@ -473,7 +479,8 @@ def build_mvp_live_dogfood_run_output(
                 run_id=run_id,
                 command_harness_used=_command_harness(confirm_live_dprime_review),
                 provider_broker_posture=(
-                    "private_broker_sanitized_provider_proxy_to_retained_artifacts_"
+                    "generic_broker_sanitized_provider_execution_to_"
+                    "retained_artifacts_"
                     "with_explicit_dprime_review"
                 ),
             )
@@ -492,10 +499,13 @@ def build_mvp_live_dogfood_run_output(
             retained_root=retained_root,
             counts=counts,
             provider_broker_posture=(
-                "private_broker_sanitized_provider_proxy_to_retained_artifacts"
+                "generic_broker_sanitized_provider_execution_to_retained_artifacts"
                 "_with_explicit_dprime_review"
                 if confirm_live_dprime_review
-                else "private_broker_sanitized_provider_proxy_to_retained_artifacts"
+                else (
+                    "generic_broker_sanitized_provider_execution_to_"
+                    "retained_artifacts"
+                )
             ),
             consumed_status=True,
             model_review_licensed=confirm_live_dprime_review,
@@ -553,12 +563,16 @@ def run_provider_proxy_helper_once(
         request.query,
         "--max-results",
         str(request.max_results),
+        "--timeout-seconds",
+        "30",
+        "--retry-cap",
+        "0",
+        "--cost-ceiling-usd",
+        "0.05",
         "--output",
         str(request.output_path),
         "--broker-url",
         request.broker_url,
-        "--private-broker-path",
-        str(request.private_broker_path),
         "--confirm-provider-call",
     ]
     for env_file in request.env_file_paths:
@@ -1166,7 +1180,7 @@ def _blocked_packet(
         ),
         "ordinary_product_path_consumed": False,
         "mvp_live_status_consumed_retained_artifacts": consumed_status,
-        "provider_broker_posture": "blocked_before_private_broker_completion",
+        "provider_broker_posture": "blocked_before_generic_broker_completion",
         "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
         "provider_calls_completed": counts.get("provider_calls_completed", 0),
         "search_tasks_attempted": counts.get("search_tasks_attempted", 0),
@@ -1315,8 +1329,8 @@ def _load_sanitized_provider_output(path: Path) -> dict[str, Any]:
         decoded = _read_json(path)
     except FileNotFoundError as exc:
         raise MvpLiveDogfoodRunError(
-            BLOCKED_MVP_LIVE_PRIVATE_BROKER_UNAVAILABLE,
-            "sanitized provider proxy response was not written.",
+            BLOCKED_MVP_LIVE_GENERIC_BROKER_UNAVAILABLE,
+            "sanitized provider execution proof was not written.",
         ) from exc
     return _validate_provider_payload(decoded)
 
@@ -1341,6 +1355,28 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
             "sanitized provider response retained raw search response.",
         )
+    if (
+        raw.get("raw_request_material_retained") is not False
+        or raw.get("raw_response_material_retained") is not False
+    ):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider response retained raw request/response material.",
+        )
+    if (
+        raw.get("schema_version") != EXPECTED_SEARCH_SCHEMA_VERSION
+        or raw.get("proof_kind") != EXPECTED_SEARCH_PROOF_KIND
+        or raw.get("provider") != DEFAULT_PROVIDER
+        or raw.get("operation") != DEFAULT_OPERATION
+        or raw.get("status") != "ok"
+        or raw.get("physical_attempt_count") != 1
+        or raw.get("caller_authorized_cost_ceiling_usd")
+        != EXPECTED_SEARCH_COST_CEILING_USD
+    ):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING,
+            "sanitized provider response proof attestation is invalid.",
+        )
     results = raw.get("results")
     if not isinstance(results, list):
         raise MvpLiveDogfoodRunError(
@@ -1360,12 +1396,18 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
     normalized = [_normalize_provider_result(item, index=i) for i, item in enumerate(results, 1)]
     return {
-        "request_kind": raw.get("request_kind"),
-        "provider": str(raw.get("provider") or DEFAULT_PROVIDER),
-        "operation": str(raw.get("operation") or DEFAULT_OPERATION),
+        "schema_version": EXPECTED_SEARCH_SCHEMA_VERSION,
+        "proof_kind": EXPECTED_SEARCH_PROOF_KIND,
+        "provider": DEFAULT_PROVIDER,
+        "operation": DEFAULT_OPERATION,
+        "status": "ok",
         "result_count": len(normalized),
         "results": normalized,
+        "physical_attempt_count": 1,
+        "caller_authorized_cost_ceiling_usd": EXPECTED_SEARCH_COST_CEILING_USD,
         "raw_provider_payload_retained": False,
+        "raw_request_material_retained": False,
+        "raw_response_material_retained": False,
         "raw_search_response_retained": False,
     }
 
@@ -1392,6 +1434,14 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
         raise MvpLiveDogfoodRunError(
             BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
             "sanitized provider result retained raw search response.",
+        )
+    if (
+        raw.get("provider") != DEFAULT_PROVIDER
+        or raw.get("operation") != DEFAULT_OPERATION
+    ):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING,
+            "sanitized provider result route attestation is invalid.",
         )
     url = _required_url(raw.get("url") or raw.get("link"))
     domain = _clean_domain(raw.get("domain")) or urlparse(url).netloc.lower()
@@ -1574,7 +1624,12 @@ def _run_output_dir(root: Path, output_dir: str | Path, run_id: str) -> Path:
 
 def _env_file_paths(values: Sequence[str | Path] | None) -> tuple[Path, ...]:
     if values is None:
-        return (DEFAULT_PRIVATE_BROKER_ENV_FILE,)
+        return ()
+    if len(values) > 1:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_GENERIC_BROKER_UNAVAILABLE,
+            "tracked broker activation accepts at most one environment file.",
+        )
     return tuple(Path(value) for value in values)
 
 
@@ -1830,7 +1885,7 @@ __all__ = [
     "BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE",
     "BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING",
     "BLOCKED_MVP_LIVE_MODEL_ROUTE_SECRET_BOUNDARY",
-    "BLOCKED_MVP_LIVE_PRIVATE_BROKER_UNAVAILABLE",
+    "BLOCKED_MVP_LIVE_GENERIC_BROKER_UNAVAILABLE",
     "BLOCKED_MVP_LIVE_PRODUCT_PATH_NOT_CONSUMED",
     "BLOCKED_MVP_LIVE_TEST_OR_CI_GUARD",
     "CONFIRM_LIVE_DPRIME_REVIEW_FLAG",

@@ -230,32 +230,13 @@ def test_ag96i3e_live_budget_remains_one_provider_search_call_for_serper() -> No
 def test_private_broker_template_includes_generic_serper_proxy_without_secret_values() -> None:
     module = _load_template_module()
 
-    assert module.REQUEST_KIND == "generic_provider_proxy_request"
-    assert "serper" in module.SUPPORTED_PROVIDERS
-    assert "search" in module.SUPPORTED_OPERATIONS
-    assert module.MAX_RESULTS_CAP == 10
-    request = module.validate_provider_proxy_request(
-        {
-            "request_kind": module.REQUEST_KIND,
-            "provider": "serper",
-            "operation": "search",
-            "query": "official current discovery",
-            "max_results": 5,
-            "raw_provider_payload_retained": False,
-            "raw_search_response_retained": False,
-        }
-    )
-    assert request == {
-        "provider": "serper",
-        "operation": "search",
-        "query": "official current discovery",
-        "max_results": 5,
-    }
-
+    assert "private broker copies are retired" in module.RETIREMENT_NOTICE
+    with pytest.raises(RuntimeError, match="retired"):
+        module.main()
     source = TEMPLATE.read_text(encoding="utf-8")
-    assert "replace-in-private-copy" in source
-    assert "placeholder-for-unit-test" not in source
-    assert "test-key" not in source
+    assert "ThreadingHTTPServer" not in source
+    assert "dispatch_provider_request" not in source
+    assert "validate_provider_proxy_request" not in source
     assert _SERPER_ENV_KEY not in source
     assert "ALLOWLISTED_JOBS" not in source
 

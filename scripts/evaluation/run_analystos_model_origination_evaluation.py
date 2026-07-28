@@ -121,6 +121,7 @@ ALL_LIVE_LICENSE_FIELDS = (
     "maximum_model_calls",
     "maximum_scryraven_runs",
     "retry_cap",
+    "timeout_seconds",
     "maximum_input_tokens",
     "maximum_output_tokens",
     "cost_ceiling",
@@ -243,6 +244,7 @@ class LiveAuthorization:
     maximum_model_calls: int
     maximum_scryraven_runs: int
     retry_cap: int
+    timeout_seconds: float
     maximum_input_tokens: int
     maximum_output_tokens: int
     cost_ceiling: float
@@ -276,6 +278,7 @@ class LiveAuthorization:
                 maximum_model_calls=int(value["maximum_model_calls"]),
                 maximum_scryraven_runs=int(value["maximum_scryraven_runs"]),
                 retry_cap=int(value["retry_cap"]),
+                timeout_seconds=float(value["timeout_seconds"]),
                 maximum_input_tokens=int(value["maximum_input_tokens"]),
                 maximum_output_tokens=int(value["maximum_output_tokens"]),
                 cost_ceiling=float(value["cost_ceiling"]),
@@ -1039,6 +1042,10 @@ def validate_live_authorization(
         raise EvaluationConfigurationError("live addendum scenario set/order must exactly match the selected scenarios")
     if authorization.retry_cap < 0:
         raise EvaluationConfigurationError("live retry cap cannot be negative")
+    if authorization.timeout_seconds <= 0 or authorization.timeout_seconds > 600:
+        raise EvaluationConfigurationError(
+            "live timeout seconds must be within the installed broker bound"
+        )
     if authorization.maximum_input_tokens <= 0:
         raise EvaluationConfigurationError("maximum input tokens must be positive")
     if authorization.maximum_output_tokens <= 0:
@@ -2762,6 +2769,7 @@ def proposed_live_addendum_template(
         "maximum_model_calls": "<EXACT-COMPUTED-CAP>",
         "maximum_scryraven_runs": "<EXACT-RUN-CAP>",
         "retry_cap": 0,
+        "timeout_seconds": "<EXACT-TIMEOUT-SECONDS>",
         "maximum_input_tokens": "<EXACT-INPUT-TOKEN-CAP>",
         "maximum_output_tokens": "<EXACT-OUTPUT-TOKEN-CAP>",
         "cost_ceiling": "<EXACT-COST-CEILING>",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
 
 import pytest
@@ -162,39 +161,22 @@ def test_direct_runner_refuses_profile_without_exact_query() -> None:
 
 
 def test_broker_profile_request_uses_registry_without_arbitrary_command() -> None:
-    payload = broker_client._build_profile_request_payload(
-        "ag-live-smoke-once",
-        AG_LIVE_SMOKE,
+    assert broker_client.main(
+        ["--job-id", "ag-live-smoke-once", "--profile", AG_LIVE_SMOKE]
+    ) == 2
+    source = (ROOT / "scripts" / "request_live_validation_broker.py").read_text(
+        encoding="utf-8"
     )
-
-    assert payload["job_id"] == "ag-live-smoke-once"
-    assert payload["confirm_live"] is True
-    assert payload["request_kind"] == "approved_validation_profile"
-    profile_request = payload["profile_request"]
-    assert profile_request["validation_profile"] == AG_LIVE_SMOKE
-    assert profile_request["cap_policy"]["surface"] == "RunConfig.cap_policy"
-    assert profile_request["cap_policy"]["values"] == get_validation_profile(
-        AG_LIVE_SMOKE
-    ).cap_policy.as_requested_dict()
-    assert profile_request["source_custody_policy"] is None
-    assert "command" not in json.dumps(payload).casefold()
-    assert "dotenv" not in json.dumps(payload).casefold()
+    assert "_build_profile_request_payload" not in source
+    assert "get_validation_profile" not in source
+    assert "urlopen" not in source
+    assert "subprocess" not in source
 
 
 def test_source_custody_broker_profile_request_includes_policy_surface() -> None:
-    payload = broker_client._build_profile_request_payload(
-        "ag-live-source-custody",
-        AG_LIVE_SOURCE_CUSTODY,
-    )
-
-    profile_request = payload["profile_request"]
-    assert profile_request["validation_profile"] == AG_LIVE_SOURCE_CUSTODY
-    assert profile_request["source_custody_policy"]["surface"] == (
-        "ValidationProfile.source_custody_policy_non_executable_expectation"
-    )
-    assert profile_request["source_custody_policy"]["values"][
-        "required_evidence_material_type"
-    ] == "full_page_fetched"
+    assert broker_client.main(
+        ["--job-id", "ag-live-source-custody", "--profile", AG_LIVE_SOURCE_CUSTODY]
+    ) == 2
     product_path = support.source_custody_policy_product_path(
         AG_LIVE_SOURCE_CUSTODY
     )

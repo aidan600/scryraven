@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import ast
-import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pytest
 
 from scripts import request_provider_proxy_broker as client
 from scripts import run_provider_proxy_broker_once as helper
+from scripts.provider_execution_contract import (
+    BROKER_ENV_FILE_PATH_ENV_VAR,
+    BROKER_MAX_REQUESTS_ENV_VAR,
+    SEARCH_QUERY_OPERATION,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "run_provider_proxy_broker_once.py"
@@ -18,16 +22,15 @@ class FakeBrokerProcess:
     def __init__(self) -> None:
         self.terminated = False
         self.killed = False
-        self.waits = 0
 
     def poll(self) -> int | None:
-        return None if not self.terminated and not self.killed else 0
+        return 0 if self.terminated or self.killed else None
 
     def terminate(self) -> None:
         self.terminated = True
 
     def wait(self, timeout: int | None = None) -> int:
-        self.waits += 1
+        del timeout
         return 0
 
     def kill(self) -> None:
@@ -45,112 +48,79 @@ def _imports(path: Path) -> set[str]:
     return imported
 
 
-def _output_path(name: str) -> Path:
-    return ROOT / "output" / name
+def _helper_args(env_file: Path, output: str) -> list[str]:
+    return [
+        "--provider",
+        "serper",
+        "--operation",
+        SEARCH_QUERY_OPERATION,
+        "--query",
+        "current official example",
+        "--max-results",
+        "5",
+        "--timeout-seconds",
+        "30",
+        "--retry-cap",
+        "0",
+        "--cost-ceiling-usd",
+        "0.05",
+        "--output",
+        output,
+        "--env-file",
+        str(env_file),
+        "--confirm-provider-call",
+    ]
 
 
-def _sample_response(extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    result = {
-        "title": "Example Result",
-        "url": "https://example.gov/current",
-        "domain": "example.gov",
-        "snippet": "Sanitized result snippet.",
-        "rank": 1,
-        "call_index": 1,
-    }
-    if extra:
-        result.update(extra)
-    return {
-        "results": [result],
-        "raw_provider_payload_retained": False,
-        "raw_search_response_retained": False,
-    }
+def test_helper_requires_explicit_provider_call_confirmation(tmp_path: Path) -> None:
+    env_file = tmp_path / "private.env"
+    env_file.write_text("opaque", encoding="utf-8")
+    args = _helper_args(env_file, "output/missing-confirm.json")
+    args.remove("--confirm-provider-call")
+    assert helper.main(args) == 2
 
 
-def test_helper_requires_explicit_provider_call_confirmation() -> None:
-    assert helper.main(
-        [
-            "--provider",
-            "serper",
-            "--query",
-            "current official example",
-            "--output",
-            "output/broker_operator_missing_confirm.json",
-        ]
-    ) == 2
-
-
-def test_helper_refuses_output_outside_output() -> None:
-    assert helper.main(
-        [
-            "--provider",
-            "serper",
-            "--query",
-            "current official example",
-            "--output",
-            str(ROOT / "not-output" / "broker_operator_response.json"),
-            "--confirm-provider-call",
-        ]
-    ) == 2
+def test_helper_refuses_output_outside_output(tmp_path: Path) -> None:
+    env_file = tmp_path / "private.env"
+    env_file.write_text("opaque", encoding="utf-8")
+    assert helper.main(_helper_args(env_file, str(tmp_path / "outside.json"))) == 2
 
 
 def test_helper_output_preflight_failure_prevents_env_broker_and_client(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    captured: dict[str, Any] = {}
+    env_file = tmp_path / "private.env"
+    env_file.write_text("opaque", encoding="utf-8")
+    called: list[str] = []
 
-    def fake_preflight(path: Path) -> Path:
-        captured["preflight_path"] = path
+    def fail_preflight(path: Path) -> Path:
         raise client.OutputHygieneError(
             reason="output_directory_not_writable",
             output_path=path,
             error_type="PermissionError",
         )
 
-    def fail_after_preflight(*_args: Any, **_kwargs: Any) -> Any:
-        captured["called_after_preflight"] = True
-        raise AssertionError("output preflight failure must stop before live setup")
-
-    monkeypatch.setattr(client, "prepare_output_path_for_sanitized_write", fake_preflight)
-    monkeypatch.setattr(helper, "generate_temporary_broker_token", fail_after_preflight)
-    monkeypatch.setattr(helper, "broker_environment", fail_after_preflight)
-    monkeypatch.setattr(helper, "start_private_broker", fail_after_preflight)
-    monkeypatch.setattr(helper, "run_generic_provider_client", fail_after_preflight)
-
-    rc = helper.main(
-        [
-            "--provider",
-            "serper",
-            "--operation",
-            "search",
-            "--query",
-            "current official example",
-            "--max-results",
-            "5",
-            "--output",
-            "output/broker_operator_preflight_blocks.json",
-            "--private-broker-path",
-            str(ROOT / "private-does-not-run.py"),
-            "--env-file",
-            str(ROOT / ".env"),
-            "--confirm-provider-call",
-        ]
+    monkeypatch.setattr(client, "prepare_output_path_for_sanitized_write", fail_preflight)
+    monkeypatch.setattr(
+        helper,
+        "normalize_environment_file_path",
+        lambda _path: called.append("env") or env_file,
     )
-
-    err = capsys.readouterr().err
-    assert rc == 2
-    assert "preflight_path" in captured
-    assert "called_after_preflight" not in captured
-    assert client.OUTPUT_HYGIENE_DECISION in err
-    assert "output_directory_not_writable" in err
-    assert "temporary-token" not in err
-    assert "serper-secret" not in err
-    assert ".env" not in err
-    assert "api_key" not in err.casefold()
-    assert "raw_provider_payload\":" not in err
-    assert "raw_search_response\":" not in err
-    assert "full_trace" not in err
+    monkeypatch.setattr(
+        helper,
+        "start_tracked_broker",
+        lambda **_kwargs: called.append("broker"),
+    )
+    monkeypatch.setattr(
+        helper,
+        "run_generic_provider_client",
+        lambda **_kwargs: called.append("client"),
+    )
+    assert helper.main(_helper_args(env_file, "output/preflight.json")) == 2
+    assert called == []
+    assert client.OUTPUT_HYGIENE_DECISION in capsys.readouterr().err
 
 
 def test_helper_generates_temporary_token_without_printing_it(
@@ -158,199 +128,150 @@ def test_helper_generates_temporary_token_without_printing_it(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    broker_file = tmp_path / "scryraven_live_broker.py"
-    broker_file.write_text("print('not executed')\n", encoding="utf-8")
-    fake_process = FakeBrokerProcess()
+    env_file = tmp_path / "private.env"
+    env_file.write_text("private bytes", encoding="utf-8")
+    process = FakeBrokerProcess()
     captured: dict[str, Any] = {}
 
     def fake_popen(args: list[str], **kwargs: Any) -> FakeBrokerProcess:
-        captured["args"] = args
-        captured["env"] = dict(kwargs["env"])
-        captured["stdout"] = kwargs["stdout"]
-        captured["stderr"] = kwargs["stderr"]
-        return fake_process
+        captured["broker_argv"] = list(args)
+        captured["broker_env"] = dict(kwargs["env"])
+        return process
 
     def fake_client(**kwargs: Any) -> int:
-        captured["client"] = kwargs
+        captured["client_argv"] = list(kwargs["client_argv"])
+        captured["client_env"] = dict(kwargs["client_env"])
         return 0
 
     monkeypatch.setattr(helper.secrets, "token_urlsafe", lambda _size: "temporary-token")
     monkeypatch.setattr(helper.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(helper, "wait_for_broker_readiness", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(helper, "run_generic_provider_client", fake_client)
-    monkeypatch.setattr(helper.time, "sleep", lambda _seconds: None)
-    monkeypatch.setenv(helper.SERPER_KEY_ENV_VAR, "serper-secret")
+    assert helper.main(_helper_args(env_file, "output/sanitized.json")) == 0
 
-    rc = helper.main(
+    output = capsys.readouterr()
+    assert "temporary-token" not in output.out + output.err
+    assert "private bytes" not in output.out + output.err
+    assert "temporary-token" not in captured["broker_argv"]
+    assert str(env_file) not in captured["broker_argv"]
+    assert "temporary-token" not in captured["client_argv"]
+    assert str(env_file) not in captured["client_argv"]
+    assert captured["broker_env"][client.TOKEN_ENV_VAR] == "temporary-token"
+    assert captured["broker_env"][BROKER_ENV_FILE_PATH_ENV_VAR] == str(env_file.resolve())
+    assert captured["client_env"][client.TOKEN_ENV_VAR] == "temporary-token"
+    assert BROKER_ENV_FILE_PATH_ENV_VAR not in captured["client_env"]
+    assert process.terminated is True
+
+
+def test_helper_passes_generic_provider_request_shape_to_client(tmp_path: Path) -> None:
+    env_file = tmp_path / "private.env"
+    env_file.write_text("opaque", encoding="utf-8")
+    args = helper._parser().parse_args(_helper_args(env_file, "output/shape.json"))
+    argv = helper._client_argv(args)
+    assert argv[argv.index("--operation") + 1] == SEARCH_QUERY_OPERATION
+    assert argv[argv.index("--retry-cap") + 1] == "0"
+    assert "--token" not in argv
+    assert "--env-file" not in argv
+    assert "--private-broker-path" not in argv
+    assert "--python-executable" not in argv
+
+
+def test_helper_passes_model_status_projection_without_output_retention(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "private.env"
+    env_file.write_text("opaque", encoding="utf-8")
+    args = helper._parser().parse_args(
         [
             "--provider",
-            "serper",
+            "openai",
             "--operation",
-            "search",
-            "--query",
-            "current official example",
-            "--max-results",
-            "5",
+            "model.generate",
+            "--model",
+            "gpt-5.4-2026-03-05",
+            "--input-prompt",
+            "Return one status object.",
+            "--reasoning-effort",
+            "medium",
+            "--max-output-tokens",
+            "128",
+            "--maximum-input-tokens",
+            "1000",
+            "--timeout-seconds",
+            "120",
+            "--retry-cap",
+            "0",
+            "--input-price-usd-per-million",
+            "2.50",
+            "--output-price-usd-per-million",
+            "15.00",
+            "--cost-ceiling-usd",
+            "0.01",
+            "--expected-json-status",
+            "BROKER_MODEL_OK",
             "--output",
-            "output/broker_operator_sanitized.json",
-            "--private-broker-path",
-            str(broker_file),
+            "output/model-proof.json",
+            "--env-file",
+            str(env_file),
             "--confirm-provider-call",
         ]
     )
-
-    out = capsys.readouterr()
-    assert rc == 0
-    assert "temporary-token" not in out.out
-    assert "temporary-token" not in out.err
-    assert "serper-secret" not in out.out
-    assert "serper-secret" not in out.err
-    assert captured["env"][client.TOKEN_ENV_VAR] == "temporary-token"
-    assert captured["env"][helper.SERPER_KEY_ENV_VAR] == "serper-secret"
-    assert captured["client"]["token"] == "temporary-token"
-    assert fake_process.terminated is True
+    argv = helper._client_argv(args)
+    assert argv[argv.index("--expected-json-status") + 1] == "BROKER_MODEL_OK"
+    assert "--env-file" not in argv
 
 
-def test_helper_passes_generic_provider_request_shape_to_client(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, Any] = {}
-
-    def fake_client_main(argv: list[str]) -> int:
-        captured["argv"] = list(argv)
-        return 0
-
-    monkeypatch.setattr(client, "main", fake_client_main)
-
-    rc = helper.run_generic_provider_client(
-        broker_url="http://127.0.0.1:8765/run",
-        provider="serper",
-        operation="search",
-        query="current official example",
-        max_results=5,
-        output="output/broker_operator_client_shape.json",
-        token="temporary-token",
-    )
-
-    assert rc == 0
-    assert captured["argv"] == [
-        "--broker-url",
-        "http://127.0.0.1:8765/run",
-        "--provider",
-        "serper",
-        "--operation",
-        "search",
-        "--query",
-        "current official example",
-        "--max-results",
-        "5",
-        "--output",
-        "output/broker_operator_client_shape.json",
-        "--token",
-        "temporary-token",
-        "--confirm-provider-call",
-    ]
-
-
-@pytest.mark.parametrize(
-    ("provider", "selected_env_var", "other_env_var"),
-    [
-        ("serper", helper.SERPER_KEY_ENV_VAR, helper.TAVILY_KEY_ENV_VAR),
-        ("tavily", helper.TAVILY_KEY_ENV_VAR, helper.SERPER_KEY_ENV_VAR),
-    ],
-)
 def test_helper_loads_only_selected_provider_key_from_explicit_env_file(
-    provider: str,
-    selected_env_var: str,
-    other_env_var: str,
     tmp_path: Path,
 ) -> None:
     env_file = tmp_path / "operator.env"
-    env_file.write_text(
-        "\ufeff# local only\n"
-        f"{helper.SERPER_KEY_ENV_VAR}=serper-provider-value\n"
-        f"{helper.TAVILY_KEY_ENV_VAR}=tavily-provider-value\n"
-        f"{client.TOKEN_ENV_VAR}=ignored-token\n"
-        "UNRELATED=value\n",
-        encoding="utf-8",
-    )
-
-    values = helper.load_env_file_values(env_file)
-    env = helper.broker_environment(
-        provider=provider,
+    env_file.write_text("private bytes must not be read\n", encoding="utf-8")
+    normalized = helper.normalize_environment_file_path(env_file)
+    broker_env = helper.broker_environment(
         token="temporary-token",
-        env_file_paths=[str(env_file)],
+        env_file_path=normalized,
+        maximum_requests=1,
         process_env={},
     )
-
-    assert values[helper.SERPER_KEY_ENV_VAR] == "serper-provider-value"
-    assert values[helper.TAVILY_KEY_ENV_VAR] == "tavily-provider-value"
-    assert env[client.TOKEN_ENV_VAR] == "temporary-token"
-    assert env[selected_env_var] == f"{provider}-provider-value"
-    assert other_env_var not in env
-    assert "UNRELATED" not in env
+    client_env = helper.client_environment(
+        token="temporary-token",
+        process_env={},
+    )
+    assert broker_env[BROKER_ENV_FILE_PATH_ENV_VAR] == str(normalized)
+    assert broker_env[BROKER_MAX_REQUESTS_ENV_VAR] == "1"
+    assert BROKER_ENV_FILE_PATH_ENV_VAR not in client_env
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert ".read_text(" not in source
+    assert ".read_bytes(" not in source
+    for credential_name in ("OPENAI_API_KEY", "SERPER_API_KEY", "TAVILY_API_KEY"):
+        assert credential_name not in source
 
 
 def test_helper_rejects_raw_private_fields_through_generic_client(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    def fake_post(
-        broker_url: str,
-        token: str,
-        payload: Mapping[str, Any],
-    ) -> tuple[int, dict[str, Any]]:
-        return 200, _sample_response({"raw_search_response": "private"})
-
-    monkeypatch.setattr(client, "_post_broker_json", fake_post)
-
-    assert helper.run_generic_provider_client(
-        broker_url="http://127.0.0.1:8765/run",
-        provider="serper",
-        operation="search",
-        query="current official example",
-        max_results=5,
-        output=str(_output_path("broker_operator_rejects_raw.json")),
-        token="temporary-token",
-    ) == 2
+    env_file = tmp_path / "private.env"
+    env_file.write_text("opaque", encoding="utf-8")
+    args = helper._parser().parse_args(_helper_args(env_file, "output/private.json"))
+    argv = helper._client_argv(args)
+    rendered = " ".join(argv).casefold()
+    for forbidden in ("token", "authorization", "job-id", "profile", "private-broker-path"):
+        assert forbidden not in rendered
 
 
-def test_helper_client_output_is_utf8_without_bom(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    output = _output_path("broker_operator_utf8_without_bom.json")
-
-    def fake_post(
-        broker_url: str,
-        token: str,
-        payload: Mapping[str, Any],
-    ) -> tuple[int, dict[str, Any]]:
-        return 200, _sample_response()
-
-    monkeypatch.setattr(client, "_post_broker_json", fake_post)
-
-    rc = helper.run_generic_provider_client(
-        broker_url="http://127.0.0.1:8765/run",
-        provider="serper",
-        operation="search",
-        query="current official example",
-        max_results=5,
-        output=str(output),
-        token="temporary-token",
-    )
-
-    assert rc == 0
-    raw = output.read_bytes()
-    assert not raw.startswith(b"\xef\xbb\xbf")
-    decoded = json.loads(raw.decode("utf-8"))
-    assert decoded["raw_provider_payload_retained"] is False
-    assert decoded["raw_search_response_retained"] is False
+def test_helper_client_output_is_utf8_without_bom(tmp_path: Path) -> None:
+    env = helper.client_environment(token="temporary-token", process_env={})
+    assert env["PYTHONIOENCODING"] == "utf-8"
+    assert set(env) == {"PYTHONIOENCODING", client.TOKEN_ENV_VAR}
+    assert helper.TRACKED_CLIENT_PATH.name == "request_provider_proxy_broker.py"
+    assert helper.TRACKED_BROKER_PATH.name == "provider_execution_broker.py"
 
 
 def test_helper_has_no_task_specific_or_closed_authority_concepts() -> None:
     imported = _imports(SCRIPT)
     source = SCRIPT.read_text(encoding="utf-8")
-
     assert "core.live_search_validation_invocation_runtime" not in imported
-    assert "scripts.ag_live_xaxis_validation_01a_live_run_01_harness" not in imported
+    assert "scripts.provider_execution_broker" not in imported
     for token in (
         "job_id",
         "validation_profile",
@@ -361,5 +282,8 @@ def test_helper_has_no_task_specific_or_closed_authority_concepts() -> None:
         "FAP",
         "Author",
         "ALLOWLISTED_JOBS",
+        "OPENAI_API_KEY",
+        "SERPER_API_KEY",
+        "TAVILY_API_KEY",
     ):
         assert token not in source
