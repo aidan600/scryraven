@@ -151,6 +151,29 @@ def test_parser_failure_blocks_semantic_success() -> None:
     assert rules["M02"].posture == "NOT_REACHED"
 
 
+def test_required_envelope_failure_is_owned_by_m01_after_parser_pass() -> None:
+    observation = replace(
+        _observation(),
+        boundary_status="FAIL",
+        validator_posture="FAIL",
+        runtime_projection_posture="NOT_REACHED",
+        initial_acceptance_posture="NOT_REACHED",
+        search_work_plan_posture="NOT_REACHED",
+        canonical_failure_rule_ids=("M01",),
+    )
+    result = validate_product_observation(observation)
+    rules = {item.rule_id: item for item in result.rule_results}
+
+    assert observation.parser_posture == "PASS"
+    assert result.overall_posture == "FAIL"
+    assert rules["M01"].posture == "FAIL"
+    assert rules["M01"].observation_refs == (
+        "parser_posture",
+        "canonical_failure_rule:M01",
+    )
+    assert rules["M02"].posture == "NOT_REACHED"
+
+
 def test_canonical_dependency_failure_is_owned_only_by_m04() -> None:
     observation = replace(
         _observation(),

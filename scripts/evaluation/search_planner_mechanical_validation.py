@@ -265,6 +265,12 @@ def _evaluate_rule(
 def _parser_rule(
     observation: ProductBoundaryObservation,
 ) -> tuple[str, str, tuple[str, ...]]:
+    if "M01" in observation.canonical_failure_rule_ids:
+        return (
+            "FAIL",
+            "Canonical product parsing or required-envelope validation failed.",
+            ("parser_posture", "canonical_failure_rule:M01"),
+        )
     posture = observation.parser_posture
     return (
         posture,

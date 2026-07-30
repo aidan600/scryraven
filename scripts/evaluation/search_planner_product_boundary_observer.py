@@ -14,6 +14,10 @@ from dataclasses import asdict, dataclass
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
+from core.search_planner_model_adapter import (
+    SearchPlannerModelAdapterError,
+    SearchPlannerModelAdapterFailureStage,
+)
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 
 PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION = "search_planner_product_boundary_observer_v1"
@@ -176,8 +180,13 @@ class ProductBoundaryObservation:
             raise ValueError("output digest must be one SHA-256 digest")
         if self.proposal_digest is not None and not re.fullmatch(r"[0-9a-f]{64}", self.proposal_digest):
             raise ValueError("proposal digest must be one SHA-256 digest")
-        if self.validator_posture == "PASS" and self.proposal_digest is None:
-            raise ValueError("validated proposal observations require a proposal digest")
+        if (
+            self.runtime_projection_posture == "PASS"
+            and self.proposal_digest is None
+        ):
+            raise ValueError(
+                "projected proposal observations require a proposal digest"
+            )
         if self.response_received != (self.output_digest is not None):
             raise ValueError("response posture must match the output digest")
         if not self.response_received and self.output_length:
@@ -246,6 +255,7 @@ class CanonicalProductSearchPlannerBoundaryObserver:
         *,
         run_kernel: Any | None,
         failure: Exception | None = None,
+        validated_proposal_returned: bool = False,
         response_cleaner_ref: str = "core.text_utils.clean_json_response",
         failure_rule_ids: Sequence[str] = (),
         safe_usage_refs: Sequence[Mapping[str, Any]] = (),
@@ -253,6 +263,17 @@ class CanonicalProductSearchPlannerBoundaryObserver:
     ) -> ProductBoundaryObservation:
         """Create one typed observation from the product-owned state."""
 
+        if validated_proposal_returned and not self._response_received:
+            raise ValueError(
+                "validated adapter proposals require an observed response"
+            )
+        if validated_proposal_returned and isinstance(
+            failure,
+            SearchPlannerModelAdapterError,
+        ):
+            raise ValueError(
+                "adapter failures cannot accompany a validated adapter proposal"
+            )
         state = getattr(run_kernel, "state", None)
         proposal_value = getattr(state, "search_planner_proposal_state", None)
         proposal_state = bool(proposal_value)
@@ -261,12 +282,13 @@ class CanonicalProductSearchPlannerBoundaryObserver:
         parser, validator = _parser_validator_postures(
             called=self._call_count > 0,
             proposal_state=proposal_state,
+            validated_proposal_returned=validated_proposal_returned,
             failure=failure,
         )
-        runtime = _downstream_posture(
+        runtime = _runtime_projection_posture(
             reached=proposal_state,
-            upstream=validator,
-            failed=bool(failure and not proposal_state),
+            validator=validator,
+            failure=failure,
         )
         acceptance = _downstream_posture(
             reached=acceptance_state,
@@ -278,13 +300,16 @@ class CanonicalProductSearchPlannerBoundaryObserver:
             upstream=acceptance,
             failed=bool(failure and acceptance_state and not search_work_plan),
         )
-        bounded_reason = (
-            (
-                f"{type(failure).__name__}:"
-                f"message_sha256={_digest_text(str(failure))}"
-            )
-            if failure is not None
-            else None
+        bounded_reason = _bounded_failure_reason(failure)
+        canonical_failure_rule_ids = list(failure_rule_ids)
+        if (
+            isinstance(failure, SearchPlannerModelAdapterError)
+            and failure.mechanical_rule_id is not None
+            and failure.mechanical_rule_id not in canonical_failure_rule_ids
+        ):
+            canonical_failure_rule_ids.append(failure.mechanical_rule_id)
+        canonical_failure_rule_ids = list(
+            dict.fromkeys(canonical_failure_rule_ids)
         )
         incomplete = (
             "NOT_REACHED"
@@ -314,7 +339,7 @@ class CanonicalProductSearchPlannerBoundaryObserver:
             initial_acceptance_posture=acceptance,
             search_work_plan_posture=work_plan,
             incomplete_generation_posture=incomplete,
-            canonical_failure_rule_ids=tuple(failure_rule_ids),
+            canonical_failure_rule_ids=tuple(canonical_failure_rule_ids),
             bounded_failure_reason=bounded_reason,
             safe_usage_refs=tuple(dict(item) for item in safe_usage_refs),
             safe_execution_refs=tuple(dict(item) for item in safe_execution_refs),
@@ -385,20 +410,59 @@ def _parser_validator_postures(
     *,
     called: bool,
     proposal_state: bool,
+    validated_proposal_returned: bool,
     failure: Exception | None,
 ) -> tuple[str, str]:
     if not called:
         return "NOT_REACHED", "NOT_REACHED"
     if proposal_state:
         return "PASS", "PASS"
+    if validated_proposal_returned:
+        return "PASS", "PASS"
     if failure is None:
         return "REVIEW_REQUIRED", "REVIEW_REQUIRED"
-    reason = str(failure).casefold()
-    if "valid json" in reason or "json object" in reason:
-        return "FAIL", "NOT_REACHED"
-    if "search planner model output" in reason:
-        return "PASS", "FAIL"
+    if isinstance(failure, SearchPlannerModelAdapterError):
+        if failure.failure_stage in {
+            SearchPlannerModelAdapterFailureStage.OUTPUT_CLEANING,
+            SearchPlannerModelAdapterFailureStage.JSON_PARSING,
+        }:
+            return "FAIL", "NOT_REACHED"
+        if failure.failure_stage in {
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+        }:
+            return "PASS", "FAIL"
+        return "NOT_REACHED", "NOT_REACHED"
     return "REVIEW_REQUIRED", "REVIEW_REQUIRED"
+
+
+def _runtime_projection_posture(
+    *,
+    reached: bool,
+    validator: str,
+    failure: Exception | None,
+) -> str:
+    if reached:
+        return "PASS"
+    if validator != "PASS":
+        return "NOT_REACHED"
+    if failure is not None:
+        return "FAIL"
+    return "REVIEW_REQUIRED"
+
+
+def _bounded_failure_reason(failure: Exception | None) -> str | None:
+    if failure is None:
+        return None
+    message_digest = _digest_text(str(failure))
+    if isinstance(failure, SearchPlannerModelAdapterError):
+        return (
+            "SearchPlannerModelAdapterError:"
+            f"failure_stage={failure.failure_stage.value}:"
+            f"failure_code={failure.failure_code.value}:"
+            f"message_sha256={message_digest}"
+        )
+    return f"{type(failure).__name__}:message_sha256={message_digest}"
 
 
 def _downstream_posture(

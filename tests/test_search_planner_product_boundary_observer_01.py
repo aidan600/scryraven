@@ -14,10 +14,12 @@ materially more expensive than the tiny fast_pr budget.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, replace
+from copy import deepcopy
+from dataclasses import FrozenInstanceError, asdict, replace
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, Mapping
 
 import pytest
 from pytest import MonkeyPatch
@@ -25,11 +27,21 @@ from pytest import MonkeyPatch
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
 from core.protocols import NullStatusWriter
+from core.search_planner_model_adapter import (
+    SearchPlannerModelAdapter,
+    SearchPlannerModelAdapterError,
+    SearchPlannerModelAdapterFailureCode,
+    SearchPlannerModelAdapterFailureStage,
+)
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 from core.text_utils import clean_json_response
+from scripts.evaluation.search_planner_mechanical_validation import (
+    validate_product_observation,
+)
 from scripts.evaluation.search_planner_product_boundary_observer import (
     CANONICAL_PRODUCT_BOUNDARY_REF,
     CanonicalProductSearchPlannerBoundaryObserver,
+    ProductBoundaryObservation,
 )
 from tests.fixtures.searchos_analystos_offline_scenarios import (
     SCENARIOS,
@@ -62,6 +74,79 @@ def _model_payload() -> dict[str, Any]:
         obligation["obligation_kind"] = "official_current"
         obligation["strictness"] = "required"
     return payload
+
+
+def _observe_adapter_result(
+    response: Any,
+    *,
+    cleaner: Any = clean_json_response,
+    later_failure: Exception | None = None,
+) -> tuple[Exception | None, ProductBoundaryObservation]:
+    response_text = (
+        response
+        if isinstance(response, str | Exception)
+        else json.dumps(response)
+    )
+
+    def synthetic_model_call(
+        _prompt: str,
+        _system_prompt: str,
+        **_kwargs: Any,
+    ) -> str:
+        if isinstance(response_text, Exception):
+            raise response_text
+        return response_text
+
+    observer = CanonicalProductSearchPlannerBoundaryObserver(synthetic_model_call)
+
+    def observed_model_call(
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        kwargs["cost_accumulator"] = object()
+        kwargs["cost_phase"] = "search_planner"
+        return observer(prompt, system_prompt, **kwargs)
+
+    adapter = SearchPlannerModelAdapter(
+        ask_model=observed_model_call,
+        clean_json_response=cleaner,
+        provider="synthetic-provider",
+        model="synthetic-model",
+        effort="fixed",
+        use_reasoning=False,
+        enabled=True,
+        licensed=True,
+    )
+    proposal: Mapping[str, Any] | None = None
+    failure: Exception | None = None
+    try:
+        proposal = adapter.produce(
+            {
+                "user_query_text_for_planning": (
+                    "attestation-input-private-sentinel"
+                ),
+                "safe_context": {},
+            }
+        )
+    except Exception as exc:
+        failure = exc
+    if later_failure is not None:
+        assert failure is None
+        assert proposal is not None
+        failure = later_failure
+    kernel = SimpleNamespace(
+        state=SimpleNamespace(
+            search_planner_proposal_state={},
+            initial_answer_contract_projection={},
+            search_work_plan={},
+        )
+    )
+    return failure, observer.finalize(
+        run_kernel=kernel,
+        failure=failure,
+        validated_proposal_returned=proposal is not None,
+    )
 
 
 class _BoundaryHarness(SearchOSAnalystOSHarness):
@@ -258,6 +343,359 @@ def test_observer_preserves_product_fail_closed_posture(
     assert observation.validator_posture == "NOT_REACHED"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.initial_acceptance_posture == "NOT_REACHED"
+
+
+@pytest.mark.parametrize(
+    ("response", "expected_code"),
+    (
+        (
+            "not-json-private-output-sentinel",
+            SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+        ),
+        ("[]", SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT),
+        ("42", SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT),
+        (
+            '"scalar-private-output-sentinel"',
+            SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT,
+        ),
+    ),
+)
+def test_json_parse_failures_are_typed_m01_and_stop_before_runtime(
+    response: str,
+    expected_code: SearchPlannerModelAdapterFailureCode,
+) -> None:
+    failure, observation = _observe_adapter_result(response)
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert (
+        failure.failure_stage
+        == SearchPlannerModelAdapterFailureStage.JSON_PARSING
+    )
+    assert failure.failure_code == expected_code
+    assert failure.mechanical_rule_id == "M01"
+    assert observation.parser_posture == "FAIL"
+    assert observation.validator_posture == "NOT_REACHED"
+    assert observation.runtime_projection_posture == "NOT_REACHED"
+    assert observation.canonical_failure_rule_ids == ("M01",)
+    mechanical = validate_product_observation(observation)
+    rules = {item.rule_id: item for item in mechanical.rule_results}
+    assert rules["M01"].posture == "FAIL"
+    assert all(
+        rules[f"M{index:02d}"].posture != "FAIL"
+        for index in range(2, 11)
+    )
+
+
+def test_output_cleaner_failure_is_typed_and_never_blames_runtime() -> None:
+    raw_cleaner_failure = "private-cleaner-exception-sentinel"
+
+    def failing_cleaner(_value: str) -> str:
+        raise RuntimeError(raw_cleaner_failure)
+
+    failure, observation = _observe_adapter_result(
+        _model_payload(),
+        cleaner=failing_cleaner,
+    )
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert (
+        failure.failure_stage
+        == SearchPlannerModelAdapterFailureStage.OUTPUT_CLEANING
+    )
+    assert (
+        failure.failure_code
+        == SearchPlannerModelAdapterFailureCode.OUTPUT_CLEANING_FAILED
+    )
+    assert failure.mechanical_rule_id is None
+    assert observation.parser_posture == "FAIL"
+    assert observation.validator_posture == "NOT_REACHED"
+    assert observation.runtime_projection_posture == "NOT_REACHED"
+    assert observation.canonical_failure_rule_ids == ()
+    assert raw_cleaner_failure not in json.dumps(
+        observation.to_packet(),
+        sort_keys=True,
+    )
+    rules = {
+        item.rule_id: item
+        for item in validate_product_observation(observation).rule_results
+    }
+    assert rules["M01"].posture == "FAIL"
+
+
+def test_model_call_failure_is_typed_before_parser_and_runtime() -> None:
+    raw_model_failure = "private-model-invocation-exception-sentinel"
+
+    failure, observation = _observe_adapter_result(
+        RuntimeError(raw_model_failure)
+    )
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert (
+        failure.failure_stage
+        == SearchPlannerModelAdapterFailureStage.MODEL_CALL
+    )
+    assert (
+        failure.failure_code
+        == SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED
+    )
+    assert failure.mechanical_rule_id is None
+    assert observation.response_received is False
+    assert observation.parser_posture == "NOT_REACHED"
+    assert observation.validator_posture == "NOT_REACHED"
+    assert observation.runtime_projection_posture == "NOT_REACHED"
+    assert observation.canonical_failure_rule_ids == ()
+    assert raw_model_failure not in json.dumps(
+        observation.to_packet(),
+        sort_keys=True,
+    )
+
+
+def _m02_invalid_nested_type(payload: dict[str, Any]) -> None:
+    payload["semantic_slots"] = {}
+
+
+def _m03_invalid_cross_reference(payload: dict[str, Any]) -> None:
+    payload["answer_components"][0]["semantic_slot_ids"] = [
+        "model-generated-missing-slot-sentinel"
+    ]
+
+
+def _m04_invalid_dependency(payload: dict[str, Any]) -> None:
+    component_id = payload["answer_components"][0]["component_id"]
+    payload["answer_components"][0]["dependency_component_ids"] = [
+        component_id
+    ]
+
+
+def _m05_invalid_support_matrix(payload: dict[str, Any]) -> None:
+    payload["answer_components"][0]["max_inference_depth"] = 1
+
+
+def _m06_invalid_component_purpose(payload: dict[str, Any]) -> None:
+    payload["answer_components"][0]["component_purpose"] = (
+        "model-generated-invalid-purpose-sentinel"
+    )
+
+
+def _m07_invalid_query_strategy(payload: dict[str, Any]) -> None:
+    payload["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ] = []
+
+
+def _m08_closed_authority(payload: dict[str, Any]) -> None:
+    payload["current_answer_contract"] = {
+        "model-generated-authority-value-sentinel": True
+    }
+
+
+def _m09_raw_material(payload: dict[str, Any]) -> None:
+    payload["raw_provider_payload"] = (
+        "model-generated-private-payload-sentinel"
+    )
+
+
+def _m10_stale_binding(payload: dict[str, Any]) -> None:
+    payload["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["component_id"] = "model-generated-stale-binding-sentinel"
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "stage", "code", "mutate"),
+    (
+        (
+            "M02",
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE,
+            _m02_invalid_nested_type,
+        ),
+        (
+            "M03",
+            SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+            _m03_invalid_cross_reference,
+        ),
+        (
+            "M04",
+            SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH,
+            _m04_invalid_dependency,
+        ),
+        (
+            "M05",
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_SUPPORT_MATRIX,
+            _m05_invalid_support_matrix,
+        ),
+        (
+            "M06",
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION,
+            _m06_invalid_component_purpose,
+        ),
+        (
+            "M07",
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.INVALID_QUERY_STRATEGY_METADATA,
+            _m07_invalid_query_strategy,
+        ),
+        (
+            "M08",
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.CLOSED_AUTHORITY_VIOLATION,
+            _m08_closed_authority,
+        ),
+        (
+            "M09",
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.PRIVACY_OR_RAW_MATERIAL_VIOLATION,
+            _m09_raw_material,
+        ),
+        (
+            "M10",
+            SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+            SearchPlannerModelAdapterFailureCode.LINEAGE_OR_BINDING_FAILURE,
+            _m10_stale_binding,
+        ),
+    ),
+)
+def test_validator_failure_attestation_maps_exactly_m02_through_m10(
+    rule_id: str,
+    stage: SearchPlannerModelAdapterFailureStage,
+    code: SearchPlannerModelAdapterFailureCode,
+    mutate: Any,
+) -> None:
+    payload = deepcopy(_model_payload())
+    mutate(payload)
+
+    failure, observation = _observe_adapter_result(payload)
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert failure.failure_stage == stage
+    assert failure.failure_code == code
+    assert failure.mechanical_rule_id == rule_id
+    assert observation.parser_posture == "PASS"
+    assert observation.validator_posture == "FAIL"
+    assert observation.runtime_projection_posture == "NOT_REACHED"
+    assert observation.canonical_failure_rule_ids == (rule_id,)
+    rules = {
+        item.rule_id: item
+        for item in validate_product_observation(observation).rule_results
+    }
+    assert rules[rule_id].posture == "FAIL"
+    assert all(
+        rules[f"M{index:02d}"].posture != "FAIL"
+        for index in range(1, 11)
+        if f"M{index:02d}" != rule_id
+    )
+
+
+def test_validated_proposal_followed_by_runtime_failure_is_distinct() -> None:
+    misleading_later_message = (
+        "search planner model output was not valid JSON but this is a later "
+        "runtime failure"
+    )
+    failure, observation = _observe_adapter_result(
+        _model_payload(),
+        later_failure=RuntimeError(misleading_later_message),
+    )
+
+    assert isinstance(failure, RuntimeError)
+    assert observation.parser_posture == "PASS"
+    assert observation.validator_posture == "PASS"
+    assert observation.runtime_projection_posture == "FAIL"
+    assert observation.initial_acceptance_posture == "NOT_REACHED"
+    assert observation.canonical_failure_rule_ids == ()
+    assert misleading_later_message not in json.dumps(
+        observation.to_packet(),
+        sort_keys=True,
+    )
+
+
+def test_unexpected_post_response_failure_does_not_overclaim_validation() -> None:
+    observer = CanonicalProductSearchPlannerBoundaryObserver(
+        lambda _prompt, _system_prompt, **_kwargs: "{}"
+    )
+    observer(
+        "synthetic prompt",
+        SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
+        provider="synthetic-provider",
+    )
+    failure = RuntimeError("unexpected-private-failure-sentinel")
+
+    observation = observer.finalize(
+        run_kernel=SimpleNamespace(
+            state=SimpleNamespace(
+                search_planner_proposal_state={},
+                initial_answer_contract_projection={},
+                search_work_plan={},
+            )
+        ),
+        failure=failure,
+    )
+
+    assert observation.parser_posture == "REVIEW_REQUIRED"
+    assert observation.validator_posture == "REVIEW_REQUIRED"
+    assert observation.runtime_projection_posture == "NOT_REACHED"
+
+
+def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> None:
+    payload = deepcopy(_model_payload())
+    _m10_stale_binding(payload)
+    model_component_id = payload["answer_components"][0]["component_id"]
+    model_field_value = payload["answer_components"][0][
+        "user_facing_question"
+    ]
+    model_query_text = payload["component_search_requirements"][0][
+        "metadata"
+    ]["query_strategy_candidates"][0]["candidate_query_text"]
+
+    failure, observation = _observe_adapter_result(payload)
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    with pytest.raises(FrozenInstanceError):
+        setattr(
+            failure.failure_metadata,
+            "failure_code",
+            SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+        )
+    with pytest.raises(AttributeError):
+        setattr(
+            failure,
+            "_failure_metadata",
+            failure.failure_metadata,
+        )
+    packet = observation.to_packet()
+    serialized = json.dumps(packet, sort_keys=True)
+    for forbidden in (
+        "attestation-input-private-sentinel",
+        "model-generated-stale-binding-sentinel",
+        model_component_id,
+        model_field_value,
+        model_query_text,
+        str(failure),
+    ):
+        assert forbidden not in serialized
+    assert packet["raw_prompt_retained"] is False
+    assert packet["raw_response_retained"] is False
+    assert packet["raw_provider_payload_retained"] is False
+    assert packet["observer_parsed_model_output"] is False
+    assert packet["bounded_failure_reason"] == (
+        "SearchPlannerModelAdapterError:"
+        "failure_stage=CROSS_REFERENCE_VALIDATION:"
+        "failure_code=LINEAGE_OR_BINDING_FAILURE:"
+        f"message_sha256={_digest(str(failure))}"
+    )
+
+
+def test_observer_stage_classification_contains_no_message_search() -> None:
+    source = Path(
+        "scripts/evaluation/search_planner_product_boundary_observer.py"
+    ).read_text(encoding="utf-8")
+    assert "str(failure).casefold()" not in source
+    assert '"valid json" in reason' not in source.casefold()
+    assert '"json object" in reason' not in source.casefold()
 
 
 def test_observer_retains_only_safe_digest_and_shape_facts(
