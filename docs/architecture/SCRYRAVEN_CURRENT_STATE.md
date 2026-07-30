@@ -91,6 +91,7 @@ configuration.
 | `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, the unchanged same-component Analyst and D-prime, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
 | `SEARCHOS-BOUNDARY-B-CONVERGENCE` | Boundary B is installed through the ordinary consumer. Component Analyst or Cross-Component Analyst may emit the shared typed query-resolution proposal; deterministic arbitration selects only an exact noncompeting proposal. A searched-premise winner reuses ContractAmendment v2, the same whole-run SearchOS lease/cycle owner, QueryPlan, acquisition/custody, ComponentCoverage, Graph V1 reproof, and affected-only resynthesis. SearchOS searches the missing premise but never authors or admits inference. Target-mapped Graph V1 inference is bounded to semantic depth 1 in Fast/Balanced and 2 in Deep. Sufficiency, FAP, Author, RunOutcome, and CLI output consume only current admitted direct or inferred posture. The former ordinary dynamic-recovery runtime is deleted and has zero ordinary reachability. |
 | `SEARCHOS-ANALYSTOS-OFFLINE-GATE` | PR #521 installs the reusable seven-scenario fictional SearchOS/AnalystOS ordinary-path gate. It proves direct closure, one searched-premise recovery, depth-two reconstruction, nested recovery with fresh whole-case reconciliation, root-query retention against a distractor, honest nonclosure, exact nested semantic-role artifact custody, atomic action bookkeeping, defensive proposal custody/replay, and exact action/observation sequence closure under the installed Fast 0 / Balanced 1 / Deep 2 serial searched-generation limits. |
+| `ANALYSTOS-EVALUATION-RESPONSIBILITY-SPLIT` | Model-origination validation now has separate owners for observation of the canonical ordinary SearchPlanner boundary, deterministic mechanical rules, provider-neutral teacher-free semantic judgment, experiment identity and calibrated attribution, non-overriding coordination, and passive sanitized reporting. The legacy evaluator retains only call-manifest, command-identity, authorization-validation, and zero-live planning compatibility; its combined execute, scoring, causal-classification, and reporting authority is retired. The ordinary product path and its prompt, schema, parser, validator, runtime projection, and initial acceptance behavior are unchanged. |
 
 The shared parser keeps factual numeric assertions inspectable when they appear
 under source/reference headings, in Markdown bullets, brackets, accounting
@@ -719,8 +720,11 @@ This deterministic gate proves that the operating system can carry valid
 model-boundary semantic proposals. It does not prove that a real SearchPlanner
 or Analyst model can reliably originate the correct decomposition.
 Real-model origination, arbitrary-query quality, provider quality, and live
-product correctness remain unproved. The present evaluation-preparation phase
-performs no real model call.
+product correctness remain unproved. Offline evaluation now observes this
+canonical boundary and preserves separately owned mechanical, semantic, and
+attribution postures. Semantic-judge provider/model selection is not installed,
+live semantic evaluation remains unlicensed, and real prompt causality remains
+unproved.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
