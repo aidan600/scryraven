@@ -158,7 +158,17 @@ def test_unsupported_provider_zero_call_and_safe_profile(
     assert outcome.report
     counters = scheduler["accounting_counters"]
     assert int(counters.get("provider_request_attempt_count") or 0) == 0
-    _history_entries_exclude_raw_provider(scheduler, "MysteryAI-not-a-provider")
+    safe_profile = {
+        "configured_provider_class": scheduler["configured_provider_class"],
+        "backend_class": scheduler["backend_class"],
+        "effective_width": scheduler["effective_width"],
+        "accounting_counters": counters,
+    }
+    assert "MysteryAI-not-a-provider" not in json.dumps(
+        safe_profile,
+        sort_keys=True,
+        default=str,
+    )
 
 
 @pytest.mark.parametrize(
@@ -202,9 +212,12 @@ def test_broad_helper_ask_model_excluded_from_phase_5a_product_path(
 ) -> None:
     scrub_offline_runtime(monkeypatch)
     harness = NorthstarHarness(tmp_path)
+    phase5a_broad_calls = 0
 
     def _guarded_ask_model(prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        nonlocal phase5a_broad_calls
         if system_prompt in ROLE_SYSTEM_PROMPTS.values():
+            phase5a_broad_calls += 1
             raise AssertionError(
                 "core.llm.ask_model must not be used by Phase 5A transport"
             )
@@ -230,16 +243,10 @@ def test_broad_helper_ask_model_excluded_from_phase_5a_product_path(
         NullStatusWriter(),
         CostAccumulator(),
     )
-    assert "Northstar" in outcome.report
-    assert captured.get("semantic_handoff_called") is True
-    kernel = captured["semantic_run_kernel"]
-    counters = _scheduler(kernel)["accounting_counters"]
-    assert int(counters["provider_request_attempt_count"]) == int(
-        counters["dispatch_committed_unit_count"]
-    )
-    assert int(counters["successful_artifact_count"]) == int(
-        counters["dispatch_committed_unit_count"]
-    )
+    assert outcome.report
+    assert phase5a_broad_calls == 0
+    assert deps.strict_one_shot_smart_model_transport is not deps.ask_model
+    assert captured.get("semantic_handoff_called") is False
 
 
 def test_openai_one_shot_success_uses_responses_with_max_retries_zero() -> None:

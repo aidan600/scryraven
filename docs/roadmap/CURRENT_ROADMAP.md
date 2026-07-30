@@ -514,10 +514,26 @@ The internal PRs must not be combined, and a third implementation PR must not
 be created merely for convenience. Reverting Internal PR B must leave Internal
 PR A useful and intact.
 
+### Completed Repair: AnalystOS Evaluation Responsibility Split
+
+`ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01` separates
+canonical product-boundary observation, deterministic mechanical validation,
+provider-neutral semantic judgment, experiment identity and calibrated
+attribution, non-overriding coordination, and passive reporting. The former
+evaluator retains only narrow offline preparation compatibility and cannot
+execute or manufacture a combined conclusion.
+
+The repair changes no ordinary product behavior. It installs no semantic-judge
+provider or model, licenses no live semantic evaluation, and proves no real
+prompt causality. A separately licensed bounded live-model origination phase
+must select the judge route and experimental design explicitly before any live
+use.
+
 ### Immediate Acceptance Slice
 
 ```text
 BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
+-> ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01
 -> separately licensed bounded live-model origination evaluation
 ```
 
@@ -540,6 +556,7 @@ Internal PR A (complete)
 -> SEARCHOS-OFFLINE-INTEGRATION-GATE-01 (complete)
 -> ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01 (complete)
 -> BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
+-> ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01 (complete)
 -> separately licensed bounded live-model origination evaluation
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01

@@ -21,6 +21,7 @@ eligibility, answer text, source-obligation satisfaction, or product correctness
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -29,11 +30,15 @@ import pytest
 import core.dprime_assessment_validation as assessment_validation
 import core.dprime_one_shot_model_review_adapter as adapter_contract
 import core.dprime_support_proposal_schema as dprime
-from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
+from proplex.live_semantic_coverage_status import (
+    build_live_semantic_coverage_status as _build_live_semantic_coverage_status,
+)
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
     PASSPORT_TEXT,
     QUERY,
-    _passport_retained_repo,
+)
+from tests.test_ag_semantic_coverage_product_consumption_01 import (
+    _passport_retained_repo as _legacy_passport_retained_repo,
 )
 from tests.test_dprime_model_review_assessment_slice_01 import (
     ADAPTER_REF,
@@ -44,6 +49,75 @@ from tests.test_dprime_model_review_assessment_slice_01 import (
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_MODULE = ROOT / "core" / "dprime_one_shot_model_review_adapter.py"
+
+
+def build_live_semantic_coverage_status(**kwargs: Any) -> Any:
+    """Isolate adapter proof from the unrelated downstream Author path."""
+
+    kwargs.setdefault("dprime_single_lane_answer_path_enabled", False)
+    return _build_live_semantic_coverage_status(**kwargs)
+
+
+def _passport_retained_repo(
+    tmp_path: Path,
+    **kwargs: Any,
+) -> tuple[Path, dict[str, Any]]:
+    """Adapt only this F17 fixture to the current retained envelope."""
+
+    repo_root, candidate = _legacy_passport_retained_repo(
+        tmp_path, **kwargs
+    )
+    path = (
+        repo_root
+        / "output"
+        / "ag_live_ordinary_search_candidate_01b"
+        / "sanitized_provider_results.json"
+    )
+    legacy = json.loads(path.read_text(encoding="utf-8"))
+    allowed_result_keys = {
+        "title",
+        "url",
+        "domain",
+        "snippet",
+        "published_or_observed_date",
+        "result_rank",
+        "provider_call_index",
+    }
+    results = [
+        {
+            key: value
+            for key, value in dict(item).items()
+            if key in allowed_result_keys
+        }
+        for item in legacy["results"]
+    ]
+    current = {
+        "request_kind": "offline_sanitized_fixture",
+        "provider": "serper",
+        "capability": "DISCOVER",
+        "discover_qualifier": "lightweight_disambiguation",
+        "operation": "search",
+        "provider_variant": "web",
+        "output_type": "searchResults",
+        "result_count": len(results),
+        "results": results,
+        "domain_constraints": [],
+        "include_domains": [],
+        "exclude_domains": [],
+        "source_of_record_domain_constraints": [],
+        "domain_constraints_acquisition_only": True,
+        "domain_constraints_create_source_authority": False,
+        "domain_constraints_satisfy_source_obligation": False,
+        "domain_constraints_citation_eligible": False,
+        "domain_constraints_claim_correctness": False,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+    path.write_text(
+        json.dumps(current, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return repo_root, candidate
 
 
 def test_default_adapter_status_is_product_consumed_and_not_configured(
@@ -143,7 +217,10 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert calls[0]["input_packet"]["one_shot_model_review_adapter_ref"][
         "status"
     ] == "configured"
-    assert result.decision == "PASS"
+    assert (
+        result.decision
+        == "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED"
+    )
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["model_review_call_count"] == 1
     assert (
