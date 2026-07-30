@@ -23,7 +23,7 @@ from scripts.evaluation.model_origination_experiment_authority import (
     build_experiment_identity,
 )
 
-REPOSITORY_SHA = "cd7a33731ff501456ba97fcfd15e423fd2676e1f"
+REPOSITORY_SHA = "cd7a33731ff501456ba97fcfd15e423fd2676e1f"  # pragma: allowlist secret
 
 
 def _hex(value: str) -> str:

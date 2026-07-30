@@ -503,7 +503,9 @@ def test_report_assembler_rejects_raw_or_private_metadata() -> None:
             mechanical=mechanical,
             semantic=semantic,
             attribution=None,
-            safe_usage_and_cost_metadata={"api_key": "forbidden"},
+            safe_usage_and_cost_metadata={
+                "api_key": "forbidden",  # pragma: allowlist secret
+            },
             execution_references=(),
         )
 

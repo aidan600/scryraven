@@ -65,7 +65,7 @@ def _observation() -> ProductBoundaryObservation:
                 "require_json",
             ),
             keyword_types={
-                "api_key": "str",
+                "api_key": "str",  # pragma: allowlist secret
                 "cost_accumulator": "object",
                 "cost_phase": "str",
                 "effort": "str",
