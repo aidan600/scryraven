@@ -423,24 +423,6 @@ class BrokeredSearchPlannerSemanticJudge:
             request_packet_digest=primary_request_digest,
         )
         primary_response = None
-        if primary_judgment is None:
-            adversarial_fact = _not_run_fact(
-                pass_kind="adversarial",
-                call_id=adversarial_call_id,
-                execution_identity_digest=adversarial_execution_digest,
-                request_packet_digest=adversarial_request_digest,
-            )
-            adversarial_prompt = ""
-            return BrokeredSemanticJudgmentOutcome(
-                semantic_result=None,
-                execution_observation=_build_observation(
-                    request=request,
-                    route_digest=route_digest,
-                    primary=primary_fact,
-                    adversarial=adversarial_fact,
-                    reconciliation_posture="NOT_RUN",
-                ),
-            )
 
         adversarial_response = self._call(
             prompt=adversarial_prompt,
@@ -457,7 +439,10 @@ class BrokeredSearchPlannerSemanticJudge:
             request_packet_digest=adversarial_request_digest,
         )
         adversarial_response = None
-        if adversarial_judgment is None:
+        if (
+            primary_judgment is None
+            or adversarial_judgment is None
+        ):
             return BrokeredSemanticJudgmentOutcome(
                 semantic_result=None,
                 execution_observation=_build_observation(
@@ -901,40 +886,6 @@ def _build_observation(
             "reasoning_traces_retained": False,
         },
         bounded_failure_facts=failures,
-    )
-
-
-def _not_run_fact(
-    *,
-    pass_kind: str,
-    call_id: str,
-    execution_identity_digest: str,
-    request_packet_digest: str,
-) -> SemanticJudgePassExecutionFact:
-    return SemanticJudgePassExecutionFact(
-        pass_kind=pass_kind,
-        call_id=call_id,
-        execution_identity_digest=execution_identity_digest,
-        request_packet_digest=request_packet_digest,
-        response_digest=None,
-        response_length=0,
-        response_presence_posture="NOT_RUN",
-        parse_posture="NOT_RUN",
-        contract_validation_posture="NOT_RUN",
-        validated_pass_status=None,
-        route_attestation={"posture": "NOT_RUN"},
-        usage_attestation={"posture": "NOT_RUN"},
-        token_accounting={
-            "input_tokens": None,
-            "cached_input_tokens": None,
-            "uncached_input_tokens": None,
-            "output_tokens": None,
-            "reasoning_tokens": None,
-            "non_reasoning_output_tokens": None,
-            "total_tokens": None,
-        },
-        cost_accounting_usd=None,
-        bounded_failure_fact=None,
     )
 
 

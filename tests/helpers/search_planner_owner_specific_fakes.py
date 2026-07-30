@@ -75,10 +75,7 @@ def scenario_packet() -> OwnerSpecificScenarioPacket:
         schema_version=SCENARIO_PACKET_SCHEMA_VERSION,
         scenario_id="fictional-owner-specific-case",
         fictional_scenario=True,
-        normalized_fictional_user_request=(
-            "What is the fictional Alder permit threshold and which "
-            "fictional authority establishes it?"
-        ),
+        normalized_fictional_user_request=SCENARIOS[0].root_query,
         requested_mode="Balanced",
         current_date="2026-07-30",
         focus_academic=False,
@@ -90,9 +87,9 @@ def scenario_packet() -> OwnerSpecificScenarioPacket:
             "intent": "general",
             "report_type": "research_report",
             "query_type": "factual",
-            "core_topic": "fictional Alder permit threshold",
-            "primary_entity": "fictional Alder permit",
-            "entities": ["fictional Alder permit"],
+            "core_topic": "Harbor Cooperative filing route",
+            "primary_entity": "Harbor Cooperative",
+            "entities": ["Harbor Cooperative", "Northstar Bulletin 26"],
             "is_academic": False,
         },
         route_projection={"route_id": "route:fictional-owner-specific"},
@@ -131,16 +128,16 @@ def requirement_packet() -> SemanticRequirementPacket:
         scenario_id="fictional-owner-specific-case",
         essential_requirements=(
             EssentialRequirement(
-                requirement_id="requirement:threshold",
+                requirement_id="requirement:filing-route",
                 normalized_requirement=(
-                    "The plan must represent the requested threshold fact."
+                    "The plan must represent the requested filing-route assignment."
                 ),
                 requirement_kind="FACT",
             ),
             EssentialRequirement(
                 requirement_id="requirement:authority",
                 normalized_requirement=(
-                    "The plan must preserve an official-current authority need."
+                    "The plan must preserve the current fictional bulletin source need."
                 ),
                 requirement_kind="AUTHORITY",
             ),

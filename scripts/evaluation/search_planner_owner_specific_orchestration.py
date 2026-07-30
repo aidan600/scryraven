@@ -34,6 +34,7 @@ from scripts.evaluation.brokered_model_origination_transport import (
 )
 from scripts.evaluation.brokered_search_planner_semantic_judge import (
     BrokeredSearchPlannerSemanticJudge,
+    BrokeredSemanticJudgeError,
     BrokeredSemanticJudgmentOutcome,
     SearchPlannerSemanticJudgeExecutionObservation,
     validate_semantic_result_execution_pair,
@@ -679,7 +680,7 @@ def build_plan_only_packet(
             "required_call_classes": [
                 "one Planner call per scheduled trial",
                 "one primary semantic call after each mechanical PASS",
-                "one adversarial semantic call after each validated primary pass",
+                "one adversarial semantic call after each primary pass attempt",
             ],
             "call_ids_must_be_pre_reserved": True,
             "retry_cap": 0,
@@ -795,6 +796,25 @@ def execute_owner_specific_evaluation(
         raise OwnerSpecificAuthorizationError(
             "execute requires a temporary loopback broker session"
         )
+    if not broker_client._is_loopback_broker_url(
+        broker_client.DEFAULT_BROKER_URL
+    ):
+        raise OwnerSpecificAuthorizationError(
+            "execute requires the fixed loopback broker endpoint"
+        )
+    if (
+        transport_factory is not None
+        and getattr(transport_factory, "test_only", False) is not True
+    ):
+        raise OwnerSpecificAuthorizationError(
+            "injected transport factories are confined to explicit test doubles"
+        )
+    try:
+        output_target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise OwnerSpecificAuthorizationError(
+            "output packet parent is not writable"
+        ) from exc
 
     selected_factory = (
         create_brokered_model_route_transport
@@ -868,15 +888,27 @@ def execute_owner_specific_evaluation(
                     authorization.semantic_requirement_packet.prohibited_upgrades_or_shortcuts
                 ),
             )
-            semantic_outcome: BrokeredSemanticJudgmentOutcome = (
-                semantic_adapter.judge(
-                    semantic_request,
-                    primary_call_id=scheduled.primary_judge_call_id,
-                    adversarial_call_id=(
-                        scheduled.adversarial_judge_call_id
-                    ),
+            try:
+                semantic_outcome: BrokeredSemanticJudgmentOutcome = (
+                    semantic_adapter.judge(
+                        semantic_request,
+                        primary_call_id=scheduled.primary_judge_call_id,
+                        adversarial_call_id=(
+                            scheduled.adversarial_judge_call_id
+                        ),
+                    )
                 )
-            )
+            except OwnerSpecificOrchestrationError:
+                raise
+            except (
+                BrokeredSemanticJudgeError,
+                EvaluationConfigurationError,
+                EvaluationTransportError,
+            ) as exc:
+                raise OwnerSpecificOrchestrationError(
+                    "semantic-judge broker execution failed closed: "
+                    f"{type(exc).__name__}"
+                ) from exc
             semantic_result = semantic_outcome.semantic_result
             semantic_execution = (
                 semantic_outcome.execution_observation
@@ -910,7 +942,6 @@ def execute_owner_specific_evaluation(
         budget_snapshot=ledger.snapshot(),
         repository_sha=repository_sha,
     )
-    output_target.parent.mkdir(parents=True, exist_ok=True)
     try:
         with output_target.open("x", encoding="utf-8", newline="\n") as handle:
             json.dump(
@@ -1321,6 +1352,8 @@ def _assemble_outer_packet(
         trial_observations,
         safe_trial_materials,
     ):
+        if item.semantic_execution is not None:
+            semantic_observation_count += 1
         if item.semantic_result is not None:
             if item.semantic_execution is None:
                 raise OwnerSpecificOrchestrationError(
@@ -1330,7 +1363,6 @@ def _assemble_outer_packet(
                 item.semantic_result,
                 item.semantic_execution,
             )
-            semantic_observation_count += 1
         combined = coordinator.coordinate(
             product=item.product_observation,
             mechanical=item.mechanical_result,

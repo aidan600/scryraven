@@ -528,6 +528,35 @@ class PromptExperimentAuthorization:
             raise OwnerSpecificAuthorizationError(
                 "trial schedule contains a call-identity collision"
             )
+        arm_identity_fragments = {
+            _normalized_identifier(self.control_arm_id),
+            _normalized_identifier(self.variant_arm_id),
+            "control",
+            "variant",
+        }
+        for item in self.trial_schedule:
+            for call_id in (
+                item.primary_judge_call_id,
+                item.adversarial_judge_call_id,
+            ):
+                normalized_call_id = _normalized_identifier(call_id)
+                if any(
+                    fragment
+                    and (
+                        normalized_call_id == fragment
+                        or normalized_call_id.startswith(
+                            f"{fragment}-"
+                        )
+                        or normalized_call_id.endswith(
+                            f"-{fragment}"
+                        )
+                        or f"-{fragment}-" in normalized_call_id
+                    )
+                    for fragment in arm_identity_fragments
+                ):
+                    raise OwnerSpecificAuthorizationError(
+                        "semantic-judge call IDs must remain arm-blind"
+                    )
 
     @classmethod
     def from_mapping(
@@ -2109,6 +2138,14 @@ def _reject_secret_like_text(value: str) -> None:
             raise OwnerSpecificAuthorizationError(
                 "variant instruction contains secret-like material"
             )
+
+
+def _normalized_identifier(value: str) -> str:
+    return re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        value.casefold(),
+    ).strip("-")
 
 
 def _reject_forbidden_keys(

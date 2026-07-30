@@ -299,6 +299,12 @@ def test_plan_only_constructs_no_transport_or_credentials(
             "generic loopback broker",
         ),
         (
+            lambda packet: packet["evaluation_identity"].update(
+                {"canonical_operator_command_digest": "1" * 64}
+            ),
+            "command digest does not cover",
+        ),
+        (
             lambda packet: packet["retention_policy"].update(
                 {"retain_raw_outputs": True}
             ),
@@ -309,6 +315,28 @@ def test_plan_only_constructs_no_transport_or_credentials(
                 {"maximum_planner_calls": 99}
             ),
             "exactly match",
+        ),
+        (
+            lambda packet: packet["prompt_experiment"][
+                "trial_schedule"
+            ][0].update(
+                {"primary_judge_call_id": "control-primary-call"}
+            ),
+            "arm-blind",
+        ),
+        (
+            lambda packet: packet["prompt_experiment"].update(
+                {
+                    "trial_schedule": list(
+                        reversed(
+                            packet["prompt_experiment"][
+                                "trial_schedule"
+                            ]
+                        )
+                    )
+                }
+            ),
+            "policy packet differs",
         ),
         (
             lambda packet: packet["whole_evaluation_caps"].update(
@@ -350,6 +378,7 @@ def test_authorization_mapping_rejects_every_unlicensed_shape(
         ("command", "CLI invocation"),
         ("scenario", "exact scenario"),
         ("scenario_digest", "scenario packet digest"),
+        ("output", "path identity"),
     ),
 )
 def test_context_mismatch_fails_before_transport_factory(
@@ -364,6 +393,9 @@ def test_context_mismatch_fails_before_transport_factory(
     )
     repository_sha = REPOSITORY_SHA
     actual_argv = argv
+    output_packet_path = (
+        authorization.evaluation_identity.output_packet_path
+    )
     if context_mutation == "repository":
         repository_sha = "1" * 40
     elif context_mutation == "command":
@@ -373,7 +405,7 @@ def test_context_mismatch_fails_before_transport_factory(
             scenario,
             scenario_id="another-fictional-scenario",
         )
-    else:
+    elif context_mutation == "scenario_digest":
         authorization = replace(
             authorization,
             scenario_packet_identity=replace(
@@ -381,6 +413,8 @@ def test_context_mismatch_fails_before_transport_factory(
                 scenario_packet_sha256="1" * 64,
             ),
         )
+    else:
+        output_packet_path = "output/local/another-result.json"
     monkeypatch.setenv(
         broker_client.TOKEN_ENV_VAR,
         "synthetic-test-session",
@@ -402,7 +436,7 @@ def test_context_mismatch_fails_before_transport_factory(
                 authorization.evaluation_identity.scenario_packet_path
             ),
             output_packet_path=(
-                authorization.evaluation_identity.output_packet_path
+                output_packet_path
             ),
             actual_argv=actual_argv,
             repository_root=tmp_path,
@@ -577,3 +611,80 @@ def test_non_test_execute_identity_is_fixed_to_generic_broker(
         authorization.evaluation_identity.transport_factory_spec
         == GENERIC_BROKER_TRANSPORT_FACTORY_SPEC
     )
+
+
+def test_nonloopback_endpoint_and_unmarked_factory_fail_before_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization, scenario, argv = authorization_bundle(
+        repository_root=tmp_path,
+        repository_sha=REPOSITORY_SHA,
+    )
+    factory = FakeOwnerSpecificBrokerFactory()
+    monkeypatch.setenv(
+        broker_client.TOKEN_ENV_VAR,
+        "synthetic-test-session",
+    )
+    monkeypatch.setattr(
+        broker_client,
+        "DEFAULT_BROKER_URL",
+        "https://broker.invalid",
+    )
+
+    with pytest.raises(
+        OwnerSpecificAuthorizationError,
+        match="fixed loopback broker endpoint",
+    ):
+        execute_owner_specific_evaluation(
+            authorization=authorization,
+            scenario_packet=scenario,
+            repository_sha=REPOSITORY_SHA,
+            live_addendum_path=(
+                authorization.evaluation_identity.live_addendum_path
+            ),
+            scenario_packet_path=(
+                authorization.evaluation_identity.scenario_packet_path
+            ),
+            output_packet_path=(
+                authorization.evaluation_identity.output_packet_path
+            ),
+            actual_argv=argv,
+            repository_root=tmp_path,
+            transport_factory=factory,
+        )
+    assert factory.factory_routes == []
+
+    monkeypatch.setattr(
+        broker_client,
+        "DEFAULT_BROKER_URL",
+        "http://127.0.0.1:8765/run",
+    )
+    unmarked_factory_calls: list[object] = []
+
+    def unmarked_factory(route):
+        unmarked_factory_calls.append(route)
+        raise AssertionError("unmarked factory was constructed")
+
+    with pytest.raises(
+        OwnerSpecificAuthorizationError,
+        match="confined to explicit test doubles",
+    ):
+        execute_owner_specific_evaluation(
+            authorization=authorization,
+            scenario_packet=scenario,
+            repository_sha=REPOSITORY_SHA,
+            live_addendum_path=(
+                authorization.evaluation_identity.live_addendum_path
+            ),
+            scenario_packet_path=(
+                authorization.evaluation_identity.scenario_packet_path
+            ),
+            output_packet_path=(
+                authorization.evaluation_identity.output_packet_path
+            ),
+            actual_argv=argv,
+            repository_root=tmp_path,
+            transport_factory=unmarked_factory,
+        )
+    assert unmarked_factory_calls == []

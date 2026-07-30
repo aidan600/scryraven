@@ -235,9 +235,18 @@ def test_malformed_primary_pass_cannot_produce_semantic_met(
     )
     assert (
         outcome.execution_observation.adversarial_pass.response_presence_posture
-        == "NOT_RUN"
+        == "PRESENT"
     )
-    assert len(factory.calls) == 1
+    assert (
+        outcome.execution_observation.adversarial_pass.contract_validation_posture
+        == "PASS"
+    )
+    assert outcome.execution_observation.semantic_judge_call_cap_consumption == {
+        "primary_calls": 1,
+        "adversarial_calls": 1,
+        "total_calls": 2,
+    }
+    assert len(factory.calls) == 2
 
 
 def test_malformed_adversarial_pass_cannot_produce_semantic_met(
