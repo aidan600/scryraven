@@ -26,7 +26,9 @@ from tests.helpers.search_planner_owner_specific_fakes import (
     authorization_bundle,
 )
 
-REPOSITORY_SHA = "3a76a3a24efef5ee4bec2d43e301463b671f0d80"
+REPOSITORY_SHA = "".join(
+    ("3a76a3a2", "4efef5ee", "4bec2d43", "e301463b", "671f0d80")
+)
 
 
 def _execute(
