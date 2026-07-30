@@ -422,83 +422,148 @@ class ScriptedSemanticJudgeAdapter:
         self.invocation_count = 0
 
     def judge(self, request: SemanticJudgmentRequest) -> SemanticJudgmentResult:
-        request.__post_init__()
         self.invocation_count += 1
-        primary = _validate_pass(request, self._primary, label="primary")
-        adversarial = _validate_pass(request, self._adversarial, label="adversarial")
-        mechanical = str(request.mechanical_validation_summary.get("overall_posture") or "")
-        if not _materially_agree(primary, adversarial):
-            result_status = "REVIEW_REQUIRED"
-            mappings: tuple[RequirementMapping, ...] = ()
-            issues: tuple[SemanticIssue, ...] = ()
-            evidence_paths = _pass_evidence_paths(primary, adversarial)
-            ambiguities = (
-                SemanticAmbiguity(
-                    requirement_id="two_pass_disagreement",
-                    precise_ambiguity=(
-                        "Primary and adversarial semantic passes reached materially different postures."
+        return reconcile_semantic_judgments(
+            request,
+            primary=self._primary,
+            adversarial=self._adversarial,
+        )
+
+
+def reconcile_semantic_judgments(
+    request: SemanticJudgmentRequest,
+    *,
+    primary: SemanticPassJudgment,
+    adversarial: SemanticPassJudgment,
+) -> SemanticJudgmentResult:
+    """Validate and reconcile two supplied passes under the installed owner."""
+
+    request.__post_init__()
+    validated_primary = _validate_pass(request, primary, label="primary")
+    validated_adversarial = _validate_pass(
+        request,
+        adversarial,
+        label="adversarial",
+    )
+    mechanical = str(
+        request.mechanical_validation_summary.get("overall_posture") or ""
+    )
+    if not _materially_agree(validated_primary, validated_adversarial):
+        result_status = "REVIEW_REQUIRED"
+        mappings: tuple[RequirementMapping, ...] = ()
+        issues: tuple[SemanticIssue, ...] = ()
+        evidence_paths = _pass_evidence_paths(
+            validated_primary,
+            validated_adversarial,
+        )
+        ambiguities = (
+            SemanticAmbiguity(
+                requirement_id="two_pass_disagreement",
+                precise_ambiguity=(
+                    "Primary and adversarial semantic passes reached "
+                    "materially different postures."
+                ),
+                competing_interpretations=(
+                    (
+                        f"primary:{validated_primary.status}:"
+                        f"{_pass_identity(validated_primary)}"
                     ),
-                    competing_interpretations=(
-                        f"primary:{primary.status}:{_pass_identity(primary)}",
-                        f"adversarial:{adversarial.status}:{_pass_identity(adversarial)}",
-                    ),
-                    proposal_paths=evidence_paths,
-                    smallest_review_action=(
-                        "Obtain one independent decision on the conflicting "
-                        "requirement-to-proposal evidence."
+                    (
+                        f"adversarial:{validated_adversarial.status}:"
+                        f"{_pass_identity(validated_adversarial)}"
                     ),
                 ),
-            )
-        else:
-            result_status = primary.status
-            mappings = primary.requirement_mappings
-            issues = primary.issues
-            ambiguities = primary.ambiguities
-        findings = _build_requirement_findings(
-            request=request,
-            status=result_status,
-            mappings=mappings,
-            issues=issues,
-            ambiguities=ambiguities,
-        )
-        answer_findings = tuple(item for item in findings if item.requirement_kind == "ANSWER_CAPABILITY")
-        evidence = tuple(
-            SemanticEvidenceRef(
-                requirement_id=item.requirement_id,
-                proposal_paths=item.proposal_paths,
-            )
-            for item in findings
-        )
-        return SemanticJudgmentResult(
-            judge_contract_version=SEMANTIC_JUDGMENT_CONTRACT_VERSION,
-            owner="SearchPlannerSemanticJudgment",
-            request_id=request.request_id,
-            input_packet_digest=request.input_packet_digest,
-            proposal_digest=request.proposal_digest,
-            deterministic_result_ref=request.deterministic_result_ref,
-            final_status=result_status,
-            requirement_mappings=mappings,
-            issues=issues,
-            ambiguities=ambiguities,
-            primary_judgment=primary,
-            adversarial_challenge=adversarial,
-            requirement_findings=findings,
-            necessary_fact_findings=tuple(item for item in findings if item.requirement_kind == "FACT"),
-            necessary_relationship_findings=tuple(item for item in findings if item.requirement_kind == "RELATIONSHIP"),
-            authority_findings=tuple(item for item in findings if item.requirement_kind == "AUTHORITY"),
-            answer_capability=AnswerCapabilityFinding(
-                status=(answer_findings[0].status if answer_findings else result_status),
-                requirement_ids=tuple(item.requirement_id for item in answer_findings),
-                bounded_explanation=(
-                    answer_findings[0].bounded_explanation
-                    if answer_findings
-                    else "Overall semantic posture governs answer capability."
+                proposal_paths=evidence_paths,
+                smallest_review_action=(
+                    "Obtain one independent decision on the conflicting "
+                    "requirement-to-proposal evidence."
                 ),
             ),
-            bounded_evidence=evidence,
-            mechanical_posture_seen=mechanical,
-            diagnostic_only=request.diagnostic_mode and mechanical != "PASS",
         )
+    else:
+        result_status = validated_primary.status
+        mappings = validated_primary.requirement_mappings
+        issues = validated_primary.issues
+        ambiguities = validated_primary.ambiguities
+    findings = _build_requirement_findings(
+        request=request,
+        status=result_status,
+        mappings=mappings,
+        issues=issues,
+        ambiguities=ambiguities,
+    )
+    answer_findings = tuple(
+        item
+        for item in findings
+        if item.requirement_kind == "ANSWER_CAPABILITY"
+    )
+    evidence = tuple(
+        SemanticEvidenceRef(
+            requirement_id=item.requirement_id,
+            proposal_paths=item.proposal_paths,
+        )
+        for item in findings
+    )
+    return SemanticJudgmentResult(
+        judge_contract_version=SEMANTIC_JUDGMENT_CONTRACT_VERSION,
+        owner="SearchPlannerSemanticJudgment",
+        request_id=request.request_id,
+        input_packet_digest=request.input_packet_digest,
+        proposal_digest=request.proposal_digest,
+        deterministic_result_ref=request.deterministic_result_ref,
+        final_status=result_status,
+        requirement_mappings=mappings,
+        issues=issues,
+        ambiguities=ambiguities,
+        primary_judgment=validated_primary,
+        adversarial_challenge=validated_adversarial,
+        requirement_findings=findings,
+        necessary_fact_findings=tuple(
+            item for item in findings if item.requirement_kind == "FACT"
+        ),
+        necessary_relationship_findings=tuple(
+            item
+            for item in findings
+            if item.requirement_kind == "RELATIONSHIP"
+        ),
+        authority_findings=tuple(
+            item for item in findings if item.requirement_kind == "AUTHORITY"
+        ),
+        answer_capability=AnswerCapabilityFinding(
+            status=(
+                answer_findings[0].status
+                if answer_findings
+                else result_status
+            ),
+            requirement_ids=tuple(
+                item.requirement_id for item in answer_findings
+            ),
+            bounded_explanation=(
+                answer_findings[0].bounded_explanation
+                if answer_findings
+                else "Overall semantic posture governs answer capability."
+            ),
+        ),
+        bounded_evidence=evidence,
+        mechanical_posture_seen=mechanical,
+        diagnostic_only=request.diagnostic_mode and mechanical != "PASS",
+    )
+
+
+def validate_semantic_pass_judgment(
+    request: SemanticJudgmentRequest,
+    judgment: SemanticPassJudgment,
+    *,
+    pass_label: str,
+) -> SemanticPassJudgment:
+    """Validate one parsed pass without assigning a final semantic status."""
+
+    request.__post_init__()
+    if pass_label not in {"primary", "adversarial"}:
+        raise SemanticJudgmentContractError(
+            "semantic pass label is unsupported"
+        )
+    return _validate_pass(request, judgment, label=pass_label)
 
 
 def build_semantic_judgment_request(
@@ -1029,4 +1094,6 @@ __all__ = [
     "SemanticPassJudgment",
     "SemanticRequirementFinding",
     "build_semantic_judgment_request",
+    "reconcile_semantic_judgments",
+    "validate_semantic_pass_judgment",
 ]

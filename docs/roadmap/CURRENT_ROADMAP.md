@@ -529,12 +529,37 @@ prompt causality. A separately licensed bounded live-model origination phase
 must select the judge route and experimental design explicitly before any live
 use.
 
+### Completed Build: Owner-Specific SearchPlanner Evaluation Orchestration
+
+`ANALYSTOS-SEARCHPLANNER-OWNER-SPECIFIC-LIVE-ORCHESTRATION-01` installs one
+separate, default-closed SearchPlanner evaluation command. `plan_only` requires
+no addendum, credentials, or transport and reports every owner as `NOT_RUN`.
+`execute` can proceed only when one future exact addendum binds the repository,
+fictional scenario, canonical command, ordered schedule, Planner and
+semantic-judge routes, all caps, owner versions, retention policy, and the
+complete canonical experiment-policy digest before transport construction.
+
+The generic loopback broker remains the only non-test live transport. The
+installed control prompt is byte-identical; a variant can change only the
+evaluation-time instruction prefix. Trials use the real Planner product
+boundary, canonical mechanical validation, two arm-blind semantic passes, the
+existing semantic reconciliation and experiment-attribution owners, and the
+existing passive report inside a separate sanitized execution envelope.
+Stochastic evidence cannot exceed `ASSOCIATION_ONLY`.
+
+This build selects no default Planner or semantic-judge route and no final
+prompt variant. It restores no combined-evaluator execute authority, changes no
+ordinary product behavior, performs no live validation, and establishes no
+prompt-quality or causal conclusion. The next checkpoint is a separately
+authorized exact live comparison addendum; this roadmap does not authorize it.
+
 ### Immediate Acceptance Slice
 
 ```text
 BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
 -> ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01
--> separately licensed bounded live-model origination evaluation
+-> ANALYSTOS-SEARCHPLANNER-OWNER-SPECIFIC-LIVE-ORCHESTRATION-01
+-> separately authorized exact live comparison
 ```
 
 The broker convergence slice installs the tracked explicit-route generic broker,
@@ -557,7 +582,8 @@ Internal PR A (complete)
 -> ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01 (complete)
 -> BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
 -> ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01 (complete)
--> separately licensed bounded live-model origination evaluation
+-> ANALYSTOS-SEARCHPLANNER-OWNER-SPECIFIC-LIVE-ORCHESTRATION-01 (complete)
+-> separately authorized exact live comparison
 -> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
 -> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
 -> SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01

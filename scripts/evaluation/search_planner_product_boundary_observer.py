@@ -23,7 +23,7 @@ CANONICAL_PRODUCT_BOUNDARY_REF = (
     "core.search_planner_model_adapter.SearchPlannerModelAdapter"
 )
 CANONICAL_PRODUCT_BOUNDARY_VERSION = "canonical_product_search_planner_boundary_cd7a337_v1"
-_PROMPT_PAYLOAD_MARKER = "Sanitized planner input JSON:\n"
+SEARCH_PLANNER_PROMPT_PAYLOAD_MARKER = "Sanitized planner input JSON:\n"
 _STAGE_POSTURES = frozenset({"PASS", "FAIL", "NOT_REACHED", "REVIEW_REQUIRED"})
 _INCOMPLETE_POSTURES = frozenset({"COMPLETE", "INCOMPLETE", "NOT_REACHED", "REVIEW_REQUIRED"})
 _FORBIDDEN_SAFE_REF_KEYS = frozenset(
@@ -330,7 +330,9 @@ def _observe_prompt_identity(
     prompt: str,
     system_prompt: str,
 ) -> PromptDigestObservation:
-    prefix, marker, serialized_packet = prompt.partition(_PROMPT_PAYLOAD_MARKER)
+    prefix, marker, serialized_packet = prompt.partition(
+        SEARCH_PLANNER_PROMPT_PAYLOAD_MARKER
+    )
     if not marker:
         return PromptDigestObservation(
             semantic_input_digest=_digest_text(""),
@@ -432,6 +434,7 @@ __all__ = [
     "CANONICAL_PRODUCT_BOUNDARY_VERSION",
     "CanonicalProductSearchPlannerBoundaryObserver",
     "PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION",
+    "SEARCH_PLANNER_PROMPT_PAYLOAD_MARKER",
     "ProductBoundaryObservation",
     "PromptDigestObservation",
 ]

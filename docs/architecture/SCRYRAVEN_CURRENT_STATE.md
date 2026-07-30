@@ -726,6 +726,35 @@ attribution postures. Semantic-judge provider/model selection is not installed,
 live semantic evaluation remains unlicensed, and real prompt causality remains
 unproved.
 
+## Installed Owner-Specific SearchPlanner Evaluation Orchestration
+
+The separate owner-specific SearchPlanner evaluation command now supports a
+zero-live `plan_only` mode and an `execute` mode that remains disabled unless an
+exact versioned live addendum, fictional scenario packet, canonical command,
+precommitted schedule, routes, owner identities, retention posture, and complete
+budget all agree before transport construction. The generic loopback broker is
+the sole non-test live transport. No default Planner route, semantic-judge
+route, or final prompt variant is selected, and the retired combined evaluator
+execute path remains closed.
+
+An authorized trial reuses the ordinary product-built Planner prompt, the real
+SearchPlanner cleaner/parser/validator/runtime projection/initial acceptance
+path, and the canonical SearchWorkPlan. Its evaluation-only dispatcher leaves
+the control bytes unchanged and may replace only the instruction prefix for an
+explicitly authorized variant. Mechanical nonpass withholds both semantic
+calls. Mechanical PASS permits two separately identified, arm-blind brokered
+semantic passes whose existing semantic owner reconciles the unchanged
+provider-neutral result. A separate sanitized execution observation records
+only broker facts.
+
+The existing experiment authority binds the complete canonical policy digest,
+and stochastic evidence is capped at `ASSOCIATION_ONLY`. Existing coordination
+and passive reporting remain non-overriding; a separate outer orchestration
+envelope carries safe execution, schedule, policy, and budget facts. This
+installation was validated only with offline fake transports. No live
+validation was performed, and no prompt-quality, real-effect, causal, provider,
+or arbitrary-query conclusion is established.
+
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
 `SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01` connects ordinary
@@ -899,9 +928,9 @@ and this document does not license changes to that surface.
 Prioritization and phase selection are owned exclusively by
 [Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not
 installed-state claims. The immediate acceptance slice is offline/no-live
-`ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01`, followed only under a
-separate exact addendum by the bounded live-model origination evaluation.
-Comparative provider/query calibration remains the next durable roadmap phase.
+owner-specific SearchPlanner evaluation orchestration. Any actual comparison
+still requires a separate exact maintainer-approved addendum. Comparative
+provider/query calibration remains a later durable roadmap phase.
 
 ## Historical Provenance
 
