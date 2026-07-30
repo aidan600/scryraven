@@ -12,11 +12,16 @@ from scripts.evaluation.brokered_search_planner_semantic_judge import (
     parse_semantic_pass_judgment,
     validate_semantic_result_execution_pair,
 )
+from scripts.evaluation.search_planner_owner_specific_authorization import (
+    SEMANTIC_CALL_ID_PATTERN,
+    OwnerSpecificAuthorizationError,
+)
 from scripts.evaluation.search_planner_semantic_judgment import (
     SemanticJudgmentContractError,
     build_semantic_judgment_request,
 )
 from tests.helpers.search_planner_owner_specific_fakes import (
+    OPAQUE_SEMANTIC_CALL_IDS,
     FakeOwnerSpecificBrokerFactory,
     authorization_bundle,
     requirement_packet,
@@ -25,6 +30,8 @@ from tests.helpers.search_planner_owner_specific_fakes import (
 REPOSITORY_SHA = "".join(
     ("3a76a3a2", "4efef5ee", "4bec2d43", "e301463b", "671f0d80")
 )
+PRIMARY_SEMANTIC_CALL_ID = OPAQUE_SEMANTIC_CALL_IDS[0]
+ADVERSARIAL_SEMANTIC_CALL_ID = OPAQUE_SEMANTIC_CALL_IDS[1]
 
 
 def _semantic_request():
@@ -163,8 +170,8 @@ def test_two_live_shaped_passes_return_provider_neutral_result_and_observation(
 
     outcome = adapter.judge(
         request,
-        primary_call_id="primary-call",
-        adversarial_call_id="adversarial-call",
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
     )
 
     assert outcome.semantic_result is not None
@@ -206,8 +213,8 @@ def test_two_pass_disagreement_remains_review_required(
 
     outcome = adapter.judge(
         request,
-        primary_call_id="primary-call",
-        adversarial_call_id="adversarial-call",
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
     )
 
     assert outcome.semantic_result is not None
@@ -225,8 +232,8 @@ def test_malformed_primary_pass_cannot_produce_semantic_met(
 
     outcome = adapter.judge(
         _semantic_request(),
-        primary_call_id="primary-call",
-        adversarial_call_id="adversarial-call",
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
     )
 
     assert outcome.semantic_result is None
@@ -262,8 +269,8 @@ def test_malformed_adversarial_pass_cannot_produce_semantic_met(
 
     outcome = adapter.judge(
         request,
-        primary_call_id="primary-call",
-        adversarial_call_id="adversarial-call",
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
     )
 
     assert outcome.semantic_result is None
@@ -290,12 +297,18 @@ def test_judge_prompts_and_execution_observation_are_arm_blind(
         "ARM_ID_SENTINEL",
         "TRIAL_ORDER_SENTINEL",
         "INSTRUCTION_DIGEST_SENTINEL",
+        "installed-control",
+        "synthetic-prefix-variant",
+        "trial-01",
+        "trial-02",
+        "planner-call-01",
+        "planner-call-02",
     )
 
     outcome = adapter.judge(
         request,
-        primary_call_id="primary-call",
-        adversarial_call_id="adversarial-call",
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
     )
 
     sent_material = "\n".join(
@@ -311,14 +324,31 @@ def test_judge_prompts_and_execution_observation_are_arm_blind(
         assert sentinel not in observation_packet
     forbidden_keys = {
         "arm_id",
+        "trial_id",
         "trial_order",
+        "schedule_index",
         "variant",
         "control",
         "instruction_digest",
     }
-    assert not forbidden_keys.intersection(
-        outcome.execution_observation.to_packet()
-    )
+    observed_keys: set[str] = set()
+
+    def collect_keys(value) -> None:
+        if isinstance(value, dict):
+            observed_keys.update(value)
+            for nested in value.values():
+                collect_keys(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                collect_keys(nested)
+
+    observation = outcome.execution_observation.to_packet()
+    collect_keys(observation)
+    assert not forbidden_keys.intersection(observed_keys)
+    for pass_name in ("primary_pass", "adversarial_pass"):
+        assert SEMANTIC_CALL_ID_PATTERN.fullmatch(
+            observation[pass_name]["call_id"]
+        )
 
 
 def test_semantic_result_requires_one_exact_matching_observation(
@@ -327,8 +357,8 @@ def test_semantic_result_requires_one_exact_matching_observation(
     adapter, _ = _adapter(tmp_path)
     outcome = adapter.judge(
         _semantic_request(),
-        primary_call_id="primary-call",
-        adversarial_call_id="adversarial-call",
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
     )
     assert outcome.semantic_result is not None
     mismatched = replace(
@@ -344,6 +374,38 @@ def test_semantic_result_requires_one_exact_matching_observation(
             outcome.semantic_result,
             mismatched,
         )
+
+
+def test_execution_fact_and_adapter_reject_nonopaque_call_ids(
+    tmp_path,
+) -> None:
+    adapter, _ = _adapter(tmp_path)
+    outcome = adapter.judge(
+        _semantic_request(),
+        primary_call_id=PRIMARY_SEMANTIC_CALL_ID,
+        adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
+    )
+
+    with pytest.raises(
+        OwnerSpecificAuthorizationError,
+        match="64 lowercase hex",
+    ):
+        replace(
+            outcome.execution_observation.primary_pass,
+            call_id="primary-call-01",
+        )
+
+    adapter, factory = _adapter(tmp_path)
+    with pytest.raises(
+        OwnerSpecificAuthorizationError,
+        match="64 lowercase hex",
+    ):
+        adapter.judge(
+            _semantic_request(),
+            primary_call_id="primary-call-01",
+            adversarial_call_id=ADVERSARIAL_SEMANTIC_CALL_ID,
+        )
+    assert factory.calls == []
 
 
 def test_pass_parser_rejects_unknown_fields_and_nonfinite_json() -> None:

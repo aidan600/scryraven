@@ -69,6 +69,99 @@ SYNTHETIC_VARIANT_INSTRUCTION = (
     "Return only a contract-valid JSON planning proposal.\n\n"
 )
 
+# Fixed opaque literals for the bounded test schedules in this phase. Their
+# tuple order allocates identities but their values encode no schedule facts.
+OPAQUE_SEMANTIC_CALL_IDS = (
+    (
+        "semantic-call:"
+        "d0daa435"
+        "b1727dda"
+        "33398f01"
+        "480b4215"
+        "37bd9594"
+        "a8e798f5"
+        "1cdae028"
+        "aa6d1784"
+    ),
+    (
+        "semantic-call:"
+        "505fcc0e"
+        "2c2fcbf9"
+        "26164626"
+        "ea04add6"
+        "e914bd51"
+        "d815f202"
+        "0971d6e8"
+        "074abbeb"
+    ),
+    (
+        "semantic-call:"
+        "3203bde5"
+        "8464a731"
+        "c0da1546"
+        "1c2b4c78"
+        "845c063f"
+        "1989e916"
+        "57c34aeb"
+        "755d15dd"
+    ),
+    (
+        "semantic-call:"
+        "69c4bfc4"
+        "507e56c0"
+        "01ee0605"
+        "8b183a3b"
+        "ce01cfd2"
+        "0e889561"
+        "823e5ef0"
+        "f3524e15"
+    ),
+    (
+        "semantic-call:"
+        "da8df851"
+        "f077d616"
+        "7c28545e"
+        "a4c3de49"
+        "dac6a805"
+        "a2cb5e15"
+        "a51bc1e4"
+        "d9a5daf1"
+    ),
+    (
+        "semantic-call:"
+        "7b5bb361"
+        "a4c985e9"
+        "ae638e6b"
+        "e52988d1"
+        "848bedc7"
+        "ec2bb4be"
+        "51104eb7"
+        "06c707d6"
+    ),
+    (
+        "semantic-call:"
+        "e5fbdd7c"
+        "983590a3"
+        "63b06bb8"
+        "6650eed6"
+        "b3d94080"
+        "a0134031"
+        "7eed2821"
+        "198d79c1"
+    ),
+    (
+        "semantic-call:"
+        "992c334d"
+        "b9ff4dd2"
+        "38357a3b"
+        "3fada521"
+        "aa7f8258"
+        "9aea5793"
+        "6f10900c"
+        "1ba53b9e"
+    ),
+)
+
 
 def scenario_packet() -> OwnerSpecificScenarioPacket:
     return OwnerSpecificScenarioPacket(
@@ -182,13 +275,21 @@ def authorization_bundle(
         for _ in range(required_observations_per_arm)
         for arm in (control, variant)
     )
+    semantic_id_count = len(order) * 2
+    if semantic_id_count > len(OPAQUE_SEMANTIC_CALL_IDS):
+        raise ValueError(
+            "test schedule exceeds its predeclared opaque semantic identities"
+        )
+    semantic_call_ids = iter(
+        OPAQUE_SEMANTIC_CALL_IDS[:semantic_id_count]
+    )
     schedule = tuple(
         TrialScheduleEntry(
             trial_id=f"trial-{index:02d}",
             arm_id=arm,
             planner_call_id=f"planner-call-{index:02d}",
-            primary_judge_call_id=f"primary-call-{index:02d}",
-            adversarial_judge_call_id=f"adversarial-call-{index:02d}",
+            primary_judge_call_id=next(semantic_call_ids),
+            adversarial_judge_call_id=next(semantic_call_ids),
         )
         for index, arm in enumerate(order, start=1)
     )
@@ -488,6 +589,7 @@ def _transport_response(
 
 __all__ = [
     "FakeOwnerSpecificBrokerFactory",
+    "OPAQUE_SEMANTIC_CALL_IDS",
     "SYNTHETIC_VARIANT_INSTRUCTION",
     "authorization_bundle",
     "owner_identities",

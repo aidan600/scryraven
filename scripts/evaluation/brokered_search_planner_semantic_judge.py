@@ -17,6 +17,7 @@ from scripts.evaluation.search_planner_owner_specific_authorization import (
     SemanticJudgeRouteAuthorization,
     canonical_json_bytes,
     canonical_sha256,
+    validate_semantic_call_id,
 )
 from scripts.evaluation.search_planner_semantic_judgment import (
     SEMANTIC_JUDGMENT_CONTRACT_VERSION,
@@ -113,10 +114,10 @@ class SemanticJudgePassExecutionFact:
             raise BrokeredSemanticJudgeError(
                 "semantic execution pass kind is unsupported"
             )
-        if not str(self.call_id or "").strip():
-            raise BrokeredSemanticJudgeError(
-                "semantic execution call ID must be explicit"
-            )
+        validate_semantic_call_id(
+            self.call_id,
+            label="semantic execution call_id",
+        )
         for label in (
             "execution_identity_digest",
             "request_packet_digest",
@@ -376,11 +377,15 @@ class BrokeredSearchPlannerSemanticJudge:
         adversarial_call_id: str,
     ) -> BrokeredSemanticJudgmentOutcome:
         request.__post_init__()
-        if (
-            not primary_call_id
-            or not adversarial_call_id
-            or primary_call_id == adversarial_call_id
-        ):
+        primary_call_id = validate_semantic_call_id(
+            primary_call_id,
+            label="primary semantic call ID",
+        )
+        adversarial_call_id = validate_semantic_call_id(
+            adversarial_call_id,
+            label="adversarial semantic call ID",
+        )
+        if primary_call_id == adversarial_call_id:
             raise BrokeredSemanticJudgeError(
                 "semantic judge calls require distinct pre-reserved identities"
             )

@@ -74,6 +74,9 @@ GENERIC_BROKER_TRANSPORT_FACTORY_SPEC = (
     "scripts.evaluation.brokered_model_origination_transport:"
     "create_brokered_model_route_transport"
 )
+SEMANTIC_CALL_ID_PATTERN = re.compile(
+    r"semantic-call:[0-9a-f]{64}"
+)
 
 _DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}")
 _GIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
@@ -150,6 +153,23 @@ def canonical_sha256(value: Any) -> str:
 
 def text_sha256(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
+
+
+def validate_semantic_call_id(
+    value: Any,
+    *,
+    label: str = "semantic call ID",
+) -> str:
+    """Return one unchanged, precommitted opaque semantic-call identity."""
+
+    if (
+        not isinstance(value, str)
+        or SEMANTIC_CALL_ID_PATTERN.fullmatch(value) is None
+    ):
+        raise OwnerSpecificAuthorizationError(
+            f"{label} must match semantic-call:<64 lowercase hex>"
+        )
+    return value
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
@@ -379,8 +399,24 @@ class TrialScheduleEntry:
     adversarial_judge_call_id: str
 
     def __post_init__(self) -> None:
-        for label, value in asdict(self).items():
+        for label, value in (
+            ("trial_id", self.trial_id),
+            ("arm_id", self.arm_id),
+            ("planner_call_id", self.planner_call_id),
+        ):
             _strict_text(value, label, maximum=160)
+        primary = validate_semantic_call_id(
+            self.primary_judge_call_id,
+            label="primary_judge_call_id",
+        )
+        adversarial = validate_semantic_call_id(
+            self.adversarial_judge_call_id,
+            label="adversarial_judge_call_id",
+        )
+        if primary == adversarial:
+            raise OwnerSpecificAuthorizationError(
+                "trial schedule contains a semantic call-identity collision"
+            )
 
     @classmethod
     def from_mapping(
@@ -396,13 +432,30 @@ class TrialScheduleEntry:
         )
         raw = _exact_mapping(value, names, "trial_schedule_entry")
         return cls(
-            **{
-                name: _strict_text(
-                    raw[name],
-                    f"trial_schedule_entry.{name}",
-                )
-                for name in names
-            }
+            trial_id=_strict_text(
+                raw["trial_id"],
+                "trial_schedule_entry.trial_id",
+            ),
+            arm_id=_strict_text(
+                raw["arm_id"],
+                "trial_schedule_entry.arm_id",
+            ),
+            planner_call_id=_strict_text(
+                raw["planner_call_id"],
+                "trial_schedule_entry.planner_call_id",
+            ),
+            primary_judge_call_id=validate_semantic_call_id(
+                raw["primary_judge_call_id"],
+                label=(
+                    "trial_schedule_entry.primary_judge_call_id"
+                ),
+            ),
+            adversarial_judge_call_id=validate_semantic_call_id(
+                raw["adversarial_judge_call_id"],
+                label=(
+                    "trial_schedule_entry.adversarial_judge_call_id"
+                ),
+            ),
         )
 
 
@@ -528,35 +581,6 @@ class PromptExperimentAuthorization:
             raise OwnerSpecificAuthorizationError(
                 "trial schedule contains a call-identity collision"
             )
-        arm_identity_fragments = {
-            _normalized_identifier(self.control_arm_id),
-            _normalized_identifier(self.variant_arm_id),
-            "control",
-            "variant",
-        }
-        for item in self.trial_schedule:
-            for call_id in (
-                item.primary_judge_call_id,
-                item.adversarial_judge_call_id,
-            ):
-                normalized_call_id = _normalized_identifier(call_id)
-                if any(
-                    fragment
-                    and (
-                        normalized_call_id == fragment
-                        or normalized_call_id.startswith(
-                            f"{fragment}-"
-                        )
-                        or normalized_call_id.endswith(
-                            f"-{fragment}"
-                        )
-                        or f"-{fragment}-" in normalized_call_id
-                    )
-                    for fragment in arm_identity_fragments
-                ):
-                    raise OwnerSpecificAuthorizationError(
-                        "semantic-judge call IDs must remain arm-blind"
-                    )
 
     @classmethod
     def from_mapping(
@@ -2140,14 +2164,6 @@ def _reject_secret_like_text(value: str) -> None:
             )
 
 
-def _normalized_identifier(value: str) -> str:
-    return re.sub(
-        r"[^a-z0-9]+",
-        "-",
-        value.casefold(),
-    ).strip("-")
-
-
 def _reject_forbidden_keys(
     value: Any,
     *,
@@ -2339,6 +2355,7 @@ __all__ = [
     "POLICY_CANONICALIZATION_VERSION",
     "RETENTION_POSTURE",
     "SCENARIO_PACKET_SCHEMA_VERSION",
+    "SEMANTIC_CALL_ID_PATTERN",
     "SEMANTIC_EXECUTION_OBSERVATION_VERSION",
     "SEMANTIC_JUDGE_ROLE",
     "SEMANTIC_REQUIREMENT_PACKET_SCHEMA_VERSION",
@@ -2366,4 +2383,5 @@ __all__ = [
     "normalize_repository_relative_path",
     "text_sha256",
     "validate_authorization_context",
+    "validate_semantic_call_id",
 ]
