@@ -6,8 +6,8 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
-from math import isfinite, sqrt
-from statistics import fmean, variance
+from math import isfinite
+from statistics import fmean
 from typing import Any, Mapping, Sequence
 
 EXPERIMENT_AUTHORITY_SCHEMA_VERSION = "model_origination_experiment_authority_v1"
@@ -519,6 +519,13 @@ def attribute_prompt_comparison(
             "Within-variant full-prompt identity is not stable.",
         )
     if control_full == variant_full:
+        if design.stochastic:
+            return _result(
+                base,
+                "CONFOUNDED",
+                None,
+                "Stochastic comparison labels resolve to the same full prompt.",
+            )
         return _result(
             base,
             "NO_EFFECT_ESTABLISHED",
@@ -565,13 +572,6 @@ def attribute_prompt_comparison(
             observed_effect,
             "The design contains unplanned exclusions.",
         )
-    if len(controls) == 1 and len(variants) == 1 and design.stochastic:
-        return _result(
-            base,
-            "ASSOCIATION_ONLY",
-            observed_effect,
-            "One independent stochastic pair supports association only.",
-        )
     if (
         len(controls) < design.required_observations_per_variant
         or len(variants) < design.required_observations_per_variant
@@ -581,6 +581,13 @@ def attribute_prompt_comparison(
             "INSUFFICIENT_EVIDENCE",
             observed_effect,
             "The predeclared replication count was not reached.",
+        )
+    if len(controls) == 1 and len(variants) == 1 and design.stochastic:
+        return _result(
+            base,
+            "ASSOCIATION_ONLY",
+            observed_effect,
+            "One independent stochastic pair supports association only.",
         )
     if design.design_kind == "DETERMINISTIC_REPLAY":
         design_complete = (
@@ -616,35 +623,31 @@ def attribute_prompt_comparison(
             observed_effect,
             "Replication or preregistered randomized-design authority is incomplete.",
         )
-    if design.design_kind == "DETERMINISTIC_REPLAY":
-        control_values = {
-            float(item.outcome_value) for item in controls
-        }
-        variant_values = {
-            float(item.outcome_value) for item in variants
-        }
-        if len(control_values) != 1 or len(variant_values) != 1:
-            return _result(
-                base,
-                "INSUFFICIENT_EVIDENCE",
-                observed_effect,
-                "Deterministic replay did not reproduce stable arm outcomes.",
-            )
-        uncertainty_bound = 0.0
-    else:
-        control_values = [
-            float(item.outcome_value) for item in controls
-        ]
-        variant_values = [
-            float(item.outcome_value) for item in variants
-        ]
-        standard_error = sqrt(
-            variance(control_values) / len(control_values)
-            + variance(variant_values) / len(variant_values)
+    if design.stochastic:
+        return _result(
+            base,
+            "ASSOCIATION_ONLY",
+            observed_effect,
+            (
+                f"Complete stochastic comparison observed {len(controls)} "
+                f"control and {len(variants)} variant outcomes; stochastic "
+                "causal inference is not installed or licensed."
+            ),
         )
-        uncertainty_bound = (
-            float(design.confidence_multiplier) * standard_error
+    control_values = {
+        float(item.outcome_value) for item in controls
+    }
+    variant_values = {
+        float(item.outcome_value) for item in variants
+    }
+    if len(control_values) != 1 or len(variant_values) != 1:
+        return _result(
+            base,
+            "INSUFFICIENT_EVIDENCE",
+            observed_effect,
+            "Deterministic replay did not reproduce stable arm outcomes.",
         )
+    uncertainty_bound = 0.0
     threshold = float(design.error_threshold or 0.0)
     if abs(observed_effect) <= threshold + uncertainty_bound:
         return _result(

@@ -198,16 +198,20 @@ def test_mismatched_invariant_is_confounded(
     assert result.causal_language_allowed is False
 
 
-def test_missing_replication_is_insufficient_evidence() -> None:
+def test_missing_stochastic_replication_is_insufficient_evidence() -> None:
     design = ExperimentDesign(
-        design_kind="DETERMINISTIC_REPLAY",
-        stochastic=False,
+        design_kind="RANDOMIZED_REPEATED",
+        stochastic=True,
         preregistered=True,
         required_observations_per_variant=2,
+        sampling_policy="fixed blocked randomization",
         outcome_metric="bounded_semantic_outcome",
         decision_statistic="difference_in_means",
+        uncertainty_method="standard_error_of_mean_difference",
+        confidence_multiplier=2.0,
         error_threshold=0.1,
-        replication_verified=True,
+        randomized_order=True,
+        blinded_judging=True,
     )
     result = attribute_prompt_comparison(
         control=(
@@ -231,7 +235,7 @@ def test_missing_replication_is_insufficient_evidence() -> None:
     assert result.status == "INSUFFICIENT_EVIDENCE"
 
 
-def test_identical_full_prompts_mislabeled_as_variants_establish_no_effect() -> None:
+def test_identical_full_prompts_mislabeled_as_variants_are_confounded() -> None:
     result = attribute_prompt_comparison(
         control=(
             _trial(
@@ -253,8 +257,8 @@ def test_identical_full_prompts_mislabeled_as_variants_establish_no_effect() -> 
         ),
         design=_single_pair_design(),
     )
-    assert result.status == "NO_EFFECT_ESTABLISHED"
-    assert result.observed_effect == 0.0
+    assert result.status == "CONFOUNDED"
+    assert result.observed_effect is None
 
 
 def test_shared_execution_identity_is_rejected_before_attribution() -> None:
@@ -367,7 +371,7 @@ def test_deterministic_replay_requires_stable_arm_replication() -> None:
     assert result.uncertainty_bound is None
 
 
-def test_complete_preregistered_randomized_design_can_support_synthetic_causality() -> None:
+def test_complete_preregistered_randomized_design_is_association_only() -> None:
     control = tuple(
         _trial(
             call_id=f"control:{index}",
@@ -405,10 +409,16 @@ def test_complete_preregistered_randomized_design_can_support_synthetic_causalit
         variant=variant,
         design=design,
     )
-    assert result.status == "CAUSAL_SUPPORT_ESTABLISHED"
-    assert result.causal_language_allowed is True
-    assert result.uncertainty_bound == 0.0
+    assert result.status == "ASSOCIATION_ONLY"
+    assert result.causal_language_allowed is False
+    assert result.uncertainty_bound is None
+    assert result.uncertainty_bound != 0.0
     assert result.real_prompt_effect_proved is False
+    assert any(
+        "stochastic causal inference is not installed or licensed"
+        in reason
+        for reason in result.bounded_reasons
+    )
 
 
 def test_unplanned_exclusion_confounds_replicated_design() -> None:
@@ -571,7 +581,7 @@ def test_unblinded_randomized_design_cannot_establish_causality() -> None:
     assert result.causal_language_allowed is False
 
 
-def test_randomized_uncertainty_bound_blocks_weak_effect() -> None:
+def test_small_stochastic_effect_is_association_only() -> None:
     result = attribute_prompt_comparison(
         control=tuple(
             _trial(
@@ -580,7 +590,7 @@ def test_randomized_uncertainty_bound_blocks_weak_effect() -> None:
                 outcome=outcome,
                 index=index,
             )
-            for index, outcome in enumerate((0.0, 1.0), start=1)
+            for index, outcome in enumerate((0.0, 0.0), start=1)
         ),
         variant=tuple(
             _trial(
@@ -589,7 +599,7 @@ def test_randomized_uncertainty_bound_blocks_weak_effect() -> None:
                 outcome=outcome,
                 index=index + 2,
             )
-            for index, outcome in enumerate((1.0, 2.0), start=1)
+            for index, outcome in enumerate((0.05, 0.05), start=1)
         ),
         design=ExperimentDesign(
             design_kind="RANDOMIZED_REPEATED",
@@ -606,10 +616,12 @@ def test_randomized_uncertainty_bound_blocks_weak_effect() -> None:
             blinded_judging=True,
         ),
     )
-    assert result.status == "NO_EFFECT_ESTABLISHED"
-    assert result.observed_effect == 1.0
-    assert result.uncertainty_bound is not None
-    assert result.uncertainty_bound > result.observed_effect
+    assert result.status == "ASSOCIATION_ONLY"
+    assert result.status != "NO_EFFECT_ESTABLISHED"
+    assert result.status != "CAUSAL_SUPPORT_ESTABLISHED"
+    assert result.observed_effect == pytest.approx(0.05)
+    assert result.uncertainty_bound is None
+    assert result.causal_language_allowed is False
 
 
 def test_experiment_and_call_digests_reject_identity_substitution() -> None:
