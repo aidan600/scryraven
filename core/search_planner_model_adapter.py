@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
+from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
 
 from core.search_planner_model_prompt import (
@@ -60,14 +61,10 @@ _SEMANTIC_SLOT_KINDS = frozenset(
         "unknown_or_other",
     }
 )
-_SEMANTIC_SLOT_STATUSES = frozenset(
-    {"explicit", "implied", "ambiguous", "unresolved"}
-)
+_SEMANTIC_SLOT_STATUSES = frozenset({"explicit", "implied", "ambiguous", "unresolved"})
 _MATERIALITY_VALUES = frozenset({"material", "non_material", "unknown"})
 _REQUIREMENT_POSTURES = frozenset({"required", "conditional", "optional"})
-_COMPONENT_PURPOSES = frozenset(
-    {"user_facing_answer_target", "supporting_premise"}
-)
+_COMPONENT_PURPOSES = frozenset({"user_facing_answer_target", "supporting_premise"})
 _SUPPORT_KINDS = frozenset({"direct", "inferred"})
 _PARTIAL_ANSWER_POLICIES = frozenset(
     {
@@ -89,9 +86,7 @@ _QUERY_ROLES = frozenset(
 )
 _RECON_POSTURES = frozenset({"not_needed", "optional", "required"})
 _SOURCE_OBLIGATION_KINDS = frozenset(item.value for item in SourceObligationKind)
-_SOURCE_OBLIGATION_STRICTNESSES = frozenset(
-    item.value for item in SourceObligationStrictness
-)
+_SOURCE_OBLIGATION_STRICTNESSES = frozenset(item.value for item in SourceObligationStrictness)
 _FORBIDDEN_QUERY_AUTHORITY_KEYS = frozenset(
     {
         "provider",
@@ -222,8 +217,198 @@ _DANGEROUS_TRUE_KEYS = frozenset(
 )
 
 
+class SearchPlannerModelAdapterFailureStage(str, Enum):
+    """Stable adapter-owned stage for one fail-closed Planner error."""
+
+    INPUT = "INPUT"
+    MODEL_CALL = "MODEL_CALL"
+    OUTPUT_CLEANING = "OUTPUT_CLEANING"
+    JSON_PARSING = "JSON_PARSING"
+    MODEL_OUTPUT_VALIDATION = "MODEL_OUTPUT_VALIDATION"
+    CROSS_REFERENCE_VALIDATION = "CROSS_REFERENCE_VALIDATION"
+
+
+class SearchPlannerModelAdapterFailureCode(str, Enum):
+    """Repository-owned bounded classification for adapter failures."""
+
+    ADAPTER_DISABLED = "ADAPTER_DISABLED"
+    ROUTE_UNAVAILABLE = "ROUTE_UNAVAILABLE"
+    INPUT_CONSTRUCTION_FAILED = "INPUT_CONSTRUCTION_FAILED"
+    MODEL_CALL_FAILED = "MODEL_CALL_FAILED"
+    OUTPUT_CLEANING_FAILED = "OUTPUT_CLEANING_FAILED"
+    INVALID_JSON = "INVALID_JSON"
+    JSON_VALUE_NOT_OBJECT = "JSON_VALUE_NOT_OBJECT"
+    MISSING_REQUIRED_TOP_LEVEL_FIELDS = "MISSING_REQUIRED_TOP_LEVEL_FIELDS"
+    MISSING_REQUIRED_NESTED_FIELD = "MISSING_REQUIRED_NESTED_FIELD"
+    INVALID_NESTED_TYPE = "INVALID_NESTED_TYPE"
+    INVALID_ENUM_OR_BOUNDED_VALUE = "INVALID_ENUM_OR_BOUNDED_VALUE"
+    INVALID_COMPONENT_COUNT = "INVALID_COMPONENT_COUNT"
+    INVALID_COMPONENT_SUPPORT_MATRIX = "INVALID_COMPONENT_SUPPORT_MATRIX"
+    INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION = "INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION"
+    INVALID_ID_OR_CROSS_REFERENCE = "INVALID_ID_OR_CROSS_REFERENCE"
+    INVALID_DEPENDENCY_OR_INFERENCE_DEPTH = "INVALID_DEPENDENCY_OR_INFERENCE_DEPTH"
+    INVALID_QUERY_STRATEGY_METADATA = "INVALID_QUERY_STRATEGY_METADATA"
+    CLOSED_AUTHORITY_VIOLATION = "CLOSED_AUTHORITY_VIOLATION"
+    PRIVACY_OR_RAW_MATERIAL_VIOLATION = "PRIVACY_OR_RAW_MATERIAL_VIOLATION"
+    LINEAGE_OR_BINDING_FAILURE = "LINEAGE_OR_BINDING_FAILURE"
+
+
+_FailureCode = SearchPlannerModelAdapterFailureCode
+_ADAPTER_MECHANICAL_RULE_IDS = frozenset(f"M{index:02d}" for index in range(1, 11))
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPlannerModelAdapterFailureMetadata:
+    """Immutable sanitized facts attached to an adapter failure."""
+
+    failure_stage: SearchPlannerModelAdapterFailureStage
+    failure_code: SearchPlannerModelAdapterFailureCode
+    mechanical_rule_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.failure_stage,
+            SearchPlannerModelAdapterFailureStage,
+        ):
+            raise TypeError("failure_stage must be an adapter-owned stage")
+        if not isinstance(
+            self.failure_code,
+            SearchPlannerModelAdapterFailureCode,
+        ):
+            raise TypeError("failure_code must be a repository-owned code")
+        if self.mechanical_rule_id is not None and self.mechanical_rule_id not in _ADAPTER_MECHANICAL_RULE_IDS:
+            raise ValueError("mechanical_rule_id must be M01 through M10")
+
+
+_FAILURE_STAGE_AND_RULE_BY_CODE: Mapping[
+    SearchPlannerModelAdapterFailureCode,
+    tuple[SearchPlannerModelAdapterFailureStage, str | None],
+] = MappingProxyType({
+    _FailureCode.ADAPTER_DISABLED: (
+        SearchPlannerModelAdapterFailureStage.INPUT,
+        None,
+    ),
+    _FailureCode.ROUTE_UNAVAILABLE: (
+        SearchPlannerModelAdapterFailureStage.INPUT,
+        None,
+    ),
+    _FailureCode.INPUT_CONSTRUCTION_FAILED: (
+        SearchPlannerModelAdapterFailureStage.INPUT,
+        None,
+    ),
+    _FailureCode.MODEL_CALL_FAILED: (
+        SearchPlannerModelAdapterFailureStage.MODEL_CALL,
+        None,
+    ),
+    _FailureCode.OUTPUT_CLEANING_FAILED: (
+        SearchPlannerModelAdapterFailureStage.OUTPUT_CLEANING,
+        None,
+    ),
+    _FailureCode.INVALID_JSON: (
+        SearchPlannerModelAdapterFailureStage.JSON_PARSING,
+        "M01",
+    ),
+    _FailureCode.JSON_VALUE_NOT_OBJECT: (
+        SearchPlannerModelAdapterFailureStage.JSON_PARSING,
+        "M01",
+    ),
+    _FailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M01",
+    ),
+    _FailureCode.MISSING_REQUIRED_NESTED_FIELD: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M02",
+    ),
+    _FailureCode.INVALID_NESTED_TYPE: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M02",
+    ),
+    _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M02",
+    ),
+    _FailureCode.INVALID_COMPONENT_COUNT: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M02",
+    ),
+    _FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M05",
+    ),
+    _FailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M06",
+    ),
+    _FailureCode.INVALID_ID_OR_CROSS_REFERENCE: (
+        SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+        "M03",
+    ),
+    _FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH: (
+        SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+        "M04",
+    ),
+    _FailureCode.INVALID_QUERY_STRATEGY_METADATA: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M07",
+    ),
+    _FailureCode.CLOSED_AUTHORITY_VIOLATION: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M08",
+    ),
+    _FailureCode.PRIVACY_OR_RAW_MATERIAL_VIOLATION: (
+        SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+        "M09",
+    ),
+    _FailureCode.LINEAGE_OR_BINDING_FAILURE: (
+        SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
+        "M10",
+    ),
+})
+
+
 class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
     """Raised when the model adapter fails closed before planner observation."""
+
+    __slots__ = ("_failure_metadata",)
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: SearchPlannerModelAdapterFailureCode,
+    ) -> None:
+        super().__init__(message)
+        try:
+            failure_stage, mechanical_rule_id = _FAILURE_STAGE_AND_RULE_BY_CODE[failure_code]
+        except KeyError as exc:
+            raise ValueError("adapter failure code is not registered") from exc
+        self._failure_metadata = SearchPlannerModelAdapterFailureMetadata(
+            failure_stage=failure_stage,
+            failure_code=failure_code,
+            mechanical_rule_id=mechanical_rule_id,
+        )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_failure_metadata" and hasattr(self, name):
+            raise AttributeError("adapter failure metadata is immutable")
+        super().__setattr__(name, value)
+
+    @property
+    def failure_metadata(self) -> SearchPlannerModelAdapterFailureMetadata:
+        return self._failure_metadata
+
+    @property
+    def failure_stage(self) -> SearchPlannerModelAdapterFailureStage:
+        return self._failure_metadata.failure_stage
+
+    @property
+    def failure_code(self) -> SearchPlannerModelAdapterFailureCode:
+        return self._failure_metadata.failure_code
+
+    @property
+    def mechanical_rule_id(self) -> str | None:
+        return self._failure_metadata.mechanical_rule_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,11 +426,20 @@ class SearchPlannerModelAdapter:
     licensed: bool = False
 
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        if not self.enabled or not self.licensed or self.ask_model is None:
-            raise SearchPlannerModelAdapterError("search planner model adapter is not explicitly enabled")
+        if not self.enabled or not self.licensed:
+            raise SearchPlannerModelAdapterError(
+                "search planner model adapter is not explicitly enabled",
+                failure_code=_FailureCode.ADAPTER_DISABLED,
+            )
+        if self.ask_model is None:
+            raise SearchPlannerModelAdapterError(
+                "search planner model adapter is not explicitly enabled",
+                failure_code=_FailureCode.ROUTE_UNAVAILABLE,
+            )
         if not str(self.provider or "").strip() or not str(self.model or "").strip():
             raise SearchPlannerModelAdapterError(
-                "selected search planner provider and model must be available"
+                "selected search planner provider and model must be available",
+                failure_code=_FailureCode.ROUTE_UNAVAILABLE,
             )
 
         try:
@@ -253,7 +447,8 @@ class SearchPlannerModelAdapter:
             metadata = prompt_metadata(prompt)
         except Exception as exc:
             raise SearchPlannerModelAdapterError(
-                f"search planner model input failed closed: {type(exc).__name__}"
+                f"search planner model input failed closed: {type(exc).__name__}",
+                failure_code=(_FailureCode.INPUT_CONSTRUCTION_FAILED),
             ) from exc
         model_kwargs = {
             "provider": self.provider,
@@ -272,7 +467,8 @@ class SearchPlannerModelAdapter:
             )
         except Exception as exc:
             raise SearchPlannerModelAdapterError(
-                f"search planner model call failed closed: {type(exc).__name__}"
+                f"search planner model call failed closed: {type(exc).__name__}",
+                failure_code=_FailureCode.MODEL_CALL_FAILED,
             ) from exc
 
         parsed = _parse_model_output(raw, clean_json_response=self.clean_json_response)
@@ -298,14 +494,21 @@ def _parse_model_output(
             text = clean_json_response(text)
         except Exception as exc:
             raise SearchPlannerModelAdapterError(
-                f"search planner model output cleaning failed closed: {type(exc).__name__}"
+                f"search planner model output cleaning failed closed: {type(exc).__name__}",
+                failure_code=(_FailureCode.OUTPUT_CLEANING_FAILED),
             ) from exc
     try:
         parsed = json.loads(text)
     except Exception as exc:
-        raise SearchPlannerModelAdapterError("search planner model output was not valid JSON") from exc
+        raise SearchPlannerModelAdapterError(
+            "search planner model output was not valid JSON",
+            failure_code=_FailureCode.INVALID_JSON,
+        ) from exc
     if not isinstance(parsed, Mapping):
-        raise SearchPlannerModelAdapterError("search planner model output must be a JSON object")
+        raise SearchPlannerModelAdapterError(
+            "search planner model output must be a JSON object",
+            failure_code=(_FailureCode.JSON_VALUE_NOT_OBJECT),
+        )
     return parsed
 
 
@@ -316,7 +519,8 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
     missing = [field for field in _TOP_LEVEL_REQUIRED if field not in model_output]
     if missing:
         raise SearchPlannerModelAdapterError(
-            "search planner model output missing required fields: " + ", ".join(missing)
+            "search planner model output missing required fields: " + ", ".join(missing),
+            failure_code=(_FailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS),
         )
 
     semantic_slots = _semantic_slots(model_output.get("semantic_slots"))
@@ -366,23 +570,31 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
         "contract_amendment_candidates": _contract_amendment_candidates(
             model_output.get("contract_amendment_candidates")
         ),
-        "relationship_hypotheses": _relationship_hypotheses(
-            model_output.get("relationship_hypotheses")
-        ),
+        "relationship_hypotheses": _relationship_hypotheses(model_output.get("relationship_hypotheses")),
     }
 
 
 def _semantic_slots(value: Any) -> list[dict[str, Any]]:
     items = _required_sequence(value, "semantic_slots")
     if not items:
-        raise SearchPlannerModelAdapterError("search planner model output requires at least one semantic slot")
+        raise SearchPlannerModelAdapterError(
+            "search planner model output requires at least one semantic slot",
+            failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
+        )
     slots: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
         mapping = _required_mapping(item, "semantic slot")
-        slot_id = _required_text(mapping, "slot_id")
+        slot_id = _required_text(
+            mapping,
+            "slot_id",
+            failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+        )
         if slot_id in seen:
-            raise SearchPlannerModelAdapterError(f"duplicate semantic slot id: {slot_id}")
+            raise SearchPlannerModelAdapterError(
+                f"duplicate semantic slot id: {slot_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
+            )
         seen.add(slot_id)
         status = _required_enum_text(
             mapping,
@@ -397,7 +609,8 @@ def _semantic_slots(value: Any) -> list[dict[str, Any]]:
         user_confirmation_required = bool(mapping.get("user_confirmation_required", False))
         if materiality == "material" and status in {"ambiguous", "unresolved"} and not user_confirmation_required:
             raise SearchPlannerModelAdapterError(
-                f"material semantic slot {slot_id} requires user_confirmation_required"
+                f"material semantic slot {slot_id} requires user_confirmation_required",
+                failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
             )
         slots.append(
             _without_empty(
@@ -424,21 +637,33 @@ def _semantic_slots(value: Any) -> list[dict[str, Any]]:
 def _answer_components(value: Any) -> list[dict[str, Any]]:
     items = _required_sequence(value, "answer_components")
     if not items:
-        raise SearchPlannerModelAdapterError("search planner model output requires at least one answer component")
+        raise SearchPlannerModelAdapterError(
+            "search planner model output requires at least one answer component",
+            failure_code=_FailureCode.INVALID_COMPONENT_COUNT,
+        )
     if len(items) > SEARCH_PLANNER_MAX_ANSWER_COMPONENTS:
         raise SearchPlannerModelAdapterError(
-            "search planner model output exceeds the five-component acceptance ceiling"
+            "search planner model output exceeds the five-component acceptance ceiling",
+            failure_code=_FailureCode.INVALID_COMPONENT_COUNT,
         )
     components: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
         mapping = _required_mapping(item, "answer component")
-        component_id = _required_text(mapping, "component_id")
+        component_id = _required_text(
+            mapping,
+            "component_id",
+            failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+        )
         if component_id in seen:
-            raise SearchPlannerModelAdapterError(f"duplicate answer component id: {component_id}")
+            raise SearchPlannerModelAdapterError(
+                f"duplicate answer component id: {component_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
+            )
         seen.add(component_id)
         source_obligation_ids = _optional_text_list(
-            mapping.get("source_obligation_candidate_ids")
+            mapping.get("source_obligation_candidate_ids"),
+            failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
         )
         requirement_posture = _required_enum_text(
             mapping,
@@ -452,8 +677,8 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
         unsupported_kinds = sorted(set(allowed_support_kinds) - _SUPPORT_KINDS)
         if unsupported_kinds:
             raise SearchPlannerModelAdapterError(
-                "answer component contains unsupported support kinds: "
-                + ", ".join(unsupported_kinds)
+                "answer component contains unsupported support kinds: " + ", ".join(unsupported_kinds),
+                failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
             )
         support_tuple = tuple(allowed_support_kinds)
         if support_tuple not in {
@@ -462,9 +687,13 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
             ("direct", "inferred"),
         }:
             raise SearchPlannerModelAdapterError(
-                f"answer component {component_id} has an invalid support-kind combination"
+                f"answer component {component_id} has an invalid support-kind combination",
+                failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
             )
-        dependencies = _optional_text_list(mapping.get("dependency_component_ids"))
+        dependencies = _optional_text_list(
+            mapping.get("dependency_component_ids"),
+            failure_code=_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH,
+        )
         max_inference_depth = _required_non_negative_int(
             mapping,
             "max_inference_depth",
@@ -472,40 +701,50 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
         if support_tuple == ("direct",):
             if max_inference_depth != 0 or len(source_obligation_ids) != 1:
                 raise SearchPlannerModelAdapterError(
-                    f"answer component {component_id} violates the direct-only component matrix"
+                    f"answer component {component_id} violates the direct-only component matrix",
+                    failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
                 )
         elif support_tuple == ("inferred",):
             if max_inference_depth < 1 or not dependencies or source_obligation_ids:
                 raise SearchPlannerModelAdapterError(
-                    f"answer component {component_id} violates the inferred-only component matrix"
+                    f"answer component {component_id} violates the inferred-only component matrix",
+                    failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
                 )
         elif max_inference_depth < 1 or not dependencies or len(source_obligation_ids) != 1:
             raise SearchPlannerModelAdapterError(
-                f"answer component {component_id} violates the direct-or-inferred component matrix"
+                f"answer component {component_id} violates the direct-or-inferred component matrix",
+                failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
             )
         partial_answer_policy = _clean_text(mapping.get("partial_answer_policy"))
-        if (
-            partial_answer_policy is not None
-            and partial_answer_policy not in _PARTIAL_ANSWER_POLICIES
-        ):
+        if partial_answer_policy is not None and partial_answer_policy not in _PARTIAL_ANSWER_POLICIES:
             raise SearchPlannerModelAdapterError(
-                f"unsupported partial answer policy: {partial_answer_policy}"
+                f"unsupported partial answer policy: {partial_answer_policy}",
+                failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
             )
         components.append(
             _without_empty(
                 {
                     "component_id": component_id,
-                    "component_revision": _required_text(mapping, "component_revision"),
+                    "component_revision": _required_text(
+                        mapping,
+                        "component_revision",
+                        failure_code=_FailureCode.LINEAGE_OR_BINDING_FAILURE,
+                    ),
                     "component_purpose": _required_enum_text(
                         mapping,
                         "component_purpose",
                         allowed=_COMPONENT_PURPOSES,
+                        failure_code=(_FailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION),
                     ),
                     "user_facing_label": _required_text(mapping, "user_facing_label", limit=180),
                     "user_facing_question": _required_text(mapping, "user_facing_question", limit=400),
                     "requirement_posture": requirement_posture,
                     "acceptance_criteria": _required_text_list(mapping, "acceptance_criteria", limit=320),
-                    "semantic_slot_ids": _required_text_list(mapping, "semantic_slot_ids"),
+                    "semantic_slot_ids": _required_text_list(
+                        mapping,
+                        "semantic_slot_ids",
+                        failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+                    ),
                     "source_obligation_candidate_ids": source_obligation_ids,
                     "allowed_support_kinds": allowed_support_kinds,
                     "max_inference_depth": max_inference_depth,
@@ -524,12 +763,10 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                 }
             )
         )
-    if not any(
-        component.get("requirement_posture") == "required"
-        for component in components
-    ):
+    if not any(component.get("requirement_posture") == "required" for component in components):
         raise SearchPlannerModelAdapterError(
-            "search planner model output requires at least one required answer component"
+            "search planner model output requires at least one required answer component",
+            failure_code=(_FailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION),
         )
     return components
 
@@ -542,13 +779,19 @@ def _relationship_hypotheses(value: Any) -> list[dict[str, Any]]:
     for item in _required_sequence(value, "relationship_hypotheses"):
         if len(hypotheses) >= SEARCH_PLANNER_MAX_ANSWER_COMPONENTS:
             raise SearchPlannerModelAdapterError(
-                "relationship hypotheses exceed the five-item local ceiling"
+                "relationship hypotheses exceed the five-item local ceiling",
+                failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
             )
         mapping = _required_mapping(item, "relationship hypothesis")
-        hypothesis_id = _required_text(mapping, "hypothesis_id")
+        hypothesis_id = _required_text(
+            mapping,
+            "hypothesis_id",
+            failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+        )
         if hypothesis_id in seen:
             raise SearchPlannerModelAdapterError(
-                f"duplicate relationship hypothesis id: {hypothesis_id}"
+                f"duplicate relationship hypothesis id: {hypothesis_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
             )
         seen.add(hypothesis_id)
         hypotheses.append(
@@ -557,10 +800,12 @@ def _relationship_hypotheses(value: Any) -> list[dict[str, Any]]:
                 "target_component_id": _required_text(
                     mapping,
                     "target_component_id",
+                    failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
                 ),
                 "premise_component_ids": _required_text_list(
                     mapping,
                     "premise_component_ids",
+                    failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
                 ),
                 "relationship_summary": _required_text(
                     mapping,
@@ -579,19 +824,30 @@ def _relationship_hypotheses(value: Any) -> list[dict[str, Any]]:
 def _source_obligation_candidates(value: Any) -> list[dict[str, Any]]:
     items = _required_sequence(value, "source_obligation_candidates")
     if not items:
-        raise SearchPlannerModelAdapterError("search planner model output requires source obligation candidates")
+        raise SearchPlannerModelAdapterError(
+            "search planner model output requires source obligation candidates",
+            failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
+        )
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
         mapping = _required_mapping(item, "source obligation candidate")
-        candidate_id = _required_text(mapping, "candidate_id")
+        candidate_id = _required_text(
+            mapping,
+            "candidate_id",
+            failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+        )
         if candidate_id in seen:
-            raise SearchPlannerModelAdapterError(f"duplicate source obligation candidate id: {candidate_id}")
+            raise SearchPlannerModelAdapterError(
+                f"duplicate source obligation candidate id: {candidate_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
+            )
         seen.add(candidate_id)
         strictness = _clean_text(mapping.get("strictness"))
         if strictness is not None and strictness not in _SOURCE_OBLIGATION_STRICTNESSES:
             raise SearchPlannerModelAdapterError(
-                f"unsupported value for strictness: {strictness}"
+                f"unsupported value for strictness: {strictness}",
+                failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
             )
         candidates.append(
             _without_empty(
@@ -602,7 +858,11 @@ def _source_obligation_candidates(value: Any) -> list[dict[str, Any]]:
                         "obligation_kind",
                         allowed=_SOURCE_OBLIGATION_KINDS,
                     ),
-                    "component_candidate_ids": _required_text_list(mapping, "component_candidate_ids"),
+                    "component_candidate_ids": _required_text_list(
+                        mapping,
+                        "component_candidate_ids",
+                        failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+                    ),
                     "strictness": strictness,
                     "metadata": _safe_metadata(mapping.get("metadata")),
                 }
@@ -614,30 +874,49 @@ def _source_obligation_candidates(value: Any) -> list[dict[str, Any]]:
 def _component_search_requirements(value: Any) -> list[dict[str, Any]]:
     items = _required_sequence(value, "component_search_requirements")
     if not items:
-        raise SearchPlannerModelAdapterError("search planner model output requires component search requirements")
+        raise SearchPlannerModelAdapterError(
+            "search planner model output requires component search requirements",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
+        )
     requirements: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
         mapping = _required_mapping(item, "component search requirement")
         _reject_executing_requirement(mapping)
-        requirement_id = _required_text(mapping, "requirement_id")
+        requirement_id = _required_text(
+            mapping,
+            "requirement_id",
+            failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+        )
         if requirement_id in seen:
-            raise SearchPlannerModelAdapterError(f"duplicate component search requirement id: {requirement_id}")
+            raise SearchPlannerModelAdapterError(
+                f"duplicate component search requirement id: {requirement_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
+            )
         seen.add(requirement_id)
         raw_metadata = mapping.get("metadata")
         _validate_query_strategy_metadata(
             raw_metadata,
-            component_id=_required_text(mapping, "component_id"),
+            component_id=_required_text(
+                mapping,
+                "component_id",
+                failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+            ),
         )
         requirements.append(
             _without_empty(
                 {
-                    "component_id": _required_text(mapping, "component_id"),
+                    "component_id": _required_text(
+                        mapping,
+                        "component_id",
+                        failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
+                    ),
                     "requirement_id": requirement_id,
                     "requirement_summary": _required_text(mapping, "requirement_summary", limit=320),
                     "source_obligation_candidate_ids": _required_text_list(
                         mapping,
                         "source_obligation_candidate_ids",
+                        failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
                     ),
                     "preferred_source_kinds": _optional_text_list(mapping.get("preferred_source_kinds")),
                     "recency_requirement": _clean_text(mapping.get("recency_requirement"), limit=220),
@@ -655,91 +934,130 @@ def _validate_query_strategy_metadata(
 ) -> None:
     if not isinstance(value, Mapping):
         raise SearchPlannerModelAdapterError(
-            f"component {component_id} search requirement requires metadata"
+            f"component {component_id} search requirement requires metadata",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
     candidates = _required_sequence(
         value.get("query_strategy_candidates"),
         "query_strategy_candidates",
+        failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
     )
     if not candidates:
         raise SearchPlannerModelAdapterError(
-            f"component {component_id} requires query strategy candidates"
+            f"component {component_id} requires query strategy candidates",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
     seen_strategy_ids: set[str] = set()
     for raw_candidate in candidates:
-        candidate = _required_mapping(raw_candidate, "query strategy candidate")
-        forbidden = sorted(
-            _collect_keys(candidate) & _FORBIDDEN_QUERY_AUTHORITY_KEYS
+        candidate = _required_mapping(
+            raw_candidate,
+            "query strategy candidate",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
+        forbidden = sorted(_collect_keys(candidate) & _FORBIDDEN_QUERY_AUTHORITY_KEYS)
         if forbidden:
             raise SearchPlannerModelAdapterError(
-                "query strategy candidate selects forbidden provider/model authority: "
-                + ", ".join(forbidden)
+                "query strategy candidate selects forbidden provider/model authority: " + ", ".join(forbidden),
+                failure_code=(_FailureCode.CLOSED_AUTHORITY_VIOLATION),
             )
-        strategy_id = _required_text(candidate, "strategy_id")
+        strategy_id = _required_text(
+            candidate,
+            "strategy_id",
+            failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
+        )
         if strategy_id in seen_strategy_ids:
             raise SearchPlannerModelAdapterError(
-                f"duplicate query strategy id: {strategy_id}"
+                f"duplicate query strategy id: {strategy_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
             )
         seen_strategy_ids.add(strategy_id)
-        candidate_component_id = _required_text(candidate, "component_id")
+        candidate_component_id = _required_text(
+            candidate,
+            "component_id",
+            failure_code=(_FailureCode.LINEAGE_OR_BINDING_FAILURE),
+        )
         if candidate_component_id != component_id:
             raise SearchPlannerModelAdapterError(
-                f"query strategy {strategy_id} has stale component binding"
+                f"query strategy {strategy_id} has stale component binding",
+                failure_code=(_FailureCode.LINEAGE_OR_BINDING_FAILURE),
             )
         _required_enum_text(
             candidate,
             "candidate_kind",
             allowed=_QUERY_CANDIDATE_KINDS,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
-        _required_text(candidate, "candidate_query_text", limit=300)
+        _required_text(
+            candidate,
+            "candidate_query_text",
+            limit=300,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
+        )
         _required_enum_text(
             candidate,
             "requested_role",
             allowed=_QUERY_ROLES,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         if not _required_text_list(
             candidate,
             "source_obligation_candidate_ids",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         ):
             raise SearchPlannerModelAdapterError(
-                f"query strategy {strategy_id} requires source obligations"
+                f"query strategy {strategy_id} requires source obligations",
+                failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
             )
         _required_text(
             candidate,
             "distinct_need_justification",
             limit=300,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         recon = _required_mapping(
             candidate.get("recon_requirement"),
             "recon requirement",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         _required_enum_text(
             recon,
             "posture",
             allowed=_RECON_POSTURES,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         _required_text_list(
             recon,
             "unresolved_dimension_ids",
             allow_empty=True,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         recon_candidates = _required_sequence(
             recon.get("candidate_queries"),
             "recon candidate_queries",
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         for raw_recon_candidate in recon_candidates:
             recon_candidate = _required_mapping(
                 raw_recon_candidate,
                 "recon candidate query",
+                failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
             )
-            _required_text(recon_candidate, "dimension_id")
+            _required_text(
+                recon_candidate,
+                "dimension_id",
+                failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
+            )
             _required_text(
                 recon_candidate,
                 "candidate_query_text",
                 limit=300,
+                failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
             )
-            _required_text(recon_candidate, "query_kind")
+            _required_text(
+                recon_candidate,
+                "query_kind",
+                failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
+            )
 
 
 def _contract_amendment_candidates(value: Any) -> list[dict[str, Any]]:
@@ -779,57 +1097,64 @@ def _validate_component_refs(
         if component.get("requirement_posture") == "required"
         and "direct" in (component.get("allowed_support_kinds") or ())
     }
-    primary_count_by_component = {
-        component_id: 0 for component_id in direct_required_component_ids
-    }
+    primary_count_by_component = {component_id: 0 for component_id in direct_required_component_ids}
     for component in answer_components:
         component_id = str(component["component_id"])
         for slot_id in component.get("semantic_slot_ids") or ():
             if slot_id not in slot_ids:
-                raise SearchPlannerModelAdapterError(f"component {component_id} references missing slot {slot_id}")
+                raise SearchPlannerModelAdapterError(
+                    f"component {component_id} references missing slot {slot_id}",
+                    failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
+                )
         for obligation_id in component.get("source_obligation_candidate_ids") or ():
             if obligation_id not in obligation_ids:
                 raise SearchPlannerModelAdapterError(
-                    f"component {component_id} references missing source obligation {obligation_id}"
+                    f"component {component_id} references missing source obligation {obligation_id}",
+                    failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
                 )
         dependency_ids = list(component.get("dependency_component_ids") or ())
         if len(dependency_ids) != len(set(dependency_ids)):
             raise SearchPlannerModelAdapterError(
-                f"component {component_id} contains duplicate component dependencies"
+                f"component {component_id} contains duplicate component dependencies",
+                failure_code=(_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH),
             )
         for dependency_id in dependency_ids:
             if dependency_id not in component_ids:
                 raise SearchPlannerModelAdapterError(
-                    f"component {component_id} depends on missing component {dependency_id}"
+                    f"component {component_id} depends on missing component {dependency_id}",
+                    failure_code=(_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH),
                 )
             if dependency_id == component_id:
                 raise SearchPlannerModelAdapterError(
-                    f"component {component_id} cannot depend on itself"
+                    f"component {component_id} cannot depend on itself",
+                    failure_code=(_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH),
                 )
     for obligation in source_obligations:
         obligation_id = str(obligation["candidate_id"])
         for component_id in obligation.get("component_candidate_ids") or ():
             if component_id not in component_ids:
                 raise SearchPlannerModelAdapterError(
-                    f"source obligation {obligation_id} references missing component {component_id}"
+                    f"source obligation {obligation_id} references missing component {component_id}",
+                    failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
                 )
     for requirement in component_search_requirements:
         component_id = str(requirement["component_id"])
         if component_id not in component_ids:
             raise SearchPlannerModelAdapterError(
-                f"component search requirement references missing component {component_id}"
+                f"component search requirement references missing component {component_id}",
+                failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
             )
-        component = next(
-            item for item in answer_components if item.get("component_id") == component_id
-        )
+        component = next(item for item in answer_components if item.get("component_id") == component_id)
         if tuple(component.get("allowed_support_kinds") or ()) == ("inferred",):
             raise SearchPlannerModelAdapterError(
-                f"inferred-only component {component_id} cannot own component search requirements"
+                f"inferred-only component {component_id} cannot own component search requirements",
+                failure_code=(_FailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION),
             )
         for obligation_id in requirement.get("source_obligation_candidate_ids") or ():
             if obligation_id not in obligation_ids:
                 raise SearchPlannerModelAdapterError(
-                    f"component search requirement references missing source obligation {obligation_id}"
+                    f"component search requirement references missing source obligation {obligation_id}",
+                    failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
                 )
         metadata = requirement.get("metadata")
         metadata = metadata if isinstance(metadata, Mapping) else {}
@@ -837,31 +1162,22 @@ def _validate_component_refs(
             if not isinstance(strategy, Mapping):
                 continue
             strategy_id = str(strategy.get("strategy_id") or "")
-            if (
-                strategy.get("candidate_kind") == "primary"
-                and component_id in primary_count_by_component
-            ):
+            if strategy.get("candidate_kind") == "primary" and component_id in primary_count_by_component:
                 primary_count_by_component[component_id] += 1
-            for obligation_id in strategy.get(
-                "source_obligation_candidate_ids"
-            ) or ():
+            for obligation_id in strategy.get("source_obligation_candidate_ids") or ():
                 if obligation_id not in obligation_ids:
                     raise SearchPlannerModelAdapterError(
-                        f"query strategy {strategy_id} references missing source obligation {obligation_id}"
+                        f"query strategy {strategy_id} references missing source obligation {obligation_id}",
+                        failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
                     )
     invalid_primary_counts = {
-        component_id: count
-        for component_id, count in primary_count_by_component.items()
-        if count != 1
+        component_id: count for component_id, count in primary_count_by_component.items() if count != 1
     }
     if invalid_primary_counts:
-        details = ", ".join(
-            f"{component_id}={count}"
-            for component_id, count in sorted(invalid_primary_counts.items())
-        )
+        details = ", ".join(f"{component_id}={count}" for component_id, count in sorted(invalid_primary_counts.items()))
         raise SearchPlannerModelAdapterError(
-            "each required component requires exactly one primary query strategy: "
-            + details
+            "each required component requires exactly one primary query strategy: " + details,
+            failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
 
 
@@ -870,17 +1186,20 @@ def _reject_unsafe_payload(value: Any) -> None:
     sensitive = sorted(key for key in keys if _is_sensitive_key(key))
     if sensitive:
         raise SearchPlannerModelAdapterError(
-            "search planner model output contains raw/private fields: " + ", ".join(sensitive)
+            "search planner model output contains raw/private fields: " + ", ".join(sensitive),
+            failure_code=(_FailureCode.PRIVACY_OR_RAW_MATERIAL_VIOLATION),
         )
     forbidden = sorted(keys & _FORBIDDEN_AUTHORITY_KEYS)
     if forbidden:
         raise SearchPlannerModelAdapterError(
-            "search planner model output contains closed authority fields: " + ", ".join(forbidden)
+            "search planner model output contains closed authority fields: " + ", ".join(forbidden),
+            failure_code=(_FailureCode.CLOSED_AUTHORITY_VIOLATION),
         )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:
         raise SearchPlannerModelAdapterError(
-            "search planner model output opens closed runtime surfaces: " + ", ".join(dangerous)
+            "search planner model output opens closed runtime surfaces: " + ", ".join(dangerous),
+            failure_code=(_FailureCode.CLOSED_AUTHORITY_VIOLATION),
         )
 
 
@@ -897,11 +1216,20 @@ def _reject_executing_requirement(value: Mapping[str, Any]) -> None:
         if key not in value:
             continue
         if key == "must_not_execute" and value.get(key) is not True:
-            raise SearchPlannerModelAdapterError("component search requirement claims executable search")
+            raise SearchPlannerModelAdapterError(
+                "component search requirement claims executable search",
+                failure_code=(_FailureCode.CLOSED_AUTHORITY_VIOLATION),
+            )
         if key == "subordinate_to_answer_contract" and value.get(key) is not True:
-            raise SearchPlannerModelAdapterError("component search requirement is not subordinate")
+            raise SearchPlannerModelAdapterError(
+                "component search requirement is not subordinate",
+                failure_code=(_FailureCode.LINEAGE_OR_BINDING_FAILURE),
+            )
         if key not in {"must_not_execute", "subordinate_to_answer_contract"} and value.get(key) is True:
-            raise SearchPlannerModelAdapterError("component search requirement claims closed surface execution")
+            raise SearchPlannerModelAdapterError(
+                "component search requirement claims closed surface execution",
+                failure_code=(_FailureCode.CLOSED_AUTHORITY_VIOLATION),
+            )
 
 
 def _planner_model_metadata(
@@ -929,29 +1257,58 @@ def _planner_model_metadata(
     }
 
 
-def _required_mapping(value: Any, label: str) -> Mapping[str, Any]:
+def _required_mapping(
+    value: Any,
+    label: str,
+    *,
+    failure_code: SearchPlannerModelAdapterFailureCode = (_FailureCode.INVALID_NESTED_TYPE),
+) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise SearchPlannerModelAdapterError(f"{label} must be a JSON object")
+        raise SearchPlannerModelAdapterError(
+            f"{label} must be a JSON object",
+            failure_code=failure_code,
+        )
     return value
 
 
-def _required_sequence(value: Any, label: str) -> list[Any]:
+def _required_sequence(
+    value: Any,
+    label: str,
+    *,
+    failure_code: SearchPlannerModelAdapterFailureCode = (_FailureCode.INVALID_NESTED_TYPE),
+) -> list[Any]:
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
-        raise SearchPlannerModelAdapterError(f"{label} must be a JSON array")
+        raise SearchPlannerModelAdapterError(
+            f"{label} must be a JSON array",
+            failure_code=failure_code,
+        )
     return list(value)
 
 
-def _required_text(mapping: Mapping[str, Any], key: str, *, limit: int = 160) -> str:
+def _required_text(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    limit: int = 160,
+    failure_code: SearchPlannerModelAdapterFailureCode | None = None,
+) -> str:
     if key not in mapping:
-        raise SearchPlannerModelAdapterError(f"missing required field: {key}")
+        raise SearchPlannerModelAdapterError(
+            f"missing required field: {key}",
+            failure_code=(failure_code or _FailureCode.MISSING_REQUIRED_NESTED_FIELD),
+        )
     raw_text = " ".join(str(mapping.get(key) or "").strip().split())
     if len(raw_text) > limit:
         raise SearchPlannerModelAdapterError(
-            f"required field exceeds bounded length: {key}"
+            f"required field exceeds bounded length: {key}",
+            failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
         )
     text = _clean_text(mapping.get(key), limit=limit)
     if not text:
-        raise SearchPlannerModelAdapterError(f"required field is empty: {key}")
+        raise SearchPlannerModelAdapterError(
+            f"required field is empty: {key}",
+            failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
+        )
     return text
 
 
@@ -960,11 +1317,17 @@ def _required_enum_text(
     key: str,
     *,
     allowed: frozenset[str],
+    failure_code: SearchPlannerModelAdapterFailureCode = (_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
 ) -> str:
-    text = _required_text(mapping, key)
+    text = _required_text(
+        mapping,
+        key,
+        failure_code=failure_code,
+    )
     if text not in allowed:
         raise SearchPlannerModelAdapterError(
-            f"unsupported value for {key}: {text}"
+            f"unsupported value for {key}: {text}",
+            failure_code=failure_code,
         )
     return text
 
@@ -975,27 +1338,51 @@ def _required_text_list(
     *,
     limit: int = 160,
     allow_empty: bool = False,
+    failure_code: SearchPlannerModelAdapterFailureCode | None = None,
 ) -> list[str]:
     if key not in mapping:
-        raise SearchPlannerModelAdapterError(f"missing required field: {key}")
-    items = _required_sequence(mapping.get(key), key)
-    out = _optional_text_list(items, limit=limit)
+        raise SearchPlannerModelAdapterError(
+            f"missing required field: {key}",
+            failure_code=(failure_code or _FailureCode.MISSING_REQUIRED_NESTED_FIELD),
+        )
+    items = _required_sequence(
+        mapping.get(key),
+        key,
+        failure_code=(failure_code or _FailureCode.INVALID_NESTED_TYPE),
+    )
+    out = _optional_text_list(
+        items,
+        limit=limit,
+        failure_code=failure_code,
+    )
     if not out and not allow_empty:
-        raise SearchPlannerModelAdapterError(f"required field must contain text values: {key}")
+        raise SearchPlannerModelAdapterError(
+            f"required field must contain text values: {key}",
+            failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
+        )
     return out
 
 
-def _optional_text_list(value: Any, *, limit: int = 160) -> list[str]:
+def _optional_text_list(
+    value: Any,
+    *,
+    limit: int = 160,
+    failure_code: SearchPlannerModelAdapterFailureCode | None = None,
+) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
-        raise SearchPlannerModelAdapterError("expected an array of strings")
+        raise SearchPlannerModelAdapterError(
+            "expected an array of strings",
+            failure_code=(failure_code or _FailureCode.INVALID_NESTED_TYPE),
+        )
     out: list[str] = []
     for item in value:
         raw_text = " ".join(str(item or "").strip().split())
         if len(raw_text) > limit:
             raise SearchPlannerModelAdapterError(
-                "array text value exceeds bounded length"
+                "array text value exceeds bounded length",
+                failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
             )
         text = _clean_text(item, limit=limit)
         if text:
@@ -1005,13 +1392,22 @@ def _optional_text_list(value: Any, *, limit: int = 160) -> list[str]:
 
 def _required_non_negative_int(mapping: Mapping[str, Any], key: str) -> int:
     if key not in mapping or isinstance(mapping.get(key), bool):
-        raise SearchPlannerModelAdapterError(f"missing required integer field: {key}")
+        raise SearchPlannerModelAdapterError(
+            f"missing required integer field: {key}",
+            failure_code=(_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH),
+        )
     try:
         value = int(mapping.get(key))
     except (TypeError, ValueError) as exc:
-        raise SearchPlannerModelAdapterError(f"required field must be an integer: {key}") from exc
+        raise SearchPlannerModelAdapterError(
+            f"required field must be an integer: {key}",
+            failure_code=(_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH),
+        ) from exc
     if value < 0:
-        raise SearchPlannerModelAdapterError(f"required field must be non-negative: {key}")
+        raise SearchPlannerModelAdapterError(
+            f"required field must be non-negative: {key}",
+            failure_code=(_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH),
+        )
     return value
 
 
@@ -1019,7 +1415,10 @@ def _safe_metadata(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
-        raise SearchPlannerModelAdapterError("metadata must be a JSON object")
+        raise SearchPlannerModelAdapterError(
+            "metadata must be a JSON object",
+            failure_code=(_FailureCode.INVALID_NESTED_TYPE),
+        )
     _reject_unsafe_payload(value)
     safe = _json_safe(dict(value))
     return dict(safe) if isinstance(safe, Mapping) else {}
@@ -1107,5 +1506,8 @@ __all__ = [
     "SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION",
     "SearchPlannerModelAdapter",
     "SearchPlannerModelAdapterError",
+    "SearchPlannerModelAdapterFailureCode",
+    "SearchPlannerModelAdapterFailureMetadata",
+    "SearchPlannerModelAdapterFailureStage",
     "validate_and_sanitize_model_output",
 ]

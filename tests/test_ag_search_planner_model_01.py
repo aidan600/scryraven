@@ -8,11 +8,14 @@ from typing import Any, Mapping
 
 import pytest
 
+import core.search_planner_model_adapter as search_planner_model_adapter
 from core.run_kernel import Observation, ObservationType, RunKernel, RunStageStatus
 from core.search_planner_model_adapter import (
     SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION,
     SearchPlannerModelAdapter,
     SearchPlannerModelAdapterError,
+    SearchPlannerModelAdapterFailureCode,
+    SearchPlannerModelAdapterFailureStage,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
 from core.search_planner_runtime import (
@@ -80,6 +83,7 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
             {
                 "component_id": "component:model-official-threshold",
                 "component_revision": "1",
+                "component_purpose": "user_facing_answer_target",
                 "user_facing_label": "Official threshold",
                 "user_facing_question": (
                     "What is the official current filing threshold for the requested program?"
@@ -250,9 +254,22 @@ def test_model_adapter_requires_enabled_and_callable() -> None:
     missing_callable = SearchPlannerModelAdapter(ask_model=None, enabled=True, licensed=True)
     planner_input = _planner_input(_kernel()).to_adapter_payload()
 
-    for adapter in (disabled, unlicensed, missing_callable):
-        with pytest.raises(SearchPlannerModelAdapterError, match="explicitly enabled"):
+    for adapter, expected_code in (
+        (disabled, SearchPlannerModelAdapterFailureCode.ADAPTER_DISABLED),
+        (unlicensed, SearchPlannerModelAdapterFailureCode.ADAPTER_DISABLED),
+        (missing_callable, SearchPlannerModelAdapterFailureCode.ROUTE_UNAVAILABLE),
+    ):
+        with pytest.raises(
+            SearchPlannerModelAdapterError,
+            match="explicitly enabled",
+        ) as caught:
             adapter.produce(planner_input)
+        assert (
+            caught.value.failure_stage
+            == SearchPlannerModelAdapterFailureStage.INPUT
+        )
+        assert caught.value.failure_code == expected_code
+        assert caught.value.mechanical_rule_id is None
 
     assert fake.calls == []
 
@@ -277,6 +294,60 @@ def test_model_adapter_calls_injected_model_with_json_requirement() -> None:
     assert kwargs["require_json"] is True
     assert kwargs["provider"] == "FakeProvider"
     assert kwargs["model"] == "fake-fast-model"
+
+
+def test_model_adapter_input_construction_failure_is_typed_and_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_failure = "private-input-construction-sentinel"
+
+    def fail_prompt_construction(_planner_input: Mapping[str, Any]) -> str:
+        raise RuntimeError(raw_failure)
+
+    monkeypatch.setattr(
+        search_planner_model_adapter,
+        "build_search_planner_model_prompt",
+        fail_prompt_construction,
+    )
+    fake = FakeAskModel(json.dumps(_planner_output()))
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="model input failed closed: RuntimeError",
+    ) as caught:
+        _adapter(fake).produce(_planner_input(_kernel()).to_adapter_payload())
+
+    assert caught.value.failure_stage == SearchPlannerModelAdapterFailureStage.INPUT
+    assert (
+        caught.value.failure_code
+        == SearchPlannerModelAdapterFailureCode.INPUT_CONSTRUCTION_FAILED
+    )
+    assert caught.value.mechanical_rule_id is None
+    assert raw_failure not in str(caught.value)
+    assert fake.calls == []
+
+
+def test_model_adapter_model_call_failure_is_typed_and_sanitized() -> None:
+    raw_failure = "private-model-call-sentinel"
+    fake = FakeAskModel(RuntimeError(raw_failure))
+
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="model call failed closed: RuntimeError",
+    ) as caught:
+        _adapter(fake).produce(_planner_input(_kernel()).to_adapter_payload())
+
+    assert (
+        caught.value.failure_stage
+        == SearchPlannerModelAdapterFailureStage.MODEL_CALL
+    )
+    assert (
+        caught.value.failure_code
+        == SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED
+    )
+    assert caught.value.mechanical_rule_id is None
+    assert raw_failure not in str(caught.value)
+    assert len(fake.calls) == 1
 
 
 def test_valid_fake_model_json_flows_through_search_planner_runtime_and_initial_contract_acceptance() -> None:
@@ -308,9 +379,21 @@ def test_invalid_json_or_unparseable_response_fails_before_observation() -> None
     kernel = _kernel()
     fake = FakeAskModel("not-json " + RAW_RESPONSE_SENTINEL)
 
-    with pytest.raises(SearchPlannerModelAdapterError, match="valid JSON"):
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="valid JSON",
+    ) as caught:
         _produce(kernel, _adapter(fake))
 
+    assert (
+        caught.value.failure_stage
+        == SearchPlannerModelAdapterFailureStage.JSON_PARSING
+    )
+    assert (
+        caught.value.failure_code
+        == SearchPlannerModelAdapterFailureCode.INVALID_JSON
+    )
+    assert caught.value.mechanical_rule_id == "M01"
     assert kernel.state.search_planner_proposal_state == {}
     assert kernel.state.search_planner_proposal_projection == {}
     assert kernel.state.search_planner_proposal_history == []
@@ -322,9 +405,21 @@ def test_schema_invalid_model_output_fails_before_observation() -> None:
     invalid.pop("answer_components")
     fake = FakeAskModel(json.dumps(invalid))
 
-    with pytest.raises(SearchPlannerModelAdapterError, match="missing required fields"):
+    with pytest.raises(
+        SearchPlannerModelAdapterError,
+        match="missing required fields",
+    ) as caught:
         _produce(kernel, _adapter(fake))
 
+    assert (
+        caught.value.failure_stage
+        == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    )
+    assert (
+        caught.value.failure_code
+        == SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS
+    )
+    assert caught.value.mechanical_rule_id == "M01"
     assert kernel.state.search_planner_proposal_state == {}
 
 
@@ -526,6 +621,76 @@ def test_model_query_strategy_cannot_select_provider_or_model() -> None:
         _produce(kernel, _adapter(fake))
 
     assert kernel.state.search_planner_proposal_state == {}
+
+
+def test_adapter_failure_code_inventory_is_stable_and_repository_owned() -> None:
+    assert {
+        item.value for item in SearchPlannerModelAdapterFailureCode
+    } == {
+        "ADAPTER_DISABLED",
+        "ROUTE_UNAVAILABLE",
+        "INPUT_CONSTRUCTION_FAILED",
+        "MODEL_CALL_FAILED",
+        "OUTPUT_CLEANING_FAILED",
+        "INVALID_JSON",
+        "JSON_VALUE_NOT_OBJECT",
+        "MISSING_REQUIRED_TOP_LEVEL_FIELDS",
+        "MISSING_REQUIRED_NESTED_FIELD",
+        "INVALID_NESTED_TYPE",
+        "INVALID_ENUM_OR_BOUNDED_VALUE",
+        "INVALID_COMPONENT_COUNT",
+        "INVALID_COMPONENT_SUPPORT_MATRIX",
+        "INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION",
+        "INVALID_ID_OR_CROSS_REFERENCE",
+        "INVALID_DEPENDENCY_OR_INFERENCE_DEPTH",
+        "INVALID_QUERY_STRATEGY_METADATA",
+        "CLOSED_AUTHORITY_VIOLATION",
+        "PRIVACY_OR_RAW_MATERIAL_VIOLATION",
+        "LINEAGE_OR_BINDING_FAILURE",
+    }
+
+
+def test_every_adapter_error_construction_supplies_a_registered_code() -> None:
+    tree = ast.parse(_text(ADAPTER_MODULE))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "SearchPlannerModelAdapterError"
+    ]
+    assert calls
+    for call in calls:
+        keyword_names = {item.arg for item in call.keywords}
+        assert "failure_code" in keyword_names
+
+    expected_rules = {
+        SearchPlannerModelAdapterFailureCode.INVALID_JSON: "M01",
+        SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT: "M01",
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS: "M01",
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD: "M02",
+        SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE: "M02",
+        SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE: "M02",
+        SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT: "M02",
+        SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE: "M03",
+        SearchPlannerModelAdapterFailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH: "M04",
+        SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_SUPPORT_MATRIX: "M05",
+        SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION: "M06",
+        SearchPlannerModelAdapterFailureCode.INVALID_QUERY_STRATEGY_METADATA: "M07",
+        SearchPlannerModelAdapterFailureCode.CLOSED_AUTHORITY_VIOLATION: "M08",
+        SearchPlannerModelAdapterFailureCode.PRIVACY_OR_RAW_MATERIAL_VIOLATION: "M09",
+        SearchPlannerModelAdapterFailureCode.LINEAGE_OR_BINDING_FAILURE: "M10",
+    }
+    for code in SearchPlannerModelAdapterFailureCode:
+        error = SearchPlannerModelAdapterError(
+            "bounded synthetic message",
+            failure_code=code,
+        )
+        assert isinstance(
+            error.failure_stage,
+            SearchPlannerModelAdapterFailureStage,
+        )
+        assert error.mechanical_rule_id == expected_rules.get(code)
 
 
 def test_static_closed_surface_guard_for_search_planner_model_adapter() -> None:

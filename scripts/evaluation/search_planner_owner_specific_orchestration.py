@@ -416,13 +416,17 @@ class _CapturedPlannerAdapter:
         default=None,
         repr=False,
     )
+    validated_proposal_returned: bool = False
 
     def produce(
         self,
         planner_input: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         self.planner_input = deepcopy(dict(planner_input))
-        return self.delegate.produce(planner_input)
+        self.validated_proposal_returned = False
+        proposal = self.delegate.produce(planner_input)
+        self.validated_proposal_returned = True
+        return proposal
 
 
 @dataclass(slots=True)
@@ -1061,6 +1065,9 @@ def _execute_product_trial(
     product_observation = observer.finalize(
         run_kernel=kernel,
         failure=failure,
+        validated_proposal_returned=(
+            capturing_adapter.validated_proposal_returned
+        ),
         safe_usage_refs=((safe_usage,) if safe_usage else ()),
         safe_execution_refs=(
             (safe_execution,) if safe_execution else ()

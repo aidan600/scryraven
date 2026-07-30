@@ -259,11 +259,28 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
         "search_planner_semantic_judge",
     ]
     failed = packet["trial_results"][0]
-    assert failed["product_boundary_result"]["boundary_status"] == "FAIL"
+    product_failure = failed["product_boundary_result"]
+    assert product_failure["boundary_status"] == "FAIL"
+    assert product_failure["parser_posture"] == "PASS"
+    assert product_failure["validator_posture"] == "FAIL"
+    assert product_failure["runtime_projection_posture"] == "NOT_REACHED"
+    assert product_failure["canonical_failure_rule_ids"] == ["M01"]
+    assert product_failure["bounded_failure_reason"].startswith(
+        "SearchPlannerModelAdapterError:"
+        "failure_stage=MODEL_OUTPUT_VALIDATION:"
+        "failure_code=MISSING_REQUIRED_TOP_LEVEL_FIELDS:"
+        "message_sha256="
+    )
     assert (
         failed["mechanical_validation_result"]["overall_posture"]
         == "FAIL"
     )
+    mechanical_rules = {
+        item["rule_id"]: item
+        for item in failed["mechanical_validation_result"]["rule_results"]
+    }
+    assert mechanical_rules["M01"]["posture"] == "FAIL"
+    assert mechanical_rules["M11"]["posture"] == "NOT_REACHED"
     assert failed["semantic_judgment_result"] is None
     assert failed["semantic_execution_observation"] is None
     assert failed["trial_observation"]["semantic_status"] == "NOT_RUN"
