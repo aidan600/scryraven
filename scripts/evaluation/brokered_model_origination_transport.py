@@ -32,6 +32,10 @@ TRANSPORT_FACTORY_SPEC = (
     "scripts.evaluation.brokered_model_origination_transport:"
     "create_brokered_model_origination_transport"
 )
+GENERIC_ROUTE_TRANSPORT_FACTORY_SPEC = (
+    "scripts.evaluation.brokered_model_origination_transport:"
+    "create_brokered_model_route_transport"
+)
 
 BrokerRequest = Callable[
     [str, str, Mapping[str, Any]],
@@ -40,11 +44,73 @@ BrokerRequest = Callable[
 
 
 @dataclass(frozen=True, slots=True)
-class _BrokeredModelOriginationTransport:
+class BrokeredModelRouteAuthorization:
+    """Exact provider-neutral route authority for one or more model roles."""
+
+    provider: str
+    model: str
+    reasoning_effort: str
+    allowed_model_roles: tuple[str, ...]
+    retry_cap: int
+    timeout_seconds: float
+    maximum_input_tokens: int
+    maximum_output_tokens: int
+    per_call_cost_ceiling_usd: str
+    raw_retention_posture: str = "sanitized_only"
+    require_observed_usage: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.provider or not self.model or not self.reasoning_effort:
+            raise EvaluationConfigurationError(
+                "brokered model route requires provider, model, and reasoning effort"
+            )
+        if (
+            not self.allowed_model_roles
+            or len(self.allowed_model_roles)
+            != len(set(self.allowed_model_roles))
+            or any(not str(item or "").strip() for item in self.allowed_model_roles)
+        ):
+            raise EvaluationConfigurationError(
+                "brokered model route requires explicit unique roles"
+            )
+        if self.retry_cap != 0:
+            raise EvaluationConfigurationError(
+                "brokered model route requires exact retry cap 0"
+            )
+        if self.timeout_seconds <= 0 or self.timeout_seconds > 600:
+            raise EvaluationConfigurationError(
+                "brokered model route requires a bounded timeout"
+            )
+        if self.maximum_input_tokens <= 0 or self.maximum_output_tokens <= 0:
+            raise EvaluationConfigurationError(
+                "brokered model route requires positive token caps"
+            )
+        try:
+            cost_ceiling = Decimal(self.per_call_cost_ceiling_usd)
+        except Exception as exc:
+            raise EvaluationConfigurationError(
+                "brokered model route requires an exact decimal cost ceiling"
+            ) from exc
+        if not cost_ceiling.is_finite() or cost_ceiling <= 0:
+            raise EvaluationConfigurationError(
+                "brokered model route requires a finite positive cost ceiling"
+            )
+        if self.raw_retention_posture != "sanitized_only":
+            raise EvaluationConfigurationError(
+                "brokered model route requires sanitized_only retention"
+            )
+        if not isinstance(self.require_observed_usage, bool):
+            raise EvaluationConfigurationError(
+                "brokered model route usage posture must be boolean"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _BrokeredModelRouteTransport:
     _broker_url: str
     _session_token: str = field(repr=False, compare=False)
     _request: BrokerRequest = field(repr=False, compare=False)
-    _authorization: LiveAuthorization
+    _authorization: BrokeredModelRouteAuthorization
     _cost_policy: ModelCostPolicy
     credentials_accessed: bool = field(default=False, init=False)
 
@@ -58,6 +124,7 @@ class _BrokeredModelOriginationTransport:
         model: str,
         maximum_input_tokens: int,
         maximum_output_tokens: int,
+        correlation_id: str | None = None,
     ) -> EvaluationTransportResponse:
         if role not in self._authorization.allowed_model_roles:
             prompt = ""
@@ -92,6 +159,7 @@ class _BrokeredModelOriginationTransport:
             max_output_tokens=maximum_output_tokens,
             timeout_seconds=self._authorization.timeout_seconds,
             retry_cap=self._authorization.retry_cap,
+            correlation_id=correlation_id,
         )
         response: Mapping[str, Any] | None = None
         output_text: str | None = None
@@ -125,6 +193,13 @@ class _BrokeredModelOriginationTransport:
                     "brokered transport response omitted usage posture"
                 )
             usage_observed = usage.get("usage_observed") is True
+            if (
+                self._authorization.require_observed_usage
+                and not usage_observed
+            ):
+                raise EvaluationTransportError(
+                    "brokered transport requires observed usage for live admissibility"
+                )
             input_tokens = usage.get("input_tokens")
             cached_input_tokens = usage.get("cached_input_tokens")
             uncached_input_tokens = usage.get("uncached_input_tokens")
@@ -149,7 +224,9 @@ class _BrokeredModelOriginationTransport:
                     output_tokens,
                     policy=self._cost_policy,
                 )
-                if cost > Decimal(str(self._authorization.cost_ceiling)):
+                if cost > Decimal(
+                    self._authorization.per_call_cost_ceiling_usd
+                ):
                     raise EvaluationTransportError(
                         "brokered transport response exceeded authorized cost ceiling"
                     )
@@ -244,46 +321,21 @@ def _request_broker(
     )
 
 
-def _create_brokered_model_origination_transport(
-    authorization: LiveAuthorization,
+def _create_brokered_model_route_transport(
+    authorization: BrokeredModelRouteAuthorization,
     *,
     broker_url: str,
     session_token: str,
     request_function: BrokerRequest,
-) -> _BrokeredModelOriginationTransport:
-    if authorization.retry_cap != 0:
-        raise EvaluationConfigurationError(
-            "brokered origination transport requires exact retry cap 0"
-        )
-    if (
-        authorization.timeout_seconds <= 0
-        or authorization.timeout_seconds > 600
-    ):
-        raise EvaluationConfigurationError(
-            "brokered origination transport requires a bounded timeout"
-        )
-    if (
-        authorization.maximum_input_tokens <= 0
-        or authorization.maximum_output_tokens <= 0
-    ):
-        raise EvaluationConfigurationError(
-            "brokered origination transport requires positive token caps"
-        )
-    if authorization.raw_retention_posture != "sanitized_only":
-        raise EvaluationConfigurationError(
-            "brokered origination transport requires sanitized_only retention"
-        )
-    if not authorization.reasoning_effort:
-        raise EvaluationConfigurationError(
-            "brokered origination transport requires exact reasoning effort"
-        )
+) -> _BrokeredModelRouteTransport:
+    authorization.__post_init__()
     if not broker_client._is_loopback_broker_url(broker_url):
         raise EvaluationConfigurationError(
-            "brokered origination transport requires the loopback broker"
+            "brokered model route requires the loopback broker"
         )
     if not session_token:
         raise EvaluationConfigurationError(
-            "brokered origination transport requires a temporary broker session"
+            "brokered model route requires a temporary broker session"
         )
     try:
         cost_policy = resolve_model_cost_policy(
@@ -294,7 +346,7 @@ def _create_brokered_model_origination_transport(
         raise EvaluationConfigurationError(
             "no caller-owned cost policy exists for the exact authorized route"
         ) from exc
-    return _BrokeredModelOriginationTransport(
+    return _BrokeredModelRouteTransport(
         _broker_url=broker_url,
         _session_token=session_token,
         _request=request_function,
@@ -303,12 +355,55 @@ def _create_brokered_model_origination_transport(
     )
 
 
+def _create_brokered_model_origination_transport(
+    authorization: LiveAuthorization,
+    *,
+    broker_url: str,
+    session_token: str,
+    request_function: BrokerRequest,
+) -> _BrokeredModelRouteTransport:
+    """Compatibility wrapper preserving the established private test seam."""
+
+    route_authorization = BrokeredModelRouteAuthorization(
+        provider=authorization.provider,
+        model=authorization.model,
+        reasoning_effort=authorization.reasoning_effort,
+        allowed_model_roles=authorization.allowed_model_roles,
+        retry_cap=authorization.retry_cap,
+        timeout_seconds=authorization.timeout_seconds,
+        maximum_input_tokens=authorization.maximum_input_tokens,
+        maximum_output_tokens=authorization.maximum_output_tokens,
+        per_call_cost_ceiling_usd=str(authorization.cost_ceiling),
+        raw_retention_posture=authorization.raw_retention_posture,
+        require_observed_usage=False,
+    )
+    return _create_brokered_model_route_transport(
+        route_authorization,
+        broker_url=broker_url,
+        session_token=session_token,
+        request_function=request_function,
+    )
+
+
 def create_brokered_model_origination_transport(
     authorization: LiveAuthorization,
-) -> _BrokeredModelOriginationTransport:
+) -> _BrokeredModelRouteTransport:
     """Construct the active provider-neutral AnalystOS broker transport."""
 
     return _create_brokered_model_origination_transport(
+        authorization,
+        broker_url=broker_client.DEFAULT_BROKER_URL,
+        session_token=os.environ.get(broker_client.TOKEN_ENV_VAR, ""),
+        request_function=_request_broker,
+    )
+
+
+def create_brokered_model_route_transport(
+    authorization: BrokeredModelRouteAuthorization,
+) -> _BrokeredModelRouteTransport:
+    """Construct the generic loopback transport for an exact model route."""
+
+    return _create_brokered_model_route_transport(
         authorization,
         broker_url=broker_client.DEFAULT_BROKER_URL,
         session_token=os.environ.get(broker_client.TOKEN_ENV_VAR, ""),
@@ -321,9 +416,17 @@ setattr(
     "transport_factory_spec",
     TRANSPORT_FACTORY_SPEC,
 )
+setattr(
+    create_brokered_model_route_transport,
+    "transport_factory_spec",
+    GENERIC_ROUTE_TRANSPORT_FACTORY_SPEC,
+)
 
 
 __all__ = [
+    "BrokeredModelRouteAuthorization",
+    "GENERIC_ROUTE_TRANSPORT_FACTORY_SPEC",
     "TRANSPORT_FACTORY_SPEC",
+    "create_brokered_model_route_transport",
     "create_brokered_model_origination_transport",
 ]
