@@ -54,6 +54,7 @@ _QUERY_ROLES = SEARCH_PLANNER_MODEL_QUERY_ROLES
 _RECON_POSTURES = SEARCH_PLANNER_MODEL_RECON_POSTURES
 _SOURCE_OBLIGATION_KINDS = SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS
 _SOURCE_OBLIGATION_STRICTNESSES = SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES
+_MISSING = object()
 _FORBIDDEN_QUERY_AUTHORITY_KEYS = frozenset(
     {
         "provider",
@@ -633,13 +634,14 @@ def _semantic_slots(value: Any) -> list[dict[str, Any]]:
                     ),
                     "status": status,
                     "candidate_values": _optional_text_list(
-                        mapping.get("candidate_values"),
+                        mapping.get("candidate_values", _MISSING),
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "semantic_slot_candidate_value"
                         ],
                     ),
-                    "selected_value": _clean_text(
-                        mapping.get("selected_value"),
+                    "selected_value": _optional_model_text(
+                        mapping,
+                        "selected_value",
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "semantic_slot_selected_value"
                         ],
@@ -647,7 +649,7 @@ def _semantic_slots(value: Any) -> list[dict[str, Any]]:
                     "materiality": materiality,
                     "user_confirmation_required": user_confirmation_required,
                     "normalization_notes": _optional_text_list(
-                        mapping.get("normalization_notes"),
+                        mapping.get("normalization_notes", _MISSING),
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "semantic_slot_normalization_note"
                         ],
@@ -687,7 +689,7 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
             )
         seen.add(component_id)
         source_obligation_ids = _optional_text_list(
-            mapping.get("source_obligation_candidate_ids"),
+            mapping.get("source_obligation_candidate_ids", _MISSING),
             failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
         )
         requirement_posture = _required_enum_text(
@@ -712,7 +714,7 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                 failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
             )
         dependencies = _optional_text_list(
-            mapping.get("dependency_component_ids"),
+            mapping.get("dependency_component_ids", _MISSING),
             failure_code=_FailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH,
         )
         max_inference_depth = _required_non_negative_int(
@@ -736,7 +738,7 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                 f"answer component {component_id} violates the direct-or-inferred component matrix",
                 failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
             )
-        partial_answer_policy = _clean_text(mapping.get("partial_answer_policy"))
+        partial_answer_policy = _optional_model_text(mapping, "partial_answer_policy")
         if partial_answer_policy is not None and partial_answer_policy not in _PARTIAL_ANSWER_POLICIES:
             raise SearchPlannerModelAdapterError(
                 f"unsupported partial answer policy: {partial_answer_policy}",
@@ -787,14 +789,16 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                     "source_obligation_candidate_ids": source_obligation_ids,
                     "allowed_support_kinds": allowed_support_kinds,
                     "max_inference_depth": max_inference_depth,
-                    "normalization_policy": _clean_text(
-                        mapping.get("normalization_policy"),
+                    "normalization_policy": _optional_model_text(
+                        mapping,
+                        "normalization_policy",
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "answer_component_normalization_policy"
                         ],
                     ),
-                    "calculation_policy": _clean_text(
-                        mapping.get("calculation_policy"),
+                    "calculation_policy": _optional_model_text(
+                        mapping,
+                        "calculation_policy",
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "answer_component_calculation_policy"
                         ],
@@ -802,13 +806,13 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                     "dependency_component_ids": dependencies,
                     "partial_answer_policy": partial_answer_policy,
                     "mandatory_caveats": _optional_text_list(
-                        mapping.get("mandatory_caveats"),
+                        mapping.get("mandatory_caveats", _MISSING),
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "answer_component_mandatory_caveat"
                         ],
                     ),
                     "prohibited_upgrades": _optional_text_list(
-                        mapping.get("prohibited_upgrades"),
+                        mapping.get("prohibited_upgrades", _MISSING),
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "answer_component_prohibited_upgrade"
                         ],
@@ -904,7 +908,7 @@ def _source_obligation_candidates(value: Any) -> list[dict[str, Any]]:
                 failure_code=(_FailureCode.INVALID_ID_OR_CROSS_REFERENCE),
             )
         seen.add(candidate_id)
-        strictness = _clean_text(mapping.get("strictness"))
+        strictness = _optional_model_text(mapping, "strictness")
         if strictness is not None and strictness not in _SOURCE_OBLIGATION_STRICTNESSES:
             raise SearchPlannerModelAdapterError(
                 f"unsupported value for strictness: {strictness}",
@@ -985,9 +989,12 @@ def _component_search_requirements(value: Any) -> list[dict[str, Any]]:
                         "source_obligation_candidate_ids",
                         failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
                     ),
-                    "preferred_source_kinds": _optional_text_list(mapping.get("preferred_source_kinds")),
-                    "recency_requirement": _clean_text(
-                        mapping.get("recency_requirement"),
+                    "preferred_source_kinds": _optional_text_list(
+                        mapping.get("preferred_source_kinds", _MISSING)
+                    ),
+                    "recency_requirement": _optional_model_text(
+                        mapping,
+                        "recency_requirement",
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "component_search_requirement_recency"
                         ],
@@ -1145,10 +1152,11 @@ def _contract_amendment_candidates(value: Any) -> list[dict[str, Any]]:
         candidates.append(
             _without_empty(
                 {
-                    "candidate_id": _clean_text(mapping.get("candidate_id")),
-                    "operation_kind": _clean_text(mapping.get("operation_kind")),
-                    "summary": _clean_text(
-                        mapping.get("summary"),
+                    "candidate_id": _optional_model_text(mapping, "candidate_id"),
+                    "operation_kind": _optional_model_text(mapping, "operation_kind"),
+                    "summary": _optional_model_text(
+                        mapping,
+                        "summary",
                         limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
                             "contract_amendment_candidate_summary"
                         ],
@@ -1378,13 +1386,14 @@ def _required_text(
             f"missing required field: {key}",
             failure_code=(failure_code or _FailureCode.MISSING_REQUIRED_NESTED_FIELD),
         )
-    raw_text = " ".join(str(mapping.get(key) or "").strip().split())
+    value = _model_visible_text(mapping[key])
+    raw_text = " ".join(value.strip().split())
     if len(raw_text) > limit:
         raise SearchPlannerModelAdapterError(
             f"required field exceeds bounded length: {key}",
             failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
         )
-    text = _clean_text(mapping.get(key), limit=limit)
+    text = _clean_text(value, limit=limit)
     if not text:
         raise SearchPlannerModelAdapterError(
             f"required field is empty: {key}",
@@ -1429,7 +1438,7 @@ def _required_text_list(
     items = _required_sequence(
         mapping.get(key),
         key,
-        failure_code=(failure_code or _FailureCode.INVALID_NESTED_TYPE),
+        failure_code=_FailureCode.INVALID_NESTED_TYPE,
     )
     out = _optional_text_list(
         items,
@@ -1450,25 +1459,46 @@ def _optional_text_list(
     limit: int = SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
     failure_code: SearchPlannerModelAdapterFailureCode | None = None,
 ) -> list[str]:
-    if value is None:
+    if value is _MISSING:
         return []
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
         raise SearchPlannerModelAdapterError(
             "expected an array of strings",
-            failure_code=(failure_code or _FailureCode.INVALID_NESTED_TYPE),
+            failure_code=_FailureCode.INVALID_NESTED_TYPE,
         )
     out: list[str] = []
     for item in value:
-        raw_text = " ".join(str(item or "").strip().split())
+        text_item = _model_visible_text(item)
+        raw_text = " ".join(text_item.strip().split())
         if len(raw_text) > limit:
             raise SearchPlannerModelAdapterError(
                 "array text value exceeds bounded length",
                 failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
             )
-        text = _clean_text(item, limit=limit)
+        text = _clean_text(text_item, limit=limit)
         if text:
             out.append(text)
     return out
+
+
+def _optional_model_text(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    limit: int = SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
+) -> str | None:
+    if key not in mapping:
+        return None
+    return _clean_text(_model_visible_text(mapping[key]), limit=limit)
+
+
+def _model_visible_text(value: Any) -> str:
+    if not isinstance(value, str):
+        raise SearchPlannerModelAdapterError(
+            "model-visible text value must be a JSON string",
+            failure_code=_FailureCode.INVALID_NESTED_TYPE,
+        )
+    return value
 
 
 def _required_non_negative_int(mapping: Mapping[str, Any], key: str) -> int:

@@ -46,6 +46,83 @@ RAW_PROMPT_SENTINEL = "RAW_PROMPT_MODEL_ADAPTER_SENTINEL"
 RAW_RESPONSE_SENTINEL = "RAW_MODEL_RESPONSE_SENTINEL"
 RAW_PROVIDER_SENTINEL = "RAW_PROVIDER_PAYLOAD_SENTINEL"
 
+_STRICT_JSON_WRONG_TEXT_TYPES: tuple[tuple[str, Any], ...] = (
+    ("null", None),
+    ("true", True),
+    ("false", False),
+    ("integer", 7),
+    ("finite_decimal", 1.5),
+    ("object", {"fictional": "value"}),
+    ("array", ["fictional"]),
+)
+
+_STRICT_TYPE_PREDICATE_MATRIX: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "direct_optional_enum_text",
+        (
+            "ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM",
+            "SOURCE_OBLIGATION_STRICTNESS_ENUM",
+        ),
+    ),
+    (
+        "required_text",
+        (
+            "QUESTION_MEANING_SUMMARY_TEXT_OVER_MAX",
+            "REQUESTED_OUTPUT_TEXT_OVER_MAX",
+            "MATERIAL_AMBIGUITY_POSTURE_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_USER_FACING_LABEL_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_USER_FACING_QUESTION_TEXT_OVER_MAX",
+            "RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_OVER_MAX",
+            "COMPONENT_SEARCH_REQUIREMENT_SUMMARY_TEXT_OVER_MAX",
+            "SEMANTIC_SLOT_STATUS_TEXT_OVER_MAX",
+            "SEMANTIC_SLOT_MATERIALITY_TEXT_OVER_MAX",
+            "SEMANTIC_SLOT_KIND_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_REQUIREMENT_POSTURE_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_MATERIALITY_TEXT_OVER_MAX",
+            "SOURCE_OBLIGATION_KIND_TEXT_OVER_MAX",
+        ),
+    ),
+    (
+        "required_enum_empty_text",
+        (
+            "SEMANTIC_SLOT_STATUS_TEXT_EMPTY",
+            "SEMANTIC_SLOT_MATERIALITY_TEXT_EMPTY",
+            "SEMANTIC_SLOT_KIND_TEXT_EMPTY",
+            "ANSWER_COMPONENT_REQUIREMENT_POSTURE_TEXT_EMPTY",
+            "ANSWER_COMPONENT_MATERIALITY_TEXT_EMPTY",
+            "SOURCE_OBLIGATION_KIND_TEXT_EMPTY",
+        ),
+    ),
+    (
+        "required_enum_value_membership",
+        (
+            "SEMANTIC_SLOT_STATUS_VALUE_NOT_ALLOWED",
+            "SEMANTIC_SLOT_MATERIALITY_VALUE_NOT_ALLOWED",
+            "SEMANTIC_SLOT_KIND_VALUE_NOT_ALLOWED",
+            "ANSWER_COMPONENT_REQUIREMENT_POSTURE_VALUE_NOT_ALLOWED",
+            "ANSWER_COMPONENT_MATERIALITY_VALUE_NOT_ALLOWED",
+            "SOURCE_OBLIGATION_KIND_VALUE_NOT_ALLOWED",
+        ),
+    ),
+    (
+        "text_array_items",
+        (
+            "TOP_LEVEL_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX",
+            "TOP_LEVEL_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX",
+            "NORMALIZATION_OBLIGATION_ITEM_TEXT_OVER_MAX",
+            "ASSUMPTION_ITEM_TEXT_OVER_MAX",
+            "UNSUPPORTED_OR_DEFERRED_OUTPUT_ITEM_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_ITEM_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_ACCEPTANCE_CRITERIA_ITEM_TEXT_OVER_MAX",
+            "SEMANTIC_SLOT_CANDIDATE_VALUE_ITEM_TEXT_OVER_MAX",
+            "SEMANTIC_SLOT_NORMALIZATION_NOTE_ITEM_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX",
+            "ANSWER_COMPONENT_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX",
+            "COMPONENT_SEARCH_REQUIREMENT_PREFERRED_SOURCE_KIND_ITEM_TEXT_OVER_MAX",
+        ),
+    ),
+)
+
 
 class FakeAskModel:
     def __init__(self, response: Any) -> None:
@@ -224,6 +301,39 @@ def _produce(
     if reduce:
         kernel.reduce(observation)
     return result.observation_payload
+
+
+def _model_output_error(
+    model_output: Mapping[str, Any],
+    *,
+    kernel: RunKernel | None = None,
+) -> SearchPlannerModelAdapterError:
+    target_kernel = kernel or _kernel()
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(
+            target_kernel,
+            _adapter(FakeAskModel(json.dumps(model_output))),
+        )
+    return caught.value
+
+
+def _strict_text_type_error(
+    mutate: Callable[[dict[str, Any], Any], None],
+    wrong_value: Any,
+    *,
+    kernel: RunKernel | None = None,
+) -> SearchPlannerModelAdapterError:
+    model_output = _planner_output()
+    mutate(model_output, deepcopy(wrong_value))
+    target_kernel = kernel or _kernel()
+    error = _model_output_error(model_output, kernel=target_kernel)
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE
+    assert error.mechanical_rule_id == "M02"
+    assert target_kernel.state.search_planner_proposal_state == {}
+    assert target_kernel.state.search_planner_proposal_projection == {}
+    assert target_kernel.state.search_planner_proposal_history == []
+    return error
 
 
 def _accept_planner_qmr(kernel: RunKernel, qmr_payload: Mapping[str, Any]) -> None:
@@ -1466,6 +1576,462 @@ def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections()
         )
         assert caught.value.failure_code == expected_code
         assert caught.value.mechanical_rule_id == "M02"
+
+
+def test_strict_type_predicate_matrix_covers_the_exact_licensed_partition() -> None:
+    predicate_ids = [
+        predicate_id
+        for _, predicate_group in _STRICT_TYPE_PREDICATE_MATRIX
+        for predicate_id in predicate_group
+    ]
+
+    assert len(predicate_ids) == 39
+    assert len(set(predicate_ids)) == len(predicate_ids)
+    assert set(predicate_ids) == {
+        "ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM",
+        "SOURCE_OBLIGATION_STRICTNESS_ENUM",
+        "QUESTION_MEANING_SUMMARY_TEXT_OVER_MAX",
+        "REQUESTED_OUTPUT_TEXT_OVER_MAX",
+        "MATERIAL_AMBIGUITY_POSTURE_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_USER_FACING_LABEL_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_USER_FACING_QUESTION_TEXT_OVER_MAX",
+        "RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_OVER_MAX",
+        "COMPONENT_SEARCH_REQUIREMENT_SUMMARY_TEXT_OVER_MAX",
+        "SEMANTIC_SLOT_STATUS_TEXT_EMPTY",
+        "SEMANTIC_SLOT_MATERIALITY_TEXT_EMPTY",
+        "SEMANTIC_SLOT_KIND_TEXT_EMPTY",
+        "ANSWER_COMPONENT_REQUIREMENT_POSTURE_TEXT_EMPTY",
+        "ANSWER_COMPONENT_MATERIALITY_TEXT_EMPTY",
+        "SOURCE_OBLIGATION_KIND_TEXT_EMPTY",
+        "SEMANTIC_SLOT_STATUS_TEXT_OVER_MAX",
+        "SEMANTIC_SLOT_MATERIALITY_TEXT_OVER_MAX",
+        "SEMANTIC_SLOT_KIND_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_REQUIREMENT_POSTURE_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_MATERIALITY_TEXT_OVER_MAX",
+        "SOURCE_OBLIGATION_KIND_TEXT_OVER_MAX",
+        "SEMANTIC_SLOT_STATUS_VALUE_NOT_ALLOWED",
+        "SEMANTIC_SLOT_MATERIALITY_VALUE_NOT_ALLOWED",
+        "SEMANTIC_SLOT_KIND_VALUE_NOT_ALLOWED",
+        "ANSWER_COMPONENT_REQUIREMENT_POSTURE_VALUE_NOT_ALLOWED",
+        "ANSWER_COMPONENT_MATERIALITY_VALUE_NOT_ALLOWED",
+        "SOURCE_OBLIGATION_KIND_VALUE_NOT_ALLOWED",
+        "TOP_LEVEL_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX",
+        "TOP_LEVEL_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX",
+        "NORMALIZATION_OBLIGATION_ITEM_TEXT_OVER_MAX",
+        "ASSUMPTION_ITEM_TEXT_OVER_MAX",
+        "UNSUPPORTED_OR_DEFERRED_OUTPUT_ITEM_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_ITEM_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_ACCEPTANCE_CRITERIA_ITEM_TEXT_OVER_MAX",
+        "SEMANTIC_SLOT_CANDIDATE_VALUE_ITEM_TEXT_OVER_MAX",
+        "SEMANTIC_SLOT_NORMALIZATION_NOTE_ITEM_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX",
+        "ANSWER_COMPONENT_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX",
+        "COMPONENT_SEARCH_REQUIREMENT_PREFERRED_SOURCE_KIND_ITEM_TEXT_OVER_MAX",
+    }
+    assert "ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_NO_NONEMPTY_ITEMS" not in predicate_ids
+
+
+@pytest.mark.parametrize(
+    ("case_name", "mutate"),
+    (
+        (
+            "required_free_text",
+            lambda output, value: output.__setitem__("question_meaning_summary", value),
+        ),
+        (
+            "required_enum_text",
+            lambda output, value: output["semantic_slots"][0].__setitem__("status", value),
+        ),
+        (
+            "optional_free_text",
+            lambda output, value: output["semantic_slots"][0].__setitem__("selected_value", value),
+        ),
+        (
+            "optional_enum_text",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "partial_answer_policy",
+                value,
+            ),
+        ),
+    ),
+    ids=(
+        "required_free_text",
+        "required_enum_text",
+        "optional_free_text",
+        "optional_enum_text",
+    ),
+)
+@pytest.mark.parametrize(
+    ("wrong_type", "wrong_value"),
+    _STRICT_JSON_WRONG_TEXT_TYPES,
+    ids=tuple(name for name, _ in _STRICT_JSON_WRONG_TEXT_TYPES),
+)
+def test_model_visible_scalar_wrong_types_fail_before_string_validation(
+    case_name: str,
+    mutate: Callable[[dict[str, Any], Any], None],
+    wrong_type: str,
+    wrong_value: Any,
+) -> None:
+    error = _strict_text_type_error(mutate, wrong_value)
+
+    assert case_name
+    assert wrong_type
+    assert str(error) == "model-visible text value must be a JSON string"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "mutate"),
+    (
+        (
+            "semantic_slot.selected_value",
+            lambda output, value: output["semantic_slots"][0].__setitem__("selected_value", value),
+        ),
+        (
+            "answer_component.normalization_policy",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "normalization_policy",
+                value,
+            ),
+        ),
+        (
+            "answer_component.calculation_policy",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "calculation_policy",
+                value,
+            ),
+        ),
+        (
+            "answer_component.partial_answer_policy",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "partial_answer_policy",
+                value,
+            ),
+        ),
+        (
+            "source_obligation_candidate.strictness",
+            lambda output, value: output["source_obligation_candidates"][0].__setitem__(
+                "strictness",
+                value,
+            ),
+        ),
+        (
+            "component_search_requirement.recency_requirement",
+            lambda output, value: output["component_search_requirements"][0].__setitem__(
+                "recency_requirement",
+                value,
+            ),
+        ),
+        (
+            "contract_amendment_candidate.candidate_id",
+            lambda output, value: output.setdefault("contract_amendment_candidates", [{}])[0].__setitem__(
+                "candidate_id",
+                value,
+            ),
+        ),
+        (
+            "contract_amendment_candidate.operation_kind",
+            lambda output, value: output.setdefault("contract_amendment_candidates", [{}])[0].__setitem__(
+                "operation_kind",
+                value,
+            ),
+        ),
+        (
+            "contract_amendment_candidate.summary",
+            lambda output, value: output.setdefault("contract_amendment_candidates", [{}])[0].__setitem__(
+                "summary",
+                value,
+            ),
+        ),
+    ),
+    ids=(
+        "selected_value",
+        "normalization_policy",
+        "calculation_policy",
+        "partial_answer_policy",
+        "strictness",
+        "recency_requirement",
+        "amendment_candidate_id",
+        "amendment_operation_kind",
+        "amendment_summary",
+    ),
+)
+def test_every_optional_model_visible_text_call_site_rejects_present_null(
+    field_name: str,
+    mutate: Callable[[dict[str, Any], Any], None],
+) -> None:
+    error = _strict_text_type_error(mutate, None)
+
+    assert field_name
+    assert str(error) == "model-visible text value must be a JSON string"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "mutate"),
+    (
+        (
+            "semantic_slot.candidate_values",
+            lambda output, value: output["semantic_slots"][0].__setitem__("candidate_values", value),
+        ),
+        (
+            "semantic_slot.normalization_notes",
+            lambda output, value: output["semantic_slots"][0].__setitem__(
+                "normalization_notes",
+                value,
+            ),
+        ),
+        (
+            "answer_component.source_obligation_candidate_ids",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "source_obligation_candidate_ids",
+                value,
+            ),
+        ),
+        (
+            "answer_component.dependency_component_ids",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "dependency_component_ids",
+                value,
+            ),
+        ),
+        (
+            "answer_component.mandatory_caveats",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "mandatory_caveats",
+                value,
+            ),
+        ),
+        (
+            "answer_component.prohibited_upgrades",
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "prohibited_upgrades",
+                value,
+            ),
+        ),
+        (
+            "component_search_requirement.preferred_source_kinds",
+            lambda output, value: output["component_search_requirements"][0].__setitem__(
+                "preferred_source_kinds",
+                value,
+            ),
+        ),
+    ),
+    ids=(
+        "candidate_values",
+        "normalization_notes",
+        "source_obligation_candidate_ids",
+        "dependency_component_ids",
+        "mandatory_caveats",
+        "prohibited_upgrades",
+        "preferred_source_kinds",
+    ),
+)
+def test_every_optional_text_list_call_site_rejects_present_null(
+    field_name: str,
+    mutate: Callable[[dict[str, Any], Any], None],
+) -> None:
+    error = _strict_text_type_error(mutate, None)
+
+    assert field_name
+    assert str(error) == "expected an array of strings"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "omit", "set_value", "result_container"),
+    (
+        (
+            "partial_answer_policy",
+            lambda output: output["answer_components"][0].pop("partial_answer_policy", None),
+            lambda output, value: output["answer_components"][0].__setitem__(
+                "partial_answer_policy",
+                value,
+            ),
+            lambda proposal: proposal["answer_components"][0],
+        ),
+        (
+            "strictness",
+            lambda output: output["source_obligation_candidates"][0].pop("strictness", None),
+            lambda output, value: output["source_obligation_candidates"][0].__setitem__(
+                "strictness",
+                value,
+            ),
+            lambda proposal: proposal["source_obligation_candidates"][0],
+        ),
+    ),
+    ids=("partial_answer_policy", "strictness"),
+)
+def test_optional_scalar_omission_empty_and_whitespace_strings_remain_omissions(
+    field_name: str,
+    omit: Callable[[dict[str, Any]], None],
+    set_value: Callable[[dict[str, Any], str], None],
+    result_container: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+) -> None:
+    omitted = _planner_output()
+    omit(omitted)
+    proposal = _adapter(FakeAskModel(json.dumps(omitted))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+    assert field_name not in result_container(proposal)
+
+    for value in ("", "   "):
+        supplied = _planner_output()
+        set_value(supplied, value)
+        proposal = _adapter(FakeAskModel(json.dumps(supplied))).produce(
+            _planner_input(_kernel()).to_adapter_payload()
+        )
+        assert field_name not in result_container(proposal)
+
+
+def test_optional_text_list_omission_and_empty_array_remain_omissions() -> None:
+    omitted = _planner_output()
+    proposal = _adapter(FakeAskModel(json.dumps(omitted))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+    assert "candidate_values" not in proposal["semantic_slots"][0]
+
+    empty_array = _planner_output()
+    empty_array["semantic_slots"][0]["candidate_values"] = []
+    proposal = _adapter(FakeAskModel(json.dumps(empty_array))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+    assert "candidate_values" not in proposal["semantic_slots"][0]
+
+
+@pytest.mark.parametrize(
+    ("array_kind", "mutate"),
+    (
+        (
+            "required_top_level_text_array",
+            lambda output, value: output.__setitem__("mandatory_caveats", [value]),
+        ),
+        (
+            "optional_semantic_slot_text_array",
+            lambda output, value: output["semantic_slots"][0].__setitem__(
+                "candidate_values",
+                [value],
+            ),
+        ),
+    ),
+    ids=("required", "optional"),
+)
+@pytest.mark.parametrize(
+    ("wrong_type", "wrong_value"),
+    _STRICT_JSON_WRONG_TEXT_TYPES,
+    ids=tuple(name for name, _ in _STRICT_JSON_WRONG_TEXT_TYPES),
+)
+def test_model_visible_text_array_items_reject_non_string_json_values(
+    array_kind: str,
+    mutate: Callable[[dict[str, Any], Any], None],
+    wrong_type: str,
+    wrong_value: Any,
+) -> None:
+    error = _strict_text_type_error(mutate, wrong_value)
+
+    assert array_kind
+    assert wrong_type
+    assert str(error) == "model-visible text value must be a JSON string"
+
+
+def test_valid_string_arrays_remain_normalized_and_ordered() -> None:
+    model_output = _planner_output()
+    model_output["mandatory_caveats"] = ["  first caveat ", "second   caveat"]
+    model_output["semantic_slots"][0]["candidate_values"] = ["  first value ", "second   value"]
+
+    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+
+    assert proposal["mandatory_caveats"] == ["first caveat", "second caveat"]
+    assert proposal["semantic_slots"][0]["candidate_values"] == [
+        "first value",
+        "second value",
+    ]
+
+
+def test_valid_string_bounds_and_enum_ownership_are_preserved() -> None:
+    over_limit = _planner_output()
+    over_limit["mandatory_caveats"] = [
+        "x" * (search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS["top_level_text_list_item"] + 1)
+    ]
+    error = _model_output_error(over_limit)
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE
+    assert error.mechanical_rule_id == "M02"
+
+    invalid_enum = _planner_output()
+    invalid_enum["source_obligation_candidates"][0]["strictness"] = "not-a-strictness"
+    error = _model_output_error(invalid_enum)
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE
+    assert error.mechanical_rule_id == "M02"
+
+
+def test_shared_text_helper_spillover_uses_type_failure_before_m03_or_m07() -> None:
+    id_item_type = _strict_text_type_error(
+        lambda output, value: output["answer_components"][0].__setitem__(
+            "source_obligation_candidate_ids",
+            [value],
+        ),
+        7,
+    )
+    assert id_item_type.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE
+
+    missing_id = _planner_output()
+    missing_id["answer_components"][0]["source_obligation_candidate_ids"] = ["missing:fictional"]
+    error = _model_output_error(missing_id)
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE
+    assert error.mechanical_rule_id == "M03"
+
+    metadata_enum_type = _strict_text_type_error(
+        lambda output, value: output["component_search_requirements"][0]["metadata"][
+            "query_strategy_candidates"
+        ][0].__setitem__("candidate_kind", value),
+        7,
+    )
+    assert metadata_enum_type.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE
+
+    invalid_metadata_enum = _planner_output()
+    invalid_metadata_enum["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["candidate_kind"] = "not-a-candidate-kind"
+    error = _model_output_error(invalid_metadata_enum)
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_QUERY_STRATEGY_METADATA
+    assert error.mechanical_rule_id == "M07"
+
+
+def test_allowed_support_kinds_empty_string_item_behavior_remains_deferred() -> None:
+    _strict_text_type_error(
+        lambda output, value: output["answer_components"][0].__setitem__(
+            "allowed_support_kinds",
+            [value],
+        ),
+        None,
+    )
+
+    whitespace_item = _planner_output()
+    whitespace_item["answer_components"][0]["allowed_support_kinds"] = ["   "]
+    error = _model_output_error(whitespace_item)
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE
+    assert error.mechanical_rule_id == "M02"
+
+
+def test_wrong_type_errors_are_generic_and_do_not_retain_rejected_material() -> None:
+    rejected_marker = "FICTIONAL_REJECTED_TYPE_PRIVATE_SENTINEL"
+    kernel = _kernel()
+    error = _strict_text_type_error(
+        lambda output, value: output.__setitem__("question_meaning_summary", value),
+        {"nested": [rejected_marker]},
+        kernel=kernel,
+    )
+
+    assert rejected_marker not in str(error)
+    assert rejected_marker not in repr(error)
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
+    assert kernel.state.search_planner_proposal_history == []
+    assert rejected_marker not in repr(kernel.state)
 
 
 def test_model_query_strategy_cannot_select_provider_or_model() -> None:
