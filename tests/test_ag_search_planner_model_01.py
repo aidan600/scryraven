@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import pytest
 
@@ -183,10 +183,16 @@ def _planner_input(kernel: RunKernel, *, query: str = QUERY) -> SearchPlannerInp
     )
 
 
-def _adapter(fake: FakeAskModel, *, enabled: bool = True, licensed: bool = True) -> SearchPlannerModelAdapter:
+def _adapter(
+    fake: FakeAskModel,
+    *,
+    clean_json_response: Callable[[str], str] | None = None,
+    enabled: bool = True,
+    licensed: bool = True,
+) -> SearchPlannerModelAdapter:
     return SearchPlannerModelAdapter(
         ask_model=fake,
-        clean_json_response=lambda text: text,
+        clean_json_response=clean_json_response or (lambda text: text),
         provider="FakeProvider",
         model="fake-fast-model",
         effort="low",
@@ -406,6 +412,177 @@ def test_invalid_json_or_unparseable_response_fails_before_observation() -> None
     assert kernel.state.search_planner_proposal_state == {}
     assert kernel.state.search_planner_proposal_projection == {}
     assert kernel.state.search_planner_proposal_history == []
+
+
+def _assert_strict_json_parsing_failure(
+    raw: str,
+    *,
+    clean_json_response: Callable[[str], str] | None = None,
+    forbidden_fragments: tuple[str, ...] = (),
+) -> None:
+    kernel = _kernel()
+    fake = FakeAskModel(raw)
+
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(fake, clean_json_response=clean_json_response))
+
+    assert caught.value.failure_stage == SearchPlannerModelAdapterFailureStage.JSON_PARSING
+    assert caught.value.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_JSON
+    assert caught.value.mechanical_rule_id == "M01"
+    assert caught.value.failure_stage != SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    for fragment in forbidden_fragments:
+        assert fragment not in str(caught.value)
+    assert len(fake.calls) == 1
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
+    assert kernel.state.search_planner_proposal_history == []
+
+
+@pytest.mark.parametrize(
+    ("token", "raw"),
+    (
+        (
+            "NaN",
+            '{"raw-input-sentinel": "raw-input-value", "nonfinite-member": NaN}',
+        ),
+        (
+            "Infinity",
+            '{"outer": {"raw-input-sentinel": "raw-input-value", "nonfinite-member": Infinity}}',
+        ),
+        (
+            "-Infinity",
+            '{"items": [{"raw-input-sentinel": "raw-input-value", "nonfinite-member": -Infinity}]}',
+        ),
+    ),
+    ids=("top_level", "nested_object", "array_object"),
+)
+def test_nonfinite_json_constants_fail_at_the_parser_boundary(
+    token: str,
+    raw: str,
+) -> None:
+    _assert_strict_json_parsing_failure(
+        raw,
+        forbidden_fragments=(token, "raw-input-sentinel", "raw-input-value"),
+    )
+
+
+def _top_level_duplicate_output(first: str, second: str) -> str:
+    raw = json.dumps(_planner_output())
+    original = '"material_ambiguity_posture": "clear"'
+    replacement = (
+        '"raw-input-sentinel": "raw-input-value", '
+        f'"material_ambiguity_posture": {json.dumps(first)}, '
+        f'"material_ambiguity_posture": {json.dumps(second)}'
+    )
+    assert original in raw
+    return raw.replace(original, replacement, 1)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    (
+        ("clear", "synthetic-invalid-value"),
+        ("synthetic-invalid-value", "clear"),
+    ),
+    ids=("valid_then_invalid", "invalid_then_valid"),
+)
+def test_top_level_duplicate_members_fail_before_validation_in_both_orders(
+    first: str,
+    second: str,
+) -> None:
+    _assert_strict_json_parsing_failure(
+        _top_level_duplicate_output(first, second),
+        forbidden_fragments=(
+            "raw-input-sentinel",
+            "raw-input-value",
+            "synthetic-invalid-value",
+        ),
+    )
+
+
+def test_nested_duplicate_member_fails_at_the_parser_boundary() -> None:
+    _assert_strict_json_parsing_failure(
+        '{"outer": {"duplicate-member-sentinel": "first-value", '
+        '"duplicate-member-sentinel": "second-value"}}',
+        forbidden_fragments=(
+            "duplicate-member-sentinel",
+            "first-value",
+            "second-value",
+        ),
+    )
+
+
+def test_duplicate_member_inside_array_object_fails_at_the_parser_boundary() -> None:
+    _assert_strict_json_parsing_failure(
+        '{"items": [{"duplicate-member-sentinel": "first-value", '
+        '"duplicate-member-sentinel": "second-value"}]}',
+        forbidden_fragments=(
+            "duplicate-member-sentinel",
+            "first-value",
+            "second-value",
+        ),
+    )
+
+
+def test_unique_member_strict_json_reaches_ordinary_adapter_validation() -> None:
+    kernel = _kernel()
+    fake = FakeAskModel(json.dumps({"question_meaning_summary": "unique-member control"}))
+
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(fake))
+
+    assert (
+        caught.value.failure_stage
+        == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    )
+    assert (
+        caught.value.failure_code
+        == SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS
+    )
+    assert caught.value.mechanical_rule_id == "M01"
+
+
+def test_benign_response_cleaning_preserves_valid_strict_json() -> None:
+    kernel = _kernel()
+    cleaned = json.dumps(_planner_output())
+    fake = FakeAskModel("prefix:" + cleaned)
+
+    _produce(
+        kernel,
+        _adapter(
+            fake,
+            clean_json_response=lambda text: text.removeprefix("prefix:"),
+        ),
+    )
+
+    assert kernel.state.search_planner_proposal_state["owner"] == "RunKernel.SearchPlannerProposal"
+
+
+@pytest.mark.parametrize(
+    "cleaned_output",
+    (
+        '{"duplicate-member-sentinel": "first-value", '
+        '"duplicate-member-sentinel": "second-value"}',
+        '{"nonfinite-member": NaN}',
+    ),
+    ids=("duplicate_member", "nonfinite_constant"),
+)
+def test_response_cleaning_cannot_bypass_strict_json_parsing(
+    cleaned_output: str,
+) -> None:
+    _assert_strict_json_parsing_failure(
+        "raw-cleaner-input-sentinel",
+        clean_json_response=lambda _text: cleaned_output,
+        forbidden_fragments=(
+            "raw-cleaner-input-sentinel",
+            "duplicate-member-sentinel",
+            "first-value",
+            "second-value",
+            "NaN",
+        ),
+    )
 
 
 def test_schema_invalid_model_output_fails_before_observation() -> None:

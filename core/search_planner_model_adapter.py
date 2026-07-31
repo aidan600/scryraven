@@ -464,18 +464,38 @@ def _parse_model_output(
                 f"search planner model output cleaning failed closed: {type(exc).__name__}",
                 failure_code=(_FailureCode.OUTPUT_CLEANING_FAILED),
             ) from exc
+    parse_failed = False
     try:
-        parsed = json.loads(text)
-    except Exception as exc:
+        parsed = json.loads(
+            text,
+            parse_constant=_reject_nonfinite_json_constant,
+            object_pairs_hook=_reject_duplicate_json_members,
+        )
+    except Exception:
+        parse_failed = True
+    if parse_failed:
         raise SearchPlannerModelAdapterError(
             "search planner model output was not valid JSON",
             failure_code=_FailureCode.INVALID_JSON,
-        ) from exc
+        )
     if not isinstance(parsed, Mapping):
         raise SearchPlannerModelAdapterError(
             "search planner model output must be a JSON object",
             failure_code=(_FailureCode.JSON_VALUE_NOT_OBJECT),
         )
+    return parsed
+
+
+def _reject_nonfinite_json_constant(_token: str) -> None:
+    raise ValueError("strict JSON parsing rejected a nonfinite constant")
+
+
+def _reject_duplicate_json_members(members: list[tuple[str, Any]]) -> dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    for key, value in members:
+        if key in parsed:
+            raise ValueError("strict JSON parsing rejected a duplicate member")
+        parsed[key] = value
     return parsed
 
 
