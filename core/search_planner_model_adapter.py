@@ -14,8 +14,23 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
 
 from core.search_planner_model_prompt import (
+    SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS,
+    SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES,
+    SEARCH_PLANNER_MODEL_MATERIALITY_VALUES,
+    SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES,
     SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION,
+    SEARCH_PLANNER_MODEL_QUERY_CANDIDATE_KINDS,
+    SEARCH_PLANNER_MODEL_QUERY_ROLES,
+    SEARCH_PLANNER_MODEL_RECON_POSTURES,
+    SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
+    SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES,
+    SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS,
+    SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES,
+    SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS,
+    SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES,
+    SEARCH_PLANNER_MODEL_SUPPORT_KINDS,
     SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
+    SEARCH_PLANNER_MODEL_TEXT_LIMITS,
     build_search_planner_model_prompt,
     prompt_metadata,
 )
@@ -23,70 +38,22 @@ from core.search_planner_runtime import (
     SEARCH_PLANNER_MAX_ANSWER_COMPONENTS,
     SearchPlannerRuntimeError,
 )
-from core.search_work_plan import SourceObligationKind, SourceObligationStrictness
 
 SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION = "search_planner_model_adapter_ag_search_planner_model_01_v1"
 
-_TOP_LEVEL_REQUIRED = (
-    "question_meaning_summary",
-    "requested_output",
-    "semantic_slots",
-    "answer_components",
-    "source_obligation_candidates",
-    "component_search_requirements",
-    "material_ambiguity_posture",
-    "mandatory_caveats",
-    "prohibited_upgrades",
-    "normalization_obligations",
-    "assumptions",
-    "unsupported_or_deferred_outputs",
-)
-
-_SEMANTIC_SLOT_KINDS = frozenset(
-    {
-        "entity",
-        "variant",
-        "metric",
-        "numerator",
-        "denominator",
-        "time_period",
-        "geography",
-        "currency_basis",
-        "inflation_basis",
-        "configuration",
-        "route_profile",
-        "load_factor",
-        "direct_vs_computed",
-        "source_basis",
-        "unknown_or_other",
-    }
-)
-_SEMANTIC_SLOT_STATUSES = frozenset({"explicit", "implied", "ambiguous", "unresolved"})
-_MATERIALITY_VALUES = frozenset({"material", "non_material", "unknown"})
-_REQUIREMENT_POSTURES = frozenset({"required", "conditional", "optional"})
-_COMPONENT_PURPOSES = frozenset({"user_facing_answer_target", "supporting_premise"})
-_SUPPORT_KINDS = frozenset({"direct", "inferred"})
-_PARTIAL_ANSWER_POLICIES = frozenset(
-    {
-        "qualify_visible_gap",
-        "block_if_required_unsatisfied",
-        "allow_if_optional_only",
-    }
-)
-_QUERY_CANDIDATE_KINDS = frozenset({"primary", "secondary"})
-_QUERY_ROLES = frozenset(
-    {
-        "initial",
-        "official_bias",
-        "canonical_bias",
-        "recency",
-        "disambiguation",
-        "recon_rewrite",
-    }
-)
-_RECON_POSTURES = frozenset({"not_needed", "optional", "required"})
-_SOURCE_OBLIGATION_KINDS = frozenset(item.value for item in SourceObligationKind)
-_SOURCE_OBLIGATION_STRICTNESSES = frozenset(item.value for item in SourceObligationStrictness)
+_TOP_LEVEL_REQUIRED = SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+_SEMANTIC_SLOT_KINDS = SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS
+_SEMANTIC_SLOT_STATUSES = SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES
+_MATERIALITY_VALUES = SEARCH_PLANNER_MODEL_MATERIALITY_VALUES
+_REQUIREMENT_POSTURES = SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES
+_COMPONENT_PURPOSES = SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES
+_SUPPORT_KINDS = SEARCH_PLANNER_MODEL_SUPPORT_KINDS
+_PARTIAL_ANSWER_POLICIES = SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES
+_QUERY_CANDIDATE_KINDS = SEARCH_PLANNER_MODEL_QUERY_CANDIDATE_KINDS
+_QUERY_ROLES = SEARCH_PLANNER_MODEL_QUERY_ROLES
+_RECON_POSTURES = SEARCH_PLANNER_MODEL_RECON_POSTURES
+_SOURCE_OBLIGATION_KINDS = SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS
+_SOURCE_OBLIGATION_STRICTNESSES = SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES
 _FORBIDDEN_QUERY_AUTHORITY_KEYS = frozenset(
     {
         "provider",
@@ -541,8 +508,16 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
     )
 
     return {
-        "question_meaning_summary": _required_text(model_output, "question_meaning_summary", limit=420),
-        "requested_output": _required_text(model_output, "requested_output", limit=300),
+        "question_meaning_summary": _required_text(
+            model_output,
+            "question_meaning_summary",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["question_meaning_summary"],
+        ),
+        "requested_output": _required_text(
+            model_output,
+            "requested_output",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["requested_output"],
+        ),
         "semantic_slots": semantic_slots,
         "answer_components": answer_components,
         "source_obligation_candidates": source_obligations,
@@ -550,21 +525,36 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
         "material_ambiguity_posture": _required_text(
             model_output,
             "material_ambiguity_posture",
-            limit=120,
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["material_ambiguity_posture"],
         ),
-        "mandatory_caveats": _required_text_list(model_output, "mandatory_caveats", limit=260, allow_empty=True),
-        "prohibited_upgrades": _required_text_list(model_output, "prohibited_upgrades", limit=260, allow_empty=True),
+        "mandatory_caveats": _required_text_list(
+            model_output,
+            "mandatory_caveats",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["top_level_text_list_item"],
+            allow_empty=True,
+        ),
+        "prohibited_upgrades": _required_text_list(
+            model_output,
+            "prohibited_upgrades",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["top_level_text_list_item"],
+            allow_empty=True,
+        ),
         "normalization_obligations": _required_text_list(
             model_output,
             "normalization_obligations",
-            limit=260,
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["top_level_text_list_item"],
             allow_empty=True,
         ),
-        "assumptions": _required_text_list(model_output, "assumptions", limit=260, allow_empty=True),
+        "assumptions": _required_text_list(
+            model_output,
+            "assumptions",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["top_level_text_list_item"],
+            allow_empty=True,
+        ),
         "unsupported_or_deferred_outputs": _required_text_list(
             model_output,
             "unsupported_or_deferred_outputs",
-            limit=260,
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["top_level_text_list_item"],
             allow_empty=True,
         ),
         "contract_amendment_candidates": _contract_amendment_candidates(
@@ -622,11 +612,26 @@ def _semantic_slots(value: Any) -> list[dict[str, Any]]:
                         allowed=_SEMANTIC_SLOT_KINDS,
                     ),
                     "status": status,
-                    "candidate_values": _optional_text_list(mapping.get("candidate_values"), limit=220),
-                    "selected_value": _clean_text(mapping.get("selected_value"), limit=220),
+                    "candidate_values": _optional_text_list(
+                        mapping.get("candidate_values"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "semantic_slot_candidate_value"
+                        ],
+                    ),
+                    "selected_value": _clean_text(
+                        mapping.get("selected_value"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "semantic_slot_selected_value"
+                        ],
+                    ),
                     "materiality": materiality,
                     "user_confirmation_required": user_confirmation_required,
-                    "normalization_notes": _optional_text_list(mapping.get("normalization_notes"), limit=260),
+                    "normalization_notes": _optional_text_list(
+                        mapping.get("normalization_notes"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "semantic_slot_normalization_note"
+                        ],
+                    ),
                     "metadata": _safe_metadata(mapping.get("metadata")),
                 }
             )
@@ -681,11 +686,7 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                 failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
             )
         support_tuple = tuple(allowed_support_kinds)
-        if support_tuple not in {
-            ("direct",),
-            ("inferred",),
-            ("direct", "inferred"),
-        }:
+        if support_tuple not in SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS:
             raise SearchPlannerModelAdapterError(
                 f"answer component {component_id} has an invalid support-kind combination",
                 failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
@@ -736,10 +737,28 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                         allowed=_COMPONENT_PURPOSES,
                         failure_code=(_FailureCode.INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION),
                     ),
-                    "user_facing_label": _required_text(mapping, "user_facing_label", limit=180),
-                    "user_facing_question": _required_text(mapping, "user_facing_question", limit=400),
+                    "user_facing_label": _required_text(
+                        mapping,
+                        "user_facing_label",
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_user_facing_label"
+                        ],
+                    ),
+                    "user_facing_question": _required_text(
+                        mapping,
+                        "user_facing_question",
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_user_facing_question"
+                        ],
+                    ),
                     "requirement_posture": requirement_posture,
-                    "acceptance_criteria": _required_text_list(mapping, "acceptance_criteria", limit=320),
+                    "acceptance_criteria": _required_text_list(
+                        mapping,
+                        "acceptance_criteria",
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_acceptance_criterion"
+                        ],
+                    ),
                     "semantic_slot_ids": _required_text_list(
                         mapping,
                         "semantic_slot_ids",
@@ -748,12 +767,32 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
                     "source_obligation_candidate_ids": source_obligation_ids,
                     "allowed_support_kinds": allowed_support_kinds,
                     "max_inference_depth": max_inference_depth,
-                    "normalization_policy": _clean_text(mapping.get("normalization_policy"), limit=300),
-                    "calculation_policy": _clean_text(mapping.get("calculation_policy"), limit=300),
+                    "normalization_policy": _clean_text(
+                        mapping.get("normalization_policy"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_normalization_policy"
+                        ],
+                    ),
+                    "calculation_policy": _clean_text(
+                        mapping.get("calculation_policy"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_calculation_policy"
+                        ],
+                    ),
                     "dependency_component_ids": dependencies,
                     "partial_answer_policy": partial_answer_policy,
-                    "mandatory_caveats": _optional_text_list(mapping.get("mandatory_caveats"), limit=260),
-                    "prohibited_upgrades": _optional_text_list(mapping.get("prohibited_upgrades"), limit=260),
+                    "mandatory_caveats": _optional_text_list(
+                        mapping.get("mandatory_caveats"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_mandatory_caveat"
+                        ],
+                    ),
+                    "prohibited_upgrades": _optional_text_list(
+                        mapping.get("prohibited_upgrades"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "answer_component_prohibited_upgrade"
+                        ],
+                    ),
                     "materiality": _required_enum_text(
                         mapping,
                         "materiality",
@@ -810,7 +849,9 @@ def _relationship_hypotheses(value: Any) -> list[dict[str, Any]]:
                 "relationship_summary": _required_text(
                     mapping,
                     "relationship_summary",
-                    limit=360,
+                    limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                        "relationship_hypothesis_summary"
+                    ],
                 ),
                 "proposal_only": True,
                 "canonical_state": False,
@@ -912,14 +953,25 @@ def _component_search_requirements(value: Any) -> list[dict[str, Any]]:
                         failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
                     ),
                     "requirement_id": requirement_id,
-                    "requirement_summary": _required_text(mapping, "requirement_summary", limit=320),
+                    "requirement_summary": _required_text(
+                        mapping,
+                        "requirement_summary",
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "component_search_requirement_summary"
+                        ],
+                    ),
                     "source_obligation_candidate_ids": _required_text_list(
                         mapping,
                         "source_obligation_candidate_ids",
                         failure_code=_FailureCode.INVALID_ID_OR_CROSS_REFERENCE,
                     ),
                     "preferred_source_kinds": _optional_text_list(mapping.get("preferred_source_kinds")),
-                    "recency_requirement": _clean_text(mapping.get("recency_requirement"), limit=220),
+                    "recency_requirement": _clean_text(
+                        mapping.get("recency_requirement"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "component_search_requirement_recency"
+                        ],
+                    ),
                     "metadata": _safe_metadata(raw_metadata),
                 }
             )
@@ -990,7 +1042,9 @@ def _validate_query_strategy_metadata(
         _required_text(
             candidate,
             "candidate_query_text",
-            limit=300,
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                "query_strategy_candidate_query"
+            ],
             failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         _required_enum_text(
@@ -1011,7 +1065,9 @@ def _validate_query_strategy_metadata(
         _required_text(
             candidate,
             "distinct_need_justification",
-            limit=300,
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                "query_strategy_distinct_need_justification"
+            ],
             failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
         )
         recon = _required_mapping(
@@ -1050,7 +1106,7 @@ def _validate_query_strategy_metadata(
             _required_text(
                 recon_candidate,
                 "candidate_query_text",
-                limit=300,
+                limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["recon_candidate_query"],
                 failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
             )
             _required_text(
@@ -1071,7 +1127,12 @@ def _contract_amendment_candidates(value: Any) -> list[dict[str, Any]]:
                 {
                     "candidate_id": _clean_text(mapping.get("candidate_id")),
                     "operation_kind": _clean_text(mapping.get("operation_kind")),
-                    "summary": _clean_text(mapping.get("summary"), limit=260),
+                    "summary": _clean_text(
+                        mapping.get("summary"),
+                        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS[
+                            "contract_amendment_candidate_summary"
+                        ],
+                    ),
                     "proposal_only": True,
                     "deferred": True,
                     "accepted_authority": False,
@@ -1289,7 +1350,7 @@ def _required_text(
     mapping: Mapping[str, Any],
     key: str,
     *,
-    limit: int = 160,
+    limit: int = SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
     failure_code: SearchPlannerModelAdapterFailureCode | None = None,
 ) -> str:
     if key not in mapping:
@@ -1336,7 +1397,7 @@ def _required_text_list(
     mapping: Mapping[str, Any],
     key: str,
     *,
-    limit: int = 160,
+    limit: int = SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
     allow_empty: bool = False,
     failure_code: SearchPlannerModelAdapterFailureCode | None = None,
 ) -> list[str]:
@@ -1366,7 +1427,7 @@ def _required_text_list(
 def _optional_text_list(
     value: Any,
     *,
-    limit: int = 160,
+    limit: int = SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
     failure_code: SearchPlannerModelAdapterFailureCode | None = None,
 ) -> list[str]:
     if value is None:
@@ -1449,7 +1510,11 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     return _clean_text(value, limit=300)
 
 
-def _clean_text(value: Any, *, limit: int = 160) -> str | None:
+def _clean_text(
+    value: Any,
+    *,
+    limit: int = SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
+) -> str | None:
     if value is None:
         return None
     text = " ".join(str(value).strip().split())

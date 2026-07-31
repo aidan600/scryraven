@@ -3,12 +3,14 @@ from __future__ import annotations
 import ast
 import json
 from copy import deepcopy
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
 import pytest
 
 import core.search_planner_model_adapter as search_planner_model_adapter
+import core.search_planner_model_prompt as search_planner_model_prompt
 from core.run_kernel import Observation, ObservationType, RunKernel, RunStageStatus
 from core.search_planner_model_adapter import (
     SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION,
@@ -245,6 +247,13 @@ def _imports(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module)
     return imports
+
+
+def _schema_path(schema: Mapping[str, Any], *path: str) -> Any:
+    value: Any = schema
+    for key in path:
+        value = value[key]
+    return value
 
 
 def test_model_adapter_requires_enabled_and_callable() -> None:
@@ -602,6 +611,684 @@ def test_model_output_with_invented_source_obligation_enum_fails_before_observat
     assert len(fake.calls) == 1
     assert kernel.state.search_planner_proposal_state == {}
     assert kernel.state.search_planner_proposal_projection == {}
+
+
+# New parity tests are phase_focus / component_harness_proof. They guard the
+# current product-consumed adapter contract and remain out of fast_pr because
+# they are detailed schema coverage rather than a broad execution sentinel.
+def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
+    planner_input = _planner_input(_kernel()).to_adapter_payload()
+    prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
+    prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
+
+    assert (
+        SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
+        == "search_planner_model_prompt_ag_search_planner_model_01_v2"
+    )
+    assert (
+        SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION
+        == "search_planner_model_adapter_ag_search_planner_model_01_v1"
+    )
+    assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
+    assert (
+        prompt_packet["output_schema"]
+        == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    )
+    assert (
+        "Every enum field must use an exact value listed in output_schema. "
+        "Every required object or array must satisfy its declared type and "
+        "cardinality. Omit an optional field rather than inventing an unsupported "
+        "value."
+    ) in prompt
+
+
+def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep() -> None:
+    schema = search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    top_level = schema["top_level"]
+
+    assert top_level["required_fields"] == list(
+        search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+    )
+    assert set(top_level["fields"]) == {
+        *search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
+        *search_planner_model_prompt.SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS,
+    }
+
+    enum_contracts = (
+        (
+            "_SEMANTIC_SLOT_KINDS",
+            ("semantic_slot", "fields", "slot_kind", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS,
+        ),
+        (
+            "_SEMANTIC_SLOT_STATUSES",
+            ("semantic_slot", "fields", "status", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES,
+        ),
+        (
+            "_MATERIALITY_VALUES",
+            ("semantic_slot", "fields", "materiality", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_MATERIALITY_VALUES,
+        ),
+        (
+            "_MATERIALITY_VALUES",
+            ("answer_component", "fields", "materiality", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_MATERIALITY_VALUES,
+        ),
+        (
+            "_REQUIREMENT_POSTURES",
+            ("answer_component", "fields", "requirement_posture", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES,
+        ),
+        (
+            "_COMPONENT_PURPOSES",
+            ("answer_component", "fields", "component_purpose", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES,
+        ),
+        (
+            "_SUPPORT_KINDS",
+            (
+                "answer_component",
+                "fields",
+                "allowed_support_kinds",
+                "items",
+                "exact_values",
+            ),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_SUPPORT_KINDS,
+        ),
+        (
+            "_PARTIAL_ANSWER_POLICIES",
+            ("answer_component", "fields", "partial_answer_policy", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES,
+        ),
+        (
+            "_SOURCE_OBLIGATION_KINDS",
+            (
+                "source_obligation_candidate",
+                "fields",
+                "obligation_kind",
+                "exact_values",
+            ),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS,
+        ),
+        (
+            "_SOURCE_OBLIGATION_STRICTNESSES",
+            (
+                "source_obligation_candidate",
+                "fields",
+                "strictness",
+                "exact_values",
+            ),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES,
+        ),
+        (
+            "_QUERY_CANDIDATE_KINDS",
+            ("query_strategy_candidate", "fields", "candidate_kind", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_QUERY_CANDIDATE_KINDS,
+        ),
+        (
+            "_QUERY_ROLES",
+            ("query_strategy_candidate", "fields", "requested_role", "exact_values"),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_QUERY_ROLES,
+        ),
+        (
+            "_RECON_POSTURES",
+            (
+                "query_strategy_candidate",
+                "fields",
+                "recon_requirement",
+                "fields",
+                "posture",
+                "exact_values",
+            ),
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_RECON_POSTURES,
+        ),
+    )
+    for adapter_constant, schema_path, expected_values in enum_contracts:
+        assert getattr(search_planner_model_adapter, adapter_constant) is expected_values
+        assert set(_schema_path(schema, *schema_path)) == set(expected_values)
+
+    assert (
+        search_planner_model_adapter._TOP_LEVEL_REQUIRED
+        is search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+    )
+    assert (
+        search_planner_model_adapter.SEARCH_PLANNER_MODEL_TEXT_LIMITS
+        is search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS
+    )
+    assert (
+        _schema_path(
+            schema,
+            "answer_component_cross_field_conditions",
+        )[3]["allowed_support_kinds"]["exact_ordered_combinations"]
+        == [
+            list(item)
+            for item in search_planner_model_prompt.SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS
+        ]
+    )
+
+    expected_required_fields = {
+        "semantic_slot": ("slot_id", "slot_kind", "status", "materiality"),
+        "answer_component": (
+            "component_id",
+            "component_revision",
+            "component_purpose",
+            "user_facing_label",
+            "user_facing_question",
+            "requirement_posture",
+            "acceptance_criteria",
+            "semantic_slot_ids",
+            "allowed_support_kinds",
+            "max_inference_depth",
+            "materiality",
+        ),
+        "source_obligation_candidate": (
+            "candidate_id",
+            "obligation_kind",
+            "component_candidate_ids",
+        ),
+        "component_search_requirement": (
+            "component_id",
+            "requirement_id",
+            "requirement_summary",
+            "source_obligation_candidate_ids",
+            "metadata",
+        ),
+        "query_strategy_candidate": (
+            "strategy_id",
+            "component_id",
+            "candidate_kind",
+            "candidate_query_text",
+            "requested_role",
+            "source_obligation_candidate_ids",
+            "distinct_need_justification",
+            "recon_requirement",
+        ),
+        "recon_candidate_query": (
+            "dimension_id",
+            "candidate_query_text",
+            "query_kind",
+        ),
+        "relationship_hypothesis": (
+            "hypothesis_id",
+            "target_component_id",
+            "premise_component_ids",
+            "relationship_summary",
+        ),
+    }
+    for contract_name, required_fields in expected_required_fields.items():
+        assert schema[contract_name]["required_fields"] == list(required_fields)
+
+    assert top_level["fields"]["semantic_slots"] == {
+        "json_type": "array",
+        "required": True,
+        "minimum_items": 1,
+        "item_contract": "semantic_slot",
+    }
+    assert top_level["fields"]["answer_components"]["minimum_items"] == 1
+    assert (
+        top_level["fields"]["answer_components"]["maximum_items"]
+        == search_planner_model_adapter.SEARCH_PLANNER_MAX_ANSWER_COMPONENTS
+    )
+    assert (
+        top_level["fields"]["relationship_hypotheses"]["maximum_items"]
+        == search_planner_model_adapter.SEARCH_PLANNER_MAX_ANSWER_COMPONENTS
+    )
+    assert (
+        schema["answer_component"]["fields"]["max_inference_depth"]
+        == {
+            "json_type": "integer",
+            "required": True,
+            "minimum": 0,
+            "adapter_normalization": (
+                "adapter accepts integer-coercible values; emit a JSON integer"
+            ),
+        }
+    )
+    assert schema["semantic_slot_cross_field_conditions"] == [
+        {
+            "if": {
+                "materiality": "material",
+                "status": {"one_of": ["ambiguous", "unresolved"]},
+            },
+            "then": {"user_confirmation_required": True},
+        }
+    ]
+    assert schema["answer_component_cross_field_conditions"][:3] == [
+        {
+            "if": {"allowed_support_kinds": ["direct"]},
+            "then": {
+                "max_inference_depth": {"equals": 0},
+                "source_obligation_candidate_ids": {"exact_item_count": 1},
+            },
+        },
+        {
+            "if": {"allowed_support_kinds": ["inferred"]},
+            "then": {
+                "max_inference_depth": {"minimum": 1},
+                "dependency_component_ids": {"minimum_nonempty_items": 1},
+                "source_obligation_candidate_ids": {"exact_item_count": 0},
+            },
+        },
+        {
+            "if": {"allowed_support_kinds": ["direct", "inferred"]},
+            "then": {
+                "max_inference_depth": {"minimum": 1},
+                "dependency_component_ids": {"minimum_nonempty_items": 1},
+                "source_obligation_candidate_ids": {"exact_item_count": 1},
+            },
+        },
+    ]
+    assert schema["component_search_requirement_cross_field_conditions"] == [
+        {
+            "for_each_component_where": {
+                "allowed_support_kinds": ["inferred"]
+            },
+            "then": {
+                "owned_component_search_requirements": {"exact_item_count": 0}
+            },
+        },
+        {
+            "for_each_component_where": {
+                "requirement_posture": "required",
+                "allowed_support_kinds_contains": "direct",
+            },
+            "then": {
+                "owned_query_strategy_candidates": {
+                    "candidate_kind": "primary",
+                    "exact_item_count": 1,
+                }
+            },
+        },
+    ]
+    assert schema["query_strategy_candidate_cross_field_conditions"] == [
+        {
+            "component_id": {
+                "must_equal": "parent component_search_requirement.component_id"
+            }
+        },
+        {
+            "source_obligation_candidate_ids": {
+                "each_item_must_reference": "source_obligation_candidate.candidate_id"
+            }
+        },
+    ]
+
+    array_contracts = (
+        (("top_level", "fields", "semantic_slots"), True, "minimum_items", 1),
+        (("top_level", "fields", "answer_components"), True, "minimum_items", 1),
+        (
+            ("top_level", "fields", "source_obligation_candidates"),
+            True,
+            "minimum_items",
+            1,
+        ),
+        (
+            ("top_level", "fields", "component_search_requirements"),
+            True,
+            "minimum_items",
+            1,
+        ),
+        (
+            ("top_level", "fields", "relationship_hypotheses"),
+            False,
+            "minimum_items",
+            0,
+        ),
+        (
+            ("top_level", "fields", "contract_amendment_candidates"),
+            False,
+            "minimum_items",
+            0,
+        ),
+        (
+            ("top_level", "fields", "mandatory_caveats"),
+            True,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("top_level", "fields", "prohibited_upgrades"),
+            True,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("top_level", "fields", "normalization_obligations"),
+            True,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("top_level", "fields", "assumptions"),
+            True,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("top_level", "fields", "unsupported_or_deferred_outputs"),
+            True,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("semantic_slot", "fields", "candidate_values"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("semantic_slot", "fields", "normalization_notes"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("answer_component", "fields", "acceptance_criteria"),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+        (
+            ("answer_component", "fields", "semantic_slot_ids"),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+        (
+            ("answer_component", "fields", "source_obligation_candidate_ids"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("answer_component", "fields", "allowed_support_kinds"),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+        (
+            ("answer_component", "fields", "dependency_component_ids"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("answer_component", "fields", "mandatory_caveats"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("answer_component", "fields", "prohibited_upgrades"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            ("source_obligation_candidate", "fields", "component_candidate_ids"),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+        (
+            (
+                "component_search_requirement",
+                "fields",
+                "source_obligation_candidate_ids",
+            ),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+        (
+            ("component_search_requirement", "fields", "preferred_source_kinds"),
+            False,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            (
+                "component_search_requirement",
+                "fields",
+                "metadata",
+                "fields",
+                "query_strategy_candidates",
+            ),
+            True,
+            "minimum_items",
+            1,
+        ),
+        (
+            (
+                "query_strategy_candidate",
+                "fields",
+                "source_obligation_candidate_ids",
+            ),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+        (
+            (
+                "query_strategy_candidate",
+                "fields",
+                "recon_requirement",
+                "fields",
+                "unresolved_dimension_ids",
+            ),
+            True,
+            "minimum_nonempty_items",
+            0,
+        ),
+        (
+            (
+                "query_strategy_candidate",
+                "fields",
+                "recon_requirement",
+                "fields",
+                "candidate_queries",
+            ),
+            True,
+            "minimum_items",
+            0,
+        ),
+        (
+            ("relationship_hypothesis", "fields", "premise_component_ids"),
+            True,
+            "minimum_nonempty_items",
+            1,
+        ),
+    )
+    for schema_path, required, cardinality_key, cardinality in array_contracts:
+        contract = _schema_path(schema, *schema_path)
+        assert contract["json_type"] == "array"
+        assert contract["required"] is required
+        assert contract[cardinality_key] == cardinality
+        if "items" in contract:
+            assert contract["items"]["json_type"] == "string"
+        else:
+            assert isinstance(contract["item_contract"], str)
+
+    object_contract_paths = (
+        ("semantic_slot",),
+        ("answer_component",),
+        ("source_obligation_candidate",),
+        ("component_search_requirement",),
+        ("query_strategy_candidate",),
+        ("recon_candidate_query",),
+        ("relationship_hypothesis",),
+        ("contract_amendment_candidate",),
+        ("component_search_requirement", "fields", "metadata"),
+        ("query_strategy_candidate", "fields", "recon_requirement"),
+    )
+    for schema_path in object_contract_paths:
+        assert _schema_path(schema, *schema_path)["json_type"] == "object"
+
+    text_limit_contracts = (
+        (
+            "default_text",
+            ("semantic_slot", "fields", "slot_id"),
+        ),
+        (
+            "question_meaning_summary",
+            ("top_level", "fields", "question_meaning_summary"),
+        ),
+        (
+            "requested_output",
+            ("top_level", "fields", "requested_output"),
+        ),
+        (
+            "material_ambiguity_posture",
+            ("top_level", "fields", "material_ambiguity_posture"),
+        ),
+        (
+            "top_level_text_list_item",
+            ("top_level", "fields", "mandatory_caveats", "items"),
+        ),
+        (
+            "semantic_slot_candidate_value",
+            ("semantic_slot", "fields", "candidate_values", "items"),
+        ),
+        (
+            "semantic_slot_selected_value",
+            ("semantic_slot", "fields", "selected_value"),
+        ),
+        (
+            "semantic_slot_normalization_note",
+            ("semantic_slot", "fields", "normalization_notes", "items"),
+        ),
+        (
+            "answer_component_user_facing_label",
+            ("answer_component", "fields", "user_facing_label"),
+        ),
+        (
+            "answer_component_user_facing_question",
+            ("answer_component", "fields", "user_facing_question"),
+        ),
+        (
+            "answer_component_acceptance_criterion",
+            ("answer_component", "fields", "acceptance_criteria", "items"),
+        ),
+        (
+            "answer_component_normalization_policy",
+            ("answer_component", "fields", "normalization_policy"),
+        ),
+        (
+            "answer_component_calculation_policy",
+            ("answer_component", "fields", "calculation_policy"),
+        ),
+        (
+            "answer_component_mandatory_caveat",
+            ("answer_component", "fields", "mandatory_caveats", "items"),
+        ),
+        (
+            "answer_component_prohibited_upgrade",
+            ("answer_component", "fields", "prohibited_upgrades", "items"),
+        ),
+        (
+            "relationship_hypothesis_summary",
+            ("relationship_hypothesis", "fields", "relationship_summary"),
+        ),
+        (
+            "component_search_requirement_summary",
+            ("component_search_requirement", "fields", "requirement_summary"),
+        ),
+        (
+            "component_search_requirement_recency",
+            ("component_search_requirement", "fields", "recency_requirement"),
+        ),
+        (
+            "query_strategy_candidate_query",
+            ("query_strategy_candidate", "fields", "candidate_query_text"),
+        ),
+        (
+            "query_strategy_distinct_need_justification",
+            (
+                "query_strategy_candidate",
+                "fields",
+                "distinct_need_justification",
+            ),
+        ),
+        (
+            "recon_candidate_query",
+            ("recon_candidate_query", "fields", "candidate_query_text"),
+        ),
+        (
+            "contract_amendment_candidate_summary",
+            ("contract_amendment_candidate", "fields", "summary"),
+        ),
+    )
+    for limit_key, schema_path in text_limit_contracts:
+        assert _schema_path(schema, *schema_path)["max_length"] == (
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS[limit_key]
+        )
+
+    with pytest.raises(TypeError):
+        search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"] = 0
+
+
+def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections() -> None:
+    valid_output = _planner_output()
+    expected_sanitized = search_planner_model_adapter.validate_and_sanitize_model_output(
+        deepcopy(valid_output)
+    )
+    produced = _adapter(FakeAskModel(json.dumps(valid_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+    metadata = produced.pop("planner_model_metadata")
+
+    assert produced == expected_sanitized
+    assert sha256(
+        json.dumps(produced, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest() == "6d8ee61129489cd03e2c7b35d0c93f320322772929e5ebbb51d48d610aca4f90"  # pragma: allowlist secret
+    assert metadata["planner_model_prompt_schema_version"] == (
+        SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
+    )
+
+    invalid_cases = (
+        (
+            lambda output: output["answer_components"][0].pop("user_facing_label"),
+            "missing required field: user_facing_label",
+            SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD,
+        ),
+        (
+            lambda output: output.__setitem__("semantic_slots", {}),
+            "semantic_slots must be a JSON array",
+            SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE,
+        ),
+        (
+            lambda output: output["semantic_slots"][0].__setitem__(
+                "status",
+                "unsupported_status",
+            ),
+            "unsupported value for status: unsupported_status",
+            SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+        ),
+        (
+            lambda output: output.__setitem__("answer_components", []),
+            "search planner model output requires at least one answer component",
+            SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT,
+        ),
+        (
+            lambda output: output.__setitem__("question_meaning_summary", "x" * 421),
+            "required field exceeds bounded length: question_meaning_summary",
+            SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+        ),
+    )
+    for mutate, expected_message, expected_code in invalid_cases:
+        invalid_output = _planner_output()
+        mutate(invalid_output)
+        with pytest.raises(SearchPlannerModelAdapterError) as caught:
+            _adapter(FakeAskModel(json.dumps(invalid_output))).produce(
+                _planner_input(_kernel()).to_adapter_payload()
+            )
+        assert str(caught.value) == expected_message
+        assert caught.value.failure_stage == (
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+        )
+        assert caught.value.failure_code == expected_code
+        assert caught.value.mechanical_rule_id == "M02"
 
 
 def test_model_query_strategy_cannot_select_provider_or_model() -> None:
