@@ -697,16 +697,7 @@ def _answer_components(value: Any) -> list[dict[str, Any]]:
             "requirement_posture",
             allowed=_REQUIREMENT_POSTURES,
         )
-        allowed_support_kinds = _required_text_list(
-            mapping,
-            "allowed_support_kinds",
-        )
-        unsupported_kinds = sorted(set(allowed_support_kinds) - _SUPPORT_KINDS)
-        if unsupported_kinds:
-            raise SearchPlannerModelAdapterError(
-                "answer component contains unsupported support kinds: " + ", ".join(unsupported_kinds),
-                failure_code=(_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX),
-            )
+        allowed_support_kinds = _required_support_kind_list(mapping)
         support_tuple = tuple(allowed_support_kinds)
         if support_tuple not in SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS:
             raise SearchPlannerModelAdapterError(
@@ -1451,6 +1442,43 @@ def _required_text_list(
             failure_code=(failure_code or _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
         )
     return out
+
+
+def _required_support_kind_list(mapping: Mapping[str, Any]) -> list[str]:
+    key = "allowed_support_kinds"
+    if key not in mapping:
+        raise SearchPlannerModelAdapterError(
+            f"missing required field: {key}",
+            failure_code=_FailureCode.MISSING_REQUIRED_NESTED_FIELD,
+        )
+    items = _required_sequence(
+        mapping.get(key),
+        key,
+        failure_code=_FailureCode.INVALID_NESTED_TYPE,
+    )
+    if not items:
+        raise SearchPlannerModelAdapterError(
+            "answer component requires allowed support kinds",
+            failure_code=_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+        )
+
+    support_kinds: list[str] = []
+    for item in items:
+        text_item = _model_visible_text(item)
+        raw_text = " ".join(text_item.strip().split())
+        if len(raw_text) > SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"]:
+            raise SearchPlannerModelAdapterError(
+                "answer component has invalid allowed support kinds",
+                failure_code=_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+            )
+        support_kind = _clean_text(text_item)
+        if support_kind not in _SUPPORT_KINDS:
+            raise SearchPlannerModelAdapterError(
+                "answer component has invalid allowed support kinds",
+                failure_code=_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+            )
+        support_kinds.append(support_kind)
+    return support_kinds
 
 
 def _optional_text_list(
