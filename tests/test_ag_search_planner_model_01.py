@@ -2321,7 +2321,7 @@ def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections()
             "search_planner_model_prompt_ag_search_planner_model_01_v3"
         ),
         "prompt_hash": (
-            "ad0915872f1e5bdbfa14e4e134bb7ae2c941e772dd018b59abc965e0c0a54ac5"
+            "ad0915872f1e5bdbfa14e4e134bb7ae2c941e772dd018b59abc965e0c0a54ac5"  # pragma: allowlist secret
         ),
         "prompt_length": 22479,
         "provider": "FakeProvider",
@@ -3285,6 +3285,14 @@ def test_predicate_registry_and_failure_metadata_are_fail_closed_and_immutable()
             predicate_registry_version=registration.predicate_registry_version,
             predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
         )
+    with pytest.raises(ValueError, match="mechanical_rule_id does not match"):
+        SearchPlannerModelAdapterFailureMetadata(
+            failure_stage=registration.failure_stage,
+            failure_code=registration.failure_code,
+            mechanical_rule_id="M02",
+            predicate_registry_version=registration.predicate_registry_version,
+            predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+        )
 
 
 def test_public_message_and_digest_baselines_are_preserved_across_m01_to_m10() -> None:
@@ -3338,61 +3346,61 @@ def test_public_message_and_digest_baselines_are_preserved_across_m01_to_m10() -
             invalid_json,
             SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
             "search planner model output was not valid JSON",
-            "139912cee10aee310b3a5fe407c851850abb9e6894edbce6f7a3a7ad51442f47",
+            "139912cee10aee310b3a5fe407c851850abb9e6894edbce6f7a3a7ad51442f47",  # pragma: allowlist secret
         ),
         (
             _model_output_error(invalid_policy),
             SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM,
             "unsupported partial answer policy: invalid_partial_answer_policy",
-            "a50982ae79fed002029f60411c57ec4615df17954f79f2f2ee5e8aad45440f64",
+            "a50982ae79fed002029f60411c57ec4615df17954f79f2f2ee5e8aad45440f64",  # pragma: allowlist secret
         ),
         (
             _model_output_error(invalid_reference),
             SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_SOURCE_OBLIGATION_REFERENCE_UNRESOLVED,
             "component component:model-official-threshold references missing source obligation missing:obligation",
-            "230b18e0e8dd8434d23ff77b88f4a56700ea8f498954168f64850299cc54b9f1",
+            "230b18e0e8dd8434d23ff77b88f4a56700ea8f498954168f64850299cc54b9f1",  # pragma: allowlist secret
         ),
         (
             _model_output_error(invalid_dependency),
             SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_DEPENDENCY_IDS_DUPLICATE,
             "component component:model-official-threshold contains duplicate component dependencies",
-            "cc24aa3bb98a295251f2b9366d893d01cd9ae7745d507c9b1a8e299498e74cbd",
+            "cc24aa3bb98a295251f2b9366d893d01cd9ae7745d507c9b1a8e299498e74cbd",  # pragma: allowlist secret
         ),
         (
             _model_output_error(invalid_support_tuple),
             SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_TUPLE_NOT_ALLOWED,
             "answer component component:model-official-threshold has an invalid support-kind combination",
-            "8c28c8d2b8020f6cc6b0f54e649feffb0da758bcf79e1779ce6fcf68f1451d31",
+            "8c28c8d2b8020f6cc6b0f54e649feffb0da758bcf79e1779ce6fcf68f1451d31",  # pragma: allowlist secret
         ),
         (
             _model_output_error(invalid_purpose),
             SearchPlannerModelAdapterPredicateId.M06_REQUIRED_ENUM_VALUE_NOT_ALLOWED,
             "unsupported value for component_purpose: invalid_component_purpose",
-            "c3fcd278d63d314bf77b5da18ac89767d7d1b6b886dded45cb5bb10b2c11c640",
+            "c3fcd278d63d314bf77b5da18ac89767d7d1b6b886dded45cb5bb10b2c11c640",  # pragma: allowlist secret
         ),
         (
             _model_output_error(invalid_strategy),
             SearchPlannerModelAdapterPredicateId.M07_REQUIRED_ENUM_VALUE_NOT_ALLOWED,
             "unsupported value for candidate_kind: invalid_candidate_kind",
-            "50f83a9e60f6563be08ffe8db2ca37977a7cdbf922e87e9a4ff5671b825df30b",
+            "50f83a9e60f6563be08ffe8db2ca37977a7cdbf922e87e9a4ff5671b825df30b",  # pragma: allowlist secret
         ),
         (
             _model_output_error(forbidden_authority),
             SearchPlannerModelAdapterPredicateId.CLOSED_AUTHORITY_FIELD_FORBIDDEN,
             "search planner model output contains closed authority fields: answer",
-            "f13a36cc17242ff3457a7853b5dca75e5d5f3520c813b2791e5ab3a78d4c4396",
+            "f13a36cc17242ff3457a7853b5dca75e5d5f3520c813b2791e5ab3a78d4c4396",  # pragma: allowlist secret
         ),
         (
             _model_output_error(raw_material),
             SearchPlannerModelAdapterPredicateId.RAW_OR_PRIVATE_FIELD_FORBIDDEN,
             "search planner model output contains raw/private fields: raw_payload",
-            "4fb6ba9899d8be07aa65c8ec4a1c784a0e3a2241c5fddde4d19432c7cdcd56d8",
+            "4fb6ba9899d8be07aa65c8ec4a1c784a0e3a2241c5fddde4d19432c7cdcd56d8",  # pragma: allowlist secret
         ),
         (
             _model_output_error(stale_binding),
             SearchPlannerModelAdapterPredicateId.QUERY_STRATEGY_COMPONENT_BINDING_STALE,
             "query strategy strategy:model-official-threshold:primary has stale component binding",
-            "a72885a78d8f74658332ac2116122871c6c92710cd099826153f0f7f83fb1b5d",
+            "a72885a78d8f74658332ac2116122871c6c92710cd099826153f0f7f83fb1b5d",  # pragma: allowlist secret
         ),
     )
 

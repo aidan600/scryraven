@@ -20,7 +20,7 @@ main:
 ## Remaining after this change merges
 
 - bounded live SearchPlanner confirmation
-- targeted prompt calibration only if an exact predicate still fails
+- targeted prompt calibration only if exact predicate still fails
 
 ## Live-confirmation prerequisites
 
