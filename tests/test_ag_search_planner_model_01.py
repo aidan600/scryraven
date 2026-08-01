@@ -336,6 +336,78 @@ def _strict_text_type_error(
     return error
 
 
+def _assert_support_kind_rejection(
+    support_kinds: Any,
+    *,
+    expected_code: SearchPlannerModelAdapterFailureCode,
+    expected_rule: str,
+    configure_component: Callable[[dict[str, Any]], None] | None = None,
+    forbidden_fragments: tuple[str, ...] = (),
+) -> SearchPlannerModelAdapterError:
+    kernel = _kernel()
+    model_output = _planner_output()
+    component = model_output["answer_components"][0]
+    component["allowed_support_kinds"] = deepcopy(support_kinds)
+    if configure_component is not None:
+        configure_component(component)
+
+    error = _model_output_error(model_output, kernel=kernel)
+
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == expected_code
+    assert error.mechanical_rule_id == expected_rule
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
+    assert kernel.state.search_planner_proposal_history == []
+    for fragment in forbidden_fragments:
+        assert fragment not in str(error)
+        assert fragment not in repr(error)
+        assert fragment not in repr(kernel.state)
+    return error
+
+
+def _planner_output_with_support_kind_variant(
+    support_kinds: list[str],
+) -> tuple[dict[str, Any], int]:
+    model_output = _planner_output()
+    if support_kinds == ["direct"]:
+        return model_output, 0
+
+    support_component = deepcopy(model_output["answer_components"][0])
+    support_component.update(
+        {
+            "component_id": "component:model-derived-threshold",
+            "user_facing_label": "Derived threshold result",
+            "user_facing_question": "What threshold follows from the direct official result?",
+            "requirement_posture": "optional",
+            "allowed_support_kinds": support_kinds,
+            "max_inference_depth": 1,
+            "dependency_component_ids": ["component:model-official-threshold"],
+        }
+    )
+    if support_kinds == ["inferred"]:
+        support_component["source_obligation_candidate_ids"] = []
+    elif support_kinds == ["direct", "inferred"]:
+        support_component["source_obligation_candidate_ids"] = [
+            "obligation:model-derived-current"
+        ]
+        model_output["source_obligation_candidates"].append(
+            {
+                "candidate_id": "obligation:model-derived-current",
+                "obligation_kind": "official_current",
+                "component_candidate_ids": ["component:model-derived-threshold"],
+                "strictness": "required",
+            }
+        )
+    else:
+        raise AssertionError(f"unsupported test support-kind variant: {support_kinds!r}")
+
+    model_output["answer_components"].append(support_component)
+    return model_output, 1
+
+
 def _accept_planner_qmr(kernel: RunKernel, qmr_payload: Mapping[str, Any]) -> None:
     action = kernel.authorize_initial_answer_contract_acceptance(
         parent_question_meaning_record_id=str(qmr_payload["record_id"]),
@@ -1997,6 +2069,208 @@ def test_shared_text_helper_spillover_uses_type_failure_before_m03_or_m07() -> N
     assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
     assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_QUERY_STRATEGY_METADATA
     assert error.mechanical_rule_id == "M07"
+
+
+@pytest.mark.parametrize(
+    ("support_kinds", "expected_message", "forbidden_fragments"),
+    (
+        ([], "answer component requires allowed support kinds", ()),
+        ([""], "answer component has invalid allowed support kinds", ()),
+        (["   "], "answer component has invalid allowed support kinds", ()),
+        (["unsupported"], "answer component has invalid allowed support kinds", ("unsupported",)),
+        (["direct", ""], "answer component has invalid allowed support kinds", ()),
+        (["", "direct"], "answer component has invalid allowed support kinds", ()),
+        (["direct", "   "], "answer component has invalid allowed support kinds", ()),
+        (
+            ["direct", "unsupported"],
+            "answer component has invalid allowed support kinds",
+            ("unsupported",),
+        ),
+        (
+            ["FICTIONAL_SUPPORT_KIND_PRIVATE_SENTINEL"],
+            "answer component has invalid allowed support kinds",
+            ("FICTIONAL_SUPPORT_KIND_PRIVATE_SENTINEL",),
+        ),
+    ),
+    ids=(
+        "empty_array",
+        "empty_item",
+        "whitespace_item",
+        "unsupported_item",
+        "empty_after_direct",
+        "empty_before_direct",
+        "whitespace_after_direct",
+        "unsupported_after_direct",
+        "private_unsupported_item",
+    ),
+)
+def test_allowed_support_kinds_rejects_every_invalid_supplied_string_item(
+    support_kinds: list[str],
+    expected_message: str,
+    forbidden_fragments: tuple[str, ...],
+) -> None:
+    error = _assert_support_kind_rejection(
+        support_kinds,
+        expected_code=SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+        expected_rule="M02",
+        forbidden_fragments=forbidden_fragments,
+    )
+
+    assert str(error) == expected_message
+
+
+@pytest.mark.parametrize(
+    ("wrong_type", "wrong_value"),
+    _STRICT_JSON_WRONG_TEXT_TYPES,
+    ids=tuple(name for name, _ in _STRICT_JSON_WRONG_TEXT_TYPES),
+)
+def test_allowed_support_kinds_rejects_each_non_string_item_before_matrix_validation(
+    wrong_type: str,
+    wrong_value: Any,
+) -> None:
+    error = _assert_support_kind_rejection(
+        [wrong_value],
+        expected_code=SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE,
+        expected_rule="M02",
+    )
+
+    assert wrong_type
+    assert str(error) == "model-visible text value must be a JSON string"
+
+
+@pytest.mark.parametrize(
+    ("wrong_type", "wrong_value"),
+    (
+        ("null", None),
+        ("boolean", True),
+        ("integer", 7),
+        ("finite_decimal", 1.5),
+        ("object", {"fictional": "value"}),
+        ("string", "direct"),
+    ),
+    ids=("null", "boolean", "integer", "finite_decimal", "object", "string"),
+)
+def test_allowed_support_kinds_requires_a_json_array_container(
+    wrong_type: str,
+    wrong_value: Any,
+) -> None:
+    error = _assert_support_kind_rejection(
+        wrong_value,
+        expected_code=SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE,
+        expected_rule="M02",
+    )
+
+    assert wrong_type
+    assert str(error) == "allowed_support_kinds must be a JSON array"
+
+
+def test_allowed_support_kinds_missing_field_keeps_the_existing_m02_owner() -> None:
+    kernel = _kernel()
+    model_output = _planner_output()
+    model_output["answer_components"][0].pop("allowed_support_kinds")
+
+    error = _model_output_error(model_output, kernel=kernel)
+
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD
+    assert error.mechanical_rule_id == "M02"
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
+    assert kernel.state.search_planner_proposal_history == []
+
+
+@pytest.mark.parametrize(
+    ("support_kinds", "expected_index"),
+    (
+        (["direct"], 0),
+        (["inferred"], 1),
+        (["direct", "inferred"], 1),
+    ),
+    ids=("direct", "inferred", "mixed"),
+)
+def test_allowed_support_kinds_valid_tuples_remain_accepted_in_compatible_components(
+    support_kinds: list[str],
+    expected_index: int,
+) -> None:
+    model_output, component_index = _planner_output_with_support_kind_variant(support_kinds)
+
+    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+
+    assert component_index == expected_index
+    assert proposal["answer_components"][component_index]["allowed_support_kinds"] == support_kinds
+
+
+def test_allowed_support_kinds_preserves_existing_string_normalization_and_order() -> None:
+    model_output, component_index = _planner_output_with_support_kind_variant(["direct", "inferred"])
+    model_output["answer_components"][component_index]["allowed_support_kinds"] = [
+        "  direct ",
+        " inferred  ",
+    ]
+
+    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+
+    assert proposal["answer_components"][component_index]["allowed_support_kinds"] == [
+        "direct",
+        "inferred",
+    ]
+
+
+@pytest.mark.parametrize(
+    "support_kinds",
+    (
+        ["direct", "direct"],
+        ["inferred", "inferred"],
+        ["inferred", "direct"],
+    ),
+    ids=("duplicate_direct", "duplicate_inferred", "reversed"),
+)
+def test_allowed_support_kinds_valid_items_with_invalid_tuples_keep_m05(
+    support_kinds: list[str],
+) -> None:
+    _assert_support_kind_rejection(
+        support_kinds,
+        expected_code=SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_SUPPORT_MATRIX,
+        expected_rule="M05",
+    )
+
+
+def test_allowed_support_kinds_valid_tuple_with_invalid_component_matrix_keeps_m05() -> None:
+    _assert_support_kind_rejection(
+        ["direct"],
+        expected_code=SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_SUPPORT_MATRIX,
+        expected_rule="M05",
+        configure_component=lambda component: component.__setitem__("max_inference_depth", 1),
+    )
+
+
+def test_allowed_support_kinds_invalid_item_wins_before_component_matrix_validation() -> None:
+    rejected_marker = "FICTIONAL_INVALID_SUPPORT_KIND_PRIVATE_SENTINEL"
+    error = _assert_support_kind_rejection(
+        ["direct", rejected_marker],
+        expected_code=SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+        expected_rule="M02",
+        configure_component=lambda component: component.__setitem__("max_inference_depth", 1),
+        forbidden_fragments=(rejected_marker,),
+    )
+
+    assert str(error) == "answer component has invalid allowed support kinds"
+
+
+def test_allowed_support_kinds_repair_preserves_unrelated_text_array_empty_item_behavior() -> None:
+    model_output = _planner_output()
+    model_output["mandatory_caveats"] = ["valid text", ""]
+
+    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+
+    assert proposal["mandatory_caveats"] == ["valid text"]
 
 
 def test_allowed_support_kinds_empty_string_item_behavior_remains_deferred() -> None:
