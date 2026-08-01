@@ -23,7 +23,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v2"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v3"
 
 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
     "You are SearchPlanner and own semantic interpretation of the supplied human "
@@ -126,6 +126,13 @@ SEARCH_PLANNER_MODEL_TEXT_LIMITS: Mapping[str, int] = MappingProxyType(
     }
 )
 
+_REQUIRED_NARRATIVE_TEXT_NORMALIZATION = (
+    "Whitespace is normalized before validation: leading and trailing whitespace is "
+    "removed, internal whitespace runs are collapsed to one space, and the normalized "
+    "text must contain at least one non-whitespace character. max_length applies to the "
+    "normalized text."
+)
+
 
 def _text_contract(
     limit_key: str,
@@ -191,10 +198,12 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
             "question_meaning_summary": _text_contract(
                 "question_meaning_summary",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
             "requested_output": _text_contract(
                 "requested_output",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
             "semantic_slots": {
                 "json_type": "array",
@@ -224,6 +233,7 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
             "material_ambiguity_posture": _text_contract(
                 "material_ambiguity_posture",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
             "mandatory_caveats": _text_array_contract(
                 "top_level_text_list_item",
@@ -349,10 +359,12 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
             "user_facing_label": _text_contract(
                 "answer_component_user_facing_label",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
             "user_facing_question": _text_contract(
                 "answer_component_user_facing_question",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
             "requirement_posture": _text_contract(
                 "default_text",
@@ -518,6 +530,7 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
             "requirement_summary": _text_contract(
                 "component_search_requirement_summary",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
             "source_obligation_candidate_ids": _text_array_contract(
                 "default_text",
@@ -682,6 +695,7 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
             "relationship_summary": _text_contract(
                 "relationship_hypothesis_summary",
                 required=True,
+                adapter_normalization=_REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
             ),
         },
     ),
@@ -759,6 +773,7 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "",
         "Planning rules:",
         "- Every enum field must use an exact value listed in output_schema. Every required object or array must satisfy its declared type and cardinality. Omit an optional field rather than inventing an unsupported value.",
+        "- The seven required narrative fields must contain meaningful non-whitespace text after whitespace normalization; never emit empty or whitespace-only values, and keep normalized text within each declared max_length.",
         "- You own the intended question, the distinction between request and context, and the warranted component structure.",
         "- Propose from one through five required answer components; five is a ceiling, never a target.",
         "- Use one component for one central intention even when the utterance is long, narrated, imprecise, or self-correcting.",
