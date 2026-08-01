@@ -14,10 +14,14 @@ import core.search_planner_model_prompt as search_planner_model_prompt
 from core.run_kernel import Observation, ObservationType, RunKernel, RunStageStatus
 from core.search_planner_model_adapter import (
     SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION,
+    SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY,
+    SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION,
     SearchPlannerModelAdapter,
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureCode,
+    SearchPlannerModelAdapterFailureMetadata,
     SearchPlannerModelAdapterFailureStage,
+    SearchPlannerModelAdapterPredicateId,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
 from core.search_planner_runtime import (
@@ -218,6 +222,33 @@ _REQUIRED_NARRATIVE_TEXT_FIELDS: tuple[_NarrativeTextField, ...] = (
         "M02",
         "COMPONENT_SEARCH_REQUIREMENT_SUMMARY_TEXT_EMPTY",
     ),
+)
+
+_CONTINUITY_TAIL_PREDICATE_IDS = (
+    "ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_NO_NONEMPTY_ITEMS",
+    "ANSWER_COMPONENT_ACCEPTANCE_CRITERIA_NO_NONEMPTY_ITEMS",
+    "SEMANTIC_SLOTS_MINIMUM_ITEMS_1",
+    "SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED",
+    "RELATIONSHIP_HYPOTHESES_MAXIMUM_ITEMS_5",
+    "SOURCE_OBLIGATION_CANDIDATES_MINIMUM_ITEMS_1",
+    "SEMANTIC_SLOT_STATUS_MISSING",
+    "SEMANTIC_SLOT_MATERIALITY_MISSING",
+    "SEMANTIC_SLOT_KIND_MISSING",
+    "ANSWER_COMPONENT_REQUIREMENT_POSTURE_MISSING",
+    "ANSWER_COMPONENT_MATERIALITY_MISSING",
+    "SOURCE_OBLIGATION_KIND_MISSING",
+)
+_CONTINUITY_SEED_IDS = tuple(
+    SearchPlannerModelAdapterPredicateId(predicate_id)
+    for predicate_id in (
+        *(
+            predicate_id
+            for _, predicate_group in _STRICT_TYPE_PREDICATE_MATRIX
+            for predicate_id in predicate_group
+        ),
+        *(field[7] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS),
+        *_CONTINUITY_TAIL_PREDICATE_IDS,
+    )
 )
 
 _NARRATIVE_WRONG_TEXT_TYPES: tuple[tuple[str, Any], ...] = (
@@ -507,6 +538,273 @@ def _model_output_error(
             _adapter(FakeAskModel(json.dumps(model_output))),
         )
     return caught.value
+
+
+def _continuity_seed_error(
+    predicate_id: SearchPlannerModelAdapterPredicateId,
+) -> SearchPlannerModelAdapterError:
+    """Exercise one current deterministic witness for each continuity seed."""
+
+    model_output = _planner_output()
+    over_limit_text = "x" * 10_000
+    component = model_output["answer_components"][0]
+    semantic_slot = model_output["semantic_slots"][0]
+    source_obligation = model_output["source_obligation_candidates"][0]
+    requirement = model_output["component_search_requirements"][0]
+
+    if predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM:
+        component["partial_answer_policy"] = "invalid_partial_answer_policy"
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.SOURCE_OBLIGATION_STRICTNESS_ENUM:
+        source_obligation["strictness"] = "invalid_strictness"
+    elif predicate_id in {
+        SearchPlannerModelAdapterPredicateId.TOP_LEVEL_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX,
+        SearchPlannerModelAdapterPredicateId.TOP_LEVEL_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX,
+        SearchPlannerModelAdapterPredicateId.NORMALIZATION_OBLIGATION_ITEM_TEXT_OVER_MAX,
+        SearchPlannerModelAdapterPredicateId.ASSUMPTION_ITEM_TEXT_OVER_MAX,
+        SearchPlannerModelAdapterPredicateId.UNSUPPORTED_OR_DEFERRED_OUTPUT_ITEM_TEXT_OVER_MAX,
+    }:
+        top_level_field = {
+            SearchPlannerModelAdapterPredicateId.TOP_LEVEL_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX: "mandatory_caveats",
+            SearchPlannerModelAdapterPredicateId.TOP_LEVEL_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX: "prohibited_upgrades",
+            SearchPlannerModelAdapterPredicateId.NORMALIZATION_OBLIGATION_ITEM_TEXT_OVER_MAX: "normalization_obligations",
+            SearchPlannerModelAdapterPredicateId.ASSUMPTION_ITEM_TEXT_OVER_MAX: "assumptions",
+            SearchPlannerModelAdapterPredicateId.UNSUPPORTED_OR_DEFERRED_OUTPUT_ITEM_TEXT_OVER_MAX: "unsupported_or_deferred_outputs",
+        }[predicate_id]
+        model_output[top_level_field] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_NO_NONEMPTY_ITEMS:
+        component["allowed_support_kinds"] = []
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_ITEM_TEXT_OVER_MAX:
+        component["allowed_support_kinds"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ACCEPTANCE_CRITERIA_ITEM_TEXT_OVER_MAX:
+        component["acceptance_criteria"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ACCEPTANCE_CRITERIA_NO_NONEMPTY_ITEMS:
+        component["acceptance_criteria"] = []
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_CANDIDATE_VALUE_ITEM_TEXT_OVER_MAX:
+        semantic_slot["candidate_values"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_NORMALIZATION_NOTE_ITEM_TEXT_OVER_MAX:
+        semantic_slot["normalization_notes"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_MANDATORY_CAVEAT_ITEM_TEXT_OVER_MAX:
+        component["mandatory_caveats"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_PROHIBITED_UPGRADE_ITEM_TEXT_OVER_MAX:
+        component["prohibited_upgrades"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.COMPONENT_SEARCH_REQUIREMENT_PREFERRED_SOURCE_KIND_ITEM_TEXT_OVER_MAX:
+        requirement["preferred_source_kinds"] = [over_limit_text]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOTS_MINIMUM_ITEMS_1:
+        model_output["semantic_slots"] = []
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED:
+        semantic_slot["status"] = "ambiguous"
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.RELATIONSHIP_HYPOTHESES_MAXIMUM_ITEMS_5:
+        model_output["relationship_hypotheses"] = [
+            {
+                "hypothesis_id": f"hypothesis:{index}",
+                "target_component_id": "component:model-official-threshold",
+                "premise_component_ids": ["component:model-official-threshold"],
+                "relationship_summary": "A bounded relationship proposal.",
+            }
+            for index in range(6)
+        ]
+    elif predicate_id == SearchPlannerModelAdapterPredicateId.SOURCE_OBLIGATION_CANDIDATES_MINIMUM_ITEMS_1:
+        model_output["source_obligation_candidates"] = []
+    else:
+        enum_targets: dict[
+            SearchPlannerModelAdapterPredicateId,
+            tuple[dict[str, Any], str, str],
+        ] = {
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_STATUS_TEXT_EMPTY: (
+                semantic_slot,
+                "status",
+                "empty",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_STATUS_TEXT_OVER_MAX: (
+                semantic_slot,
+                "status",
+                "over",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_STATUS_VALUE_NOT_ALLOWED: (
+                semantic_slot,
+                "status",
+                "invalid",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_STATUS_MISSING: (
+                semantic_slot,
+                "status",
+                "missing",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIALITY_TEXT_EMPTY: (
+                semantic_slot,
+                "materiality",
+                "empty",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIALITY_TEXT_OVER_MAX: (
+                semantic_slot,
+                "materiality",
+                "over",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIALITY_VALUE_NOT_ALLOWED: (
+                semantic_slot,
+                "materiality",
+                "invalid",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIALITY_MISSING: (
+                semantic_slot,
+                "materiality",
+                "missing",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_KIND_TEXT_EMPTY: (
+                semantic_slot,
+                "slot_kind",
+                "empty",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_KIND_TEXT_OVER_MAX: (
+                semantic_slot,
+                "slot_kind",
+                "over",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_KIND_VALUE_NOT_ALLOWED: (
+                semantic_slot,
+                "slot_kind",
+                "invalid",
+            ),
+            SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_KIND_MISSING: (
+                semantic_slot,
+                "slot_kind",
+                "missing",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_REQUIREMENT_POSTURE_TEXT_EMPTY: (
+                component,
+                "requirement_posture",
+                "empty",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_REQUIREMENT_POSTURE_TEXT_OVER_MAX: (
+                component,
+                "requirement_posture",
+                "over",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_REQUIREMENT_POSTURE_VALUE_NOT_ALLOWED: (
+                component,
+                "requirement_posture",
+                "invalid",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_REQUIREMENT_POSTURE_MISSING: (
+                component,
+                "requirement_posture",
+                "missing",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_MATERIALITY_TEXT_EMPTY: (
+                component,
+                "materiality",
+                "empty",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_MATERIALITY_TEXT_OVER_MAX: (
+                component,
+                "materiality",
+                "over",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_MATERIALITY_VALUE_NOT_ALLOWED: (
+                component,
+                "materiality",
+                "invalid",
+            ),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_MATERIALITY_MISSING: (
+                component,
+                "materiality",
+                "missing",
+            ),
+            SearchPlannerModelAdapterPredicateId.SOURCE_OBLIGATION_KIND_TEXT_EMPTY: (
+                source_obligation,
+                "obligation_kind",
+                "empty",
+            ),
+            SearchPlannerModelAdapterPredicateId.SOURCE_OBLIGATION_KIND_TEXT_OVER_MAX: (
+                source_obligation,
+                "obligation_kind",
+                "over",
+            ),
+            SearchPlannerModelAdapterPredicateId.SOURCE_OBLIGATION_KIND_VALUE_NOT_ALLOWED: (
+                source_obligation,
+                "obligation_kind",
+                "invalid",
+            ),
+            SearchPlannerModelAdapterPredicateId.SOURCE_OBLIGATION_KIND_MISSING: (
+                source_obligation,
+                "obligation_kind",
+                "missing",
+            ),
+        }
+        if predicate_id in enum_targets:
+            target, field_name, mode = enum_targets[predicate_id]
+            if mode == "missing":
+                target.pop(field_name)
+            elif mode == "empty":
+                target[field_name] = ""
+            elif mode == "over":
+                target[field_name] = over_limit_text
+            else:
+                target[field_name] = "invalid_enum_value"
+        else:
+            narrative_empty_path = next(
+                (
+                    field[1]
+                    for field in _REQUIRED_NARRATIVE_TEXT_FIELDS
+                    if field[7] == predicate_id.value
+                ),
+                None,
+            )
+            narrative_over_paths = {
+                SearchPlannerModelAdapterPredicateId.QUESTION_MEANING_SUMMARY_TEXT_OVER_MAX: (
+                    "question_meaning_summary",
+                ),
+                SearchPlannerModelAdapterPredicateId.REQUESTED_OUTPUT_TEXT_OVER_MAX: (
+                    "requested_output",
+                ),
+                SearchPlannerModelAdapterPredicateId.MATERIAL_AMBIGUITY_POSTURE_TEXT_OVER_MAX: (
+                    "material_ambiguity_posture",
+                ),
+                SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_USER_FACING_LABEL_TEXT_OVER_MAX: (
+                    "answer_components",
+                    0,
+                    "user_facing_label",
+                ),
+                SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_USER_FACING_QUESTION_TEXT_OVER_MAX: (
+                    "answer_components",
+                    0,
+                    "user_facing_question",
+                ),
+                SearchPlannerModelAdapterPredicateId.RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_OVER_MAX: (
+                    "relationship_hypotheses",
+                    0,
+                    "relationship_summary",
+                ),
+                SearchPlannerModelAdapterPredicateId.COMPONENT_SEARCH_REQUIREMENT_SUMMARY_TEXT_OVER_MAX: (
+                    "component_search_requirements",
+                    0,
+                    "requirement_summary",
+                ),
+            }
+            if predicate_id in {
+                SearchPlannerModelAdapterPredicateId.RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_OVER_MAX,
+                SearchPlannerModelAdapterPredicateId.RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_EMPTY,
+            }:
+                model_output["relationship_hypotheses"] = [
+                    {
+                        "hypothesis_id": "hypothesis:current",
+                        "target_component_id": "component:model-official-threshold",
+                        "premise_component_ids": ["component:model-official-threshold"],
+                        "relationship_summary": "A bounded relationship proposal.",
+                    }
+                ]
+            if narrative_empty_path is not None:
+                _set_narrative_text_field(model_output, narrative_empty_path, "")
+            elif predicate_id in narrative_over_paths:
+                _set_narrative_text_field(
+                    model_output,
+                    narrative_over_paths[predicate_id],
+                    over_limit_text,
+                )
+            else:
+                raise AssertionError(f"missing continuity witness for {predicate_id.value}")
+
+    return _model_output_error(model_output)
 
 
 def _strict_text_type_error(
@@ -2015,6 +2313,51 @@ def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections()
     assert metadata["planner_model_prompt_schema_version"] == (
         SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
     )
+    assert metadata == {
+        "planner_model_adapter_schema_version": (
+            "search_planner_model_adapter_ag_search_planner_model_01_v1"
+        ),
+        "planner_model_prompt_schema_version": (
+            "search_planner_model_prompt_ag_search_planner_model_01_v3"
+        ),
+        "prompt_hash": (
+            "ad0915872f1e5bdbfa14e4e134bb7ae2c941e772dd018b59abc965e0c0a54ac5"
+        ),
+        "prompt_length": 22479,
+        "provider": "FakeProvider",
+        "model": "fake-fast-model",
+        "effort": "low",
+        "use_reasoning": False,
+        "require_json": True,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "provider_payload_retained": False,
+        "model_adapter_enabled": True,
+    }
+    successful_payload = json.dumps(
+        {"proposal": produced, "planner_model_metadata": metadata},
+        sort_keys=True,
+    )
+    assert "predicate_id" not in successful_payload
+    assert "predicate_registry_version" not in successful_payload
+    successful_kernel = _kernel()
+    _produce(
+        successful_kernel,
+        _adapter(FakeAskModel(json.dumps(_planner_output()))),
+    )
+    successful_state = json.dumps(
+        {
+            "proposal_state": successful_kernel.state.search_planner_proposal_state,
+            "proposal_projection": (
+                successful_kernel.state.search_planner_proposal_projection
+            ),
+            "proposal_history": successful_kernel.state.search_planner_proposal_history,
+            "trace_projection": successful_kernel.trace_projection().to_dict(),
+        },
+        sort_keys=True,
+    )
+    assert "predicate_id" not in successful_state
+    assert "predicate_registry_version" not in successful_state
 
     invalid_cases = (
         (
@@ -2112,6 +2455,43 @@ def test_strict_type_predicate_matrix_covers_the_exact_licensed_partition() -> N
         "COMPONENT_SEARCH_REQUIREMENT_PREFERRED_SOURCE_KIND_ITEM_TEXT_OVER_MAX",
     }
     assert "ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_NO_NONEMPTY_ITEMS" not in predicate_ids
+
+
+def test_continuity_seed_predicate_registry_is_complete_and_closed() -> None:
+    assert len(_CONTINUITY_SEED_IDS) == 58
+    assert len(set(_CONTINUITY_SEED_IDS)) == 58
+    assert {
+        predicate_id.value for predicate_id in _CONTINUITY_SEED_IDS
+    } <= {
+        predicate_id.value
+        for predicate_id in SearchPlannerModelAdapterPredicateId
+    }
+    assert {
+        predicate_id.value for predicate_id in _CONTINUITY_SEED_IDS
+    } <= {
+        predicate_id.value
+        for predicate_id in SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY
+    }
+
+
+@pytest.mark.parametrize(
+    "predicate_id",
+    _CONTINUITY_SEED_IDS,
+    ids=tuple(predicate_id.value for predicate_id in _CONTINUITY_SEED_IDS),
+)
+def test_continuity_seed_predicates_emit_from_current_witnesses(
+    predicate_id: SearchPlannerModelAdapterPredicateId,
+) -> None:
+    error = _continuity_seed_error(predicate_id)
+
+    assert error.predicate_id == predicate_id
+    assert error.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert error.failure_metadata.predicate_id == predicate_id
+    assert error.failure_metadata.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
 
 
 @pytest.mark.parametrize(
@@ -2778,6 +3158,7 @@ def test_every_adapter_error_construction_supplies_a_registered_code() -> None:
     for call in calls:
         keyword_names = {item.arg for item in call.keywords}
         assert "failure_code" in keyword_names
+        assert "predicate_id" in keyword_names
 
     expected_rules = {
         SearchPlannerModelAdapterFailureCode.INVALID_JSON: "M01",
@@ -2797,15 +3178,307 @@ def test_every_adapter_error_construction_supplies_a_registered_code() -> None:
         SearchPlannerModelAdapterFailureCode.LINEAGE_OR_BINDING_FAILURE: "M10",
     }
     for code in SearchPlannerModelAdapterFailureCode:
+        matching_predicates = [
+            predicate_id
+            for predicate_id, registration in (
+                SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY.items()
+            )
+            if registration.failure_code == code
+        ]
+        predicate_id = matching_predicates[0] if matching_predicates else None
         error = SearchPlannerModelAdapterError(
             "bounded synthetic message",
             failure_code=code,
+            predicate_id=predicate_id,
         )
         assert isinstance(
             error.failure_stage,
             SearchPlannerModelAdapterFailureStage,
         )
         assert error.mechanical_rule_id == expected_rules.get(code)
+        if error.mechanical_rule_id is None:
+            assert error.predicate_registry_version is None
+            assert error.predicate_id is None
+        else:
+            assert error.predicate_registry_version == (
+                SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+            )
+            assert error.predicate_id == predicate_id
+
+
+def test_predicate_registry_and_failure_metadata_are_fail_closed_and_immutable() -> None:
+    registry = SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY
+
+    assert len(SearchPlannerModelAdapterPredicateId.__members__) == len(
+        SearchPlannerModelAdapterPredicateId
+    )
+    assert len(registry) == len(SearchPlannerModelAdapterPredicateId)
+    assert set(registry) == set(SearchPlannerModelAdapterPredicateId)
+    for predicate_id, registration in registry.items():
+        assert predicate_id.value == predicate_id.name
+        assert registration.predicate_registry_version == (
+            SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+        )
+        assert registration.mechanical_rule_id.startswith("M")
+        assert registration.failure_code in SearchPlannerModelAdapterFailureCode
+        assert registration.failure_stage in SearchPlannerModelAdapterFailureStage
+
+    with pytest.raises(TypeError):
+        registry[SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED] = registry[
+            SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
+        ]
+
+    registration = registry[
+        SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
+    ]
+    metadata = SearchPlannerModelAdapterFailureMetadata(
+        failure_stage=registration.failure_stage,
+        failure_code=registration.failure_code,
+        mechanical_rule_id=registration.mechanical_rule_id,
+        predicate_registry_version=registration.predicate_registry_version,
+        predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+    )
+    assert metadata.predicate_id == SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
+
+    with pytest.raises(TypeError):
+        SearchPlannerModelAdapterError(
+            "bounded synthetic message",
+            failure_code=SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+        )
+    with pytest.raises(ValueError, match="mechanical failures require predicate"):
+        SearchPlannerModelAdapterError(
+            "bounded synthetic message",
+            failure_code=SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+            predicate_id=None,
+        )
+    with pytest.raises(ValueError, match="infrastructure failures"):
+        SearchPlannerModelAdapterError(
+            "bounded synthetic message",
+            failure_code=SearchPlannerModelAdapterFailureCode.ADAPTER_DISABLED,
+            predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+        )
+    with pytest.raises(ValueError, match="does not match its registration"):
+        SearchPlannerModelAdapterError(
+            "bounded synthetic message",
+            failure_code=SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
+            predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+        )
+    with pytest.raises(ValueError, match="not registered"):
+        SearchPlannerModelAdapterError(
+            "bounded synthetic message",
+            failure_code=SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+            predicate_id="UNREGISTERED_PREDICATE",  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="registry version"):
+        SearchPlannerModelAdapterFailureMetadata(
+            failure_stage=registration.failure_stage,
+            failure_code=registration.failure_code,
+            mechanical_rule_id=registration.mechanical_rule_id,
+            predicate_registry_version="wrong_registry_version",
+            predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+        )
+    with pytest.raises(ValueError, match="failure_stage does not match"):
+        SearchPlannerModelAdapterFailureMetadata(
+            failure_stage=SearchPlannerModelAdapterFailureStage.INPUT,
+            failure_code=registration.failure_code,
+            mechanical_rule_id=registration.mechanical_rule_id,
+            predicate_registry_version=registration.predicate_registry_version,
+            predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+        )
+
+
+def test_public_message_and_digest_baselines_are_preserved_across_m01_to_m10() -> None:
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _adapter(FakeAskModel("{")).produce(
+            _planner_input(_kernel()).to_adapter_payload()
+        )
+    invalid_json = caught.value
+
+    invalid_policy = _planner_output()
+    invalid_policy["answer_components"][0]["partial_answer_policy"] = (
+        "invalid_partial_answer_policy"
+    )
+    invalid_reference = _planner_output()
+    invalid_reference["answer_components"][0][
+        "source_obligation_candidate_ids"
+    ] = ["missing:obligation"]
+    invalid_dependency = _planner_output()
+    dependency_component = invalid_dependency["answer_components"][0]
+    dependency_component["allowed_support_kinds"] = ["inferred"]
+    dependency_component["source_obligation_candidate_ids"] = []
+    dependency_component["max_inference_depth"] = 1
+    dependency_component["dependency_component_ids"] = [
+        "component:model-official-threshold",
+        "component:model-official-threshold",
+    ]
+    invalid_support_tuple = _planner_output()
+    invalid_support_tuple["answer_components"][0]["allowed_support_kinds"] = [
+        "direct",
+        "direct",
+    ]
+    invalid_purpose = _planner_output()
+    invalid_purpose["answer_components"][0]["component_purpose"] = (
+        "invalid_component_purpose"
+    )
+    invalid_strategy = _planner_output()
+    invalid_strategy["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["candidate_kind"] = "invalid_candidate_kind"
+    forbidden_authority = _planner_output()
+    forbidden_authority["answer"] = "forbidden"
+    raw_material = _planner_output()
+    raw_material["raw_payload"] = "forbidden"
+    stale_binding = _planner_output()
+    stale_binding["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["component_id"] = "component:other"
+
+    expected_cases = (
+        (
+            invalid_json,
+            SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
+            "search planner model output was not valid JSON",
+            "139912cee10aee310b3a5fe407c851850abb9e6894edbce6f7a3a7ad51442f47",
+        ),
+        (
+            _model_output_error(invalid_policy),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM,
+            "unsupported partial answer policy: invalid_partial_answer_policy",
+            "a50982ae79fed002029f60411c57ec4615df17954f79f2f2ee5e8aad45440f64",
+        ),
+        (
+            _model_output_error(invalid_reference),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_SOURCE_OBLIGATION_REFERENCE_UNRESOLVED,
+            "component component:model-official-threshold references missing source obligation missing:obligation",
+            "230b18e0e8dd8434d23ff77b88f4a56700ea8f498954168f64850299cc54b9f1",
+        ),
+        (
+            _model_output_error(invalid_dependency),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_DEPENDENCY_IDS_DUPLICATE,
+            "component component:model-official-threshold contains duplicate component dependencies",
+            "cc24aa3bb98a295251f2b9366d893d01cd9ae7745d507c9b1a8e299498e74cbd",
+        ),
+        (
+            _model_output_error(invalid_support_tuple),
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_TUPLE_NOT_ALLOWED,
+            "answer component component:model-official-threshold has an invalid support-kind combination",
+            "8c28c8d2b8020f6cc6b0f54e649feffb0da758bcf79e1779ce6fcf68f1451d31",
+        ),
+        (
+            _model_output_error(invalid_purpose),
+            SearchPlannerModelAdapterPredicateId.M06_REQUIRED_ENUM_VALUE_NOT_ALLOWED,
+            "unsupported value for component_purpose: invalid_component_purpose",
+            "c3fcd278d63d314bf77b5da18ac89767d7d1b6b886dded45cb5bb10b2c11c640",
+        ),
+        (
+            _model_output_error(invalid_strategy),
+            SearchPlannerModelAdapterPredicateId.M07_REQUIRED_ENUM_VALUE_NOT_ALLOWED,
+            "unsupported value for candidate_kind: invalid_candidate_kind",
+            "50f83a9e60f6563be08ffe8db2ca37977a7cdbf922e87e9a4ff5671b825df30b",
+        ),
+        (
+            _model_output_error(forbidden_authority),
+            SearchPlannerModelAdapterPredicateId.CLOSED_AUTHORITY_FIELD_FORBIDDEN,
+            "search planner model output contains closed authority fields: answer",
+            "f13a36cc17242ff3457a7853b5dca75e5d5f3520c813b2791e5ab3a78d4c4396",
+        ),
+        (
+            _model_output_error(raw_material),
+            SearchPlannerModelAdapterPredicateId.RAW_OR_PRIVATE_FIELD_FORBIDDEN,
+            "search planner model output contains raw/private fields: raw_payload",
+            "4fb6ba9899d8be07aa65c8ec4a1c784a0e3a2241c5fddde4d19432c7cdcd56d8",
+        ),
+        (
+            _model_output_error(stale_binding),
+            SearchPlannerModelAdapterPredicateId.QUERY_STRATEGY_COMPONENT_BINDING_STALE,
+            "query strategy strategy:model-official-threshold:primary has stale component binding",
+            "a72885a78d8f74658332ac2116122871c6c92710cd099826153f0f7f83fb1b5d",
+        ),
+    )
+
+    for error, predicate_id, expected_message, expected_digest in expected_cases:
+        assert str(error) == expected_message
+        assert error.args == (expected_message,)
+        assert sha256(str(error).encode("utf-8")).hexdigest() == expected_digest
+        assert error.predicate_id == predicate_id
+        assert error.predicate_registry_version == (
+            SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+        )
+        assert predicate_id.value not in str(error)
+        assert predicate_id.value not in error.args[0]
+        assert error.__cause__ is None
+        assert error.__context__ is None
+
+
+def test_predicate_precedence_preserves_existing_first_failure_order() -> None:
+    two_missing_top_level = _planner_output()
+    two_missing_top_level.pop("question_meaning_summary")
+    two_missing_top_level.pop("requested_output")
+
+    wrong_type_before_invalid_value = _planner_output()
+    wrong_type_before_invalid_value["semantic_slots"][0]["status"] = 7
+    wrong_type_before_invalid_value["answer_components"][0][
+        "component_purpose"
+    ] = "invalid_component_purpose"
+
+    invalid_support_item_before_matrix = _planner_output()
+    invalid_support_item_before_matrix["answer_components"][0][
+        "allowed_support_kinds"
+    ] = ["unsupported"]
+    invalid_support_item_before_matrix["answer_components"][0][
+        "max_inference_depth"
+    ] = 1
+
+    invalid_reference_before_dependency = _planner_output()
+    invalid_reference_before_dependency["answer_components"][0][
+        "semantic_slot_ids"
+    ] = ["missing:slot"]
+    invalid_reference_before_dependency["answer_components"][0][
+        "dependency_component_ids"
+    ] = [
+        "component:model-official-threshold",
+        "component:model-official-threshold",
+    ]
+
+    forbidden_authority_before_unrelated_invalid_field = _planner_output()
+    forbidden_authority_before_unrelated_invalid_field["answer"] = "forbidden"
+    forbidden_authority_before_unrelated_invalid_field["answer_components"][0][
+        "requirement_posture"
+    ] = "invalid_requirement_posture"
+
+    raw_material_before_structural_failure = _planner_output()
+    raw_material_before_structural_failure["raw_payload"] = "forbidden"
+    raw_material_before_structural_failure["semantic_slots"] = []
+
+    expected_cases = (
+        (
+            two_missing_top_level,
+            SearchPlannerModelAdapterPredicateId.TOP_LEVEL_QUESTION_MEANING_SUMMARY_MISSING,
+        ),
+        (
+            wrong_type_before_invalid_value,
+            SearchPlannerModelAdapterPredicateId.MODEL_VISIBLE_TEXT_VALUE_NOT_JSON_STRING,
+        ),
+        (
+            invalid_support_item_before_matrix,
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_ITEM_VALUE_NOT_ALLOWED,
+        ),
+        (
+            invalid_reference_before_dependency,
+            SearchPlannerModelAdapterPredicateId.ANSWER_COMPONENT_SEMANTIC_SLOT_REFERENCE_UNRESOLVED,
+        ),
+        (
+            forbidden_authority_before_unrelated_invalid_field,
+            SearchPlannerModelAdapterPredicateId.CLOSED_AUTHORITY_FIELD_FORBIDDEN,
+        ),
+        (
+            raw_material_before_structural_failure,
+            SearchPlannerModelAdapterPredicateId.RAW_OR_PRIVATE_FIELD_FORBIDDEN,
+        ),
+    )
+    for model_output, expected_predicate_id in expected_cases:
+        error = _model_output_error(model_output)
+        assert error.predicate_id == expected_predicate_id
 
 
 def test_static_closed_surface_guard_for_search_planner_model_adapter() -> None:

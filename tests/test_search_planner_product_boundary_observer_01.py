@@ -28,10 +28,12 @@ import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
 from core.protocols import NullStatusWriter
 from core.search_planner_model_adapter import (
+    SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION,
     SearchPlannerModelAdapter,
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureCode,
     SearchPlannerModelAdapterFailureStage,
+    SearchPlannerModelAdapterPredicateId,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 from core.text_utils import clean_json_response
@@ -40,6 +42,7 @@ from scripts.evaluation.search_planner_mechanical_validation import (
 )
 from scripts.evaluation.search_planner_product_boundary_observer import (
     CANONICAL_PRODUCT_BOUNDARY_REF,
+    PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION,
     CanonicalProductSearchPlannerBoundaryObserver,
     ProductBoundaryObservation,
 )
@@ -313,6 +316,12 @@ def test_observer_matches_exact_ordinary_product_boundary(
     assert observation.runtime_projection_posture == "PASS"
     assert observation.initial_acceptance_posture == "PASS"
     assert observation.search_work_plan_posture == "PASS"
+    assert PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION == (
+        "search_planner_product_boundary_observer_v2"
+    )
+    assert observation.schema_version == PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION
+    assert observation.canonical_failure_predicate_registry_version is None
+    assert observation.canonical_failure_predicate_id is None
 
 
 def test_observer_preserves_product_fail_closed_posture(
@@ -346,23 +355,34 @@ def test_observer_preserves_product_fail_closed_posture(
 
 
 @pytest.mark.parametrize(
-    ("response", "expected_code"),
+    ("response", "expected_code", "expected_predicate"),
     (
         (
             "not-json-private-output-sentinel",
             SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+            SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
         ),
-        ("[]", SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT),
-        ("42", SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT),
+        (
+            "[]",
+            SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT,
+            SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
+        ),
+        (
+            "42",
+            SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT,
+            SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
+        ),
         (
             '"scalar-private-output-sentinel"',
             SearchPlannerModelAdapterFailureCode.JSON_VALUE_NOT_OBJECT,
+            SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
         ),
     ),
 )
 def test_json_parse_failures_are_typed_m01_and_stop_before_runtime(
     response: str,
     expected_code: SearchPlannerModelAdapterFailureCode,
+    expected_predicate: SearchPlannerModelAdapterPredicateId,
 ) -> None:
     failure, observation = _observe_adapter_result(response)
 
@@ -373,10 +393,20 @@ def test_json_parse_failures_are_typed_m01_and_stop_before_runtime(
     )
     assert failure.failure_code == expected_code
     assert failure.mechanical_rule_id == "M01"
+    assert failure.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert failure.predicate_id == expected_predicate
     assert observation.parser_posture == "FAIL"
     assert observation.validator_posture == "NOT_REACHED"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == ("M01",)
+    assert observation.canonical_failure_predicate_registry_version == (
+        failure.predicate_registry_version
+    )
+    assert observation.canonical_failure_predicate_id == (
+        failure.predicate_id.value
+    )
     mechanical = validate_product_observation(observation)
     rules = {item.rule_id: item for item in mechanical.rule_results}
     assert rules["M01"].posture == "FAIL"
@@ -407,10 +437,20 @@ def test_output_cleaner_failure_is_typed_and_never_blames_runtime() -> None:
         == SearchPlannerModelAdapterFailureCode.OUTPUT_CLEANING_FAILED
     )
     assert failure.mechanical_rule_id is None
+    assert failure.predicate_registry_version is None
+    assert failure.predicate_id is None
     assert observation.parser_posture == "FAIL"
     assert observation.validator_posture == "NOT_REACHED"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == ()
+    assert observation.canonical_failure_predicate_registry_version is None
+    assert observation.canonical_failure_predicate_id is None
+    assert observation.bounded_failure_reason == (
+        "SearchPlannerModelAdapterError:"
+        "failure_stage=OUTPUT_CLEANING:"
+        "failure_code=OUTPUT_CLEANING_FAILED:"
+        f"message_sha256={_digest(str(failure))}"
+    )
     assert raw_cleaner_failure not in json.dumps(
         observation.to_packet(),
         sort_keys=True,
@@ -439,11 +479,15 @@ def test_model_call_failure_is_typed_before_parser_and_runtime() -> None:
         == SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED
     )
     assert failure.mechanical_rule_id is None
+    assert failure.predicate_registry_version is None
+    assert failure.predicate_id is None
     assert observation.response_received is False
     assert observation.parser_posture == "NOT_REACHED"
     assert observation.validator_posture == "NOT_REACHED"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == ()
+    assert observation.canonical_failure_predicate_registry_version is None
+    assert observation.canonical_failure_predicate_id is None
     assert raw_model_failure not in json.dumps(
         observation.to_packet(),
         sort_keys=True,
@@ -575,10 +619,21 @@ def test_validator_failure_attestation_maps_exactly_m02_through_m10(
     assert failure.failure_stage == stage
     assert failure.failure_code == code
     assert failure.mechanical_rule_id == rule_id
+    assert failure.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert failure.predicate_id is not None
+    assert failure.args == (str(failure),)
     assert observation.parser_posture == "PASS"
     assert observation.validator_posture == "FAIL"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == (rule_id,)
+    assert observation.canonical_failure_predicate_registry_version == (
+        failure.predicate_registry_version
+    )
+    assert observation.canonical_failure_predicate_id == (
+        failure.predicate_id.value
+    )
     rules = {
         item.rule_id: item
         for item in validate_product_observation(observation).rule_results
@@ -607,6 +662,8 @@ def test_validated_proposal_followed_by_runtime_failure_is_distinct() -> None:
     assert observation.runtime_projection_posture == "FAIL"
     assert observation.initial_acceptance_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == ()
+    assert observation.canonical_failure_predicate_registry_version is None
+    assert observation.canonical_failure_predicate_id is None
     assert misleading_later_message not in json.dumps(
         observation.to_packet(),
         sort_keys=True,
@@ -654,6 +711,10 @@ def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> No
     failure, observation = _observe_adapter_result(payload)
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert failure.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert failure.predicate_id is not None
     with pytest.raises(FrozenInstanceError):
         setattr(
             failure.failure_metadata,
@@ -675,18 +736,52 @@ def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> No
         model_field_value,
         model_query_text,
         str(failure),
+        failure.args[0],
     ):
         assert forbidden not in serialized
     assert packet["raw_prompt_retained"] is False
     assert packet["raw_response_retained"] is False
     assert packet["raw_provider_payload_retained"] is False
     assert packet["observer_parsed_model_output"] is False
+    assert packet["canonical_failure_predicate_registry_version"] == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert packet["canonical_failure_predicate_id"] == failure.predicate_id.value
     assert packet["bounded_failure_reason"] == (
         "SearchPlannerModelAdapterError:"
         "failure_stage=CROSS_REFERENCE_VALIDATION:"
         "failure_code=LINEAGE_OR_BINDING_FAILURE:"
+        "mechanical_rule_id=M10:"
+        "predicate_registry_version="
+        f"{SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION}:"
+        f"predicate_id={failure.predicate_id.value}:"
         f"message_sha256={_digest(str(failure))}"
     )
+
+
+def test_observer_predicate_fields_are_closed_and_paired() -> None:
+    failure, observation = _observe_adapter_result(
+        "not-json-private-output-sentinel"
+    )
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert observation.canonical_failure_predicate_id is not None
+    with pytest.raises(
+        ValueError,
+        match="canonical failure predicate identities must be paired",
+    ):
+        replace(
+            observation,
+            canonical_failure_predicate_id=None,
+        )
+    with pytest.raises(
+        ValueError,
+        match="canonical failure predicate identity is unsupported",
+    ):
+        replace(
+            observation,
+            canonical_failure_predicate_id="MODEL_DERIVED_PREDICATE_SENTINEL",
+        )
 
 
 def test_observer_stage_classification_contains_no_message_search() -> None:
@@ -794,3 +889,5 @@ def test_observer_failure_reason_retains_only_type_and_digest() -> None:
     assert observation.bounded_failure_reason == (
         f"RuntimeError:message_sha256={_digest(raw_exception_material)}"
     )
+    assert observation.canonical_failure_predicate_registry_version is None
+    assert observation.canonical_failure_predicate_id is None

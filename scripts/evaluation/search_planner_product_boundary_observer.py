@@ -15,12 +15,14 @@ from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
 from core.search_planner_model_adapter import (
+    SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION,
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureStage,
+    SearchPlannerModelAdapterPredicateId,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 
-PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION = "search_planner_product_boundary_observer_v1"
+PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION = "search_planner_product_boundary_observer_v2"
 CANONICAL_PRODUCT_BOUNDARY_REF = (
     "core.pipeline_orchestrator.run_pipeline -> "
     "core.query_production_runtime.execute_initial_query_strategy_convergence -> "
@@ -147,6 +149,8 @@ class ProductBoundaryObservation:
     raw_response_retained: bool = False
     raw_provider_payload_retained: bool = False
     observer_parsed_model_output: bool = False
+    canonical_failure_predicate_registry_version: str | None = None
+    canonical_failure_predicate_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION:
@@ -196,6 +200,22 @@ class ProductBoundaryObservation:
             or not set(self.canonical_failure_rule_ids) <= _MECHANICAL_RULE_IDS
         ):
             raise ValueError("canonical failure rule identities are invalid")
+        if (
+            self.canonical_failure_predicate_registry_version is None
+        ) != (self.canonical_failure_predicate_id is None):
+            raise ValueError("canonical failure predicate identities must be paired")
+        if (
+            self.canonical_failure_predicate_registry_version is not None
+            and self.canonical_failure_predicate_registry_version
+            != SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+        ):
+            raise ValueError("canonical failure predicate registry is unsupported")
+        if (
+            self.canonical_failure_predicate_id is not None
+            and self.canonical_failure_predicate_id
+            not in {item.value for item in SearchPlannerModelAdapterPredicateId}
+        ):
+            raise ValueError("canonical failure predicate identity is unsupported")
         if any(
             (
                 self.raw_prompt_retained,
@@ -301,6 +321,10 @@ class CanonicalProductSearchPlannerBoundaryObserver:
             failed=bool(failure and acceptance_state and not search_work_plan),
         )
         bounded_reason = _bounded_failure_reason(failure)
+        (
+            predicate_registry_version,
+            predicate_id,
+        ) = _canonical_failure_predicate_fields(failure)
         canonical_failure_rule_ids = list(failure_rule_ids)
         if (
             isinstance(failure, SearchPlannerModelAdapterError)
@@ -348,6 +372,10 @@ class CanonicalProductSearchPlannerBoundaryObserver:
                 if proposal_state
                 else None
             ),
+            canonical_failure_predicate_registry_version=(
+                predicate_registry_version
+            ),
+            canonical_failure_predicate_id=predicate_id,
         )
 
 
@@ -456,6 +484,28 @@ def _bounded_failure_reason(failure: Exception | None) -> str | None:
         return None
     message_digest = _digest_text(str(failure))
     if isinstance(failure, SearchPlannerModelAdapterError):
+        (
+            predicate_registry_version,
+            predicate_id,
+        ) = _canonical_failure_predicate_fields(failure)
+        if failure.mechanical_rule_id is not None:
+            if predicate_registry_version is None or predicate_id is None:
+                raise ValueError(
+                    "mechanical adapter failure lacks canonical predicate metadata"
+                )
+            return (
+                "SearchPlannerModelAdapterError:"
+                f"failure_stage={failure.failure_stage.value}:"
+                f"failure_code={failure.failure_code.value}:"
+                f"mechanical_rule_id={failure.mechanical_rule_id}:"
+                f"predicate_registry_version={predicate_registry_version}:"
+                f"predicate_id={predicate_id}:"
+                f"message_sha256={message_digest}"
+            )
+        if predicate_registry_version is not None or predicate_id is not None:
+            raise ValueError(
+                "infrastructure adapter failure has canonical predicate metadata"
+            )
         return (
             "SearchPlannerModelAdapterError:"
             f"failure_stage={failure.failure_stage.value}:"
@@ -463,6 +513,20 @@ def _bounded_failure_reason(failure: Exception | None) -> str | None:
             f"message_sha256={message_digest}"
         )
     return f"{type(failure).__name__}:message_sha256={message_digest}"
+
+
+def _canonical_failure_predicate_fields(
+    failure: Exception | None,
+) -> tuple[str | None, str | None]:
+    """Copy only typed adapter predicate metadata into the observation."""
+
+    if not isinstance(failure, SearchPlannerModelAdapterError):
+        return None, None
+    predicate_id = failure.predicate_id
+    return (
+        failure.predicate_registry_version,
+        predicate_id.value if predicate_id is not None else None,
+    )
 
 
 def _downstream_posture(
