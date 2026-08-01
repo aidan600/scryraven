@@ -123,6 +123,120 @@ _STRICT_TYPE_PREDICATE_MATRIX: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
+_REQUIRED_NARRATIVE_TEXT_NORMALIZATION = (
+    "Whitespace is normalized before validation: leading and trailing whitespace is "
+    "removed, internal whitespace runs are collapsed to one space, and the normalized "
+    "text must contain at least one non-whitespace character. max_length applies to the "
+    "normalized text."
+)
+_REQUIRED_NARRATIVE_TEXT_PROMPT_RULE = (
+    "The seven required narrative fields must contain meaningful non-whitespace text "
+    "after whitespace normalization; never emit empty or whitespace-only values, and "
+    "keep normalized text within each declared max_length."
+)
+_NARRATIVE_TEXT_REJECTED_SENTINEL = "FICTIONAL_NARRATIVE_TEXT_REJECTED_SENTINEL"
+
+_NarrativeTextField = tuple[
+    str,
+    tuple[str | int, ...],
+    tuple[str, ...],
+    str,
+    int,
+    SearchPlannerModelAdapterFailureCode,
+    str,
+    str,
+]
+
+_REQUIRED_NARRATIVE_TEXT_FIELDS: tuple[_NarrativeTextField, ...] = (
+    (
+        "top_level.question_meaning_summary",
+        ("question_meaning_summary",),
+        ("top_level", "fields", "question_meaning_summary"),
+        "question_meaning_summary",
+        420,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS,
+        "M01",
+        "QUESTION_MEANING_SUMMARY_TEXT_EMPTY",
+    ),
+    (
+        "top_level.requested_output",
+        ("requested_output",),
+        ("top_level", "fields", "requested_output"),
+        "requested_output",
+        300,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS,
+        "M01",
+        "REQUESTED_OUTPUT_TEXT_EMPTY",
+    ),
+    (
+        "top_level.material_ambiguity_posture",
+        ("material_ambiguity_posture",),
+        ("top_level", "fields", "material_ambiguity_posture"),
+        "material_ambiguity_posture",
+        120,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS,
+        "M01",
+        "MATERIAL_AMBIGUITY_POSTURE_TEXT_EMPTY",
+    ),
+    (
+        "answer_component.user_facing_label",
+        ("answer_components", 0, "user_facing_label"),
+        ("answer_component", "fields", "user_facing_label"),
+        "answer_component_user_facing_label",
+        180,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD,
+        "M02",
+        "ANSWER_COMPONENT_USER_FACING_LABEL_TEXT_EMPTY",
+    ),
+    (
+        "answer_component.user_facing_question",
+        ("answer_components", 0, "user_facing_question"),
+        ("answer_component", "fields", "user_facing_question"),
+        "answer_component_user_facing_question",
+        400,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD,
+        "M02",
+        "ANSWER_COMPONENT_USER_FACING_QUESTION_TEXT_EMPTY",
+    ),
+    (
+        "relationship_hypothesis.relationship_summary",
+        ("relationship_hypotheses", 0, "relationship_summary"),
+        ("relationship_hypothesis", "fields", "relationship_summary"),
+        "relationship_hypothesis_summary",
+        360,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD,
+        "M02",
+        "RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_EMPTY",
+    ),
+    (
+        "component_search_requirement.requirement_summary",
+        ("component_search_requirements", 0, "requirement_summary"),
+        ("component_search_requirement", "fields", "requirement_summary"),
+        "component_search_requirement_summary",
+        320,
+        SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD,
+        "M02",
+        "COMPONENT_SEARCH_REQUIREMENT_SUMMARY_TEXT_EMPTY",
+    ),
+)
+
+_NARRATIVE_WRONG_TEXT_TYPES: tuple[tuple[str, Any], ...] = (
+    ("null", None),
+    ("boolean", True),
+    ("integer", 7),
+    ("object", {"fictional_value": _NARRATIVE_TEXT_REJECTED_SENTINEL}),
+    ("array", [_NARRATIVE_TEXT_REJECTED_SENTINEL]),
+)
+
+_NARRATIVE_EMPTY_TEXT_CASES: tuple[tuple[str, str], ...] = (
+    ("empty", ""),
+    ("space", " "),
+    ("spaces", "   "),
+    ("tab", "\t"),
+    ("newline", "\n"),
+    ("mixed_whitespace", " \t \n "),
+)
+
 
 class FakeAskModel:
     def __init__(self, response: Any) -> None:
@@ -234,6 +348,84 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
     if extra:
         payload.update(extra)
     return payload
+
+
+def _narrative_text_model_output(field_path: tuple[str | int, ...]) -> dict[str, Any]:
+    payload = _planner_output()
+    if field_path[0] == "relationship_hypotheses":
+        payload["relationship_hypotheses"] = [
+            {
+                "hypothesis_id": "hypothesis:model-official-threshold",
+                "target_component_id": "component:model-official-threshold",
+                "premise_component_ids": ["component:model-official-threshold"],
+                "relationship_summary": "The official source determines the answer component.",
+            }
+        ]
+    return payload
+
+
+def _narrative_text_field_container(
+    payload: dict[str, Any],
+    field_path: tuple[str | int, ...],
+) -> dict[str, Any]:
+    container: Any = payload
+    for segment in field_path[:-1]:
+        container = container[segment]
+    assert isinstance(container, dict)
+    return container
+
+
+def _set_narrative_text_field(
+    payload: dict[str, Any],
+    field_path: tuple[str | int, ...],
+    value: Any,
+) -> None:
+    field_name = field_path[-1]
+    assert isinstance(field_name, str)
+    _narrative_text_field_container(payload, field_path)[field_name] = value
+
+
+def _pop_narrative_text_field(
+    payload: dict[str, Any],
+    field_path: tuple[str | int, ...],
+) -> Any:
+    field_name = field_path[-1]
+    assert isinstance(field_name, str)
+    return _narrative_text_field_container(payload, field_path).pop(field_name)
+
+
+def _narrative_text_field_value(
+    payload: Mapping[str, Any],
+    field_path: tuple[str | int, ...],
+) -> Any:
+    value: Any = payload
+    for segment in field_path:
+        value = value[segment]
+    return value
+
+
+def _assert_rejected_narrative_text_is_not_retained(
+    error: SearchPlannerModelAdapterError,
+    kernel: RunKernel,
+    *,
+    submitted_values: tuple[str, ...] = (),
+) -> None:
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert kernel.state.search_planner_proposal_state == {}
+    assert kernel.state.search_planner_proposal_projection == {}
+    assert kernel.state.search_planner_proposal_history == []
+    trace_json = json.dumps(kernel.trace_projection().to_dict(), sort_keys=True)
+    assert '"raw_prompt":' not in trace_json
+    assert '"raw_model_response":' not in trace_json
+    assert '"raw_provider_payload":' not in trace_json
+    assert '"provider_payload":' not in trace_json
+    for submitted_value in submitted_values:
+        assert submitted_value not in str(error)
+        assert submitted_value not in repr(error)
+        assert submitted_value not in repr(error.args)
+        assert submitted_value not in repr(kernel.state)
+        assert submitted_value not in trace_json
 
 
 def _kernel() -> RunKernel:
@@ -442,6 +634,36 @@ def _schema_path(schema: Mapping[str, Any], *path: str) -> Any:
     for key in path:
         value = value[key]
     return value
+
+
+def _schema_paths_with_adapter_normalization(
+    value: Any,
+    expected_normalization: str,
+    *,
+    path: tuple[str | int, ...] = (),
+) -> set[tuple[str | int, ...]]:
+    matches: set[tuple[str | int, ...]] = set()
+    if isinstance(value, Mapping):
+        if value.get("adapter_normalization") == expected_normalization:
+            matches.add(path)
+        for key, child in value.items():
+            matches.update(
+                _schema_paths_with_adapter_normalization(
+                    child,
+                    expected_normalization,
+                    path=(*path, str(key)),
+                )
+            )
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            matches.update(
+                _schema_paths_with_adapter_normalization(
+                    child,
+                    expected_normalization,
+                    path=(*path, index),
+                )
+            )
+    return matches
 
 
 def test_model_adapter_requires_enabled_and_callable() -> None:
@@ -982,7 +1204,7 @@ def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
 
     assert (
         SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
-        == "search_planner_model_prompt_ag_search_planner_model_01_v2"
+        == "search_planner_model_prompt_ag_search_planner_model_01_v3"
     )
     assert (
         SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION
@@ -993,12 +1215,201 @@ def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
         prompt_packet["output_schema"]
         == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
     )
+    assert _schema_paths_with_adapter_normalization(
+        prompt_packet["output_schema"],
+        _REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
+    ) == {field[2] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS}
     assert (
         "Every enum field must use an exact value listed in output_schema. "
         "Every required object or array must satisfy its declared type and "
         "cardinality. Omit an optional field rather than inventing an unsupported "
         "value."
     ) in prompt
+    assert _REQUIRED_NARRATIVE_TEXT_PROMPT_RULE in prompt
+
+
+def test_required_narrative_text_schema_contract_is_explicit_and_exactly_scoped() -> None:
+    schema = search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    expected_schema_paths = {field[2] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS}
+
+    assert len(_REQUIRED_NARRATIVE_TEXT_FIELDS) == 7
+    assert {field[7] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS} == {
+        "QUESTION_MEANING_SUMMARY_TEXT_EMPTY",
+        "REQUESTED_OUTPUT_TEXT_EMPTY",
+        "MATERIAL_AMBIGUITY_POSTURE_TEXT_EMPTY",
+        "ANSWER_COMPONENT_USER_FACING_LABEL_TEXT_EMPTY",
+        "ANSWER_COMPONENT_USER_FACING_QUESTION_TEXT_EMPTY",
+        "RELATIONSHIP_HYPOTHESIS_SUMMARY_TEXT_EMPTY",
+        "COMPONENT_SEARCH_REQUIREMENT_SUMMARY_TEXT_EMPTY",
+    }
+    assert _schema_paths_with_adapter_normalization(
+        schema,
+        _REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
+    ) == expected_schema_paths
+
+    for _, _, schema_path, limit_key, expected_limit, _, _, _ in _REQUIRED_NARRATIVE_TEXT_FIELDS:
+        contract = _schema_path(schema, *schema_path)
+        assert contract["json_type"] == "string"
+        assert contract["required"] is True
+        assert contract["nonempty"] is True
+        assert contract["adapter_normalization"] == _REQUIRED_NARRATIVE_TEXT_NORMALIZATION
+        assert contract["max_length"] == expected_limit
+        assert search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS[limit_key] == expected_limit
+
+
+@pytest.mark.parametrize(
+    "field",
+    _REQUIRED_NARRATIVE_TEXT_FIELDS,
+    ids=tuple(field[0] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS),
+)
+def test_required_narrative_text_missing_field_owner_is_preserved(
+    field: _NarrativeTextField,
+) -> None:
+    field_name, field_path, _, _, _, expected_code, expected_rule, _ = field
+    model_output = _narrative_text_model_output(field_path)
+    _pop_narrative_text_field(model_output, field_path)
+    kernel = _kernel()
+
+    error = _model_output_error(model_output, kernel=kernel)
+
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == expected_code, field_name
+    assert error.mechanical_rule_id == expected_rule, field_name
+    _assert_rejected_narrative_text_is_not_retained(error, kernel)
+
+
+@pytest.mark.parametrize(
+    "field",
+    _REQUIRED_NARRATIVE_TEXT_FIELDS,
+    ids=tuple(field[0] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS),
+)
+@pytest.mark.parametrize(
+    ("wrong_type", "wrong_value"),
+    _NARRATIVE_WRONG_TEXT_TYPES,
+    ids=tuple(name for name, _ in _NARRATIVE_WRONG_TEXT_TYPES),
+)
+def test_required_narrative_text_wrong_json_types_fail_before_string_validation(
+    field: _NarrativeTextField,
+    wrong_type: str,
+    wrong_value: Any,
+) -> None:
+    field_name, field_path, _, _, _, _, _, _ = field
+    model_output = _narrative_text_model_output(field_path)
+    _set_narrative_text_field(model_output, field_path, deepcopy(wrong_value))
+    kernel = _kernel()
+
+    error = _model_output_error(model_output, kernel=kernel)
+
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE
+    assert error.mechanical_rule_id == "M02"
+    assert str(error) == "model-visible text value must be a JSON string", (
+        f"{field_name} ({wrong_type})"
+    )
+    _assert_rejected_narrative_text_is_not_retained(
+        error,
+        kernel,
+        submitted_values=(
+            (_NARRATIVE_TEXT_REJECTED_SENTINEL,)
+            if wrong_type in {"object", "array"}
+            else ()
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    _REQUIRED_NARRATIVE_TEXT_FIELDS,
+    ids=tuple(field[0] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS),
+)
+@pytest.mark.parametrize(
+    ("case_name", "value"),
+    _NARRATIVE_EMPTY_TEXT_CASES,
+    ids=tuple(name for name, _ in _NARRATIVE_EMPTY_TEXT_CASES),
+)
+def test_required_narrative_text_empty_after_normalization_fails_closed(
+    field: _NarrativeTextField,
+    case_name: str,
+    value: str,
+) -> None:
+    field_name, field_path, _, _, _, _, _, _ = field
+    field_key = field_path[-1]
+    assert isinstance(field_key, str)
+    model_output = _narrative_text_model_output(field_path)
+    _set_narrative_text_field(model_output, field_path, value)
+    kernel = _kernel()
+
+    error = _model_output_error(model_output, kernel=kernel)
+
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE
+    assert error.mechanical_rule_id == "M02"
+    assert str(error) == f"required field is empty: {field_key}", f"{field_name} ({case_name})"
+    _assert_rejected_narrative_text_is_not_retained(error, kernel)
+
+
+@pytest.mark.parametrize(
+    "field",
+    _REQUIRED_NARRATIVE_TEXT_FIELDS,
+    ids=tuple(field[0] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS),
+)
+def test_required_narrative_text_normalizes_before_proposal_preservation(
+    field: _NarrativeTextField,
+) -> None:
+    field_name, field_path, _, _, _, _, _, _ = field
+    model_output = _narrative_text_model_output(field_path)
+    _set_narrative_text_field(model_output, field_path, "  meaningful   normalized\ntext  ")
+
+    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+
+    assert _narrative_text_field_value(proposal, field_path) == "meaningful normalized text", field_name
+
+
+@pytest.mark.parametrize(
+    "field",
+    _REQUIRED_NARRATIVE_TEXT_FIELDS,
+    ids=tuple(field[0] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS),
+)
+def test_required_narrative_text_uses_normalized_length_boundaries(
+    field: _NarrativeTextField,
+) -> None:
+    field_name, field_path, _, limit_key, expected_limit, _, _, _ = field
+    field_key = field_path[-1]
+    assert isinstance(field_key, str)
+    assert search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS[limit_key] == expected_limit
+
+    at_limit_text = "x" * expected_limit
+    at_limit_output = _narrative_text_model_output(field_path)
+    _set_narrative_text_field(at_limit_output, field_path, f" \t{at_limit_text}\n ")
+    proposal = _adapter(FakeAskModel(json.dumps(at_limit_output))).produce(
+        _planner_input(_kernel()).to_adapter_payload()
+    )
+    assert len(at_limit_text) == expected_limit
+    assert _narrative_text_field_value(proposal, field_path) == at_limit_text, field_name
+
+    over_length_marker = f"{_NARRATIVE_TEXT_REJECTED_SENTINEL}_{field_name.replace('.', '_')}"
+    over_length_text = (
+        over_length_marker
+        * ((expected_limit + 1 + len(over_length_marker) - 1) // len(over_length_marker))
+    )[: expected_limit + 1]
+    over_limit_output = _narrative_text_model_output(field_path)
+    _set_narrative_text_field(over_limit_output, field_path, f"\n {over_length_text}\t ")
+    kernel = _kernel()
+
+    error = _model_output_error(over_limit_output, kernel=kernel)
+
+    assert len(over_length_text) == expected_limit + 1
+    assert error.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert error.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE
+    assert error.mechanical_rule_id == "M02"
+    assert str(error) == f"required field exceeds bounded length: {field_key}", field_name
+    _assert_rejected_narrative_text_is_not_retained(
+        error,
+        kernel,
+        submitted_values=(over_length_marker,),
+    )
 
 
 def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep() -> None:
