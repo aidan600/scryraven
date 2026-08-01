@@ -3,9 +3,9 @@
 ## Verified merged baseline before this change
 
 main:
-eb0a46b25939ba977bc2569a484e6ab484569934
+3e81048e455ca812e58bb985c0a4ef6540920b4b
 
-Completed merged repairs:
+## Completed merged repairs
 
 - PR #531 / 7484e3c38ba210d3303dae46fd4807c4d7c828ac
   visible output-contract parity
@@ -15,27 +15,30 @@ Completed merged repairs:
   strict model-visible text types
 - PR #535 / eb0a46b25939ba977bc2569a484e6ab484569934
   allowed_support_kinds item validation
+- PR #536 / 3e81048e455ca812e58bb985c0a4ef6540920b4b
+  seven scalar normalized-nonempty contracts
 
 ## Repair introduced by this change set
 
-- seven scalar normalized-nonempty contracts
-- prompt schema v2 to v3
+- privacy-safe predicate-level attestation
+- predicate registry v1
+- product-boundary observer v2
 - merge SHA intentionally unavailable until the PR is merged
 
 ## Remaining after this change merges
 
-- privacy-safe predicate-level failure attestation
+- bounded live SearchPlanner confirmation
+- targeted prompt calibration only if exact predicate still fails
 
 ## Live-confirmation prerequisites
 
-- this contract-completion PR merged
 - predicate-attestation PR merged
 - explicit bounded live-validation license
 
 ## SearchPlanner boundary definition of done
 
-This definition of done is a target state; it does not claim predicate attestation is
-installed or that the SearchPlanner boundary is already fully repaired.
+This definition of done is a target state until a valid live proposal enters runtime;
+this repair does not claim that bounded live confirmation has occurred.
 
 - strict JSON accepted
 - no silent type or invalid-item conversion

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -238,13 +239,22 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    factory = FakeOwnerSpecificBrokerFactory(
-        planner_outputs=["{}", None],
-    )
-    # Restore the second default Planner output without exposing a production
-    # fake. The helper constructor supplies its own bounded fixture queue.
+    rejected_value = "planner-rejected-private-value-sentinel"
     defaults = FakeOwnerSpecificBrokerFactory().planner_outputs
-    factory.planner_outputs[1] = defaults[0]
+    rejected_payload = json.loads(defaults[0])
+    rejected_payload["answer_components"][0]["partial_answer_policy"] = (
+        rejected_value
+    )
+    rejected_response = json.dumps(rejected_payload)
+    rejected_error_argument = (
+        f"unsupported partial answer policy: {rejected_value}"
+    )
+    rejected_error_digest = sha256(
+        rejected_error_argument.encode("utf-8")
+    ).hexdigest()
+    factory = FakeOwnerSpecificBrokerFactory(
+        planner_outputs=[rejected_response, defaults[0]],
+    )
 
     authorization, _, factory, packet = _execute(
         tmp_path,
@@ -260,16 +270,36 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     ]
     failed = packet["trial_results"][0]
     product_failure = failed["product_boundary_result"]
+    assert (
+        product_failure["schema_version"]
+        == "search_planner_product_boundary_observer_v2"
+    )
     assert product_failure["boundary_status"] == "FAIL"
     assert product_failure["parser_posture"] == "PASS"
     assert product_failure["validator_posture"] == "FAIL"
     assert product_failure["runtime_projection_posture"] == "NOT_REACHED"
-    assert product_failure["canonical_failure_rule_ids"] == ["M01"]
-    assert product_failure["bounded_failure_reason"].startswith(
+    assert product_failure["raw_prompt_retained"] is False
+    assert product_failure["raw_response_retained"] is False
+    assert product_failure["raw_provider_payload_retained"] is False
+    assert product_failure["canonical_failure_rule_ids"] == ["M02"]
+    assert (
+        product_failure["canonical_failure_predicate_registry_version"]
+        == "search_planner_model_adapter_predicate_registry_v1"
+    )
+    assert (
+        product_failure["canonical_failure_predicate_id"]
+        == "ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM"
+    )
+    assert product_failure["bounded_failure_reason"] == (
         "SearchPlannerModelAdapterError:"
         "failure_stage=MODEL_OUTPUT_VALIDATION:"
-        "failure_code=MISSING_REQUIRED_TOP_LEVEL_FIELDS:"
+        "failure_code=INVALID_ENUM_OR_BOUNDED_VALUE:"
+        "mechanical_rule_id=M02:"
+        "predicate_registry_version="
+        "search_planner_model_adapter_predicate_registry_v1:"
+        "predicate_id=ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM:"
         "message_sha256="
+        f"{rejected_error_digest}"
     )
     assert (
         failed["mechanical_validation_result"]["overall_posture"]
@@ -279,12 +309,35 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
         item["rule_id"]: item
         for item in failed["mechanical_validation_result"]["rule_results"]
     }
-    assert mechanical_rules["M01"]["posture"] == "FAIL"
-    assert mechanical_rules["M11"]["posture"] == "NOT_REACHED"
+    assert mechanical_rules["M02"]["posture"] == "FAIL"
+    assert mechanical_rules["M03"]["posture"] == "NOT_REACHED"
     assert failed["semantic_judgment_result"] is None
     assert failed["semantic_execution_observation"] is None
     assert failed["trial_observation"]["semantic_status"] == "NOT_RUN"
     assert failed["trial_observation"]["complete"] is False
+    failed_semantic_call_ids = {
+        authorization.prompt_experiment.trial_schedule[
+            0
+        ].primary_judge_call_id,
+        authorization.prompt_experiment.trial_schedule[
+            0
+        ].adversarial_judge_call_id,
+    }
+    assert not any(
+        call["role"] == "search_planner_semantic_judge"
+        and call["correlation_id"] in failed_semantic_call_ids
+        for call in factory.calls
+    )
+    serialized_packet = json.dumps(packet, sort_keys=True)
+    for forbidden in (
+        rejected_value,
+        rejected_response,
+        rejected_error_argument,
+        factory.calls[0]["prompt"],
+        factory.calls[0]["system_prompt"],
+    ):
+        assert forbidden not in serialized_packet
+    assert not any(_retention_flag_values(packet))
     assert len(packet["trial_results"]) == 2
     assert (
         packet["experiment_attribution_result"]["status"]
