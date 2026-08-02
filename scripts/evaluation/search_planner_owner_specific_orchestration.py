@@ -93,6 +93,8 @@ from scripts.evaluation.search_planner_semantic_judgment import (
     build_semantic_judgment_request,
 )
 
+# fmt: off
+
 OWNER_SPECIFIC_PLAN_SCHEMA_VERSION = (
     "search_planner_owner_specific_plan_v1"
 )
@@ -1587,6 +1589,73 @@ def _validate_outer_packet(
         )
 
 
+def validate_owner_specific_result_packet_metadata(
+    packet: Mapping[str, Any],
+    *,
+    authorization: OwnerSpecificLiveAuthorization,
+    repository_sha: str,
+) -> dict[str, int | str]:
+    """Validate one completed packet and project only exact safe totals.
+
+    The caller receives no trial material, route content, prompt material, or
+    provider output. This narrow projection exists for operator stop
+    attestation, where exact counts and cost are truthful only after the normal
+    result packet has passed its existing owner validation.
+    """
+
+    _validate_outer_packet(packet, authorization)
+    if packet.get("repository_sha") != repository_sha or packet.get("execution_mode") != "execute":
+        raise OwnerSpecificOrchestrationError("result packet does not bind the exact execute checkout")
+    authorization_identity = packet.get("authorization_identity")
+    if (
+        not isinstance(authorization_identity, Mapping)
+        or (authorization_identity.get("authorization_sha256") != authorization.authorization_sha256)
+        or (authorization_identity.get("policy_packet_sha256") != authorization.policy_packet_sha256)
+        or (
+            authorization_identity.get("canonical_operator_command_digest")
+            != authorization.evaluation_identity.canonical_operator_command_digest
+        )
+    ):
+        raise OwnerSpecificOrchestrationError("result packet authorization identity is invalid")
+    budget = packet.get("budget_and_cap_consumption")
+    if not isinstance(budget, Mapping):
+        raise OwnerSpecificOrchestrationError("result packet budget projection is invalid")
+
+    def count(label: str) -> int:
+        value = budget.get(label)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise OwnerSpecificOrchestrationError(f"result packet {label} is invalid")
+        return value
+
+    planner_calls = count("planner_calls_consumed")
+    primary_judge_calls = count("primary_judge_calls_consumed")
+    adversarial_judge_calls = count("adversarial_judge_calls_consumed")
+    total_broker_calls = count("attempted_call_count")
+    completed_call_count = count("completed_call_count")
+    if (
+        total_broker_calls != completed_call_count
+        or total_broker_calls != planner_calls + primary_judge_calls + adversarial_judge_calls
+        or planner_calls > authorization.planner_route.maximum_planner_calls
+        or primary_judge_calls > authorization.semantic_judge_route.maximum_primary_judge_calls
+        or adversarial_judge_calls > authorization.semantic_judge_route.maximum_adversarial_judge_calls
+        or total_broker_calls > authorization.whole_evaluation_caps.maximum_total_broker_calls
+    ):
+        raise OwnerSpecificOrchestrationError("result packet call-consumption projection is invalid")
+    observed_cost = _nonnegative_decimal(
+        budget.get("total_observed_cost_usd"),
+        "result packet observed cost",
+    )
+    if observed_cost > Decimal(authorization.whole_evaluation_caps.maximum_total_observed_cost_usd):
+        raise OwnerSpecificOrchestrationError("result packet observed cost exceeds the exact authorization")
+    return {
+        "planner_calls": planner_calls,
+        "primary_judge_calls": primary_judge_calls,
+        "adversarial_judge_calls": adversarial_judge_calls,
+        "total_broker_calls": total_broker_calls,
+        "observed_cost_usd": format(observed_cost, "f"),
+    }
+
+
 def _broker_route_authorization(
     route: PlannerRouteAuthorization
     | SemanticJudgeRouteAuthorization,
@@ -1783,4 +1852,6 @@ __all__ = [
     "SearchPlannerBrokerBridge",
     "build_plan_only_packet",
     "execute_owner_specific_evaluation",
+    "validate_owner_specific_result_packet_metadata",
 ]
+# fmt: on

@@ -12,6 +12,9 @@ from scripts.evaluation import (
 from scripts.evaluation import (
     run_search_planner_owner_specific_evaluation as cli,
 )
+from scripts.evaluation import (
+    search_planner_owner_execution_stop_attestation as attestation,
+)
 from scripts.evaluation.search_planner_owner_specific_authorization import (
     GENERIC_BROKER_TRANSPORT_FACTORY_SPEC,
     OwnerSpecificAuthorizationError,
@@ -20,13 +23,8 @@ from tests.helpers.search_planner_owner_specific_fakes import (
     authorization_bundle,
 )
 
-REPOSITORY_SHA = "".join(
-    ("3a76a3a2", "4efef5ee", "4bec2d43", "e301463b", "671f0d80")
-)
-ENTRYPOINT = (
-    "scripts/evaluation/"
-    "run_search_planner_owner_specific_evaluation.py"
-)
+REPOSITORY_SHA = "".join(("3a76a3a2", "4efef5ee", "4bec2d43", "e301463b", "671f0d80"))
+ENTRYPOINT = "scripts/evaluation/run_search_planner_owner_specific_evaluation.py"
 
 
 def test_cli_plan_only_is_zero_live_and_needs_no_addendum(
@@ -71,6 +69,37 @@ def test_cli_plan_only_is_zero_live_and_needs_no_addendum(
     assert packet["credentials_accessed"] is False
     assert packet["raw_material_retained"] is False
     assert execution_calls == []
+
+
+def test_cli_plan_only_ignores_the_private_handshake_variable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    startup_relative = "output/local/plan-only.startup.json"
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "current_repository_sha",
+        lambda: REPOSITORY_SHA,
+    )
+    monkeypatch.setenv(
+        attestation.STARTUP_HANDSHAKE_ENV_VAR,
+        attestation.STARTUP_HANDSHAKE_TRIGGER_VALUE,
+    )
+
+    assert (
+        cli.main(
+            (
+                ENTRYPOINT,
+                "--execution-mode",
+                "plan_only",
+                "--repository-sha",
+                REPOSITORY_SHA,
+            )
+        )
+        == 0
+    )
+    assert (tmp_path / startup_relative).exists() is False
 
 
 def test_cli_execute_requires_complete_authority_before_file_or_transport(
@@ -126,14 +155,8 @@ def test_cli_loads_only_the_exact_canonical_execute_invocation(
         repository_root=tmp_path,
         repository_sha=REPOSITORY_SHA,
     )
-    addendum = (
-        tmp_path
-        / authorization.evaluation_identity.live_addendum_path
-    )
-    scenario_path = (
-        tmp_path
-        / authorization.evaluation_identity.scenario_packet_path
-    )
+    addendum = tmp_path / authorization.evaluation_identity.live_addendum_path
+    scenario_path = tmp_path / authorization.evaluation_identity.scenario_packet_path
     addendum.parent.mkdir(parents=True, exist_ok=True)
     scenario_path.parent.mkdir(parents=True, exist_ok=True)
     addendum.write_text(
@@ -164,27 +187,161 @@ def test_cli_loads_only_the_exact_canonical_execute_invocation(
         "execute_owner_specific_evaluation",
         fake_execute,
     )
+    monkeypatch.delenv(
+        attestation.STARTUP_HANDSHAKE_ENV_VAR,
+        raising=False,
+    )
 
     assert cli.main(argv) == 0
     assert captured["actual_argv"] == argv
-    assert (
-        captured["authorization"]
-        .evaluation_identity.transport_factory_spec
-        == GENERIC_BROKER_TRANSPORT_FACTORY_SPEC
-    )
+    assert captured["authorization"].evaluation_identity.transport_factory_spec == GENERIC_BROKER_TRANSPORT_FACTORY_SPEC
     assert captured["scenario_packet"].sha256 == scenario.sha256
     assert json.loads(capsys.readouterr().out) == {
         "execution_mode": "execute",
         "transport_created": False,
     }
+    startup_path = tmp_path / (authorization.evaluation_identity.output_packet_path + ".startup.json")
+    assert startup_path.exists() is False
+
+
+def test_cli_execute_writes_only_the_launcher_requested_handshake(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization, scenario, argv = authorization_bundle(
+        repository_root=tmp_path,
+        repository_sha=REPOSITORY_SHA,
+    )
+    addendum_path = tmp_path / authorization.evaluation_identity.live_addendum_path
+    scenario_path = tmp_path / authorization.evaluation_identity.scenario_packet_path
+    addendum_path.parent.mkdir(parents=True, exist_ok=True)
+    scenario_path.parent.mkdir(parents=True, exist_ok=True)
+    addendum_path.write_text(
+        json.dumps(authorization.to_packet()),
+        encoding="utf-8",
+    )
+    scenario_path.write_text(
+        json.dumps(scenario.to_packet()),
+        encoding="utf-8",
+    )
+    startup_relative = authorization.evaluation_identity.output_packet_path + ".startup.json"
+    (tmp_path / startup_relative).parent.mkdir(parents=True)
+    captured: dict[str, Any] = {}
+
+    def fake_execute(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        marker = attestation.load_evaluator_entry_handshake(
+            tmp_path / startup_relative,
+            repository_root=tmp_path,
+        )
+        assert marker["stage"] == "EVALUATOR_ENTERED"
+        return {"execution_mode": "execute", "transport_created": False}
+
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "current_repository_sha",
+        lambda: REPOSITORY_SHA,
+    )
+    monkeypatch.setattr(
+        cli,
+        "execute_owner_specific_evaluation",
+        fake_execute,
+    )
+    monkeypatch.setenv(
+        attestation.STARTUP_HANDSHAKE_ENV_VAR,
+        attestation.STARTUP_HANDSHAKE_TRIGGER_VALUE,
+    )
+
+    assert cli.main(argv) == 0
+    assert captured["actual_argv"] == argv
+    assert (tmp_path / startup_relative).is_file()
+
+
+def test_cli_rejects_a_path_shaped_handshake_trigger_without_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization, _, argv = authorization_bundle(
+        repository_root=tmp_path,
+        repository_sha=REPOSITORY_SHA,
+    )
+    addendum_path = tmp_path / authorization.evaluation_identity.live_addendum_path
+    addendum_path.parent.mkdir(parents=True, exist_ok=True)
+    addendum_path.write_text(
+        json.dumps(authorization.to_packet()),
+        encoding="utf-8",
+    )
+    startup_relative = authorization.evaluation_identity.output_packet_path + ".startup.json"
+    execution_calls: list[object] = []
+
+    def forbidden_execute(**kwargs: Any) -> dict[str, Any]:
+        execution_calls.append(kwargs)
+        raise AssertionError("invalid handshake trigger reached evaluation dispatch")
+
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli, "current_repository_sha", lambda: REPOSITORY_SHA)
+    monkeypatch.setattr(cli, "execute_owner_specific_evaluation", forbidden_execute)
+    monkeypatch.setenv(
+        attestation.STARTUP_HANDSHAKE_ENV_VAR,
+        startup_relative,
+    )
+
+    with pytest.raises(attestation.OwnerExecutionStopAttestationError, match="trigger is invalid"):
+        cli.main(argv)
+
+    assert (tmp_path / startup_relative).exists() is False
+    assert execution_calls == []
+
+
+def test_cli_rejects_a_launcher_handshake_with_a_mismatched_output_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization, _, argv = authorization_bundle(
+        repository_root=tmp_path,
+        repository_sha=REPOSITORY_SHA,
+    )
+    addendum_path = tmp_path / authorization.evaluation_identity.live_addendum_path
+    addendum_path.parent.mkdir(parents=True, exist_ok=True)
+    addendum_path.write_text(
+        json.dumps(authorization.to_packet()),
+        encoding="utf-8",
+    )
+    caller_output_path = "output/local/caller-chosen-result.json"
+    mismatched_argv = (*argv[:-1], caller_output_path)
+    authorized_startup_path = tmp_path / (authorization.evaluation_identity.output_packet_path + ".startup.json")
+    caller_startup_path = tmp_path / (caller_output_path + ".startup.json")
+    execution_calls: list[object] = []
+
+    def forbidden_execute(**kwargs: Any) -> dict[str, Any]:
+        execution_calls.append(kwargs)
+        raise AssertionError("mismatched startup handshake reached evaluation dispatch")
+
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli, "current_repository_sha", lambda: REPOSITORY_SHA)
+    monkeypatch.setattr(cli, "execute_owner_specific_evaluation", forbidden_execute)
+    monkeypatch.setenv(
+        attestation.STARTUP_HANDSHAKE_ENV_VAR,
+        attestation.STARTUP_HANDSHAKE_TRIGGER_VALUE,
+    )
+
+    with pytest.raises(
+        attestation.OwnerExecutionStopAttestationError,
+        match="authority does not match",
+    ):
+        cli.main(mismatched_argv)
+
+    assert authorized_startup_path.exists() is False
+    assert caller_startup_path.exists() is False
+    assert execution_calls == []
 
 
 def test_cli_has_no_transport_selector_or_direct_provider_path() -> None:
     source = Path(cli.__file__).read_text(encoding="utf-8")
-    orchestration_source = Path(
-        "scripts/evaluation/"
-        "search_planner_owner_specific_orchestration.py"
-    ).read_text(encoding="utf-8")
+    orchestration_source = Path("scripts/evaluation/search_planner_owner_specific_orchestration.py").read_text(
+        encoding="utf-8"
+    )
 
     with pytest.raises(SystemExit):
         cli.main(
@@ -209,8 +366,7 @@ def test_compatibility_runner_execute_remains_retired() -> None:
     ):
         compatibility_runner.main(
             (
-                "scripts/evaluation/"
-                "run_analystos_model_origination_evaluation.py",
+                "scripts/evaluation/run_analystos_model_origination_evaluation.py",
                 "--evaluation-pass",
                 "planner_only",
                 "--execution-mode",
