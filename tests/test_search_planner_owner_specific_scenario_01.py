@@ -385,6 +385,51 @@ def test_rejects_invalid_typed_scenario_inputs(specification, match: str) -> Non
         build_owner_specific_scenario_packet(specification())
 
 
+@pytest.mark.parametrize(
+    "relationship_id",
+    ("regional-filing-flag", "REGIONAL-FILING-FLAG"),
+    ids=("exact", "case-insensitive"),
+)
+def test_rejects_supporting_relationship_id_collision_with_direct_record(
+    relationship_id: str,
+) -> None:
+    specification = _depth_two_spec()
+    collision = replace(
+        specification,
+        supporting_relationships=(
+            replace(
+                specification.supporting_relationships[0],
+                relationship_id=relationship_id,
+            ),
+        ),
+        user_facing_relationship=replace(
+            specification.user_facing_relationship,
+            input_ids=(relationship_id, "northstar-certificate"),
+        ),
+    )
+    with pytest.raises(
+        OwnerSpecificScenarioConstructionError,
+        match="relationship identities.*direct record identities",
+    ):
+        build_owner_specific_scenario_packet(collision)
+
+
+def test_rejects_user_facing_relationship_id_collision_with_direct_record() -> None:
+    specification = _depth_two_spec()
+    collision = replace(
+        specification,
+        user_facing_relationship=replace(
+            specification.user_facing_relationship,
+            relationship_id="regional-filing-flag",
+        ),
+    )
+    with pytest.raises(
+        OwnerSpecificScenarioConstructionError,
+        match="relationship identities.*direct record identities",
+    ):
+        build_owner_specific_scenario_packet(collision)
+
+
 def test_rejects_dangling_cycle_and_direct_source_relationships() -> None:
     specification = _depth_two_spec()
     dangling = replace(

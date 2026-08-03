@@ -485,6 +485,11 @@ def _build_relationship_requirements(
     if len({item.casefold() for item in all_ids}) != len(all_ids):
         raise OwnerSpecificScenarioConstructionError("relationship identities must be unique")
     known_records = {item.casefold() for item in direct_record_ids}
+    relationship_keys = {item.relationship_id.casefold() for item in all_relationships}
+    if relationship_keys & known_records:
+        raise OwnerSpecificScenarioConstructionError(
+            "relationship identities must not collide with direct record identities"
+        )
     relationship_by_key = {item.relationship_id.casefold(): item for item in all_relationships}
     for item in all_relationships:
         for input_id in item.input_ids:
