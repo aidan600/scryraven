@@ -100,6 +100,8 @@ FAILURE_CODES = frozenset(
         "RESULT_PATH_ALREADY_EXISTS",
         "CHILD_PROCESS_CREATE_FAILED",
         "CHILD_PROCESS_NONZERO_EXIT",
+        "CHILD_PROCESS_TIMEOUT",
+        "CHILD_PROCESS_COMMUNICATION_FAILED",
         "EVALUATOR_ENTRY_UNATTESTED",
         "EVALUATOR_HANDSHAKE_INVALID",
         "RESULT_PACKET_MISSING",
@@ -500,6 +502,169 @@ def _validate_stop_attestation_body(packet: Mapping[str, Any]) -> None:
         and cost is not None
     ):
         raise OwnerExecutionStopAttestationError("unknown cost posture cannot carry a cost value")
+    _validate_lifecycle_coherence(
+        packet,
+        counts=counts,
+        cost=cost,
+    )
+
+
+def _validate_lifecycle_coherence(
+    packet: Mapping[str, Any],
+    *,
+    counts: tuple[int | None, int | None, int | None, int | None],
+    cost: str | None,
+) -> None:
+    """Bind every public terminal packet to one reaped-child lifecycle."""
+
+    terminal_status = packet["terminal_status"]
+    failure_code = packet["bounded_failure_code"]
+    child_created = packet["child_process_created"]
+    child_exit_code = packet["child_exit_code"]
+    evaluator_posture = packet["evaluator_entry_posture"]
+    evaluator_stage = packet["highest_evaluator_stage"]
+    result_created = packet["result_packet_created"]
+    result_digest = packet["result_packet_sha256"]
+    manifest_posture = packet["manifest_consumption_posture"]
+    cost_posture = packet["cost_posture"]
+    broker_posture = packet["broker_startup_posture"]
+    exception_code = packet["exception_class_code"]
+    exception_digest = packet["exception_message_sha256"]
+    exact_result = (
+        manifest_posture == "EXACT"
+        and cost_posture == "EXACT"
+        and result_created
+        and result_digest is not None
+        and all(value is not None for value in counts)
+        and cost is not None
+    )
+
+    def require_unknown_metadata() -> None:
+        expected = "UNKNOWN_AFTER_EVALUATOR_ENTRY" if evaluator_posture == "TRUE" else "UNKNOWN_AFTER_CHILD_CREATION"
+        if (
+            evaluator_posture not in {"TRUE", "UNKNOWN"}
+            or manifest_posture != expected
+            or cost_posture != expected
+            or any(value is not None for value in counts)
+            or cost is not None
+        ):
+            raise OwnerExecutionStopAttestationError("terminal packet unknown result metadata is incoherent")
+
+    def require_pre_child_zero() -> None:
+        if (
+            child_created
+            or child_exit_code is not None
+            or evaluator_posture != "FALSE"
+            or evaluator_stage is not None
+            or result_created
+            or result_digest is not None
+            or manifest_posture != "ZERO_PRE_CHILD"
+            or cost_posture != "EXACT_ZERO_PRE_CHILD"
+            or counts != (0, 0, 0, 0)
+            or cost != "0"
+            or broker_posture == "TRUE"
+        ):
+            raise OwnerExecutionStopAttestationError("pre-child terminal packet is incoherent")
+
+    child_terminal_codes = {
+        "CHILD_PROCESS_NONZERO_EXIT",
+        "CHILD_PROCESS_TIMEOUT",
+        "CHILD_PROCESS_COMMUNICATION_FAILED",
+    }
+    result_validation_codes = {
+        "RESULT_PACKET_VALIDATION_FAILED",
+        "RESULT_PACKET_DIGEST_FAILED",
+    }
+    if child_created and child_exit_code is None:
+        raise OwnerExecutionStopAttestationError("created child requires one reaped terminal exit code")
+    if not child_created and child_exit_code is not None:
+        raise OwnerExecutionStopAttestationError("uncreated child cannot carry one terminal exit code")
+    if (failure_code == "NONE") != (terminal_status == "COMPLETE"):
+        raise OwnerExecutionStopAttestationError("terminal status and bounded failure code are incoherent")
+    if exception_code == "NONE":
+        if exception_digest is not None:
+            raise OwnerExecutionStopAttestationError("none exception class cannot carry a message digest")
+    elif exception_digest is None:
+        raise OwnerExecutionStopAttestationError("observed exception class requires one message digest")
+    if terminal_status == "COMPLETE" and exception_code != "NONE":
+        raise OwnerExecutionStopAttestationError("complete packet cannot carry one exception posture")
+    if broker_posture == "TRUE" and (not exact_result or counts[3] is None or counts[3] <= 0):
+        raise OwnerExecutionStopAttestationError("broker startup true requires one exact positive call receipt")
+    if terminal_status != "COMPLETE" and (
+        exact_result or manifest_posture == "EXACT" or cost_posture == "EXACT" or result_digest is not None
+    ):
+        raise OwnerExecutionStopAttestationError("stopped packet cannot claim exact successful result metadata")
+    if failure_code in child_terminal_codes and terminal_status != "STOPPED_AFTER_CHILD_EXIT":
+        raise OwnerExecutionStopAttestationError("child terminal failure requires after-child-exit status")
+    if failure_code in result_validation_codes and terminal_status != "STOPPED_DURING_RESULT_VALIDATION":
+        raise OwnerExecutionStopAttestationError("result validation failure requires result-validation status")
+    if failure_code == "ATTESTATION_WRITE_FAILED" and terminal_status != "STOPPED_DURING_ATTESTATION_WRITE":
+        raise OwnerExecutionStopAttestationError("attestation write failure requires attestation-write status")
+
+    if terminal_status == "COMPLETE":
+        if (
+            not child_created
+            or child_exit_code != 0
+            or evaluator_posture != "TRUE"
+            or evaluator_stage is None
+            or not exact_result
+            or exception_code != "NONE"
+            or exception_digest is not None
+            or (counts[3] is not None and counts[3] > 0 and broker_posture != "TRUE")
+        ):
+            raise OwnerExecutionStopAttestationError("complete terminal packet is incoherent")
+        return
+    if terminal_status == "STOPPED_PRE_CHILD":
+        require_pre_child_zero()
+        return
+    if terminal_status == "STOPPED_PRE_EVALUATOR_ENTRY":
+        if (
+            not child_created
+            or evaluator_posture != "UNKNOWN"
+            or evaluator_stage is not None
+            or result_created
+            or result_digest is not None
+            or broker_posture == "TRUE"
+        ):
+            raise OwnerExecutionStopAttestationError("pre-evaluator terminal packet is incoherent")
+        require_unknown_metadata()
+        return
+    if terminal_status == "STOPPED_AFTER_EVALUATOR_ENTRY":
+        if not child_created or evaluator_posture != "TRUE" or evaluator_stage is None or broker_posture == "TRUE":
+            raise OwnerExecutionStopAttestationError("after-evaluator terminal packet is incoherent")
+        require_unknown_metadata()
+        return
+    if terminal_status == "STOPPED_AFTER_CHILD_EXIT":
+        if failure_code not in child_terminal_codes or broker_posture == "TRUE":
+            raise OwnerExecutionStopAttestationError("after-child-exit terminal packet is incoherent")
+        if failure_code == "CHILD_PROCESS_NONZERO_EXIT" and child_exit_code == 0:
+            raise OwnerExecutionStopAttestationError("nonzero child failure requires one nonzero exit code")
+        require_unknown_metadata()
+        return
+    if terminal_status == "STOPPED_DURING_RESULT_VALIDATION":
+        if (
+            failure_code not in result_validation_codes
+            or not child_created
+            or evaluator_posture != "TRUE"
+            or evaluator_stage is None
+            or not result_created
+            or result_digest is not None
+            or broker_posture == "TRUE"
+        ):
+            raise OwnerExecutionStopAttestationError("result-validation terminal packet is incoherent")
+        require_unknown_metadata()
+        return
+    if terminal_status == "STOPPED_DURING_ATTESTATION_WRITE":
+        if failure_code != "ATTESTATION_WRITE_FAILED" or exception_code == "NONE" or exception_digest is None:
+            raise OwnerExecutionStopAttestationError("attestation-write terminal packet is incoherent")
+        if child_created:
+            if broker_posture == "TRUE":
+                raise OwnerExecutionStopAttestationError("attestation-write packet cannot claim broker startup")
+            require_unknown_metadata()
+        else:
+            require_pre_child_zero()
+        return
+    raise OwnerExecutionStopAttestationError("terminal status is unsupported")
 
 
 def validate_stop_attestation_packet(packet: Mapping[str, Any]) -> None:

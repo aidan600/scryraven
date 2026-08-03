@@ -84,18 +84,65 @@ class _FakeChildProcess:
         stdout: str,
         stderr: str,
         on_communicate: Callable[[], None] | None,
+        initial_exception: BaseException | None = None,
+        on_reap_communicate: Callable[[], None] | None = None,
+        reap_exception: BaseException | None = None,
+        poll_exit_code: int | None = None,
+        normal_returncode: bool = True,
+        reap_returncode: bool = True,
     ) -> None:
         self._exit_code = exit_code
         self._stdout = stdout
         self._stderr = stderr
         self._on_communicate = on_communicate
+        self._initial_exception = initial_exception
+        self._on_reap_communicate = on_reap_communicate
+        self._reap_exception = reap_exception
+        self._poll_exit_code = poll_exit_code
+        self._normal_returncode = normal_returncode
+        self._reap_returncode = reap_returncode
+        self._active = True
+        self._initial_communicated = False
+        self.reaped = False
+        self.kill_calls = 0
+        self.communicate_timeouts: list[float | None] = []
         self.returncode: int | None = None
 
-    def communicate(self) -> tuple[str, str]:
-        if self._on_communicate is not None:
-            self._on_communicate()
-        self.returncode = self._exit_code
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        self.communicate_timeouts.append(timeout)
+        if timeout is not None:
+            if self._initial_communicated:
+                raise AssertionError("fake child received more than one initial communicate call")
+            self._initial_communicated = True
+            if self._on_communicate is not None:
+                self._on_communicate()
+            if self._initial_exception is not None:
+                raise self._initial_exception
+            if self._normal_returncode:
+                self.returncode = self._exit_code
+                self._active = False
+                self.reaped = True
+            return self._stdout, self._stderr
+        if self._active and self.kill_calls == 0:
+            raise AssertionError("launcher attempted an unbounded wait for an active child")
+        if self._on_reap_communicate is not None:
+            self._on_reap_communicate()
+        if self._reap_exception is not None:
+            raise self._reap_exception
+        if self._reap_returncode:
+            self.returncode = self._exit_code
+            self._active = False
+            self.reaped = True
         return self._stdout, self._stderr
+
+    def poll(self) -> int | None:
+        if self._poll_exit_code is not None:
+            self.returncode = self._poll_exit_code
+            self._active = False
+        return self.returncode
+
+    def kill(self) -> None:
+        self.kill_calls += 1
 
 
 def _fake_child(
@@ -107,6 +154,12 @@ def _fake_child(
     stdout: str = "fictional-private-stdout-sentinel",
     stderr: str = "fictional-private-stderr-sentinel",
     on_communicate: Callable[[], None] | None = None,
+    initial_exception: BaseException | None = None,
+    on_reap_communicate: Callable[[], None] | None = None,
+    reap_exception: BaseException | None = None,
+    poll_exit_code: int | None = None,
+    normal_returncode: bool = True,
+    reap_returncode: bool = True,
 ) -> tuple[Callable[..., _FakeChildProcess], dict[str, Any]]:
     observed: dict[str, Any] = {}
 
@@ -126,12 +179,20 @@ def _fake_child(
                 argv[argv.index("--output") + 1],
                 repository_root=root,
             )
-        return _FakeChildProcess(
+        child = _FakeChildProcess(
             exit_code=exit_code,
             stdout=stdout,
             stderr=stderr,
             on_communicate=on_communicate,
+            initial_exception=initial_exception,
+            on_reap_communicate=on_reap_communicate,
+            reap_exception=reap_exception,
+            poll_exit_code=poll_exit_code,
+            normal_returncode=normal_returncode,
+            reap_returncode=reap_returncode,
         )
+        observed["child"] = child
+        return child
 
     return popen, observed
 
@@ -433,7 +494,7 @@ def test_communicate_failure_after_child_creation_preserves_unknown_state(
 ) -> None:
     root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
     private_sentinel = "fictional-private-communicate-sentinel"
-    fake_popen, _ = _fake_child(
+    fake_popen, observed = _fake_child(
         root=root,
         argv=argv,
         write_marker=False,
@@ -443,19 +504,281 @@ def test_communicate_failure_after_child_creation_preserves_unknown_state(
 
     outcome = launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
 
-    assert outcome.facts.bounded_failure_code == "UNEXPECTED_OPERATOR_EXCEPTION"
-    assert outcome.facts.terminal_status == "STOPPED_PRE_EVALUATOR_ENTRY"
-    assert outcome.facts.operator_stage == "CHILD_PROCESS_CREATED"
+    child = observed["child"]
+    assert outcome.facts.bounded_failure_code == "CHILD_PROCESS_COMMUNICATION_FAILED"
+    assert outcome.facts.terminal_status == "STOPPED_AFTER_CHILD_EXIT"
+    assert outcome.facts.operator_stage == "ATTESTATION_WRITE"
     assert outcome.facts.child_process_created is True
-    assert outcome.facts.child_exit_code is None
+    assert outcome.facts.child_exit_code == 0
     assert outcome.facts.evaluator_entry_posture == "UNKNOWN"
     assert outcome.facts.manifest_consumption_posture == "UNKNOWN_AFTER_CHILD_CREATION"
     assert outcome.facts.cost_posture == "UNKNOWN_AFTER_CHILD_CREATION"
     assert outcome.facts.planner_calls is None
     assert outcome.facts.total_broker_calls is None
     assert outcome.facts.observed_cost_usd is None
+    assert child.kill_calls == 1
+    assert child.reaped is True
+    assert child.communicate_timeouts[0] is not None
+    assert child.communicate_timeouts[1] is None
     packet = attestation.load_json_object(root / str(outcome.attestation_relative))
     assert private_sentinel not in json.dumps(packet, sort_keys=True)
+
+
+@pytest.mark.parametrize(
+    ("handshake_state", "expected_posture"),
+    (
+        ("valid", "TRUE"),
+        ("missing", "UNKNOWN"),
+        ("invalid", "UNKNOWN"),
+    ),
+)
+def test_timeout_kills_reaps_and_never_validates_a_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    handshake_state: str,
+    expected_posture: str,
+) -> None:
+    root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
+    result_path = root / authorization.evaluation_identity.output_packet_path
+    private_result = "fictional-private-timeout-result-sentinel"
+    private_stdout = "fictional-private-timeout-stdout-sentinel"
+    private_stderr = "fictional-private-timeout-stderr-sentinel"
+
+    def write_post_child_material() -> None:
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(
+            json.dumps({"fixture": private_result}),
+            encoding="utf-8",
+        )
+        if handshake_state == "invalid":
+            startup_path = root / (authorization.evaluation_identity.output_packet_path + ".startup.json")
+            startup_path.write_text(
+                '{"fixture":"fictional-private-timeout-handshake-sentinel"}',
+                encoding="utf-8",
+            )
+
+    fake_popen, observed = _fake_child(
+        root=root,
+        argv=argv,
+        exit_code=-9,
+        write_marker=handshake_state == "valid",
+        stdout=private_stdout,
+        stderr=private_stderr,
+        on_communicate=write_post_child_material,
+        initial_exception=subprocess.TimeoutExpired("synthetic-child", 1),
+    )
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        launcher,
+        "load_validated_result_metadata",
+        _raise(AssertionError("timeout path attempted result validation")),
+    )
+    production_writer = launcher.write_stop_attestation
+    writer_calls: list[object] = []
+
+    def checked_writer(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        child = observed["child"]
+        facts = kwargs["facts"]
+        assert child.reaped is True
+        assert child.returncode is not None
+        assert facts.child_exit_code == child.returncode
+        writer_calls.append((args, kwargs))
+        return production_writer(*args, **kwargs)
+
+    monkeypatch.setattr(launcher, "write_stop_attestation", checked_writer)
+
+    outcome = launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
+
+    child = observed["child"]
+    assert outcome.facts.bounded_failure_code == "CHILD_PROCESS_TIMEOUT"
+    assert outcome.facts.terminal_status == "STOPPED_AFTER_CHILD_EXIT"
+    assert outcome.facts.child_exit_code == -9
+    assert outcome.facts.evaluator_entry_posture == expected_posture
+    assert outcome.facts.result_packet_created is False
+    assert outcome.facts.result_packet_sha256 is None
+    assert outcome.facts.manifest_consumption_posture == (
+        "UNKNOWN_AFTER_EVALUATOR_ENTRY" if expected_posture == "TRUE" else "UNKNOWN_AFTER_CHILD_CREATION"
+    )
+    assert outcome.facts.cost_posture == outcome.facts.manifest_consumption_posture
+    assert outcome.facts.total_broker_calls is None
+    assert outcome.facts.observed_cost_usd is None
+    assert child.kill_calls == 1
+    assert child.reaped is True
+    assert child.communicate_timeouts[0] is not None
+    assert child.communicate_timeouts[1] is None
+    assert len(writer_calls) == 1
+    packet = attestation.load_json_object(root / str(outcome.attestation_relative))
+    rendered = "\n".join(
+        (
+            json.dumps(packet, sort_keys=True),
+            repr(outcome),
+            capsys.readouterr().out,
+        )
+    )
+    assert private_result not in rendered
+    assert private_stdout not in rendered
+    assert private_stderr not in rendered
+
+
+@pytest.mark.parametrize(
+    ("handshake_state", "expected_posture"),
+    (
+        ("valid", "TRUE"),
+        ("missing", "UNKNOWN"),
+        ("invalid", "UNKNOWN"),
+    ),
+)
+def test_communication_failure_kills_reaps_and_keeps_private_data_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    handshake_state: str,
+    expected_posture: str,
+) -> None:
+    root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
+    private_exception = "fictional-private-communication-exception-sentinel"
+    private_stdout = "fictional-private-communication-stdout-sentinel"
+    private_stderr = "fictional-private-communication-stderr-sentinel"
+
+    def write_invalid_marker() -> None:
+        if handshake_state == "invalid":
+            startup_path = root / (authorization.evaluation_identity.output_packet_path + ".startup.json")
+            startup_path.write_text(
+                '{"fixture":"fictional-private-communication-handshake-sentinel"}',
+                encoding="utf-8",
+            )
+
+    fake_popen, observed = _fake_child(
+        root=root,
+        argv=argv,
+        exit_code=-9,
+        write_marker=handshake_state == "valid",
+        stdout=private_stdout,
+        stderr=private_stderr,
+        on_communicate=write_invalid_marker,
+        initial_exception=RuntimeError(private_exception),
+    )
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+
+    outcome = launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
+
+    child = observed["child"]
+    assert outcome.facts.bounded_failure_code == "CHILD_PROCESS_COMMUNICATION_FAILED"
+    assert outcome.facts.terminal_status == "STOPPED_AFTER_CHILD_EXIT"
+    assert outcome.facts.child_exit_code == -9
+    assert outcome.facts.evaluator_entry_posture == expected_posture
+    assert outcome.facts.planner_calls is None
+    assert outcome.facts.total_broker_calls is None
+    assert outcome.facts.observed_cost_usd is None
+    assert child.kill_calls == 1
+    assert child.reaped is True
+    assert child.communicate_timeouts[0] is not None
+    assert child.communicate_timeouts[1] is None
+    packet = attestation.load_json_object(root / str(outcome.attestation_relative))
+    rendered = json.dumps(packet, sort_keys=True) + repr(outcome)
+    assert private_exception not in rendered
+    assert private_stdout not in rendered
+    assert private_stderr not in rendered
+
+
+def test_communication_failure_reaps_an_already_exited_child_without_killing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
+    fake_popen, observed = _fake_child(
+        root=root,
+        argv=argv,
+        exit_code=7,
+        write_marker=False,
+        initial_exception=RuntimeError("fictional-private-poll-sentinel"),
+        poll_exit_code=7,
+    )
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+
+    outcome = launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
+
+    child = observed["child"]
+    assert outcome.facts.bounded_failure_code == "CHILD_PROCESS_COMMUNICATION_FAILED"
+    assert outcome.facts.child_exit_code == 7
+    assert child.kill_calls == 0
+    assert child.reaped is True
+    assert child.communicate_timeouts[1] is None
+
+
+def test_remaining_authorization_budget_bounds_the_first_child_wait(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
+    assert authorization.whole_evaluation_caps.maximum_wall_clock_seconds == 300
+    fake_popen, observed = _fake_child(root=root, argv=argv)
+    monotonic_values = iter((0.0, 17.0))
+
+    def controlled_monotonic() -> float:
+        return next(monotonic_values, 17.0)
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(launcher.time, "monotonic", controlled_monotonic)
+
+    outcome = launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
+
+    assert outcome.facts.bounded_failure_code == "RESULT_PACKET_MISSING"
+    assert observed["child"].communicate_timeouts == [283.0]
+
+
+def test_consumed_authorization_budget_kills_and_reaps_without_an_initial_wait(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
+    fake_popen, observed = _fake_child(root=root, argv=argv, exit_code=-9)
+    monotonic_values = iter((0.0, 300.0))
+
+    def controlled_monotonic() -> float:
+        return next(monotonic_values, 300.0)
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(launcher.time, "monotonic", controlled_monotonic)
+
+    outcome = launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
+
+    child = observed["child"]
+    assert outcome.facts.bounded_failure_code == "CHILD_PROCESS_TIMEOUT"
+    assert outcome.facts.terminal_status == "STOPPED_AFTER_CHILD_EXIT"
+    assert child.kill_calls == 1
+    assert child.reaped is True
+    assert child.communicate_timeouts == [None]
+
+
+def test_unreaped_child_never_attempts_final_attestation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, authorization, _, argv = _launcher_fixture(tmp_path, monkeypatch)
+    fake_popen, observed = _fake_child(
+        root=root,
+        argv=argv,
+        write_marker=False,
+        normal_returncode=False,
+        reap_returncode=False,
+    )
+    writer_calls: list[object] = []
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        launcher,
+        "write_stop_attestation",
+        lambda *args, **kwargs: writer_calls.append((args, kwargs)),
+    )
+
+    with pytest.raises(launcher._ChildReapingInvariant):
+        launcher.execute_launcher(("--live-addendum", authorization.evaluation_identity.live_addendum_path))
+
+    child = observed["child"]
+    assert child.kill_calls == 1
+    assert child.reaped is False
+    assert child.returncode is None
+    assert writer_calls == []
 
 
 def test_console_discards_fake_streams(
