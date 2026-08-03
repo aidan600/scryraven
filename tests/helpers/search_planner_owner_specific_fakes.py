@@ -8,6 +8,10 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.run_authority_contract import (
+    RunContractRequirementKind,
+    RunContractStrictness,
+)
 from scripts.evaluation.model_origination_evaluation_reporting import (
     EVALUATION_REPORT_SCHEMA_VERSION,
 )
@@ -47,6 +51,13 @@ from scripts.evaluation.search_planner_owner_specific_authorization import (
     WholeEvaluationCaps,
     build_canonical_execute_command,
     build_canonical_policy_packet,
+)
+from scripts.evaluation.search_planner_owner_specific_scenario import (
+    OwnerSpecificContextRecord,
+    OwnerSpecificRouterSpecification,
+    OwnerSpecificScenarioSpecification,
+    OwnerSpecificSourceObligation,
+    build_owner_specific_scenario_packet,
 )
 from scripts.evaluation.search_planner_product_boundary_observer import (
     CANONICAL_PRODUCT_BOUNDARY_VERSION,
@@ -164,38 +175,52 @@ OPAQUE_SEMANTIC_CALL_IDS = (
 
 
 def scenario_packet() -> OwnerSpecificScenarioPacket:
-    return OwnerSpecificScenarioPacket(
-        schema_version=SCENARIO_PACKET_SCHEMA_VERSION,
-        scenario_id="fictional-owner-specific-case",
-        fictional_scenario=True,
-        normalized_fictional_user_request=SCENARIOS[0].root_query,
-        requested_mode="Balanced",
-        current_date="2026-07-30",
-        focus_academic=False,
-        force_intent_news=False,
-        include_domains=(),
-        exclude_domains=(),
-        news_preferred_domains=(),
-        router_input={
-            "intent": "general",
-            "report_type": "research_report",
-            "query_type": "factual",
-            "core_topic": "Harbor Cooperative filing route",
-            "primary_entity": "Harbor Cooperative",
-            "entities": ["Harbor Cooperative", "Northstar Bulletin 26"],
-            "is_academic": False,
-        },
-        route_projection={"route_id": "route:fictional-owner-specific"},
-        run_contract_projection={
-            "contract_id": "run-contract:fictional-owner-specific",
-            "schema_version": "run_contract_fixture_v1",
-            "synthesis_mode": "offline_fixture",
-            "selected_depth": "balanced",
-            "source_requirements": [],
-        },
-        supplied_context={
-            "context_posture": "fictional_planning_context_only",
-        },
+    return build_owner_specific_scenario_packet(
+        OwnerSpecificScenarioSpecification(
+            scenario_id="fictional-owner-specific-case",
+            fictional_scenario=True,
+            normalized_fictional_user_request=SCENARIOS[0].root_query,
+            requested_mode="Balanced",
+            current_date="2026-07-30",
+            focus_academic=False,
+            force_intent_news=False,
+            include_domains=(),
+            exclude_domains=(),
+            news_preferred_domains=(),
+            router=OwnerSpecificRouterSpecification(
+                intent="general",
+                report_type="research_report",
+                query_type="factual",
+                core_topic="Harbor Cooperative filing route",
+                primary_entity="Harbor Cooperative",
+                entities=("Harbor Cooperative", "Northstar Bulletin 26"),
+            ),
+            direct_records=(
+                OwnerSpecificContextRecord(
+                    record_id="harbor-bulletin",
+                    label="Northstar Bulletin 26",
+                    information_need="Identify the fictional filing-route constraints.",
+                    fictional_summary=(
+                        "Fictional current bulletin retained only for planning."
+                    ),
+                    source_obligation_requirement_id="harbor-bulletin-source",
+                ),
+            ),
+            source_obligations=(
+                OwnerSpecificSourceObligation(
+                    requirement_id="harbor-bulletin-source",
+                    requirement_kind=RunContractRequirementKind.OFFICIAL_CURRENT,
+                    strictness=RunContractStrictness.REQUIRED,
+                    required_source_class="fictional_official_bulletin",
+                    required_source_tier="official",
+                    required_currentness="current",
+                    satisfaction_rule="direct fictional bulletin required for planning",
+                    allowed_lower_tier_use="context_only",
+                    cannot_satisfy_with=("secondary_summary",),
+                    rationale="fictional direct-premise source obligation",
+                ),
+            ),
+        )
     )
 
 

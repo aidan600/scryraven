@@ -15,12 +15,15 @@ from scripts.evaluation.search_planner_owner_specific_authorization import (
     OwnerSpecificAuthorizationError,
     OwnerSpecificLiveAuthorization,
     TrialScheduleEntry,
+    build_canonical_execute_command,
     build_canonical_policy_packet,
     canonical_sha256,
+    validate_authorization_context,
     validate_semantic_call_id,
 )
 from scripts.evaluation.search_planner_owner_specific_orchestration import (
     OwnerSpecificOrchestrationError,
+    _kernel_with_authorized_run_contract,
     build_plan_only_packet,
     execute_owner_specific_evaluation,
 )
@@ -68,6 +71,7 @@ def _execute(
     factory: FakeOwnerSpecificBrokerFactory | None = None,
     required_observations_per_arm: int = 1,
     output_packet_path: str = "output/local/result.json",
+    captured_run_contract_projections: list[dict[str, object]] | None = None,
 ):
     authorization, scenario, argv = authorization_bundle(
         repository_root=tmp_path,
@@ -76,6 +80,19 @@ def _execute(
         output_packet_path=output_packet_path,
     )
     selected_factory = factory or FakeOwnerSpecificBrokerFactory()
+    if captured_run_contract_projections is not None:
+        def capture_authorized_kernel(scenario_packet):
+            kernel = _kernel_with_authorized_run_contract(scenario_packet)
+            captured_run_contract_projections.append(
+                dict(kernel.state.run_contract_projection)
+            )
+            return kernel
+
+        monkeypatch.setattr(
+            "scripts.evaluation.search_planner_owner_specific_orchestration."
+            "_kernel_with_authorized_run_contract",
+            capture_authorized_kernel,
+        )
     monkeypatch.setenv(
         broker_client.TOKEN_ENV_VAR,
         "synthetic-test-session",
@@ -102,10 +119,37 @@ def test_full_fake_schedule_reaches_real_product_and_every_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authorization, _, factory, packet = _execute(
+    captured_run_contract_projections: list[dict[str, object]] = []
+    authorization, scenario, factory, packet = _execute(
         tmp_path,
         monkeypatch,
+        captured_run_contract_projections=captured_run_contract_projections,
     )
+    expected_argv, _, _ = build_canonical_execute_command(
+        repository_sha=REPOSITORY_SHA,
+        live_addendum_path=authorization.evaluation_identity.live_addendum_path,
+        scenario_packet_path=authorization.evaluation_identity.scenario_packet_path,
+        output_packet_path=authorization.evaluation_identity.output_packet_path,
+        repository_root=tmp_path,
+    )
+    validate_authorization_context(
+        authorization,
+        scenario_packet=scenario,
+        repository_sha=REPOSITORY_SHA,
+        live_addendum_path=authorization.evaluation_identity.live_addendum_path,
+        scenario_packet_path=authorization.evaluation_identity.scenario_packet_path,
+        output_packet_path=authorization.evaluation_identity.output_packet_path,
+        actual_argv=expected_argv,
+        repository_root=tmp_path,
+    )
+    assert len(captured_run_contract_projections) == len(
+        authorization.prompt_experiment.trial_schedule
+    )
+    for kernel_projection in captured_run_contract_projections:
+        assert {
+            key: kernel_projection[key]
+            for key in scenario.run_contract_projection
+        } == dict(scenario.run_contract_projection)
 
     assert len(factory.factory_routes) == 2
     assert [call["role"] for call in factory.calls] == [
