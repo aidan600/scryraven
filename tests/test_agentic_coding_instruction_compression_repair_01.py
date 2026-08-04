@@ -331,15 +331,17 @@ def test_execution_surfaces_are_command_level_and_bound_product_claims() -> None
     assert "Claim forbidden:" in proof
 
 
-def test_revised_roadmap_has_one_product_pulse_sequence() -> None:
+def test_revised_roadmap_has_one_bounded_product_pulse_gate() -> None:
     roadmap = _read(ROADMAP)
 
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Validation and Execution-Surface Ergonomics Closure" in roadmap
-    assert roadmap.count("## Active Sequence And Evidence Loop") == 1
+    assert roadmap.count("## Active Decision Gate: Bounded Product Pulse") == 1
     assert roadmap.count("## Active Next:") == 0
-    assert "bounded product-level cap review" in roadmap
-    assert "one ordinary-product pulse" in roadmap
+    assert "acceptable, finite, enforceable product-level envelope" in roadmap
+    assert "one bounded ordinary-product pulse" in roadmap
+    assert "Cap repair is permitted only when" in roadmap
+    assert "This gate remains active until supported-product evidence is obtained" in roadmap
     assert "smallest owning repair" in roadmap
     assert "another product pulse" in roadmap
 

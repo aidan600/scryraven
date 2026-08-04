@@ -3,16 +3,16 @@
 Status: current
 Authority: canonical:current-roadmap
 Default-read: yes
-Applies-to: approved product and architecture sequence
+Applies-to: current strategic decision gate, result branches, and deferred direction
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 0625522da177cadd46dc22fd5c1c6cb632004852
-Update-trigger: maintainer changes priority, order, or checkpoint definition
+Update-trigger: maintainer changes the active decision gate, its result branches, or deferred strategic direction
 
 ## Purpose
 
-This document is the sole repository owner of current phase sequence. It records
-approved direction without installing a capability or licensing implementation.
-Current installed behavior is owned separately by
+This document is the sole repository owner of the current strategic decision
+gate, the branches that follow its result, and important deferred direction. It
+does not duplicate PR chronology or select work merely because another document
+or repository commit changed. Current installed behavior is owned separately by
 [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 
 ## Installed Foundation: S0
@@ -439,26 +439,25 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Sequence And Evidence Loop
+## Active Decision Gate: Bounded Product Pulse
 
-This document exclusively selects the current phase sequence:
+Establish an acceptable, finite, enforceable product-level envelope covering
+model, embedding, search, READ, retry, and dollar-bearing execution, then obtain
+one bounded ordinary-product pulse.
 
-```text
-documentation truth-spine repair
--> Project Source synchronization
--> bounded product-level cap review
--> one ordinary-product pulse
--> localization through existing front- or back-half gates
--> smallest owning repair
--> another product pulse
-```
+If the existing tracked bounded ordinary-product runner already provides that
+envelope, run the separately licensed pulse. If it does not, repair only the
+smallest ordinary-product cap surface required to make the envelope acceptable,
+then run the separately licensed pulse. Cap repair is permitted only when the
+existing runner lacks the required envelope.
 
-The documentation repair is the current repository checkpoint. Project Source
-synchronization is an external maintenance action after merge, not a second
-repository documentation phase. The cap review and every later implementation
-step require their own authority.
+This gate remains active until supported-product evidence is obtained. The gate
+does not prescribe a PR-by-PR chronology, and each implementation or live step
+requires its own authority.
 
-The default operating loop is:
+## Durable Evidence Loop
+
+The default operating loop after evidence is:
 
 ```text
 supported-product evidence
@@ -475,20 +474,6 @@ exception naming the blocker and the next product pulse. After one non-product
 infrastructure PR, its immediate successor should consume that infrastructure
 unless an architectural review explicitly changes the sequence. This is PR
 cadence, not a calendar deadline.
-
-No second repository documentation phase may intervene before the product pulse.
-
-## Product-pulse safety sequence
-
-The next repository product checkpoint must:
-
-```text
-inspect the existing tracked bounded ordinary-product runner
--> verify an acceptable enforceable worst-case envelope for model, embedding,
-   search, READ, retry, and dollar-bearing stages
--> run one bounded ordinary-product pulse when adequate
--> otherwise repair only the smallest ordinary-product cap surface
-```
 
 This roadmap does not authorize or execute that pulse. It grants no provider,
 model, embedding, search, fetch/READ, retrieval, or dollar-bearing live-call
@@ -510,16 +495,25 @@ confirmed capability gap. It is deferred, evidence-triggered, and not an
 ordinary-product blocker. Current real-model SearchPlanner behavior remains
 unproved, as does current real-model Component/Cross-Component Analyst behavior.
 
-Future SearchPlanner component evaluation is selected only if supported-product
+Future SearchPlanner component evaluation is activated only if supported-product
 evidence localizes a blocker to that boundary or an architectural review records
-an equivalent hard prerequisite. It may not independently select the next phase,
-intervene before the product pulse, or substitute for product-level cap review.
+an approved hard prerequisite. It may not independently alter the active
+decision gate, intervene before the product pulse, or substitute for product-
+level cap enforcement.
 
-## Immediate Successor
+## Deferred Evidence-Dependent Trajectory
 
-After merge, refresh the four affected ChatGPT Project Sources from merged
-repository truth, then perform the bounded product-level cap review. No second
-repository documentation phase may intervene.
+```text
+evidence-triggered front- or back-half optimization
+-> comparative provider/query calibration when warranted
+-> mode/provider policy selection
+-> MVP live shakeout and hardening
+-> release readiness
+```
+
+These are evidence-dependent directions, not promises that every step must occur
+or an immediate implementation sequence. Each requires its own applicable
+authority and may be skipped when product evidence does not warrant it.
 
 ## Optional And Post-MVP Insertions
 

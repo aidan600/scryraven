@@ -71,7 +71,7 @@ def test_guidance_map_routes_to_exclusive_temporal_owners() -> None:
     assert "../architecture/scryraven_current_state.md" in guidance_lower
     assert "../roadmap/current_roadmap.md" in guidance_lower
     assert "current installed product state" in guidance_lower
-    assert "current priority, sequence, and checkpoint definitions" in guidance_lower
+    assert "current strategic decision gate, result branches, and deferred direction" in guidance_lower
     assert "ag-multicomponent-dynamic-graph-recovery-01" not in guidance_lower
 
 

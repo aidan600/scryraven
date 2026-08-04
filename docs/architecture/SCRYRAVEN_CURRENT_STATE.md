@@ -5,15 +5,18 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 0625522da177cadd46dc22fd5c1c6cb632004852
-Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
+Runtime-audit-through: 0625522da177cadd46dc22fd5c1c6cb632004852
+Update-trigger: merged change to installed product behavior, supported boundaries, evidence classification, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
 
 This document is the sole repository owner of temporal installed-state truth.
 Code and focused tests remain the executable authority; when they disagree with
-this summary, treat the summary as stale and repair it. Deep architecture owners
-define contracts and rationale, while the roadmap owns sequence. Neither makes a
+this summary, treat the summary as stale and repair it. `Runtime-audit-through`
+identifies the latest runtime commit whose installed behavior was substantively
+reviewed; documentation-only, test-only, or workflow-only merges do not make
+that anchor stale. Deep architecture owners define contracts and rationale,
+while the roadmap owns the current strategic decision gate. Neither makes a
 capability installed merely by describing it.
 
 ## Supported Ordinary Entrypoints And Query Boundary
@@ -952,9 +955,9 @@ and this document does not license changes to that surface.
 
 ## Current Roadmap
 
-Prioritization and phase selection are owned exclusively by
-[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not
-installed-state claims. This owner does not select an acceptance slice, future
+The current strategic decision gate is owned exclusively by [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not installed-
+state claims. This owner does not select work, an acceptance slice, future
 component evaluation, or another documentation phase.
 
 ## Historical Provenance

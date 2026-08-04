@@ -92,7 +92,6 @@ READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # 
 SEARCHOS_SLICE_A_RUNTIME_SHA = "4431ff46ed1e8367b124f596ccc04e90040217b6"  # pragma: allowlist secret
 SEARCHOS_RECOVERY_RUNTIME_SHA = "540141acaaaf041bda303edd62211dd6a11958bc"  # pragma: allowlist secret
 CURRENT_STATE_RUNTIME_SHA = "0625522da177cadd46dc22fd5c1c6cb632004852"  # pragma: allowlist secret
-ROADMAP_RUNTIME_SHA = CURRENT_STATE_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
     "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
@@ -129,26 +128,26 @@ def test_guidance_links_resolve() -> None:
         assert target.is_file(), target
 
 
-def test_temporal_authorities_are_unique_and_default_read() -> None:
+def test_temporal_authorities_are_unique_and_owned_by_truth_type() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
-    for authority, owner, verified_runtime in (
-        (
-            "canonical:current-installed-state",
-            CURRENT_STATE,
-            CURRENT_STATE_RUNTIME_SHA,
-        ),
-        (
-            "canonical:current-roadmap",
-            ROADMAP,
-            ROADMAP_RUNTIME_SHA,
-        ),
+    for authority, owner in (
+        ("canonical:current-installed-state", CURRENT_STATE),
+        ("canonical:current-roadmap", ROADMAP),
     ):
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
-        assert "Status: current" in _read(owner)
-        assert "Default-read: yes" in _read(owner)
-        assert f"Verified-against-runtime: {verified_runtime}" in _read(owner)
+        text = _read(owner)
+        assert "Status: current" in text
+        assert "Default-read: yes" in text
+
+    current = _read(CURRENT_STATE)
+    roadmap = _read(ROADMAP)
+    runtime_anchor = f"Runtime-audit-through: {CURRENT_STATE_RUNTIME_SHA}"
+    assert current.count(runtime_anchor) == 1
+    assert "Verified-against-runtime:" not in current
+    assert "Runtime-audit-through:" not in roadmap
+    assert "Verified-against-runtime:" not in roadmap
 
 
 def test_concern_authorities_are_unique_current_and_default_no() -> None:
@@ -459,7 +458,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Sequence And Evidence Loop" in roadmap
+    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -525,7 +524,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Sequence And Evidence Loop" in roadmap
+    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -587,8 +586,11 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(
         PROVIDER_ROUTING
     )
-    for owner in (CURRENT_STATE, ROADMAP):
-        assert f"Verified-against-runtime: {CURRENT_STATE_RUNTIME_SHA}" in _read(owner)
+    current_owner = _read(CURRENT_STATE)
+    roadmap_owner = _read(ROADMAP)
+    assert f"Runtime-audit-through: {CURRENT_STATE_RUNTIME_SHA}" in current_owner
+    assert "Runtime-audit-through:" not in roadmap_owner
+    assert "Verified-against-runtime:" not in roadmap_owner
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
@@ -639,7 +641,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Sequence And Evidence Loop" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -729,7 +731,7 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     navigation_index = roadmap_folded.index(
         "## completed build: searchos-one-hop-navigation-product-activation-01"
     )
-    active_index = roadmap_folded.index("## active sequence and evidence loop")
+    active_index = roadmap_folded.index("## active decision gate: bounded product pulse")
     assert (
         handoff_index
         < query_index
@@ -738,7 +740,7 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
         < navigation_index
         < active_index
     )
-    assert "existing front- or back-half gates" in roadmap
+    assert "existing front- or back-half localization" in roadmap
     assert "Map may be inserted later as an optional navigation plugin" in roadmap
     assert "Exact-candidate READ, custody, and governed component semantic handoff are installed" in current
     assert "PR #517 one-hop breadcrumb navigation" in current
@@ -806,9 +808,9 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
     assert "Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01" in roadmap
-    assert "## Active Sequence And Evidence Loop" in roadmap
-    assert "one ordinary-product pulse" in roadmap
-    assert "## Product-pulse safety sequence" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "one bounded ordinary-product pulse" in roadmap
+    assert "Cap repair is permitted only when" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
 
@@ -894,7 +896,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Sequence And Evidence Loop" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -923,7 +925,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     acquisition_control = roadmap.index("## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01")
     discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
     candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
-    convergence = roadmap.index("## Active Sequence And Evidence Loop")
+    convergence = roadmap.index("## Active Decision Gate: Bounded Product Pulse")
     assert (
         s0
         < s1
@@ -978,33 +980,51 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
             assert marker not in roadmap
 
 
-def test_product_pulse_sequence_and_searchplanner_record_are_exclusive() -> None:
+def test_bounded_product_pulse_gate_and_searchplanner_record_are_exclusive() -> None:
+    roadmap_raw = _read(ROADMAP)
     roadmap = _collapsed(ROADMAP)
     tracker = _collapsed(SEARCHPLANNER_TRACKER)
     current = _collapsed(CURRENT_STATE)
 
-    sequence = (
+    active_gates = re.findall(
+        r"^## Active Decision Gate: .+$",
+        roadmap_raw,
+        re.MULTILINE,
+    )
+    assert active_gates == ["## Active Decision Gate: Bounded Product Pulse"]
+    assert "Runtime-audit-through:" not in roadmap
+    assert "Verified-against-runtime:" not in roadmap
+
+    for transient in (
         "documentation truth-spine repair",
         "Project Source synchronization",
-        "bounded product-level cap review",
-        "one ordinary-product pulse",
-        "localization through existing front- or back-half gates",
-        "smallest owning repair",
-        "another product pulse",
-    )
-    positions = [roadmap.index(item) for item in sequence]
-    assert positions == sorted(positions)
+        "## Immediate Successor",
+        "## Product-pulse safety sequence",
+    ):
+        assert transient not in roadmap
 
     for phrase in (
+        "acceptable, finite, enforceable product-level envelope",
+        "model, embedding, search, READ, retry, and dollar-bearing execution",
+        "existing tracked bounded ordinary-product runner already provides that envelope",
+        "repair only the smallest ordinary-product cap surface required",
+        "Cap repair is permitted only when the existing runner lacks the required envelope",
+        "This gate remains active until supported-product evidence is obtained",
+        "supported-product evidence",
+        "existing front- or back-half localization",
+        "smallest owning repair",
+        "another product pulse",
+        "evidence-triggered front- or back-half optimization",
+        "comparative provider/query calibration when warranted",
+        "mode/provider policy selection",
+        "MVP live shakeout and hardening",
+        "release readiness",
         "No more than three consecutive merged implementation PRs",
         "After one non-product infrastructure PR",
-        "inspect the existing tracked bounded ordinary-product runner",
-        "model, embedding, search, READ, retry, and dollar-bearing stages",
-        "otherwise repair only the smallest ordinary-product cap surface",
         "confirmed capability gap",
         "deferred, evidence-triggered",
         "not an ordinary-product blocker",
-        "No second repository documentation phase may intervene",
+        "approved hard prerequisite",
     ):
         assert phrase in roadmap
 
@@ -1014,7 +1034,7 @@ def test_product_pulse_sequence_and_searchplanner_record_are_exclusive() -> None
         "Repairs through PR #539 are complete",
         "Real-model SearchPlanner behavior remains unproved",
         "Future SearchPlanner component evaluation is evidence-triggered",
-        "Current phase selection belongs exclusively to",
+        "The current strategic decision gate belongs exclusively to",
     ):
         assert phrase in tracker
 
@@ -1064,10 +1084,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
-    assert "## Active Sequence And Evidence Loop" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
     assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
-        "## Active Sequence And Evidence Loop"
+        "## Active Decision Gate: Bounded Product Pulse"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -1102,7 +1122,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Sequence And Evidence Loop" in roadmap
+    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
@@ -1144,7 +1164,7 @@ def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries(
         "full source catalogs, source material, and complete candidate records are absent from canonical RunKernel projections",
         "`docs/roadmap/CURRENT_ROADMAP.md`",
         "do not authorize live validation",
-        "do not select the next phase",
+        "do not select work",
         "do not establish live correctness",
     ):
         assert phrase in text

@@ -14,8 +14,8 @@ history. Read only the smallest owner set needed for the task.
 2. Read this routing map.
 3. Read [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 4. Read one exact concern-specific architecture owner routed below.
-5. Read [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) only for prioritization
-   or phase selection.
+5. Read [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) only for the active
+   strategic decision gate, result branches, or deferred direction.
 6. Read validation or operator documents only when the phase licenses them and
    they are relevant.
 
@@ -30,7 +30,7 @@ must not be treated as paths in this repository.
 | Concern | Exclusive owner |
 | --- | --- |
 | Current installed product state, supported envelope, not-installed list, and explicit nonproofs | [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md) |
-| Current priority, sequence, and checkpoint definitions | [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) |
+| Current strategic decision gate, result branches, and deferred direction | [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) |
 
 Do not infer current status or next work from completed phase chronology in a
 deep contract, workflow guide, PR record, or historical document.
@@ -44,9 +44,9 @@ deep contract, workflow guide, PR record, or historical document.
 Read the register when a phase discovers a confirmed out-of-scope defect, is
 explicitly repairing a TD item, or claims in its final bundle that debt was
 added, updated, or resolved. Do not read it for every ordinary implementation
-task. It records active debt but does not choose phase order; [Current
-Roadmap](../roadmap/CURRENT_ROADMAP.md) remains the priority and sequencing
-owner. GitHub Issues may support execution but do not replace the canonical
+task. It records active debt but does not choose the strategic decision gate;
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md) remains that gate's owner.
+GitHub Issues may support execution but do not replace the canonical
 register. Do not convert speculative improvements or future features into debt
 merely because they are not implemented.
 
@@ -125,9 +125,9 @@ Model](../architecture/SEARCHOS_OPERATING_MODEL.md) after the default current-
 state owner. Additionally read [Provider Capability and Acquisition
 Routing](../architecture/PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md) only
 when provider selection, adapters, profiles, or escalation policy is in scope.
-Additionally read [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) only for
-prioritization, checkpoint selection, or phase sequencing. A narrow search task
-does not require all three supporting documents.
+Additionally read [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) only for the
+active strategic decision gate, its result branches, or deferred direction. A
+narrow search task does not require all three supporting documents.
 
 SearchOS doctrine is a concern owner, not a global workflow owner. The smallest-
 owner rule and default current-state read path remain in force.

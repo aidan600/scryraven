@@ -278,8 +278,9 @@ blocker report instead of demonstrating the behavior beside the product.
 ### Temporal truth ownership
 
 Current installed state is owned by
-`docs/architecture/SCRYRAVEN_CURRENT_STATE.md`. Current phase sequence is owned
-by `docs/roadmap/CURRENT_ROADMAP.md`. The canonical deep multi-component
+`docs/architecture/SCRYRAVEN_CURRENT_STATE.md`. The current strategic decision
+gate, its result branches, and deferred direction are owned by
+`docs/roadmap/CURRENT_ROADMAP.md`. The canonical deep multi-component
 architecture remains
 `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`.
 
