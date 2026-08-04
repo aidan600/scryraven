@@ -1,7 +1,7 @@
 """Static guards for the canonical documentation truth spine.
 
 Test path: tests/test_docs_canonical_truth_spine_01.py
-Proof class: docs_only.
+Proof class: STATIC_CONTRACT_PROOF / documentation-only.
 Validation bucket: phase_focus.
 Surface guarded: temporal owners, concern owners, routing, and stale-doctrine
 exclusion.
@@ -24,6 +24,7 @@ GUIDANCE = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 PROOF_GATE = DOCS / "codex" / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 ROADMAP = DOCS / "roadmap" / "CURRENT_ROADMAP.md"
+SEARCHPLANNER_TRACKER = DOCS / "roadmap" / "SEARCHPLANNER_REPAIR_TRACKER.md"
 TECH_DEBT = DOCS / "TECH_DEBT_REGISTER.md"
 DISCOVER_HANDOFF_BRIEF = DOCS / "roadmap" / "DISCOVER_RESULT_CANDIDATE_HANDOFF_CONVERGENCE_01.md"
 QUERY_CONVERGENCE_BRIEF = (
@@ -76,6 +77,7 @@ MARKERS = (
     "PROVIDER-CAPABILITY-ROUTING",
     "SEARCHOS-QUERY-CONVERGENCE",
     "SEARCHOS-SLICE-A-CUTOVER",
+    "SEARCHPLANNER-BOUNDARY-INTEGRITY",
 )
 QUANT_FINALIZATION_RUNTIME_SHA = "4e095c7db287ab29fbe748bdd5c24cf4f2545e15"  # pragma: allowlist secret
 QUANT_LINEAGE_RUNTIME_SHA = "bba0d16313944b742251298b4fc929b4ceb55d76"  # pragma: allowlist secret
@@ -88,9 +90,8 @@ DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pra
 QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
 SEARCHOS_SLICE_A_RUNTIME_SHA = "4431ff46ed1e8367b124f596ccc04e90040217b6"  # pragma: allowlist secret
-SEARCHOS_RECOVERY_RUNTIME_SHA = "323ed6982aa131cda0dfe7c9bded9aad68f327a1"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = SEARCHOS_RECOVERY_RUNTIME_SHA
-ROADMAP_RUNTIME_SHA = SEARCHOS_RECOVERY_RUNTIME_SHA
+SEARCHOS_RECOVERY_RUNTIME_SHA = "540141acaaaf041bda303edd62211dd6a11958bc"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = "0625522da177cadd46dc22fd5c1c6cb632004852"  # pragma: allowlist secret
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
     "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
@@ -105,19 +106,6 @@ SPECIALIST_ADMISSION_RUNTIME_SHA = "72251c126770e41a9b52105d860154d1cfef811b"  #
 LEGACY_ECONOMIST_RETIREMENT_RUNTIME_SHA = "7bbfff0f604096e3437bfdadc3dd8b81ec56b57c"  # pragma: allowlist secret
 QUANT_CONTAINMENT_RUNTIME_SHA = "5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2"  # pragma: allowlist secret
 S1_RUNTIME_SHA = "4232c4570908065adf589ec2b44be695f82fce56"  # pragma: allowlist secret
-RUNTIME_SHA_BY_CONCERN = {
-    "canonical:dprime-role-contract": QUANT_LINEAGE_RUNTIME_SHA,
-    "canonical:run-contract-semantic-loop": READ_SOURCE_CUSTODY_RUNTIME_SHA,
-    "canonical:component-dag-scheduling-concurrency": S1_RUNTIME_SHA,
-    "canonical:fap-author-boundary": QUANT_LINEAGE_RUNTIME_SHA,
-    "canonical:bounded-multicomponent-runtime": STRUCTURED_ROUTE_RUNTIME_SHA,
-    "canonical:specialist-graph-substrate": SPECIALIST_ADMISSION_RUNTIME_SHA,
-    "canonical:quantitative-specialist-product-activation": (SPECIALIST_ADMISSION_RUNTIME_SHA),
-    "canonical:quantitative-finalization-containment": (QUANT_CONTAINMENT_RUNTIME_SHA),
-    "canonical:searchos-post-analysis-recovery-and-inference-direction": (
-        SEARCHOS_RECOVERY_RUNTIME_SHA
-    ),
-}
 
 
 def _read(path: Path) -> str:
@@ -140,39 +128,38 @@ def test_guidance_links_resolve() -> None:
         assert target.is_file(), target
 
 
-def test_temporal_authorities_are_unique_and_default_read() -> None:
+def test_temporal_authorities_are_unique_and_owned_by_truth_type() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
-    for authority, owner, verified_runtime in (
-        (
-            "canonical:current-installed-state",
-            CURRENT_STATE,
-            CURRENT_STATE_RUNTIME_SHA,
-        ),
-        (
-            "canonical:current-roadmap",
-            ROADMAP,
-            ROADMAP_RUNTIME_SHA,
-        ),
+    for authority, owner in (
+        ("canonical:current-installed-state", CURRENT_STATE),
+        ("canonical:current-roadmap", ROADMAP),
     ):
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
-        assert "Status: current" in _read(owner)
-        assert "Default-read: yes" in _read(owner)
-        assert f"Verified-against-runtime: {verified_runtime}" in _read(owner)
+        text = _read(owner)
+        assert "Status: current" in text
+        assert "Default-read: yes" in text
+
+    current = _read(CURRENT_STATE)
+    roadmap = _read(ROADMAP)
+    runtime_anchor = f"Runtime-audit-through: {CURRENT_STATE_RUNTIME_SHA}"
+    assert current.count(runtime_anchor) == 1
+    assert "Verified-against-runtime:" not in current
+    assert "Runtime-audit-through:" not in roadmap
+    assert "Verified-against-runtime:" not in roadmap
 
 
 def test_concern_authorities_are_unique_current_and_default_no() -> None:
     markdown = tuple(DOCS.rglob("*.md"))
     for authority, owner in CONCERN_OWNERS.items():
         text = _read(owner)
-        verified_runtime = RUNTIME_SHA_BY_CONCERN[authority]
         claim = f"Authority: {authority}"
         claimants = [path for path in markdown if claim in _read(path)]
         assert claimants == [owner]
         assert "Status: current" in text
         assert "Default-read: no" in text
-        assert f"Verified-against-runtime: {verified_runtime}" in text
+        assert len(re.findall(r"^Verified-against-runtime: [0-9a-f]{40}$", text, re.MULTILINE)) == 1
 
 
 def test_quantitative_finalization_inventory_does_not_overclaim_saved_thread() -> None:
@@ -276,7 +263,7 @@ def test_searchos_recovery_direction_is_durable_routed_and_predecessor_is_histor
         path for path in ARCH.rglob("*.md") if authority in _read(path)
     ]
     assert active_claimants == [SEARCHOS_RECOVERY_DIRECTION]
-    assert "Status: current approved direction" in direction
+    assert "Status: current installed convergence doctrine" in direction
     assert "Default-read: no" in direction
     assert f"Verified-against-runtime: {SEARCHOS_RECOVERY_RUNTIME_SHA}" in direction
 
@@ -284,7 +271,7 @@ def test_searchos_recovery_direction_is_durable_routed_and_predecessor_is_histor
     assert SEARCHOS_RECOVERY_DIRECTION.name in guidance
     assert SEARCHOS_ITERATIVE_DIRECTION_ACTIVE.name not in guidance
     assert "Installed first-wave and iterative SearchJudgment" in guidance
-    assert "Post-analysis recovery, append-only recovery cycles" in guidance
+    assert "Installed Boundary A existing-gap recovery" in guidance
 
     assert SEARCHOS_SLICE_A.name in operating_model
     assert SEARCHOS_RECOVERY_DIRECTION.name in operating_model
@@ -301,10 +288,10 @@ def test_searchos_recovery_direction_is_durable_routed_and_predecessor_is_histor
         "Sufficiency owns whole-run posture",
         "Recovery cycles are append-only",
         "Recovery generation depth is distinct from semantic inference depth",
-        "Checkpoint-appendix expiry: completion of SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01",
+        "Checkpoint-appendix expiry: completed with SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01",
         "## Post-Checkpoint Steady-State Architecture",
         "## Current Checkpoint Implementation Appendix",
-        "This appendix governs the current implementation checkpoint",
+        "This appendix records the completed implementation boundaries",
         "It is not the durable identity of the subsystem",
     ):
         assert phrase in direction
@@ -424,7 +411,8 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             assert phrase in text
 
     assert "No provider or model changed." in containment
-    assert "No model adapter changed and no live provider transport was exercised." in current
+    assert "Current real-model SearchPlanner behavior remains unproved." in current
+    assert "`SEARCHPLANNER-BOUNDARY-INTEGRITY`" in current
 
     assert "No route-qualification repair was performed." in containment
     assert "Arbitrary-query decomposition and broad route qualification remain unproved." in current
@@ -470,7 +458,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active SearchOS MVP Sequence" in roadmap
+    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -501,8 +489,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
         assert "Fast`, `Deep`, and unsupported modes return no policy" not in text
 
     assert "no recovery adapter" in roadmap
-    assert "no component-gap recovery adapter" in current
-    assert "no component-gap recovery adapter" in strangler
+    assert "supported ordinary CLI composition still supplies no adapter" in current
 
     for phrase in (
         "Every supported mode now resolves the recovery-related slice of one shared mode-policy envelope",
@@ -515,9 +502,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
         "RunKernel's canonical EvidenceLedger and semantic component-coverage state",
         "same ordinary typed materialization handoff",
         "Sufficiency runs again from the current canonical state before FAP",
-        "blocked FAP does not call Author",
         "No live recovery composition",
-        "permanent Fast/Balanced/Deep recovery budget profile",
     ):
         assert phrase in current
 
@@ -539,7 +524,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active SearchOS MVP Sequence" in roadmap
+    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -601,8 +586,11 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(
         PROVIDER_ROUTING
     )
-    for owner in (CURRENT_STATE, ROADMAP):
-        assert f"Verified-against-runtime: {CURRENT_STATE_RUNTIME_SHA}" in _read(owner)
+    current_owner = _read(CURRENT_STATE)
+    roadmap_owner = _read(ROADMAP)
+    assert f"Runtime-audit-through: {CURRENT_STATE_RUNTIME_SHA}" in current_owner
+    assert "Runtime-audit-through:" not in roadmap_owner
+    assert "Verified-against-runtime:" not in roadmap_owner
     assert f"Runtime/test commit `{ACQUISITION_CONTROL_RUNTIME_SHA}`" in _read(ROADMAP)
 
     for text in (routing, census, current):
@@ -653,7 +641,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active SearchOS MVP Sequence" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -743,11 +731,7 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     navigation_index = roadmap_folded.index(
         "## completed build: searchos-one-hop-navigation-product-activation-01"
     )
-    active_index = roadmap_folded.index("## active searchos mvp sequence")
-    recovery_index = roadmap_folded.index(
-        "searchos-gap-recovery-and-stop-convergence-01",
-        active_index,
-    )
+    active_index = roadmap_folded.index("## active decision gate: bounded product pulse")
     assert (
         handoff_index
         < query_index
@@ -755,13 +739,12 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
         < slice_a_index
         < navigation_index
         < active_index
-        < recovery_index
     )
-    assert "initial and in-loop SearchJudgment" in roadmap
+    assert "existing front- or back-half localization" in roadmap
     assert "Map may be inserted later as an optional navigation plugin" in roadmap
     assert "Exact-candidate READ, custody, and governed component semantic handoff are installed" in current
     assert "PR #517 one-hop breadcrumb navigation" in current
-    assert "Canonical post-analysis recovery cycles" in current
+    assert "One canonical required existing-gap post-analysis cycle" in current
 
 
 def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
@@ -825,9 +808,9 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
     assert "Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01" in roadmap
-    assert "NEXT CHECKPOINT" in roadmap
-    assert "SEARCHOS-GAP-RECOVERY-AND-STOP-CONVERGENCE-01" in roadmap
-    assert "initial and in-loop SearchJudgment" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "one bounded ordinary-product pulse" in roadmap
+    assert "Cap repair is permitted only when" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
 
@@ -913,7 +896,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active SearchOS MVP Sequence" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -942,9 +925,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     acquisition_control = roadmap.index("## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01")
     discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
     candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
-    convergence = roadmap.index("## Active SearchOS MVP Sequence")
-    live = roadmap.index("SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01")
-
+    convergence = roadmap.index("## Active Decision Gate: Bounded Product Pulse")
     assert (
         s0
         < s1
@@ -963,7 +944,6 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
         < discovery_retirement
         < candidate_handoff
         < convergence
-        < live
     )
     assert "CLI/UI product composition" not in roadmap
     assert "fixed ordinary CLI product composition" in normalized
@@ -998,6 +978,74 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     for marker in MARKERS:
         if marker != "PROVIDER-CAPABILITY-ROUTING":
             assert marker not in roadmap
+
+
+def test_bounded_product_pulse_gate_and_searchplanner_record_are_exclusive() -> None:
+    roadmap_raw = _read(ROADMAP)
+    roadmap = _collapsed(ROADMAP)
+    tracker = _collapsed(SEARCHPLANNER_TRACKER)
+    current = _collapsed(CURRENT_STATE)
+
+    active_gates = re.findall(
+        r"^## Active Decision Gate: .+$",
+        roadmap_raw,
+        re.MULTILINE,
+    )
+    assert active_gates == ["## Active Decision Gate: Bounded Product Pulse"]
+    assert "Runtime-audit-through:" not in roadmap
+    assert "Verified-against-runtime:" not in roadmap
+
+    for transient in (
+        "documentation truth-spine repair",
+        "Project Source synchronization",
+        "## Immediate Successor",
+        "## Product-pulse safety sequence",
+    ):
+        assert transient not in roadmap
+
+    for phrase in (
+        "acceptable, finite, enforceable product-level envelope",
+        "model, embedding, search, READ, retry, and dollar-bearing execution",
+        "existing tracked bounded ordinary-product runner already provides that envelope",
+        "repair only the smallest ordinary-product cap surface required",
+        "Cap repair is permitted only when the existing runner lacks the required envelope",
+        "This gate remains active until supported-product evidence is obtained",
+        "supported-product evidence",
+        "existing front- or back-half localization",
+        "smallest owning repair",
+        "another product pulse",
+        "evidence-triggered front- or back-half optimization",
+        "comparative provider/query calibration when warranted",
+        "mode/provider policy selection",
+        "MVP live shakeout and hardening",
+        "release readiness",
+        "No more than three consecutive merged implementation PRs",
+        "After one non-product infrastructure PR",
+        "confirmed capability gap",
+        "deferred, evidence-triggered",
+        "not an ordinary-product blocker",
+        "approved hard prerequisite",
+    ):
+        assert phrase in roadmap
+
+    for phrase in (
+        "Status: completed repair record",
+        "Phase-selection authority: none",
+        "Repairs through PR #539 are complete",
+        "Real-model SearchPlanner behavior remains unproved",
+        "Future SearchPlanner component evaluation is evidence-triggered",
+        "The current strategic decision gate belongs exclusively to",
+    ):
+        assert phrase in tracker
+
+    for phrase in (
+        "The installed result is organized by durable capability, not PR chronology",
+        "Installed evaluator and validation infrastructure is not real-model component proof",
+        "Current real-model SearchPlanner behavior remains unproved",
+        "Current ordinary-CLI live product behavior remains unproved",
+        "OPERATOR/VALIDATION surface",
+    ):
+        assert phrase in current
 
 
 def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow() -> None:
@@ -1036,10 +1084,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
-    assert "## Active SearchOS MVP Sequence" in roadmap
+    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
     assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
-        "## Active SearchOS MVP Sequence"
+        "## Active Decision Gate: Bounded Product Pulse"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -1074,7 +1122,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active SearchOS MVP Sequence" in roadmap
+    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
@@ -1116,7 +1164,7 @@ def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries(
         "full source catalogs, source material, and complete candidate records are absent from canonical RunKernel projections",
         "`docs/roadmap/CURRENT_ROADMAP.md`",
         "do not authorize live validation",
-        "do not select the next phase",
+        "do not select work",
         "do not establish live correctness",
     ):
         assert phrase in text

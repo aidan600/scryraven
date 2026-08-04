@@ -15,7 +15,7 @@ Forbidden interpretation: passing does not prove runtime behavior, live
 validation, citation behavior, or product correctness.
 
 Test path: tests/test_agentic_coding_instruction_compression_repair_01.py
-Proof class: docs_only.
+Proof class: STATIC_CONTRACT_PROOF / documentation-only.
 Validation bucket: phase_focus.
 Surface guarded: coding-agent instruction ownership and publication posture.
 Runtime/product path guarded: repo-doc operating system only.
@@ -331,13 +331,67 @@ def test_execution_surfaces_are_command_level_and_bound_product_claims() -> None
     assert "Claim forbidden:" in proof
 
 
-def test_revised_roadmap_has_one_active_next_checkpoint() -> None:
+def test_revised_roadmap_has_one_bounded_product_pulse_gate() -> None:
     roadmap = _read(ROADMAP)
 
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Validation and Execution-Surface Ergonomics Closure" in roadmap
-    assert (
-        "## Active Next: EXACT-URL-ACQUISITION-AND-FINAL-CUSTODY-CONVERGENCE-01"
-        in roadmap
-    )
-    assert roadmap.count("## Active Next:") == 1
+    assert roadmap.count("## Active Decision Gate: Bounded Product Pulse") == 1
+    assert roadmap.count("## Active Next:") == 0
+    assert "acceptable, finite, enforceable product-level envelope" in roadmap
+    assert "one bounded ordinary-product pulse" in roadmap
+    assert "Cap repair is permitted only when" in roadmap
+    assert "This gate remains active until supported-product evidence is obtained" in roadmap
+    assert "smallest owning repair" in roadmap
+    assert "another product pulse" in roadmap
+
+
+def test_product_evidence_harness_and_testing_rules_are_durable() -> None:
+    agents = _collapsed(AGENTS)
+    playbook = _collapsed(PLAYBOOK)
+    proof = _collapsed(PROOF_GATE)
+    addenda = _collapsed(ADDENDA)
+
+    for phrase in (
+        "No more than three consecutive merged implementation PRs",
+        "After one non-product infrastructure PR",
+        "Two failed attempts in the same preparation, authorization, launcher, workspace, or harness-consumption layer",
+        "require architectural review before a third attempt",
+        "Bounded fixes may continue inside one tracked phase",
+        "third near-identical phase",
+    ):
+        assert phrase in agents
+        assert phrase in playbook
+
+    for level in ("Whole product:", "Front half:", "Back half:"):
+        assert level in proof
+    for evidence_class in (
+        "STATIC_CONTRACT_PROOF",
+        "OFFLINE_COMPONENT_PROOF",
+        "OFFLINE_PRODUCT_PATH_PROOF",
+        "MODEL_IN_THE_LOOP_COMPONENT_PROOF",
+        "LIVE_COMPONENT_PROOF",
+        "ORDINARY_CLI_PRODUCT_PROOF",
+        "FULL_PRODUCT_PROOF",
+    ):
+        assert evidence_class in proof
+
+    for field in (
+        "Observed failure or approved hard prerequisite:",
+        "Exact unresolved distinction:",
+        "Existing owners already tried:",
+        "Demonstrated observability or reproducibility gap:",
+        "Production-owned boundary injected or observed:",
+        "Named immediate consumer:",
+        "Why the dependency cannot reasonably be completed in the consumer phase:",
+        "Decision the harness will make:",
+        "Duplicate-observation check:",
+        "Maximum infrastructure PRs before consumption:",
+        "Durable ownership, integration, replacement, or removal condition:",
+        "Mandatory next supported-product checkpoint:",
+        "Forbidden interpretation:",
+    ):
+        assert field in proof
+        assert field in addenda
+
+    assert "named consumer uses it -> evidence is produced -> a product or architecture decision changes" in proof

@@ -48,6 +48,20 @@ deleted, demoted, bypassed, subordinated, or explicitly scheduled for
 retirement. Trace-, storage-, wrapper-, prompt-, or test-only adoption is not
 runtime consumption.
 
+Supported-product evidence sets implementation cadence. No more than three
+consecutive merged implementation PRs may produce no supported-product evidence
+unless the maintainer explicitly approves an exception naming the blocker and
+the next product pulse. After one non-product infrastructure PR, its immediate
+successor should consume that infrastructure unless an architectural review
+explicitly changes the sequence.
+
+Two failed attempts in the same preparation, authorization, launcher,
+workspace, or harness-consumption layer--without reaching the intended product
+or component boundary--require architectural review before a third attempt.
+Bounded fixes may continue inside one tracked phase while failures remain in one
+causal cluster. This rule prevents a third near-identical phase; it does not stop
+ordinary in-phase debugging.
+
 Detailed proof classes, harness requirements, and exception leashes are owned by
 `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` and
 `docs/codex/PHASE_BRIEF_ADDENDA.md`.

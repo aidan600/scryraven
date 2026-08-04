@@ -292,7 +292,7 @@ capability arbitration. It does not prove live correctness, arbitrary-query
 coverage, broad quantitative reasoning quality, answer quality, or production
 stability.
 
-Current phase sequence is owned exclusively by
+The current strategic decision gate is owned exclusively by
 `docs/roadmap/CURRENT_ROADMAP.md`. Capability availability and these offline
-product-path proofs do not authorize live validation, do not select the next
-phase, and do not establish live correctness.
+product-path proofs do not authorize live validation, do not select work, and do
+not establish live correctness.

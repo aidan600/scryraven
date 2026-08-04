@@ -5,15 +5,18 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Verified-against-runtime: 0719c70982b22a65f7688f2fbda5b0be8e653f95
-Update-trigger: merged change to installed product behavior, supported envelope, or explicit nonproofs
+Runtime-audit-through: 0625522da177cadd46dc22fd5c1c6cb632004852
+Update-trigger: merged change to installed product behavior, supported boundaries, evidence classification, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
 
 This document is the sole repository owner of temporal installed-state truth.
 Code and focused tests remain the executable authority; when they disagree with
-this summary, treat the summary as stale and repair it. Deep architecture owners
-define contracts and rationale, while the roadmap owns sequence. Neither makes a
+this summary, treat the summary as stale and repair it. `Runtime-audit-through`
+identifies the latest runtime commit whose installed behavior was substantively
+reviewed; documentation-only, test-only, or workflow-only merges do not make
+that anchor stale. Deep architecture owners define contracts and rationale,
+while the roadmap owns the current strategic decision gate. Neither makes a
 capability installed merely by describing it.
 
 ## Supported Ordinary Entrypoints And Query Boundary
@@ -85,6 +88,7 @@ configuration.
 | `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `GENERIC-PROVIDER-EXECUTION-BROKER-V2` | One tracked loopback-only broker consumes the versioned explicit-route `scryraven_provider_execution_request_v2` / response family. It supports Serper and Tavily `search.query` plus OpenAI `model.generate`; only the broker child parses the private environment file, while session tokens stay out of argv and the generic client persists safe completion, exact cache/reasoning/usage accounting, elapsed time, and output digest/length rather than output text. Caller/evaluator owns route selection, exact reasoning-effort authorization, prompts/query, retries/timeouts/caps, pricing, cost ceilings, interpretation, and durable sanitization. Incomplete generation is published as `REVIEW_REQUIRED / INCOMPLETE_GENERATION` before parser or semantic scoring and stops later calls. The job/profile bouncer is fail-closed, and new AnalystOS addenda select the provider-neutral brokered model-origination transport rather than the direct OpenAI fallback. |
+| `SEARCHPLANNER-BOUNDARY-INTEGRITY` | The ordinary SearchPlanner adapter exposes one visible/enforced strict JSON contract, rejects duplicate members and invalid model-visible types, validates every bounded scalar and `allowed_support_kinds` item, and attaches immutable privacy-safe stage/code/rule plus field-exact predicate identity to mechanical failure. The canonical boundary observer consumes those identities without retaining prompts, responses, provider payloads, or private material. |
 | `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the closed four-action vocabulary. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
 | `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
@@ -726,34 +730,56 @@ attribution postures. Semantic-judge provider/model selection is not installed,
 live semantic evaluation remains unlicensed, and real prompt causality remains
 unproved.
 
-## Installed Owner-Specific SearchPlanner Evaluation Orchestration
+## Installed SearchPlanner Evaluation And Validation Infrastructure
 
-The separate owner-specific SearchPlanner evaluation command now supports a
-zero-live `plan_only` mode and an `execute` mode that remains disabled unless an
-exact versioned live addendum, fictional scenario packet, canonical command,
-precommitted schedule, routes, owner identities, retention posture, and complete
-budget all agree before transport construction. The generic loopback broker is
-the sole non-test live transport. No default Planner route, semantic-judge
-route, or final prompt variant is selected, and the retired combined evaluator
-execute path remains closed.
+The installed result is organized by durable capability, not PR chronology.
 
-An authorized trial reuses the ordinary product-built Planner prompt, the real
-SearchPlanner cleaner/parser/validator/runtime projection/initial acceptance
-path, and the canonical SearchWorkPlan. Its evaluation-only dispatcher leaves
-the control bytes unchanged and may replace only the instruction prefix for an
-explicitly authorized variant. Mechanical nonpass withholds both semantic
-calls. Mechanical PASS permits two separately identified, arm-blind brokered
-semantic passes whose existing semantic owner reconciles the unchanged
-provider-neutral result. A separate sanitized execution observation records
-only broker facts.
+The ordinary SearchPlanner boundary now has visible/enforced output-contract
+parity, strict JSON parsing, strict model-visible text and collection types,
+bounded scalar and `allowed_support_kinds` validation, and immutable
+privacy-safe failure stage/code/rule plus field-exact predicate attestation. The
+product-boundary observer consumes that canonical failure identity without
+retaining prompts, responses, provider payloads, or private material.
 
-The existing experiment authority binds the complete canonical policy digest,
-and stochastic evidence is capped at `ASSOCIATION_ONLY`. Existing coordination
-and passive reporting remain non-overriding; a separate outer orchestration
-envelope carries safe execution, schedule, policy, and budget facts. This
-installation was validated only with offline fake transports. No live
-validation was performed, and no prompt-quality, real-effect, causal, provider,
-or arbitrary-query conclusion is established.
+The owner-specific evaluation stack separately owns canonical boundary
+observation, deterministic mechanical validation, provider-neutral teacher-free
+semantic judgment, experiment identity and calibrated attribution,
+non-overriding coordination, passive sanitized reporting, authorization,
+fictional scenario construction, and startup/terminal stop attestation. Scenario
+construction is deterministic and has no model, provider, broker, or ordinary
+pipeline dependency. Stop attestation records bounded lifecycle, child-reaping,
+manifest-consumption, call-count, and cost posture even when execution stops
+before a result packet.
+
+The evaluation command retains zero-live `plan_only` and default-closed
+`execute`. Execute requires an exact versioned live addendum, fictional
+scenario packet, canonical command, schedule, routes, owner identities,
+retention posture, and complete budget before transport construction. The
+generic loopback broker is the sole non-test live transport; no default Planner
+route, semantic-judge route, or final prompt variant is selected. An authorized
+trial would reuse the ordinary product-built Planner prompt, cleaner, parser,
+validator, runtime projection, initial acceptance, and SearchWorkPlan. The
+variant dispatcher may replace only the authorized instruction prefix;
+mechanical nonpass withholds semantic calls, while mechanical PASS permits two
+arm-blind semantic passes. Stochastic evidence remains capped at
+`ASSOCIATION_ONLY`.
+
+### Real-model component proof
+
+Installed evaluator and validation infrastructure is not real-model component
+proof. Current real-model SearchPlanner behavior and current real-model
+Component/Cross-Component Analyst behavior remain unproved. Broker transport,
+authorization, orchestration, scenario construction, or stop attestation does
+not establish prompt quality, semantic reliability, causal effect, provider
+quality, or arbitrary-query behavior.
+
+### Ordinary supported-product proof
+
+The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
+consumption. Current ordinary-CLI live product behavior remains unproved. No
+supported user input has been shown by this infrastructure to traverse the
+ordinary pipeline to a user-visible answer or honest blocker under a bounded live
+product envelope.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -860,6 +886,10 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 ## Not Proved
 
 - No live validation was performed.
+- Current real-model SearchPlanner behavior remains unproved.
+- Current real-model Component/Cross-Component Analyst behavior remains
+  unproved.
+- Current ordinary-CLI live product behavior remains unproved.
 - The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
   or Component/Cross-Component Analyst reliably originates its required
   semantic decomposition.
@@ -925,12 +955,10 @@ and this document does not license changes to that surface.
 
 ## Current Roadmap
 
-Prioritization and phase selection are owned exclusively by
-[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not
-installed-state claims. The immediate acceptance slice is offline/no-live
-owner-specific SearchPlanner evaluation orchestration. Any actual comparison
-still requires a separate exact maintainer-approved addendum. Comparative
-provider/query calibration remains a later durable roadmap phase.
+The current strategic decision gate is owned exclusively by [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md). Planned capabilities are not installed-
+state claims. This owner does not select work, an acceptance slice, future
+component evaluation, or another documentation phase.
 
 ## Historical Provenance
 

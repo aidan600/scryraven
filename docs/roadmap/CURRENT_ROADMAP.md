@@ -3,16 +3,16 @@
 Status: current
 Authority: canonical:current-roadmap
 Default-read: yes
-Applies-to: approved product and architecture sequence
+Applies-to: current strategic decision gate, result branches, and deferred direction
 Does-not-authorize: implementation, live calls, protected-surface changes, or claims that planned capabilities are installed
-Verified-against-runtime: 0719c70982b22a65f7688f2fbda5b0be8e653f95
-Update-trigger: maintainer changes priority, order, or checkpoint definition
+Update-trigger: maintainer changes the active decision gate, its result branches, or deferred strategic direction
 
 ## Purpose
 
-This document is the sole repository owner of current phase sequence. It records
-approved direction without installing a capability or licensing implementation.
-Current installed behavior is owned separately by
+This document is the sole repository owner of the current strategic decision
+gate, the branches that follow its result, and important deferred direction. It
+does not duplicate PR chronology or select work merely because another document
+or repository commit changed. Current installed behavior is owned separately by
 [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 
 ## Installed Foundation: S0
@@ -439,180 +439,81 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active SearchOS MVP Sequence
+## Active Decision Gate: Bounded Product Pulse
 
-[SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md) owns the
-target subsystem boundary. [SearchOS Post-Analysis Recovery And Inference
-Direction](../architecture/SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md)
-owns the detailed authority, internal implementation, inference, and retirement
-doctrine for the next checkpoint.
+Establish an acceptable, finite, enforceable product-level envelope covering
+model, embedding, search, READ, retry, and dollar-bearing execution, then obtain
+one bounded ordinary-product pulse.
 
-Query strategy, READ/source custody, initial and in-loop SearchJudgment,
-semantic handoff, bounded one-hop breadcrumb navigation, Boundary A
-existing-component/source-obligation recovery, Boundary B searched-premise
-recovery, and bounded query-centered inference are installed. SearchOS searches
-premises; Analyst/synthesis D-prime/RunKernel own inference proposal,
-validation, and admission. Recursive navigation and live validation remain
-outside the installed boundary.
+If the existing tracked bounded ordinary-product runner already provides that
+envelope, run the separately licensed pulse. If it does not, repair only the
+smallest ordinary-product cap surface required to make the envelope acceptable,
+then run the separately licensed pulse. Cap repair is permitted only when the
+existing runner lacks the required envelope.
 
-### COMPLETED CHECKPOINT
+This gate remains active until supported-product evidence is obtained. The gate
+does not prescribe a PR-by-PR chronology, and each implementation or live step
+requires its own authority.
 
-```text
-SEARCHOS-OFFLINE-INTEGRATION-GATE-01
-```
+## Durable Evidence Loop
 
-The parent gap-recovery-and-stop convergence checkpoint is complete as one
-roadmap outcome with its two ordered internal implementation PRs. PR #521 then
-installed the reusable seven-scenario fictional SearchOS/AnalystOS ordinary-path
-gate. It proves that the deterministic operating system can carry valid
-model-boundary semantic proposals; it does not prove real-model origination,
-provider/query quality, arbitrary-query behavior, or live product correctness.
-
-### COMPLETED BUILD: Internal PR A
-
-Working name:
+The default operating loop after evidence is:
 
 ```text
-SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01
+supported-product evidence
+-> existing front- or back-half localization
+-> smallest owning repair
+-> another product pulse
 ```
 
-Internal PR A installs canonical SearchOS as the sole executable
-existing-component and source-obligation recovery authority on an ordinary
-SearchOS run. One exact required gap receives one whole-run lease in Fast,
-Balanced, and Deep; the prior slot is immutable, the new cycle is append-only,
-the same component runs through the unchanged Component Analyst and component
-D-prime, exact replay creates no new work, and the cycle closes recovered or
-exhausted-insufficient before ordinary Sufficiency makes the final stop
-decision. The retained Scrutineer/deterministic derived-component route is
-Boundary B-only and cannot execute as same-component fallback. Analyst
-proposal, ContractAmendment mutation, component-graph mutation, Specialist
-behavior, and general inference remain closed.
+## Supported-product cadence
 
-Broad physical deletion of already-forward-dead AG-92B files, inert
-compatibility consumers, direct legacy tests, or historical helpers is not an
-Internal PR A merge gate. Those surfaces remain retirement targets and receive
-no new callers, fallback, or compatibility investment.
+No more than three consecutive merged implementation PRs may produce no
+supported-product evidence unless the maintainer explicitly approves an
+exception naming the blocker and the next product pulse. After one non-product
+infrastructure PR, its immediate successor should consume that infrastructure
+unless an architectural review explicitly changes the sequence. This is PR
+cadence, not a calendar deadline.
 
-### COMPLETED BUILD: Internal PR B
+This roadmap does not authorize or execute that pulse. It grants no provider,
+model, embedding, search, fetch/READ, retrieval, or dollar-bearing live-call
+authority. The deferred SearchPlanner evaluator operator is not a substitute for
+adequate product-level cap enforcement.
 
-Working name:
+## Evidence localization And Test Consumption
+
+Use the top-level whole-product, front-half, and back-half taxonomy in
+[Proof Class and Actual App Delta Gate](../codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
+Focused seams remain subordinate localization tools. A component harness does not
+become a prerequisite for a safe product pulse merely because it offers finer
+diagnosis.
+
+## Deferred Evaluator Capability Gap
+
+A combined generic-broker plus SearchPlanner-evaluator operator remains a
+confirmed capability gap. It is deferred, evidence-triggered, and not an
+ordinary-product blocker. Current real-model SearchPlanner behavior remains
+unproved, as does current real-model Component/Cross-Component Analyst behavior.
+
+Future SearchPlanner component evaluation is activated only if supported-product
+evidence localizes a blocker to that boundary or an architectural review records
+an approved hard prerequisite. It may not independently alter the active
+decision gate, intervene before the product pulse, or substitute for product-
+level cap enforcement.
+
+## Deferred Evidence-Dependent Trajectory
 
 ```text
-SEARCHOS-DERIVED-COMPONENT-RECOVERY-AND-AUTHORITY-CONVERGENCE-01
+evidence-triggered front- or back-half optimization
+-> comparative provider/query calibration when warranted
+-> mode/provider policy selection
+-> MVP live shakeout and hardening
+-> release readiness
 ```
 
-Internal PR B consumes Internal PR A. It connects Analyst-originated
-child proposals to independent ContractAmendment admission/application, exact
-parent/dependency lineage, the child's first canonical SearchOS recovery cycle,
-direct component support, graph reproof, selective resynthesis, and a changed
-final result. It installs searched recovery-generation ceilings of `Fast 0 /
-Balanced 1 / Deep 2`, semantic inference ceilings of `Fast 1 / Balanced 1 /
-Deep 2`, and replaces the active Scrutineer/deterministic derived-component
-recovery authority. The ordinary legacy dynamic-recovery runtime is deleted.
-
-The internal PRs must not be combined, and a third implementation PR must not
-be created merely for convenience. Reverting Internal PR B must leave Internal
-PR A useful and intact.
-
-### Completed Repair: AnalystOS Evaluation Responsibility Split
-
-`ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01` separates
-canonical product-boundary observation, deterministic mechanical validation,
-provider-neutral semantic judgment, experiment identity and calibrated
-attribution, non-overriding coordination, and passive reporting. The former
-evaluator retains only narrow offline preparation compatibility and cannot
-execute or manufacture a combined conclusion.
-
-The repair changes no ordinary product behavior. It installs no semantic-judge
-provider or model, licenses no live semantic evaluation, and proves no real
-prompt causality. A separately licensed bounded live-model origination phase
-must select the judge route and experimental design explicitly before any live
-use.
-
-### Completed Build: Owner-Specific SearchPlanner Evaluation Orchestration
-
-`ANALYSTOS-SEARCHPLANNER-OWNER-SPECIFIC-LIVE-ORCHESTRATION-01` installs one
-separate, default-closed SearchPlanner evaluation command. `plan_only` requires
-no addendum, credentials, or transport and reports every owner as `NOT_RUN`.
-`execute` can proceed only when one future exact addendum binds the repository,
-fictional scenario, canonical command, ordered schedule, Planner and
-semantic-judge routes, all caps, owner versions, retention policy, and the
-complete canonical experiment-policy digest before transport construction.
-
-The generic loopback broker remains the only non-test live transport. The
-installed control prompt is byte-identical; a variant can change only the
-evaluation-time instruction prefix. Trials use the real Planner product
-boundary, canonical mechanical validation, two arm-blind semantic passes, the
-existing semantic reconciliation and experiment-attribution owners, and the
-existing passive report inside a separate sanitized execution envelope.
-Stochastic evidence cannot exceed `ASSOCIATION_ONLY`.
-
-This build selects no default Planner or semantic-judge route and no final
-prompt variant. It restores no combined-evaluator execute authority, changes no
-ordinary product behavior, performs no live validation, and establishes no
-prompt-quality or causal conclusion. The next checkpoint is a separately
-authorized exact live comparison addendum; this roadmap does not authorize it.
-
-### Immediate Acceptance Slice
-
-```text
-BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
--> ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01
--> ANALYSTOS-SEARCHPLANNER-OWNER-SPECIFIC-LIVE-ORCHESTRATION-01
--> separately authorized exact live comparison
-```
-
-The broker convergence slice installs the tracked explicit-route generic broker,
-migrates Serper/Tavily search, adds OpenAI model generation, retires the
-job/profile bouncer, and moves new AnalystOS addenda to the provider-neutral
-brokered transport. Its licensed live proof is only one OpenAI smoke and one
-Serper smoke; it does not run AnalystOS Stage A/B/C. The later bounded live
-evaluation still requires its own exact addendum and measures SearchPlanner
-origination and Analyst origination separately before combined runs. This
-acceptance slice preserves the installed `Fast 0 / Balanced 1 / Deep 2`
-searched-generation limits and does not reopen sibling, branching,
-parallel-child, or multi-premise recovery.
-
-### Durable Sequence After Acceptance
-
-```text
-Internal PR A (complete)
--> Internal PR B (complete)
--> SEARCHOS-OFFLINE-INTEGRATION-GATE-01 (complete)
--> ANALYSTOS-MODEL-ORIGINATION-EVALUATION-PREP-01 (complete)
--> BROKER-GENERIC-CORE-AND-EVALUATOR-CONVERGENCE-01
--> ANALYSTOS-SEARCHPLANNER-EVALUATION-RESPONSIBILITY-SPLIT-01 (complete)
--> ANALYSTOS-SEARCHPLANNER-OWNER-SPECIFIC-LIVE-ORCHESTRATION-01 (complete)
--> separately authorized exact live comparison
--> SEARCHOS-COMPARATIVE-PROVIDER-AND-QUERY-CALIBRATION-01
--> SEARCHOS-MODE-AND-PROVIDER-POLICY-SELECTION-01
--> SEARCHOS-MVP-LIVE-SHAKEOUT-AND-HARDENING-01
--> SearchOS MVP release
-```
-
-### DEFERRED
-
-- comparative provider/query calibration;
-- permanent mode/provider selection;
-- live shakeout;
-- recursive navigation and other optional product surfaces.
-
-### RETIRED AFTER REPLACEMENT
-
-- AG-92B;
-- old component-gap recovery;
-- legacy ordinary source-class recovery execution; and
-- Scrutineer-originated dynamic recovery authority.
-
-Competing executable existing-gap authority must end during Internal PR A.
-Already-forward-dead production and compatibility surfaces may remain
-temporarily when broad deletion would enlarge that product PR without improving
-authority convergence. Active Scrutineer/deterministic derived-component
-authority ends during Internal PR B after replacement product proof. No legacy
-fallback survives canonical activation.
-
-These names record sequence only. This governance documentation is not a
-product checkpoint and activates no capability.
+These are evidence-dependent directions, not promises that every step must occur
+or an immediate implementation sequence. Each requires its own applicable
+authority and may be skipped when product evidence does not warrant it.
 
 ## Optional And Post-MVP Insertions
 

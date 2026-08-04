@@ -1,47 +1,39 @@
-# SearchPlanner Repair Tracker
+# SearchPlanner Repair Record
 
-## Verified merged baseline before this change
+Status: completed repair record
+Phase-selection authority: none
+Current decision-gate owner: [Current Roadmap](CURRENT_ROADMAP.md)
 
-main:
-3e81048e455ca812e58bb985c0a4ef6540920b4b
+## Completed disposition
 
-## Completed merged repairs
+Repairs through PR #539 are complete. This record preserves compact provenance;
+it does not independently select a next phase.
 
-- PR #531 / 7484e3c38ba210d3303dae46fd4807c4d7c828ac
-  visible output-contract parity
-- PR #533 / c983d25083b0f226e557f2b608679b5f633797d3
-  strict JSON parser boundary
-- PR #534 / a83faeca3819e672fc9cacdab827bbb0fcbad6ec
-  strict model-visible text types
-- PR #535 / eb0a46b25939ba977bc2569a484e6ab484569934
-  allowed_support_kinds item validation
-- PR #536 / 3e81048e455ca812e58bb985c0a4ef6540920b4b
-  seven scalar normalized-nonempty contracts
+- PR #530 / `ee3c9c3a`: typed model-output failure attestation.
+- PR #531 / `7484e3c3`: visible output-contract parity.
+- PR #533 / `c983d250`: strict JSON parser boundary.
+- PR #534 / `a83faeca`: strict model-visible text types.
+- PR #535 / `eb0a46b2`: `allowed_support_kinds` item validation.
+- PR #536 / `3e81048e`: scalar normalized-nonempty contracts.
+- PR #537 / `17740e9a`: privacy-safe field-exact predicate attestation.
+- PR #538 / `a1d00698`: evaluator startup and execution-stop attestation.
+- PR #539 / `0625522d`: owner-specific fictional scenario construction.
 
-## Repair introduced by this change set
+The installed result is summarized by durable capability in
+[ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md).
 
-- privacy-safe predicate-level attestation
-- predicate registry v1
-- product-boundary observer v2
-- merge SHA intentionally unavailable until the PR is merged
+## Evidence boundary
 
-## Remaining after this change merges
+Real-model SearchPlanner behavior remains unproved. Evaluator, scenario,
+authorization, broker, attestation, and contract-validation infrastructure does
+not establish prompt quality, semantic reliability, causal effect, provider
+quality, arbitrary-query behavior, or ordinary supported-product behavior.
 
-- bounded live SearchPlanner confirmation
-- targeted prompt calibration only if exact predicate still fails
+Future SearchPlanner component evaluation is evidence-triggered. It is activated
+only when supported-product evidence localizes a blocker to the SearchPlanner
+boundary or an architectural review approves an equivalent hard prerequisite.
 
-## Live-confirmation prerequisites
-
-- predicate-attestation PR merged
-- explicit bounded live-validation license
-
-## SearchPlanner boundary definition of done
-
-This definition of done is a target state until a valid live proposal enters runtime;
-this repair does not claim that bounded live confirmation has occurred.
-
-- strict JSON accepted
-- no silent type or invalid-item conversion
-- visible contract matches adapter behavior
-- valid proposal can enter runtime
-- invalid proposal reports an exact privacy-safe predicate ID
+The current strategic decision gate belongs exclusively to
+[Current Roadmap](CURRENT_ROADMAP.md). This completed record cannot select a live
+comparison, prompt calibration, evaluator continuation, or another documentation
+phase.

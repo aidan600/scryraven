@@ -240,8 +240,9 @@ Phase validation summaries must state:
 For validation routing, read
 `docs/architecture/SCRYRAVEN_CURRENT_STATE.md` for current installed state and
 `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` for proof/product-delta
-classification. Read `docs/roadmap/CURRENT_ROADMAP.md` only when phase sequence
-matters. `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` is routed support
+classification. Read `docs/roadmap/CURRENT_ROADMAP.md` only when its strategic
+decision gate or result branches matter.
+`docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` is routed support
 for its narrow quarantine classifications, not the broad current product-status
 owner.
 
