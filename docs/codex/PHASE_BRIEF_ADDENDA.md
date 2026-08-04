@@ -75,17 +75,26 @@ Absent this completed addendum, live validation remains disabled.
 
 ```text
 Harness label: PRODUCT-PATH-REGRESSION | SEAM-DIAGNOSTIC | INTEGRATION-STAGING | EXPLORATORY-PROOF-ONLY | SHADOW-PRODUCT-HARNESS
-Ordinary product path guarded or fed:
-Runtime consumer:
-Why ordinary product-path work cannot be done directly:
-Integration deadline:
-Exit condition:
-Why this is not a shadow product path:
+Observed failure or approved hard prerequisite:
+Exact unresolved distinction:
+Existing owners already tried:
+Demonstrated observability or reproducibility gap:
+Production-owned boundary injected or observed:
+Named immediate consumer:
+Why the dependency cannot reasonably be completed in the consumer phase:
+Decision the harness will make:
+Duplicate-observation check:
+Maximum infrastructure PRs before consumption:
+Durable ownership, integration, replacement, or removal condition:
+Mandatory next supported-product checkpoint:
 Forbidden interpretation:
 ```
 
-New harnesses must follow the taxonomy and expiration rule in the playbook and
-proof-class gate.
+A future consumer is valid only as the approved immediate successor, with a real
+dependency, no equivalent seam, no intervening infrastructure phase, and an
+explicit evidence target and exit condition. Installation completes nothing
+until the named consumer uses it, evidence is produced, and a product or
+architecture decision changes. Follow the proof-class gate and playbook.
 
 ## High-custody migration inventory
 

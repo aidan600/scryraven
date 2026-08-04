@@ -77,8 +77,9 @@ A phase brief is invalid if a skeptical reviewer could fairly describe the
 deliverable as "a nice collection of harnesses" and the ordinary product path
 still cannot demonstrate the claimed behavior.
 
-Current repo-doc posture: after #352 through #355, the next gate is tightly
-scoped limited live validation, not another proof layer.
+Current priority and checkpoint selection belong exclusively to
+`docs/roadmap/CURRENT_ROADMAP.md`; completed chronology in this guardrail does
+not select another proof or infrastructure phase.
 
 ## Surface vocabulary
 
@@ -99,21 +100,97 @@ Use precise vocabulary instead of the retired active phrase protected surface:
 "do not touch." When a surface is important and risky but intended to be changed,
 call it a high-custody target or strangler target, not protected.
 
-## Required proof classes
+## Three-level testing model
+
+Use this top-level taxonomy before selecting a focused seam:
+
+```text
+Whole product:
+supported user input
+-> ordinary ScryRaven pipeline
+-> user-visible result or honest blocker
+
+Front half:
+user query
+-> SearchPlanner
+-> QueryPlan
+-> SearchOS discovery and READ
+-> EvidenceLedger/canonical custody handoff
+
+Back half:
+fixed known-good canonical evidence/custody
+-> Analyst
+-> D-prime
+-> graph admission/recomputation
+-> Sufficiency
+-> FinalAnswerPacket
+-> Author
+```
+
+Focused sub-surface tests remain valid within these three levels. They are
+subordinate seams, not separate truth systems. The default repair loop is:
+
+```text
+product evidence
+-> existing half-specific localization
+-> smallest repair
+-> another product pulse
+```
+
+A component harness must not become a prerequisite for a safe product pulse
+merely because it offers more detailed information.
+
+## Required proof classes and evidence ladder
 
 Every implementation phase must identify one proof class:
 
 ```text
-docs_only
-schema_or_passive_record
-component_harness_proof
-offline_product_path_proof
-offline_product_path_projection_proof
-live_component_proof
-live_product_proof
+STATIC_CONTRACT_PROOF
+OFFLINE_COMPONENT_PROOF
+OFFLINE_PRODUCT_PATH_PROOF
+MODEL_IN_THE_LOOP_COMPONENT_PROOF
+LIVE_COMPONENT_PROOF
+ORDINARY_CLI_PRODUCT_PROOF
+FULL_PRODUCT_PROOF
 ```
 
-A phase must not use broader completion language than its proof class supports.
+The ladder is cumulative only where the executed consumer supports the stronger
+claim. Definitions:
+
+- `STATIC_CONTRACT_PROOF`: repository text, schema, or static contract checks;
+  no executed component or product behavior.
+- `OFFLINE_COMPONENT_PROOF`: one component boundary with fictional, fake, or
+  response-only dependencies; no ordinary product claim.
+- `OFFLINE_PRODUCT_PATH_PROOF`: supported user-style input through the ordinary
+  product consumer with offline dependencies and a visible result or honest
+  blocker.
+- `MODEL_IN_THE_LOOP_COMPONENT_PROOF`: a real model reaches the named component
+  boundary, without establishing live acquisition or ordinary-product behavior.
+- `LIVE_COMPONENT_PROOF`: the named component uses its explicitly licensed live
+  model, provider, search, or READ dependency; it is still not product proof.
+- `ORDINARY_CLI_PRODUCT_PROOF`: a supported input traverses the ordinary CLI
+  pipeline and produces its user-visible result or honest blocker within the
+  licensed envelope.
+- `FULL_PRODUCT_PROOF`: the claimed supported product boundary is exercised
+  end to end. One bounded CLI pulse does not by itself prove broad correctness,
+  stability, or the entire supported envelope.
+
+Compact mapping from active older terms:
+
+| Older term | Current evidence class |
+| --- | --- |
+| `docs_only`, `schema_or_passive_record` | `STATIC_CONTRACT_PROOF` |
+| `component_harness_proof` | `OFFLINE_COMPONENT_PROOF` |
+| `offline_product_path_proof` | `OFFLINE_PRODUCT_PATH_PROOF` |
+| `offline_product_path_projection_proof` | `OFFLINE_PRODUCT_PATH_PROOF`, retaining the projection qualifier and nonproofs |
+| `live_component_proof` | `LIVE_COMPONENT_PROOF`; use `MODEL_IN_THE_LOOP_COMPONENT_PROOF` when only a real-model component boundary ran |
+| `live_product_proof` | `ORDINARY_CLI_PRODUCT_PROOF` for the ordinary CLI; `FULL_PRODUCT_PROOF` only when the full claimed supported boundary ran |
+
+Do not rename runtime fields, packet schemas, persisted values, test marks, or
+historical records solely for terminology consistency. Retain a narrower legacy
+label when a coherent active-owner migration would create ambiguity, and define
+its current mapping instead. A phase must not use broader completion language
+than its evidence class supports.
 
 ## Product-Facing Progress Default
 
@@ -342,12 +419,11 @@ If the actual app delta, consumer seam, exception leash, or next product-path
 checkpoint is vague, stop and run an integration or authority-path audit before
 continuing.
 
-## Harness label and expiration rule
+## Harness prerequisite and consumption rule
 
-A harness is allowed, but only with a short leash.
-
-Every new harness, proof-only script, replay path, packet-only demo, or
-non-product scaffold must carry exactly one label:
+A harness is allowed only with a short, PR-based consumption leash. Every new
+harness, fixture, replay seam, evaluator, preparation layer, proof-only script,
+packet-only demo, or other non-product scaffold must carry exactly one label:
 
 ```text
 PRODUCT-PATH-REGRESSION
@@ -357,52 +433,49 @@ EXPLORATORY-PROOF-ONLY
 SHADOW-PRODUCT-HARNESS
 ```
 
-Definitions:
+The existing meanings remain: product-path regression guards are durable;
+seam diagnostics and integration staging are temporary; exploratory proof is
+non-product learning; and a shadow product harness is a failure unless
+explicitly authorized for review-only diagnosis.
 
-- PRODUCT-PATH-REGRESSION: a harness/test guarding behavior already consumed by
-  the ordinary product path. Healthy and durable.
-- SEAM-DIAGNOSTIC: temporary harness to isolate a failure or uncertainty at one
-  seam. Must name the product seam and exit condition.
-- INTEGRATION-STAGING: temporary scaffold used while wiring a real product path.
-  Must name ordinary runtime consumer and integration deadline.
-- EXPLORATORY-PROOF-ONLY: non-product learning/proof. Must not be named like
-  product behavior and must have integrate/reject/delete decision.
-- SHADOW-PRODUCT-HARNESS: a product-shaped alternate path beside the product.
-  Failure unless explicitly authorized for review-only diagnosis.
-
-Required fields for any new harness/proof-only script/replay path:
+Before implementation, the scaffold must establish:
 
 ```text
 Harness label:
-Ordinary product path guarded or fed:
-Runtime consumer:
-Why ordinary product-path work cannot be done directly:
-Integration deadline:
-Exit condition:
-Why this is not a shadow product path:
+Observed failure or approved hard prerequisite:
+Exact unresolved distinction:
+Existing owners already tried:
+Demonstrated observability or reproducibility gap:
+Production-owned boundary injected or observed:
+Named immediate consumer:
+Why the dependency cannot reasonably be completed in the consumer phase:
+Decision the harness will make:
+Duplicate-observation check:
+Maximum infrastructure PRs before consumption:
+Durable ownership, integration, replacement, or removal condition:
+Mandatory next supported-product checkpoint:
 Forbidden interpretation:
 ```
 
-A harness created in phase N should be consumed, converted to product-path
-regression guard, deleted, or marked historical/proof-only debt by phase N+1. It
-may survive to N+2 only if N+1 exposed a specific blocker and N+2 is explicitly
-the integration/retirement phase. After N+2, unconsumed harness/proof scaffolding
-is historical/proof-only debt by default and must not be cited as product
-progress.
+A future consumer is acceptable only when it is the approved immediate
+successor, the dependency is real, no equivalent seam exists, no second
+infrastructure phase intervenes, and the intended evidence and exit condition
+are explicit. The default maximum is one infrastructure PR before consumption;
+an architectural review must explicitly change that sequence.
 
-A good harness phase must state:
+Installation alone does not complete the objective:
 
 ```text
-This is a harness.
-It does not affect the product path yet.
-It proves this exact interface/invariant.
-The next step is integrate, fixtureize, or retire.
+named consumer uses it
+-> evidence is produced
+-> a product or architecture decision changes
 ```
 
-No component proof should get more than one or two phases without a product-path
-checkpoint. Hidden harness drift is a stop condition. The right next action is to
-integrate existing machinery, dogfood through the product path, or retire/demote
-the unused surface.
+After one non-product infrastructure PR, its immediate successor should consume,
+convert, integrate, replace, or remove the scaffold. An unconsumed scaffold is
+historical/proof-only debt and cannot be cited as product progress. Hidden
+harness drift is a stop condition. A safe product pulse does not require a
+component harness merely because the harness would offer finer diagnosis.
 
 ## Review checks
 

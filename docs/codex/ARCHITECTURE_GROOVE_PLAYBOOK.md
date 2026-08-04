@@ -458,41 +458,38 @@ A surface may be current internal authority and still have only fixture-only,
 offline-harness, or product-facing-dry-run proof. Use current product-consumed
 path only when ordinary product/CLI/app flow actually consumes the behavior.
 
-## Harness labels and expiration
+## Supported-product cadence and architectural review
+
+No more than three consecutive merged implementation PRs may produce no
+supported-product evidence unless the maintainer explicitly approves an
+exception naming the blocker and the next product pulse. After one non-product
+infrastructure PR, its immediate successor should consume that infrastructure
+unless an architectural review explicitly changes the sequence. Cadence is
+measured in merged PRs, not calendar time.
+
+Two failed attempts in the same preparation, authorization, launcher, workspace,
+or harness-consumption layer without reaching the intended product or component
+boundary require architectural review before a third attempt. Bounded fixes may
+continue inside one tracked phase while failures remain within one causal
+cluster. The stop prevents a third near-identical phase, not ordinary in-phase
+debugging.
+
+## Harness labels and consumption
 
 Every new harness, proof-only script, replay path, packet-only demo, or
-non-product scaffold must carry exactly one label:
+non-product scaffold must carry exactly one existing label:
+`PRODUCT-PATH-REGRESSION`, `SEAM-DIAGNOSTIC`, `INTEGRATION-STAGING`,
+`EXPLORATORY-PROOF-ONLY`, or `SHADOW-PRODUCT-HARNESS`.
 
-- **PRODUCT-PATH-REGRESSION:** a harness/test guarding behavior already consumed
-  by the ordinary product path. Healthy and durable.
-- **SEAM-DIAGNOSTIC:** a temporary harness to isolate a failure or uncertainty at
-  one seam. Must name the product seam and exit condition.
-- **INTEGRATION-STAGING:** a temporary scaffold used while wiring a real product
-  path. Must name the ordinary runtime consumer and integration deadline.
-- **EXPLORATORY-PROOF-ONLY:** non-product learning/proof. Must not be named like
-  product behavior and must have an integrate/reject/delete decision.
-- **SHADOW-PRODUCT-HARNESS:** a product-shaped alternate path beside the product.
-  This is failure unless explicitly authorized for review-only diagnosis.
-
-Required fields:
-
-```text
-Harness label:
-Ordinary product path guarded or fed:
-Runtime consumer:
-Why ordinary product-path work cannot be done directly:
-Integration deadline:
-Exit condition:
-Why this is not a shadow product path:
-Forbidden interpretation:
-```
-
-A harness created in phase N should be consumed, converted to a product-path
-regression guard, deleted, or marked historical/proof-only debt by phase N+1. It
-may survive to N+2 only if N+1 exposed a specific blocker and N+2 is explicitly
-the integration/retirement phase. After N+2, unconsumed harness/proof scaffolding
-is historical/proof-only debt by default and must not be cited as product
-progress.
+The complete prerequisite inventory is owned by
+`PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` and templated in
+`PHASE_BRIEF_ADDENDA.md`. A future consumer is valid only as the approved
+immediate successor, when the dependency is real, no equivalent seam exists, no
+second infrastructure PR intervenes, and the evidence target and exit condition
+are explicit. Installation alone is not completion: the named consumer must use
+the scaffold, produce evidence, and change a product or architecture decision.
+Otherwise the scaffold is historical/proof-only debt and cannot be cited as
+product progress.
 
 ## AG-89+ RunAuthority work
 

@@ -57,9 +57,9 @@ merely because they are not implemented.
 | Build / Proof / Repair workflow, Path B, phase sizing, convergence, validation-job separation, acceptance ownership, review loop, and final bundle | [Architecture Groove Playbook](ARCHITECTURE_GROOVE_PLAYBOOK.md) |
 | Execution profiles, causal clusters, checkpoints, surface licensing, and delegation posture | [Agentic Coding Operating Profile](AGENTIC_CODING_OPERATING_PROFILE.md) |
 | Compact phase prompt | [Phase Brief Template](PHASE_BRIEF_TEMPLATE.md) |
-| Conditional proof, live, harness, migration, or delegation fields | [Phase Brief Addenda](PHASE_BRIEF_ADDENDA.md) |
+| Conditional proof, live, harness-consumption, migration, or delegation fields | [Phase Brief Addenda](PHASE_BRIEF_ADDENDA.md) |
 | Bundled internal milestones | [Execution Plan Template](EXECUTION_PLAN_TEMPLATE.md) |
-| Proof class, product delta, consumer seam, and nonproofs | [Proof Class and Actual App Delta Gate](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md) |
+| Proof class, three-level testing model, product delta, consumer seam, harness consumption, and nonproofs | [Proof Class and Actual App Delta Gate](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md) |
 | Test classification and promotion | [Test Classification Library](TEST_CLASSIFICATION_LIBRARY.md) |
 | Validation scope and commands | [Validation Buckets](VALIDATION_BUCKETS.md) and [CI Validation Ergonomics](CI_VALIDATION_ERGONOMICS.md) |
 | Windows sandbox, Git, push, and draft PR | [Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md) |
