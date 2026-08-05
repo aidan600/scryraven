@@ -441,19 +441,24 @@ the installed acquisition and custody owners.
 
 ## Active Decision Gate: Bounded Product Pulse
 
-Establish an acceptable, finite, enforceable product-level envelope covering
-model, embedding, search, READ, retry, and dollar-bearing execution, then obtain
-one bounded ordinary-product pulse.
+The acceptable finite product-level envelope is now installed on the supported
+public CLI aliases as the opt-in `public-cli-v1` profile. One product-owned
+`RunConfig.cap_policy` governs physical model, embedding, search, and READ
+attempts; conservative token and dollar exposure; zero retry/fallback posture;
+and the whole-run deadline. Offline product-path proof reaches the ordinary
+pipeline and all four physical families with fake transports. It is not live
+supported-product evidence.
 
-If the existing tracked bounded ordinary-product runner already provides that
-envelope, run the separately licensed pulse. If it does not, repair only the
-smallest ordinary-product cap surface required to make the envelope acceptable,
-then run the separately licensed pulse. Cap repair is permitted only when the
-existing runner lacks the required envelope.
+The active step is now exactly one separately licensed bounded public-CLI pulse:
 
-This gate remains active until supported-product evidence is obtained. The gate
-does not prescribe a PR-by-PR chronology, and each implementation or live step
-requires its own authority.
+```text
+PRODUCT-PULSE-PUBLIC-CLI-MATH-ISCLOSE-01
+```
+
+The gate remains active until that pulse produces supported-product evidence.
+No additional documentation, evaluator, harness, authorization, or
+infrastructure phase may intervene. The pulse retains its own live-call and
+current-official-pricing license requirements; this roadmap does not grant them.
 
 ## Durable Evidence Loop
 

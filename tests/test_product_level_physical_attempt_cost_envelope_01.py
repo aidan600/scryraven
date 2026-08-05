@@ -1076,6 +1076,39 @@ def test_unbounded_cli_config_keeps_the_default_no_policy_posture() -> None:
     assert config.cap_policy is None
 
 
+def test_unbounded_cli_does_not_render_a_bounded_cap_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    expected = RunCapExceeded("fixture_unbounded_exception")
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_logger",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        lambda _log: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "run_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(expected),
+    )
+
+    with pytest.raises(RunCapExceeded) as exc:
+        compatibility_cli.main([_ISCLOSE_QUERY])
+
+    assert exc.value is expected
+    assert "bounded_product_cli_terminal_v1" not in capsys.readouterr().out
+
+
 def test_incomplete_bounded_cli_configuration_reports_zero_attempt_posture(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

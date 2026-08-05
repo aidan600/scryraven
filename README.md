@@ -103,6 +103,35 @@ python -m proplex "your query" --mode Balanced
 
 Use `python -m scryraven --help` for all CLI options. `python -m proplex --help` is preserved for existing scripts.
 
+#### Opt-in bounded product posture
+
+The shared CLI exposes one product-owned physical-attempt envelope:
+
+```powershell
+python -m scryraven "your query" --mode Balanced --bounded-product-profile public-cli-v1
+```
+
+The compatibility alias is equivalent:
+
+```powershell
+python -m proplex "your query" --mode Balanced --bounded-product-profile public-cli-v1
+```
+
+This posture still makes real model, embedding, search, and READ requests when
+run with configured credentials. It directly invokes ordinary `run_pipeline()`,
+but supplies a single run-scoped ledger that reserves each physical request
+before dispatch, disables retries and endpoint fallback, clips transport
+timeouts to the whole-run deadline, and enforces conservative token and dollar
+ceilings. It prints one sanitized JSON result or terminal and suppresses the
+ordinary output, log, policy, knowledge-base, and database persistence paths for
+that run. `--output`, verbose diagnostics, and the special operator/status modes
+are intentionally incompatible with this posture.
+
+Bounded mode does not load `.env`; credentials for an explicitly authorized
+live run must already be present in the process environment. The profile's
+immutable pricing values are conservative admission ceilings, not billing
+estimates or a claim that current provider prices have been verified.
+
 ### Retired UI Entrypoint
 
 Executing `python app.py` now prints a retirement notice and exits nonzero. It does not launch or redirect to another interface.

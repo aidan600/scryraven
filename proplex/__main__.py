@@ -36,6 +36,13 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+
+def _argv_selects_bounded_profile(raw_argv: list[str]) -> bool:
+    return any(
+        value == "--bounded-product-profile" or value.startswith("--bounded-product-profile=") for value in raw_argv
+    )
+
+
 # Ensure the project root is on sys.path when run as "python -m proplex" from
 # outside the repo root (e.g. installed as a script).
 _HERE = Path(__file__).resolve().parent
@@ -62,7 +69,16 @@ from core.product_model_route_config import (  # noqa: E402
     initialize_product_model_route_config,
 )
 
-PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = ProductModelRouteConfigInitialization()
+_MODULE_IMPORT_ARGV = list(sys.argv[1:])
+_PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED = not _argv_selects_bounded_profile(_MODULE_IMPORT_ARGV)
+PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = (
+    initialize_product_model_route_config(
+        _MODULE_IMPORT_ARGV,
+        load_dotenv_func=load_dotenv,
+    )
+    if _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED
+    else ProductModelRouteConfigInitialization()
+)
 
 import core.pipeline_orchestrator as pipeline_orchestrator  # noqa: E402
 from core.bounded_product_profile import (  # noqa: E402
@@ -1093,14 +1109,16 @@ def main(
     raw_argv = sys.argv[1:] if argv is None else list(argv)
     args = _parse_args(raw_argv)
     bounded = bool(args.bounded_product_profile)
-    global PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION
+    global PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION, _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED
     if bounded:
         PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = ProductModelRouteConfigInitialization()
-    elif type(PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION) is (ProductModelRouteConfigInitialization):
+        _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED = False
+    elif not _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED:
         PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = initialize_product_model_route_config(
             raw_argv,
             load_dotenv_func=load_dotenv,
         )
+        _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED = True
     log = _build_logger(args.verbose, persistent=False) if bounded else _build_logger(args.verbose)
 
     if args.source_of_record_recovery_provider_decision:
@@ -1183,14 +1201,16 @@ def main(
     try:
         outcome = run_pipeline(config, deps, status, accumulator)
     except RunCapExceeded as exc:
-        _print_bounded_payload(
-            _bounded_terminal_payload(
-                entrypoint=entrypoint,
-                exc=exc,
-                config=config,
+        if bounded:
+            _print_bounded_payload(
+                _bounded_terminal_payload(
+                    entrypoint=entrypoint,
+                    exc=exc,
+                    config=config,
+                )
             )
-        )
-        return 2
+            return 2
+        raise
     except PipelineError as exc:
         if bounded:
             _print_bounded_payload(

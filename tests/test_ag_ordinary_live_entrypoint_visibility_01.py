@@ -59,6 +59,18 @@ def test_normal_cli_startup_loads_dotenv_before_search_provider_import(
     assert result["brave_search_timeout_sec"] == 17.0
 
 
+def test_bounded_product_profile_startup_skips_dotenv_before_provider_import(
+    tmp_path: Path,
+) -> None:
+    result = _run_search_provider_startup_probe(
+        tmp_path,
+        argv_after_query=["--bounded-product-profile", "public-cli-v1"],
+    )
+
+    assert result["search_providers_imported_by_cli_core_imports"] is True
+    assert result["brave_search_timeout_sec"] == 8.0
+
+
 def test_dry_run_startup_skips_dotenv_before_search_provider_import(
     tmp_path: Path,
 ) -> None:
