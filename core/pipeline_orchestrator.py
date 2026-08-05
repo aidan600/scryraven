@@ -370,13 +370,21 @@ from core.weak_failure_gate_contract import (
 
 logger = logging.getLogger(__name__)
 
-_author_quant_source_telemetry_defaults = post_analyst_handoff_packaging._author_quant_source_telemetry_defaults
-_economist_skip_eligibility_shadow_defaults = post_analyst_handoff_packaging._economist_skip_eligibility_shadow_defaults
+_author_quant_source_telemetry_defaults = (
+    post_analyst_handoff_packaging._author_quant_source_telemetry_defaults
+)
+_economist_skip_eligibility_shadow_defaults = (
+    post_analyst_handoff_packaging._economist_skip_eligibility_shadow_defaults
+)
 _economist_skip_eligibility_shadow_telemetry = (
     post_analyst_handoff_packaging._economist_skip_eligibility_shadow_telemetry
 )
-_economist_skip_shadow_alignment = post_analyst_handoff_packaging._economist_skip_shadow_alignment
-_scan_author_quant_source_telemetry = post_analyst_handoff_packaging._scan_author_quant_source_telemetry
+_economist_skip_shadow_alignment = (
+    post_analyst_handoff_packaging._economist_skip_shadow_alignment
+)
+_scan_author_quant_source_telemetry = (
+    post_analyst_handoff_packaging._scan_author_quant_source_telemetry
+)
 
 
 DB_ENABLED = True
@@ -389,7 +397,6 @@ _SOURCE_CLASS_RECOVERY_ORDINARY_BLOCK_REASONS = frozenset(
         "blocked_by_source_class_recovery",
     }
 )
-
 
 class PipelineError(RuntimeError):
     """Raised by run_pipeline() for expected failure conditions (empty query, no passages, …)."""
@@ -417,16 +424,16 @@ class PipelineError(RuntimeError):
 _retrieval_stop_shadow_defaults = retrieval_stop_shadow_defaults
 _retrieval_stop_active_defaults = retrieval_stop_active_defaults
 _build_retrieval_stop_shadow_telemetry = build_retrieval_stop_shadow_telemetry
-_build_retrieval_stop_active_stop_no_queries_telemetry = build_retrieval_stop_active_stop_no_queries_telemetry
+_build_retrieval_stop_active_stop_no_queries_telemetry = (
+    build_retrieval_stop_active_stop_no_queries_telemetry
+)
 _build_retrieval_stop_active_stop_budget_exhausted_telemetry = (
     build_retrieval_stop_active_stop_budget_exhausted_telemetry
 )
 
-
 def _acc_iter_time(iter_idx: int, started_at: float, acc: dict[int, float]) -> None:
     elapsed = max(0.0, time.monotonic() - started_at)
     acc[iter_idx] = float(acc.get(iter_idx, 0.0)) + elapsed
-
 
 GENERIC_NEWS_DOMAINS = analyst_runtime_stage.GENERIC_NEWS_DOMAINS
 _query_expects_official_evidence = analyst_runtime_stage.query_expects_official_evidence
@@ -466,7 +473,12 @@ def _pipeline_timing_payload(
         + float(scrutineer_seconds)
         + float(author_seconds)
     )
-    accounted = float(pre_retrieval_seconds) + float(recon_seconds) + retrieval_iters + post_llm
+    accounted = (
+        float(pre_retrieval_seconds)
+        + float(recon_seconds)
+        + retrieval_iters
+        + post_llm
+    )
     return {
         "pre_retrieval_seconds": round(pre_retrieval_seconds, 2),
         "recon_seconds": round(float(recon_seconds), 2),
@@ -491,7 +503,6 @@ def _pipeline_timing_payload(
 # ---------------------------------------------------------------------------
 # Main entry-point
 # ---------------------------------------------------------------------------
-
 
 def run_pipeline(
     config: RunConfig,
@@ -526,7 +537,9 @@ def run_pipeline(
             "process_search_queries": deps.process_search_queries,
         }
         if deps.strict_one_shot_smart_model_transport is not None:
-            required_cap_aware["strict_one_shot_smart_model_transport"] = deps.strict_one_shot_smart_model_transport
+            required_cap_aware["strict_one_shot_smart_model_transport"] = (
+                deps.strict_one_shot_smart_model_transport
+            )
         if any(not is_cap_aware(transport) for transport in required_cap_aware.values()):
             cap_policy.finalize_active_attempts()
             raise RunCapExceeded("unaccounted_transport")
@@ -625,11 +638,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     or_api_key = config.or_api_key
     use_reasoning = config.use_reasoning
     run_authority_contract_smart_model = bool(config.run_authority_contract_smart_model)
-    run_authority_search_judgment_smart_model = bool(config.run_authority_search_judgment_smart_model)
-    run_authority_sufficiency_smart_model = bool(config.run_authority_sufficiency_smart_model)
+    run_authority_search_judgment_smart_model = bool(
+        config.run_authority_search_judgment_smart_model
+    )
+    run_authority_sufficiency_smart_model = bool(
+        config.run_authority_sufficiency_smart_model
+    )
     current_date = config.current_date
     cap_policy = config.cap_policy
-    suppress_persistence = bool(cap_policy is not None and cap_policy.persistence_suppressed)
+    suppress_persistence = bool(
+        cap_policy is not None and cap_policy.persistence_suppressed
+    )
     provider_availability_snapshot = ProviderAvailabilitySnapshot.from_mapping(
         deps.provider_availability
         if deps.provider_availability is not None
@@ -644,7 +663,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     a5_provider_override: list[str] | None = None
     if config.provider_override:
-        a5_provider_override = [str(x).strip().lower() for x in config.provider_override if str(x).strip()] or None
+        a5_provider_override = [
+            str(x).strip().lower() for x in config.provider_override if str(x).strip()
+        ] or None
 
     a5_force_state = normalize_force_corpus_state(config.forced_corpus_state)
     corpus_state_forced_flag = False
@@ -656,7 +677,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # Cost-tracking wrappers
     def _ask(*, phase: str = "model"):
         base = deps.ask_model
-
         def wrapped(*args: Any, **kw: Any) -> Any:
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
@@ -665,12 +685,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 if "logical_call_id" not in kw:
                     kw["logical_call_id"] = cap_policy.new_logical_call_id(phase)
             return base(*args, **kw)
-
         return wrapped
 
     def _embed(*, phase: str = "embedding"):
         base = deps.embed_texts
-
         def wrapped(*args: Any, **kw: Any) -> Any:
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
@@ -679,12 +697,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 if "logical_call_id" not in kw:
                     kw["logical_call_id"] = cap_policy.new_logical_call_id(phase)
             return base(*args, **kw)
-
         return wrapped
 
     def _search(*, phase: str = "retrieval"):
         base = deps.process_search_queries
-
         def wrapped(*args: Any, **kw: Any) -> Any:
             if cap_policy is not None and cap_policy.bounded:
                 kw.setdefault("cap_policy", cap_policy)
@@ -709,7 +725,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "discovery_result_store",
             }.intersection(optional_kw)
             if lineage_keys.difference(supported_optional_kw):
-                raise PipelineError("ordinary discovery callable cannot consume canonical result lineage/store")
+                raise PipelineError(
+                    "ordinary discovery callable cannot consume canonical "
+                    "result lineage/store"
+                )
             kw.update(supported_optional_kw)
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
@@ -720,7 +739,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 else:
                     cap_policy.mark_search_dispatch()
             return base(*args, **kw)
-
         return wrapped
 
     def _before_read_transport(request: Any) -> Any:
@@ -820,7 +838,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         evidence_text: Any | None = None,
         source_ids: list[Any] | None = None,
     ) -> None:
-        measured_prompt = f"{system_prompt}\n{prompt}" if system_prompt is not None else prompt
+        measured_prompt = (
+            f"{system_prompt}\n{prompt}" if system_prompt is not None else prompt
+        )
         stage_source_ids = (
             source_ids
             if source_ids is not None
@@ -867,7 +887,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     scout_queries: list[str] = []
     scout_skip_reason: str | None = "legacy_semantic_scout_ordinary_execution_retired"
     economist_preflight_allowed: bool | None = None
-    economist_preflight_block_reason: str | None = "legacy_economist_ordinary_execution_retired"
+    economist_preflight_block_reason: str | None = (
+        "legacy_economist_ordinary_execution_retired"
+    )
     economist_preflight_missing_entities: list[str] = []
     missing_target_metric_directive_emitted = False
     author_system_prompt_key: str | None = None
@@ -884,12 +906,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "economist_skip_reason": "legacy_economist_ordinary_execution_retired",
         **economist_schema_telemetry_defaults(),
     }
-    quant_retrieval_sufficiency_telemetry: dict[str, Any] = quant_retrieval_sufficiency_telemetry_defaults()
+    quant_retrieval_sufficiency_telemetry: dict[str, Any] = (
+        quant_retrieval_sufficiency_telemetry_defaults()
+    )
     nutrition_lookup_telemetry: dict[str, Any] = {}
-    analyst_quant_packet_handoff_telemetry: dict[str, Any] = _analyst_quant_packet_telemetry_defaults()
-    author_quant_source_telemetry: dict[str, Any] = _author_quant_source_telemetry_defaults()
-    economist_skip_eligibility_shadow_telemetry: dict[str, Any] = _economist_skip_eligibility_shadow_defaults()
-    economist_pre_analyst_skip_candidate_telemetry: dict[str, Any] = _economist_pre_analyst_skip_candidate_defaults()
+    analyst_quant_packet_handoff_telemetry: dict[str, Any] = (
+        _analyst_quant_packet_telemetry_defaults()
+    )
+    author_quant_source_telemetry: dict[str, Any] = (
+        _author_quant_source_telemetry_defaults()
+    )
+    economist_skip_eligibility_shadow_telemetry: dict[str, Any] = (
+        _economist_skip_eligibility_shadow_defaults()
+    )
+    economist_pre_analyst_skip_candidate_telemetry: dict[str, Any] = (
+        _economist_pre_analyst_skip_candidate_defaults()
+    )
     economist_skip_shadow_alignment = "not_evaluated"
     analyst_skipped_after_economist = False
     analyst_after_economist_skip_reason: str | None = None
@@ -920,7 +952,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         api_key=or_api_key,
         use_reasoning=use_reasoning,
         measure_context_stage=_measure_context_stage,
-        allow_model_retry=not (cap_policy is not None and cap_policy.should_disable_model_retry()),
+        allow_model_retry=not (
+            cap_policy is not None and cap_policy.should_disable_model_retry()
+        ),
     )
     run_kernel.reduce(route_result.observation)
     router_query_preparation_contract = route_result.router_query_preparation_contract
@@ -959,7 +993,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_kernel.reduce(run_contract_result.observation)
     run_contract_projection = dict(run_kernel.state.run_contract_projection)
 
-    policy_state = {} if suppress_persistence else load_policy_state(policy_state_path)
+    policy_state = (
+        {} if suppress_persistence else load_policy_state(policy_state_path)
+    )
     cfg = apply_policy_to_run_config(
         {
             "utilization_threshold": DEFAULT_UTILIZATION_THRESHOLD,
@@ -968,7 +1004,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         policy_state,
     )
     utilization_threshold = float(cfg.get("utilization_threshold", DEFAULT_UTILIZATION_THRESHOLD))
-    synth_skip_utilization_threshold = float(cfg.get("synth_skip_utilization_threshold", DEFAULT_UTILIZATION_THRESHOLD))
+    synth_skip_utilization_threshold = float(
+        cfg.get("synth_skip_utilization_threshold", DEFAULT_UTILIZATION_THRESHOLD)
+    )
     policy_applied = {
         "utilization_threshold": utilization_threshold,
         "synth_skip_utilization_threshold": synth_skip_utilization_threshold,
@@ -994,9 +1032,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if not suppress_persistence:
         try:
             for hint in recent_recurring_kb_hints(
-                kb_triggers_path,
-                limit=20,
-                max_display=3,
+                kb_triggers_path, limit=20, max_display=3
             ):
                 status.step(f"\u2139\ufe0f KB (recurring): {hint[:400]}")
         except Exception:
@@ -1011,20 +1047,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             f"Generate a 3-5 word professional title for a research report about: {core_topic}. "
             "Return ONLY the title, no quotes or formatting."
         )
-        session_title = (
-            ask_model(
-                title_prompt,
-                "You are a concise title generator.",
-                provider=fast_provider,
-                model=fast_model,
-                effort="low",
-                base_url=local_url,
-                api_key=or_api_key,
-                use_reasoning=False,
-            )
-            .replace('"', "")
-            .strip()
-        )
+        session_title = ask_model(
+            title_prompt, "You are a concise title generator.",
+            provider=fast_provider, model=fast_model, effort="low",
+            base_url=local_url, api_key=or_api_key, use_reasoning=False,
+        ).replace('"', "").strip()
         if not session_title:
             session_title = query[:40]
 
@@ -1076,7 +1103,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     query_production_action = convergence.query_production_action
     query_production_result = convergence.query_production_result
     query_production_projection = run_kernel.state.projections[QUERY_PRODUCTION_STAGE]
-    query_plan_inputs = query_plan_admission_inputs_from_query_production_projection(query_production_projection)
+    query_plan_inputs = query_plan_admission_inputs_from_query_production_projection(
+        query_production_projection
+    )
 
     intent = query_production_result.intent
     report_type = query_production_result.report_type
@@ -1120,7 +1149,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "candidate_source": query_plan_inputs.candidate_source,
             "candidate_count": len(query_plan_inputs.candidate_queries),
             "query_plan_id": query_authority.plan.plan_id,
-            "allocation_policy_version": (query_plan_inputs.initial_query_allocation_policy.policy_version),
+            "allocation_policy_version": (
+                query_plan_inputs.initial_query_allocation_policy.policy_version
+            ),
             "legacy_downstream_max_queries": query_plan_inputs.max_queries,
             "small_global_initial_query_cap_applied": False,
         }
@@ -1137,17 +1168,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         max_queries=query_plan_inputs.max_queries,
         route_runtime_posture=query_plan_inputs.effective_route_posture,
         search_work_projection=convergence.search_work_plan,
-        initial_query_allocation_policy=(query_plan_inputs.initial_query_allocation_policy),
+        initial_query_allocation_policy=(
+            query_plan_inputs.initial_query_allocation_policy
+        ),
     )
     run_kernel.reduce(query_admission_result.observation)
     queries = query_admission_result.queries
     current_queries = query_admission_result.current_queries
     provider_job_execution_handoff = dict(
-        query_admission_result.observation.payload.get("provider_job_execution_handoff") or {}
+        query_admission_result.observation.payload.get(
+            "provider_job_execution_handoff"
+        )
+        or {}
     )
     recency_merge_used = query_admission_result.recency_merge_used
     recency_merge_query = query_admission_result.recency_merge_query
-    router_query_preparation_contract = query_admission_result.router_query_preparation_contract
+    router_query_preparation_contract = (
+        query_admission_result.router_query_preparation_contract
+    )
     intent = router_query_preparation_contract.intent
     report_type = router_query_preparation_contract.report_type
     query_type = router_query_preparation_contract.query_type
@@ -1186,13 +1224,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             candidate_results=config.ordinary_live_candidate_handoff_results,
             provider_authorized=config.ordinary_live_candidate_handoff_provider,
         )
-        ordinary_live_candidate_handoff_projection = ordinary_live_candidate_handoff.projection
+        ordinary_live_candidate_handoff_projection = (
+            ordinary_live_candidate_handoff.projection
+        )
         ordinary_live_candidate_handoff_projection.update(
             {
                 "parent_run_kernel_run_id": run_kernel.state.run_id,
-                "candidate_handoff_run_kernel_run_id": (candidate_handoff_kernel.state.run_id),
-                "candidate_handoff_run_kernel_request_id": (candidate_handoff_kernel.state.request_id),
-                "candidate_handoff_state_owner": ("ordinary_live_candidate_handoff_run_kernel"),
+                "candidate_handoff_run_kernel_run_id": (
+                    candidate_handoff_kernel.state.run_id
+                ),
+                "candidate_handoff_run_kernel_request_id": (
+                    candidate_handoff_kernel.state.request_id
+                ),
+                "candidate_handoff_state_owner": (
+                    "ordinary_live_candidate_handoff_run_kernel"
+                ),
                 "main_answer_kernel_semantic_state_preserved_before_retrieval": (
                     not run_kernel.state.initial_answer_contract
                     and not run_kernel.state.semantic_observation_admission_history
@@ -1210,15 +1256,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 if ordinary_live_candidate_handoff is not None
                 else None
             ),
-            available_providers=(provider_availability_snapshot.to_capability_available_keys()),
-            acquisition_transports=(deps.ordinary_live_source_acquisition_transports),
+            available_providers=(
+                provider_availability_snapshot.to_capability_available_keys()
+            ),
+            acquisition_transports=(
+                deps.ordinary_live_source_acquisition_transports
+            ),
             cap_policy=cap_policy,
-            before_transport=(_before_read_transport if cap_policy is not None else None),
-            required_or_preferred_anchors=(config.ordinary_live_source_custody_anchor_groups),
+            before_transport=(
+                _before_read_transport if cap_policy is not None else None
+            ),
+            required_or_preferred_anchors=(
+                config.ordinary_live_source_custody_anchor_groups
+            ),
             component_text=core_topic,
             claim_under_test=None,
         )
-        ordinary_live_source_custody_projection = ordinary_live_source_custody.projection
+        ordinary_live_source_custody_projection = (
+            ordinary_live_source_custody.projection
+        )
     if (
         config.enable_ordinary_live_semantic_coverage
         and ordinary_live_source_custody is not None
@@ -1230,14 +1286,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             parent_request_id=session_id,
             source_custody_result=ordinary_live_source_custody,
         )
-        ordinary_live_semantic_coverage_projection = ordinary_live_semantic_coverage.projection
-    if config.enable_ordinary_live_authority_consolidation and ordinary_live_semantic_coverage is not None:
-        ordinary_live_authority_consolidation = execute_ordinary_live_authority_consolidation(
-            main_run_kernel=run_kernel,
-            child_run_kernel=candidate_handoff_kernel,
-            semantic_coverage_result=ordinary_live_semantic_coverage,
+        ordinary_live_semantic_coverage_projection = (
+            ordinary_live_semantic_coverage.projection
         )
-        ordinary_live_authority_consolidation_projection = ordinary_live_authority_consolidation.projection
+    if (
+        config.enable_ordinary_live_authority_consolidation
+        and ordinary_live_semantic_coverage is not None
+    ):
+        ordinary_live_authority_consolidation = (
+            execute_ordinary_live_authority_consolidation(
+                main_run_kernel=run_kernel,
+                child_run_kernel=candidate_handoff_kernel,
+                semantic_coverage_result=ordinary_live_semantic_coverage,
+            )
+        )
+        ordinary_live_authority_consolidation_projection = (
+            ordinary_live_authority_consolidation.projection
+        )
     all_passages: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     collected_images: set[str] = set()
@@ -1248,7 +1313,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     suppress_tavily = False
     scrutineer_high_count = 0
     queries_by_iteration: dict[int, list[str]] = {}
-    synthesis_evaluator_supplemental_search_collector = RuntimeSynthesisEvaluatorSupplementalSearchFactCollector()
+    synthesis_evaluator_supplemental_search_collector = (
+        RuntimeSynthesisEvaluatorSupplementalSearchFactCollector()
+    )
     retrieval_retry_used = False
     disambiguation_queries_by_iteration: dict[int, list[str]] = {}
     weak_corpus_recovery_considered = False
@@ -1261,12 +1328,20 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     weak_corpus_recovery_blockers: list[str] = []
     retrieval_stop_shadow_telemetry = _retrieval_stop_shadow_defaults()
     retrieval_stop_active_telemetry = _retrieval_stop_active_defaults()
-    ordinary_continuation_candidate_trace = ordinary_continuation_candidate_defaults()
-    evidence_integration_checkpoint_trace = evidence_integration_checkpoint_unavailable_trace("not_evaluated")
+    ordinary_continuation_candidate_trace = (
+        ordinary_continuation_candidate_defaults()
+    )
+    evidence_integration_checkpoint_trace = (
+        evidence_integration_checkpoint_unavailable_trace("not_evaluated")
+    )
     evidence_integration_checkpoint_handoff: dict[str, Any] = {}
     evidence_integration_checkpoint_decided = False
-    evaluator_continuation_spine_gate_trace: dict[str, Any] = evaluator_continuation_spine_gate_defaults()
-    expander_continuation_spine_gate_trace: dict[str, Any] = expander_continuation_spine_gate_defaults()
+    evaluator_continuation_spine_gate_trace: dict[str, Any] = (
+        evaluator_continuation_spine_gate_defaults()
+    )
+    expander_continuation_spine_gate_trace: dict[str, Any] = (
+        expander_continuation_spine_gate_defaults()
+    )
     # Passive compatibility projection only. It is never supplied to a current
     # continuation, retrieval-authority, or dispatch decision.
     scout_continuation_spine_gate_trace: dict[str, Any] = {
@@ -1277,18 +1352,27 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "authorized_queries": [],
         "query_provenance": None,
     }
-    retrieval_batch_dispatch_trace: dict[str, Any] = retrieval_batch_dispatch_defaults()
+    retrieval_batch_dispatch_trace: dict[str, Any] = (
+        retrieval_batch_dispatch_defaults()
+    )
     retrieval_loop_contract_state = None
     weak_failure_gate_contract_state = None
     weak_corpus_decision_for_checkpoint_gate: WeakCorpusRecoveryDecision | None = None
-    conflict_resolution_decision_for_checkpoint_gate: ConflictResolutionDecision | None = None
+    conflict_resolution_decision_for_checkpoint_gate: (
+        ConflictResolutionDecision | None
+    ) = None
     utilization_rate_val: float | None = None
     utilization_pre_retry: float | None = None
-    corpus_state = CorpusState.EMPTY_ENTITY.value if empty_entity_flag else CorpusState.HEALTHY.value
+    corpus_state = (
+        CorpusState.EMPTY_ENTITY.value if empty_entity_flag else CorpusState.HEALTHY.value
+    )
     corpus_weak = False
 
     _embed_tail = " | ".join(e for e in (entities_list or [])[:8] if e).strip()
-    _embed_topic = (_embed_tail if _embed_tail else ((primary_entity or core_topic) or query))[:2000] or core_topic
+    _embed_topic = (
+        (_embed_tail if _embed_tail else ((primary_entity or core_topic) or query))[:2000]
+        or core_topic
+    )
     embedding_action = EmbeddingActionRecord(
         topic_text=_embed_topic,
         provider=embed_provider,
@@ -1302,10 +1386,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         provider_availability_snapshot.to_capability_available_keys(),
         plan_id=f"provider-plan-{run_id}",
     )
-    available_keys, (select_provider_list, merge_provider_overrides) = (
-        provider_plan.available_keys(),
-        (select_providers, merge_search_provider_overrides),
-    )
+    available_keys, (select_provider_list, merge_provider_overrides) = provider_plan.available_keys(), (select_providers, merge_search_provider_overrides)
     current_search_depth_for_recovery = search_depth
 
     pre_retrieval_seconds = max(0.0, time.monotonic() - _bucket_pre_retrieval_t0)
@@ -1325,7 +1406,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ) -> None:
         nonlocal retrieval_stop_shadow_telemetry
         nonlocal ordinary_continuation_candidate_trace
-        if retrieval_stop_shadow_telemetry.get("retrieval_stop_shadow_available"):
+        if retrieval_stop_shadow_telemetry.get(
+            "retrieval_stop_shadow_available"
+        ):
             return
         projection = build_retrieval_stop_trace_projection(
             decision=decision,
@@ -1341,8 +1424,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             blockers=blockers,
             build_shadow_telemetry=_build_retrieval_stop_shadow_telemetry,
         )
-        retrieval_stop_shadow_telemetry = projection["retrieval_stop_shadow_telemetry"]
-        ordinary_continuation_candidate_trace = projection["ordinary_continuation_candidate_trace"]
+        retrieval_stop_shadow_telemetry = projection[
+            "retrieval_stop_shadow_telemetry"
+        ]
+        ordinary_continuation_candidate_trace = projection[
+            "ordinary_continuation_candidate_trace"
+        ]
 
     def _decide_retrieval_loop_stop_continue(
         *,
@@ -1424,7 +1511,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 source_tier_counts=source_tier_snapshot["source_tier_counts"],
                 source_domain_counts=source_domain_snapshot["source_domain_counts"],
                 top_source_domains=source_domain_snapshot["top_source_domains"],
-                official_evidence_found=source_tier_snapshot["official_evidence_found"],
+                official_evidence_found=source_tier_snapshot[
+                    "official_evidence_found"
+                ],
             )
             source_class_observability = build_source_class_observability_telemetry(
                 query=query,
@@ -1472,13 +1561,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     },
                     active_source_class_recovery_lifecycle=source_class_lifecycle,
                     weak_corpus=bool(corpus_weak),
-                    weak_corpus_reason=((weak_corpus_skip_reason or corpus_state) if corpus_weak else None),
-                    weak_corpus_recovery_considered=bool(weak_corpus_recovery_considered),
+                    weak_corpus_reason=(
+                        (weak_corpus_skip_reason or corpus_state)
+                        if corpus_weak
+                        else None
+                    ),
+                    weak_corpus_recovery_considered=bool(
+                        weak_corpus_recovery_considered
+                    ),
                     weak_corpus_recovery_used=False,
                     weak_corpus_recovery_skip_reason=weak_corpus_skip_reason,
-                    conflicts_present=weak_checkpoint_conflict_projection["conflicts_present"],
-                    conflict_notes=weak_checkpoint_conflict_projection["conflict_notes"],
-                    resolving_queries=weak_checkpoint_conflict_projection["resolving_queries"],
+                    conflicts_present=weak_checkpoint_conflict_projection[
+                        "conflicts_present"
+                    ],
+                    conflict_notes=weak_checkpoint_conflict_projection[
+                        "conflict_notes"
+                    ],
+                    resolving_queries=weak_checkpoint_conflict_projection[
+                        "resolving_queries"
+                    ],
                     retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
                     retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
                     queries_by_iteration=queries_by_iteration,
@@ -1503,20 +1604,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 iterations_run=iteration,
                 max_iterations=max_iterations,
             )
-            checkpoint_decision = decide_evidence_integration_checkpoint(checkpoint_snapshot)
-            evidence_integration_checkpoint_trace = build_evidence_integration_checkpoint_trace(
-                snapshot=checkpoint_snapshot,
-                decision=checkpoint_decision,
-                legacy_runtime_branch="weak_corpus_recovery_gate",
+            checkpoint_decision = decide_evidence_integration_checkpoint(
+                checkpoint_snapshot
             )
-            evidence_integration_checkpoint_handoff = checkpoint_decision.to_handoff_reference()
+            evidence_integration_checkpoint_trace = (
+                build_evidence_integration_checkpoint_trace(
+                    snapshot=checkpoint_snapshot,
+                    decision=checkpoint_decision,
+                    legacy_runtime_branch="weak_corpus_recovery_gate",
+                )
+            )
+            evidence_integration_checkpoint_handoff = (
+                checkpoint_decision.to_handoff_reference()
+            )
         except Exception as exc:
             run_log.warning(
                 "Non-fatal weak-corpus checkpoint decision omitted: %s",
                 exc,
             )
-            evidence_integration_checkpoint_trace = evidence_integration_checkpoint_unavailable_trace(
-                "weak_corpus_checkpoint_exception"
+            evidence_integration_checkpoint_trace = (
+                evidence_integration_checkpoint_unavailable_trace(
+                    "weak_corpus_checkpoint_exception"
+                )
             )
             evidence_integration_checkpoint_handoff = {}
         evidence_integration_checkpoint_decided = True
@@ -1532,13 +1641,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             decision = build_retrieval_batch_dispatch_decision(
                 RetrievalBatchDispatchFacts.from_traces(
                     checkpoint_trace=evidence_integration_checkpoint_trace,
-                    ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
-                    targeted_retrieval_lifecycle_trace=(targeted_retrieval_lifecycle_trace),
+                    ordinary_continuation_candidate_trace=(
+                        ordinary_continuation_candidate_trace
+                    ),
+                    targeted_retrieval_lifecycle_trace=(
+                        targeted_retrieval_lifecycle_trace
+                    ),
                     source_class_lifecycle_trace=source_class_lifecycle_trace,
                     weak_corpus_lifecycle_trace=weak_corpus_lifecycle_trace,
-                    conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_trace),
-                    evaluator_continuation_spine_gate_trace=(evaluator_continuation_spine_gate_trace),
-                    expander_continuation_spine_gate_trace=(expander_continuation_spine_gate_trace),
+                    conflict_resolution_lifecycle_trace=(
+                        conflict_resolution_lifecycle_trace
+                    ),
+                    evaluator_continuation_spine_gate_trace=(
+                        evaluator_continuation_spine_gate_trace
+                    ),
+                    expander_continuation_spine_gate_trace=(
+                        expander_continuation_spine_gate_trace
+                    ),
                 )
             )
             retrieval_batch_dispatch_trace = decision.to_trace()
@@ -1548,7 +1667,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "Non-fatal retrieval batch dispatch omitted: %s",
                 exc,
             )
-            retrieval_batch_dispatch_trace = retrieval_batch_dispatch_defaults("retrieval_batch_dispatch_exception")
+            retrieval_batch_dispatch_trace = retrieval_batch_dispatch_defaults(
+                "retrieval_batch_dispatch_exception"
+            )
             return False, []
 
     def _authorize_evaluator_continuation_before_scheduling(
@@ -1562,11 +1683,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         nonlocal targeted_retrieval_lifecycle_trace
         nonlocal evaluator_continuation_spine_gate_trace
 
-        ordinary_continuation_candidate_trace = build_evaluator_continuation_candidate(
-            evaluator_queries=evaluator_queries,
-            prior_queries=queries_by_iteration.get(iteration, []),
-            current_iteration=iteration,
-            max_iterations=max_iterations,
+        ordinary_continuation_candidate_trace = (
+            build_evaluator_continuation_candidate(
+                evaluator_queries=evaluator_queries,
+                prior_queries=queries_by_iteration.get(iteration, []),
+                current_iteration=iteration,
+                max_iterations=max_iterations,
+            )
         )
         try:
             source_tier_snapshot = source_tier_telemetry(all_passages)
@@ -1586,7 +1709,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 source_tier_counts=source_tier_snapshot["source_tier_counts"],
                 source_domain_counts=source_domain_snapshot["source_domain_counts"],
                 top_source_domains=source_domain_snapshot["top_source_domains"],
-                official_evidence_found=source_tier_snapshot["official_evidence_found"],
+                official_evidence_found=source_tier_snapshot[
+                    "official_evidence_found"
+                ],
             )
             source_class_observability = build_source_class_observability_telemetry(
                 query=query,
@@ -1634,13 +1759,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     },
                     active_source_class_recovery_lifecycle=source_class_lifecycle,
                     weak_corpus=bool(corpus_weak),
-                    weak_corpus_reason=((weak_corpus_recovery_skip_reason or corpus_state) if corpus_weak else None),
-                    weak_corpus_recovery_considered=bool(weak_corpus_recovery_considered),
+                    weak_corpus_reason=(
+                        (weak_corpus_recovery_skip_reason or corpus_state)
+                        if corpus_weak
+                        else None
+                    ),
+                    weak_corpus_recovery_considered=bool(
+                        weak_corpus_recovery_considered
+                    ),
                     weak_corpus_recovery_used=bool(weak_corpus_recovery_used),
                     weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                    conflicts_present=evaluator_conflict_projection["conflicts_present"],
+                    conflicts_present=evaluator_conflict_projection[
+                        "conflicts_present"
+                    ],
                     conflict_notes=evaluator_conflict_projection["conflict_notes"],
-                    resolving_queries=evaluator_conflict_projection["resolving_queries"],
+                    resolving_queries=evaluator_conflict_projection[
+                        "resolving_queries"
+                    ],
                     retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
                     retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
                     queries_by_iteration=queries_by_iteration,
@@ -1665,7 +1800,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 iterations_run=iteration,
                 max_iterations=max_iterations,
             )
-            checkpoint_decision = decide_evidence_integration_checkpoint(checkpoint_snapshot)
+            checkpoint_decision = decide_evidence_integration_checkpoint(
+                checkpoint_snapshot
+            )
             checkpoint_trace = build_evidence_integration_checkpoint_trace(
                 snapshot=checkpoint_snapshot,
                 decision=checkpoint_decision,
@@ -1677,9 +1814,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 if weak_corpus_recovery_considered
                 else None
             )
-            conflict_resolution_lifecycle_for_gate = _conflict_resolution_lifecycle_facts(
-                decision=conflict_resolution_decision_for_checkpoint_gate,
-                lifecycle_trace=active_conflict_resolution_lifecycle,
+            conflict_resolution_lifecycle_for_gate = (
+                _conflict_resolution_lifecycle_facts(
+                    decision=conflict_resolution_decision_for_checkpoint_gate,
+                    lifecycle_trace=active_conflict_resolution_lifecycle,
+                )
             )
             gate_facts = EvaluatorContinuationSpineGateFacts.from_traces(
                 evaluator_queries=evaluator_queries,
@@ -1690,21 +1829,33 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 checkpoint_handoff=checkpoint_handoff,
                 source_class_lifecycle_trace=source_class_lifecycle,
                 weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_for_gate),
-                ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
+                conflict_resolution_lifecycle_trace=(
+                    conflict_resolution_lifecycle_for_gate
+                ),
+                ordinary_continuation_candidate_trace=(
+                    ordinary_continuation_candidate_trace
+                ),
             )
             pregate_result = build_evaluator_continuation_spine_pregate(gate_facts)
-            ordinary_continuation_candidate_trace = pregate_result.ordinary_continuation_candidate_trace
+            ordinary_continuation_candidate_trace = (
+                pregate_result.ordinary_continuation_candidate_trace
+            )
             targeted_trace = _build_targeted_retrieval_lifecycle_from_runtime(
                 answer_contract_result=answer_contract_result,
                 source_class_recovery_telemetry=source_class_recommendation,
                 active_source_class_recovery_lifecycle=source_class_lifecycle,
                 weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                active_conflict_resolution_lifecycle=(active_conflict_resolution_lifecycle),
+                active_conflict_resolution_lifecycle=(
+                    active_conflict_resolution_lifecycle
+                ),
                 retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
                 retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                controller_loop_spine_result=(pregate_result.controller_loop_spine_result),
-                ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
+                controller_loop_spine_result=(
+                    pregate_result.controller_loop_spine_result
+                ),
+                ordinary_continuation_candidate_trace=(
+                    ordinary_continuation_candidate_trace
+                ),
                 max_iterations=max_iterations,
             )
             gate_output = authorize_evaluator_continuation_spine_gate(
@@ -1717,30 +1868,44 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     checkpoint_handoff=checkpoint_handoff,
                     source_class_lifecycle_trace=source_class_lifecycle,
                     weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                    conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_for_gate),
-                    ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
+                    conflict_resolution_lifecycle_trace=(
+                        conflict_resolution_lifecycle_for_gate
+                    ),
+                    ordinary_continuation_candidate_trace=(
+                        ordinary_continuation_candidate_trace
+                    ),
                     targeted_retrieval_lifecycle_trace=targeted_trace,
                 )
             )
             evidence_integration_checkpoint_trace = gate_output.checkpoint_trace
             evidence_integration_checkpoint_handoff = gate_output.checkpoint_handoff
             evidence_integration_checkpoint_decided = gate_output.checkpoint_decided
-            ordinary_continuation_candidate_trace = gate_output.ordinary_continuation_candidate_trace
-            targeted_retrieval_lifecycle_trace = gate_output.targeted_retrieval_lifecycle_trace
-            evaluator_continuation_spine_gate_trace = gate_output.evaluator_continuation_spine_gate_trace
+            ordinary_continuation_candidate_trace = (
+                gate_output.ordinary_continuation_candidate_trace
+            )
+            targeted_retrieval_lifecycle_trace = (
+                gate_output.targeted_retrieval_lifecycle_trace
+            )
+            evaluator_continuation_spine_gate_trace = (
+                gate_output.evaluator_continuation_spine_gate_trace
+            )
             if not gate_output.authorized:
                 return gate_output.authorized, gate_output.authorized_queries
             return _authorize_retrieval_batch_dispatch_for_current_continuation(
                 source_class_lifecycle_trace=source_class_lifecycle,
                 weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_for_gate),
+                conflict_resolution_lifecycle_trace=(
+                    conflict_resolution_lifecycle_for_gate
+                ),
             )
         except Exception as exc:
             run_log.warning(
                 "Non-fatal evaluator continuation spine gate omitted: %s",
                 exc,
             )
-            evaluator_continuation_spine_gate_trace = evaluator_continuation_spine_gate_exception_trace()
+            evaluator_continuation_spine_gate_trace = (
+                evaluator_continuation_spine_gate_exception_trace()
+            )
             return False, list(evaluator_queries)
 
     def _authorize_expander_continuation_before_scheduling(
@@ -1754,11 +1919,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         nonlocal targeted_retrieval_lifecycle_trace
         nonlocal expander_continuation_spine_gate_trace
 
-        ordinary_continuation_candidate_trace = build_expander_continuation_candidate(
-            component_queries=component_queries,
-            prior_queries=queries_by_iteration.get(iteration, []),
-            current_iteration=iteration,
-            max_iterations=max_iterations,
+        ordinary_continuation_candidate_trace = (
+            build_expander_continuation_candidate(
+                component_queries=component_queries,
+                prior_queries=queries_by_iteration.get(iteration, []),
+                current_iteration=iteration,
+                max_iterations=max_iterations,
+            )
         )
         try:
             source_tier_snapshot = source_tier_telemetry(all_passages)
@@ -1778,7 +1945,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 source_tier_counts=source_tier_snapshot["source_tier_counts"],
                 source_domain_counts=source_domain_snapshot["source_domain_counts"],
                 top_source_domains=source_domain_snapshot["top_source_domains"],
-                official_evidence_found=source_tier_snapshot["official_evidence_found"],
+                official_evidence_found=source_tier_snapshot[
+                    "official_evidence_found"
+                ],
             )
             source_class_observability = build_source_class_observability_telemetry(
                 query=query,
@@ -1826,13 +1995,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     },
                     active_source_class_recovery_lifecycle=source_class_lifecycle,
                     weak_corpus=bool(corpus_weak),
-                    weak_corpus_reason=((weak_corpus_recovery_skip_reason or corpus_state) if corpus_weak else None),
-                    weak_corpus_recovery_considered=bool(weak_corpus_recovery_considered),
+                    weak_corpus_reason=(
+                        (weak_corpus_recovery_skip_reason or corpus_state)
+                        if corpus_weak
+                        else None
+                    ),
+                    weak_corpus_recovery_considered=bool(
+                        weak_corpus_recovery_considered
+                    ),
                     weak_corpus_recovery_used=bool(weak_corpus_recovery_used),
                     weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                    conflicts_present=expander_conflict_projection["conflicts_present"],
+                    conflicts_present=expander_conflict_projection[
+                        "conflicts_present"
+                    ],
                     conflict_notes=expander_conflict_projection["conflict_notes"],
-                    resolving_queries=expander_conflict_projection["resolving_queries"],
+                    resolving_queries=expander_conflict_projection[
+                        "resolving_queries"
+                    ],
                     retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
                     retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
                     queries_by_iteration=queries_by_iteration,
@@ -1857,7 +2036,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 iterations_run=iteration,
                 max_iterations=max_iterations,
             )
-            checkpoint_decision = decide_evidence_integration_checkpoint(checkpoint_snapshot)
+            checkpoint_decision = decide_evidence_integration_checkpoint(
+                checkpoint_snapshot
+            )
             checkpoint_trace = build_evidence_integration_checkpoint_trace(
                 snapshot=checkpoint_snapshot,
                 decision=checkpoint_decision,
@@ -1869,9 +2050,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 if weak_corpus_recovery_considered
                 else None
             )
-            conflict_resolution_lifecycle_for_gate = _conflict_resolution_lifecycle_facts(
-                decision=conflict_resolution_decision_for_checkpoint_gate,
-                lifecycle_trace=active_conflict_resolution_lifecycle,
+            conflict_resolution_lifecycle_for_gate = (
+                _conflict_resolution_lifecycle_facts(
+                    decision=conflict_resolution_decision_for_checkpoint_gate,
+                    lifecycle_trace=active_conflict_resolution_lifecycle,
+                )
             )
             gate_facts = ExpanderContinuationSpineGateFacts.from_traces(
                 component_queries=component_queries,
@@ -1882,21 +2065,33 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 checkpoint_handoff=checkpoint_handoff,
                 source_class_lifecycle_trace=source_class_lifecycle,
                 weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_for_gate),
-                ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
+                conflict_resolution_lifecycle_trace=(
+                    conflict_resolution_lifecycle_for_gate
+                ),
+                ordinary_continuation_candidate_trace=(
+                    ordinary_continuation_candidate_trace
+                ),
             )
             pregate_result = build_expander_continuation_spine_pregate(gate_facts)
-            ordinary_continuation_candidate_trace = pregate_result.ordinary_continuation_candidate_trace
+            ordinary_continuation_candidate_trace = (
+                pregate_result.ordinary_continuation_candidate_trace
+            )
             targeted_trace = _build_targeted_retrieval_lifecycle_from_runtime(
                 answer_contract_result=answer_contract_result,
                 source_class_recovery_telemetry=source_class_recommendation,
                 active_source_class_recovery_lifecycle=source_class_lifecycle,
                 weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                active_conflict_resolution_lifecycle=(active_conflict_resolution_lifecycle),
+                active_conflict_resolution_lifecycle=(
+                    active_conflict_resolution_lifecycle
+                ),
                 retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
                 retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                controller_loop_spine_result=(pregate_result.controller_loop_spine_result),
-                ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
+                controller_loop_spine_result=(
+                    pregate_result.controller_loop_spine_result
+                ),
+                ordinary_continuation_candidate_trace=(
+                    ordinary_continuation_candidate_trace
+                ),
                 max_iterations=max_iterations,
             )
             gate_output = authorize_expander_continuation_spine_gate(
@@ -1909,28 +2104,42 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     checkpoint_handoff=checkpoint_handoff,
                     source_class_lifecycle_trace=source_class_lifecycle,
                     weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                    conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_for_gate),
-                    ordinary_continuation_candidate_trace=(ordinary_continuation_candidate_trace),
+                    conflict_resolution_lifecycle_trace=(
+                        conflict_resolution_lifecycle_for_gate
+                    ),
+                    ordinary_continuation_candidate_trace=(
+                        ordinary_continuation_candidate_trace
+                    ),
                     targeted_retrieval_lifecycle_trace=targeted_trace,
                 )
             )
             evidence_integration_checkpoint_trace = gate_output.checkpoint_trace
             evidence_integration_checkpoint_handoff = gate_output.checkpoint_handoff
             evidence_integration_checkpoint_decided = gate_output.checkpoint_decided
-            ordinary_continuation_candidate_trace = gate_output.ordinary_continuation_candidate_trace
-            targeted_retrieval_lifecycle_trace = gate_output.targeted_retrieval_lifecycle_trace
-            expander_continuation_spine_gate_trace = gate_output.expander_continuation_spine_gate_trace
+            ordinary_continuation_candidate_trace = (
+                gate_output.ordinary_continuation_candidate_trace
+            )
+            targeted_retrieval_lifecycle_trace = (
+                gate_output.targeted_retrieval_lifecycle_trace
+            )
+            expander_continuation_spine_gate_trace = (
+                gate_output.expander_continuation_spine_gate_trace
+            )
             return _authorize_retrieval_batch_dispatch_for_current_continuation(
                 source_class_lifecycle_trace=source_class_lifecycle,
                 weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_gate,
-                conflict_resolution_lifecycle_trace=(conflict_resolution_lifecycle_for_gate),
+                conflict_resolution_lifecycle_trace=(
+                    conflict_resolution_lifecycle_for_gate
+                ),
             )
         except Exception as exc:
             run_log.warning(
                 "Non-fatal expander continuation spine gate omitted: %s",
                 exc,
             )
-            expander_continuation_spine_gate_trace = expander_continuation_spine_gate_exception_trace()
+            expander_continuation_spine_gate_trace = (
+                expander_continuation_spine_gate_exception_trace()
+            )
             return False, []
 
     # ------------------------------------------------------------------
@@ -1952,7 +2161,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 next_queries=current_queries,
                 query_source="pre_search",
             )
-            if pre_search_stop_decision.decision is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES:
+            if (
+                pre_search_stop_decision.decision
+                is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES
+            ):
                 waste_flags.append("query_redundancy_skipped")
                 break
         current_queries = query_authority.admit_execution_queries(
@@ -1979,9 +2191,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         if retrieval_scheduled_action.route_blocked:
             raise ProviderRouteBlockedError(provider_plan.records[-1].route_decision)
-        current_queries, current_search_depth, loop_providers, force_component_providers = main_retrieval_action_values(
-            retrieval_scheduled_action
-        )
+        current_queries, current_search_depth, loop_providers, force_component_providers = main_retrieval_action_values(retrieval_scheduled_action)
         current_search_depth_for_recovery = current_search_depth
         status.step(f"--- **Iteration {iteration}/{max_iterations}** ---")
         status.step(f"Executing Searches: {current_queries} ({current_search_depth} depth)")
@@ -1989,8 +2199,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
         status.step(f"Providers this pass: {', '.join(loop_providers)}")
         providers_by_iteration.append(list(loop_providers))
-        similarity_prior_queries = queries_by_iteration.get(iteration - 1, []) if iteration > 1 else None
-        query_similarity_basis = "previous_main_retrieval_iteration" if similarity_prior_queries else None
+        similarity_prior_queries = (
+            queries_by_iteration.get(iteration - 1, []) if iteration > 1 else None
+        )
+        query_similarity_basis = (
+            "previous_main_retrieval_iteration" if similarity_prior_queries else None
+        )
         main_retrieval_outcome = execute_main_retrieval_pass_from_scope(
             locals(),
             retrieval_pass_records=retrieval_pass_records,
@@ -1999,17 +2213,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         new_passages = main_retrieval_outcome.passages
         discover_candidate_urls_admitted += main_retrieval_outcome.seen_url_delta
         total_chunks_embedded += main_retrieval_outcome.chunk_delta
-        retrieval_loop_contract_state = main_retrieval_outcome.retrieval_loop_contract_state
+        retrieval_loop_contract_state = (
+            main_retrieval_outcome.retrieval_loop_contract_state
+        )
         to_merge = list(new_passages)
 
         if iteration == 1 and not searchos_slice_a_active:
             _ent = utilization_entity_anchor((primary_entity or core_topic or "").strip(), query_type)
             utilization_pre_retry = utilization_rate(to_merge, _ent) if _ent else None
-            if _ent and should_retry_retrieval(utilization_pre_retry) and not retrieval_retry_used:
-                if cap_policy is not None and cap_policy.should_disable_utilization_retry():
+            if (
+                _ent
+                and should_retry_retrieval(utilization_pre_retry)
+                and not retrieval_retry_used
+            ):
+                if (
+                    cap_policy is not None
+                    and cap_policy.should_disable_utilization_retry()
+                ):
                     cap_policy.record_fact("utilization_retry_disabled_by_cap_policy")
                 else:
-                    rqs = build_disambiguation_queries(query, core_topic, primary_entity, query_type, current_date)
+                    rqs = build_disambiguation_queries(
+                        query, core_topic, primary_entity, query_type, current_date
+                    )
                     rqs = query_authority.finalize_disambiguation(rqs)
                     if rqs:
                         if cap_policy is not None:
@@ -2029,13 +2254,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         to_merge = to_merge + retry_passages
             u_post = utilization_rate(to_merge, _ent) if _ent else 1.0
             utilization_rate_val = u_post
-            _low_ent_match = bool(_ent) and u_post is not None and float(u_post) < float(utilization_threshold)
+            _low_ent_match = (
+                bool(_ent)
+                and u_post is not None
+                and float(u_post) < float(utilization_threshold)
+            )
             corpus_state = classify_corpus_state(
                 empty_entity=empty_entity_flag,
                 utilization_rate=u_post if _ent else None,
                 utilization_threshold=utilization_threshold,
                 estimate_from_priors=(
-                    (not empty_entity_flag) and _low_ent_match and is_quantitative_query(query_type, report_type)
+                    (not empty_entity_flag)
+                    and _low_ent_match
+                    and is_quantitative_query(query_type, report_type)
                 ),
             ).value
             corpus_weak = is_weak_corpus_state(corpus_state)
@@ -2046,12 +2277,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             if _ent and corpus_state == CorpusState.OFF_TOPIC.value:
                 waste_flags.append("low_entity_utilization")
         elif not utilization_rate_val and (primary_entity or core_topic or "").strip():
-            _ent2 = utilization_entity_anchor((primary_entity or core_topic or "").strip(), query_type)
+            _ent2 = utilization_entity_anchor(
+                (primary_entity or core_topic or "").strip(), query_type
+            )
             utilization_rate_val = utilization_rate(list(new_passages), _ent2)
 
         if iteration == 1 and intent == "general" and not is_academic and not suppress_tavily:
             specialist_hits = [
-                p for p in to_merge if p.get("_provider") in {"exa", "linkup"} and p.get("credibility", 0) >= 3
+                p for p in to_merge
+                if p.get("_provider") in {"exa", "linkup"} and p.get("credibility", 0) >= 3
             ]
             if len(specialist_hits) >= 10:
                 suppress_tavily = True
@@ -2098,51 +2332,83 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 readable_passage_count=len(all_passages),
                 recovery_queries=recovery_queries,
             )
-            weak_corpus_decision = decide_weak_corpus_recovery(weak_corpus_snapshot)
+            weak_corpus_decision = decide_weak_corpus_recovery(
+                weak_corpus_snapshot
+            )
             weak_corpus_decision_for_checkpoint_gate = weak_corpus_decision
-            weak_corpus_recovery_decision_fields = weak_corpus_recovery_trace_fields(weak_corpus_decision)
-            weak_corpus_recovery_decision = str(weak_corpus_recovery_decision_fields["weak_corpus_recovery_decision"])
-            weak_corpus_recovery_reason = str(weak_corpus_recovery_decision_fields["weak_corpus_recovery_reason"])
-            weak_corpus_recovery_blockers = list(weak_corpus_recovery_decision_fields["weak_corpus_recovery_blockers"])
+            weak_corpus_recovery_decision_fields = (
+                weak_corpus_recovery_trace_fields(weak_corpus_decision)
+            )
+            weak_corpus_recovery_decision = str(
+                weak_corpus_recovery_decision_fields[
+                    "weak_corpus_recovery_decision"
+                ]
+            )
+            weak_corpus_recovery_reason = str(
+                weak_corpus_recovery_decision_fields[
+                    "weak_corpus_recovery_reason"
+                ]
+            )
+            weak_corpus_recovery_blockers = list(
+                weak_corpus_recovery_decision_fields[
+                    "weak_corpus_recovery_blockers"
+                ]
+            )
 
             if weak_corpus_decision.considered:
                 weak_corpus_recovery_considered = True
-                checkpoint_skip_reason = None if weak_corpus_decision.approved else weak_corpus_decision.reason
+                checkpoint_skip_reason = (
+                    None if weak_corpus_decision.approved else weak_corpus_decision.reason
+                )
                 _ensure_checkpoint_decision_for_weak_corpus_timing(
                     weak_corpus_skip_reason=checkpoint_skip_reason,
                 )
                 weak_corpus_spine_result = build_controller_loop_spine_result(
                     ControllerLoopSpineInput.from_traces(
                         checkpoint_trace=evidence_integration_checkpoint_trace,
-                        weak_corpus_lifecycle_trace=_weak_corpus_lifecycle_facts(weak_corpus_decision),
+                        weak_corpus_lifecycle_trace=_weak_corpus_lifecycle_facts(
+                            weak_corpus_decision
+                        ),
                     )
                 )
-                weak_corpus_authorization = weak_corpus_spine_result.dispatch_authorization
-                weak_corpus_authorized_action = weak_corpus_authorization.authorized_action_name
+                weak_corpus_authorization = (
+                    weak_corpus_spine_result.dispatch_authorization
+                )
+                weak_corpus_authorized_action = (
+                    weak_corpus_authorization.authorized_action_name
+                )
                 record_weak_corpus_recovery_decision(
                     _run_controller_mirror,
                     snapshot=weak_corpus_snapshot,
                     decision=weak_corpus_decision,
-                    action_promoted=(weak_corpus_authorized_action == RECOVER_WEAK_CORPUS),
+                    action_promoted=(
+                        weak_corpus_authorized_action == RECOVER_WEAK_CORPUS
+                    ),
                 )
                 if weak_corpus_decision.approved:
-                    weak_corpus_recovery_schedule = schedule_weak_corpus_recovery_from_pipeline_scope(
-                        locals(),
-                        recovery_queries=weak_corpus_decision.queries,
-                        iteration=iteration + 1,
-                        authorized_action_name=weak_corpus_authorized_action,
-                        recover_action_name=RECOVER_WEAK_CORPUS,
-                        controller_decision_reason=weak_corpus_decision.reason,
+                    weak_corpus_recovery_schedule = (
+                        schedule_weak_corpus_recovery_from_pipeline_scope(
+                            locals(),
+                            recovery_queries=weak_corpus_decision.queries,
+                            iteration=iteration + 1,
+                            authorized_action_name=weak_corpus_authorized_action,
+                            recover_action_name=RECOVER_WEAK_CORPUS,
+                            controller_decision_reason=weak_corpus_decision.reason,
+                        )
                     )
                     if weak_corpus_recovery_schedule.continue_retrieval:
                         weak_corpus_recovery_attempted = True
-                        weak_corpus_recovery_queries = list(weak_corpus_recovery_schedule.current_queries)
-                        status.step(
-                            f"Weak first-pass corpus; running bounded recovery searches: {weak_corpus_recovery_queries}"
+                        weak_corpus_recovery_queries = list(
+                            weak_corpus_recovery_schedule.current_queries
                         )
-                        weak_corpus_recovery_used = weak_corpus_recovery_schedule.recovery_active
+                        status.step(f"Weak first-pass corpus; running bounded recovery searches: {weak_corpus_recovery_queries}")
+                        weak_corpus_recovery_used = (
+                            weak_corpus_recovery_schedule.recovery_active
+                        )
                         weak_corpus_recovery_skip_reason = None
-                        current_queries = weak_corpus_recovery_schedule.queries_list()
+                        current_queries = (
+                            weak_corpus_recovery_schedule.queries_list()
+                        )
                         _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
                         iterations_run += 1
                         iteration += 1
@@ -2167,7 +2433,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 query_source="weak_corpus_recovery",
                 weak_corpus_recovery_completed=True,
             )
-            if recovery_stop_decision.decision is RetrievalStopControllerDecision.STOP_AFTER_RECOVERY:
+            if (
+                recovery_stop_decision.decision
+                is RetrievalStopControllerDecision.STOP_AFTER_RECOVERY
+            ):
                 is_sufficient = True
 
         if iteration < max_iterations and not (corpus_weak and iteration == 1):
@@ -2186,26 +2455,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     "expander",
                     prompt=expander_prompt,
                     system_prompt=expander_sys,
-                    evidence_texts=[str(p.get("text") or "")[:200] for p in diverse_top_evidence[:12]],
+                    evidence_texts=[
+                        str(p.get("text") or "")[:200]
+                        for p in diverse_top_evidence[:12]
+                    ],
                 )
                 _exp_t0 = time.monotonic()
                 expander_text = deps.clean_json_response(
                     ask_model(
-                        expander_prompt,
-                        expander_sys,
-                        provider=fast_provider,
-                        model=fast_model,
-                        effort="low",
-                        base_url=local_url,
-                        api_key=or_api_key,
-                        require_json=True,
-                        use_reasoning=False,
+                        expander_prompt, expander_sys,
+                        provider=fast_provider, model=fast_model, effort="low",
+                        base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=False,
                     )
                 )
                 expander_llm_seconds += max(0.0, time.monotonic() - _exp_t0)
                 try:
                     expander_data = json.loads(expander_text)
-                    raw_component_queries = [str(q)[:300] for q in expander_data.get("component_queries", [])]
+                    raw_component_queries = [
+                        str(q)[:300] for q in expander_data.get("component_queries", [])
+                    ]
                     component_queries = query_authority.finalize_expander_continuation(
                         raw_component_queries, max_len=max_queries
                     )
@@ -2214,8 +2482,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         if len(component_queries) > max_queries:
                             run_log.warning(
                                 "Expander returned %d queries despite prompt cap of %d. Truncating.",
-                                len(component_queries),
-                                max_queries,
+                                len(component_queries), max_queries,
                             )
                         component_queries = component_queries[:max_queries]
                         expander_stop_decision = _decide_retrieval_loop_stop_continue(
@@ -2225,7 +2492,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             next_queries=component_queries,
                             query_source="expander",
                         )
-                        if expander_stop_decision.decision is not RetrievalStopControllerDecision.CONTINUE_RETRIEVAL:
+                        if (
+                            expander_stop_decision.decision
+                            is not RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
+                        ):
                             is_sufficient = True
                             continue
                         (
@@ -2244,14 +2514,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             iteration=iteration + 1,
                             continuation_authorized=expander_continuation_authorized,
                         )
-                        current_queries, force_component_providers = continuation_action_values(
-                            expander_continuation_schedule
+                        current_queries, force_component_providers = (
+                            continuation_action_values(expander_continuation_schedule)
                         )
                         run_log.info(
                             "Expander generated %d component queries: %s | Reason: %s",
-                            len(current_queries),
-                            current_queries,
-                            expander_reasoning,
+                            len(current_queries), current_queries, expander_reasoning,
                         )
                         status.step(f"Component gaps identified: {current_queries}")
                         _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
@@ -2270,7 +2538,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             # --- GAP EVALUATOR ---
             if not expander_fired:
                 status.step(f"Evaluating data gaps with {fast_provider}...")
-                evidence_block = "\n\n".join(f"[{p['title']}]\n{p['text'][:800]}" for p in diverse_top_evidence)
+                evidence_block = "\n\n".join(
+                    f"[{p['title']}]\n{p['text'][:800]}" for p in diverse_top_evidence
+                )
                 eval_prompt = (
                     f"Today is {current_date}.\nTopic: {core_topic}\n\n"
                     f"Past Searches Attempted:\n{past_searches}\n\n"
@@ -2280,20 +2550,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     "evaluator",
                     prompt=eval_prompt,
                     system_prompt=DEFAULT_SYSTEM["evaluator"],
-                    evidence_texts=[str(p.get("text") or "")[:800] for p in diverse_top_evidence],
+                    evidence_texts=[
+                        str(p.get("text") or "")[:800]
+                        for p in diverse_top_evidence
+                    ],
                 )
                 _gev_t0 = time.monotonic()
                 eval_text = deps.clean_json_response(
                     ask_model(
-                        eval_prompt,
-                        DEFAULT_SYSTEM["evaluator"],
-                        provider=fast_provider,
-                        model=fast_model,
-                        effort="low",
-                        base_url=local_url,
-                        api_key=or_api_key,
-                        require_json=True,
-                        use_reasoning=use_reasoning,
+                        eval_prompt, DEFAULT_SYSTEM["evaluator"],
+                        provider=fast_provider, model=fast_model, effort="low",
+                        base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
                     )
                 )
                 gap_evaluator_llm_seconds += max(0.0, time.monotonic() - _gev_t0)
@@ -2302,17 +2569,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     is_sufficient = eval_data.get("is_sufficient", False)
                     evaluator_sufficient_for_shadow = bool(is_sufficient)
                     evaluator_next_queries = [
-                        _clean_query(str(q)) for q in eval_data.get("new_queries", []) if _clean_query(str(q))
+                        _clean_query(str(q)) for q in eval_data.get("new_queries", [])
+                        if _clean_query(str(q))
                     ][:2]
                     if intent == "news":
                         evaluator_next_queries = [
-                            q if any(ch.isdigit() for ch in q) else _clean_query(f"{q} {_extract_year(current_date)}")
+                            q if any(ch.isdigit() for ch in q)
+                            else _clean_query(f"{q} {_extract_year(current_date)}")
                             for q in evaluator_next_queries
                         ]
                     evaluator_next_queries = query_authority.finalize_evaluator_continuation(
                         evaluator_next_queries, max_len=2
                     )
-                    evaluator_stop_prior_queries = queries_by_iteration.get(1, []) if iteration == 1 else []
+                    evaluator_stop_prior_queries = (
+                        queries_by_iteration.get(1, []) if iteration == 1 else []
+                    )
                     evaluator_stop_snapshot = build_retrieval_stop_controller_input(
                         evaluator_sufficient=evaluator_sufficient_for_shadow,
                         iteration=iteration,
@@ -2322,16 +2593,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         query_source="evaluator",
                         weak_corpus_recovery_used=weak_corpus_recovery_used,
                     )
-                    evaluator_stop_checkpoint_action = run_kernel.authorize_retrieval_stop_checkpoint(
-                        inputs={
-                            "checkpoint_stage": "evaluator",
-                            "iteration": iteration,
-                            "max_iterations": max_iterations,
-                            "prior_query_count": len(tuple(evaluator_stop_prior_queries)),
-                            "next_query_count": len(tuple(evaluator_next_queries)),
-                            "query_source": "evaluator",
-                            "evaluator_sufficient": evaluator_sufficient_for_shadow,
-                        }
+                    evaluator_stop_checkpoint_action = (
+                        run_kernel.authorize_retrieval_stop_checkpoint(
+                            inputs={
+                                "checkpoint_stage": "evaluator",
+                                "iteration": iteration,
+                                "max_iterations": max_iterations,
+                                "prior_query_count": len(tuple(evaluator_stop_prior_queries)),
+                                "next_query_count": len(tuple(evaluator_next_queries)),
+                                "query_source": "evaluator",
+                                "evaluator_sufficient": evaluator_sufficient_for_shadow,
+                            }
+                        )
                     )
                     evaluator_stop_checkpoint = decide_retrieval_stop_with_kernel_action(
                         evaluator_stop_checkpoint_action,
@@ -2341,9 +2614,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     run_kernel.reduce(evaluator_stop_checkpoint.observation)
                     evaluator_stop_decision = evaluator_stop_checkpoint.decision
                     evaluator_stop_stage = {
-                        RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS: ("evaluator"),
-                        RetrievalStopControllerDecision.STOP_NO_QUERIES: ("evaluator_no_queries"),
-                        RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES: ("evaluator_redundant_queries"),
+                        RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS: (
+                            "evaluator"
+                        ),
+                        RetrievalStopControllerDecision.STOP_NO_QUERIES: (
+                            "evaluator_no_queries"
+                        ),
+                        RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES: (
+                            "evaluator_redundant_queries"
+                        ),
                     }.get(evaluator_stop_decision.decision, "evaluator")
                     _record_retrieval_stop_shadow_once(
                         decision=evaluator_stop_decision,
@@ -2353,25 +2632,43 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         next_queries=evaluator_next_queries,
                         query_source="evaluator",
                     )
-                    if evaluator_stop_decision.decision is RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS:
+                    if (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS
+                    ):
                         is_sufficient = True
-                    elif evaluator_stop_decision.decision is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES:
+                    elif (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES
+                    ):
                         waste_flags.append("query_redundancy_skipped")
                         is_sufficient = True
-                    elif evaluator_stop_decision.decision is RetrievalStopControllerDecision.STOP_NO_QUERIES:
-                        retrieval_stop_active_telemetry = _build_retrieval_stop_active_stop_no_queries_telemetry(
-                            stage="evaluator_no_queries",
-                            evaluator_sufficient=False,
-                            iteration=iteration,
-                            max_iterations=max_iterations,
-                            prior_queries=queries_by_iteration.get(iteration, []),
-                            next_queries=[],
-                            query_source="evaluator",
-                            weak_corpus_recovery_used=(weak_corpus_recovery_used),
-                            shadow_telemetry=retrieval_stop_shadow_telemetry,
+                    elif (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.STOP_NO_QUERIES
+                    ):
+                        retrieval_stop_active_telemetry = (
+                            _build_retrieval_stop_active_stop_no_queries_telemetry(
+                                stage="evaluator_no_queries",
+                                evaluator_sufficient=False,
+                                iteration=iteration,
+                                max_iterations=max_iterations,
+                                prior_queries=queries_by_iteration.get(
+                                    iteration, []
+                                ),
+                                next_queries=[],
+                                query_source="evaluator",
+                                weak_corpus_recovery_used=(
+                                    weak_corpus_recovery_used
+                                ),
+                                shadow_telemetry=retrieval_stop_shadow_telemetry,
+                            )
                         )
                         is_sufficient = True
-                    elif evaluator_stop_decision.decision is RetrievalStopControllerDecision.CONTINUE_RETRIEVAL:
+                    elif (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
+                    ):
                         (
                             evaluator_continuation_authorized,
                             authorized_evaluator_queries,
@@ -2385,19 +2682,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             continuation_authorized=evaluator_continuation_authorized,
                         )
                         if evaluator_continuation_authorized:
-                            current_queries = evaluator_continuation_schedule.queries_list()
+                            current_queries = (
+                                evaluator_continuation_schedule.queries_list()
+                            )
                         else:
                             current_queries = []
                             source_class_block_reasons = {
                                 str(reason)
                                 for reason in (
                                     [
-                                        evaluator_continuation_spine_gate_trace.get("authorized_action_name"),
-                                        evaluator_continuation_spine_gate_trace.get("checkpoint_action_name"),
-                                        evaluator_continuation_spine_gate_trace.get("reason"),
+                                        evaluator_continuation_spine_gate_trace.get(
+                                            "authorized_action_name"
+                                        ),
+                                        evaluator_continuation_spine_gate_trace.get(
+                                            "checkpoint_action_name"
+                                        ),
+                                        evaluator_continuation_spine_gate_trace.get(
+                                            "reason"
+                                        ),
                                     ]
                                     + list(
-                                        targeted_retrieval_lifecycle_trace.get("targeted_retrieval_candidate_blockers")
+                                        targeted_retrieval_lifecycle_trace.get(
+                                            "targeted_retrieval_candidate_blockers"
+                                        )
                                         or []
                                     )
                                 )
@@ -2405,7 +2712,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             }
                             if not (
                                 RECOVER_MISSING_SOURCE_CLASS in source_class_block_reasons
-                                or (source_class_block_reasons & _SOURCE_CLASS_RECOVERY_ORDINARY_BLOCK_REASONS)
+                                or (
+                                    source_class_block_reasons
+                                    & _SOURCE_CLASS_RECOVERY_ORDINARY_BLOCK_REASONS
+                                )
                             ):
                                 is_sufficient = True
                     else:
@@ -2423,19 +2733,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 query_source="budget",
             )
             if (
-                budget_stop_decision.decision is RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED
-                and retrieval_stop_shadow_telemetry.get("retrieval_stop_shadow_decision") == "stop_budget_exhausted"
+                budget_stop_decision.decision
+                is RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED
+                and retrieval_stop_shadow_telemetry.get(
+                    "retrieval_stop_shadow_decision"
+                )
+                == "stop_budget_exhausted"
             ):
-                retrieval_stop_active_telemetry = _build_retrieval_stop_active_stop_budget_exhausted_telemetry(
-                    stage="iteration_budget_exhausted",
-                    evaluator_sufficient=None,
-                    iteration=iteration,
-                    max_iterations=max_iterations,
-                    prior_queries=queries_by_iteration.get(iteration, []),
-                    next_queries=[],
-                    query_source="budget",
-                    weak_corpus_recovery_used=weak_corpus_recovery_used,
-                    shadow_telemetry=retrieval_stop_shadow_telemetry,
+                retrieval_stop_active_telemetry = (
+                    _build_retrieval_stop_active_stop_budget_exhausted_telemetry(
+                        stage="iteration_budget_exhausted",
+                        evaluator_sufficient=None,
+                        iteration=iteration,
+                        max_iterations=max_iterations,
+                        prior_queries=queries_by_iteration.get(iteration, []),
+                        next_queries=[],
+                        query_source="budget",
+                        weak_corpus_recovery_used=weak_corpus_recovery_used,
+                        shadow_telemetry=retrieval_stop_shadow_telemetry,
+                    )
                 )
 
         _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
@@ -2457,9 +2773,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         top_chunks,
         max_domain_chunks,
     )
-    ordinary_discovery_authority_snapshot = build_ordinary_discovery_authority_snapshot(
-        query_plan=query_authority.plan,
-        provider_plan=provider_plan,
+    ordinary_discovery_authority_snapshot = (
+        build_ordinary_discovery_authority_snapshot(
+            query_plan=query_authority.plan,
+            provider_plan=provider_plan,
+        )
     )
     ordinary_discovery_selection = prepare_ordinary_discovery_selection(
         final_top_evidence=initial_discovery_top_evidence,
@@ -2473,27 +2791,38 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     }
     if ordinary_discovery_selection.candidate_count:
         active_answer_contract_ref = contract_ref_from_contract(
-            run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract,
+            run_kernel.state.current_answer_contract
+            or run_kernel.state.initial_answer_contract,
             source=(
-                "current_answer_contract" if run_kernel.state.current_answer_contract else "initial_answer_contract"
+                "current_answer_contract"
+                if run_kernel.state.current_answer_contract
+                else "initial_answer_contract"
             ),
         )
-        ordinary_candidate_action_inputs = build_ordinary_discovery_candidate_action_inputs(
-            run_id=run_id,
-            request_id=session_id,
-            source_result_identity_set_ref=(discovery_result_store.identity_set_ref()),
-            selection=ordinary_discovery_selection,
-            answer_contract_ref=active_answer_contract_ref,
+        ordinary_candidate_action_inputs = (
+            build_ordinary_discovery_candidate_action_inputs(
+                run_id=run_id,
+                request_id=session_id,
+                source_result_identity_set_ref=(
+                    discovery_result_store.identity_set_ref()
+                ),
+                selection=ordinary_discovery_selection,
+                answer_contract_ref=active_answer_contract_ref,
+            )
         )
-        ordinary_candidate_action = run_kernel.authorize_ordinary_discovery_candidate_handoff(
-            inputs=ordinary_candidate_action_inputs
+        ordinary_candidate_action = (
+            run_kernel.authorize_ordinary_discovery_candidate_handoff(
+                inputs=ordinary_candidate_action_inputs
+            )
         )
-        ordinary_candidate_execution = execute_ordinary_discovery_candidate_handoff_action(
-            action=ordinary_candidate_action,
-            selection=ordinary_discovery_selection,
-            discovery_result_store=discovery_result_store,
-            authority_snapshot=ordinary_discovery_authority_snapshot,
-            answer_contract_ref=active_answer_contract_ref,
+        ordinary_candidate_execution = (
+            execute_ordinary_discovery_candidate_handoff_action(
+                action=ordinary_candidate_action,
+                selection=ordinary_discovery_selection,
+                discovery_result_store=discovery_result_store,
+                authority_snapshot=ordinary_discovery_authority_snapshot,
+                answer_contract_ref=active_answer_contract_ref,
+            )
         )
         run_kernel.reduce(ordinary_candidate_execution.observation)
         ordinary_discovery_candidate_packet = dict(ordinary_candidate_execution.packet)
@@ -2595,7 +2924,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
                         status=RunStageStatus.FAILED,
                         payload={
-                            "failure_reason": ("searchos_followup_retrieval_failed:" + type(exc).__name__),
+                            "failure_reason": (
+                                "searchos_followup_retrieval_failed:"
+                                + type(exc).__name__
+                            ),
                             "provider_dispatch_attempted": True,
                         },
                     )
@@ -2610,7 +2942,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         "discover_passage_count": 0,
                     },
                     "overflow_facts": {},
-                    "followup_failure_reason": ("retrieval_failed:" + type(exc).__name__),
+                    "followup_failure_reason": (
+                        "retrieval_failed:" + type(exc).__name__
+                    ),
                 }
             run_kernel.reduce(followup_outcome.observation)
             retrieval_loop_contract_state = followup_outcome.retrieval_loop_contract_state
@@ -2637,7 +2971,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             wave_packet: dict[str, Any] = {}
             if wave_selection.candidate_count:
                 wave_answer_contract_ref = contract_ref_from_contract(
-                    run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract,
+                    run_kernel.state.current_answer_contract
+                    or run_kernel.state.initial_answer_contract,
                     source=(
                         "current_answer_contract"
                         if run_kernel.state.current_answer_contract
@@ -2696,7 +3031,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             available_providers=(provider_availability_snapshot.to_capability_available_keys()),
             acquisition_transports=deps.searchos_read_acquisition_transports,
             execute_followup_discover=_execute_searchos_followup_discover,
-            before_transport=(_before_read_transport if cap_policy is not None else None),
+            before_transport=(
+                _before_read_transport if cap_policy is not None else None
+            ),
             measure_context_stage=_measure_context_stage,
         )
         searchos_slice_a_projection = dict(searchos_slice_a_result.projection)
@@ -2710,67 +3047,89 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         all_passages,
         domain_anchor=primary_entity or core_topic,
     )
-    _source_class_recovery_lifecycle_recommendation = build_source_class_recovery_recommendation(
-        query=query,
-        current_date=current_date,
-        intent=intent,
-        report_type=report_type,
-        query_type=query_type,
-        core_topic=core_topic,
-        primary_entity=primary_entity,
-        anchor_packet=anchor_packet_telemetry,
-        source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
-        source_domain_counts=_source_domain_recovery_lifecycle["source_domain_counts"],
-        top_source_domains=_source_domain_recovery_lifecycle["top_source_domains"],
-        official_evidence_found=_source_tier_recovery_lifecycle["official_evidence_found"],
-    )
-    official_source_obligation_bridge_trace: dict[str, Any] | None = None
-    official_canonical_recovery_query_acquisition_trace: dict[str, Any] | None = None
-    official_canonical_recovery_execution_admission_trace: dict[str, Any] | None = None
-    _search_judgment_started = False
-    try:
-        _source_class_recovery_answer_contract_observability = build_source_class_observability_telemetry(
+    _source_class_recovery_lifecycle_recommendation = (
+        build_source_class_recovery_recommendation(
             query=query,
+            current_date=current_date,
             intent=intent,
             report_type=report_type,
             query_type=query_type,
             core_topic=core_topic,
             primary_entity=primary_entity,
             anchor_packet=anchor_packet_telemetry,
-            final_top_evidence=all_passages,
-            final_answer_source_ids=None,
+            source_tier_counts=_source_tier_recovery_lifecycle[
+                "source_tier_counts"
+            ],
+            source_domain_counts=_source_domain_recovery_lifecycle[
+                "source_domain_counts"
+            ],
+            top_source_domains=_source_domain_recovery_lifecycle[
+                "top_source_domains"
+            ],
+            official_evidence_found=_source_tier_recovery_lifecycle[
+                "official_evidence_found"
+            ],
+        )
+    )
+    official_source_obligation_bridge_trace: dict[str, Any] | None = None
+    official_canonical_recovery_query_acquisition_trace: dict[str, Any] | None = None
+    official_canonical_recovery_execution_admission_trace: dict[str, Any] | None = None
+    _search_judgment_started = False
+    try:
+        _source_class_recovery_answer_contract_observability = (
+            build_source_class_observability_telemetry(
+                query=query,
+                intent=intent,
+                report_type=report_type,
+                query_type=query_type,
+                core_topic=core_topic,
+                primary_entity=primary_entity,
+                anchor_packet=anchor_packet_telemetry,
+                final_top_evidence=all_passages,
+                final_answer_source_ids=None,
+            )
         )
         reduce_run_contract_requirements_into_evidence_ledger(
             run_kernel=run_kernel,
             run_id=run_id,
             run_contract_projection=run_contract_projection,
             observation_id_suffix="run-contract-pre-recovery",
-            authorization_observation_source=("run_authority_contract_pre_recovery"),
-        )
-        provider_job_evidence_reduction = reduce_provider_job_evidence_into_evidence_ledger(
-            run_kernel=run_kernel,
-            run_id=run_id,
-            provider_job_execution_handoff=provider_job_execution_handoff,
-            query_plan_trace=query_authority.to_trace_fragment().get(
-                "query_plan",
-                {},
+            authorization_observation_source=(
+                "run_authority_contract_pre_recovery"
             ),
-            current_authorized_queries=current_queries,
-            retrieval_records=all_passages,
-            search_work_projection=run_kernel.state.search_work_plan,
         )
-        evidence_ledger_projection = provider_job_evidence_reduction["evidence_ledger_projection"]
-        provider_job_evidence_ledger_bridge_projection = provider_job_evidence_reduction[
-            "provider_job_evidence_ledger_bridge_projection"
+        provider_job_evidence_reduction = (
+            reduce_provider_job_evidence_into_evidence_ledger(
+                run_kernel=run_kernel,
+                run_id=run_id,
+                provider_job_execution_handoff=provider_job_execution_handoff,
+                query_plan_trace=query_authority.to_trace_fragment().get(
+                    "query_plan",
+                    {},
+                ),
+                current_authorized_queries=current_queries,
+                retrieval_records=all_passages,
+                search_work_projection=run_kernel.state.search_work_plan,
+            )
+        )
+        evidence_ledger_projection = provider_job_evidence_reduction[
+            "evidence_ledger_projection"
         ]
-        evidence_ledger_projection = reduce_pre_recovery_source_obligations_into_evidence_ledger(
-            run_kernel=run_kernel,
-            run_id=run_id,
-            source_class_recovery_telemetry={
-                **_source_class_recovery_lifecycle_recommendation,
-                **_source_class_recovery_answer_contract_observability,
-            },
-            final_top_evidence=all_passages,
+        provider_job_evidence_ledger_bridge_projection = (
+            provider_job_evidence_reduction[
+                "provider_job_evidence_ledger_bridge_projection"
+            ]
+        )
+        evidence_ledger_projection = (
+            reduce_pre_recovery_source_obligations_into_evidence_ledger(
+                run_kernel=run_kernel,
+                run_id=run_id,
+                source_class_recovery_telemetry={
+                    **_source_class_recovery_lifecycle_recommendation,
+                    **_source_class_recovery_answer_contract_observability,
+                },
+                final_top_evidence=all_passages,
+            )
         )
         (
             _pre_recovery_conflict_state,
@@ -2781,7 +3140,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             primary_entity=primary_entity,
             current_date=current_date,
             final_top_evidence=all_passages,
-            source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
+            source_tier_counts=_source_tier_recovery_lifecycle[
+                "source_tier_counts"
+            ],
             source_domain_telemetry=_source_domain_recovery_lifecycle,
             source_class_observability={
                 **_source_class_recovery_lifecycle_recommendation,
@@ -2799,21 +3160,35 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 core_topic=core_topic,
                 evidence_available=bool(all_passages),
                 evidence_sufficient=bool(is_sufficient),
-                source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
+                source_tier_counts=_source_tier_recovery_lifecycle[
+                    "source_tier_counts"
+                ],
                 source_class_recovery_telemetry={
                     **_source_class_recovery_lifecycle_recommendation,
                     **_source_class_recovery_answer_contract_observability,
                 },
                 evidence_ledger_projection=evidence_ledger_projection,
-                active_source_class_recovery_lifecycle=(source_class_recovery_lifecycle_defaults()),
+                active_source_class_recovery_lifecycle=(
+                    source_class_recovery_lifecycle_defaults()
+                ),
                 weak_corpus=bool(corpus_weak),
-                weak_corpus_reason=((weak_corpus_recovery_skip_reason or corpus_state) if corpus_weak else None),
-                weak_corpus_recovery_considered=bool(weak_corpus_recovery_considered),
+                weak_corpus_reason=(
+                    (weak_corpus_recovery_skip_reason or corpus_state)
+                    if corpus_weak
+                    else None
+                ),
+                weak_corpus_recovery_considered=bool(
+                    weak_corpus_recovery_considered
+                ),
                 weak_corpus_recovery_used=bool(weak_corpus_recovery_used),
                 weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                conflicts_present=pre_recovery_conflict_projection["conflicts_present"],
+                conflicts_present=pre_recovery_conflict_projection[
+                    "conflicts_present"
+                ],
                 conflict_notes=pre_recovery_conflict_projection["conflict_notes"],
-                resolving_queries=pre_recovery_conflict_projection["resolving_queries"],
+                resolving_queries=pre_recovery_conflict_projection[
+                    "resolving_queries"
+                ],
                 retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
                 retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
                 queries_by_iteration=queries_by_iteration,
@@ -2823,7 +3198,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 max_recovery_attempts=1,
             )
         )
-        _pre_recovery_answer_contract_projection = _pre_recovery_answer_contract_result.fulfillment_handoff.to_dict()
+        _pre_recovery_answer_contract_projection = (
+            _pre_recovery_answer_contract_result.fulfillment_handoff.to_dict()
+        )
         answer_contract_projection = dict(_pre_recovery_answer_contract_projection)
         if not run_kernel.state.initial_answer_contract:
             final_top_evidence = list(all_passages)
@@ -2914,10 +3291,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "Non-fatal answer-contract source-class recovery trigger omitted: %s",
             exc,
         )
-    _authoritative_source_action_handoff = build_authoritative_source_action_orchestrator_handoff(
-        _run_controller_mirror,
-        orchestrator_state=locals(),
-        logger=run_log,
+    _authoritative_source_action_handoff = (
+        build_authoritative_source_action_orchestrator_handoff(
+            _run_controller_mirror,
+            orchestrator_state=locals(),
+            logger=run_log,
+        )
     )
     (
         _source_class_recovery_lifecycle_recommendation,
@@ -2939,8 +3318,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     _retrieval_authority_stage = build_retrieval_authority_stage(
         answer_contract_result=_pre_recovery_answer_contract_result,
-        source_class_recovery_recommendation=(_source_class_recovery_lifecycle_recommendation),
-        active_source_class_recovery_lifecycle=(active_source_class_recovery_lifecycle),
+        source_class_recovery_recommendation=(
+            _source_class_recovery_lifecycle_recommendation
+        ),
+        active_source_class_recovery_lifecycle=(
+            active_source_class_recovery_lifecycle
+        ),
         active_conflict_resolution_lifecycle=active_conflict_resolution_lifecycle,
         conflict_resolution_decision=conflict_resolution_decision_for_checkpoint_gate,
         weak_corpus_lifecycle_trace=(
@@ -2969,18 +3352,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             else ()
         ),
         retrieval_batch_dispatch_trace=retrieval_batch_dispatch_trace,
-        evaluator_continuation_spine_gate_trace=(evaluator_continuation_spine_gate_trace),
+        evaluator_continuation_spine_gate_trace=(
+            evaluator_continuation_spine_gate_trace
+        ),
         expander_continuation_spine_gate_trace=expander_continuation_spine_gate_trace,
         logger=run_log,
         decide_checkpoint=decide_evidence_integration_checkpoint,
         build_checkpoint_trace=build_evidence_integration_checkpoint_trace,
         checkpoint_unavailable_trace=evidence_integration_checkpoint_unavailable_trace,
     )
-    evidence_integration_checkpoint_trace = _retrieval_authority_stage.evidence_integration_checkpoint_trace
-    evidence_integration_checkpoint_handoff = _retrieval_authority_stage.evidence_integration_checkpoint_handoff
-    evidence_integration_checkpoint_decided = _retrieval_authority_stage.evidence_integration_checkpoint_decided
-    ordinary_continuation_candidate_trace = _retrieval_authority_stage.ordinary_continuation_candidate_trace
-    targeted_retrieval_lifecycle_trace = _retrieval_authority_stage.targeted_retrieval_lifecycle_trace
+    evidence_integration_checkpoint_trace = (
+        _retrieval_authority_stage.evidence_integration_checkpoint_trace
+    )
+    evidence_integration_checkpoint_handoff = (
+        _retrieval_authority_stage.evidence_integration_checkpoint_handoff
+    )
+    evidence_integration_checkpoint_decided = (
+        _retrieval_authority_stage.evidence_integration_checkpoint_decided
+    )
+    ordinary_continuation_candidate_trace = (
+        _retrieval_authority_stage.ordinary_continuation_candidate_trace
+    )
+    targeted_retrieval_lifecycle_trace = (
+        _retrieval_authority_stage.targeted_retrieval_lifecycle_trace
+    )
     authorized_spine_action = _retrieval_authority_stage.authorized_spine_action
 
     if searchos_slice_a_active:
@@ -3016,7 +3411,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "new_url_count": 0,
         }
     if conflict_resolution_execution["attempted"]:
-        discover_candidate_urls_admitted += int(conflict_resolution_execution["new_url_count"])
+        discover_candidate_urls_admitted += int(
+            conflict_resolution_execution["new_url_count"]
+        )
         total_chunks_embedded += int(conflict_resolution_execution["result_count"])
 
     final_evidence_handoff = build_final_evidence_runtime_handoff_from_scope(
@@ -3047,7 +3444,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         and not economist_safety_telemetry.get("quantitative_packet_present")
         and not economist_safety_telemetry.get("high_stakes_quant_detected")
     ):
-        economist_safety_telemetry.update(validate_high_stakes_quantitative_query_shadow(query=query))
+        economist_safety_telemetry.update(
+            validate_high_stakes_quantitative_query_shadow(query=query)
+        )
 
     quant_retrieval_sufficiency_telemetry = _quant_retrieval_sufficiency_shadow_telemetry(
         query=query,
@@ -3058,23 +3457,31 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         nutrition_lookup_entity=(primary_entity or None),
         router_entities=entities_list,
     )
-    economist_pre_analyst_skip_candidate_telemetry = _economist_pre_analyst_skip_candidate_telemetry(
-        report_type=report_type,
-        complexity=complexity,
-        mode=strategy,
-        economist_safety_telemetry=economist_safety_telemetry,
-        quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
+    economist_pre_analyst_skip_candidate_telemetry = (
+        _economist_pre_analyst_skip_candidate_telemetry(
+            report_type=report_type,
+            complexity=complexity,
+            mode=strategy,
+            economist_safety_telemetry=economist_safety_telemetry,
+            quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
+        )
     )
-    estimate_from_priors_requested = corpus_state == CorpusState.ESTIMATE_FROM_PRIORS.value
-    missing_target_metric_fallback_directive = _format_missing_target_metric_fallback_directive(
-        query=query,
-        report_type=report_type,
-        quant_report_types=QUANT_REPORT_TYPES,
-        economist_safety_telemetry=economist_safety_telemetry,
-        quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
-        estimate_from_priors=estimate_from_priors_requested,
+    estimate_from_priors_requested = (
+        corpus_state == CorpusState.ESTIMATE_FROM_PRIORS.value
     )
-    missing_target_metric_directive_emitted = bool(missing_target_metric_fallback_directive)
+    missing_target_metric_fallback_directive = (
+        _format_missing_target_metric_fallback_directive(
+            query=query,
+            report_type=report_type,
+            quant_report_types=QUANT_REPORT_TYPES,
+            economist_safety_telemetry=economist_safety_telemetry,
+            quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
+            estimate_from_priors=estimate_from_priors_requested,
+        )
+    )
+    missing_target_metric_directive_emitted = bool(
+        missing_target_metric_fallback_directive
+    )
     if missing_target_metric_fallback_directive:
         author_notes += missing_target_metric_fallback_directive
 
@@ -3087,20 +3494,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
 
     def _build_analyst_cached_prefix() -> str:
-        assembly = build_analyst_cached_prefix_from_scope(
-            {
-                "final_top_evidence": final_top_evidence,
-                "economist_ran": economist_ran,
-                "report_type": report_type,
-                "QUANT_REPORT_TYPES": QUANT_REPORT_TYPES,
-                "current_date": current_date,
-                "query": query,
-                "linkup_block": linkup_block,
-                "economist_safety_telemetry": economist_safety_telemetry,
-                "_format_analyst_quant_packet_section": _format_analyst_quant_packet_section,
-                "missing_target_metric_fallback_directive": missing_target_metric_fallback_directive,
-            }
-        )
+        assembly = build_analyst_cached_prefix_from_scope({
+            "final_top_evidence": final_top_evidence,
+            "economist_ran": economist_ran,
+            "report_type": report_type,
+            "QUANT_REPORT_TYPES": QUANT_REPORT_TYPES,
+            "current_date": current_date,
+            "query": query,
+            "linkup_block": linkup_block,
+            "economist_safety_telemetry": economist_safety_telemetry,
+            "_format_analyst_quant_packet_section": _format_analyst_quant_packet_section,
+            "missing_target_metric_fallback_directive": missing_target_metric_fallback_directive,
+        })
         run_log.info("Analyst corpus capped to %d chunks", len(assembly.evidence_slice))
         analyst_quant_packet_handoff_telemetry.update(assembly.quant_packet_handoff)
         return assembly.prefix
@@ -3124,8 +3529,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 )
                 searchos_component_receiver_selected = True
             except OrdinaryMulticomponentRuntimeError as exc:
-                searchos_slice_a_projection["component_receiver_failure"] = type(exc).__name__
-                searchos_slice_a_projection["component_receiver_failure_reason"] = str(exc)[:240]
+                searchos_slice_a_projection["component_receiver_failure"] = (
+                    type(exc).__name__
+                )
+                searchos_slice_a_projection[
+                    "component_receiver_failure_reason"
+                ] = str(exc)[:240]
     elif ordinary_multicomponent_path_selected(run_kernel):
         execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             run_kernel,
@@ -3183,7 +3592,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "readiness_projection_digest": searchos_readiness_projection.get("readiness_projection_digest"),
         }
         searchos_slice_a_projection["readiness_projection"] = dict(searchos_readiness_projection)
-        if not searchos_readiness_projection.get("all_required_slots_slice_a_ready"):
+        if not searchos_readiness_projection.get(
+            "all_required_slots_slice_a_ready"
+        ):
             recovery_trace: dict[str, Any] = {
                 "attempted": False,
                 "eligible_required_gap_found": False,
@@ -3194,26 +3605,46 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             }
             recovery_admission: dict[str, Any] | None = (
                 dict(searched_premise_recovery_admission)
-                if searched_premise_recovery_admission.get("work_authorized") is True
+                if searched_premise_recovery_admission.get(
+                    "work_authorized"
+                )
+                is True
                 else None
             )
             recovery_basis: dict[str, Any] | None = None
             component_admission_projection = dict(
-                run_kernel.state.projections.get("multicomponent_component_admission") or {}
+                run_kernel.state.projections.get(
+                    "multicomponent_component_admission"
+                )
+                or {}
             )
             for unresolved in (
                 ()
                 if recovery_admission is not None
-                else (searchos_readiness_projection.get("unresolved_required_slots") or ())
+                else (
+                    searchos_readiness_projection.get(
+                        "unresolved_required_slots"
+                    )
+                    or ()
+                )
             ):
-                unresolved_slot_id = str(dict(unresolved.get("slot_ref") or {}).get("slot_id") or "")
+                unresolved_slot_id = str(
+                    dict(unresolved.get("slot_ref") or {}).get("slot_id")
+                    or ""
+                )
                 try:
                     recovery_basis = build_searchos_existing_gap_basis(
                         state=run_kernel.state.searchos_state,
                         slot_id=unresolved_slot_id,
-                        component_admission_projection=(component_admission_projection),
-                        component_coverage_history=(run_kernel.state.component_coverage_history),
-                        evidence_ledger_projection=(run_kernel.state.evidence_ledger.to_projection().to_dict()),
+                        component_admission_projection=(
+                            component_admission_projection
+                        ),
+                        component_coverage_history=(
+                            run_kernel.state.component_coverage_history
+                        ),
+                        evidence_ledger_projection=(
+                            run_kernel.state.evidence_ledger.to_projection().to_dict()
+                        ),
                     )
                 except SearchOSExistingGapRecoveryError as exc:
                     blocker_interpretation = str(
@@ -3224,9 +3655,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         )
                     )
                     blocker_class = {
-                        "lawful_recovery_exhaustion": ("recovery_policy_closed"),
-                        "lawful_recovery_ineligible": ("recovery_ineligible"),
-                        "provider_or_acquisition_blocker": ("provider_or_acquisition_failure"),
+                        "lawful_recovery_exhaustion": (
+                            "recovery_policy_closed"
+                        ),
+                        "lawful_recovery_ineligible": (
+                            "recovery_ineligible"
+                        ),
+                        "provider_or_acquisition_blocker": (
+                            "provider_or_acquisition_failure"
+                        ),
                     }.get(
                         blocker_interpretation,
                         "gap_basis_rejection",
@@ -3243,12 +3680,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 break
             if recovery_admission is not None:
                 recovery_trace["eligible_required_gap_found"] = True
-                recovery_trace["derived_component_recovery_invoked"] = True
+                recovery_trace[
+                    "derived_component_recovery_invoked"
+                ] = True
             elif recovery_basis is not None:
                 recovery_trace["eligible_required_gap_found"] = True
-                recovery_purpose = build_searchos_materially_novel_recovery_purpose(recovery_basis)
+                recovery_purpose = (
+                    build_searchos_materially_novel_recovery_purpose(
+                        recovery_basis
+                    )
+                )
                 current_graph_projection = dict(
-                    run_kernel.state.projections.get("multicomponent_component_work_graph_v1") or {}
+                    run_kernel.state.projections.get(
+                        "multicomponent_component_work_graph_v1"
+                    )
+                    or {}
                 )
                 current_graph_ref = {
                     key: current_graph_projection[key]
@@ -3261,35 +3707,75 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     )
                     if current_graph_projection.get(key) is not None
                 }
-                recovery_admission_result = run_kernel.authorize_searchos_recovery_admission(
-                    stable_replay_key=str(recovery_purpose["recovery_purpose_digest"]),
-                    recovery_classification=("existing_component_gap"),
-                    proposal_ref={
-                        "schema_version": recovery_purpose.get("schema_version"),
-                        "proposal_id": recovery_purpose.get("recovery_purpose_id"),
-                        "proposal_digest": recovery_purpose.get("recovery_purpose_digest"),
-                        "gap_basis_ref": dict(recovery_purpose.get("gap_basis_ref") or {}),
-                    },
-                    current_contract_ref=dict(recovery_basis.get("answer_contract_ref") or {}),
-                    current_graph_ref=current_graph_ref,
-                    component_ref=dict(recovery_basis.get("component_ref") or {}),
-                    source_obligation_ref=dict(recovery_basis.get("source_obligation_ref") or {}),
-                    prior_terminal_slot_ref=dict(recovery_basis.get("prior_terminal_slot_ref") or {}),
-                    answer_target_refs=(),
-                    dependency_component_refs=(),
-                    generation_parent_ref={},
-                    generation_depth=0,
+                recovery_admission_result = (
+                    run_kernel.authorize_searchos_recovery_admission(
+                        stable_replay_key=str(
+                            recovery_purpose[
+                                "recovery_purpose_digest"
+                            ]
+                        ),
+                        recovery_classification=(
+                            "existing_component_gap"
+                        ),
+                        proposal_ref={
+                            "schema_version": recovery_purpose.get(
+                                "schema_version"
+                            ),
+                            "proposal_id": recovery_purpose.get(
+                                "recovery_purpose_id"
+                            ),
+                            "proposal_digest": recovery_purpose.get(
+                                "recovery_purpose_digest"
+                            ),
+                            "gap_basis_ref": dict(
+                                recovery_purpose.get("gap_basis_ref")
+                                or {}
+                            ),
+                        },
+                        current_contract_ref=dict(
+                            recovery_basis.get("answer_contract_ref")
+                            or {}
+                        ),
+                        current_graph_ref=current_graph_ref,
+                        component_ref=dict(
+                            recovery_basis.get("component_ref") or {}
+                        ),
+                        source_obligation_ref=dict(
+                            recovery_basis.get(
+                                "source_obligation_ref"
+                            )
+                            or {}
+                        ),
+                        prior_terminal_slot_ref=dict(
+                            recovery_basis.get(
+                                "prior_terminal_slot_ref"
+                            )
+                            or {}
+                        ),
+                        answer_target_refs=(),
+                        dependency_component_refs=(),
+                        generation_parent_ref={},
+                        generation_depth=0,
+                    )
                 )
                 if isinstance(recovery_admission_result, Mapping):
-                    recovery_admission = dict(recovery_admission_result)
+                    recovery_admission = dict(
+                        recovery_admission_result
+                    )
                 else:
-                    recovery_admission_action = recovery_admission_result
+                    recovery_admission_action = (
+                        recovery_admission_result
+                    )
                     run_kernel.reduce(
                         Observation.from_action(
                             recovery_admission_action,
-                            observation_type=(ObservationType.SEARCHOS_RECOVERY_ADMITTED),
+                            observation_type=(
+                                ObservationType.SEARCHOS_RECOVERY_ADMITTED
+                            ),
                             status=RunStageStatus.COMPLETED,
-                            payload=recovery_admission_action.inputs["recovery_admission_observation"],
+                            payload=recovery_admission_action.inputs[
+                                "recovery_admission_observation"
+                            ],
                         )
                     )
                     recovery_admission = dict(run_kernel.state.projections["searchos_recovery_cycle_admission"])
@@ -3306,46 +3792,102 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     "proposal_ref": {},
                 }
                 if recovery_admission.get("work_authorized") is True:
-                    recovery_result = execute_searchos_recovery_cycle(
-                        prior_result=searchos_slice_a_result,
-                        recovery_cycle_ref=recovery_admission["cycle_admission_ref"],
-                        run_kernel=run_kernel,
-                        candidate_packet=(ordinary_discovery_candidate_packet),
-                        query_authority=query_authority,
-                        discovery_result_store=discovery_result_store,
-                        profile_name=strategy,
-                        ask_model=_cap_model_phase(
-                            _ask(phase=("searchos_recovery_judgment")),
-                            "search_judgment",
-                        ),
-                        provider=smart_provider,
-                        model=smart_model,
-                        base_url=local_url,
-                        api_key=or_api_key,
-                        use_reasoning=use_reasoning,
-                        available_providers=(provider_availability_snapshot.to_capability_available_keys()),
-                        acquisition_transports=(deps.searchos_read_acquisition_transports),
-                        execute_followup_discover=(_execute_searchos_followup_discover),
-                        before_transport=(_before_read_transport if cap_policy is not None else None),
-                        measure_context_stage=_measure_context_stage,
+                    recovery_result = (
+                        execute_searchos_recovery_cycle(
+                            prior_result=searchos_slice_a_result,
+                            recovery_cycle_ref=recovery_admission[
+                                "cycle_admission_ref"
+                            ],
+                            run_kernel=run_kernel,
+                            candidate_packet=(
+                                ordinary_discovery_candidate_packet
+                            ),
+                            query_authority=query_authority,
+                            discovery_result_store=discovery_result_store,
+                            profile_name=strategy,
+                            ask_model=_cap_model_phase(
+                                _ask(
+                                    phase=(
+                                        "searchos_recovery_"
+                                        "judgment"
+                                    )
+                                ),
+                                "search_judgment",
+                            ),
+                            provider=smart_provider,
+                            model=smart_model,
+                            base_url=local_url,
+                            api_key=or_api_key,
+                            use_reasoning=use_reasoning,
+                            available_providers=(
+                                provider_availability_snapshot
+                                .to_capability_available_keys()
+                            ),
+                            acquisition_transports=(
+                                deps.searchos_read_acquisition_transports
+                            ),
+                            execute_followup_discover=(
+                                _execute_searchos_followup_discover
+                            ),
+                            before_transport=(
+                                _before_read_transport
+                                if cap_policy is not None
+                                else None
+                            ),
+                            measure_context_stage=_measure_context_stage,
+                        )
                     )
                     urls_fetched += recovery_result.provider_calls_completed
-                    recovery_slot_id = str(dict(recovery_admission.get("recovery_slot_ref") or {}).get("slot_id") or "")
+                    recovery_slot_id = str(
+                        dict(
+                            recovery_admission.get("recovery_slot_ref")
+                            or {}
+                        ).get("slot_id")
+                        or ""
+                    )
                     prior_searchos_evidence_ids = {
-                        str(item.get("searchos_evidence_ledger_candidate_id") or item.get("source_id") or "")
-                        for item in (searchos_slice_a_result.searchos_semantic_material)
+                        str(
+                            item.get(
+                                "searchos_evidence_ledger_candidate_id"
+                            )
+                            or item.get("source_id")
+                            or ""
+                        )
+                        for item in (
+                            searchos_slice_a_result.searchos_semantic_material
+                        )
                         if isinstance(item, Mapping)
                     }
                     recovery_material = [
                         dict(item)
-                        for item in (recovery_result.searchos_semantic_material)
-                        if dict(item.get("searchos_slot_ref") or item.get("slot_ref") or {}).get("slot_id")
+                        for item in (
+                            recovery_result.searchos_semantic_material
+                        )
+                        if dict(
+                            item.get("searchos_slot_ref")
+                            or item.get("slot_ref")
+                            or {}
+                        ).get("slot_id")
                         == recovery_slot_id
-                        and str(item.get("searchos_evidence_ledger_candidate_id") or item.get("source_id") or "")
+                        and str(
+                            item.get(
+                                "searchos_evidence_ledger_candidate_id"
+                            )
+                            or item.get("source_id")
+                            or ""
+                        )
                         not in prior_searchos_evidence_ids
                     ]
-                    recovery_trace["materially_novel_recovery_evidence_ids"] = [
-                        str(item.get("searchos_evidence_ledger_candidate_id") or item.get("source_id") or "")
+                    recovery_trace[
+                        "materially_novel_recovery_evidence_ids"
+                    ] = [
+                        str(
+                            item.get(
+                                "searchos_evidence_ledger_candidate_id"
+                            )
+                            or item.get("source_id")
+                            or ""
+                        )
                         for item in recovery_material
                     ]
                     if recovery_material:
@@ -3354,26 +3896,49 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 **locals(),
                                 "final_top_evidence": recovery_material,
                             }
-                            reassessment = execute_searchos_recovery_component_admission_from_scope(
-                                run_kernel,
-                                reassessment_scope,
-                                recovery_cycle_ref=recovery_admission["cycle_admission_ref"],
+                            reassessment = (
+                                execute_searchos_recovery_component_admission_from_scope(
+                                    run_kernel,
+                                    reassessment_scope,
+                                    recovery_cycle_ref=recovery_admission[
+                                        "cycle_admission_ref"
+                                    ],
+                                )
                             )
-                            candidate_component_admission = dict(reassessment["component_admission_ref"])
+                            candidate_component_admission = dict(
+                                reassessment["component_admission_ref"]
+                            )
                             if (
-                                dict(recovery_admission.get("cycle_admission_ref") or {}).get("recovery_classification")
+                                dict(
+                                    recovery_admission.get(
+                                        "cycle_admission_ref"
+                                    )
+                                    or {}
+                                ).get("recovery_classification")
                                 == "searched_premise"
                             ):
-                                reproof_graph = execute_searchos_recovery_graph_reproof_from_scope(
-                                    run_kernel=run_kernel,
-                                    runtime_scope=reassessment_scope,
-                                    component_admission_ref=(candidate_component_admission),
+                                reproof_graph = (
+                                    execute_searchos_recovery_graph_reproof_from_scope(
+                                        run_kernel=run_kernel,
+                                        runtime_scope=reassessment_scope,
+                                        component_admission_ref=(
+                                            candidate_component_admission
+                                        ),
+                                    )
                                 )
                                 recovery_trace["graph_reproof_ref"] = {
-                                    "graph_id": reproof_graph.get("graph_id"),
-                                    "graph_revision": reproof_graph.get("graph_revision"),
-                                    "graph_digest": reproof_graph.get("graph_digest"),
-                                    "graph_status": reproof_graph.get("graph_status"),
+                                    "graph_id": reproof_graph.get(
+                                        "graph_id"
+                                    ),
+                                    "graph_revision": reproof_graph.get(
+                                        "graph_revision"
+                                    ),
+                                    "graph_digest": reproof_graph.get(
+                                        "graph_digest"
+                                    ),
+                                    "graph_status": reproof_graph.get(
+                                        "graph_status"
+                                    ),
                                 }
                                 record_analyst_query_resolution_downstream_refs(
                                     run_kernel=run_kernel,
@@ -3401,10 +3966,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             recovery_failure_interpretation = "structural_or_validation_blocker"
                     else:
                         recovery_slot = dict(
-                            dict(run_kernel.state.searchos_state.get("slots_by_id") or {}).get(recovery_slot_id) or {}
+                            dict(
+                                run_kernel.state.searchos_state.get(
+                                    "slots_by_id"
+                                )
+                                or {}
+                            ).get(recovery_slot_id)
+                            or {}
                         )
                         recovery_failure_reason = str(
-                            recovery_slot.get("latest_reason") or "recovery_cycle_produced_no_semantic_handoff"
+                            recovery_slot.get("latest_reason")
+                            or "recovery_cycle_produced_no_semantic_handoff"
                         )
                         recovery_failure_interpretation = {
                             "judgment_failed": ("provider_or_acquisition_blocker"),
@@ -3414,11 +3986,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             "lawful_recovery_exhaustion",
                         )
                     recovery_slot = dict(
-                        dict(run_kernel.state.searchos_state.get("slots_by_id") or {}).get(recovery_slot_id) or {}
+                        dict(
+                            run_kernel.state.searchos_state.get(
+                                "slots_by_id"
+                            )
+                            or {}
+                        ).get(recovery_slot_id)
+                        or {}
                     )
                     recovered = bool(
                         recovery_component_admission
-                        and recovery_component_admission.get("admission_status")
+                        and recovery_component_admission.get(
+                            "admission_status"
+                        )
                         in {"admitted", "admitted_with_caveats"}
                     )
                     recovery_terminal_status = (
@@ -3457,62 +4037,126 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         ),
                     )
                     if isinstance(terminal_result, Mapping):
-                        recovery_trace["terminal"] = dict(terminal_result.get("cycle_terminal") or {})
+                        recovery_trace["terminal"] = dict(
+                            terminal_result.get("cycle_terminal")
+                            or {}
+                        )
                     else:
                         terminal_action = terminal_result
                         run_kernel.reduce(
                             Observation.from_action(
                                 terminal_action,
-                                observation_type=(ObservationType.SEARCHOS_RECOVERY_TERMINAL_REDUCED),
+                                observation_type=(
+                                    ObservationType.SEARCHOS_RECOVERY_TERMINAL_REDUCED
+                                ),
                                 status=RunStageStatus.COMPLETED,
-                                payload=terminal_action.inputs["recovery_terminal_observation"],
+                                payload=terminal_action.inputs[
+                                    "recovery_terminal_observation"
+                                ],
                             )
                         )
                         recovery_trace["terminal"] = dict(
-                            run_kernel.state.projections["searchos_recovery_cycle_terminal"]
+                            run_kernel.state.projections[
+                                "searchos_recovery_cycle_terminal"
+                            ]
                         )
                     searchos_slice_a_result = recovery_result
-                    searchos_slice_a_projection.update(dict(recovery_result.projection))
-                    all_passages = list(recovery_result.searchos_semantic_material)
-                    final_top_evidence = list(all_passages)
-                    final_evidence_handoff = build_final_evidence_runtime_handoff_from_scope(
-                        locals(),
-                        filter_top_evidence=deps.filter_top_evidence,
-                        is_plausible_domain=(deps.is_plausible_domain),
-                        recovered_evidence_visibility=(apply_controller_recovered_evidence_visibility),
+                    searchos_slice_a_projection.update(
+                        dict(recovery_result.projection)
                     )
-                    final_evidence_bundle = final_evidence_handoff.bundle
-                    unique_source_urls = final_evidence_handoff.unique_source_urls
+                    all_passages = list(
+                        recovery_result.searchos_semantic_material
+                    )
+                    final_top_evidence = list(all_passages)
+                    final_evidence_handoff = (
+                        build_final_evidence_runtime_handoff_from_scope(
+                            locals(),
+                            filter_top_evidence=deps.filter_top_evidence,
+                            is_plausible_domain=(
+                                deps.is_plausible_domain
+                            ),
+                            recovered_evidence_visibility=(
+                                apply_controller_recovered_evidence_visibility
+                            ),
+                        )
+                    )
+                    final_evidence_bundle = (
+                        final_evidence_handoff.bundle
+                    )
+                    unique_source_urls = (
+                        final_evidence_handoff.unique_source_urls
+                    )
                     ordered_sources = final_evidence_handoff.ordered_sources
-                    evidence_ledger_projection = final_evidence_handoff.evidence_ledger_projection
+                    evidence_ledger_projection = (
+                        final_evidence_handoff.evidence_ledger_projection
+                    )
                     evidence_block = final_evidence_handoff.evidence_block
                     cached_prefix = final_evidence_handoff.cached_prefix
-                    semantic_outcomes_by_slot = build_searchos_semantic_outcomes_by_slot(
-                        searchos_state=(run_kernel.state.searchos_state),
-                        semantic_handoffs=(recovery_result.semantic_handoffs),
-                        searchos_semantic_material=(recovery_result.searchos_semantic_material),
-                        component_admission_projection=dict(
-                            run_kernel.state.projections.get("multicomponent_component_admission") or {}
-                        ),
+                    semantic_outcomes_by_slot = (
+                        build_searchos_semantic_outcomes_by_slot(
+                            searchos_state=(
+                                run_kernel.state.searchos_state
+                            ),
+                            semantic_handoffs=(
+                                recovery_result.semantic_handoffs
+                            ),
+                            searchos_semantic_material=(
+                                recovery_result.searchos_semantic_material
+                            ),
+                            component_admission_projection=dict(
+                                run_kernel.state.projections.get(
+                                    "multicomponent_component_admission"
+                                )
+                                or {}
+                            ),
+                        )
                     )
-                    refreshed_readiness_action = run_kernel.authorize_searchos_slice_a_readiness(
-                        semantic_outcomes_by_slot=(semantic_outcomes_by_slot)
+                    refreshed_readiness_action = (
+                        run_kernel.authorize_searchos_slice_a_readiness(
+                            semantic_outcomes_by_slot=(
+                                semantic_outcomes_by_slot
+                            )
+                        )
                     )
                     run_kernel.reduce(
                         Observation.from_action(
                             refreshed_readiness_action,
-                            observation_type=(ObservationType.SEARCHOS_SLICE_A_READINESS_DERIVED),
+                            observation_type=(
+                                ObservationType.SEARCHOS_SLICE_A_READINESS_DERIVED
+                            ),
                             status=RunStageStatus.COMPLETED,
-                            payload={"readiness": (refreshed_readiness_action.inputs["readiness"])},
+                            payload={
+                                "readiness": (
+                                    refreshed_readiness_action.inputs[
+                                        "readiness"
+                                    ]
+                                )
+                            },
                         )
                     )
-                    searchos_readiness_projection = dict(run_kernel.state.projections["searchos_slice_a_readiness"])
-                    searchos_slice_a_projection["semantic_outcomes_by_slot"] = semantic_outcomes_by_slot
-                    searchos_slice_a_projection["readiness_projection"] = dict(searchos_readiness_projection)
-                    searchos_slice_a_projection["readiness_projection_ref"] = {
-                        "readiness_projection_id": (searchos_readiness_projection.get("readiness_projection_id")),
+                    searchos_readiness_projection = dict(
+                        run_kernel.state.projections[
+                            "searchos_slice_a_readiness"
+                        ]
+                    )
+                    searchos_slice_a_projection[
+                        "semantic_outcomes_by_slot"
+                    ] = semantic_outcomes_by_slot
+                    searchos_slice_a_projection[
+                        "readiness_projection"
+                    ] = dict(searchos_readiness_projection)
+                    searchos_slice_a_projection[
+                        "readiness_projection_ref"
+                    ] = {
+                        "readiness_projection_id": (
+                            searchos_readiness_projection.get(
+                                "readiness_projection_id"
+                            )
+                        ),
                         "readiness_projection_digest": (
-                            searchos_readiness_projection.get("readiness_projection_digest")
+                            searchos_readiness_projection.get(
+                                "readiness_projection_digest"
+                            )
                         ),
                     }
                     if next_recovery_posture.get("lawful_selected_recovery_work_remains") is True:
@@ -3536,16 +4180,36 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             represented_blocker_keys = {
                 (
                     str(dict(item or {}).get("slot_id") or ""),
-                    str(dict(item or {}).get("blocker_class") or ""),
+                    str(
+                        dict(item or {}).get("blocker_class")
+                        or ""
+                    ),
                 )
                 for item in subordinate_blocker_facts
             }
             unresolved_required_slots = [
-                dict(item or {}) for item in (searchos_readiness_projection.get("unresolved_required_slots") or ())
+                dict(item or {})
+                for item in (
+                    searchos_readiness_projection.get(
+                        "unresolved_required_slots"
+                    )
+                    or ()
+                )
             ]
             for unresolved_mapping in unresolved_required_slots:
-                unresolved_slot_id = str(dict(unresolved_mapping.get("slot_ref") or {}).get("slot_id") or "")
-                posture = str(unresolved_mapping.get("latest_judgment_posture") or "")
+                unresolved_slot_id = str(
+                    dict(
+                        unresolved_mapping.get("slot_ref")
+                        or {}
+                    ).get("slot_id")
+                    or ""
+                )
+                posture = str(
+                    unresolved_mapping.get(
+                        "latest_judgment_posture"
+                    )
+                    or ""
+                )
                 if posture in {"judgment_failed", "stale_or_invalid"}:
                     blocker_key = (
                         unresolved_slot_id,
@@ -3555,8 +4219,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         subordinate_blocker_facts.append(
                             {
                                 "blocker_class": "validation_failure",
-                                "interpretation": ("structural_or_validation_blocker"),
-                                "reason_code": (unresolved_mapping.get("reason") or posture),
+                                "interpretation": (
+                                    "structural_or_validation_blocker"
+                                ),
+                                "reason_code": (
+                                    unresolved_mapping.get("reason")
+                                    or posture
+                                ),
                                 "slot_id": unresolved_slot_id,
                             }
                         )
@@ -3569,16 +4238,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     if blocker_key not in represented_blocker_keys:
                         subordinate_blocker_facts.append(
                             {
-                                "blocker_class": ("recovery_policy_closed"),
-                                "interpretation": ("lawful_recovery_exhaustion"),
-                                "reason_code": ("judgment_budget_exhausted"),
+                                "blocker_class": (
+                                    "recovery_policy_closed"
+                                ),
+                                "interpretation": (
+                                    "lawful_recovery_exhaustion"
+                                ),
+                                "reason_code": (
+                                    "judgment_budget_exhausted"
+                                ),
                                 "slot_id": unresolved_slot_id,
                             }
                         )
                         represented_blocker_keys.add(blocker_key)
-            if searchos_slice_a_projection.get("component_receiver_failure"):
+            if searchos_slice_a_projection.get(
+                "component_receiver_failure"
+            ):
                 for unresolved_mapping in unresolved_required_slots:
-                    unresolved_slot_id = str(dict(unresolved_mapping.get("slot_ref") or {}).get("slot_id") or "")
+                    unresolved_slot_id = str(
+                        dict(
+                            unresolved_mapping.get("slot_ref")
+                            or {}
+                        ).get("slot_id")
+                        or ""
+                    )
                     blocker_key = (
                         unresolved_slot_id,
                         "component_receiver_failure",
@@ -3586,10 +4269,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     if blocker_key not in represented_blocker_keys:
                         subordinate_blocker_facts.append(
                             {
-                                "blocker_class": ("component_receiver_failure"),
-                                "interpretation": ("structural_or_validation_blocker"),
+                                "blocker_class": (
+                                    "component_receiver_failure"
+                                ),
+                                "interpretation": (
+                                    "structural_or_validation_blocker"
+                                ),
                                 "reason_code": (
-                                    searchos_slice_a_projection.get("component_receiver_failure_reason")
+                                    searchos_slice_a_projection.get(
+                                        "component_receiver_failure_reason"
+                                    )
                                     or "component_receiver_failure"
                                 ),
                                 "slot_id": unresolved_slot_id,
@@ -3597,13 +4286,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         )
                         represented_blocker_keys.add(blocker_key)
             for unresolved_mapping in unresolved_required_slots:
-                unresolved_slot_id = str(dict(unresolved_mapping.get("slot_ref") or {}).get("slot_id") or "")
-                if not any(key[0] == unresolved_slot_id for key in represented_blocker_keys):
+                unresolved_slot_id = str(
+                    dict(
+                        unresolved_mapping.get("slot_ref")
+                        or {}
+                    ).get("slot_id")
+                    or ""
+                )
+                if not any(
+                    key[0] == unresolved_slot_id
+                    for key in represented_blocker_keys
+                ):
                     subordinate_blocker_facts.append(
                         {
                             "blocker_class": "recovery_ineligible",
-                            "interpretation": ("lawful_recovery_ineligible"),
-                            "reason_code": ("no_lawful_materially_novel_recovery_purpose"),
+                            "interpretation": (
+                                "lawful_recovery_ineligible"
+                            ),
+                            "reason_code": (
+                                "no_lawful_materially_novel_recovery_purpose"
+                            ),
                             "slot_id": unresolved_slot_id,
                         }
                     )
@@ -3613,7 +4315,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             "recovery_ineligible",
                         )
                     )
-            block_action = run_kernel.authorize_searchos_required_needs_block(blocker_facts=subordinate_blocker_facts)
+            block_action = (
+                run_kernel.authorize_searchos_required_needs_block(
+                    blocker_facts=subordinate_blocker_facts
+                )
+            )
             run_kernel.reduce(
                 Observation.from_action(
                     block_action,
@@ -3707,32 +4413,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(
             locals(), deps=legacy_review_deps, default_system=DEFAULT_SYSTEM
         )
-    (
-        analysis,
-        author_notes,
-        first_synth_sufficient,
-        synth_was_insufficient,
-        synth_deficiency,
-        supplemental_ran,
-        delta_urls_supplemental,
-        synth_evaluator_seconds,
-        analyst_seconds,
-        scrutineer_ran,
-        scrutineer_seconds,
-        scrutineer_flags,
-        scrutineer_high_count,
-        scrutineer_remediation_queries,
-        scrutineer_remediation_dispatch_authorized,
-        scrutineer_remediation_dispatch_posture,
-        scrutineer_remediation_provider_role,
-        scrutineer_remediation_providers,
-        scrutineer_remediation_linkup_depth_override,
-        scrutineer_remediation_evidence,
-        scrutineer_remediation_resynthesis_triggered,
-        scrutineer_pass_flags_directly_to_author,
-        final_top_evidence,
-        unique_source_urls,
-    ) = legacy_review_outcome.orchestrator_values()
+    analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls = legacy_review_outcome.orchestrator_values()
     final_evidence_handoff = final_evidence_handoff_from_legacy_review(
         final_evidence_handoff,
         legacy_review_outcome,
@@ -3748,12 +4429,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # ------------------------------------------------------------------
     _efp_author = corpus_state == CorpusState.ESTIMATE_FROM_PRIORS.value
 
-    image_context = build_image_context(
-        image_mode=image_mode,
-        collected_images=collected_images,
-        corpus_weak=corpus_weak,
-        estimate_from_priors_author=_efp_author,
-    )
+    image_context = build_image_context(image_mode=image_mode, collected_images=collected_images, corpus_weak=corpus_weak, estimate_from_priors_author=_efp_author)
 
     recency_notes, _recency_stale = build_recency_author_notes(
         final_top_evidence,
@@ -3786,7 +4462,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "top_chunks": top_chunks,
             "current_date": current_date,
             "query": query,
-            "active_source_class_recovery_lifecycle": (active_source_class_recovery_lifecycle),
+            "active_source_class_recovery_lifecycle": (
+                active_source_class_recovery_lifecycle
+            ),
             "precision_count": precision_count,
             "complexity": complexity,
             "corpus_weak": corpus_weak,
@@ -3798,7 +4476,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "core_topic": core_topic,
             "author_notes": author_notes,
             "nutrition_lookup_telemetry": nutrition_lookup_telemetry,
-            "quant_retrieval_sufficiency_telemetry": (quant_retrieval_sufficiency_telemetry),
+            "quant_retrieval_sufficiency_telemetry": (
+                quant_retrieval_sufficiency_telemetry
+            ),
             "scrutineer_flags": scrutineer_flags,
             "image_context": image_context,
         }
@@ -3826,12 +4506,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             material.author_notes,
         )
 
-    initial_final_material_handoff = build_final_material_runtime_handoff_from_scope(
-        _final_material_runtime_scope(),
-        final_evidence_handoff=final_evidence_handoff,
-        filter_top_evidence=deps.filter_top_evidence,
-        is_plausible_domain=deps.is_plausible_domain,
-        recovered_evidence_visibility=(apply_controller_recovered_evidence_visibility),
+    initial_final_material_handoff = (
+        build_final_material_runtime_handoff_from_scope(
+            _final_material_runtime_scope(),
+            final_evidence_handoff=final_evidence_handoff,
+            filter_top_evidence=deps.filter_top_evidence,
+            is_plausible_domain=deps.is_plausible_domain,
+            recovered_evidence_visibility=(
+                apply_controller_recovered_evidence_visibility
+            ),
+        )
     )
     (
         final_evidence_handoff,
@@ -3894,17 +4578,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "phase": "ag_gap_01_semantic_component_gap_projection",
                 "contract_id": run_contract_projection.get("contract_id"),
                 "candidate_count": evidence_ledger_projection.get("candidate_count"),
-                "requirement_count": evidence_ledger_projection.get("requirement_count"),
+                "requirement_count": evidence_ledger_projection.get(
+                    "requirement_count"
+                ),
                 "iteration": iterations_run,
                 "max_iterations": max_iterations,
             }
         )
-        _semantic_gap_search_judgment_result = execute_run_authority_search_judgment_action(
-            _semantic_gap_search_judgment_action,
-            judgment_input=_semantic_gap_search_judgment_input,
-            ask_model=None,
-            clean_json_response=deps.clean_json_response,
-            smart_model_enabled=False,
+        _semantic_gap_search_judgment_result = (
+            execute_run_authority_search_judgment_action(
+                _semantic_gap_search_judgment_action,
+                judgment_input=_semantic_gap_search_judgment_input,
+                ask_model=None,
+                clean_json_response=deps.clean_json_response,
+                smart_model_enabled=False,
+            )
         )
         run_kernel.reduce(_semantic_gap_search_judgment_result.observation)
         search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
@@ -3953,16 +4641,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         component_gap_recovery_result = component_gap_recovery_handoff.result
     if component_gap_recovery_handoff is not None and component_gap_recovery_handoff.recovered:
         if not component_gap_recovery_handoff.all_passages:
-            raise PipelineError("recovered component-gap material is absent")
-        canonical_recovery_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
-        if dict(component_gap_recovery_handoff.evidence_ledger_projection or {}) != canonical_recovery_projection:
-            raise PipelineError("recovered component-gap EvidenceLedger projection is stale")
+            raise PipelineError(
+                "recovered component-gap material is absent"
+            )
+        canonical_recovery_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
+        )
+        if dict(
+            component_gap_recovery_handoff.evidence_ledger_projection or {}
+        ) != canonical_recovery_projection:
+            raise PipelineError(
+                "recovered component-gap EvidenceLedger projection is stale"
+            )
         all_passages = list(component_gap_recovery_handoff.all_passages)
-        recovered_final_material_handoff = build_final_material_runtime_handoff_from_scope(
-            _final_material_runtime_scope(),
-            filter_top_evidence=deps.filter_top_evidence,
-            is_plausible_domain=deps.is_plausible_domain,
-            recovered_evidence_visibility=(apply_controller_recovered_evidence_visibility),
+        recovered_final_material_handoff = (
+            build_final_material_runtime_handoff_from_scope(
+                _final_material_runtime_scope(),
+                filter_top_evidence=deps.filter_top_evidence,
+                is_plausible_domain=deps.is_plausible_domain,
+                recovered_evidence_visibility=(
+                    apply_controller_recovered_evidence_visibility
+                ),
+            )
         )
         (
             final_evidence_handoff,
@@ -3977,10 +4677,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             author_evidence_block,
             author_prompt,
             author_notes,
-        ) = _consume_final_material_runtime_handoff(recovered_final_material_handoff)
-        current_evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+        ) = _consume_final_material_runtime_handoff(
+            recovered_final_material_handoff
+        )
+        current_evidence_ledger_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
+        )
         if evidence_ledger_projection != current_evidence_ledger_projection:
-            raise PipelineError("shared final-material EvidenceLedger projection is stale")
+            raise PipelineError(
+                "shared final-material EvidenceLedger projection is stale"
+            )
         evidence_ledger_projection = current_evidence_ledger_projection
         sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
             run_kernel,
@@ -4018,8 +4724,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # AG-90G: build_analyst_author_handoff_state / execute_analyst_author_handoff
     # packaging moved to the bounded post-Analyst handoff helper;
     # packet-derived Author settings now remain authoritative for execution.
-    post_analyst_handoff = post_analyst_handoff_packaging.build_post_analyst_handoff_packaging_from_scope(
-        locals(), evidence_slice_for_analyst=_evidence_slice_for_analyst
+    post_analyst_handoff = (
+        post_analyst_handoff_packaging.build_post_analyst_handoff_packaging_from_scope(
+            locals(), evidence_slice_for_analyst=_evidence_slice_for_analyst
+        )
     )
     (
         analyst_author_handoff_state,
@@ -4035,7 +4743,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         # AG-BLOCKED-FAP-SAFE-TERMINAL-OUTCOME-01: blocked FAP never reaches Author.
         # Preserve FAP readiness; return a sanitized non-Author RunOutcome instead
         # of raising PipelineError.
-        blocked_fap_summary = build_safe_blocked_fap_summary(run_kernel.state.final_answer_authority_projection)
+        blocked_fap_summary = build_safe_blocked_fap_summary(
+            run_kernel.state.final_answer_authority_projection
+        )
         report = build_blocked_fap_terminal_report(blocked_fap_summary)
         author_seconds = 0.0
         synthesis_seconds = 0.0  # noqa: F841
@@ -4066,9 +4776,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         report = author_execution_handoff.report
         author_seconds = author_execution_handoff.author_seconds
         synthesis_seconds = author_execution_handoff.synthesis_seconds  # noqa: F841
-        quantitative_guard_stream_buffered = author_execution_handoff.quantitative_guard_stream_buffered
-        quantitative_consistency_telemetry = author_execution_handoff.quantitative_consistency_telemetry
-        quantitative_consistency_guard_telemetry = author_execution_handoff.quantitative_consistency_guard_telemetry
+        quantitative_guard_stream_buffered = (
+            author_execution_handoff.quantitative_guard_stream_buffered
+        )
+        quantitative_consistency_telemetry = (
+            author_execution_handoff.quantitative_consistency_telemetry
+        )
+        quantitative_consistency_guard_telemetry = (
+            author_execution_handoff.quantitative_consistency_guard_telemetry
+        )
 
     authority_citation_survival = build_post_author_citation_survival_handoff(
         report=report,
@@ -4184,7 +4900,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "blocked_fap_summary": summary_payload,
             "sufficiency_decision_lineage": summary_payload.get("sufficiency_decision"),
             "partial_candidate_not_fap_safe": (
-                summary_payload.get("sufficiency_decision") == "partial_answer_authorized"
+                summary_payload.get("sufficiency_decision")
+                == "partial_answer_authorized"
             ),
             "author_called": False,
             "author_payload_derived": False,
@@ -4217,7 +4934,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "answer_class": answer_class,
         },
     )
-    weak_failure_gate_handoff = execute_weak_failure_gate_handoff(weak_failure_gate_contract_state)
+    weak_failure_gate_handoff = execute_weak_failure_gate_handoff(
+        weak_failure_gate_contract_state
+    )
     failure_card_payload = weak_failure_gate_handoff.failure_card_payload
     useful_content = weak_failure_gate_handoff.useful_content
     useful_content_reason = weak_failure_gate_handoff.useful_content_reason
@@ -4240,7 +4959,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "blocked_fap_summary": summary_payload,
             "sufficiency_decision_lineage": summary_payload.get("sufficiency_decision"),
             "partial_candidate_not_fap_safe": (
-                summary_payload.get("sufficiency_decision") == "partial_answer_authorized"
+                summary_payload.get("sufficiency_decision")
+                == "partial_answer_authorized"
             ),
             "author_called": False,
             "author_payload_derived": False,
@@ -4273,12 +4993,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _source_tier_exec = pf.source_tier_exec
     _source_domain_exec = pf.source_domain_exec
     source_class_recovery_telemetry = pf.source_class_recovery_telemetry
-    source_class_evidence_bundle_observability_telemetry = pf.source_class_evidence_bundle_observability_telemetry
+    source_class_evidence_bundle_observability_telemetry = (
+        pf.source_class_evidence_bundle_observability_telemetry
+    )
     source_class_observability_telemetry = pf.source_class_observability_telemetry
     official_source_obligation_bridge_trace = pf.official_source_obligation_bridge_trace
     source_class_projection_handoff = pf.source_class_projection_handoff
     runtime_source_class_recovery_telemetry = pf.runtime_source_class_recovery_telemetry
-    runtime_active_source_class_recovery_lifecycle = pf.runtime_active_source_class_recovery_lifecycle
+    runtime_active_source_class_recovery_lifecycle = (
+        pf.runtime_active_source_class_recovery_lifecycle
+    )
     evidence_ledger_projection = post_final_source_class_projection.evidence_ledger_projection
     # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
     if cap_policy is not None and cap_policy.bounded:
@@ -4292,7 +5016,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     for trace_field_fragment in post_author_trace_packaging.trace_field_fragments:
         _run_controller_mirror.state.trace_fields.update(trace_field_fragment)
 
-    cap_enforcement_trace = cap_policy.to_trace_fragment()["run_cap_enforcement"] if cap_policy is not None else {}
+    cap_enforcement_trace = (
+        cap_policy.to_trace_fragment()["run_cap_enforcement"]
+        if cap_policy is not None
+        else {}
+    )
     post_author_output_packaging = build_post_author_output_packaging_from_scope(
         locals(),
         trace_packaging=post_author_trace_packaging,
@@ -4303,49 +5031,69 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     discovery_result_telemetry = discovery_result_store.telemetry()
     discovery_result_telemetry.update(
         {
-            "candidate_packets_created": int(bool(ordinary_discovery_candidate_packet)),
+            "candidate_packets_created": int(
+                bool(ordinary_discovery_candidate_packet)
+            ),
             "selected_candidates_handed_off": int(
-                ordinary_discovery_candidate_handoff_projection.get("selected_candidate_count", 0)
+                ordinary_discovery_candidate_handoff_projection.get(
+                    "selected_candidate_count", 0
+                )
             ),
         }
     )
-    execution_trace["discovery_result_telemetry"] = discovery_result_telemetry
+    execution_trace["discovery_result_telemetry"] = (
+        discovery_result_telemetry
+    )
     if ordinary_discovery_candidate_handoff_projection:
-        execution_trace[ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY] = (
-            ordinary_discovery_candidate_handoff_projection
-        )
+        execution_trace[
+            ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_TRACE_KEY
+        ] = ordinary_discovery_candidate_handoff_projection
     if ordinary_discovery_candidate_packet:
-        execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = ordinary_discovery_candidate_packet
+        execution_trace[SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY] = (
+            ordinary_discovery_candidate_packet
+        )
     if search_judgment_read_assessment_projection:
         execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY] = search_judgment_read_assessment_projection
     if searchos_slice_a_projection:
         execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
     if final_answer_packet_handoff.author_input_blocked:
-        execution_trace.update(build_blocked_fap_terminal_trace_fragment(blocked_fap_summary))
+        execution_trace.update(
+            build_blocked_fap_terminal_trace_fragment(blocked_fap_summary)
+        )
     if (
         config.enable_ordinary_live_main_runkernel_coverage
         and ordinary_live_source_custody is not None
         and ordinary_live_source_custody.fetch_read_content_packet is not None
     ):
-        ordinary_live_main_runkernel_coverage = execute_ordinary_live_main_runkernel_coverage(
-            main_run_kernel=run_kernel,
-            query=query,
-            requested_mode=strategy,
-            run_contract_projection=run_contract_projection,
-            route_projection=run_kernel.state.projections.get("route_request", {}),
-            core_topic=core_topic,
-            candidate_results=config.ordinary_live_candidate_handoff_results,
-            provider_authorized=config.ordinary_live_candidate_handoff_provider,
-            candidate_handoff_result=ordinary_live_candidate_handoff,
-            source_custody_result=ordinary_live_source_custody,
+        ordinary_live_main_runkernel_coverage = (
+            execute_ordinary_live_main_runkernel_coverage(
+                main_run_kernel=run_kernel,
+                query=query,
+                requested_mode=strategy,
+                run_contract_projection=run_contract_projection,
+                route_projection=run_kernel.state.projections.get("route_request", {}),
+                core_topic=core_topic,
+                candidate_results=config.ordinary_live_candidate_handoff_results,
+                provider_authorized=config.ordinary_live_candidate_handoff_provider,
+                candidate_handoff_result=ordinary_live_candidate_handoff,
+                source_custody_result=ordinary_live_source_custody,
+            )
         )
-        ordinary_live_main_runkernel_coverage_projection = ordinary_live_main_runkernel_coverage.projection
+        ordinary_live_main_runkernel_coverage_projection = (
+            ordinary_live_main_runkernel_coverage.projection
+        )
     if ordinary_live_candidate_handoff_projection:
-        execution_trace[ORDINARY_LIVE_CANDIDATE_HANDOFF_TRACE_KEY] = ordinary_live_candidate_handoff_projection
+        execution_trace[ORDINARY_LIVE_CANDIDATE_HANDOFF_TRACE_KEY] = (
+            ordinary_live_candidate_handoff_projection
+        )
     if ordinary_live_source_custody_projection:
-        execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY] = ordinary_live_source_custody_projection
+        execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY] = (
+            ordinary_live_source_custody_projection
+        )
     if ordinary_live_semantic_coverage_projection:
-        execution_trace[ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY] = ordinary_live_semantic_coverage_projection
+        execution_trace[ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY] = (
+            ordinary_live_semantic_coverage_projection
+        )
     if ordinary_live_authority_consolidation_projection:
         execution_trace[ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY] = (
             ordinary_live_authority_consolidation_projection
@@ -4366,29 +5114,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         kb_instrumentation = None
         kb_warning = None
     else:
-        persistence_side_effect_result = execute_persistence_side_effects(
-            execution_log_path=execution_log_path,
-            execution_log_entry=execution_log_entry,
-            run_id=run_id,
-            session_id=session_id,
-            latency_seconds=latency_seconds,
-            strategy=strategy,
-            execution_trace=execution_trace,
-            run_log=run_log,
-            policy_journal_path=policy_journal_path,
-            policy_applied=policy_applied,
-            default_utilization_threshold=DEFAULT_UTILIZATION_THRESHOLD,
-            ts_utc=ts_utc,
-            query=query,
-            kb_context=build_kb_review_persistence_context(
-                runtime_values=locals(),
-                clean_json_response=deps.clean_json_response,
-                kb_review_agent=kb_review_agent,
-            ),
-            db_enabled=DB_ENABLED,
-        )
-        kb_instrumentation = persistence_side_effect_result.kb_instrumentation
-        kb_warning = persistence_side_effect_result.kb_warning
+            persistence_side_effect_result = execute_persistence_side_effects(
+                execution_log_path=execution_log_path,
+                execution_log_entry=execution_log_entry,
+                run_id=run_id,
+                session_id=session_id,
+                latency_seconds=latency_seconds,
+                strategy=strategy,
+                execution_trace=execution_trace,
+                run_log=run_log,
+                policy_journal_path=policy_journal_path,
+                policy_applied=policy_applied,
+                default_utilization_threshold=DEFAULT_UTILIZATION_THRESHOLD,
+                ts_utc=ts_utc,
+                query=query,
+                kb_context=build_kb_review_persistence_context(
+                    runtime_values=locals(),
+                    clean_json_response=deps.clean_json_response,
+                    kb_review_agent=kb_review_agent,
+                ),
+                db_enabled=DB_ENABLED,
+            )
+            kb_instrumentation = persistence_side_effect_result.kb_instrumentation
+            kb_warning = persistence_side_effect_result.kb_warning
 
     outcome = build_run_outcome_from_scope(locals())
     if cap_policy is not None and cap_policy.bounded:
