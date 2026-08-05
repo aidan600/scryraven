@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -35,6 +36,14 @@ def _context(profile_name: str = AG_LIVE_SMOKE) -> support.PreflightContext:
         confirm_live_product_run=True,
         approved_backup_query=False,
     )
+
+
+def _nonexecuting_observability_context(
+    profile_name: str,
+) -> support.PreflightContext:
+    """Bind historical profile metadata without executing retired preflight."""
+
+    return replace(_context(), profile_name=profile_name)
 
 
 def _cap_policy(
@@ -218,9 +227,7 @@ def test_success_packet_contains_consolidated_sanitized_observability() -> None:
     }
     assert material["evidence_material_type_by_cited_url"] == {
         "https://docs.python.org/3/library/math.html#math.isclose": "snippet_only",
-        "https://docs.python.org/3/library/itertools.html#itertools.count": (
-            "full_page_fetched"
-        ),
+        "https://docs.python.org/3/library/itertools.html#itertools.count": ("full_page_fetched"),
     }
 
     rendered = json.dumps(packet, sort_keys=True)
@@ -234,7 +241,7 @@ def test_success_packet_contains_consolidated_sanitized_observability() -> None:
 
 
 def test_source_custody_profile_with_zero_fetch_read_diagnoses_unsatisfied() -> None:
-    context = _context(AG_LIVE_SOURCE_CUSTODY)
+    context = _nonexecuting_observability_context(AG_LIVE_SOURCE_CUSTODY)
     policy = _cap_policy(search_dispatches=2, fetch_read_operations=0)
     outcome = SimpleNamespace(
         report=(
@@ -285,18 +292,15 @@ def test_source_custody_profile_with_zero_fetch_read_diagnoses_unsatisfied() -> 
     assert custody["fetch_read_required"] is True
     assert custody["fetch_read_operations"] == 0
     assert custody["source_custody_satisfied"] is False
-    assert custody["source_custody_diagnosis"] == (
-        "fetch_read_operations_zero_with_official_doc_citations"
-    )
+    assert custody["source_custody_diagnosis"] == ("fetch_read_operations_zero_with_official_doc_citations")
     assert "fetch/read operations were zero" in custody["source_custody_explanation"]
     assert custody["citation_eligible_source_ids"] == ["1"]
     assert custody["final_answer_source_ids_used"] == ["1"]
-    assert packet["validation_observability"]["source_material_summary"][
-        "cited_url_resolution_source"
-    ] == "final_answer_source_ids_used"
-    assert packet["validation_observability"]["model_invocation_summary"][
-        "fast_model"
-    ] == "fixture-fast-model"
+    assert (
+        packet["validation_observability"]["source_material_summary"]["cited_url_resolution_source"]
+        == "final_answer_source_ids_used"
+    )
+    assert packet["validation_observability"]["model_invocation_summary"]["fast_model"] == "fixture-fast-model"
 
     rendered = json.dumps(packet, sort_keys=True)
     assert "official docs snippet must not serialize" not in rendered
@@ -304,7 +308,7 @@ def test_source_custody_profile_with_zero_fetch_read_diagnoses_unsatisfied() -> 
 
 
 def test_seen_official_docs_without_citation_ids_do_not_count_as_cited() -> None:
-    context = _context(AG_LIVE_SOURCE_CUSTODY)
+    context = _nonexecuting_observability_context(AG_LIVE_SOURCE_CUSTODY)
     policy = _cap_policy(search_dispatches=2, fetch_read_operations=0)
     outcome = SimpleNamespace(
         report="The answer text is unavailable.",
@@ -343,9 +347,7 @@ def test_seen_official_docs_without_citation_ids_do_not_count_as_cited() -> None
 
     custody = observability["source_custody_summary"]
     assert custody["official_doc_citations_present"] is False
-    assert custody["source_custody_diagnosis"] != (
-        "fetch_read_operations_zero_with_official_doc_citations"
-    )
+    assert custody["source_custody_diagnosis"] != ("fetch_read_operations_zero_with_official_doc_citations")
     assert custody["source_custody_diagnosis"] is None
 
     rendered = json.dumps(packet, sort_keys=True)
@@ -354,7 +356,7 @@ def test_seen_official_docs_without_citation_ids_do_not_count_as_cited() -> None
 
 
 def test_final_answer_markdown_urls_are_cited_when_source_ids_are_missing() -> None:
-    context = _context(AG_LIVE_SOURCE_CUSTODY)
+    context = _nonexecuting_observability_context(AG_LIVE_SOURCE_CUSTODY)
     policy = _cap_policy(search_dispatches=1, fetch_read_operations=1)
     cited_url = "https://docs.python.org/3/library/math.html"
     passage_url = f"{cited_url}#math.isclose"
@@ -406,9 +408,7 @@ def test_final_answer_markdown_urls_are_cited_when_source_ids_are_missing() -> N
     assert material["cited_urls"] == [cited_url]
     assert material["cited_urls_seen_in_top_passages"] is True
     assert material["source_tiers_by_cited_url"] == {cited_url: "official"}
-    assert material["evidence_material_type_by_cited_url"] == {
-        cited_url: "full_page_fetched"
-    }
+    assert material["evidence_material_type_by_cited_url"] == {cited_url: "full_page_fetched"}
 
     custody = observability["source_custody_summary"]
     assert custody["official_doc_citations_present"] is True
@@ -472,9 +472,5 @@ def test_retrieval_dispatch_summary_can_fall_back_to_loop_contract() -> None:
 def test_forbidden_packet_rejection_still_recurses_into_observability() -> None:
     with pytest.raises(support.AgLiveBoundPacketError, match="raw_request_text"):
         support.reject_forbidden_packet(
-            {
-                "validation_observability": {
-                    "nested": {"raw_request_text": "must not serialize"}
-                }
-            }
+            {"validation_observability": {"nested": {"raw_request_text": "must not serialize"}}}
         )

@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from core.cap_enforcement import RunCapExceeded
 from core.run_authority_contract import (
     ContractSynthesisStatus,
     RunAuthorityContract,
@@ -151,6 +152,8 @@ def execute_run_contract_synthesis_action(
                 effort=effort,
                 use_reasoning=use_reasoning,
             )
+        except RunCapExceeded:
+            raise
         except Exception as exc:
             committed, validation = validate_or_fallback_contract(
                 None,

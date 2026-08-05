@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
 
 from core.acquisition_adapters import AcquisitionTransports
+from core.cap_enforcement import RunCapPolicy
 
 
 @dataclass
@@ -19,7 +20,7 @@ class RunConfig:
     """All per-run settings.  Constructed by the Streamlit page or the CLI."""
 
     query: str
-    mode: str = "Balanced"          # "Fast" | "Balanced" | "Deep"
+    mode: str = "Balanced"  # "Fast" | "Balanced" | "Deep"
     current_date: str = ""
 
     # Identity — if None the orchestrator generates fresh UUIDs.
@@ -66,21 +67,17 @@ class RunConfig:
     # Optional Streamlit hook: receives the author's token stream iterator (same-thread).
     author_stream_display: Callable[[Any], Any] | None = None
 
-    # Optional bounded-validation policy. None preserves ordinary CLI/UI behavior.
-    cap_policy: Any | None = None
+    # Optional run-scoped physical-attempt policy. None preserves ordinary behavior.
+    cap_policy: RunCapPolicy | None = None
 
     # Optional ordinary-path candidate handoff repair. Defaults preserve CLI/UI behavior.
     enable_ordinary_live_candidate_handoff: bool = False
-    ordinary_live_candidate_handoff_results: (
-        list[dict[str, Any]] | dict[str, Any]
-    ) = field(default_factory=list)
+    ordinary_live_candidate_handoff_results: list[dict[str, Any]] | dict[str, Any] = field(default_factory=list)
     ordinary_live_candidate_handoff_provider: str = "offline-fake-search"
 
     # Optional ordinary-path source-custody repair. Defaults preserve CLI/UI behavior.
     enable_ordinary_live_source_custody: bool = False
-    ordinary_live_source_custody_anchor_groups: tuple[Any, ...] = field(
-        default_factory=tuple
-    )
+    ordinary_live_source_custody_anchor_groups: tuple[Any, ...] = field(default_factory=tuple)
 
     # Optional ordinary-path semantic coverage repair. Defaults preserve behavior.
     enable_ordinary_live_semantic_coverage: bool = False
@@ -120,11 +117,11 @@ class RunDeps:
     logger: logging.Logger
 
     # Output paths — typed as Path but accepted as Any for flexibility
-    execution_log_path: Any          # Path
-    feedback_log_path: Any           # Path
-    kb_triggers_path: Any            # Path
-    policy_state_path: Any           # Path
-    policy_journal_path: Any         # Path
+    execution_log_path: Any  # Path
+    feedback_log_path: Any  # Path
+    kb_triggers_path: Any  # Path
+    policy_state_path: Any  # Path
+    policy_journal_path: Any  # Path
 
     # Optional isolated compatibility fields. Current ordinary composition and
     # runtime neither require, read, nor invoke these retired callables.
@@ -233,7 +230,5 @@ def compose_component_gap_recovery_deps(
     if not enabled:
         return replace(deps, component_gap_recovery_adapter=None)
     if offline_recovery_adapter is None:
-        raise ValueError(
-            "component-gap recovery composition requires an offline adapter"
-        )
+        raise ValueError("component-gap recovery composition requires an offline adapter")
     return replace(deps, component_gap_recovery_adapter=offline_recovery_adapter)

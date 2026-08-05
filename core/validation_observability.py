@@ -107,9 +107,7 @@ def build_validation_observability(
             top_passages=top_passages,
             cited_source_ids=cited_source_ids,
             cited_urls=cited_urls,
-            fetch_read_operations=_optional_int(
-                caps_observed.get("fetch_read_operations")
-            ),
+            fetch_read_operations=_optional_int(caps_observed.get("fetch_read_operations")),
             final_answer_text=final_answer_text,
         ),
         "subject_budget_summary": build_subject_budget_summary(
@@ -150,16 +148,10 @@ def build_subject_budget_summary(
         omitted = list(subjects[max_subjects:])
 
     mapped_ids, mapping_available = _query_mapped_subject_ids(trace_map)
-    evidenced_ids, evidence_available, same_source_observed = (
-        _component_evidenced_subject_ids(trace_map)
-    )
+    evidenced_ids, evidence_available, same_source_observed = _component_evidenced_subject_ids(trace_map)
     selected_ids = {_subject_identity(item) for item in selected}
-    query_mapped_subject_count = (
-        len(selected_ids & mapped_ids) if mapping_available else None
-    )
-    independently_evidenced_subject_count = (
-        len(selected_ids & evidenced_ids) if evidence_available else None
-    )
+    query_mapped_subject_count = len(selected_ids & mapped_ids) if mapping_available else None
+    independently_evidenced_subject_count = len(selected_ids & evidenced_ids) if evidence_available else None
     subjects_without_evidence = (
         [
             _subject_payload(
@@ -187,13 +179,8 @@ def build_subject_budget_summary(
         "schema_version": SUBJECT_BUDGET_SUMMARY_SCHEMA_VERSION,
         "subject_budget_enabled": enabled,
         "max_initial_selected_subjects": max_subjects if enabled else None,
-        "subject_budget_scope": (
-            _safe_text(policy.get("subject_budget_scope"))
-            or _SUBJECT_SCOPE_INITIAL
-        ),
-        "applies_to_internal_followups": bool(
-            policy.get("applies_to_internal_followups", False)
-        ),
+        "subject_budget_scope": (_safe_text(policy.get("subject_budget_scope")) or _SUBJECT_SCOPE_INITIAL),
+        "applies_to_internal_followups": bool(policy.get("applies_to_internal_followups", False)),
         "detected_subject_count": len(subjects),
         "selected_subject_count": len(selected),
         "omitted_subject_count": len(omitted),
@@ -218,16 +205,11 @@ def build_subject_budget_summary(
             for item in omitted
         ],
         "subject_selection_source": selection_source,
-        "subject_cap_exceeded": bool(enabled and max_subjects is not None)
-        and len(subjects) > max_subjects,
+        "subject_cap_exceeded": bool(enabled and max_subjects is not None) and len(subjects) > max_subjects,
         "query_mapped_subject_count": query_mapped_subject_count,
-        "independently_evidenced_subject_count": (
-            independently_evidenced_subject_count
-        ),
+        "independently_evidenced_subject_count": (independently_evidenced_subject_count),
         "subjects_without_evidence": subjects_without_evidence,
-        "same_source_evidence_allowed": (
-            policy.get("same_source_evidence_allowed") if enabled else None
-        ),
+        "same_source_evidence_allowed": (policy.get("same_source_evidence_allowed") if enabled else None),
         "same_source_evidence_observed": same_source_observed,
         "followup_budget_policy": _followup_budget_policy(
             policy=policy,
@@ -360,12 +342,8 @@ def _subjects_from_components(
                     "subject_id": subject_id,
                     "rank": rank,
                     "source": source,
-                    "source_obligation_count": _optional_int(
-                        component.get("source_obligation_count")
-                    ),
-                    "provider_job_count": _optional_int(
-                        component.get("provider_job_count")
-                    ),
+                    "source_obligation_count": _optional_int(component.get("source_obligation_count")),
+                    "provider_job_count": _optional_int(component.get("provider_job_count")),
                 }
             )
         )
@@ -421,12 +399,8 @@ def _subject_payload(
         "rank": _optional_int(subject.get("rank")),
         "source": _safe_text(subject.get("source"), limit=120),
         "query_mapped": identity in mapped_ids if mapping_available else None,
-        "independently_evidenced": (
-            identity in evidenced_ids if evidence_available else None
-        ),
-        "source_obligation_count": _optional_int(
-            subject.get("source_obligation_count")
-        ),
+        "independently_evidenced": (identity in evidenced_ids if evidence_available else None),
+        "source_obligation_count": _optional_int(subject.get("source_obligation_count")),
         "provider_job_count": _optional_int(subject.get("provider_job_count")),
     }
     return _without_none(payload)
@@ -513,9 +487,7 @@ def _component_evidenced_subject_ids(
         if binding_available:
             rows = _mapping_list(coverage.get("semantic_source_ref_bindings"))
             if not rows:
-                rows = _mapping_list(
-                    coverage.get("author_materialization_content_refs")
-                )
+                rows = _mapping_list(coverage.get("author_materialization_content_refs"))
     if not rows:
         return set(), False, None
 
@@ -578,18 +550,12 @@ def _followup_budget_policy(
     query_plan_shadow = _query_plan_work_shadow_projection(trace)
     followup = _mapping(query_plan_shadow.get("stop_and_follow_up_posture"))
     return {
-        "policy": _safe_text(policy.get("followup_budget_policy"))
-        or _FOLLOWUP_POLICY,
-        "subject_budget_scope": _safe_text(policy.get("subject_budget_scope"))
-        or _SUBJECT_SCOPE_INITIAL,
+        "policy": _safe_text(policy.get("followup_budget_policy")) or _FOLLOWUP_POLICY,
+        "subject_budget_scope": _safe_text(policy.get("subject_budget_scope")) or _SUBJECT_SCOPE_INITIAL,
         "initial_subject_cap_applies_to_internal_followups": False,
         "internal_followups_governed_by": "existing_mode_resource_caps",
-        "observation_status": (
-            "internal_followups_exempt_but_not_independently_observed"
-        ),
-        "observed_follow_up_permission": _safe_text(
-            followup.get("follow_up_permission")
-        ),
+        "observation_status": ("internal_followups_exempt_but_not_independently_observed"),
+        "observed_follow_up_permission": _safe_text(followup.get("follow_up_permission")),
     }
 
 
@@ -614,11 +580,7 @@ def _subject_budget_diagnosis(
 
 
 def _without_none(payload: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in payload.items()
-        if value is not None and value != [] and value != {}
-    }
+    return {key: value for key, value in payload.items() if value is not None and value != [] and value != {}}
 
 
 def _model_invocation_summary(
@@ -659,11 +621,7 @@ def _model_invocation_summary(
         )
         else None,
     }
-    if (
-        summary["author_provider"] is None
-        and summary["author_model"] is None
-        and run_config is not None
-    ):
+    if summary["author_provider"] is None and summary["author_model"] is None and run_config is not None:
         provider, model = _author_provider_model_from_config(run_config)
         summary["author_provider"] = provider
         summary["author_model"] = model
@@ -678,11 +636,7 @@ def _search_provider_summary(trace: Mapping[str, Any]) -> dict[str, Any]:
     providers_attempted = _unique_strings(
         [
             *(attempt.get("provider") for attempt in attempts),
-            *(
-                provider
-                for providers in selected_provider_list_by_iteration
-                for provider in providers
-            ),
+            *(provider for providers in selected_provider_list_by_iteration for provider in providers),
         ]
     )
     accepted_by_provider: Counter[str] = Counter()
@@ -693,9 +647,7 @@ def _search_provider_summary(trace: Mapping[str, Any]) -> dict[str, Any]:
         accepted = _optional_int(attempt.get("accepted_url_count")) or 0
         if accepted:
             accepted_by_provider[provider] += accepted
-        computed_result_summary_count += (
-            _optional_int(attempt.get("provider_result_summary_count")) or 0
-        )
+        computed_result_summary_count += _optional_int(attempt.get("provider_result_summary_count")) or 0
     if result_summary_count is None:
         result_summary_count = computed_result_summary_count
 
@@ -707,16 +659,12 @@ def _search_provider_summary(trace: Mapping[str, Any]) -> dict[str, Any]:
             or summarized.get("provider_successful_attempts_by_provider")
         ),
         "provider_failed_attempts_by_provider": _safe_count_mapping(
-            trace.get("provider_failed_attempts_by_provider")
-            or summarized.get("provider_failed_attempts_by_provider")
+            trace.get("provider_failed_attempts_by_provider") or summarized.get("provider_failed_attempts_by_provider")
         ),
         "provider_attempts_by_role": _safe_count_mapping(
-            trace.get("provider_attempts_by_role")
-            or summarized.get("provider_attempts_by_role")
+            trace.get("provider_attempts_by_role") or summarized.get("provider_attempts_by_role")
         ),
-        "provider_accepted_url_count_by_provider": dict(
-            sorted(accepted_by_provider.items())
-        ),
+        "provider_accepted_url_count_by_provider": dict(sorted(accepted_by_provider.items())),
         "providers_returned_accepted_urls": sorted(
             provider for provider, count in accepted_by_provider.items() if count > 0
         ),
@@ -739,12 +687,8 @@ def _retrieval_dispatch_summary(
         "retrieval_pass_records_available": bool(pass_records),
         "retrieval_loop_contract_available": bool(loop_contract),
         "pass_records": selected,
-        "search_dispatches_observed": _optional_int(
-            caps_observed.get("search_dispatches")
-        ),
-        "fetch_read_operations_observed": _optional_int(
-            caps_observed.get("fetch_read_operations")
-        ),
+        "search_dispatches_observed": _optional_int(caps_observed.get("search_dispatches")),
+        "fetch_read_operations_observed": _optional_int(caps_observed.get("fetch_read_operations")),
     }
 
 
@@ -757,11 +701,7 @@ def _source_material_summary(
     cited_url_resolution_source: str,
 ) -> dict[str, Any]:
     cited_url_set = set(cited_urls)
-    cited_url_by_key = {
-        key: url
-        for url in cited_urls
-        if (key := _url_match_key(url))
-    }
+    cited_url_by_key = {key: url for url in cited_urls if (key := _url_match_key(url))}
     cited_source_id_set = set(cited_source_ids)
     tiers_by_url: dict[str, str] = {}
     material_by_url: dict[str, str] = {}
@@ -793,13 +733,10 @@ def _source_material_summary(
         "cited_url_resolution_source": cited_url_resolution_source,
         "top_passage_count": len(top_passages),
         "seen_url_count": len(seen_urls),
-        "cited_urls_seen_in_top_passages": bool(cited_urls)
-        and len(matched_cited_urls) == len(set(cited_urls)),
+        "cited_urls_seen_in_top_passages": bool(cited_urls) and len(matched_cited_urls) == len(set(cited_urls)),
         "cited_urls_seen_in_top_passages_count": len(matched_cited_urls),
         "source_tiers_by_cited_url": tiers_by_url,
-        "evidence_material_type_by_cited_url": {
-            url: material_by_url.get(url, _UNKNOWN) for url in cited_urls
-        },
+        "evidence_material_type_by_cited_url": {url: material_by_url.get(url, _UNKNOWN) for url in cited_urls},
     }
 
 
@@ -818,9 +755,7 @@ def _source_custody_summary(
     fetch_required = _source_custody_fetch_required(profile_name)
     official_satisfied = _official_source_custody_satisfied(trace, packet)
     source_obligation_status = _source_obligation_status(trace, packet)
-    final_answer_mentions_custody_partial = _mentions_custody_partial(
-        final_answer_text
-    )
+    final_answer_mentions_custody_partial = _mentions_custody_partial(final_answer_text)
     has_official_doc_citations = _has_official_doc_citations(
         cited_urls,
         top_passages,
@@ -829,21 +764,14 @@ def _source_custody_summary(
     explanation = None
     source_custody_satisfied = official_satisfied
 
-    if (
-        expected
-        and fetch_required
-        and fetch_read_operations == 0
-        and has_official_doc_citations
-    ):
+    if expected and fetch_required and fetch_read_operations == 0 and has_official_doc_citations:
         source_custody_satisfied = False
         diagnosis = "fetch_read_operations_zero_with_official_doc_citations"
         explanation = (
             "Cited official docs were present, but fetch/read operations were zero, "
             "so the packet does not prove official source custody."
         )
-    elif source_custody_satisfied is None and _status_is_unsatisfied(
-        source_obligation_status
-    ):
+    elif source_custody_satisfied is None and _status_is_unsatisfied(source_obligation_status):
         source_custody_satisfied = False
     elif source_custody_satisfied is None and final_answer_mentions_custody_partial:
         source_custody_satisfied = False
@@ -859,17 +787,13 @@ def _source_custody_summary(
             trace,
             packet,
         ),
-        "final_answer_source_ids_used": _string_list(
-            trace.get("final_answer_source_ids_used")
-        )
+        "final_answer_source_ids_used": _string_list(trace.get("final_answer_source_ids_used"))
         or list(cited_source_ids),
         "source_obligation_status": source_obligation_status,
         "source_custody_diagnosis": diagnosis,
         "source_custody_explanation": explanation,
         "official_doc_citations_present": has_official_doc_citations,
-        "final_answer_mentions_custody_partial": (
-            final_answer_mentions_custody_partial
-        ),
+        "final_answer_mentions_custody_partial": (final_answer_mentions_custody_partial),
     }
 
 
@@ -903,16 +827,10 @@ def _caps_requested(
 ) -> dict[str, int]:
     caps = getattr(preflight_context, "caps", None)
     if hasattr(caps, "as_requested_dict"):
-        return {
-            str(key): int(value)
-            for key, value in caps.as_requested_dict().items()
-        }
+        return {str(key): int(value) for key, value in caps.as_requested_dict().items()}
     profile_caps = getattr(validation_profile, "cap_policy", None)
     if hasattr(profile_caps, "as_requested_dict"):
-        return {
-            str(key): int(value)
-            for key, value in profile_caps.as_requested_dict().items()
-        }
+        return {str(key): int(value) for key, value in profile_caps.as_requested_dict().items()}
     return {}
 
 
@@ -922,47 +840,41 @@ def _caps_observed(
 ) -> dict[str, Any]:
     if cap_policy is not None and hasattr(cap_policy, "observed_counts"):
         observed = cap_policy.observed_counts()
-        return {
+        result = {
             "scryraven_runs": 1,
-            "search_dispatches": _optional_int(observed.get("search_dispatches"))
-            or 0,
-            "fetch_read_operations": _optional_int(
-                observed.get("fetch_read_operations")
-            )
-            or 0,
-            "author_model_calls": _optional_int(observed.get("author_model_calls"))
-            or 0,
-            "smart_search_judgment_model_calls": _optional_int(
-                observed.get("smart_search_judgment_model_calls")
-            )
-            or 0,
+            "search_dispatches": _optional_int(observed.get("search_dispatches")) or 0,
+            "fetch_read_operations": _optional_int(observed.get("fetch_read_operations")) or 0,
+            "author_model_calls": _optional_int(observed.get("author_model_calls")) or 0,
+            "smart_search_judgment_model_calls": _optional_int(observed.get("smart_search_judgment_model_calls")) or 0,
             "independent_manual_source_checks": 0,
             "retries": _optional_int(observed.get("retries")) or 0,
             "enforcement": _safe_text(observed.get("enforcement")) or "active",
             "facts": _string_list(getattr(cap_policy, "facts", None)),
         }
-    cap_trace = _mapping(trace.get("cap_enforcement_trace")) or _mapping(
-        trace.get("run_cap_enforcement")
-    )
+        if getattr(cap_policy, "bounded", False) and hasattr(
+            cap_policy,
+            "physical_snapshot",
+        ):
+            result["physical_envelope"] = cap_policy.physical_snapshot()
+        return result
+    cap_trace = _mapping(trace.get("cap_enforcement_trace")) or _mapping(trace.get("run_cap_enforcement"))
     if not cap_trace:
         return {}
-    return {
+    result = {
         "scryraven_runs": 1,
         "search_dispatches": _optional_int(cap_trace.get("search_dispatches")) or 0,
-        "fetch_read_operations": _optional_int(
-            cap_trace.get("fetch_read_operations")
-        )
-        or 0,
+        "fetch_read_operations": _optional_int(cap_trace.get("fetch_read_operations")) or 0,
         "author_model_calls": _optional_int(cap_trace.get("author_model_calls")) or 0,
-        "smart_search_judgment_model_calls": _optional_int(
-            cap_trace.get("smart_search_judgment_model_calls")
-        )
-        or 0,
+        "smart_search_judgment_model_calls": _optional_int(cap_trace.get("smart_search_judgment_model_calls")) or 0,
         "independent_manual_source_checks": 0,
         "retries": _optional_int(cap_trace.get("retries")) or 0,
         "enforcement": _safe_text(cap_trace.get("enforcement")) or "active",
         "facts": _string_list(cap_trace.get("facts")),
     }
+    physical = _mapping(cap_trace.get("physical"))
+    if physical:
+        result["physical_envelope"] = dict(physical)
+    return result
 
 
 def _retrieval_pass_records(trace: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -975,33 +887,21 @@ def _retrieval_loop_pass_records(loop_contract: Mapping[str, Any]) -> list[dict[
         return []
     descriptor = _mapping(loop_contract.get("pass_descriptor"))
     pass_result_summaries = _mapping_list(loop_contract.get("pass_result_summaries"))
-    query_count = _list_count(
-        descriptor.get("current_queries") or loop_contract.get("current_queries")
-    )
-    providers = _string_list(
-        descriptor.get("provider_list") or loop_contract.get("provider_list")
-    )
+    query_count = _list_count(descriptor.get("current_queries") or loop_contract.get("current_queries"))
+    providers = _string_list(descriptor.get("provider_list") or loop_contract.get("provider_list"))
     if not descriptor and not providers and not pass_result_summaries:
         return []
     return [
         {
             "stage": _safe_text(descriptor.get("stage")) or "main_retrieval",
-            "iteration": _optional_int(
-                descriptor.get("iteration") or loop_contract.get("iteration")
-            ),
+            "iteration": _optional_int(descriptor.get("iteration") or loop_contract.get("iteration")),
             "query_count": query_count,
             "providers": providers,
-            "provider_role": _safe_text(
-                descriptor.get("provider_role")
-                or loop_contract.get("provider_role")
-            )
+            "provider_role": _safe_text(descriptor.get("provider_role") or loop_contract.get("provider_role"))
             or "main_retrieval",
-            "search_depth": _safe_text(
-                descriptor.get("search_depth") or loop_contract.get("search_depth")
-            ),
+            "search_depth": _safe_text(descriptor.get("search_depth") or loop_contract.get("search_depth")),
             "results_per_query": _optional_int(
-                descriptor.get("results_per_query")
-                or loop_contract.get("results_per_query")
+                descriptor.get("results_per_query") or loop_contract.get("results_per_query")
             ),
             "pass_result_summary_count": len(pass_result_summaries),
         }
@@ -1038,9 +938,7 @@ def _cited_source_id_resolution(trace: Mapping[str, Any]) -> tuple[list[str], st
     if ids:
         return ids, "final_answer_source_ids_used"
     final_answer_source_telemetry = _mapping(trace.get("final_answer_source_telemetry"))
-    ids = _string_list(
-        final_answer_source_telemetry.get("final_answer_source_ids_used")
-    )
+    ids = _string_list(final_answer_source_telemetry.get("final_answer_source_ids_used"))
     if ids:
         return ids, "final_answer_source_telemetry"
     packet = _mapping(trace.get("final_answer_packet"))
@@ -1161,7 +1059,8 @@ def _custody_projection_satisfied(projection: Mapping[str, Any]) -> bool | None:
         terminal = [
             _safe_text(record.get("status"))
             for record in records
-            if _safe_text(record.get("status")) in {
+            if _safe_text(record.get("status"))
+            in {
                 "requirement_satisfied",
                 "requirement_unsatisfied",
             }
@@ -1188,9 +1087,7 @@ def _source_obligation_status(
     if not obligations:
         return None
     statuses = [
-        _safe_text(obligation.get("status"))
-        for obligation in obligations
-        if _safe_text(obligation.get("status"))
+        _safe_text(obligation.get("status")) for obligation in obligations if _safe_text(obligation.get("status"))
     ]
     if not statuses:
         return None
@@ -1211,10 +1108,7 @@ def _source_custody_expected(profile_name: str | None) -> bool:
 
 def _source_custody_fetch_required(profile_name: str | None) -> bool:
     policy = _source_custody_policy(profile_name)
-    return bool(
-        policy is not None
-        and getattr(policy, "require_official_full_fetch_read", False)
-    )
+    return bool(policy is not None and getattr(policy, "require_official_full_fetch_read", False))
 
 
 def _source_custody_policy(profile_name: str | None) -> Any | None:
@@ -1234,8 +1128,7 @@ def _has_official_doc_citations(
         return True
     cited_set = set(cited_urls)
     return any(
-        _safe_text(passage.get("url")) in cited_set
-        and _safe_text(passage.get("source_tier")) == "official"
+        _safe_text(passage.get("url")) in cited_set and _safe_text(passage.get("source_tier")) == "official"
         for passage in top_passages
     )
 
@@ -1292,9 +1185,7 @@ def _url_match_key(value: Any) -> str:
 
 def _mentions_custody_partial(answer_text: str) -> bool:
     normalized = answer_text.casefold()
-    return "custody" in normalized and (
-        "partial" in normalized or "unsatisfied" in normalized
-    )
+    return "custody" in normalized and ("partial" in normalized or "unsatisfied" in normalized)
 
 
 def _status_is_satisfied(status: str | None) -> bool:
@@ -1351,10 +1242,7 @@ def _profile_name(
     validation_profile: Any | None,
     preflight_context: Any | None,
 ) -> str | None:
-    return _safe_text(
-        getattr(validation_profile, "name", None)
-        or getattr(preflight_context, "profile_name", None)
-    )
+    return _safe_text(getattr(validation_profile, "name", None) or getattr(preflight_context, "profile_name", None))
 
 
 def _mapping(value: Any) -> dict[str, Any]:

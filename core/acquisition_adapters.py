@@ -6,6 +6,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from inspect import signature
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
@@ -24,6 +25,12 @@ from core.acquisition_contracts import (
     retained_text_digest,
     url_is_within_request_scope,
     validate_acquisition_request,
+)
+from core.cap_enforcement import (
+    AttemptLifecycle,
+    AttemptReservation,
+    RunCapExceeded,
+    TokenUsage,
 )
 from core.routing import AcquisitionCapability
 
@@ -85,7 +92,7 @@ def dispatch_acquisition(
     request: AcquisitionRequest,
     *,
     transports: AcquisitionTransports | None = None,
-    before_transport: Callable[[], None] | None = None,
+    before_transport: Callable[[], AttemptReservation | None] | None = None,
 ) -> AcquisitionExecutionResult:
     """Dispatch exactly one completed route decision or return a typed block."""
 
@@ -101,17 +108,31 @@ def dispatch_acquisition(
             code="selected_adapter_transport_unavailable",
             detail="the selected provider adapter has no available transport",
         )
-    if before_transport is not None:
-        before_transport()
+    reservation = before_transport() if before_transport is not None else None
+    if reservation is not None and not isinstance(
+        reservation,
+        AttemptReservation,
+    ):
+        raise TypeError("before_transport must return an AttemptReservation or None")
     try:
-        response = transport(_request_payload(request))
+        response = _invoke_transport(
+            transport,
+            _request_payload(request),
+            reservation=reservation,
+        )
+    except RunCapExceeded:
+        _settle_failed_dispatch(reservation)
+        raise
     except Exception as exc:  # noqa: BLE001 - provider failure is typed and sanitized.
+        _settle_failed_dispatch(reservation)
         return _failure_result(
             request,
             code="selected_provider_transport_failed",
             detail=compact_failure_detail(type(exc).__name__),
             attempted=1,
         )
+    if reservation is not None:
+        reservation.settle_observed(TokenUsage())
     try:
         artifacts = _normalize_response(request, response)
     except AcquisitionContractError as exc:
@@ -130,6 +151,35 @@ def dispatch_acquisition(
         provider_calls_completed=1,
         transport_posture="one_selected_adapter_completed",
     )
+
+
+def _invoke_transport(
+    transport: Transport,
+    payload: dict[str, Any],
+    *,
+    reservation: AttemptReservation | None,
+) -> Mapping[str, Any]:
+    if reservation is None:
+        return transport(payload)
+    parameters = signature(transport).parameters
+    if "reservation" in parameters:
+        kwargs: dict[str, Any] = {"reservation": reservation}
+        if "timeout_seconds" in parameters:
+            kwargs["timeout_seconds"] = reservation.timeout_seconds
+        return transport(payload, **kwargs)
+    reservation.mark_dispatched()
+    return transport(payload)
+
+
+def _settle_failed_dispatch(
+    reservation: AttemptReservation | None,
+) -> None:
+    if reservation is None:
+        return
+    if reservation.lifecycle is AttemptLifecycle.RESERVED:
+        reservation.cancel_pre_dispatch("transport_failed_before_dispatch")
+    elif reservation.lifecycle is AttemptLifecycle.DISPATCHED:
+        reservation.settle_conservative("dispatch_outcome_ambiguous")
 
 
 def _transport_for_request(
@@ -206,11 +256,7 @@ def _tavily_extract_payload(
     focused: bool,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "urls": (
-            request.selected_urls[0]
-            if len(request.selected_urls) == 1
-            else list(request.selected_urls)
-        ),
+        "urls": (request.selected_urls[0] if len(request.selected_urls) == 1 else list(request.selected_urls)),
         "extract_depth": "basic",
         "include_images": False,
         "include_favicon": False,
@@ -241,9 +287,7 @@ def _tavily_site_payload(
     if request.include_path_prefix:
         payload["select_paths"] = [f"^{re.escape(request.include_path_prefix)}.*"]
     if request.exclude_path_prefixes:
-        payload["exclude_paths"] = [
-            f"^{re.escape(prefix)}.*" for prefix in request.exclude_path_prefixes
-        ]
+        payload["exclude_paths"] = [f"^{re.escape(prefix)}.*" for prefix in request.exclude_path_prefixes]
     if operation == "crawl":
         payload.update(
             {
@@ -450,11 +494,7 @@ def _normalize_map(
         urls=retained,
         retained_character_count=sum(len(url) for url in retained),
         retained_digest=retained_text_digest("\n".join(retained)),
-        truncation_posture=(
-            "provider_excess_urls_truncated_to_authorized_limit"
-            if truncated
-            else "not_truncated"
-        ),
+        truncation_posture=("provider_excess_urls_truncated_to_authorized_limit" if truncated else "not_truncated"),
     )
 
 
@@ -555,9 +595,7 @@ def _normalize_crawl(
         attempted_url=request.root_url,
         pages=tuple(pages),
         retained_character_count=sum(page.retained_character_count for page in pages),
-        retained_digest=retained_text_digest(
-            "\n".join(page.retained_digest or "" for page in pages)
-        ),
+        retained_digest=retained_text_digest("\n".join(page.retained_digest or "" for page in pages)),
         truncation_posture=";".join(postures) if postures else "not_truncated",
     )
 
@@ -598,9 +636,7 @@ def _normalize_deep_discovery(
                 final_url=_url(source.get("final_url")),
                 canonical_url=_url(source.get("canonical_url")),
                 title=_scalar_text(source.get("name") or source.get("title")),
-                normalized_representation_type=(
-                    "text/markdown" if retained else None
-                ),
+                normalized_representation_type=("text/markdown" if retained else None),
                 retained_text=retained or None,
                 retained_character_count=len(retained),
                 retained_digest=retained_text_digest(retained) if retained else None,
@@ -734,11 +770,7 @@ def _http_status(value: Any) -> int | None:
 
 
 def _reported_http_status(source: Mapping[str, Any]) -> int | None:
-    value = (
-        source.get("http_status")
-        if "http_status" in source
-        else source.get("status_code")
-    )
+    value = source.get("http_status") if "http_status" in source else source.get("status_code")
     return _http_status(value)
 
 
@@ -766,11 +798,7 @@ def _normalized_url(value: str) -> str:
 
 def _observed_at(value: Mapping[str, Any]) -> str:
     return (
-        _scalar_text(
-            value.get("observed_at")
-            or value.get("retrieved_or_observed_at")
-            or value.get("retrieved_at")
-        )
+        _scalar_text(value.get("observed_at") or value.get("retrieved_or_observed_at") or value.get("retrieved_at"))
         or _now()
     )
 
@@ -790,12 +818,22 @@ def _authorization_headers(env_name: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _post_json(url: str, payload: dict[str, Any], *, env_name: str) -> Mapping[str, Any]:
+def _post_json(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    env_name: str,
+    reservation: AttemptReservation | None = None,
+    timeout_seconds: float = ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any]:
+    headers = _authorization_headers(env_name)
+    if reservation is not None:
+        reservation.mark_dispatched()
     response = requests.post(
         url,
         json=payload,
-        headers=_authorization_headers(env_name),
-        timeout=ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+        headers=headers,
+        timeout=min(ACQUISITION_TRANSPORT_TIMEOUT_SECONDS, timeout_seconds),
     )
     response.raise_for_status()
     data = response.json()
@@ -804,24 +842,79 @@ def _post_json(url: str, payload: dict[str, Any], *, env_name: str) -> Mapping[s
     return data
 
 
-def _linkup_fetch_transport(payload: dict[str, Any]) -> Mapping[str, Any]:
-    return _post_json(LINKUP_FETCH_URL, payload, env_name="LINKUP_API_KEY")
+def _linkup_fetch_transport(
+    payload: dict[str, Any],
+    *,
+    reservation: AttemptReservation | None = None,
+    timeout_seconds: float = ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any]:
+    return _post_json(
+        LINKUP_FETCH_URL,
+        payload,
+        env_name="LINKUP_API_KEY",
+        reservation=reservation,
+        timeout_seconds=timeout_seconds,
+    )
 
 
-def _linkup_deep_transport(payload: dict[str, Any]) -> Mapping[str, Any]:
-    return _post_json(LINKUP_SEARCH_URL, payload, env_name="LINKUP_API_KEY")
+def _linkup_deep_transport(
+    payload: dict[str, Any],
+    *,
+    reservation: AttemptReservation | None = None,
+    timeout_seconds: float = ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any]:
+    return _post_json(
+        LINKUP_SEARCH_URL,
+        payload,
+        env_name="LINKUP_API_KEY",
+        reservation=reservation,
+        timeout_seconds=timeout_seconds,
+    )
 
 
-def _tavily_extract_transport(payload: dict[str, Any]) -> Mapping[str, Any]:
-    return _post_json(f"{TAVILY_API_ROOT}/extract", payload, env_name="TAVILY_API_KEY")
+def _tavily_extract_transport(
+    payload: dict[str, Any],
+    *,
+    reservation: AttemptReservation | None = None,
+    timeout_seconds: float = ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any]:
+    return _post_json(
+        f"{TAVILY_API_ROOT}/extract",
+        payload,
+        env_name="TAVILY_API_KEY",
+        reservation=reservation,
+        timeout_seconds=timeout_seconds,
+    )
 
 
-def _tavily_map_transport(payload: dict[str, Any]) -> Mapping[str, Any]:
-    return _post_json(f"{TAVILY_API_ROOT}/map", payload, env_name="TAVILY_API_KEY")
+def _tavily_map_transport(
+    payload: dict[str, Any],
+    *,
+    reservation: AttemptReservation | None = None,
+    timeout_seconds: float = ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any]:
+    return _post_json(
+        f"{TAVILY_API_ROOT}/map",
+        payload,
+        env_name="TAVILY_API_KEY",
+        reservation=reservation,
+        timeout_seconds=timeout_seconds,
+    )
 
 
-def _tavily_crawl_transport(payload: dict[str, Any]) -> Mapping[str, Any]:
-    return _post_json(f"{TAVILY_API_ROOT}/crawl", payload, env_name="TAVILY_API_KEY")
+def _tavily_crawl_transport(
+    payload: dict[str, Any],
+    *,
+    reservation: AttemptReservation | None = None,
+    timeout_seconds: float = ACQUISITION_TRANSPORT_TIMEOUT_SECONDS,
+) -> Mapping[str, Any]:
+    return _post_json(
+        f"{TAVILY_API_ROOT}/crawl",
+        payload,
+        env_name="TAVILY_API_KEY",
+        reservation=reservation,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 __all__ = [

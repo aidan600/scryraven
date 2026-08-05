@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from core.cap_enforcement import RunCapExceeded
 from core.run_authority_search_judgment import (
     RunSearchJudgment,
     RunSearchJudgmentInput,
@@ -129,6 +130,8 @@ def execute_run_authority_search_judgment_action(
                 effort=effort,
                 use_reasoning=use_reasoning,
             )
+        except RunCapExceeded:
+            raise
         except Exception as exc:
             committed, validation = validate_or_repair_search_judgment(
                 None,
@@ -140,9 +143,7 @@ def execute_run_authority_search_judgment_action(
                 model=model,
                 effort=effort,
                 use_reasoning=use_reasoning,
-                fallback_reason=(
-                    f"model_search_judgment_parse_failed:{type(exc).__name__}"
-                ),
+                fallback_reason=(f"model_search_judgment_parse_failed:{type(exc).__name__}"),
             )
 
     projection = committed.to_projection()

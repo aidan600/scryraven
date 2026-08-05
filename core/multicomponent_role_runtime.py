@@ -20,6 +20,7 @@ from core.analyst_query_resolution_proposal import (
     AnalystQueryResolutionProposalError,
     normalize_local_query_resolution_candidate,
 )
+from core.cap_enforcement import RunCapExceeded
 
 SUPPORTED_QUERY_CLASS = "ordinary-bounded-multicomponent-factual-synthesis-v1"
 
@@ -210,9 +211,7 @@ class PreparedMulticomponentTransportCall:
     model: str
     use_reasoning: bool
     strict_one_shot_transport: Callable[..., Any] = field(repr=False, compare=False)
-    clean_json_response: Callable[[str], str] | None = field(
-        default=None, repr=False, compare=False
-    )
+    clean_json_response: Callable[[str], str] | None = field(default=None, repr=False, compare=False)
     raw_retention: bool = False
 
 
@@ -295,10 +294,7 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, str):
         return _clean_text(value, limit=2000)
     if isinstance(value, Mapping):
-        return {
-            str(key): _json_safe(item, depth=depth + 1)
-            for key, item in value.items()
-        }
+        return {str(key): _json_safe(item, depth=depth + 1) for key, item in value.items()}
     if isinstance(value, Sequence) and not isinstance(value, str | bytes):
         return [_json_safe(item, depth=depth + 1) for item in list(value)[:80]]
     return _clean_text(value, limit=300)
@@ -330,8 +326,7 @@ def reject_model_authority_claims(value: Mapping[str, Any]) -> None:
     forbidden.update(key for key in keys if key.startswith("runkernel_"))
     if forbidden:
         raise MulticomponentRoleRuntimeError(
-            "semantic role output claimed repository authority or unsafe material: "
-            + ", ".join(sorted(forbidden))
+            "semantic role output claimed repository authority or unsafe material: " + ", ".join(sorted(forbidden))
         )
 
 
@@ -348,9 +343,7 @@ def _parse_role_output(
             text = clean_json_response(text)
         parsed_value = json.loads(text)
         if not isinstance(parsed_value, Mapping):
-            raise MulticomponentRoleRuntimeError(
-                "semantic role output must be one JSON object"
-            )
+            raise MulticomponentRoleRuntimeError("semantic role output must be one JSON object")
         parsed = dict(parsed_value)
     ordinary_output = dict(parsed)
     ordinary_output.pop("specialist_need_proposal", None)
@@ -371,9 +364,7 @@ def _specialist_need_candidate(
         return False, None
     candidate = payload.get("specialist_need_proposal")
     if not isinstance(candidate, Mapping):
-        raise MulticomponentRoleRuntimeError(
-            "specialist_need_proposal must be one exact JSON mapping"
-        )
+        raise MulticomponentRoleRuntimeError("specialist_need_proposal must be one exact JSON mapping")
     return True, deepcopy(dict(candidate))
 
 
@@ -384,9 +375,7 @@ def _local_key(value: Any) -> str:
     return text
 
 
-def _with_specialist_need(
-    normalized: dict[str, Any], payload: Mapping[str, Any]
-) -> dict[str, Any]:
+def _with_specialist_need(normalized: dict[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
     """Keep parsed proposal candidates out of retained role artifacts."""
 
     del payload
@@ -402,17 +391,11 @@ def _with_query_resolution_candidates(
     proposals: list[dict[str, Any]] = []
     try:
         for raw in _safe_sequence(payload.get("query_resolution_proposals")):
-            proposals.append(
-                normalize_local_query_resolution_candidate(
-                    _safe_mapping(raw)
-                )
-            )
+            proposals.append(normalize_local_query_resolution_candidate(_safe_mapping(raw)))
     except AnalystQueryResolutionProposalError as exc:
         raise MulticomponentRoleRuntimeError(str(exc)) from exc
     if len(proposals) > 5:
-        raise MulticomponentRoleRuntimeError(
-            "Analyst may emit at most five query-resolution proposals"
-        )
+        raise MulticomponentRoleRuntimeError("Analyst may emit at most five query-resolution proposals")
     target_keys = [proposal["local_target_key"] for proposal in proposals]
     if len(target_keys) != len(set(target_keys)):
         raise MulticomponentRoleRuntimeError(
@@ -449,12 +432,8 @@ def _normalize_semantic_output(
             payload,
         )
     if role in {ROLE_COMPONENT_DPRIME, ROLE_SYNTHESIS_DPRIME}:
-        if _clean_text(payload.get("claim_text")) or _clean_text(
-            payload.get("replacement_claim")
-        ):
-            raise MulticomponentRoleRuntimeError(
-                "D-prime cannot create or replace the nominated claim"
-            )
+        if _clean_text(payload.get("claim_text")) or _clean_text(payload.get("replacement_claim")):
+            raise MulticomponentRoleRuntimeError("D-prime cannot create or replace the nominated claim")
         status = _normalize_key(payload.get("validation_status"))
         if status not in _ROLE_STATUSES[role]:
             raise MulticomponentRoleRuntimeError("D-prime validation_status invalid")
@@ -479,52 +458,36 @@ def _normalize_semantic_output(
                         "selective Cross proposal cannot use the full-graph synthesis namespace"
                     )
                 affected_inputs = [
-                    _local_key(item)
-                    for item in _safe_sequence(
-                        proposal.get("affected_synthesis_inputs")
-                    )
+                    _local_key(item) for item in _safe_sequence(proposal.get("affected_synthesis_inputs"))
                 ]
                 preserved_inputs = [
-                    _local_key(item)
-                    for item in _safe_sequence(
-                        proposal.get("preserved_synthesis_inputs")
-                    )
+                    _local_key(item) for item in _safe_sequence(proposal.get("preserved_synthesis_inputs"))
                 ]
                 if set(affected_inputs) & set(preserved_inputs):
-                    raise MulticomponentRoleRuntimeError(
-                        "selective Cross synthesis input namespaces must be disjoint"
-                    )
+                    raise MulticomponentRoleRuntimeError("selective Cross synthesis input namespaces must be disjoint")
                 synthesis_inputs = []
             else:
-                if "affected_synthesis_inputs" in proposal or (
-                    "preserved_synthesis_inputs" in proposal
-                ):
-                    raise MulticomponentRoleRuntimeError(
-                        "ordinary Cross proposal cannot use selective namespaces"
-                    )
-                synthesis_inputs = [
-                    _local_key(item)
-                    for item in _safe_sequence(proposal.get("synthesis_inputs"))
-                ]
+                if "affected_synthesis_inputs" in proposal or ("preserved_synthesis_inputs" in proposal):
+                    raise MulticomponentRoleRuntimeError("ordinary Cross proposal cannot use selective namespaces")
+                synthesis_inputs = [_local_key(item) for item in _safe_sequence(proposal.get("synthesis_inputs"))]
                 affected_inputs = []
                 preserved_inputs = []
-            if not claim_text or not relationship_type or not (
-                component_inputs
-                or synthesis_inputs
-                or affected_inputs
-                or preserved_inputs
+            if (
+                not claim_text
+                or not relationship_type
+                or not (component_inputs or synthesis_inputs or affected_inputs or preserved_inputs)
             ):
                 raise MulticomponentRoleRuntimeError(
                     "cross-component proposal requires claim, relationship, and inputs"
                 )
             normalized_proposal = {
-                    "synthesis_key": key,
-                    "claim_text": claim_text,
-                    "relationship_type": relationship_type,
-                    "component_inputs": component_inputs,
-                    "caveats": _text_list(proposal.get("caveats")),
-                    "nonclaims": _text_list(proposal.get("nonclaims")),
-                    "blockers": _text_list(proposal.get("blockers")),
+                "synthesis_key": key,
+                "claim_text": claim_text,
+                "relationship_type": relationship_type,
+                "component_inputs": component_inputs,
+                "caveats": _text_list(proposal.get("caveats")),
+                "nonclaims": _text_list(proposal.get("nonclaims")),
+                "blockers": _text_list(proposal.get("blockers")),
             }
             if output_schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA:
                 normalized_proposal.update(
@@ -537,9 +500,7 @@ def _normalize_semantic_output(
                 normalized_proposal["synthesis_inputs"] = synthesis_inputs
             proposals.append(normalized_proposal)
         if not 1 <= len(proposals) <= 4:
-            raise MulticomponentRoleRuntimeError(
-                "Cross-Component Analyst must propose one to four synthesis nodes"
-            )
+            raise MulticomponentRoleRuntimeError("Cross-Component Analyst must propose one to four synthesis nodes")
         if len({item["synthesis_key"] for item in proposals}) != len(proposals):
             raise MulticomponentRoleRuntimeError("duplicate synthesis_key")
         return _with_specialist_need(
@@ -551,9 +512,7 @@ def _normalize_semantic_output(
         )
     if role == ROLE_SCRUTINEER:
         if "query_resolution_proposals" in payload:
-            raise MulticomponentRoleRuntimeError(
-                "Scrutineer cannot author query-resolution proposals"
-            )
+            raise MulticomponentRoleRuntimeError("Scrutineer cannot author query-resolution proposals")
         status = _normalize_key(payload.get("challenge_status"))
         if status not in _ROLE_STATUSES[role]:
             raise MulticomponentRoleRuntimeError("Scrutineer challenge_status invalid")
@@ -566,39 +525,24 @@ def _normalize_semantic_output(
                 )
             target_kind = _normalize_key(target.get("target_kind"))
             if target_kind not in {"component", "synthesis", "edge", "subgraph", "graph"}:
-                raise MulticomponentRoleRuntimeError(
-                    "Scrutineer challenge target kind invalid"
-                )
+                raise MulticomponentRoleRuntimeError("Scrutineer challenge target kind invalid")
             challenge_targets.append(
                 {
                     "target_kind": target_kind,
                     "target_key": _local_key(target.get("target_key")),
                 }
             )
-        if len({(item["target_kind"], item["target_key"]) for item in challenge_targets}) != len(
-            challenge_targets
-        ):
+        if len({(item["target_kind"], item["target_key"]) for item in challenge_targets}) != len(challenge_targets):
             raise MulticomponentRoleRuntimeError("duplicate Scrutineer challenge target")
-        legacy_synthesis_keys = [
-            _local_key(item)
-            for item in _safe_sequence(payload.get("challenged_synthesis_keys"))
-        ]
+        legacy_synthesis_keys = [_local_key(item) for item in _safe_sequence(payload.get("challenged_synthesis_keys"))]
         if len(set(legacy_synthesis_keys)) != len(legacy_synthesis_keys):
             raise MulticomponentRoleRuntimeError("duplicate challenged_synthesis_key")
         if challenge_targets and legacy_synthesis_keys:
-            raise MulticomponentRoleRuntimeError(
-                "Scrutineer cannot mix typed and legacy challenge targets"
-            )
+            raise MulticomponentRoleRuntimeError("Scrutineer cannot mix typed and legacy challenge targets")
         if status in {"passed", "passed_with_caveats"} and challenge_targets:
-            raise MulticomponentRoleRuntimeError(
-                "passing Scrutineer posture cannot select challenge targets"
-            )
-        if status in {"challenged", "blocked"} and not (
-            challenge_targets or legacy_synthesis_keys
-        ):
-            raise MulticomponentRoleRuntimeError(
-                "challenged or blocked Scrutineer posture requires a target"
-            )
+            raise MulticomponentRoleRuntimeError("passing Scrutineer posture cannot select challenge targets")
+        if status in {"challenged", "blocked"} and not (challenge_targets or legacy_synthesis_keys):
+            raise MulticomponentRoleRuntimeError("challenged or blocked Scrutineer posture requires a target")
         normalized_scrutineer = {
             "challenge_status": status,
             "reasons": _text_list(payload.get("reasons")),
@@ -624,16 +568,11 @@ def validate_multicomponent_role_artifact(
     role = _normalize_key(artifact.get("role"))
     if role not in ROLE_SYSTEM_PROMPTS or (expected_role and role != expected_role):
         raise MulticomponentRoleRuntimeError("semantic role artifact role mismatch")
-    schema_variant = _clean_text(
-        artifact.get("output_schema_variant"), limit=80
-    )
+    schema_variant = _clean_text(artifact.get("output_schema_variant"), limit=80)
     if schema_variant and not (
-        role == ROLE_CROSS_COMPONENT_ANALYST
-        and schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+        role == ROLE_CROSS_COMPONENT_ANALYST and schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
     ):
-        raise MulticomponentRoleRuntimeError(
-            "semantic role artifact schema variant is invalid"
-        )
+        raise MulticomponentRoleRuntimeError("semantic role artifact schema variant is invalid")
     for key in (
         "artifact_id",
         "artifact_digest",
@@ -700,19 +639,12 @@ def prepare_multicomponent_transport_call(
         any(not inputs.get(key) for key in required)
         or inputs.get("input_packet_digest") != input_digest
         or inputs.get("specialist_handoff_digest")
-        != _safe_mapping(safe_input.get("specialist_need_handoff")).get(
-            "handoff_digest"
-        )
-        or int(inputs.get("batch_index") if inputs.get("batch_index") is not None else -1)
-        < 0
+        != _safe_mapping(safe_input.get("specialist_need_handoff")).get("handoff_digest")
+        or int(inputs.get("batch_index") if inputs.get("batch_index") is not None else -1) < 0
     ):
-        raise MulticomponentRoleRuntimeError(
-            "prepared transport does not match committed child action"
-        )
+        raise MulticomponentRoleRuntimeError("prepared transport does not match committed child action")
     if not callable(strict_one_shot_transport):
-        raise MulticomponentRoleRuntimeError(
-            "prepared transport requires a strict one-shot SmartModel transport"
-        )
+        raise MulticomponentRoleRuntimeError("prepared transport requires a strict one-shot SmartModel transport")
     canonical_provider = normalize_canonical_model_provider(provider)
     return PreparedMulticomponentTransportCall(
         schema_version=MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
@@ -739,9 +671,7 @@ def prepare_multicomponent_transport_call(
 
 
 def _bounded_worker_usage_facts(transport_result: Any) -> dict[str, Any]:
-    provider_response_received = bool(
-        getattr(transport_result, "provider_response_received", False)
-    )
+    provider_response_received = bool(getattr(transport_result, "provider_response_received", False))
     if not provider_response_received:
         return {
             "provider_response_received": False,
@@ -799,20 +729,15 @@ def execute_prepared_multicomponent_transport(
             effort="high",
             require_json=True,
             use_reasoning=prepared.use_reasoning,
+            logical_call_id=prepared.logical_evaluation_key,
         )
         if not isinstance(transport_result, StrictOneShotModelTransportResult):
-            raise MulticomponentRoleRuntimeError(
-                "strict one-shot transport returned an invalid result type"
-            )
+            raise MulticomponentRoleRuntimeError("strict one-shot transport returned an invalid result type")
         attempt_count = int(transport_result.provider_request_attempt_count or 0)
         if attempt_count not in {0, 1}:
-            raise MulticomponentRoleRuntimeError(
-                "strict one-shot transport reported an invalid provider attempt count"
-            )
+            raise MulticomponentRoleRuntimeError("strict one-shot transport reported an invalid provider attempt count")
         usage_facts = _bounded_worker_usage_facts(transport_result)
-        result_provider = normalize_canonical_model_provider(
-            transport_result.canonical_provider
-        )
+        result_provider = normalize_canonical_model_provider(transport_result.canonical_provider)
         if result_provider != normalize_canonical_model_provider(prepared.provider):
             normalized = None
             failure_kind = "provider_identity_mismatch"
@@ -824,15 +749,15 @@ def execute_prepared_multicomponent_transport(
                 transport_result.output_text,
                 clean_json_response=prepared.clean_json_response,
             )
-            specialist_candidate_present, specialist_candidate = (
-                _specialist_need_candidate(parsed_output)
-            )
+            specialist_candidate_present, specialist_candidate = _specialist_need_candidate(parsed_output)
             normalized = _normalize_semantic_output(
                 prepared.role,
                 parsed_output,
                 output_schema_variant=prepared.output_schema_variant,
             )
             failure_kind = None
+    except RunCapExceeded:
+        raise
     except Exception as exc:
         normalized = None
         failure_kind = (
@@ -957,24 +882,16 @@ def reduce_multicomponent_worker_result(
     if result.schema_version != MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION or any(
         getattr(result, key) != value for key, value in expected.items()
     ):
-        raise MulticomponentRoleRuntimeError(
-            "safe worker result does not match its exact child action"
-        )
+        raise MulticomponentRoleRuntimeError("safe worker result does not match its exact child action")
     transport_facts = {
         "transport_submitted": result.transport_submitted,
         "transport_started": result.transport_started,
         "transport_completed": result.transport_completed,
-        "provider_request_attempt_count": max(
-            0, min(1, int(result.provider_request_attempt_count or 0))
-        ),
+        "provider_request_attempt_count": max(0, min(1, int(result.provider_request_attempt_count or 0))),
         "observed_batch_max_in_flight": max(0, int(observed_batch_max_in_flight)),
     }
-    scheduler = _safe_mapping(
-        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    )
-    scheduler_provider = normalize_canonical_model_provider(
-        scheduler.get("configured_provider_class")
-    )
+    scheduler = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    scheduler_provider = normalize_canonical_model_provider(scheduler.get("configured_provider_class"))
     if result.failure_kind:
         run_kernel.reduce(
             Observation.from_action(
@@ -989,10 +906,7 @@ def reduce_multicomponent_worker_result(
             )
         )
         return None
-    if (
-        scheduler_provider
-        and normalize_canonical_model_provider(result.provider) != scheduler_provider
-    ):
+    if scheduler_provider and normalize_canonical_model_provider(result.provider) != scheduler_provider:
         run_kernel.reduce(
             Observation.from_action(
                 action,
@@ -1114,23 +1028,16 @@ def execute_multicomponent_role_call(
         raise MulticomponentRoleRuntimeError("unknown semantic role")
     schema_variant = _clean_text(output_schema_variant, limit=80)
     if schema_variant and not (
-        normalized_role == ROLE_CROSS_COMPONENT_ANALYST
-        and schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+        normalized_role == ROLE_CROSS_COMPONENT_ANALYST and schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
     ):
-        raise MulticomponentRoleRuntimeError(
-            "semantic role output schema variant is invalid"
-        )
+        raise MulticomponentRoleRuntimeError("semantic role output schema variant is invalid")
     safe_input = _json_safe(input_packet)
     if not isinstance(safe_input, Mapping):
         raise MulticomponentRoleRuntimeError("semantic role input must be a mapping")
     if not callable(strict_one_shot_transport):
-        raise MulticomponentRoleRuntimeError(
-            "semantic role transport requires a strict one-shot SmartModel transport"
-        )
+        raise MulticomponentRoleRuntimeError("semantic role transport requires a strict one-shot SmartModel transport")
     input_digest = _digest(safe_input)
-    specialist_handoff_digest = _safe_mapping(
-        safe_input.get("specialist_need_handoff")
-    ).get("handoff_digest")
+    specialist_handoff_digest = _safe_mapping(safe_input.get("specialist_need_handoff")).get("handoff_digest")
     canonical_provider = normalize_canonical_model_provider(provider)
     from core.multicomponent_graph_scheduling import (
         LEASE_FAILED,
@@ -1138,19 +1045,13 @@ def execute_multicomponent_role_call(
         MULTICOMPONENT_SCHEDULER_STAGE,
     )
 
-    scheduler_projection = _safe_mapping(
-        run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
-    )
-    scheduler_active = (
-        scheduler_projection.get("status") == "active"
-        and not bool(searchos_recovery_cycle_ref)
-    )
+    scheduler_projection = _safe_mapping(run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE))
+    scheduler_active = scheduler_projection.get("status") == "active" and not bool(searchos_recovery_cycle_ref)
     recovery_active = bool(searchos_recovery_cycle_ref)
     if searchos_recovery_cycle_ref:
         if lease_id:
             raise MulticomponentRoleRuntimeError(
-                "SearchOS recovery role authority cannot combine with a "
-                "scheduler lease"
+                "SearchOS recovery role authority cannot combine with a scheduler lease"
             )
         action = run_kernel.authorize_multicomponent_role_call(
             role=normalized_role,
@@ -1161,9 +1062,7 @@ def execute_multicomponent_role_call(
         )
     elif scheduler_active:
         if not lease_id:
-            raise MulticomponentRoleRuntimeError(
-                "scheduler-active semantic transport requires an exact lease"
-            )
+            raise MulticomponentRoleRuntimeError("scheduler-active semantic transport requires an exact lease")
         action = run_kernel.prepare_multicomponent_role_dispatch(
             lease_id=lease_id,
             role=normalized_role,
@@ -1174,9 +1073,7 @@ def execute_multicomponent_role_call(
         )
     else:
         if lease_id:
-            raise MulticomponentRoleRuntimeError(
-                "caller-authored lease is forbidden without scheduler authority"
-            )
+            raise MulticomponentRoleRuntimeError("caller-authored lease is forbidden without scheduler authority")
         action = run_kernel.authorize_multicomponent_role_call(
             role=normalized_role,
             input_packet_digest=input_digest,
@@ -1199,15 +1096,11 @@ def execute_multicomponent_role_call(
             effort="high",
             require_json=True,
             use_reasoning=use_reasoning,
+            logical_call_id=logical_evaluation_key,
         )
         if not isinstance(transport_result, StrictOneShotModelTransportResult):
-            raise MulticomponentRoleRuntimeError(
-                "strict one-shot transport returned an invalid result type"
-            )
-        if (
-            normalize_canonical_model_provider(transport_result.canonical_provider)
-            != canonical_provider
-        ):
+            raise MulticomponentRoleRuntimeError("strict one-shot transport returned an invalid result type")
+        if normalize_canonical_model_provider(transport_result.canonical_provider) != canonical_provider:
             raise MulticomponentRoleRuntimeError("provider_identity_mismatch")
         if transport_result.return_code != 0:
             raise MulticomponentRoleRuntimeError("model_transport_failure")
@@ -1219,6 +1112,8 @@ def execute_multicomponent_role_call(
             ),
             output_schema_variant=schema_variant,
         )
+    except RunCapExceeded:
+        raise
     except Exception as exc:
         if scheduler_active or recovery_active:
             failure_kind = (
@@ -1292,12 +1187,9 @@ def execute_multicomponent_role_call(
             artifact_core[key] = _json_safe(action.inputs.get(key))
     elif normalized_role == ROLE_CROSS_COMPONENT_ANALYST:
         artifact_core["accepted_contract_ref"] = _json_safe(
-            safe_input.get("accepted_contract_ref")
-            or safe_input.get("current_contract_ref")
+            safe_input.get("accepted_contract_ref") or safe_input.get("current_contract_ref")
         )
-        artifact_core["graph_ref"] = _json_safe(
-            safe_input.get("graph_ref")
-        )
+        artifact_core["graph_ref"] = _json_safe(safe_input.get("graph_ref"))
     if schema_variant:
         artifact_core["output_schema_variant"] = schema_variant
     artifact = {**artifact_core, "artifact_digest": _digest(artifact_core)}
@@ -1321,9 +1213,7 @@ def execute_multicomponent_role_call(
                 )
             )
         raise
-    if scheduler_active and not run_kernel.multicomponent_work_lease_is_current(
-        str(lease_id)
-    ):
+    if scheduler_active and not run_kernel.multicomponent_work_lease_is_current(str(lease_id)):
         run_kernel.reduce(
             Observation.from_action(
                 action,
@@ -1335,9 +1225,7 @@ def execute_multicomponent_role_call(
                 },
             )
         )
-        raise MulticomponentRoleRuntimeError(
-            "semantic role result rejected because its lease authority is stale"
-        )
+        raise MulticomponentRoleRuntimeError("semantic role result rejected because its lease authority is stale")
     observation = Observation.from_action(
         action,
         observation_type=action.expected_observation_type,
@@ -1357,14 +1245,8 @@ def execute_multicomponent_role_call(
                     observation_type=action.expected_observation_type,
                     status=RunStageStatus.FAILED,
                     payload={
-                        **(
-                            {"lease_settlement": LEASE_FAILED}
-                            if scheduler_active
-                            else {}
-                        ),
-                        "failure_kind": (
-                            "semantic_role_observation_reduction_failure"
-                        ),
+                        **({"lease_settlement": LEASE_FAILED} if scheduler_active else {}),
+                        "failure_kind": ("semantic_role_observation_reduction_failure"),
                     },
                 )
             )

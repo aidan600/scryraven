@@ -22,6 +22,7 @@ from core.analyst_query_resolution_proposal import (
     bind_analyst_query_resolution_proposal,
     selected_proposals_for_role_artifact,
 )
+from core.cap_enforcement import RunCapExceeded
 from core.component_coverage_reduction_runtime import (
     ledger_qualification_blockers_for_satisfied_coverage,
 )
@@ -275,6 +276,7 @@ def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
             smart_model=model,
             local_url=str(runtime_scope.get("local_url") or "") or None,
             openrouter_api_key=str(runtime_scope.get("or_api_key") or "") or None,
+            cap_policy=runtime_scope.get("cap_policy"),
         )
     return {
         "strict_one_shot_transport": transport,
@@ -3049,6 +3051,8 @@ def _execute_run_kernel_selected_batch(
                 for index, future in futures.items():
                     try:
                         results[index] = future.result()
+                    except RunCapExceeded:
+                        raise
                     except Exception:
                         results[index] = failed_unstarted_multicomponent_worker_result(
                             prepared_calls[index],

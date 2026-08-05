@@ -72,6 +72,7 @@ def execute_route_request_action(
     api_key: str | None,
     use_reasoning: bool,
     measure_context_stage: Callable[..., Any],
+    allow_model_retry: bool = True,
 ) -> RouteRequestRuntimeResult:
     """Execute the existing router behavior after RunKernel authorization."""
 
@@ -107,10 +108,8 @@ def execute_route_request_action(
         fallback_entities=fallback_entities_from_query(query),
     )
 
-    if not router_query_preparation_contract.entities:
-        router_retry_prompt = (
-            f"Today is {current_date}.\nUser Topic: {query}\n\n{ROUTER_RETRY_USER_APPEND}"
-        )
+    if not router_query_preparation_contract.entities and allow_model_retry:
+        router_retry_prompt = f"Today is {current_date}.\nUser Topic: {query}\n\n{ROUTER_RETRY_USER_APPEND}"
         measure_context_stage(
             "router_retry",
             prompt=router_retry_prompt,

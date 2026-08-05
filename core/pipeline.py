@@ -7,6 +7,11 @@ from hashlib import sha256
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from core.calculations import ALLOWED_CALCULATIONS, sanitize_to_float
+from core.cap_enforcement import (
+    RunCapExceeded,
+    RunCapPolicy,
+    mark_cap_aware,
+)
 from core.cost_accounting import CostAccumulator
 from core.discovery_source_result import (
     DiscoveryResultMaterialStore,
@@ -578,9 +583,7 @@ def _source_bound_value_matches_bucket(item: Any, bucket: str) -> bool:
     if bucket == "price_cost_rate":
         return _source_bound_value_supports_price_cost_rate(item)
     terms = TARGET_METRIC_BUCKETS.get(bucket, ())
-    haystack = " ".join(
-        str(item.get(key) or "") for key in ("name", "metric", "label", "unit")
-    )
+    haystack = " ".join(str(item.get(key) or "") for key in ("name", "metric", "label", "unit"))
     if bucket == "financial_line_item" and _target_metric_text_matches(
         haystack,
         FINANCIAL_LINE_ITEM_DERIVED_VALUE_TERMS,
@@ -594,9 +597,7 @@ def _source_bound_value_supports_price_cost_rate(item: Any) -> bool:
         return False
     if _source_bound_value_declares_unsupported(item):
         return False
-    haystack = " ".join(
-        str(item.get(key) or "") for key in ("name", "metric", "label", "unit")
-    )
+    haystack = " ".join(str(item.get(key) or "") for key in ("name", "metric", "label", "unit"))
     unit = str(item.get("unit") or "")
     return _target_metric_text_matches(
         haystack,
@@ -609,9 +610,7 @@ def _source_bound_value_supports_duration(item: Any) -> bool:
         return False
     if _source_bound_value_declares_unsupported(item):
         return False
-    haystack = " ".join(
-        str(item.get(key) or "") for key in ("name", "metric", "label", "unit")
-    )
+    haystack = " ".join(str(item.get(key) or "") for key in ("name", "metric", "label", "unit"))
     return _target_metric_text_matches(haystack, TARGET_METRIC_DURATION_SUPPORT_TERMS)
 
 
@@ -676,10 +675,7 @@ def _unsupported_value_blocks_target_bucket(
         return False
     if _unsupported_value_covered_by_calculation(value, calculation_results):
         return False
-    return not (
-        bucket == "financial_line_item"
-        and _unsupported_value_describes_derived_comparison(value)
-    )
+    return not (bucket == "financial_line_item" and _unsupported_value_describes_derived_comparison(value))
 
 
 def _calculation_compares_duration_bound_values(
@@ -692,16 +688,12 @@ def _calculation_compares_duration_bound_values(
     if not isinstance(input_refs, dict):
         return False
     values_by_name = {
-        _normalize_calculation_ref(item.get("name")): item
-        for item in source_bound_values
-        if isinstance(item, dict)
+        _normalize_calculation_ref(item.get("name")): item for item in source_bound_values if isinstance(item, dict)
     }
     duration_refs = {
         str(ref).strip()
         for ref in input_refs.values()
-        if _source_bound_value_supports_duration(
-            values_by_name.get(_normalize_calculation_ref(ref))
-        )
+        if _source_bound_value_supports_duration(values_by_name.get(_normalize_calculation_ref(ref)))
     }
     return len(duration_refs) >= 2
 
@@ -749,20 +741,15 @@ def validate_target_metric_shadow(
         for result in calculation_results:
             if _calculation_result_matches_bucket(result, bucket):
                 _append_unique(calculation_matches[bucket], result.get("name"))
-            if (
-                bucket == "performance_speed_throughput"
-                and _calculation_compares_duration_bound_values(
-                    result,
-                    source_bound_values,
-                )
-                ):
-                    _append_unique(calculation_matches[bucket], result.get("name"))
+            if bucket == "performance_speed_throughput" and _calculation_compares_duration_bound_values(
+                result,
+                source_bound_values,
+            ):
+                _append_unique(calculation_matches[bucket], result.get("name"))
         applies, refs, valid = _target_metric_requested_bound_value_refs(
             query=query,
             bucket=bucket,
-            source_bound_values=[
-                item for item in source_bound_values if isinstance(item, dict)
-            ],
+            source_bound_values=[item for item in source_bound_values if isinstance(item, dict)],
         )
         requested_bound_applies[bucket] = applies
         requested_bound_valid[bucket] = valid
@@ -812,8 +799,7 @@ def validate_target_metric_shadow(
     telemetry["target_metric_missing"] = missing
     telemetry["target_metric_evidence_found"] = bool(required_targets) and not missing
     telemetry["target_metric_shadow_would_block"] = (
-        telemetry["target_metric_detected"] is True
-        and telemetry["target_metric_evidence_found"] is False
+        telemetry["target_metric_detected"] is True and telemetry["target_metric_evidence_found"] is False
     )
     if telemetry["target_metric_evidence_found"]:
         if telemetry["target_metric_calculation_refs"]:
@@ -866,9 +852,7 @@ def classify_high_stakes_quantitative_claim(
     patient_context_signal = _query_has_patient_context_signal(text)
     inferred_medical_domain_signal = clinical_metric_signal and patient_context_signal
     medical_domain_detected = medical_domain_signal or inferred_medical_domain_signal
-    quantitative_or_comparative_signal = (
-        clinical_metric_signal or decision_or_comparison_signal
-    )
+    quantitative_or_comparative_signal = clinical_metric_signal or decision_or_comparison_signal
 
     calculation_requests = payload.get("calculations_requested") if isinstance(payload, dict) else []
     calculation_requested = isinstance(calculation_requests, list) and bool(calculation_requests)
@@ -878,10 +862,7 @@ def classify_high_stakes_quantitative_claim(
     target_metric_detected = target_metric_telemetry.get("target_metric_detected") is True
     explicit_metric_signal = _query_has_explicit_quantitative_metric_signal(text)
     quantitative_target_signal = (
-        target_metric_detected
-        or calculation_requested
-        or calculation_result_present
-        or explicit_metric_signal
+        target_metric_detected or calculation_requested or calculation_result_present or explicit_metric_signal
     )
 
     reasons: list[str] = []
@@ -905,11 +886,7 @@ def classify_high_stakes_quantitative_claim(
         reasons.append("explicit_quantitative_metric_signal")
 
     return {
-        "detected": bool(
-            medical_domain_detected
-            and quantitative_or_comparative_signal
-            and quantitative_target_signal
-        ),
+        "detected": bool(medical_domain_detected and quantitative_or_comparative_signal and quantitative_target_signal),
         "domain": "medical" if medical_domain_detected else None,
         "reasons": reasons,
     }
@@ -1051,15 +1028,11 @@ def build_quantitative_packet_shadow(
     if not isinstance(target_metric_names, list):
         target_metric_names = []
 
-    target_metric_bound_value_refs = target_metric_telemetry.get(
-        "target_metric_bound_value_refs"
-    )
+    target_metric_bound_value_refs = target_metric_telemetry.get("target_metric_bound_value_refs")
     if not isinstance(target_metric_bound_value_refs, list):
         target_metric_bound_value_refs = []
 
-    target_metric_calculation_refs = target_metric_telemetry.get(
-        "target_metric_calculation_refs"
-    )
+    target_metric_calculation_refs = target_metric_telemetry.get("target_metric_calculation_refs")
     if not isinstance(target_metric_calculation_refs, list):
         target_metric_calculation_refs = []
 
@@ -1085,13 +1058,9 @@ def build_quantitative_packet_shadow(
         "target_metric_names": list(target_metric_names),
         "target_metric_bound_value_refs": list(target_metric_bound_value_refs),
         "target_metric_calculation_refs": list(target_metric_calculation_refs),
-        "unsupported_values_count": int(
-            schema_telemetry.get("unsupported_values_count") or 0
-        ),
+        "unsupported_values_count": int(schema_telemetry.get("unsupported_values_count") or 0),
         "high_stakes_quant_detected": high_stakes_detected,
-        "high_stakes_quant_domain": high_stakes_telemetry.get(
-            "high_stakes_quant_domain"
-        ),
+        "high_stakes_quant_domain": high_stakes_telemetry.get("high_stakes_quant_domain"),
         "requires_analyst": requires_analyst,
         "direct_use_eligible": direct_use_eligible,
         "validation_errors": list(validation_errors),
@@ -1219,9 +1188,7 @@ def execute_economist_calculations_shadow(
         if duplicate_arg:
             telemetry["calculation_error_count"] += 1
             telemetry["calculation_input_binding_error_count"] += 1
-            telemetry["calculation_error_summaries"].append(
-                f"duplicate_calculation_arg:{duplicate_arg}"
-            )
+            telemetry["calculation_error_summaries"].append(f"duplicate_calculation_arg:{duplicate_arg}")
             continue
         if unresolved_refs:
             telemetry["calculation_error_count"] += 1
@@ -1236,9 +1203,7 @@ def execute_economist_calculations_shadow(
             result = function(**resolved_args)
         except (TypeError, ValueError, ZeroDivisionError) as exc:
             telemetry["calculation_error_count"] += 1
-            telemetry["calculation_error_summaries"].append(
-                str(exc) or type(exc).__name__
-            )
+            telemetry["calculation_error_summaries"].append(str(exc) or type(exc).__name__)
             continue
 
         telemetry["calculation_success_count"] += 1
@@ -1247,11 +1212,7 @@ def execute_economist_calculations_shadow(
                 "name": calculation_name,
                 "result": result,
                 "input_refs": input_refs,
-                **(
-                    {"result_basis": "per_100g"}
-                    if calculation_name == "normalize_per_100g"
-                    else {}
-                ),
+                **({"result_basis": "per_100g"} if calculation_name == "normalize_per_100g" else {}),
             }
         )
 
@@ -1333,17 +1294,11 @@ def economist_evidence_source_window_telemetry(
     source_ids_used: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     evidence_source_ids = collect_allowed_source_ids(evidence_passages)
-    used_ids = {
-        str(source_id).strip()
-        for source_id in (source_ids_used or [])
-        if str(source_id).strip()
-    }
+    used_ids = {str(source_id).strip() for source_id in (source_ids_used or []) if str(source_id).strip()}
     return {
         "economist_evidence_source_ids_seen": sorted(evidence_source_ids),
         "economist_evidence_source_ids_used": sorted(used_ids & evidence_source_ids),
-        "economist_source_ids_used_outside_evidence_window": sorted(
-            used_ids - evidence_source_ids
-        ),
+        "economist_source_ids_used_outside_evidence_window": sorted(used_ids - evidence_source_ids),
     }
 
 
@@ -1370,6 +1325,7 @@ QUANT_RETRIEVAL_PROXY_METRIC_TERMS = (
     "rank",
     "score",
 )
+
 
 def _quant_value_text(value: Any) -> str:
     return str(value or "").strip()
@@ -1477,11 +1433,7 @@ def _quant_subject_context_start(text: str) -> int | None:
         r"(?:last|past|previous|trailing)\s+\d+\s+"
         r"(?:quarters?|years?|months?)\b",
     )
-    starts = [
-        match.start()
-        for pattern in patterns
-        for match in re.finditer(pattern, text, flags=re.I)
-    ]
+    starts = [match.start() for pattern in patterns for match in re.finditer(pattern, text, flags=re.I)]
     return min(starts) if starts else None
 
 
@@ -1497,9 +1449,7 @@ def _quant_clean_subject(candidate: str) -> str:
         if m and (earliest is None or m.start() < earliest):
             earliest = m.start()
     context_start = _quant_subject_context_start(text)
-    if context_start is not None and (
-        earliest is None or context_start < earliest
-    ):
+    if context_start is not None and (earliest is None or context_start < earliest):
         earliest = context_start
     if earliest is not None:
         text = text[:earliest]
@@ -1581,18 +1531,12 @@ def _quant_metric_bucket_covered(
     if not metric_key:
         return False
     if metric_key in TARGET_METRIC_BUCKETS:
-        if any(
-            _quant_source_bound_value_matches_metric(item, metric_key)
-            for item in source_bound_values
-        ):
+        if any(_quant_source_bound_value_matches_metric(item, metric_key) for item in source_bound_values):
             return True
         return _target_metric_text_matches(evidence_text, TARGET_METRIC_BUCKETS[metric_key])
     if metric_key in NUTRITION_METRIC_TERMS:
         terms = NUTRITION_METRIC_TERMS[metric_key]
-        if any(
-            _target_metric_text_matches(_quant_source_value_text(item), terms)
-            for item in source_bound_values
-        ):
+        if any(_target_metric_text_matches(_quant_source_value_text(item), terms) for item in source_bound_values):
             return True
         return _target_metric_text_matches(evidence_text, terms)
     return _target_metric_text_matches(evidence_text, (metric_key,))
@@ -1602,9 +1546,7 @@ def _quant_source_bound_value_matches_metric(item: Any, bucket: str) -> bool:
     if not isinstance(item, dict):
         return False
     if bucket == "price_cost_rate":
-        haystack = " ".join(
-            str(item.get(key) or "") for key in ("name", "metric", "label", "unit")
-        )
+        haystack = " ".join(str(item.get(key) or "") for key in ("name", "metric", "label", "unit"))
         return _target_metric_text_matches(
             haystack,
             TARGET_METRIC_PRICE_COST_SUPPORT_TERMS,
@@ -1623,10 +1565,7 @@ def _quant_metric_source_bound_values(
     return [
         item
         for item in source_bound_values
-        if any(
-            _quant_source_bound_value_matches_metric(item, metric)
-            for metric in requested
-        )
+        if any(_quant_source_bound_value_matches_metric(item, metric) for metric in requested)
     ]
 
 
@@ -1715,9 +1654,7 @@ def _quant_extract_timeframes(text: str) -> list[str]:
         flags=re.I,
     )
     if ranges or quarters or relatives:
-        return _quant_unique(
-            [_quant_normalize_timeframe(item) for item in ranges + quarters + relatives]
-        )
+        return _quant_unique([_quant_normalize_timeframe(item) for item in ranges + quarters + relatives])
     annuals = re.findall(
         r"\b(?:fy|fiscal(?:\s+year)?|calendar(?:\s+year)?|annual|year)?\s*((?:19|20)\d{2})\b",
         raw,
@@ -1854,11 +1791,7 @@ def _quant_source_bound_timeframe_coverage(
 ) -> bool:
     if not query_timeframes:
         return True
-    values_with_timeframes = [
-        item
-        for item in source_bound_values
-        if _quant_source_value_timeframe_text(item)
-    ]
+    values_with_timeframes = [item for item in source_bound_values if _quant_source_value_timeframe_text(item)]
     if not values_with_timeframes:
         return False
 
@@ -1866,10 +1799,7 @@ def _quant_source_bound_timeframe_coverage(
         [
             subject
             for subject in subjects
-            if any(
-                _quant_source_value_matches_subject(item, subject)
-                for item in values_with_timeframes
-            )
+            if any(_quant_source_value_matches_subject(item, subject) for item in values_with_timeframes)
         ]
         if subjects
         else []
@@ -1887,10 +1817,7 @@ def _quant_source_bound_timeframe_coverage(
             for subject in subjects
         )
     return all(
-        any(
-            _quant_source_value_matches_timeframe(item, timeframe)
-            for item in values_with_timeframes
-        )
+        any(_quant_source_value_matches_timeframe(item, timeframe) for item in values_with_timeframes)
         for timeframe in query_timeframes
     )
 
@@ -1906,9 +1833,7 @@ def _quant_evidence_source_maps(passages: list[Any]) -> tuple[set[str], dict[str
         source_ids.add(source_id_text)
         url = _quant_value_text(_quant_passage_get(passage, "url"))
         domain = _quant_value_text(_quant_passage_get(passage, "domain"))
-        domains_by_source_id[source_id_text] = (
-            normalize_source_domain(url) or domain.casefold() or source_id_text
-        )
+        domains_by_source_id[source_id_text] = normalize_source_domain(url) or domain.casefold() or source_id_text
     return source_ids, domains_by_source_id
 
 
@@ -1951,10 +1876,7 @@ def _quant_retrieval_sufficiency_gate_reason(blockers: list[str]) -> str:
         return "sufficient_shadow_only"
     if "nutrition_value_source_binding_missing" in blockers:
         return "blocked_by_nutrition_value_source_binding"
-    if (
-        "nutrition_metrics_missing" in blockers
-        or "nutrition_partial_macro_coverage" in blockers
-    ):
+    if "nutrition_metrics_missing" in blockers or "nutrition_partial_macro_coverage" in blockers:
         return "blocked_by_nutrition_metric_coverage"
     if "proxy_metric_only" in blockers:
         return "blocked_by_proxy_metric"
@@ -2006,23 +1928,13 @@ def _quant_retrieval_sufficiency_shadow_telemetry(
     )
     nutrition_lookup_detected = bool(nutrition_lookup.get("nutrition_lookup_detected"))
     nutrition_metrics = [
-        str(item)
-        for item in nutrition_lookup.get("nutrition_lookup_metrics_requested", [])
-        if str(item or "").strip()
+        str(item) for item in nutrition_lookup.get("nutrition_lookup_metrics_requested", []) if str(item or "").strip()
     ]
 
     router_subjects = _quant_unique(
-        [
-            cleaned
-            for item in (router_entities or [])
-            if (cleaned := _quant_clean_subject(str(item)))
-        ]
+        [cleaned for item in (router_entities or []) if (cleaned := _quant_clean_subject(str(item)))]
     )
-    query_subjects = (
-        router_subjects
-        if len(router_subjects) >= 2
-        else _quant_query_comparison_subjects(query)
-    )
+    query_subjects = router_subjects if len(router_subjects) >= 2 else _quant_query_comparison_subjects(query)
     value_subjects = _quant_source_value_subjects(values)
     nutrition_subjects = [nutrition_lookup_entity] if nutrition_lookup_entity else []
     subjects = _quant_unique(query_subjects + value_subjects + nutrition_subjects)
@@ -2057,20 +1969,16 @@ def _quant_retrieval_sufficiency_shadow_telemetry(
                 subjects=subjects,
                 source_bound_values=timeframe_values,
             )
-            if query_timeframes
-            and timeframe_values
+            if query_timeframes and timeframe_values
             else (
-                all(
-                    timeframe in _quant_extract_timeframes(coverage_text)
-                    for timeframe in query_timeframes
-                )
+                all(timeframe in _quant_extract_timeframes(coverage_text) for timeframe in query_timeframes)
                 if query_timeframes
                 else True
             )
         )
     )
-    exact_binding_valid, value_source_ids, source_diversity_count = (
-        _quant_value_source_binding(passages=passages, source_bound_values=values)
+    exact_binding_valid, value_source_ids, source_diversity_count = _quant_value_source_binding(
+        passages=passages, source_bound_values=values
     )
 
     blockers: list[str] = []
@@ -2094,9 +2002,7 @@ def _quant_retrieval_sufficiency_shadow_telemetry(
         blockers.append("timeframe_missing")
     if not exact_binding_valid:
         blockers.append(
-            "nutrition_value_source_binding_missing"
-            if nutrition_lookup_detected
-            else "value_source_binding_missing"
+            "nutrition_value_source_binding_missing" if nutrition_lookup_detected else "value_source_binding_missing"
         )
     if len(subjects) >= 2 and value_source_ids and source_diversity_count <= 1:
         blockers.append("low_source_diversity")
@@ -2109,9 +2015,7 @@ def _quant_retrieval_sufficiency_shadow_telemetry(
             "quant_retrieval_entities": list(subjects),
             "quant_retrieval_metrics": list(metrics),
             "quant_retrieval_timeframes": list(query_timeframes),
-            "quant_retrieval_comparison_subjects": (
-                [] if nutrition_lookup_detected else list(subjects)
-            ),
+            "quant_retrieval_comparison_subjects": ([] if nutrition_lookup_detected else list(subjects)),
             "quant_retrieval_entity_coverage_valid": entity_coverage_valid,
             "quant_retrieval_metric_coverage_valid": metric_coverage_valid,
             "quant_retrieval_timeframe_coverage_valid": timeframe_coverage_valid,
@@ -2122,9 +2026,7 @@ def _quant_retrieval_sufficiency_shadow_telemetry(
             "quant_retrieval_value_source_ids": list(value_source_ids),
             "quant_retrieval_sufficiency_valid": sufficiency_valid,
             "quant_retrieval_sufficiency_blockers": blockers,
-            "quant_retrieval_sufficiency_gate_reason": (
-                _quant_retrieval_sufficiency_gate_reason(blockers)
-            ),
+            "quant_retrieval_sufficiency_gate_reason": (_quant_retrieval_sufficiency_gate_reason(blockers)),
             "quant_retrieval_sufficiency_shadow_mode": True,
         }
     )
@@ -2275,9 +2177,7 @@ def run_economist_step(
 ) -> Optional[str]:
     allowed_source_ids = collect_allowed_source_ids(all_passages)
     economist_evidence_passages = list((all_passages or [])[:20])
-    economist_evidence_telemetry = economist_evidence_source_window_telemetry(
-        economist_evidence_passages
-    )
+    economist_evidence_telemetry = economist_evidence_source_window_telemetry(economist_evidence_passages)
     if safety_telemetry is not None:
         safety_telemetry.update(_economist_safety_telemetry(requested=False))
         safety_telemetry.update(economist_schema_telemetry_defaults())
@@ -2484,6 +2384,7 @@ def run_economist_step(
 
     return None
 
+
 def fetch_linkup_precision_block(
     core_topic: str,
     intent: str,
@@ -2580,8 +2481,7 @@ def _is_retrieval_timeout_error(exc: Exception) -> bool:
     }
     timeout_modules = ("httpcore", "httpx", "requests", "urllib3")
     return any(
-        cls.__name__ in timeout_types
-        and str(getattr(cls, "__module__", "")).startswith(timeout_modules)
+        cls.__name__ in timeout_types and str(getattr(cls, "__module__", "")).startswith(timeout_modules)
         for cls in type(exc).__mro__
     )
 
@@ -2623,11 +2523,7 @@ def get_followup_search_params(complexity: str, pipeline_search_depth: Optional[
 
 
 def _diagnostic_urls(results: list[dict]) -> list[str]:
-    return [
-        str(item.get("url") or "")
-        for item in results
-        if str(item.get("url") or "")
-    ]
+    return [str(item.get("url") or "") for item in results if str(item.get("url") or "")]
 
 
 def _diagnostic_domains(urls: set[str]) -> set[str]:
@@ -2655,14 +2551,11 @@ def _provider_result_summary(
     title = " ".join(str(result.get("title") or "").strip().split())[:180]
     return {
         "provider_result_id": (
-            f"{provider_role}:{iteration if iteration is not None else 'unknown'}:"
-            f"{provider}:{rank}"
+            f"{provider_role}:{iteration if iteration is not None else 'unknown'}:{provider}:{rank}"
         ),
         "provider_name": provider,
         "provider_role": provider_role,
-        "retrieval_pass_id": (
-            f"{provider_role}:{iteration if iteration is not None else 'unknown'}"
-        ),
+        "retrieval_pass_id": (f"{provider_role}:{iteration if iteration is not None else 'unknown'}"),
         "query_preview": str(query or "")[:140],
         "provider_rank_or_position": rank,
         "source_url": url,
@@ -2729,24 +2622,12 @@ def _material_fields(material_type: str) -> dict[str, Any]:
 
 def _provider_candidate_passage_fields(source: dict[str, Any]) -> dict[str, Any]:
     fields: dict[str, Any] = {
-        "provider_returned_title": _bounded_provider_text(
-            source.get("title"), limit=180
-        ),
-        "provider_returned_snippet": _bounded_provider_text(
-            source.get("snippet"), limit=2000
-        ),
-        "provider_name": _bounded_provider_text(
-            source.get("provider_name") or source.get("_provider"), limit=80
-        ),
-        "provider_role": _bounded_provider_text(
-            source.get("provider_role"), limit=80
-        ),
-        "query_preview": _bounded_provider_text(
-            source.get("query_preview"), limit=140
-        ),
-        "retrieval_pass_id": _bounded_provider_text(
-            source.get("retrieval_pass_id"), limit=80
-        ),
+        "provider_returned_title": _bounded_provider_text(source.get("title"), limit=180),
+        "provider_returned_snippet": _bounded_provider_text(source.get("snippet"), limit=2000),
+        "provider_name": _bounded_provider_text(source.get("provider_name") or source.get("_provider"), limit=80),
+        "provider_role": _bounded_provider_text(source.get("provider_role"), limit=80),
+        "query_preview": _bounded_provider_text(source.get("query_preview"), limit=140),
+        "retrieval_pass_id": _bounded_provider_text(source.get("retrieval_pass_id"), limit=80),
     }
     for key in (
         "provider_call_ordinal",
@@ -2766,6 +2647,7 @@ def _provider_candidate_passage_fields(source: dict[str, Any]) -> dict[str, Any]
     return fields
 
 
+@mark_cap_aware
 def process_search_queries(
     queries_list,
     intent,
@@ -2796,6 +2678,7 @@ def process_search_queries(
     query_similarity_basis: str | None = None,
     discovery_result_context: Mapping[str, Any] | None = None,
     discovery_result_store: DiscoveryResultMaterialStore | None = None,
+    cap_policy: RunCapPolicy | None = None,
 ):
     if search_providers is None:
         # Provider selection is complete before mechanical dispatch.  The
@@ -2803,12 +2686,8 @@ def process_search_queries(
         # provider-name policy or performs transport.
         search_providers = []
 
-    if (discovery_result_context is None) is not (
-        discovery_result_store is None
-    ):
-        raise DiscoverySourceResultError(
-            "ordinary discovery identity requires both context and material store"
-        )
+    if (discovery_result_context is None) is not (discovery_result_store is None):
+        raise DiscoverySourceResultError("ordinary discovery identity requires both context and material store")
 
     linkup_depth_map = {"low": "fast", "medium": "standard", "high": "standard"}
     linkup_depth = linkup_depth_override or linkup_depth_map.get(complexity, "standard")
@@ -2821,25 +2700,15 @@ def process_search_queries(
 
     query_item_refs: list[Mapping[str, Any] | None]
     if discovery_result_context is not None:
-        raw_query_item_refs = discovery_result_context.get(
-            "query_plan_item_refs"
-        )
-        if not isinstance(raw_query_item_refs, (list, tuple)) or len(
-            raw_query_item_refs
-        ) != len(queries_list):
-            raise DiscoverySourceResultError(
-                "ordinary discovery context must bind every ordered query"
-            )
+        raw_query_item_refs = discovery_result_context.get("query_plan_item_refs")
+        if not isinstance(raw_query_item_refs, (list, tuple)) or len(raw_query_item_refs) != len(queries_list):
+            raise DiscoverySourceResultError("ordinary discovery context must bind every ordered query")
         query_item_refs = []
         for query, raw_ref in zip(queries_list, raw_query_item_refs):
             if not isinstance(raw_ref, Mapping):
-                raise DiscoverySourceResultError(
-                    "ordinary discovery query item ref must be a mapping"
-                )
+                raise DiscoverySourceResultError("ordinary discovery query item ref must be a mapping")
             if str(raw_ref.get("authorized_query") or "") != str(query):
-                raise DiscoverySourceResultError(
-                    "ordinary discovery query text does not match QueryPlan item"
-                )
+                raise DiscoverySourceResultError("ordinary discovery query text does not match QueryPlan item")
             query_item_refs.append(dict(raw_ref))
     else:
         query_item_refs = [None for _ in queries_list]
@@ -2851,9 +2720,12 @@ def process_search_queries(
         except DiscoverySourceResultError:
             continue
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(queries_list) * len(search_providers))) as executor:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max(1, len(queries_list) * len(search_providers))
+    ) as executor:
         futures = {}
         for q, query_item_ref in zip(queries_list, query_item_refs):
+
             def call_lineage(
                 provider_name: str,
             ) -> tuple[int, dict[str, Any] | None]:
@@ -2870,14 +2742,10 @@ def process_search_queries(
                     if not isinstance(provider_contexts, Mapping) or not isinstance(
                         provider_contexts.get(provider_name), Mapping
                     ):
-                        raise DiscoverySourceResultError(
-                            "ordinary discovery requires exact lineage for every provider"
-                        )
+                        raise DiscoverySourceResultError("ordinary discovery requires exact lineage for every provider")
                     base_context.update(dict(provider_contexts[provider_name]))
                 elif len(search_providers) > 1:
-                    raise DiscoverySourceResultError(
-                        "multi-provider discovery requires per-provider route lineage"
-                    )
+                    raise DiscoverySourceResultError("multi-provider discovery requires per-provider route lineage")
                 return call_ordinal, {
                     **base_context,
                     "query_plan_item_ref": dict(query_item_ref),
@@ -2887,49 +2755,73 @@ def process_search_queries(
 
             if "tavily" in search_providers:
                 call_ordinal, result_context = call_lineage("tavily")
-                futures[executor.submit(
-                    search_web_results,
-                    q,
-                    intent=intent,
-                    complexity=complexity,
-                    max_results=max_results,
-                    search_depth=search_depth,
-                    include_domains=include_domains,
-                    exclude_domains=exclude_domains,
-                    cost_accumulator=cost_accumulator,
-                    cost_phase=cost_phase,
-                )] = ("tavily", q, call_ordinal, result_context)
+                futures[
+                    executor.submit(
+                        search_web_results,
+                        q,
+                        intent=intent,
+                        complexity=complexity,
+                        max_results=max_results,
+                        search_depth=search_depth,
+                        include_domains=include_domains,
+                        exclude_domains=exclude_domains,
+                        cost_accumulator=cost_accumulator,
+                        cost_phase=cost_phase,
+                        cap_policy=cap_policy,
+                        logical_call_id=(
+                            cap_policy.new_logical_call_id("search-tavily")
+                            if cap_policy is not None and cap_policy.bounded
+                            else f"search-tavily:{call_ordinal}"
+                        ),
+                    )
+                ] = ("tavily", q, call_ordinal, result_context)
             if "linkup" in search_providers and os.getenv("LINKUP_API_KEY"):
                 call_ordinal, result_context = call_lineage("linkup")
-                futures[executor.submit(
-                    search_linkup_results,
-                    q,
-                    depth=linkup_depth,
-                    output_type="searchResults",
-                    intent=intent,
-                    max_results=max_results,
-                    include_domains=include_domains,
-                    exclude_domains=exclude_domains,
-                    from_date=from_date,
-                    to_date=to_date,
-                    cost_accumulator=cost_accumulator,
-                    cost_phase=cost_phase,
-                )] = ("linkup", q, call_ordinal, result_context)
+                futures[
+                    executor.submit(
+                        search_linkup_results,
+                        q,
+                        depth=linkup_depth,
+                        output_type="searchResults",
+                        intent=intent,
+                        max_results=max_results,
+                        include_domains=include_domains,
+                        exclude_domains=exclude_domains,
+                        from_date=from_date,
+                        to_date=to_date,
+                        cost_accumulator=cost_accumulator,
+                        cost_phase=cost_phase,
+                        cap_policy=cap_policy,
+                        logical_call_id=(
+                            cap_policy.new_logical_call_id("search-linkup")
+                            if cap_policy is not None and cap_policy.bounded
+                            else f"search-linkup:{call_ordinal}"
+                        ),
+                    )
+                ] = ("linkup", q, call_ordinal, result_context)
             if "exa" in search_providers and os.getenv("EXA_API_KEY"):
                 exa_domains = exa_domain_filter if exa_domain_filter else include_domains
                 call_ordinal, result_context = call_lineage("exa")
-                futures[executor.submit(
-                    search_exa_results,
-                    q,
-                    intent=intent,
-                    max_results=max_results,
-                    include_domains=exa_domains,
-                    exclude_domains=exclude_domains,
-                    from_date=from_date,
-                    to_date=to_date,
-                    cost_accumulator=cost_accumulator,
-                    cost_phase=cost_phase,
-                )] = ("exa", q, call_ordinal, result_context)
+                futures[
+                    executor.submit(
+                        search_exa_results,
+                        q,
+                        intent=intent,
+                        max_results=max_results,
+                        include_domains=exa_domains,
+                        exclude_domains=exclude_domains,
+                        from_date=from_date,
+                        to_date=to_date,
+                        cost_accumulator=cost_accumulator,
+                        cost_phase=cost_phase,
+                        cap_policy=cap_policy,
+                        logical_call_id=(
+                            cap_policy.new_logical_call_id("search-exa")
+                            if cap_policy is not None and cap_policy.bounded
+                            else f"search-exa:{call_ordinal}"
+                        ),
+                    )
+                ] = ("exa", q, call_ordinal, result_context)
 
         # Futures execute concurrently, but provider material is reduced in stable
         # submission order (query order, then the existing provider order).  Thread
@@ -2940,26 +2832,31 @@ def process_search_queries(
             failure_type = None
             try:
                 results, imgs = future.result()
+            except RunCapExceeded:
+                raise
             except Exception as e:
                 success = False
                 failure_type = type(e).__name__
-                logger.warning(f"[SEARCH] {provider} failed for '{q}': {e}")
-                q_preview = (str(q) if q is not None else "")[:200]
-                if _is_retrieval_timeout_error(e):
-                    log_retrieval_timeout(
-                        provider=provider,
-                        query=str(q),
-                        timeout_seconds=retrieval_timeout_seconds(provider),
-                        logger=logger,
-                    )
+                if cap_policy is not None and cap_policy.bounded:
+                    logger.warning("Bounded %s search request failed.", provider)
                 else:
-                    log_provider_error(
-                        provider=provider,
-                        error=str(e),
-                        query_preview=q_preview,
-                        phase="retrieval",
-                        logger=logger,
-                    )
+                    logger.warning(f"[SEARCH] {provider} failed for '{q}': {e}")
+                    q_preview = (str(q) if q is not None else "")[:200]
+                    if _is_retrieval_timeout_error(e):
+                        log_retrieval_timeout(
+                            provider=provider,
+                            query=str(q),
+                            timeout_seconds=retrieval_timeout_seconds(provider),
+                            logger=logger,
+                        )
+                    else:
+                        log_provider_error(
+                            provider=provider,
+                            error=str(e),
+                            query_preview=q_preview,
+                            phase="retrieval",
+                            logger=logger,
+                        )
                 results, imgs = [], []
 
             provider_buckets.setdefault(provider, [])
@@ -2985,12 +2882,8 @@ def process_search_queries(
                 identity = None
                 if discovery_result_store is not None:
                     if result_context is None:
-                        raise DiscoverySourceResultError(
-                            "ordinary discovery call lacks result lineage"
-                        )
-                    material_text, material_class = (
-                        _provider_returned_candidate_material_for_store(item)
-                    )
+                        raise DiscoverySourceResultError("ordinary discovery call lacks result lineage")
+                    material_text, material_class = _provider_returned_candidate_material_for_store(item)
                     identity = discovery_result_store.admit_result(
                         context=result_context,
                         provider=provider,
@@ -3015,11 +2908,7 @@ def process_search_queries(
                 url = item.get("url", "")
                 dedupe_url = str(item.get("normalized_url") or url)
                 plausible = is_plausible_domain(url)
-                accepted = (
-                    plausible
-                    and dedupe_url not in normalized_seen_urls
-                    and dedupe_url not in provider_seen_urls
-                )
+                accepted = plausible and dedupe_url not in normalized_seen_urls and dedupe_url not in provider_seen_urls
                 non_representation_reason = None
                 if plausible and dedupe_url in normalized_seen_urls:
                     non_representation_reason = "duplicate_seen_url"
@@ -3048,10 +2937,7 @@ def process_search_queries(
                     item["provider_name"] = provider
                     item["provider_role"] = provider_role
                     item["query_preview"] = str(q or "")[:140]
-                    item["retrieval_pass_id"] = (
-                        f"{provider_role}:"
-                        f"{iteration if iteration is not None else 'unknown'}"
-                    )
+                    item["retrieval_pass_id"] = f"{provider_role}:{iteration if iteration is not None else 'unknown'}"
                     item.setdefault("provider_rank_or_position", rank)
                     provider_buckets[provider].append(item)
                     provider_seen_urls.add(dedupe_url)
@@ -3070,13 +2956,7 @@ def process_search_queries(
                     cost_phase=cost_phase,
                     iteration=iteration,
                     query=q,
-                    depth=(
-                        search_depth
-                        if provider == "tavily"
-                        else linkup_depth
-                        if provider == "linkup"
-                        else None
-                    ),
+                    depth=(search_depth if provider == "tavily" else linkup_depth if provider == "linkup" else None),
                     output_type="searchResults",
                     max_results=max_results,
                     answer_endpoint_used=False,
@@ -3106,11 +2986,13 @@ def process_search_queries(
                 attempt_diagnostics.append((diagnostic, set(accepted_urls)))
 
     seen_urls_set.update(new_urls_this_pass)
-    all_raw_results = rrf_merge(provider_buckets, k=60) if len(provider_buckets) > 1 else (list(provider_buckets.values())[0] if provider_buckets else [])
-    search_results = all_raw_results
-    status_container.write(
-        f"Received {len(search_results)} new unique candidate URLs from DISCOVER providers."
+    all_raw_results = (
+        rrf_merge(provider_buckets, k=60)
+        if len(provider_buckets) > 1
+        else (list(provider_buckets.values())[0] if provider_buckets else [])
     )
+    search_results = all_raw_results
+    status_container.write(f"Received {len(search_results)} new unique candidate URLs from DISCOVER providers.")
 
     new_passages = []
     to_long_provider_material, to_short_provider_material = [], []
@@ -3129,9 +3011,7 @@ def process_search_queries(
         (to_short_provider_material, 1200, 150),
         (to_long_provider_material, 2000, 200),
     )
-    provider_material_count = sum(
-        len(results) for results, _, _ in material_buckets
-    )
+    provider_material_count = sum(len(results) for results, _, _ in material_buckets)
     if provider_material_count:
         status_container.write(
             "Normalizing provider-returned candidate material from "
@@ -3145,30 +3025,16 @@ def process_search_queries(
             source_material_ref = r.get("source_material_ref")
             contributor_facts: dict[str, Any] = {}
             if discovery_result_store is not None:
-                if not isinstance(source_result_ref, Mapping) or not isinstance(
-                    source_material_ref, Mapping
-                ):
-                    raise DiscoverySourceResultError(
-                        "ranked provider material requires canonical source refs"
-                    )
-                material_record = discovery_result_store.material_for_ref(
-                    source_result_ref
-                )
-                if material_record is None or material_record.ref() != dict(
-                    source_material_ref
-                ):
-                    raise DiscoverySourceResultError(
-                        "source-result material ref does not resolve"
-                    )
+                if not isinstance(source_result_ref, Mapping) or not isinstance(source_material_ref, Mapping):
+                    raise DiscoverySourceResultError("ranked provider material requires canonical source refs")
+                material_record = discovery_result_store.material_for_ref(source_result_ref)
+                if material_record is None or material_record.ref() != dict(source_material_ref):
+                    raise DiscoverySourceResultError("source-result material ref does not resolve")
                 text_content = material_record.material_text
                 material_type = material_record.material_class
-                contributor_facts = discovery_result_store.contributors_for_url(
-                    material_record.normalized_url
-                )
+                contributor_facts = discovery_result_store.contributors_for_url(material_record.normalized_url)
             else:
-                text_content, material_type = (
-                    _provider_returned_candidate_material(r)
-                )
+                text_content, material_type = _provider_returned_candidate_material(r)
             if len(text_content) > minimum_length:
                 _tier_snip = text_content[:2000]
                 _source_tier = classify_source(
@@ -3192,33 +3058,19 @@ def process_search_queries(
                             "source_material_ref": dict(source_material_ref),
                             "material_label": material_type,
                             "chunk_index": chunk_index,
-                            "chunk_digest": sha256(
-                                ranked_text.encode("utf-8")
-                            ).hexdigest(),
+                            "chunk_digest": sha256(ranked_text.encode("utf-8")).hexdigest(),
                             "contributing_source_result_refs": list(
-                                contributor_facts.get(
-                                    "contributing_source_result_refs", []
-                                )
+                                contributor_facts.get("contributing_source_result_refs", [])
                             ),
-                            "contributor_count": contributor_facts.get(
-                                "contributor_count", 0
-                            ),
-                            "contributor_overflow_count": contributor_facts.get(
-                                "contributor_overflow_count", 0
-                            ),
-                            "full_contributor_digest": contributor_facts.get(
-                                "full_contributor_digest"
-                            ),
+                            "contributor_count": contributor_facts.get("contributor_count", 0),
+                            "contributor_overflow_count": contributor_facts.get("contributor_overflow_count", 0),
+                            "full_contributor_digest": contributor_facts.get("full_contributor_digest"),
                         }
                     new_passages.append(
                         {
-                            "title": _bounded_provider_text(
-                                r.get("title"), limit=500
-                            ),
+                            "title": _bounded_provider_text(r.get("title"), limit=500),
                             "url": _bounded_provider_text(r.get("url"), limit=2000),
-                            "domain": _bounded_provider_text(
-                                r.get("domain"), limit=500
-                            ),
+                            "domain": _bounded_provider_text(r.get("domain"), limit=500),
                             "credibility": r.get("credibility", 0),
                             "text": ranked_text,
                             "score": 0,
@@ -3240,6 +3092,12 @@ def process_search_queries(
             base_url=local_url,
             cost_accumulator=cost_accumulator,
             cost_phase="embedding",
+            cap_policy=cap_policy,
+            logical_call_id=(
+                cap_policy.new_logical_call_id("retrieval-embedding")
+                if cap_policy is not None and cap_policy.bounded
+                else None
+            ),
         )
         sim_scores = compute_similarities(query_embedding, new_embeddings)
         _hint = (entity_hint or "").strip()
@@ -3286,9 +3144,17 @@ def kb_review_agent(
 ) -> Optional[dict]:
     """Generates a KB entry for a flagged run. Non-fatal — caller should try/except."""
     system_prompt = KB_REVIEW_AGENT_SYSTEM
-    exec_slice = {k: execution.get(k) for k in (
-        "intent", "report_type", "iterations_run", "scout_fired", "synth_was_insufficient",
-    ) if k in execution}
+    exec_slice = {
+        k: execution.get(k)
+        for k in (
+            "intent",
+            "report_type",
+            "iterations_run",
+            "scout_fired",
+            "synth_was_insufficient",
+        )
+        if k in execution
+    }
     user_message = (
         f"Flags: {json.dumps(flags, ensure_ascii=True)}\n\n"
         f"Execution: {json.dumps(exec_slice, ensure_ascii=True, indent=2)}\n\n"

@@ -14,6 +14,7 @@ sufficiency, or grants FinalAnswerPacket/Author authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from inspect import Parameter, signature
 from typing import Any, Callable, Mapping
 
 from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
@@ -44,7 +45,7 @@ from core.acquisition_control import (
     ensure_acquisition_control_state,
     stable_json_digest,
 )
-from core.cap_enforcement import RunCapExceeded
+from core.cap_enforcement import AttemptReservation, RunCapExceeded
 from core.routing import (
     PROVIDER_NAMES,
     AcquisitionCapability,
@@ -152,9 +153,7 @@ def build_provider_availability_snapshot_ref(
 ) -> dict[str, Any]:
     """Bind route authorization to boolean-only provider availability facts."""
 
-    availability = ProviderAvailability.from_boolean_mapping(
-        available_providers
-    )
+    availability = ProviderAvailability.from_boolean_mapping(available_providers)
     core = {
         "schema_version": PROVIDER_AVAILABILITY_SNAPSHOT_SCHEMA_VERSION,
         "provider_availability": availability.to_mapping(),
@@ -199,9 +198,7 @@ def execute_acquisition_capability_decision_action(
         stable_json_digest(state),
     )
     canonical_proposal = AcquisitionNeedProposalV1.from_dict(
-        _mapping_bucket(state, "proposals_by_id").get(
-            proposal.proposal_id, {}
-        )
+        _mapping_bucket(state, "proposals_by_id").get(proposal.proposal_id, {})
     )
     _require_canonical_record(
         state,
@@ -287,9 +284,7 @@ def execute_acquisition_route_action(
     if dict(work_order.routing_policy_ref) != current_policy_ref:
         raise AcquisitionControlError("stale_acquisition_routing_policy")
     _require_action_binding(authorized, "routing_policy_ref", current_policy_ref)
-    availability_snapshot = ProviderAvailability.from_boolean_mapping(
-        available_providers
-    ).to_mapping()
+    availability_snapshot = ProviderAvailability.from_boolean_mapping(available_providers).to_mapping()
     _require_action_binding(authorized, "availability_snapshot", availability_snapshot)
     availability_ref = build_provider_availability_snapshot_ref(
         availability_snapshot,
@@ -337,7 +332,7 @@ def execute_authorized_acquisition_work_order(
     route_observation: AcquisitionRouteObservationV1,
     route_decision: ProviderRouteDecision,
     transports: AcquisitionTransports | None = None,
-    before_transport: Callable[[], None] | None = None,
+    before_transport: Callable[..., AttemptReservation | None] | None = None,
     transient_destination_resolver: Callable[[], str] | None = None,
 ) -> AuthorizedAcquisitionExecutionRuntimeResult:
     """Guard and dispatch exactly one current, selected acquisition order."""
@@ -361,15 +356,9 @@ def execute_authorized_acquisition_work_order(
         run_id=authorized.run_id,
         request_id=str(state.get("request_id") or ""),
     )
-    _require_action_binding(
-        authorized, "authority_snapshot_digest", snapshot_digest
-    )
-    _require_action_binding(
-        authorized, "answer_contract_ref", dict(work_order.answer_contract_ref)
-    )
-    _require_action_binding(
-        authorized, "component_ref", dict(work_order.component_ref)
-    )
+    _require_action_binding(authorized, "authority_snapshot_digest", snapshot_digest)
+    _require_action_binding(authorized, "answer_contract_ref", dict(work_order.answer_contract_ref))
+    _require_action_binding(authorized, "component_ref", dict(work_order.component_ref))
     _require_action_binding(
         authorized,
         "source_obligation_ref",
@@ -386,10 +375,7 @@ def execute_authorized_acquisition_work_order(
         route_observation=route_observation,
         route_decision=route_decision,
     )
-    if (
-        work_order.origin != SEARCHOS_NAVIGATION_ORIGIN
-        and transient_destination_resolver is not None
-    ):
+    if work_order.origin != SEARCHOS_NAVIGATION_ORIGIN and transient_destination_resolver is not None:
         raise AcquisitionControlError("candidate_origin_destination_resolver_forbidden")
     request = _materialize_acquisition_request(work_order, route_decision)
     deferred_error: RunCapExceeded | None = None
@@ -408,14 +394,24 @@ def execute_authorized_acquisition_work_order(
             raise AcquisitionControlError(str(exc)) from exc
         transport_claimed = True
 
-    def claim_immediately_before_transport() -> None:
+    def claim_immediately_before_transport() -> AttemptReservation | None:
+        reservation: AttemptReservation | None = None
         if before_transport is not None:
             try:
-                before_transport()
+                reservation = _invoke_before_transport(
+                    before_transport,
+                    request=request,
+                )
             except Exception:
                 claim_execution_authorization()
                 raise
-        claim_execution_authorization()
+        try:
+            claim_execution_authorization()
+        except Exception:
+            if reservation is not None:
+                reservation.cancel_pre_dispatch("execution_authorization_claim_failed")
+            raise
+        return reservation
 
     try:
         if work_order.origin == SEARCHOS_NAVIGATION_ORIGIN:
@@ -467,33 +463,18 @@ def execute_authorized_acquisition_work_order(
                 artifact_refs=artifact_refs,
             ),
             artifact_refs=artifact_refs,
-            provider_calls_attempted=(
-                execution_result.provider_calls_attempted
-            ),
-            provider_calls_completed=(
-                execution_result.provider_calls_completed
-            ),
+            provider_calls_attempted=(execution_result.provider_calls_attempted),
+            provider_calls_completed=(execution_result.provider_calls_completed),
             terminal_status=_terminal_status(execution_result),
-            failure_or_block_code=(
-                execution_result.failure_code
-                or execution_result.block_code
-            ),
+            failure_or_block_code=(execution_result.failure_code or execution_result.block_code),
         )
     except Exception:
         if not transport_claimed:
             if work_order.origin != SEARCHOS_NAVIGATION_ORIGIN:
                 raise
             claim_execution_authorization()
-        attempted = (
-            execution_result.provider_calls_attempted
-            if execution_result is not None
-            else 0
-        )
-        completed = (
-            execution_result.provider_calls_completed
-            if execution_result is not None
-            else 0
-        )
+        attempted = execution_result.provider_calls_attempted if execution_result is not None else 0
+        completed = execution_result.provider_calls_completed if execution_result is not None else 0
         execution_result = AcquisitionExecutionResult(
             request=request,
             status=AcquisitionExecutionStatus.FAILED,
@@ -501,9 +482,7 @@ def execute_authorized_acquisition_work_order(
             provider_calls_completed=completed,
             failure_code="guarded_execution_failed_closed",
             detail=None,
-            transport_posture=(
-                "claimed_execution_failed_closed_no_replay"
-            ),
+            transport_posture=("claimed_execution_failed_closed_no_replay"),
         )
         execution_observation = AcquisitionExecutionObservationV1.create(
             work_order_ref=work_order.ref(),
@@ -535,14 +514,12 @@ def execute_acquisition_work_order_to_terminal(
     proposal: AcquisitionNeedProposalV1,
     available_providers: Mapping[str, object],
     transports: AcquisitionTransports | None = None,
-    before_transport: Callable[[], None] | None = None,
+    before_transport: Callable[..., AttemptReservation | None] | None = None,
     transient_destination_resolver: Callable[[], str] | None = None,
 ) -> dict[str, Any]:
     """Run the one installed proposal-to-terminal acquisition sequence."""
 
-    capability_action = run_kernel.authorize_acquisition_capability_decision(
-        proposal=proposal
-    )
+    capability_action = run_kernel.authorize_acquisition_capability_decision(proposal=proposal)
     capability_result = execute_acquisition_capability_decision_action(
         capability_action,
         proposal=proposal,
@@ -559,9 +536,7 @@ def execute_acquisition_work_order_to_terminal(
             "provider_calls_attempted": 0,
             "provider_calls_completed": 0,
         }
-    work_action = run_kernel.authorize_acquisition_work_order_admission(
-        capability_decision_ref=decision.ref()
-    )
+    work_action = run_kernel.authorize_acquisition_work_order_admission(capability_decision_ref=decision.ref())
     work_result = execute_acquisition_work_order_admission_action(
         work_action,
         proposal=proposal,
@@ -587,9 +562,7 @@ def execute_acquisition_work_order_to_terminal(
     run_kernel.reduce(route_result.observation)
     route = route_result.route_observation
     if route.terminal_status != "selected":
-        terminal_action = run_kernel.authorize_acquisition_terminal_reduction(
-            route_observation_ref=route.ref()
-        )
+        terminal_action = run_kernel.authorize_acquisition_terminal_reduction(route_observation_ref=route.ref())
         terminal_result = execute_acquisition_terminal_reduction_action(
             terminal_action,
             acquisition_control_state=run_kernel.state.acquisition_control_state,
@@ -650,6 +623,24 @@ def execute_acquisition_work_order_to_terminal(
     }
 
 
+def _invoke_before_transport(
+    callback: Callable[..., AttemptReservation | None],
+    *,
+    request: AcquisitionRequest,
+) -> AttemptReservation | None:
+    parameters = signature(callback).parameters.values()
+    accepts_request = any(
+        parameter.kind
+        in (
+            Parameter.POSITIONAL_ONLY,
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.VAR_POSITIONAL,
+        )
+        for parameter in parameters
+    )
+    return callback(request) if accepts_request else callback()
+
+
 def execute_acquisition_terminal_reduction_action(
     action: AuthorizedAction,
     *,
@@ -702,9 +693,7 @@ def execute_acquisition_terminal_reduction_action(
             route=route_observation,
         )
     elif work_order is not None:
-        _require_action_binding(
-            authorized, "terminal_source_ref", work_order.ref()
-        )
+        _require_action_binding(authorized, "terminal_source_ref", work_order.ref())
         _require_action_binding(
             authorized,
             "terminal_source_kind",
@@ -723,11 +712,9 @@ def execute_acquisition_terminal_reduction_action(
             code="terminal_work_order_not_canonical",
         )
         _require_active_work_order(state, work_order)
-        terminal_receipt = (
-            build_terminal_receipt_from_work_order_invalidation(
-                work_order=work_order,
-                block_code=str(invalidation_code or ""),
-            )
+        terminal_receipt = build_terminal_receipt_from_work_order_invalidation(
+            work_order=work_order,
+            block_code=str(invalidation_code or ""),
         )
     elif decision is not None and proposal is not None:
         _require_action_binding(authorized, "terminal_source_ref", decision.ref())
@@ -894,10 +881,7 @@ def _guard_execution_state(
         raise AcquisitionControlError("execution_authorization_work_order_mismatch")
     if authorization.get("route_observation_ref") != route_observation.ref():
         raise AcquisitionControlError("execution_authorization_route_mismatch")
-    if (
-        authorization.get("claim_status") != "authorized"
-        or authorization.get("transport_claimed") is not False
-    ):
+    if authorization.get("claim_status") != "authorized" or authorization.get("transport_claimed") is not False:
         raise AcquisitionControlError("execution_authorization_already_claimed")
 
 
@@ -993,9 +977,7 @@ def _materialize_acquisition_request(
         parent_acquisition_job_id=parent_id,
         acquisition_lineage_id=str(work_order.source_obligation_ref.get("source_obligation_digest") or ""),
         selected_urls=(
-            (transient_selected_url,)
-            if transient_selected_url is not None
-            else tuple(work_order.selected_urls)
+            (transient_selected_url,) if transient_selected_url is not None else tuple(work_order.selected_urls)
         ),
         root_url=work_order.root_url,
         render_javascript=False,
@@ -1057,9 +1039,7 @@ def _artifact_ref(
         "failure_code": artifact.failure_code,
         "authority_posture": artifact.authority_posture,
     }
-    compact_core = {
-        key: value for key, value in core.items() if value not in (None, "")
-    }
+    compact_core = {key: value for key, value in core.items() if value not in (None, "")}
     digest = stable_json_digest(compact_core)
     return {
         "artifact_id": (f"acquisition-artifact:{artifact.acquisition_job_id}:{digest[:20]}"),
@@ -1111,9 +1091,7 @@ def _validated_control_state(value: Mapping[str, Any], *, action: AuthorizedActi
     )
 
 
-def _validated_execution_kernel_state(
-    *, run_kernel: RunKernel, action: AuthorizedAction
-) -> dict[str, Any]:
+def _validated_execution_kernel_state(*, run_kernel: RunKernel, action: AuthorizedAction) -> dict[str, Any]:
     if not isinstance(run_kernel, RunKernel):
         raise AcquisitionControlError("execution_run_kernel_missing")
     if run_kernel.state.run_id != action.run_id:
@@ -1123,10 +1101,7 @@ def _validated_execution_kernel_state(
         raise AcquisitionControlError("execution_action_not_canonical")
     if action.action_id in run_kernel.state.reduced_action_ids:
         raise AcquisitionControlError("execution_action_already_reduced")
-    if (
-        run_kernel.state.action_statuses.get(action.action_id)
-        is not RunStageStatus.AUTHORIZED
-    ):
+    if run_kernel.state.action_statuses.get(action.action_id) is not RunStageStatus.AUTHORIZED:
         raise AcquisitionControlError("execution_action_not_authorized")
     return _validated_control_state(
         run_kernel.state.acquisition_control_state,

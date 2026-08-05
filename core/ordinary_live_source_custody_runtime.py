@@ -9,7 +9,7 @@ provenance, not a material need. Without a proposal the helper returns a normal
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_contracts import AcquisitionArtifact
@@ -30,7 +30,12 @@ from core.authorized_acquisition_runtime import (
     execute_acquisition_work_order_admission_action,
     execute_authorized_acquisition_work_order,
 )
-from core.cap_enforcement import RunCapExceeded, RunCapPolicy
+from core.cap_enforcement import (
+    AttemptReservation,
+    ExternalCallFamily,
+    RunCapExceeded,
+    RunCapPolicy,
+)
 from core.evidence_ledger_lifecycle import (
     reduce_fetch_read_content_packet_into_evidence_ledger,
 )
@@ -49,9 +54,7 @@ from core.search_result_candidate_packet import (
 )
 
 ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY = "ordinary_live_source_custody"
-ORDINARY_LIVE_SOURCE_CUSTODY_PHASE = (
-    "AG-ORDINARY-LIVE-SOURCE-CUSTODY-INTEGRATION-01"
-)
+ORDINARY_LIVE_SOURCE_CUSTODY_PHASE = "AG-ORDINARY-LIVE-SOURCE-CUSTODY-INTEGRATION-01"
 ORDINARY_LIVE_SOURCE_CUSTODY_MODE = "REPAIR"
 
 _CHILD_OWNER = "ordinary_live_candidate_handoff_run_kernel"
@@ -292,6 +295,7 @@ def execute_ordinary_live_source_custody(
     available_providers: Mapping[str, object] | None = None,
     acquisition_transports: AcquisitionTransports | None = None,
     cap_policy: RunCapPolicy | None = None,
+    before_transport: Callable[..., AttemptReservation | None] | None = None,
     required_or_preferred_anchors: Sequence[Any] = (),
     component_text: str | None = None,
     claim_under_test: str | None = None,
@@ -341,16 +345,12 @@ def execute_ordinary_live_source_custody(
             selected_candidate=selected_candidate,
             authority_snapshot=authority_snapshot,
         )
-        capability_action = run_kernel.authorize_acquisition_capability_decision(
-            proposal=proposal
-        )
+        capability_action = run_kernel.authorize_acquisition_capability_decision(proposal=proposal)
         capability_result = execute_acquisition_capability_decision_action(
             capability_action,
             proposal=proposal,
             authority_snapshot=authority_snapshot,
-            acquisition_control_state=(
-                run_kernel.state.acquisition_control_state
-            ),
+            acquisition_control_state=(run_kernel.state.acquisition_control_state),
         )
         run_kernel.reduce(capability_result.observation)
         decision = capability_result.decision
@@ -365,18 +365,14 @@ def execute_ordinary_live_source_custody(
                 "RunKernel blocked the post-discovery acquisition capability",
             )
 
-        work_order_action = (
-            run_kernel.authorize_acquisition_work_order_admission(
-                capability_decision_ref=decision.ref()
-            )
+        work_order_action = run_kernel.authorize_acquisition_work_order_admission(
+            capability_decision_ref=decision.ref()
         )
         work_order_result = execute_acquisition_work_order_admission_action(
             work_order_action,
             proposal=proposal,
             decision=decision,
-            acquisition_control_state=(
-                run_kernel.state.acquisition_control_state
-            ),
+            acquisition_control_state=(run_kernel.state.acquisition_control_state),
         )
         run_kernel.reduce(work_order_result.observation)
         work_order = work_order_result.work_order
@@ -389,9 +385,7 @@ def execute_ordinary_live_source_custody(
             route_action,
             work_order=work_order,
             available_providers=availability,
-            acquisition_control_state=(
-                run_kernel.state.acquisition_control_state
-            ),
+            acquisition_control_state=(run_kernel.state.acquisition_control_state),
         )
         run_kernel.reduce(route_result.observation)
         route_decision = route_result.route_decision
@@ -411,6 +405,11 @@ def execute_ordinary_live_source_custody(
             work_order_ref=work_order.ref(),
             route_observation_ref=route_observation.ref(),
         )
+        if cap_policy is not None and cap_policy.bounded and before_transport is None:
+            raise RunCapExceeded(
+                "unaccounted_read_transport",
+                family=ExternalCallFamily.READ,
+            )
         execution_result = execute_authorized_acquisition_work_order(
             execution_action,
             run_kernel=run_kernel,
@@ -419,7 +418,9 @@ def execute_ordinary_live_source_custody(
             route_decision=route_decision,
             transports=acquisition_transports,
             before_transport=(
-                cap_policy.mark_fetch_read_operation
+                before_transport
+                if before_transport is not None
+                else cap_policy.mark_fetch_read_operation
                 if cap_policy is not None
                 else None
             ),
@@ -435,9 +436,7 @@ def execute_ordinary_live_source_custody(
         )
         terminal_result = execute_acquisition_terminal_reduction_action(
             terminal_action,
-            acquisition_control_state=(
-                run_kernel.state.acquisition_control_state
-            ),
+            acquisition_control_state=(run_kernel.state.acquisition_control_state),
             work_order=work_order,
             route_observation=route_observation,
             execution_observation=execution_observation,
@@ -459,9 +458,7 @@ def execute_ordinary_live_source_custody(
             route_observation=route_observation,
             terminal_receipt=terminal_receipt,
             custody_consumer="core.ordinary_live_source_custody_runtime",
-            acquisition_control_state=(
-                run_kernel.state.acquisition_control_state
-            ),
+            acquisition_control_state=(run_kernel.state.acquisition_control_state),
         )
         run_kernel.reduce(custody_result.observation)
         custody_authorization = custody_result.custody_authorization
@@ -474,9 +471,7 @@ def execute_ordinary_live_source_custody(
             component_text=component_text,
             claim_under_test=claim_under_test,
         )
-        run_kernel.require_current_acquisition_custody_authorization(
-            custody_authorization.ref()
-        )
+        run_kernel.require_current_acquisition_custody_authorization(custody_authorization.ref())
         fetch_read_packet = validate_fetch_read_content_packet(
             build_fetch_read_content_packet_from_candidate_packet(
                 packet,
@@ -488,10 +483,7 @@ def execute_ordinary_live_source_custody(
         ledger_projection = reduce_fetch_read_content_packet_into_evidence_ledger(
             run_kernel=run_kernel,
             fetch_read_content_packet=fetch_read_packet,
-            observation_id=(
-                f"{packet['run_id']}:evidence-ledger:"
-                "ordinary-live-source-custody-integration-01"
-            ),
+            observation_id=(f"{packet['run_id']}:evidence-ledger:ordinary-live-source-custody-integration-01"),
         )
         ledger_summary = _ledger_summary(ledger_projection)
         projection = _without_empty(
@@ -510,18 +502,12 @@ def execute_ordinary_live_source_custody(
                 "acquisition_capability_decision_ref": decision.ref(),
                 "acquisition_work_order_ref": work_order.ref(),
                 "acquisition_route_observation_ref": route_observation.ref(),
-                "acquisition_execution_observation_ref": (
-                    execution_observation.ref()
-                ),
+                "acquisition_execution_observation_ref": (execution_observation.ref()),
                 "acquisition_terminal_receipt_ref": terminal_receipt.ref(),
-                "acquisition_custody_authorization_ref": (
-                    custody_authorization.ref()
-                ),
+                "acquisition_custody_authorization_ref": (custody_authorization.ref()),
                 "acquisition_control_owner": "RunKernel",
                 "acquisition_provider_selection_owner": "core.routing",
-                "acquisition_mechanical_adapter_owner": (
-                    "core.acquisition_adapters"
-                ),
+                "acquisition_mechanical_adapter_owner": ("core.acquisition_adapters"),
                 "read_selected_provider": route_decision.selected_provider,
                 "read_selected_operation": route_decision.operation,
                 "read_selected_variant": route_decision.variant,
@@ -534,19 +520,11 @@ def execute_ordinary_live_source_custody(
                 "raw_cookies_retained": False,
                 "raw_page_text_retained": False,
                 "raw_page_content_retained": False,
-                "bounded_content_char_count": (
-                    bounded_selection.bounded_text_char_count
-                ),
+                "bounded_content_char_count": (bounded_selection.bounded_text_char_count),
                 "bounded_content_digest": bounded_selection.bounded_text_digest,
-                "bounded_content_selector_metadata": (
-                    bounded_selection.to_metadata()
-                ),
-                "fetch_read_content_packet_ref": (
-                    fetch_read_content_packet_ref_from_packet(fetch_read_packet)
-                ),
-                "sanitized_content_reference_ref": (
-                    _content_reference_ref(reference)
-                ),
+                "bounded_content_selector_metadata": (bounded_selection.to_metadata()),
+                "fetch_read_content_packet_ref": (fetch_read_content_packet_ref_from_packet(fetch_read_packet)),
+                "sanitized_content_reference_ref": (_content_reference_ref(reference)),
                 "evidence_ledger_custody_ref": ledger_summary.get("ref"),
                 "evidence_ledger_custody_projection_summary": ledger_summary,
                 "evidence_ledger_custody_count": ledger_summary.get(
@@ -639,9 +617,7 @@ def _reduce_blocked_acquisition_decision(
         "premium_sequential_acquisition_not_licensed",
     }:
         return None
-    action = run_kernel.authorize_acquisition_terminal_reduction(
-        capability_decision_ref=decision.ref()
-    )
+    action = run_kernel.authorize_acquisition_terminal_reduction(capability_decision_ref=decision.ref())
     result = execute_acquisition_terminal_reduction_action(
         action,
         acquisition_control_state=run_kernel.state.acquisition_control_state,
@@ -658,9 +634,7 @@ def _reduce_blocked_acquisition_route(
     work_order: AcquisitionWorkOrderV1,
     route_observation: AcquisitionRouteObservationV1,
 ) -> AcquisitionTerminalReceiptV1:
-    action = run_kernel.authorize_acquisition_terminal_reduction(
-        route_observation_ref=route_observation.ref()
-    )
+    action = run_kernel.authorize_acquisition_terminal_reduction(route_observation_ref=route_observation.ref())
     result = execute_acquisition_terminal_reduction_action(
         action,
         acquisition_control_state=run_kernel.state.acquisition_control_state,
@@ -806,10 +780,7 @@ def _sanitized_material_from_fetch_read(
                 raw.get("content_title") or raw.get("title"),
                 limit=300,
             ),
-            "content_length": (
-                _bounded_int(raw.get("content_length"))
-                or len(sanitized_text or "")
-            ),
+            "content_length": (_bounded_int(raw.get("content_length")) or len(sanitized_text or "")),
             "read_error_code": _clean_text(raw.get("read_error_code"), limit=120),
             "failure_reason": _clean_text(raw.get("failure_reason"), limit=500),
             "redirect_chain_digest": _clean_text(
@@ -845,29 +816,23 @@ def _reject_diagnostic_authority_keys(value: Any, *, context: str) -> None:
     if diagnostic_keys:
         raise OrdinaryLiveSourceCustodyError(
             "diagnostic_source_authority_rejected",
-            f"{context} includes diagnostic-shaped source authority fields: "
-            + ", ".join(diagnostic_keys),
+            f"{context} includes diagnostic-shaped source authority fields: " + ", ".join(diagnostic_keys),
         )
 
 
 def _reject_fetch_read_closed_surface_keys(value: Any) -> None:
     keys = _collect_keys(value)
-    forbidden = sorted(
-        keys
-        & (_DIAGNOSTIC_AUTHORITY_KEYS | _RAW_OR_PRIVATE_KEYS | _CLOSED_AUTHORITY_KEYS)
-    )
+    forbidden = sorted(keys & (_DIAGNOSTIC_AUTHORITY_KEYS | _RAW_OR_PRIVATE_KEYS | _CLOSED_AUTHORITY_KEYS))
     if forbidden:
         raise OrdinaryLiveSourceCustodyError(
             "offline_fetch_read_result_invalid",
-            "ordinary source custody fetch/read result opens closed fields: "
-            + ", ".join(forbidden),
+            "ordinary source custody fetch/read result opens closed fields: " + ", ".join(forbidden),
         )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:
         raise OrdinaryLiveSourceCustodyError(
             "offline_fetch_read_result_invalid",
-            "ordinary source custody fetch/read result opens closed claims: "
-            + ", ".join(dangerous),
+            "ordinary source custody fetch/read result opens closed claims: " + ", ".join(dangerous),
         )
 
 
@@ -925,12 +890,8 @@ def _ledger_summary(projection: Mapping[str, Any] | None) -> dict[str, Any]:
             "trace_key": custody.get("trace_key"),
             "custody_record_id": first.get("reference_id"),
             "custody_record_digest": first.get("reference_digest"),
-            "fetch_read_content_packet_id": first.get(
-                "fetch_read_content_packet_id"
-            ),
-            "fetch_read_content_packet_digest": first.get(
-                "fetch_read_content_packet_digest"
-            ),
+            "fetch_read_content_packet_id": first.get("fetch_read_content_packet_id"),
+            "fetch_read_content_packet_digest": first.get("fetch_read_content_packet_digest"),
         }
     )
     return {
@@ -963,9 +924,9 @@ def _ledger_summary(projection: Mapping[str, Any] | None) -> dict[str, Any]:
             False,
         ),
         "author_input_created": custody.get("author_input_created", False),
-        "bounded_content_payload_retained": _safe_mapping(
-            custody.get("behavior_boundary_flags")
-        ).get("bounded_content_payload_retained", False),
+        "bounded_content_payload_retained": _safe_mapping(custody.get("behavior_boundary_flags")).get(
+            "bounded_content_payload_retained", False
+        ),
     }
 
 
@@ -1075,9 +1036,7 @@ def _child_kernel_projection(*, run_kernel: RunKernel | None) -> dict[str, Any]:
         "child_kernel_lifetime": _CHILD_LIFETIME,
         "child_kernel_parent_lineage": {
             "parent_run_id": str(run_kernel.state.request.get("parent_run_id") or ""),
-            "parent_request_id": str(
-                run_kernel.state.request.get("parent_request_id") or ""
-            ),
+            "parent_request_id": str(run_kernel.state.request.get("parent_request_id") or ""),
             "child_run_id": run_kernel.state.run_id,
             "child_request_id": run_kernel.state.request_id,
         },
@@ -1147,11 +1106,7 @@ def _bounded_int(value: Any) -> int:
 
 
 def _optional_http_status(value: Mapping[str, Any]) -> int | None:
-    raw = (
-        value.get("http_status")
-        if "http_status" in value
-        else value.get("status_code")
-    )
+    raw = value.get("http_status") if "http_status" in value else value.get("status_code")
     try:
         parsed = int(raw)
     except (TypeError, ValueError):
@@ -1192,11 +1147,7 @@ def _normalize_key(key: Any) -> str:
 
 
 def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in payload.items()
-        if value is not None and value != [] and value != {}
-    }
+    return {key: value for key, value in payload.items() if value is not None and value != [] and value != {}}
 
 
 __all__ = [

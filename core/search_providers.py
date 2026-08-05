@@ -11,6 +11,16 @@ from urllib.parse import urlparse
 import requests
 from exa_py import Exa
 
+from core.bounded_product_profile import get_route_pricing
+from core.cap_enforcement import (
+    AttemptReservation,
+    ExternalAttemptSpec,
+    ExternalCallFamily,
+    RunCapExceeded,
+    RunCapPolicy,
+    TokenUsage,
+    mark_cap_aware,
+)
 from core.cost_accounting import CostAccumulator
 from core.run_logging import log_provider_error, log_retrieval_timeout
 
@@ -49,18 +59,92 @@ def retry_with_backoff(max_retries: int = 3, base_delay: float = 1.0):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            for attempt in range(max_retries):
+            cap_policy = kwargs.get("cap_policy")
+            bounded = isinstance(cap_policy, RunCapPolicy) and cap_policy.bounded
+            attempt_limit = 1 if bounded and cap_policy.max_retries == 0 else max_retries
+            for attempt in range(attempt_limit):
+                call_kwargs = dict(kwargs)
+                call_kwargs["_physical_retry_index"] = attempt
                 try:
-                    return func(*args, **kwargs)
+                    return func(*args, **call_kwargs)
+                except RunCapExceeded:
+                    raise
                 except Exception as e:
-                    if attempt == max_retries - 1:
-                        logger.error(f"Function {func.__name__} failed after {max_retries} attempts. Error: {e}")
+                    if attempt == attempt_limit - 1:
+                        if bounded:
+                            logger.error(
+                                "Bounded %s request failed.",
+                                func.__name__,
+                            )
+                        else:
+                            logger.error(
+                                "Function %s failed after %s attempts. Error: %s",
+                                func.__name__,
+                                attempt_limit,
+                                e,
+                            )
                         raise
                     time.sleep(base_delay * (2**attempt))
 
         return wrapper
 
     return decorator
+
+
+def _reserve_search_attempt(
+    cap_policy: RunCapPolicy | None,
+    *,
+    provider: str,
+    logical_call_id: str | None,
+    retry_index: int,
+    requested_timeout_seconds: float,
+) -> AttemptReservation | None:
+    if cap_policy is None or not cap_policy.bounded:
+        return None
+    logical_id = logical_call_id or cap_policy.new_logical_call_id(f"search-{provider}")
+    pricing = get_route_pricing(
+        ExternalCallFamily.SEARCH,
+        provider,
+        "search",
+    )
+    return cap_policy.reserve_attempt(
+        ExternalAttemptSpec(
+            family=ExternalCallFamily.SEARCH,
+            provider=provider,
+            route="search",
+            operation="search",
+            logical_call_id=logical_id,
+            max_usage=TokenUsage(),
+            pricing=pricing,
+            requested_timeout_seconds=requested_timeout_seconds,
+            is_retry=retry_index > 0,
+        )
+    )
+
+
+def _dispatch_search(
+    reservation: AttemptReservation | None,
+    operation: Any,
+) -> Any:
+    if reservation is None:
+        return operation()
+    reservation.mark_dispatched()
+    try:
+        response = operation()
+    except Exception:
+        reservation.settle_conservative("dispatch_outcome_ambiguous")
+        raise
+    reservation.settle_observed(TokenUsage())
+    return response
+
+
+def _timeout(
+    configured: float,
+    reservation: AttemptReservation | None,
+) -> float:
+    if reservation is None:
+        return configured
+    return min(configured, reservation.timeout_seconds)
 
 
 def normalize_domain(url: str) -> str:
@@ -114,7 +198,9 @@ def credibility_score(url: str, title: str = "", snippet: str = "", intent: str 
         score -= 4
     if intent == "news" and any(k in text for k in ["breaking", "live", "update", "latest"]):
         score += 1
-    elif intent == "general" and any(k in text for k in ["journal", "study", "research", "official", "dataset", "forum"]):
+    elif intent == "general" and any(
+        k in text for k in ["journal", "study", "research", "official", "dataset", "forum"]
+    ):
         score += 1
     return score
 
@@ -127,6 +213,7 @@ def get_news_date_window(complexity: str) -> Tuple[str, str]:
     return from_date, to_date
 
 
+@mark_cap_aware
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def search_web_results(
     query: str,
@@ -138,6 +225,9 @@ def search_web_results(
     exclude_domains: Optional[List[str]] = None,
     cost_accumulator: Optional[CostAccumulator] = None,
     cost_phase: str = "retrieval",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
+    _physical_retry_index: int = 0,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
@@ -162,7 +252,21 @@ def search_web_results(
         news_windows = {"low": 14, "medium": 21, "high": 30}
         payload["days"] = news_windows.get(complexity, 14)
 
-    r = requests.post("https://api.tavily.com/search", json=payload, timeout=TAVILY_SEARCH_TIMEOUT_SEC)
+    reservation = _reserve_search_attempt(
+        cap_policy,
+        provider="tavily",
+        logical_call_id=logical_call_id,
+        retry_index=_physical_retry_index,
+        requested_timeout_seconds=TAVILY_SEARCH_TIMEOUT_SEC,
+    )
+    r = _dispatch_search(
+        reservation,
+        lambda: requests.post(
+            "https://api.tavily.com/search",
+            json=payload,
+            timeout=_timeout(TAVILY_SEARCH_TIMEOUT_SEC, reservation),
+        ),
+    )
     r.raise_for_status()
     data = r.json()
     if cost_accumulator is not None:
@@ -187,6 +291,7 @@ def search_web_results(
     return [x for x in results if x["url"]], data.get("images", [])
 
 
+@mark_cap_aware
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def search_linkup_results(
     query: str,
@@ -201,6 +306,9 @@ def search_linkup_results(
     structured_schema: Optional[str] = None,
     cost_accumulator: Optional[CostAccumulator] = None,
     cost_phase: str = "retrieval",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
+    _physical_retry_index: int = 0,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     api_key = os.getenv("LINKUP_API_KEY")
     if not api_key:
@@ -233,11 +341,21 @@ def search_linkup_results(
         "Content-Type": "application/json",
     }
 
-    r = requests.post(
-        "https://api.linkup.so/v1/search",
-        json=payload,
-        headers=headers,
-        timeout=LINKUP_SEARCH_TIMEOUT_SEC,
+    reservation = _reserve_search_attempt(
+        cap_policy,
+        provider="linkup",
+        logical_call_id=logical_call_id,
+        retry_index=_physical_retry_index,
+        requested_timeout_seconds=LINKUP_SEARCH_TIMEOUT_SEC,
+    )
+    r = _dispatch_search(
+        reservation,
+        lambda: requests.post(
+            "https://api.linkup.so/v1/search",
+            json=payload,
+            headers=headers,
+            timeout=_timeout(LINKUP_SEARCH_TIMEOUT_SEC, reservation),
+        ),
     )
     r.raise_for_status()
     data = r.json()
@@ -286,6 +404,7 @@ def search_linkup_results(
     return [x for x in results if x.get("url")], images
 
 
+@mark_cap_aware
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def search_exa_results(
     query: str,
@@ -297,12 +416,22 @@ def search_exa_results(
     to_date: Optional[str] = None,
     cost_accumulator: Optional[CostAccumulator] = None,
     cost_phase: str = "retrieval",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
+    _physical_retry_index: int = 0,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
-    if not os.getenv("EXA_API_KEY"):
+    api_key = os.getenv("EXA_API_KEY")
+    if not api_key:
         raise RuntimeError("EXA_API_KEY is not set")
 
     try:
-        exa = get_exa_client()
+        reservation = _reserve_search_attempt(
+            cap_policy,
+            provider="exa",
+            logical_call_id=logical_call_id,
+            retry_index=_physical_retry_index,
+            requested_timeout_seconds=EXA_SEARCH_TIMEOUT_SEC,
+        )
         kwargs = {
             "num_results": max_results,
             "type": "neural",
@@ -317,32 +446,72 @@ def search_exa_results(
         if to_date:
             kwargs["end_published_date"] = to_date
 
-        def _search() -> Any:
-            return exa.search_and_contents(query, **kwargs)
+        if reservation is not None:
+            payload: dict[str, Any] = {
+                "query": query,
+                "numResults": max_results,
+                "type": "neural",
+                "contents": {"text": True},
+            }
+            if include_domains:
+                payload["includeDomains"] = include_domains
+            if exclude_domains:
+                payload["excludeDomains"] = exclude_domains
+            if from_date:
+                payload["startPublishedDate"] = from_date
+            if to_date:
+                payload["endPublishedDate"] = to_date
+            raw_response = _dispatch_search(
+                reservation,
+                lambda: requests.post(
+                    "https://api.exa.ai/search",
+                    headers={
+                        "x-api-key": api_key,
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=_timeout(EXA_SEARCH_TIMEOUT_SEC, reservation),
+                ),
+            )
+            raw_response.raise_for_status()
+            response_items = raw_response.json().get("results", [])
+        else:
+            exa = get_exa_client()
 
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_search)
-            try:
-                response = fut.result(timeout=EXA_SEARCH_TIMEOUT_SEC)
-            except FuturesTimeout:
-                logger.error(
-                    "Exa provider error: TimeoutError: search_and_contents exceeded %.0fs",
-                    EXA_SEARCH_TIMEOUT_SEC,
-                )
-                log_retrieval_timeout(
-                    provider="exa",
-                    query=query,
-                    timeout_seconds=EXA_SEARCH_TIMEOUT_SEC,
-                    logger=logger,
-                )
-                return [], []
+            def _search() -> Any:
+                return exa.search_and_contents(query, **kwargs)
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(_search)
+                try:
+                    response = fut.result(timeout=EXA_SEARCH_TIMEOUT_SEC)
+                except FuturesTimeout:
+                    logger.error(
+                        "Exa provider error: TimeoutError: search_and_contents exceeded %.0fs",
+                        EXA_SEARCH_TIMEOUT_SEC,
+                    )
+                    log_retrieval_timeout(
+                        provider="exa",
+                        query=query,
+                        timeout_seconds=EXA_SEARCH_TIMEOUT_SEC,
+                        logger=logger,
+                    )
+                    return [], []
+            response_items = response.results
         results = []
         if cost_accumulator is not None:
             cost_accumulator.record_search_call(phase=cost_phase, provider="exa")
-        for item in response.results:
-            item_url = getattr(item, "url", "") or ""
-            title = getattr(item, "title", "") or ""
-            content = getattr(item, "text", "") or ""
+        for item in response_items:
+            if isinstance(item, Mapping):
+                item_url = str(item.get("url") or "")
+                title = str(item.get("title") or "")
+                content = str(item.get("text") or "")
+                score = item.get("score", 0.0) or 0.0
+            else:
+                item_url = getattr(item, "url", "") or ""
+                title = getattr(item, "title", "") or ""
+                content = getattr(item, "text", "") or ""
+                score = getattr(item, "score", 0.0) or 0.0
             results.append(
                 {
                     "title": title,
@@ -351,11 +520,16 @@ def search_exa_results(
                     "raw_content": content,
                     "domain": normalize_domain(item_url),
                     "credibility": credibility_score(item_url, title, content, intent),
-                    "_exa_score": getattr(item, "score", 0.0) or 0.0,
+                    "_exa_score": score,
                 }
             )
         return [x for x in results if x.get("url")], []
+    except RunCapExceeded:
+        raise
     except Exception as e:
+        if cap_policy is not None and cap_policy.bounded:
+            logger.error("Bounded Exa provider request failed.")
+            return [], []
         logger.error(f"Exa provider error: {type(e).__name__}: {e}")
         log_provider_error(
             provider="exa",
@@ -367,6 +541,7 @@ def search_exa_results(
         return [], []
 
 
+@mark_cap_aware
 def search_scout_results(
     *,
     provider: str,
@@ -377,6 +552,8 @@ def search_scout_results(
     freshness_policy: Mapping[str, Any] | None = None,
     cost_accumulator: CostAccumulator | None = None,
     cost_phase: str = "scout",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Provider-neutral lightweight scout search.
 
@@ -404,6 +581,8 @@ def search_scout_results(
             cost_accumulator=cost_accumulator,
             cost_phase=cost_phase,
             log_context="Brave scout search",
+            cap_policy=cap_policy,
+            logical_call_id=logical_call_id,
         )
     if provider_name == "serper":
         return _serper_search_results(
@@ -412,6 +591,8 @@ def search_scout_results(
             freshness=freshness,
             cost_accumulator=cost_accumulator,
             cost_phase=cost_phase,
+            cap_policy=cap_policy,
+            logical_call_id=logical_call_id,
         )
     raise ValueError(f"unsupported scout provider: {provider}")
 
@@ -449,6 +630,8 @@ def _brave_search_results(
     cost_accumulator: CostAccumulator | None = None,
     cost_phase: str = "scout",
     log_context: str = "Brave scout search",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
 ) -> list[dict[str, Any]]:
     import httpx
 
@@ -469,18 +652,33 @@ def _brave_search_results(
     }
     if freshness:
         params["freshness"] = freshness
+    reservation = _reserve_search_attempt(
+        cap_policy,
+        provider="brave",
+        logical_call_id=logical_call_id,
+        retry_index=0,
+        requested_timeout_seconds=BRAVE_SEARCH_TIMEOUT_SEC,
+    )
     try:
-        response = httpx.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            headers=headers,
-            params=params,
-            timeout=BRAVE_SEARCH_TIMEOUT_SEC,
+        response = _dispatch_search(
+            reservation,
+            lambda: httpx.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                headers=headers,
+                params=params,
+                timeout=_timeout(BRAVE_SEARCH_TIMEOUT_SEC, reservation),
+            ),
         )
         response.raise_for_status()
         data = response.json()
         if cost_accumulator is not None:
             cost_accumulator.record_search_call(phase=cost_phase, provider="brave")
+    except RunCapExceeded:
+        raise
     except Exception as e:
+        if cap_policy is not None and cap_policy.bounded:
+            logger.error("Bounded Brave provider request failed.")
+            return []
         if isinstance(e, httpx.TimeoutException):
             log_retrieval_timeout(
                 provider="brave",
@@ -518,6 +716,8 @@ def _serper_search_results(
     freshness: str | None = None,
     cost_accumulator: CostAccumulator | None = None,
     cost_phase: str = "scout",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
 ) -> list[dict[str, Any]]:
     key = api_key or os.getenv("SERPER_API_KEY")
     if not key:
@@ -534,18 +734,33 @@ def _serper_search_results(
     if freshness:
         payload["tbs"] = freshness
 
+    reservation = _reserve_search_attempt(
+        cap_policy,
+        provider="serper",
+        logical_call_id=logical_call_id,
+        retry_index=0,
+        requested_timeout_seconds=SERPER_SEARCH_TIMEOUT_SEC,
+    )
     try:
-        response = requests.post(
-            "https://google.serper.dev/search",
-            headers=headers,
-            json=payload,
-            timeout=SERPER_SEARCH_TIMEOUT_SEC,
+        response = _dispatch_search(
+            reservation,
+            lambda: requests.post(
+                "https://google.serper.dev/search",
+                headers=headers,
+                json=payload,
+                timeout=_timeout(SERPER_SEARCH_TIMEOUT_SEC, reservation),
+            ),
         )
         response.raise_for_status()
         data = response.json()
         if cost_accumulator is not None:
             cost_accumulator.record_search_call(phase=cost_phase, provider="serper")
+    except RunCapExceeded:
+        raise
     except Exception as e:
+        if cap_policy is not None and cap_policy.bounded:
+            logger.error("Bounded Serper provider request failed.")
+            return []
         if isinstance(e, requests.exceptions.Timeout):
             log_retrieval_timeout(
                 provider="serper",

@@ -46,7 +46,7 @@ def test_default_run_config_has_no_cap_policy() -> None:
     assert RunConfig(query="hello").cap_policy is None
 
 
-def test_utilization_retry_disabled_by_cap_policy_records_trace(
+def test_retired_utilization_retry_branch_does_not_claim_active_cap_evidence(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -61,7 +61,6 @@ def test_utilization_retry_disabled_by_cap_policy_records_trace(
         max_search_dispatches=2,
         max_fetch_read_operations=3,
         max_author_model_calls=1,
-        max_smart_search_judgment_model_calls=0,
         max_retries=0,
     )
     harness = _harness(tmp_path)
@@ -77,14 +76,13 @@ def test_utilization_retry_disabled_by_cap_policy_records_trace(
         provider_availability={"tavily": True},
     )
 
-    assert all(
-        call["provider_role"] != "disambiguation_retry"
-        for call in harness.search_calls
-    )
+    assert all(call["provider_role"] != "disambiguation_retry" for call in harness.search_calls)
     cap_trace = outcome.execution_trace["cap_enforcement_trace"]
     assert cap_trace["search_dispatches"] == len(harness.search_calls)
     assert cap_trace["retries"] == 0
-    assert "utilization_retry_disabled_by_cap_policy" in cap_trace["facts"]
+    assert "utilization_retry_disabled_by_cap_policy" not in cap_trace["facts"]
+    assert cap_policy.bounded is False
+    assert "physical" not in cap_trace
 
 
 def test_search_dispatch_cap_overflow_fails_before_extra_dispatch(
@@ -117,7 +115,7 @@ def test_search_dispatch_cap_overflow_fails_before_extra_dispatch(
     assert cap_policy.search_dispatches == 0
 
 
-def test_author_model_cap_overflow_fails_before_author_call(
+def test_retired_legacy_author_fixture_is_not_physical_cap_proof(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -126,25 +124,25 @@ def test_author_model_cap_overflow_fails_before_author_call(
         max_search_dispatches=2,
         max_fetch_read_operations=3,
         max_author_model_calls=0,
-        max_smart_search_judgment_model_calls=0,
         max_retries=0,
     )
     harness = _harness(tmp_path)
 
-    with pytest.raises(RunCapExceeded, match="author_model_calls cap exceeded"):
-        run_offline_ordinary_pipeline(
-            harness,
-            monkeypatch,
-            current_date="2026-06-25",
-            session_id="session-cap-author",
-            run_id="run-cap-author",
-            capture_stages=(),
-            cap_policy=cap_policy,
-            provider_availability={"tavily": True},
-        )
+    _captured, outcome = run_offline_ordinary_pipeline(
+        harness,
+        monkeypatch,
+        current_date="2026-06-25",
+        session_id="session-cap-author",
+        run_id="run-cap-author",
+        capture_stages=(),
+        cap_policy=cap_policy,
+        provider_availability={"tavily": True},
+    )
 
     assert harness.author_prompts == []
     assert cap_policy.author_model_calls == 0
+    assert cap_policy.bounded is False
+    assert "physical" not in outcome.execution_trace["cap_enforcement_trace"]
 
 
 def test_deep_discovery_uses_provider_material_without_fetch_read_cap_charge(
