@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import threading
 import time
@@ -20,6 +21,22 @@ _ZERO = Decimal("0")
 MODEL_OUTPUT_TOKEN_LIMIT = 16_384
 MODEL_REASONING_TOKEN_LIMIT = 16_384
 DEFAULT_EXTERNAL_TIMEOUT_SECONDS = 30.0
+
+
+def normalize_route_key(
+    family: ExternalCallFamily | str,
+    provider: str,
+    route: str,
+) -> tuple[ExternalCallFamily, str, str]:
+    """Normalize one physical route identity for immutable price-map lookup."""
+
+    normalized_family = ExternalCallFamily(family)
+    normalized_provider = str(provider).strip().lower()
+    normalized_route = str(route).strip().lower()
+    if not normalized_provider or not normalized_route:
+        raise ValueError("route_pricing provider and route must be nonempty")
+    return normalized_family, normalized_provider, normalized_route
+
 
 
 class RunCapExceeded(RuntimeError):
@@ -165,12 +182,16 @@ class RunCapEnvelope:
         ):
             if not _SAFE_IDENTITY.fullmatch(value):
                 raise ValueError(f"{label} must be a safe stable identifier")
-        if self.deadline_seconds <= 0:
-            raise ValueError("deadline_seconds must be positive")
+        if self.deadline_seconds <= 0 or not math.isfinite(self.deadline_seconds):
+            raise ValueError("deadline_seconds must be a finite positive number")
         if self.max_total_attempts <= 0:
             raise ValueError("max_total_attempts must be positive")
-        if self.max_per_attempt_usd <= _ZERO or self.max_run_usd <= _ZERO:
-            raise ValueError("cost caps must be positive")
+        if self.max_run_usd <= _ZERO:
+            raise ValueError("max_run_usd must be positive")
+        if self.max_per_attempt_usd < _ZERO:
+            raise ValueError("max_per_attempt_usd must be non-negative")
+        if self.max_per_attempt_usd > self.max_run_usd:
+            raise ValueError("max_per_attempt_usd cannot exceed max_run_usd")
         if self.max_retries < 0 or self.max_fallbacks < 0:
             raise ValueError("retry and fallback caps must be non-negative")
         attempt_caps = {ExternalCallFamily(key): int(value) for key, value in self.max_attempts_by_family.items()}
@@ -191,6 +212,26 @@ class RunCapEnvelope:
             "max_tokens_by_family",
             MappingProxyType(token_caps),
         )
+
+
+
+    @property
+    def authorization_id(self) -> str:
+        """User-owned authorization identity (compatibility over profile_name)."""
+
+        return self.profile_name
+
+    @property
+    def authorization_digest(self) -> str:
+        """Canonical authorization digest (compatibility over profile_digest)."""
+
+        return self.profile_digest
+
+    @property
+    def pricing_fact_set_id(self) -> str:
+        """User-owned pricing fact-set identity (compatibility over pricing_version)."""
+
+        return self.pricing_version
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,14 +343,7 @@ class RunCapPolicy:
             if not isinstance(raw_key, tuple) or len(raw_key) != 3:
                 raise ValueError("route_pricing keys must be (family, provider, route)")
             family, provider, route = raw_key
-            normalized = (
-                ExternalCallFamily(family),
-                str(provider).strip().lower(),
-                str(route).strip().lower(),
-            )
-            if not normalized[1] or not normalized[2]:
-                raise ValueError("route_pricing provider and route must be nonempty")
-            pricing_map[normalized] = pricing
+            pricing_map[normalize_route_key(family, provider, route)] = pricing
         self._route_pricing = MappingProxyType(pricing_map)
         self.search_dispatches = 0
         self.fetch_read_operations = 0
@@ -356,18 +390,13 @@ class RunCapPolicy:
     ) -> RoutePricing:
         """Return the immutable price fact for one exact physical route."""
 
-        normalized_family = ExternalCallFamily(family)
-        key = (
-            normalized_family,
-            str(provider).strip().lower(),
-            str(route).strip().lower(),
-        )
+        key = normalize_route_key(family, provider, route)
         try:
             return self._route_pricing[key]
         except KeyError as exc:
             raise RunCapExceeded(
                 "unsupported_route_pricing",
-                family=normalized_family,
+                family=key[0],
             ) from exc
 
     def activate(self, *, run_id: str, request_id: str) -> None:
@@ -611,9 +640,9 @@ class RunCapPolicy:
             )
             return {
                 "enforcement": "physical_attempt_envelope",
-                "profile_name": self.envelope.profile_name,
-                "profile_digest": self.envelope.profile_digest,
-                "pricing_version": self.envelope.pricing_version,
+                "authorization_id": self.envelope.authorization_id,
+                "authorization_digest": self.envelope.authorization_digest,
+                "pricing_fact_set_id": self.envelope.pricing_fact_set_id,
                 "run_id": self._run_id,
                 "request_id": self._request_id,
                 "furthest_product_stage": self._furthest_product_stage or "configuration",

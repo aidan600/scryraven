@@ -441,17 +441,24 @@ the installed acquisition and custody owners.
 
 ## Active Decision Gate: Bounded Product Pulse
 
-Finish review of the physical enforcement mechanism, install explicit per-run
-authorization for one ordinary product run, obtain maintainer approval, then
-execute one bounded ordinary-product run.
+Immediate sequence:
+
+```text
+complete PR #541 review and merge
+-> verify current official prices for exact intended routes
+-> prepare one proposed local authorization
+-> obtain explicit maintainer approval
+-> execute one bounded ordinary-product run
+-> localize through the existing front or back half
+```
 
 Repository-owned live-run price tables and numerical live-run defaults are not
-acceptable user authority. The public CLI currently offers no selectable bounded
-live-run posture while that authorization path is prepared.
+acceptable user authority. Bounded activation requires one complete explicit
+per-run authorization file; no reusable mode profiles exist. Do not add another
+infrastructure or calibration phase before the pulse.
 
-This gate remains active until supported-product evidence is obtained. The gate
-does not prescribe a PR-by-PR chronology, and each implementation or live step
-requires its own authority.
+This gate remains active until supported-product evidence is obtained. Each
+implementation or live step requires its own authority.
 
 
 ## Durable Evidence Loop

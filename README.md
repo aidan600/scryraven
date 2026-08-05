@@ -105,8 +105,27 @@ Use `python -m scryraven --help` for all CLI options. `python -m proplex --help`
 
 #### Bounded live-run configuration
 
-The physical cap mechanism is under revision. No public bounded live-run
-configuration is currently installed.
+The shared CLI accepts one explicit local authorization file when a maintainer
+intends a bounded ordinary-product run:
+
+```powershell
+python -m scryraven "your query" --mode Balanced `
+  --include-domains docs.python.org `
+  --fast-provider OpenAI --fast-model <exact-model> `
+  --smart-provider OpenAI --smart-model <exact-model> `
+  --embed-provider OpenAI --embed-model <exact-model> `
+  --bounded-run-authorization PATH\to\local-authorization.json
+```
+
+The compatibility alias `python -m proplex` shares the same flag. Without
+`--bounded-run-authorization`, normal CLI behavior is unchanged: dotenv loading,
+route defaults, retries/fallbacks, and ordinary persistence remain as before.
+
+The authorization file is user-owned input for one run. It supplies routes,
+limits, price facts, deadline, and `max_run_usd`. The repository does not
+install bounded defaults, repository-owned prices, or reusable mode profiles.
+Keep authorization files outside tracked source. Use fictional placeholders in
+examples and tests only; do not commit executable live authorizations.
 
 ### Retired UI Entrypoint
 
@@ -206,16 +225,16 @@ The secret scanner helps prevent committing API keys or other sensitive values. 
 
 ## Project Structure
 
-* [`app.py`](app.py) â€” fail-closed tombstone for the retired legacy Streamlit entrypoint
-* [`ui/`](ui/) â€” retained legacy Streamlit pages and helpers; reference/migration only
-* [`core/`](core/) â€” pipeline orchestration, retrieval, prompts, source handling, and storage logic
-* [`scryraven/`](scryraven/) â€” public CLI package
-* [`proplex/`](proplex/) â€” legacy-compatible CLI package and compatibility surfaces
-* [`scripts/`](scripts/) â€” quality aggregation, migrations, checks, and developer helpers
-* [`docs/`](docs/) â€” architecture notes, validation notes, roadmap notes, and evaluation aids
-* [`tests/`](tests/) â€” regression, contract, safety, and architecture tests
-* [`output/`](output/) â€” local session history, passages cache, execution logs, review packets, and other generated artifacts; ignored by Git
-* [`.env.example`](.env.example) â€” example environment variables
+* [`app.py`](app.py) — fail-closed tombstone for the retired legacy Streamlit entrypoint
+* [`ui/`](ui/) — retained legacy Streamlit pages and helpers; reference/migration only
+* [`core/`](core/) — pipeline orchestration, retrieval, prompts, source handling, and storage logic
+* [`scryraven/`](scryraven/) — public CLI package
+* [`proplex/`](proplex/) — legacy-compatible CLI package and compatibility surfaces
+* [`scripts/`](scripts/) — quality aggregation, migrations, checks, and developer helpers
+* [`docs/`](docs/) — architecture notes, validation notes, roadmap notes, and evaluation aids
+* [`tests/`](tests/) — regression, contract, safety, and architecture tests
+* [`output/`](output/) — local session history, passages cache, execution logs, review packets, and other generated artifacts; ignored by Git
+* [`.env.example`](.env.example) — example environment variables
 
 ## Notes
 

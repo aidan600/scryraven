@@ -52,6 +52,7 @@ from core.routing import (
 from core.run_authority_search_judgment_runtime import (
     execute_run_authority_search_judgment_action,
 )
+from core.run_cap_authorization import CompiledRunCapAuthorization, query_sha256
 from core.run_config import RunConfig, RunDeps
 from core.strict_one_shot_model_transport import (
     build_strict_one_shot_smart_model_transport,
@@ -172,6 +173,23 @@ def _fixture_route_pricing() -> dict[tuple[ExternalCallFamily, str, str], RouteP
     }
 
 
+
+def _compiled_from_policy(policy: RunCapPolicy, *, repository_sha: str = "a" * 40) -> CompiledRunCapAuthorization:
+    """Build a minimal compiled authorization wrapper around an explicit fixture policy."""
+
+    envelope = policy.envelope
+    assert envelope is not None
+    return CompiledRunCapAuthorization(
+        authorization_id=envelope.authorization_id,
+        authorization_digest=envelope.authorization_digest,
+        repository_sha=repository_sha,
+        pricing_fact_set_id=envelope.pricing_fact_set_id,
+        envelope=envelope,
+        route_pricing=dict(policy._route_pricing),
+        policy=policy,
+    )
+
+
 def _policy(**envelope_kwargs: Any) -> RunCapPolicy:
     route_pricing = envelope_kwargs.pop("route_pricing", None)
     activate = bool(envelope_kwargs.pop("activate", True))
@@ -227,6 +245,13 @@ def test_explicit_policies_are_independent_and_reject_unknown_routes() -> None:
 
     with pytest.raises(ValueError, match="explicit immutable route_pricing map"):
         RunCapPolicy(envelope=_envelope(), route_pricing=None)
+
+
+def test_run_cap_envelope_rejects_nonfinite_deadlines() -> None:
+    with pytest.raises(ValueError, match="finite positive"):
+        _envelope(deadline_seconds=float("inf"))
+    with pytest.raises(ValueError, match="finite positive"):
+        _envelope(deadline_seconds=float("nan"))
 
 
 def test_conservative_text_bound_dominates_common_token_units() -> None:
@@ -364,9 +389,14 @@ def test_attempt_retry_fallback_token_cost_and_deadline_denials_are_predispatch(
         )
     assert token_exc.value.reason_code == "run_token_cap"
 
-    cost_policy = _policy(max_run_usd="0.005")
+    # Gate 2: max_per_attempt cannot exceed max_run, so prove run_cost_cap by
+    # exhausting remaining whole-run authority after one successful attempt.
+    cost_policy = _policy(max_run_usd="0.015", max_per_attempt_usd="0.015")
+    first_cost = cost_policy.reserve_attempt(_spec(logical_call_id="logical:cost-1"))
+    first_cost.mark_dispatched()
+    first_cost.settle_observed(TokenUsage())
     with pytest.raises(RunCapExceeded) as cost_exc:
-        cost_policy.reserve_attempt(_spec())
+        cost_policy.reserve_attempt(_spec(logical_call_id="logical:cost-2"))
     assert cost_exc.value.reason_code == "run_cost_cap"
 
     per_attempt_policy = _policy(max_per_attempt_usd="0.005")
@@ -1166,24 +1196,116 @@ def test_public_cli_rejects_bounded_product_profile_flag() -> None:
 
 
 def test_bounded_terminal_helpers_require_explicit_policy() -> None:
-    with pytest.raises(RuntimeError, match="explicit bounded policy"):
-        compatibility_cli._bounded_terminal_payload(
-            entrypoint="proplex",
-            exc=RunCapExceeded("fixture"),
-            config=None,
-        )
+    # Pre-activation / configuration failures emit a sanitized terminal without
+    # requiring an active policy object.
+    pre_activation = compatibility_cli._bounded_terminal_payload(
+        entrypoint="proplex",
+        exc=RunCapExceeded("fixture"),
+        config=None,
+    )
+    assert pre_activation["schema_version"] == "bounded_product_cli_terminal_v1"
+    assert pre_activation["terminal"]["code"] == "bounded_configuration_unavailable"
+    assert pre_activation["terminal"]["owner"] == "core.run_cap_authorization"
+    assert "profile_name" not in pre_activation
+    assert "physical_envelope" not in pre_activation
+
     policy = _policy()
+    compiled = _compiled_from_policy(policy)
     config = RunConfig(query=_ISCLOSE_QUERY, cap_policy=policy)
     payload = compatibility_cli._bounded_terminal_payload(
         entrypoint="scryraven",
         exc=RunCapExceeded("total_attempt_cap"),
         config=config,
+        compiled_authorization=compiled,
     )
     assert payload["schema_version"] == "bounded_product_cli_terminal_v1"
     assert payload["entrypoint"] == "scryraven"
-    assert payload["profile_name"] == "fixture-v1"
+    assert payload["authorization_id"] == "fixture-v1"
+    assert payload["authorization_digest"] == "0123456789abcdef"
+    assert payload["pricing_fact_set_id"] == "fixture-pricing-v1"
+    assert "profile_name" not in payload
     assert payload["physical_envelope"]["physical_attempts"] == 0
+    assert payload["physical_envelope"]["authorization_id"] == "fixture-v1"
     assert payload["terminal"]["owner"] == "core.cap_enforcement.RunCapPolicy"
+
+
+def _offline_proof_authorization_document(*, repository_sha: str) -> dict[str, Any]:
+    """Temporary fictional authorization values for offline public-CLI proof only."""
+
+    zero = {
+        "input_per_million_usd": "0",
+        "cached_input_per_million_usd": "0",
+        "output_per_million_usd": "0",
+        "reasoning_per_million_usd": "0",
+        "embedding_per_million_usd": "0",
+        "flat_attempt_usd": "0",
+    }
+    search = {**zero, "flat_attempt_usd": "0.01"}
+    read = {**zero, "flat_attempt_usd": "0.01"}
+    model = {
+        "input_per_million_usd": "1",
+        "cached_input_per_million_usd": "1",
+        "output_per_million_usd": "2",
+        "reasoning_per_million_usd": "3",
+        "embedding_per_million_usd": "0",
+        "flat_attempt_usd": "0",
+    }
+    embedding = {
+        **zero,
+        "embedding_per_million_usd": "1",
+    }
+
+    def route(provider: str, name: str, pricing: dict[str, str]) -> dict[str, Any]:
+        return {"provider": provider, "route": name, "pricing": pricing}
+
+    return {
+        "schema_version": "scryraven_bounded_run_authorization_v1",
+        "authorization_id": "offline-isclose-auth-v1",
+        "repository_sha": repository_sha,
+        "request": {
+            "query_sha256": query_sha256(_ISCLOSE_QUERY),
+            "mode": "Balanced",
+            "include_domains": ["docs.python.org"],
+            "exclude_domains": [],
+        },
+        "pricing_fact_set_id": "offline-isclose-pricing-v1",
+        "routes": {
+            "fast_model": route("OpenAI", "gpt-5.4-mini", model),
+            "smart_model": route("OpenAI", "gpt-5.4", model),
+            "embedding": route("OpenAI", "text-embedding-3-small", embedding),
+            "search": [
+                route("tavily", "search", search),
+                route("linkup", "search", search),
+                route("exa", "search", search),
+                route("brave", "search", search),
+                route("serper", "search", search),
+            ],
+            "read": [
+                route("tavily", "extract", read),
+                route("linkup", "fetch", read),
+            ],
+        },
+        "limits": {
+            "attempts": {
+                "model": 32,
+                "embedding": 32,
+                "search": 32,
+                "read": 32,
+                "total": 64,
+            },
+            "tokens": {
+                "input": 1_000_000,
+                "cached_input": 1_000_000,
+                "output": 1_000_000,
+                "reasoning": 1_000_000,
+                "embedding": 1_000_000,
+            },
+            "max_retries": 0,
+            "max_fallbacks": 0,
+            "deadline_seconds": 30,
+        },
+        "max_run_usd": "50",
+    }
 
 
 @pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
@@ -1192,14 +1314,11 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Internal ordinary-pipeline proof with an explicit fictional policy.
-
-    Gate 1 temporary proof boundary: public CLI no longer selects a bounded
-    posture. Gate 2 restores the authorization-backed public-CLI proof.
-    """
+    """Internal ordinary-pipeline proof with an explicit fictional policy."""
 
     harness = _isclose_harness(tmp_path / entrypoint)
     policy = _policy(activate=False)
+    compiled = _compiled_from_policy(policy)
     config = RunConfig(
         query=_ISCLOSE_QUERY,
         mode="Balanced",
@@ -1244,6 +1363,7 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert "0.000000001" in outcome.report or "rel_tol" in outcome.report
     physical = policy.physical_snapshot()
     assert physical["enforcement"] == "physical_attempt_envelope"
+    assert physical["authorization_id"] == "fixture-v1"
     assert physical["retry_attempts"] == 0
     assert physical["fallback_attempts"] == 0
     assert physical["active_attempts"] == 0
@@ -1256,7 +1376,134 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
         entrypoint=entrypoint,
         config=config,
         outcome=outcome,
+        compiled_authorization=compiled,
     )
     assert success["entrypoint"] == entrypoint
+    assert success["authorization_id"] == "fixture-v1"
     assert success["answer_present"] is True
     assert success["physical_envelope"]["physical_attempts"] > 0
+    assert "profile_name" not in success
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_cli_executes_bounded_isclose_with_authorization_file(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Offline public-CLI math.isclose proof through both aliases."""
+
+    import json
+
+    from core.run_cap_authorization import SCHEMA_VERSION
+
+    assert SCHEMA_VERSION == "scryraven_bounded_run_authorization_v1"
+    fixture_sha = "cccccccccccccccccccccccccccccccccccccccc"
+    auth_path = tmp_path / "offline-auth.json"
+    auth_path.write_text(
+        json.dumps(_offline_proof_authorization_document(repository_sha=fixture_sha)),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "core.run_cap_authorization.resolve_local_repository_identity",
+        lambda _repo_root: fixture_sha,
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_logger",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            info=lambda *_a, **_k: None,
+            error=lambda *_a, **_k: None,
+            warning=lambda *_a, **_k: None,
+            debug=lambda *_a, **_k: None,
+        ),
+    )
+
+    harness = _isclose_harness(tmp_path / f"cli-{entrypoint}")
+    captured: dict[str, Any] = {}
+
+    def fake_build_run_deps(_log: Any) -> RunDeps:
+        policy = captured["policy"]
+        return _bounded_harness_deps(harness, policy)
+
+    monkeypatch.setattr(compatibility_cli, "_build_run_deps", fake_build_run_deps)
+
+    def forbidden_persistence(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("bounded path reached a persistence or raw-log path")
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_persistence_side_effects",
+        forbidden_persistence,
+    )
+    monkeypatch.setattr(orchestrator, "load_policy_state", forbidden_persistence)
+    monkeypatch.setattr(
+        orchestrator,
+        "recent_recurring_kb_hints",
+        forbidden_persistence,
+    )
+    monkeypatch.setattr(orchestrator, "log_run_started", forbidden_persistence)
+    monkeypatch.setattr(orchestrator, "log_run_failed", forbidden_persistence)
+
+    original_build = compatibility_cli._build_run_config
+
+    def capturing_build(args: Any, *, compiled_authorization=None):
+        config = original_build(args, compiled_authorization=compiled_authorization)
+        assert compiled_authorization is not None
+        captured["compiled"] = compiled_authorization
+        captured["policy"] = compiled_authorization.policy
+        return config
+
+    monkeypatch.setattr(compatibility_cli, "_build_run_config", capturing_build)
+
+    argv = [
+        _ISCLOSE_QUERY,
+        "--mode",
+        "Balanced",
+        "--include-domains",
+        "docs.python.org",
+        "--fast-provider",
+        "OpenAI",
+        "--fast-model",
+        "gpt-5.4-mini",
+        "--smart-provider",
+        "OpenAI",
+        "--smart-model",
+        "gpt-5.4",
+        "--embed-provider",
+        "OpenAI",
+        "--embed-model",
+        "text-embedding-3-small",
+        "--bounded-run-authorization",
+        str(auth_path),
+    ]
+    code = compatibility_cli.main(argv, entrypoint=entrypoint)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert str(auth_path) not in out
+    payload = json.loads(out.strip().splitlines()[-1])
+    assert payload["schema_version"] == "bounded_product_cli_result_v1"
+    assert payload["entrypoint"] == entrypoint
+    assert payload["authorization_id"] == "offline-isclose-auth-v1"
+    assert payload["pricing_fact_set_id"] == "offline-isclose-pricing-v1"
+    assert payload["answer_present"] is True
+    assert "profile_name" not in payload
+    physical = payload["physical_envelope"]
+    assert physical["enforcement"] == "physical_attempt_envelope"
+    assert physical["authorization_id"] == "offline-isclose-auth-v1"
+    assert physical["retry_attempts"] == 0
+    assert physical["fallback_attempts"] == 0
+    assert physical["unreserved_dispatches"] == 0
+    assert physical["persistence_suppressed"] is True
+    assert all(
+        physical["physical_attempts_by_family"][family.value] > 0
+        for family in ExternalCallFamily
+    )
+    assert harness.forbidden_live_calls == []
