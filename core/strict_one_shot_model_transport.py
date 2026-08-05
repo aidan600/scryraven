@@ -12,12 +12,8 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Callable, ClassVar, Mapping
 
-from core.bounded_product_profile import (
-    MODEL_OUTPUT_TOKEN_LIMIT,
-    get_route_pricing,
-    model_usage_bound,
-)
 from core.cap_enforcement import (
+    MODEL_OUTPUT_TOKEN_LIMIT,
     AttemptLifecycle,
     AttemptReservation,
     ExternalAttemptSpec,
@@ -25,6 +21,7 @@ from core.cap_enforcement import (
     RunCapExceeded,
     RunCapPolicy,
     TokenUsage,
+    model_usage_bound,
 )
 from core.cost_accounting import estimate_tokens, extract_usage_tokens
 from core.strict_accounted_model_route import (
@@ -384,7 +381,7 @@ class StrictOneShotModelTransport:
         if self.cap_policy is None or not self.cap_policy.bounded:
             return None
         self.cap_policy.note_product_stage("multicomponent_model")
-        pricing = get_route_pricing(
+        pricing = self.cap_policy.resolve_route_pricing(
             ExternalCallFamily.MODEL,
             provider,
             model,

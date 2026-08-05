@@ -10,10 +10,16 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 _SAFE_IDENTITY = re.compile(r"[A-Za-z0-9_.:-]{1,120}\Z")
 _ZERO = Decimal("0")
+
+# Mechanical per-request bounds used when constructing AttemptReservation max_usage /
+# transport timeouts. These are not live-run product profile defaults.
+MODEL_OUTPUT_TOKEN_LIMIT = 16_384
+MODEL_REASONING_TOKEN_LIMIT = 16_384
+DEFAULT_EXTERNAL_TIMEOUT_SECONDS = 30.0
 
 
 class RunCapExceeded(RuntimeError):
@@ -274,6 +280,10 @@ class RunCapPolicy:
         max_retries: int = 3,
         *,
         envelope: RunCapEnvelope | None = None,
+        route_pricing: Mapping[
+            tuple[ExternalCallFamily | str, str, str], RoutePricing
+        ]
+        | None = None,
     ) -> None:
         self.max_search_dispatches = max_search_dispatches
         self.max_fetch_read_operations = max_fetch_read_operations
@@ -281,6 +291,26 @@ class RunCapPolicy:
         self.max_smart_search_judgment_model_calls = max_smart_search_judgment_model_calls
         self.envelope = envelope
         self.max_retries = envelope.max_retries if envelope is not None else max_retries
+        if envelope is not None and route_pricing is None:
+            raise ValueError(
+                "bounded RunCapPolicy requires an explicit immutable route_pricing map"
+            )
+        pricing_map: dict[tuple[ExternalCallFamily, str, str], RoutePricing] = {}
+        for raw_key, pricing in dict(route_pricing or {}).items():
+            if not isinstance(pricing, RoutePricing):
+                raise TypeError("route_pricing values must be RoutePricing")
+            if not isinstance(raw_key, tuple) or len(raw_key) != 3:
+                raise ValueError("route_pricing keys must be (family, provider, route)")
+            family, provider, route = raw_key
+            normalized = (
+                ExternalCallFamily(family),
+                str(provider).strip().lower(),
+                str(route).strip().lower(),
+            )
+            if not normalized[1] or not normalized[2]:
+                raise ValueError("route_pricing provider and route must be nonempty")
+            pricing_map[normalized] = pricing
+        self._route_pricing = MappingProxyType(pricing_map)
         self.search_dispatches = 0
         self.fetch_read_operations = 0
         self.author_model_calls = 0
@@ -317,6 +347,28 @@ class RunCapPolicy:
     @property
     def persistence_suppressed(self) -> bool:
         return bool(self.envelope and self.envelope.suppress_persistence)
+
+    def resolve_route_pricing(
+        self,
+        family: ExternalCallFamily | str,
+        provider: str,
+        route: str,
+    ) -> RoutePricing:
+        """Return the immutable price fact for one exact physical route."""
+
+        normalized_family = ExternalCallFamily(family)
+        key = (
+            normalized_family,
+            str(provider).strip().lower(),
+            str(route).strip().lower(),
+        )
+        try:
+            return self._route_pricing[key]
+        except KeyError as exc:
+            raise RunCapExceeded(
+                "unsupported_route_pricing",
+                family=normalized_family,
+            ) from exc
 
     def activate(self, *, run_id: str, request_id: str) -> None:
         """Bind the ledger once and start its monotonic whole-run deadline."""
@@ -809,6 +861,30 @@ def conservative_text_token_upper_bound(
     if structural_overhead < 0:
         raise ValueError("structural_overhead must be non-negative")
     return len(str(text).encode("utf-8")) + structural_overhead
+
+
+def model_usage_bound(prompt: str, system_prompt: str = "") -> TokenUsage:
+    """Build a tokenizer-independent conservative per-attempt model bound."""
+
+    input_bound = conservative_text_token_upper_bound(
+        f"{system_prompt}\n{prompt}",
+        structural_overhead=64,
+    )
+    return TokenUsage(
+        input_tokens=input_bound,
+        output_tokens=MODEL_OUTPUT_TOKEN_LIMIT,
+        reasoning_tokens=MODEL_REASONING_TOKEN_LIMIT,
+    )
+
+
+def embedding_usage_bound(texts: Iterable[str]) -> TokenUsage:
+    """Build a conservative aggregate embedding-token bound for one batch."""
+
+    bound = sum(
+        conservative_text_token_upper_bound(text, structural_overhead=8)
+        for text in texts
+    )
+    return TokenUsage(embedding_tokens=bound)
 
 
 def mark_cap_aware(transport: Callable[..., Any]) -> Callable[..., Any]:

@@ -103,34 +103,10 @@ python -m proplex "your query" --mode Balanced
 
 Use `python -m scryraven --help` for all CLI options. `python -m proplex --help` is preserved for existing scripts.
 
-#### Opt-in bounded product posture
+#### Bounded live-run configuration
 
-The shared CLI exposes one product-owned physical-attempt envelope:
-
-```powershell
-python -m scryraven "your query" --mode Balanced --bounded-product-profile public-cli-v1
-```
-
-The compatibility alias is equivalent:
-
-```powershell
-python -m proplex "your query" --mode Balanced --bounded-product-profile public-cli-v1
-```
-
-This posture still makes real model, embedding, search, and READ requests when
-run with configured credentials. It directly invokes ordinary `run_pipeline()`,
-but supplies a single run-scoped ledger that reserves each physical request
-before dispatch, disables retries and endpoint fallback, clips transport
-timeouts to the whole-run deadline, and enforces conservative token and dollar
-ceilings. It prints one sanitized JSON result or terminal and suppresses the
-ordinary output, log, policy, knowledge-base, and database persistence paths for
-that run. `--output`, verbose diagnostics, and the special operator/status modes
-are intentionally incompatible with this posture.
-
-Bounded mode does not load `.env`; credentials for an explicitly authorized
-live run must already be present in the process environment. The profile's
-immutable pricing values are conservative admission ceilings, not billing
-estimates or a claim that current provider prices have been verified.
+The physical cap mechanism is under revision. No public bounded live-run
+configuration is currently installed.
 
 ### Retired UI Entrypoint
 
@@ -230,16 +206,16 @@ The secret scanner helps prevent committing API keys or other sensitive values. 
 
 ## Project Structure
 
-* [`app.py`](app.py) — fail-closed tombstone for the retired legacy Streamlit entrypoint
-* [`ui/`](ui/) — retained legacy Streamlit pages and helpers; reference/migration only
-* [`core/`](core/) — pipeline orchestration, retrieval, prompts, source handling, and storage logic
-* [`scryraven/`](scryraven/) — public CLI package
-* [`proplex/`](proplex/) — legacy-compatible CLI package and compatibility surfaces
-* [`scripts/`](scripts/) — quality aggregation, migrations, checks, and developer helpers
-* [`docs/`](docs/) — architecture notes, validation notes, roadmap notes, and evaluation aids
-* [`tests/`](tests/) — regression, contract, safety, and architecture tests
-* [`output/`](output/) — local session history, passages cache, execution logs, review packets, and other generated artifacts; ignored by Git
-* [`.env.example`](.env.example) — example environment variables
+* [`app.py`](app.py) â€” fail-closed tombstone for the retired legacy Streamlit entrypoint
+* [`ui/`](ui/) â€” retained legacy Streamlit pages and helpers; reference/migration only
+* [`core/`](core/) â€” pipeline orchestration, retrieval, prompts, source handling, and storage logic
+* [`scryraven/`](scryraven/) â€” public CLI package
+* [`proplex/`](proplex/) â€” legacy-compatible CLI package and compatibility surfaces
+* [`scripts/`](scripts/) â€” quality aggregation, migrations, checks, and developer helpers
+* [`docs/`](docs/) â€” architecture notes, validation notes, roadmap notes, and evaluation aids
+* [`tests/`](tests/) â€” regression, contract, safety, and architecture tests
+* [`output/`](output/) â€” local session history, passages cache, execution logs, review packets, and other generated artifacts; ignored by Git
+* [`.env.example`](.env.example) â€” example environment variables
 
 ## Notes
 

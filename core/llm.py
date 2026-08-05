@@ -12,21 +12,18 @@ import numpy as np
 from exa_py import Exa
 from openai import OpenAI
 
-from core.bounded_product_profile import (
+from core.cap_enforcement import (
     DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
     MODEL_OUTPUT_TOKEN_LIMIT,
-    embedding_usage_bound,
-    get_route_pricing,
-    model_usage_bound,
-)
-from core.cap_enforcement import (
     AttemptReservation,
     ExternalAttemptSpec,
     ExternalCallFamily,
     RunCapExceeded,
     RunCapPolicy,
     TokenUsage,
+    embedding_usage_bound,
     mark_cap_aware,
+    model_usage_bound,
 )
 from core.cost_accounting import CostAccumulator, estimate_tokens, extract_usage_tokens
 
@@ -94,7 +91,7 @@ def _reserve_model_attempt(
     if cap_policy is None or not cap_policy.bounded:
         return None
     logical_id = logical_call_id or cap_policy.new_logical_call_id("model")
-    pricing = get_route_pricing(ExternalCallFamily.MODEL, provider, model)
+    pricing = cap_policy.resolve_route_pricing(ExternalCallFamily.MODEL, provider, model)
     return cap_policy.reserve_attempt(
         ExternalAttemptSpec(
             family=ExternalCallFamily.MODEL,
@@ -123,7 +120,7 @@ def _reserve_embedding_attempt(
     if cap_policy is None or not cap_policy.bounded:
         return None
     logical_id = logical_call_id or cap_policy.new_logical_call_id("embedding")
-    pricing = get_route_pricing(ExternalCallFamily.EMBEDDING, provider, model)
+    pricing = cap_policy.resolve_route_pricing(ExternalCallFamily.EMBEDDING, provider, model)
     return cap_policy.reserve_attempt(
         ExternalAttemptSpec(
             family=ExternalCallFamily.EMBEDDING,

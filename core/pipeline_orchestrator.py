@@ -39,11 +39,8 @@ from core.author_execution_runtime import execute_author_handoff_from_scope
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
-from core.bounded_product_profile import (
-    DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
-    get_route_pricing,
-)
 from core.cap_enforcement import (
+    DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
     ExternalAttemptSpec,
     ExternalCallFamily,
     RunCapExceeded,
@@ -735,7 +732,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         provider = str(request.provider)
         operation = str(request.operation)
         cap_policy.note_product_stage(f"read-{operation}")
-        pricing = get_route_pricing(
+        pricing = cap_policy.resolve_route_pricing(
             ExternalCallFamily.READ,
             provider,
             operation,

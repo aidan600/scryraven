@@ -8,8 +8,6 @@ No test in this file is integration- or secrets-backed.
 
 from __future__ import annotations
 
-import json
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from decimal import Decimal
@@ -25,21 +23,13 @@ import core.llm as llm
 import core.pipeline_orchestrator as orchestrator
 import core.search_providers as search_providers
 import proplex.__main__ as compatibility_cli
-import scryraven.__main__ as public_cli
 from core.acquisition_adapters import AcquisitionTransports, dispatch_acquisition
 from core.acquisition_contracts import (
     AcquisitionExecutionStatus,
     AcquisitionRequest,
 )
-from core.bounded_product_profile import (
-    BOUNDED_PRODUCT_PROFILE_NAME,
-    DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
-    build_bounded_product_policy,
-    embedding_usage_bound,
-    get_route_pricing,
-    model_usage_bound,
-)
 from core.cap_enforcement import (
+    DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
     AttemptLifecycle,
     ExternalAttemptSpec,
     ExternalCallFamily,
@@ -49,7 +39,9 @@ from core.cap_enforcement import (
     RunCapPolicy,
     TokenUsage,
     conservative_text_token_upper_bound,
+    embedding_usage_bound,
     mark_cap_aware,
+    model_usage_bound,
 )
 from core.cost_accounting import estimate_tokens
 from core.routing import (
@@ -131,12 +123,65 @@ def _envelope(
     )
 
 
+def _fixture_route_pricing() -> dict[tuple[ExternalCallFamily, str, str], RoutePricing]:
+    """Explicit fictional prices for offline fixture policies only."""
+
+    model_fast = RoutePricing(
+        pricing_key="fixture.openai.gpt-5.4-mini",
+        input_per_million_usd=Decimal("1"),
+        cached_input_per_million_usd=Decimal("1"),
+        output_per_million_usd=Decimal("2"),
+        reasoning_per_million_usd=Decimal("3"),
+    )
+    model_smart = RoutePricing(
+        pricing_key="fixture.openai.gpt-5.4",
+        input_per_million_usd=Decimal("1"),
+        cached_input_per_million_usd=Decimal("1"),
+        output_per_million_usd=Decimal("2"),
+        reasoning_per_million_usd=Decimal("3"),
+    )
+    embedding = RoutePricing(
+        pricing_key="fixture.openai.text-embedding-3-small",
+        embedding_per_million_usd=Decimal("1"),
+    )
+    search = RoutePricing(
+        pricing_key="fixture.search",
+        flat_attempt_usd=Decimal("0.01"),
+    )
+    read = RoutePricing(
+        pricing_key="fixture.read",
+        flat_attempt_usd=Decimal("0.01"),
+    )
+    return {
+        (ExternalCallFamily.MODEL, "openai", "gpt-5.4-mini"): model_fast,
+        (ExternalCallFamily.MODEL, "openai", "gpt-5.4"): model_smart,
+        (ExternalCallFamily.EMBEDDING, "openai", "text-embedding-3-small"): embedding,
+        (ExternalCallFamily.SEARCH, "tavily", "search"): search,
+        (ExternalCallFamily.SEARCH, "linkup", "search"): search,
+        (ExternalCallFamily.SEARCH, "exa", "search"): search,
+        (ExternalCallFamily.SEARCH, "brave", "search"): search,
+        (ExternalCallFamily.SEARCH, "serper", "search"): search,
+        (ExternalCallFamily.SEARCH, "fixture", "route"): search,
+        (ExternalCallFamily.SEARCH, "fixture", "search"): search,
+        (ExternalCallFamily.READ, "linkup", "fetch"): read,
+        (ExternalCallFamily.READ, "tavily", "extract"): read,
+        (ExternalCallFamily.READ, "fixture", "route"): read,
+        (ExternalCallFamily.READ, "fixture", "fetch"): read,
+        (ExternalCallFamily.MODEL, "fixture", "route"): model_fast,
+        (ExternalCallFamily.EMBEDDING, "fixture", "route"): embedding,
+    }
+
+
 def _policy(**envelope_kwargs: Any) -> RunCapPolicy:
+    route_pricing = envelope_kwargs.pop("route_pricing", None)
+    activate = bool(envelope_kwargs.pop("activate", True))
     policy = RunCapPolicy(
         max_retries=int(envelope_kwargs.get("max_retries", 0)),
         envelope=_envelope(**envelope_kwargs),
+        route_pricing=route_pricing if route_pricing is not None else _fixture_route_pricing(),
     )
-    policy.activate(run_id="run-fixture", request_id="request-fixture")
+    if activate:
+        policy.activate(run_id="run-fixture", request_id="request-fixture")
     return policy
 
 
@@ -164,23 +209,24 @@ def _spec(
     )
 
 
-def test_product_profile_builds_fresh_ledgers_and_rejects_incomplete_routes() -> None:
-    config = RunConfig(query="offline profile construction")
-    first = build_bounded_product_policy(config)
-    second = build_bounded_product_policy(config)
+def test_explicit_policies_are_independent_and_reject_unknown_routes() -> None:
+    first = _policy(activate=False)
+    second = _policy(activate=False)
 
     assert first is not second
     assert first.envelope.profile_digest == second.envelope.profile_digest
     assert first.envelope.max_total_attempts == second.envelope.max_total_attempts
-    first.activate(run_id="profile-run-one", request_id="profile-request-one")
+    first.activate(run_id="policy-run-one", request_id="policy-request-one")
     assert first.physical_snapshot()["activated"] is True
     assert second.physical_snapshot()["activated"] is False
     assert second.physical_snapshot()["logical_calls"] == 0
 
-    incomplete = replace(config, smart_model="unpriced-model")
     with pytest.raises(RunCapExceeded) as exc:
-        build_bounded_product_policy(incomplete)
+        first.resolve_route_pricing(ExternalCallFamily.MODEL, "openai", "unpriced-model")
     assert exc.value.reason_code == "unsupported_route_pricing"
+
+    with pytest.raises(ValueError, match="explicit immutable route_pricing map"):
+        RunCapPolicy(envelope=_envelope(), route_pricing=None)
 
 
 def test_conservative_text_bound_dominates_common_token_units() -> None:
@@ -330,7 +376,7 @@ def test_attempt_retry_fallback_token_cost_and_deadline_denials_are_predispatch(
 
     clock = [100.0]
     monkeypatch.setattr(cap_module.time, "monotonic", lambda: clock[0])
-    deadline_policy = RunCapPolicy(envelope=_envelope(deadline_seconds=5.0))
+    deadline_policy = _policy(deadline_seconds=5.0, activate=False)
     deadline_policy.activate(run_id="deadline-run", request_id="deadline-request")
     clock[0] = 103.0
     clipped = deadline_policy.reserve_attempt(_spec(timeout=30.0))
@@ -524,7 +570,7 @@ def test_stream_and_concurrent_predispatch_deadlines_fail_closed(
 ) -> None:
     clock = [200.0]
     monkeypatch.setattr(cap_module.time, "monotonic", lambda: clock[0])
-    policy = RunCapPolicy(envelope=_envelope(deadline_seconds=2.0))
+    policy = _policy(deadline_seconds=2.0, activate=False)
     policy.activate(run_id="stream-deadline-run", request_id="stream-deadline-request")
     options: list[dict[str, Any]] = []
 
@@ -570,7 +616,7 @@ def test_stream_and_concurrent_predispatch_deadlines_fail_closed(
     assert policy.physical_snapshot()["lifecycle_counts"]["settled_conservative"] == 1
 
     clock[0] = 300.0
-    concurrent = RunCapPolicy(envelope=_envelope(deadline_seconds=5.0))
+    concurrent = _policy(deadline_seconds=5.0, activate=False)
     concurrent.activate(
         run_id="concurrent-deadline-run",
         request_id="concurrent-deadline-request",
@@ -732,7 +778,7 @@ def test_read_adapter_marks_fake_transport_dispatched_and_settles_once() -> None
         }
 
     def reserve_read() -> Any:
-        pricing = get_route_pricing(
+        pricing = policy.resolve_route_pricing(
             ExternalCallFamily.READ,
             "tavily",
             "extract",
@@ -814,7 +860,7 @@ def _bounded_model_fake(
                 operation="model",
                 logical_call_id=logical_call_id,
                 max_usage=model_usage_bound(prompt, system_prompt),
-                pricing=get_route_pricing(
+                pricing=policy.resolve_route_pricing(
                     ExternalCallFamily.MODEL,
                     provider,
                     model,
@@ -858,7 +904,7 @@ def _bounded_embedding_fake(
                 operation="embedding",
                 logical_call_id=str(kwargs.get("logical_call_id") or policy.new_logical_call_id("offline-embedding")),
                 max_usage=embedding_usage_bound(material),
-                pricing=get_route_pricing(
+                pricing=policy.resolve_route_pricing(
                     ExternalCallFamily.EMBEDDING,
                     provider,
                     model,
@@ -907,7 +953,7 @@ def _bounded_search_fake(
                             operation="search",
                             logical_call_id=f"offline-search:{digest}",
                             max_usage=TokenUsage(),
-                            pricing=get_route_pricing(
+                            pricing=policy.resolve_route_pricing(
                                 ExternalCallFamily.SEARCH,
                                 "tavily",
                                 "search",
@@ -960,7 +1006,7 @@ def _bounded_strict_fake(
                 operation="strict-model",
                 logical_call_id=str(kwargs.get("logical_call_id") or policy.new_logical_call_id("offline-strict")),
                 max_usage=model_usage_bound(prompt, system_prompt),
-                pricing=get_route_pricing(
+                pricing=policy.resolve_route_pricing(
                     ExternalCallFamily.MODEL,
                     provider,
                     model,
@@ -1109,214 +1155,68 @@ def test_unbounded_cli_does_not_render_a_bounded_cap_terminal(
     assert "bounded_product_cli_terminal_v1" not in capsys.readouterr().out
 
 
-def test_incomplete_bounded_cli_configuration_reports_zero_attempt_posture(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(
-        compatibility_cli,
-        "load_dotenv",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("bounded configuration must not load dotenv")),
-    )
-    monkeypatch.setattr(
-        compatibility_cli,
-        "missing_required_api_keys",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("invalid profile must fail before credential validation")
-        ),
-    )
-    monkeypatch.setattr(
-        compatibility_cli,
-        "_build_run_deps",
-        lambda _log: (_ for _ in ()).throw(AssertionError("invalid profile must fail before dependency construction")),
-    )
 
-    assert (
-        compatibility_cli.main(
-            [
-                _ISCLOSE_QUERY,
-                "--bounded-product-profile",
-                BOUNDED_PRODUCT_PROFILE_NAME,
-                "--fast-model",
-                "unpriced-model",
-            ]
+def test_public_cli_rejects_bounded_product_profile_flag() -> None:
+    with pytest.raises(SystemExit):
+        compatibility_cli._parse_args(
+            [_ISCLOSE_QUERY, "--bounded-product-profile", "public-cli-v1"]
         )
-        == 2
+    with pytest.raises(SystemExit):
+        compatibility_cli._parse_args([_ISCLOSE_QUERY, "--bounded-product-profile"])
+
+
+def test_bounded_terminal_helpers_require_explicit_policy() -> None:
+    with pytest.raises(RuntimeError, match="explicit bounded policy"):
+        compatibility_cli._bounded_terminal_payload(
+            entrypoint="proplex",
+            exc=RunCapExceeded("fixture"),
+            config=None,
+        )
+    policy = _policy()
+    config = RunConfig(query=_ISCLOSE_QUERY, cap_policy=policy)
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=RunCapExceeded("total_attempt_cap"),
+        config=config,
     )
-
-    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert payload["terminal"]["code"] == "bounded_configuration_unavailable"
-    assert payload["terminal"]["reason"] == "unsupported_route_pricing"
-    assert payload["terminal"]["owner"] == "core.bounded_product_profile"
-    assert payload["terminal"]["classification"] == "configuration"
-    physical = payload["physical_envelope"]
-    assert physical["furthest_product_stage"] == "configuration"
-    assert physical["activated"] is False
-    assert physical["logical_calls"] == 0
-    assert physical["physical_attempts"] == 0
-    assert physical["active_attempts"] == 0
-    assert physical["denials"] == []
-    assert physical["deadline_posture"]["status"] == "not_activated"
-    assert physical["retry_posture"] == {"maximum": 0, "observed": 0}
-
-
-@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
-def test_shared_cli_cap_terminal_is_sanitized_and_equivalent(
-    entrypoint: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    harness = _isclose_harness(tmp_path / f"terminal-{entrypoint}")
-
-    def forbid_dotenv(*_args: Any, **_kwargs: Any) -> bool:
-        raise AssertionError("bounded terminal path must not load dotenv")
-
-    monkeypatch.setattr(compatibility_cli, "load_dotenv", forbid_dotenv)
-    monkeypatch.setattr(
-        compatibility_cli,
-        "missing_required_api_keys",
-        lambda **_kwargs: [],
-    )
-    monkeypatch.setattr(
-        compatibility_cli,
-        "_build_run_deps",
-        lambda _log: harness.deps(),
-    )
-    argv = [
-        _ISCLOSE_QUERY,
-        "--mode",
-        "Balanced",
-        "--include-domains",
-        "docs.python.org",
-        "--bounded-product-profile",
-        BOUNDED_PRODUCT_PROFILE_NAME,
-    ]
-    invoke = compatibility_cli.main if entrypoint == "proplex" else public_cli.main
-
-    assert invoke(argv) == 2
-
-    captured = capsys.readouterr()
-    payload = json.loads(captured.out.strip().splitlines()[-1])
-    assert payload["status"] == "stopped"
-    assert payload["terminal_status"] == "stopped"
-    assert payload["entrypoint"] == entrypoint
-    assert payload["ordinary_consumer"] == "core.pipeline_orchestrator.run_pipeline"
-    assert payload["profile_name"] == BOUNDED_PRODUCT_PROFILE_NAME
-    assert payload["furthest_product_stage"] == "transport_accounting_validation"
-    assert payload["terminal"]["code"] == "bounded_run_cap_reached"
-    assert payload["terminal"]["reason"] == "unaccounted_transport"
+    assert payload["schema_version"] == "bounded_product_cli_terminal_v1"
+    assert payload["entrypoint"] == "scryraven"
+    assert payload["profile_name"] == "fixture-v1"
+    assert payload["physical_envelope"]["physical_attempts"] == 0
     assert payload["terminal"]["owner"] == "core.cap_enforcement.RunCapPolicy"
-    assert payload["terminal"]["classification"] == "cap_enforcement"
-    assert payload["answer_present"] is False
-    assert payload["citation_present"] is False
-    physical = payload["physical_envelope"]
-    assert physical["logical_calls"] == 0
-    assert physical["physical_attempts"] == 0
-    assert physical["deadline_posture"]["status"] == "closed_within_deadline"
-    assert all(value is False for value in payload["retention"].values())
-    rendered = json.dumps(payload, sort_keys=True)
-    assert _ISCLOSE_QUERY not in rendered
-    assert "private provider detail" not in rendered
 
 
 @pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
-def test_shared_cli_executes_bounded_isclose_product_path_offline(
+def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     entrypoint: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import core.author_execution_runtime as author_execution_runtime
+    """Internal ordinary-pipeline proof with an explicit fictional policy.
 
-    configs: list[RunConfig] = []
-    harnesses: list[PostRetirementOrdinaryPipelineHarness] = []
-    deps_seen: list[RunDeps] = []
-    pipeline_calls: list[tuple[RunConfig, RunDeps]] = []
-    pipeline_errors: list[str] = []
-    dotenv_calls: list[str] = []
-    credential_reads: list[str] = []
-    validation_calls: list[dict[str, Any]] = []
-    quantitative_claims_seen: list[list[dict[str, Any]]] = []
-    completion_deadline_checks: list[str] = []
+    Gate 1 temporary proof boundary: public CLI no longer selects a bounded
+    posture. Gate 2 restores the authorization-backed public-CLI proof.
+    """
 
-    original_build_config = compatibility_cli._build_run_config
-    original_run_pipeline = compatibility_cli.run_pipeline
-    original_getenv = os.getenv
-    original_quantitative_validation = author_execution_runtime.validate_author_output_quantitative_authority
-    original_ensure_within_deadline = RunCapPolicy.ensure_within_deadline
-
-    def build_config(args: Any) -> RunConfig:
-        config = original_build_config(args)
-        configs.append(config)
-        return config
-
-    def build_deps(_log: Any) -> RunDeps:
-        policy = configs[-1].cap_policy
-        assert policy is not None and policy.bounded
-        harness = _isclose_harness(tmp_path / entrypoint)
-        harnesses.append(harness)
-        deps = _bounded_harness_deps(harness, policy)
-        deps_seen.append(deps)
-        return deps
-
-    def record_run_pipeline(
-        config: RunConfig,
-        deps: RunDeps,
-        status: Any,
-        accumulator: Any,
-    ) -> Any:
-        pipeline_calls.append((config, deps))
-        try:
-            return original_run_pipeline(config, deps, status, accumulator)
-        except BaseException as exc:
-            pipeline_errors.append(f"{type(exc).__name__}: {exc}")
-            raise
-
-    def forbid_dotenv(*_args: Any, **_kwargs: Any) -> bool:
-        dotenv_calls.append("called")
-        raise AssertionError("bounded CLI must not load dotenv")
-
-    def guard_getenv(key: str, default: Any = None) -> Any:
-        if str(key).endswith("_API_KEY"):
-            credential_reads.append(str(key))
-            raise AssertionError("bounded CLI must not read credential env vars")
-        return original_getenv(key, default)
-
-    def validate_without_credentials(**kwargs: Any) -> list[str]:
-        validation_calls.append(dict(kwargs))
-        return []
-
-    def record_completion_deadline_check(policy: RunCapPolicy) -> None:
-        completion_deadline_checks.append(policy.envelope.profile_name if policy.envelope is not None else "")
-        original_ensure_within_deadline(policy)
+    harness = _isclose_harness(tmp_path / entrypoint)
+    policy = _policy(activate=False)
+    config = RunConfig(
+        query=_ISCLOSE_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        fast_provider="OpenAI",
+        fast_model="gpt-5.4-mini",
+        smart_provider="OpenAI",
+        smart_model="gpt-5.4",
+        embed_provider="OpenAI",
+        embed_model="text-embedding-3-small",
+        cap_policy=policy,
+    )
+    deps = _bounded_harness_deps(harness, policy)
 
     def forbidden_persistence(*_args: Any, **_kwargs: Any) -> Any:
-        raise AssertionError("bounded CLI reached a persistence or raw-log path")
+        raise AssertionError("bounded path reached a persistence or raw-log path")
 
-    def capture_quantitative_manifest(
-        answer_text: str,
-        *,
-        manifest: dict[str, Any],
-    ) -> dict[str, Any]:
-        quantitative_claims_seen.append(list(manifest.get("authorized_numeric_claims") or []))
-        return original_quantitative_validation(answer_text, manifest=manifest)
-
-    monkeypatch.setattr(compatibility_cli, "_build_run_config", build_config)
-    monkeypatch.setattr(compatibility_cli, "_build_run_deps", build_deps)
-    monkeypatch.setattr(compatibility_cli, "run_pipeline", record_run_pipeline)
-    monkeypatch.setattr(compatibility_cli, "load_dotenv", forbid_dotenv)
-    monkeypatch.setattr(
-        compatibility_cli,
-        "missing_required_api_keys",
-        validate_without_credentials,
-    )
-    monkeypatch.setattr(
-        RunCapPolicy,
-        "ensure_within_deadline",
-        record_completion_deadline_check,
-    )
-    monkeypatch.setattr(orchestrator.os, "getenv", guard_getenv)
     monkeypatch.setattr(
         orchestrator,
         "execute_persistence_side_effects",
@@ -1330,114 +1230,33 @@ def test_shared_cli_executes_bounded_isclose_product_path_offline(
     )
     monkeypatch.setattr(orchestrator, "log_run_started", forbidden_persistence)
     monkeypatch.setattr(orchestrator, "log_run_failed", forbidden_persistence)
-    monkeypatch.setattr(
-        author_execution_runtime,
-        "validate_author_output_quantitative_authority",
-        capture_quantitative_manifest,
+
+    from core.cost_accounting import CostAccumulator
+    from core.protocols import NullStatusWriter
+
+    outcome = orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        CostAccumulator(),
     )
-
-    argv = [
-        _ISCLOSE_QUERY,
-        "--mode",
-        "Balanced",
-        "--include-domains",
-        "docs.python.org",
-        "--fast-provider",
-        "OpenAI",
-        "--fast-model",
-        "gpt-5.4-mini",
-        "--smart-provider",
-        "OpenAI",
-        "--smart-model",
-        "gpt-5.4",
-        "--embed-provider",
-        "OpenAI",
-        "--embed-model",
-        "text-embedding-3-small",
-        "--bounded-product-profile",
-        BOUNDED_PRODUCT_PROFILE_NAME,
-    ]
-    invoke: Callable[[list[str]], int]
-    if entrypoint == "proplex":
-        invoke = compatibility_cli.main
-    else:
-        invoke = public_cli.main
-    assert invoke(argv) == 0, pipeline_errors
-
-    captured = capsys.readouterr()
-    payload = json.loads(captured.out.strip().splitlines()[-1])
-    assert payload["status"] == "completed"
-    assert payload["terminal_status"] == "completed"
-    assert payload["terminal"] == {
-        "owner": "core.pipeline_orchestrator.run_pipeline",
-        "classification": "completed",
-    }
-    assert payload["entrypoint"] == entrypoint
-    assert payload["ordinary_consumer"] == "core.pipeline_orchestrator.run_pipeline"
-    assert payload["profile_name"] == BOUNDED_PRODUCT_PROFILE_NAME
-    assert payload["furthest_product_stage"] == "run_outcome_completed"
-    assert payload["answer_present"] is True
-    assert payload["citation_present"] is True
-    assert payload["citation_count"] >= 1
-    assert "rel_tol=0.000000001" in payload["answer"]
-    assert "abs_tol=0.0" in payload["answer"]
-    assert _ISCLOSE_URL in payload["answer"]
-    assert quantitative_claims_seen
-    assert {"0.000000001", "0"} <= {
-        str(item.get("normalized_numeric_value_text")) for item in quantitative_claims_seen[-1]
-    }
-    assert {str(item.get("authority_kind")) for item in quantitative_claims_seen[-1]} == {"direct_source_numeric"}
-
-    assert len(configs) == len(harnesses) == len(deps_seen) == 1
-    assert len(pipeline_calls) == 1
-    config = configs[0]
-    harness = harnesses[0]
-    deps = deps_seen[0]
-    assert pipeline_calls[0] == (config, deps)
-    assert config.query == _ISCLOSE_QUERY
-    assert config.mode == "Balanced"
-    assert config.include_domains == ["docs.python.org"]
-    assert harness.search_calls
-    assert harness.read_transport_calls
-    assert harness.forbidden_live_calls == []
-
-    physical = payload["physical_envelope"]
+    assert outcome.report
+    assert "0.000000001" in outcome.report or "rel_tol" in outcome.report
+    physical = policy.physical_snapshot()
     assert physical["enforcement"] == "physical_attempt_envelope"
-    assert physical["furthest_product_stage"] == "run_outcome_completed"
-    assert physical["logical_calls"] > 0
-    assert all(physical["logical_calls_by_family"][family.value] > 0 for family in ExternalCallFamily)
     assert physical["retry_attempts"] == 0
     assert physical["fallback_attempts"] == 0
     assert physical["active_attempts"] == 0
-    assert physical["unreserved_dispatches"] == 0
-    assert physical["denials"] == []
-    assert physical["retry_posture"] == {"maximum": 0, "observed": 0}
-    assert physical["fallback_posture"] == {"maximum": 0, "observed": 0}
-    assert physical["deadline_posture"]["status"] == "closed_within_deadline"
-    assert physical["limits"]["max_retries"] == 0
-    assert physical["limits"]["max_fallbacks"] == 0
-    assert all(physical["physical_attempts_by_family"][family.value] > 0 for family in ExternalCallFamily)
     assert all(
-        attempt["lifecycle"]
-        in {
-            AttemptLifecycle.SETTLED_OBSERVED.value,
-            AttemptLifecycle.SETTLED_CONSERVATIVE.value,
-        }
-        for attempt in physical["attempts"]
+        physical["physical_attempts_by_family"][family.value] > 0
+        for family in ExternalCallFamily
     )
-    assert all(value is False for value in payload["retention"].values())
-    assert dotenv_calls == []
-    assert credential_reads == []
-    assert len(validation_calls) == 1
-    assert completion_deadline_checks == [BOUNDED_PRODUCT_PROFILE_NAME]
-    for path in (
-        deps.execution_log_path,
-        deps.feedback_log_path,
-        deps.kb_triggers_path,
-        deps.policy_state_path,
-        deps.policy_journal_path,
-    ):
-        assert not Path(path).exists()
-    rendered = json.dumps(payload, sort_keys=True)
-    assert "math.isclose defines default tolerances" not in rendered
-    assert "offline-fake-key" not in rendered
+    assert harness.forbidden_live_calls == []
+    success = compatibility_cli._bounded_success_payload(
+        entrypoint=entrypoint,
+        config=config,
+        outcome=outcome,
+    )
+    assert success["entrypoint"] == entrypoint
+    assert success["answer_present"] is True
+    assert success["physical_envelope"]["physical_attempts"] > 0

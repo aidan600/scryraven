@@ -213,7 +213,11 @@ def test_multi_query_provider_ranking_ignores_future_completion_order(
         monkeypatch.setattr(
             pipeline.concurrent.futures,
             "as_completed",
-            lambda futures: list(reversed(list(futures))) if reverse_completion else list(futures),
+            lambda futures: (
+                list(reversed(list(futures)))
+                if reverse_completion
+                else list(futures)
+            ),
         )
         passages = pipeline.process_search_queries(
             queries,
@@ -427,7 +431,9 @@ def test_deep_preserves_material_buckets_thresholds_and_chunk_sizes(
         chunk_sizes.append(chunk_size)
         return [text]
 
-    monkeypatch.setattr(pipeline, "search_web_results", lambda *_args, **_kwargs: (results, []))
+    monkeypatch.setattr(
+        pipeline, "search_web_results", lambda *_args, **_kwargs: (results, [])
+    )
     monkeypatch.setattr(pipeline, "chunk_text", record_chunk_size)
 
     passages = pipeline.process_search_queries(
@@ -492,11 +498,17 @@ def test_deep_preserves_embedding_bound_rrf_blend_gate_and_entity_floor(
         embedded_texts.extend(texts)
         return [[float(index)] for index in range(len(texts))]
 
-    def similarities(_query: list[float], embeddings: list[list[float]]) -> list[float]:
+    def similarities(
+        _query: list[float], embeddings: list[list[float]]
+    ) -> list[float]:
         return [0.1, 0.0, 0.2][: len(embeddings)]
 
-    monkeypatch.setattr(pipeline, "search_web_results", lambda *_args, **_kwargs: (results, []))
-    monkeypatch.setattr(pipeline, "chunk_text", lambda text, *, chunk_size: [text])
+    monkeypatch.setattr(
+        pipeline, "search_web_results", lambda *_args, **_kwargs: (results, [])
+    )
+    monkeypatch.setattr(
+        pipeline, "chunk_text", lambda text, *, chunk_size: [text]
+    )
 
     passages = pipeline.process_search_queries(
         ["offline scoring proof"],
@@ -520,7 +532,9 @@ def test_deep_preserves_embedding_bound_rrf_blend_gate_and_entity_floor(
 
     by_url = {passage["url"]: passage for passage in passages}
     assert "https://example.test/rejected" not in by_url
-    assert by_url["https://example.test/entity-floor"]["score"] == pytest.approx(0.185)
+    assert by_url["https://example.test/entity-floor"]["score"] == pytest.approx(
+        0.185
+    )
     assert by_url["https://example.test/blended"]["score"] == pytest.approx(0.265)
     assert [len(text) for text in embedded_texts] == [
         len("[SNIPPET] " + results[0]["raw_content"]),
@@ -571,7 +585,9 @@ def test_existing_mode_candidate_limits_are_preserved(
     )
 
     assert len(passages) == expected
-    assert [passage["url"] for passage in passages] == [f"https://example.test/{index}" for index in range(expected)]
+    assert [passage["url"] for passage in passages] == [
+        f"https://example.test/{index}" for index in range(expected)
+    ]
 
 
 def _dotted_name(node: ast.AST) -> str:
@@ -590,7 +606,10 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
         ROOT / "proplex" / "mvp_live_dogfood_run.py",
         ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py",
     }
-    ordinary_files = (set(CORE.glob("*.py")) | set((ROOT / "proplex").glob("*.py"))).difference(
+    ordinary_files = (
+        set(CORE.glob("*.py"))
+        | set((ROOT / "proplex").glob("*.py"))
+    ).difference(
         {
             provider_transport_owner,
             acquisition_transport_owner,
@@ -648,18 +667,32 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
             and node.args[0].value in forbidden_network_imports
         ]
         assert dynamic_network_imports == [], path
-        identifiers = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-        identifiers.update(node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute))
+        identifiers = {
+            node.id for node in ast.walk(tree) if isinstance(node, ast.Name)
+        }
         identifiers.update(
-            node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+        )
+        identifiers.update(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         )
         assert forbidden_symbols.isdisjoint(identifiers), path
-        calls = {_dotted_name(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        calls = {
+            _dotted_name(node.func)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+        }
         assert calls.isdisjoint(forbidden_network_calls), path
 
     cli_path = ROOT / "proplex" / "__main__.py"
     cli_tree = ast.parse(cli_path.read_text(encoding="utf-8"))
-    parents = {child: node for node in ast.walk(cli_tree) for child in ast.iter_child_nodes(node)}
+    parents = {
+        child: node
+        for node in ast.walk(cli_tree)
+        for child in ast.iter_child_nodes(node)
+    }
     explicit_dogfood_flags = {
         "_run_mvp_live_dogfood_run": {"mvp_live_dogfood_run"},
         "_run_mvp_single_relation_live_dogfood_run": {
@@ -669,7 +702,10 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
     }
     for helper_name, required_flags in explicit_dogfood_flags.items():
         helper_calls = [
-            node for node in ast.walk(cli_tree) if isinstance(node, ast.Call) and _dotted_name(node.func) == helper_name
+            node
+            for node in ast.walk(cli_tree)
+            if isinstance(node, ast.Call)
+            and _dotted_name(node.func) == helper_name
         ]
         assert len(helper_calls) == 1
         ancestors: list[ast.AST] = []
@@ -686,18 +722,26 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
         }
         assert guarding_flags.intersection(required_flags), helper_name
 
-    provider_tree = ast.parse(provider_transport_owner.read_text(encoding="utf-8"))
+    provider_tree = ast.parse(
+        provider_transport_owner.read_text(encoding="utf-8")
+    )
     provider_http_calls: set[tuple[str, str, str]] = set()
     for function in (
-        node for node in ast.walk(provider_tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        node
+        for node in ast.walk(provider_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ):
-        for call in (node for node in ast.walk(function) if isinstance(node, ast.Call)):
+        for call in (
+            node for node in ast.walk(function) if isinstance(node, ast.Call)
+        ):
             dotted = _dotted_name(call.func)
             if dotted not in {"requests.post", "httpx.get"}:
                 continue
             assert call.args and isinstance(call.args[0], ast.Constant), function.name
             assert isinstance(call.args[0].value, str), function.name
-            provider_http_calls.add((function.name, dotted, call.args[0].value))
+            provider_http_calls.add(
+                (function.name, dotted, call.args[0].value)
+            )
     assert provider_http_calls == {
         (
             "search_web_results",
@@ -708,11 +752,6 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
             "search_linkup_results",
             "requests.post",
             "https://api.linkup.so/v1/search",
-        ),
-        (
-            "search_exa_results",
-            "requests.post",
-            "https://api.exa.ai/search",
         ),
         (
             "_brave_search_results",
@@ -728,9 +767,11 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
     exa_search_calls = [
         (function.name, call)
         for function in ast.walk(provider_tree)
-        if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) and function.name == "_search"
+        if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and function.name == "_search"
         for call in ast.walk(function)
-        if isinstance(call, ast.Call) and _dotted_name(call.func).endswith(".search_and_contents")
+        if isinstance(call, ast.Call)
+        and _dotted_name(call.func).endswith(".search_and_contents")
     ]
     assert len(exa_search_calls) == 1
     exa_owner, exa_call = exa_search_calls[0]
@@ -741,16 +782,30 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
     dispatch_calls: list[tuple[Path, ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]] = []
     for path in CORE.glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for function in (node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for function in (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ):
             for node in ast.walk(function):
-                if isinstance(node, ast.Call) and _dotted_name(node.func).endswith("dispatch_acquisition"):
+                if isinstance(node, ast.Call) and _dotted_name(node.func).endswith(
+                    "dispatch_acquisition"
+                ):
                     dispatch_calls.append((path, node, function))
     assert len(dispatch_calls) == 1
     path, call, function = dispatch_calls[0]
     assert path.name == "authorized_acquisition_runtime.py"
-    before_transport = next(keyword for keyword in call.keywords if keyword.arg == "before_transport")
-    assert _dotted_name(before_transport.value) == ("claim_immediately_before_transport")
-    function_calls = {_dotted_name(node.func) for node in ast.walk(function) if isinstance(node, ast.Call)}
+    before_transport = next(
+        keyword for keyword in call.keywords if keyword.arg == "before_transport"
+    )
+    assert _dotted_name(before_transport.value) == (
+        "claim_immediately_before_transport"
+    )
+    function_calls = {
+        _dotted_name(node.func)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+    }
     assert "run_kernel.claim_acquisition_execution" in function_calls
 
     run_config_tree = ast.parse((CORE / "run_config.py").read_text(encoding="utf-8"))
@@ -759,7 +814,9 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
         for node in ast.walk(run_config_tree)
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
     }
-    assert annotations["ordinary_live_source_acquisition_transports"] == ("AcquisitionTransports | None")
+    assert annotations["ordinary_live_source_acquisition_transports"] == (
+        "AcquisitionTransports | None"
+    )
     cli_source = (ROOT / "proplex" / "__main__.py").read_text(encoding="utf-8")
     assert "process_search_queries=process_search_queries" in cli_source
     assert "ordinary_live_source_fetch_read" not in cli_source
@@ -780,7 +837,9 @@ def test_discovery_admission_and_exact_url_transport_telemetry_are_separate(
         tmp_path,
         monkeypatch,
         cap_policy=cap_policy,
-        environment_overrides={OFFLINE_SEARCH_PROVIDER_ENV_KEYS["tavily"]: "offline-placeholder"},
+        environment_overrides={
+            OFFLINE_SEARCH_PROVIDER_ENV_KEYS["tavily"]: "offline-placeholder"
+        },
     )
 
     trace = outcome.execution_trace
@@ -794,14 +853,18 @@ def test_discovery_admission_and_exact_url_transport_telemetry_are_separate(
     assert trace["urls_fetched"] == 0
     assert execution_record["discover_candidate_urls_admitted"] == admitted_count
     assert execution_record["urls_fetched"] == 0
-    assert execution_record["execution_trace"]["discover_candidate_urls_admitted"] == admitted_count
+    assert execution_record["execution_trace"][
+        "discover_candidate_urls_admitted"
+    ] == admitted_count
     assert execution_record["execution_trace"]["urls_fetched"] == 0
     assert cap_policy.fetch_read_operations == 0
     assert harness.forbidden_live_calls == []
 
 
 def test_all_discovery_admission_totals_use_only_the_admission_accumulator() -> None:
-    orchestrator_source = (CORE / "pipeline_orchestrator.py").read_text(encoding="utf-8")
+    orchestrator_source = (CORE / "pipeline_orchestrator.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "total_urls_fetched" not in orchestrator_source
     assert orchestrator_source.count("discover_candidate_urls_admitted +=") == 4

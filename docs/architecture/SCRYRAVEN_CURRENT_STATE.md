@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Runtime-audit-through: 2f9168b1730a1bc982df54a0c397976ad206fe6c
+Runtime-audit-through: 0625522da177cadd46dc22fd5c1c6cb632004852
 Update-trigger: merged change to installed product behavior, supported boundaries, evidence classification, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -32,16 +32,6 @@ SearchJudgment does not select a second semantic lane. Non-SearchOS compatibilit
 surfaces retain their established direct behavior. The ordinary CLI/backend
 composition no longer injects or executes the legacy Economist callable.
 
-Both public aliases now expose the explicit opt-in profile
-`--bounded-product-profile public-cli-v1`. That profile still enters ordinary
-`run_pipeline()` directly. It supplies one typed `RunConfig.cap_policy`, one
-run-scoped thread-safe physical-attempt ledger, immutable route-specific
-conservative pricing facts, zero retry/fallback authority, and one monotonic
-whole-run deadline. General model, strict semantic-role model, embedding,
-search-provider, and READ/acquisition transports must reserve through that
-ledger immediately before each physical dispatch. The bounded posture emits a
-sanitized JSON result or terminal and suppresses ordinary persistence for that
-run. Unflagged CLI behavior and persistence remain unchanged.
 
 That downstream synthesis-class boundary does not limit initial semantic
 planning. Ordinary initial semantic planning uses the selected fast-model
@@ -86,7 +76,6 @@ configuration.
 
 | Marker | Installed behavior for the supported class |
 | --- | --- |
-| `PUBLIC-CLI-PHYSICAL-ENVELOPE` | `python -m scryraven` and compatible `python -m proplex` share the opt-in `public-cli-v1` posture. One `RunCapPolicy` owns physical MODEL, EMBEDDING, SEARCH, and READ reservation, settlement, token/cost ceilings, retry/fallback posture, and the whole-run deadline. Unsupported route pricing fails during configuration with zero physical attempts; cap denial remains a distinct sanitized terminal; bounded runs do not use ordinary persistence. |
 | `MC-P1-ORDINARY` | Component Analyst and component D-prime feed RunKernel component admission; ComponentWorkGraph V1, Cross-Component Analyst, synthesis D-prime, and the full Scrutineer posture when triggered feed canonical graph/synthesis admission. The result is consumed by ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI-visible output, with safe blocked non-Author terminal behavior where required. |
 | `MC-P2-DYNAMIC-RECOVERY` | One bounded missing-component recovery may amend the AnswerContract, re-enter ordinary research, admit the recovered component, and resume the governed graph. |
 | `MC-P3-SELECTIVE-RECOMPUTE` | Recovery invalidates and recomputes only the affected synthesis closure while exact unaffected admitted synthesis is carried forward under new deterministic authority. |
@@ -788,15 +777,10 @@ quality, or arbitrary-query behavior.
 ### Ordinary supported-product proof
 
 The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
-consumption. An offline public-CLI product-path proof now drives both supported
-aliases through the explicit bounded posture, ordinary `RunConfig`/`RunDeps`,
-ordinary `run_pipeline()`, current production owners, and fake external
-transports. The fixed `math.isclose()` documentation query reaches a cited
-visible answer while MODEL, EMBEDDING, SEARCH, and READ all consume the shared
-ledger with zero retry/fallback attempts and zero persistence. This is
-`OFFLINE_PRODUCT_PATH_PROOF`; current ordinary-CLI live product behavior remains
-unproved, and no supported live input has yet traversed the profile to a visible
-answer or honest blocker.
+consumption. Current ordinary-CLI live product behavior remains unproved. No
+supported user input has been shown by this infrastructure to traverse the
+ordinary pipeline to a user-visible answer or honest blocker under a bounded live
+product envelope.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -889,8 +873,6 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Map topology selection, Map-to-READ/Focused re-entry, or Crawl page-level
   custody.
 - Provider-failure cross-provider retry.
-- A dynamic pricing service or current-provider billing authority; the bounded
-  profile contains immutable conservative admission ceilings only.
 - SearchOS recursive breadcrumb navigation, navigation depth greater than one,
   or sibling, branching, parallel-child, or multi-premise-per-generation
   searched recovery.
@@ -909,10 +891,6 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Current real-model Component/Cross-Component Analyst behavior remains
   unproved.
 - Current ordinary-CLI live product behavior remains unproved.
-- The conservative bounded-profile price ceilings have not been checked against
-  current official provider prices and are not billing estimates.
-- The separately licensed bounded public-CLI `math.isclose()` product pulse has
-  not run.
 - The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
   or Component/Cross-Component Analyst reliably originates its required
   semantic decomposition.

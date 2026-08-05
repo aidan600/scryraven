@@ -157,7 +157,9 @@ def execute_run_authority_sufficiency_judgment_action(
                 model=model,
                 effort=effort,
                 use_reasoning=use_reasoning,
-                fallback_reason=(f"model_sufficiency_judgment_parse_failed:{type(exc).__name__}"),
+                fallback_reason=(
+                    f"model_sufficiency_judgment_parse_failed:{type(exc).__name__}"
+                ),
             )
 
     committed = preserve_multicomponent_sufficiency_authority(
@@ -174,9 +176,13 @@ def execute_run_authority_sufficiency_judgment_action(
         "decision": projection.get("decision"),
         "final_answer_posture": projection.get("final_answer_posture"),
         "final_answer_allowed": projection.get("final_answer_allowed"),
-        "missing_required_obligation_count": len(projection.get("missing_required_obligations") or []),
+        "missing_required_obligation_count": len(
+            projection.get("missing_required_obligations") or []
+        ),
         "mandatory_caveat_count": len(projection.get("mandatory_caveats") or []),
-        "prohibited_upgrade_count": len(projection.get("prohibited_upgrades") or []),
+        "prohibited_upgrade_count": len(
+            projection.get("prohibited_upgrades") or []
+        ),
         "model_attempted": bool(model_attempted),
         "prompt_hash": prompt_hash,
         "prompt_length": prompt_length,
@@ -246,7 +252,10 @@ def execute_sufficiency_judgment_handoff_from_scope(
         scrutineer_flag_count=len(scrutineer_flags),
         corpus_weak=corpus_weak,
         weak_corpus_reason=(
-            runtime_scope["weak_corpus_recovery_skip_reason"] or runtime_scope["corpus_state"] if corpus_weak else None
+            runtime_scope["weak_corpus_recovery_skip_reason"]
+            or runtime_scope["corpus_state"]
+            if corpus_weak
+            else None
         ),
         synth_was_insufficient=bool(runtime_scope["synth_was_insufficient"]),
         failure_card_show=runtime_scope["_pre_gate_failure_card_show"],
@@ -259,17 +268,25 @@ def execute_sufficiency_judgment_handoff_from_scope(
         initial_answer_contract=run_kernel.state.initial_answer_contract,
         current_answer_contract=run_kernel.state.current_answer_contract,
         component_coverage_history=run_kernel.state.component_coverage_history,
-        contract_amendment_admission_history=(run_kernel.state.contract_amendment_admission_history),
+        contract_amendment_admission_history=(
+            run_kernel.state.contract_amendment_admission_history
+        ),
         answer_contract_authority_map_projection=run_kernel.state.projections.get(
             ANSWER_CONTRACT_AUTHORITY_MAP_STAGE,
         ),
-        multicomponent_graph_state=run_kernel.state.projections.get("multicomponent_component_work_graph_v1"),
-        multicomponent_scheduler_state=run_kernel.state.projections.get("multicomponent_graph_scheduler"),
+        multicomponent_graph_state=run_kernel.state.projections.get(
+            "multicomponent_component_work_graph_v1"
+        ),
+        multicomponent_scheduler_state=run_kernel.state.projections.get(
+            "multicomponent_graph_scheduler"
+        ),
         searchos_existing_gap_recovery_terminal_state=(
             run_kernel.state.searchos_state.get("recovery_terminal_aggregate")
             or run_kernel.state.projections.get("searchos_existing_gap_recovery_terminal")
         ),
-        searchos_required_needs_block_state=(run_kernel.state.projections.get("searchos_required_needs_block")),
+        searchos_required_needs_block_state=(
+            run_kernel.state.projections.get("searchos_required_needs_block")
+        ),
         searchos_state=run_kernel.state.searchos_state,
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
@@ -278,12 +295,16 @@ def execute_sufficiency_judgment_handoff_from_scope(
         inputs={
             "contract_id": run_contract_projection.get("contract_id"),
             "candidate_count": evidence_ledger_projection.get("candidate_count"),
-            "requirement_count": evidence_ledger_projection.get("requirement_count"),
+            "requirement_count": evidence_ledger_projection.get(
+                "requirement_count"
+            ),
             "search_judgment_decision": search_judgment_projection.get("decision"),
             "final_evidence_count": len(final_top_evidence),
             "smart_model_enabled": bool(smart_model_enabled),
             "multicomponent_graph_digest": _safe_mapping(
-                run_kernel.state.projections.get("multicomponent_component_work_graph_v1")
+                run_kernel.state.projections.get(
+                    "multicomponent_component_work_graph_v1"
+                )
             ).get("graph_digest"),
         }
     )

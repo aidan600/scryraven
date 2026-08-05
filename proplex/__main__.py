@@ -36,13 +36,6 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-
-def _argv_selects_bounded_profile(raw_argv: list[str]) -> bool:
-    return any(
-        value == "--bounded-product-profile" or value.startswith("--bounded-product-profile=") for value in raw_argv
-    )
-
-
 # Ensure the project root is on sys.path when run as "python -m proplex" from
 # outside the repo root (e.g. installed as a script).
 _HERE = Path(__file__).resolve().parent
@@ -65,28 +58,15 @@ from core.product_model_route_config import (  # noqa: E402
     MVP_QUERY_PLAN_STATUS_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
-    ProductModelRouteConfigInitialization,
     initialize_product_model_route_config,
 )
 
-_MODULE_IMPORT_ARGV = list(sys.argv[1:])
-_PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED = not _argv_selects_bounded_profile(_MODULE_IMPORT_ARGV)
-PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = (
-    initialize_product_model_route_config(
-        _MODULE_IMPORT_ARGV,
-        load_dotenv_func=load_dotenv,
-    )
-    if _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED
-    else ProductModelRouteConfigInitialization()
+PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = initialize_product_model_route_config(
+    sys.argv[1:],
+    load_dotenv_func=load_dotenv,
 )
 
 import core.pipeline_orchestrator as pipeline_orchestrator  # noqa: E402
-from core.bounded_product_profile import (  # noqa: E402
-    BOUNDED_PRODUCT_PROFILE_DIGEST,
-    BOUNDED_PRODUCT_PROFILE_NAME,
-    bounded_product_configuration_snapshot,
-    build_bounded_product_policy,
-)
 from core.cap_enforcement import RunCapExceeded  # noqa: E402
 from core.cost_accounting import CostAccumulator  # noqa: E402
 from core.generic_query_to_relation_planning import (  # noqa: E402
@@ -304,16 +284,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Write report to FILE instead of stdout",
     )
     p.add_argument(
-        "--bounded-product-profile",
-        choices=[BOUNDED_PRODUCT_PROFILE_NAME],
-        default=None,
-        metavar="PROFILE",
-        help=(
-            "Opt into the product-owned physical-attempt, token, cost, "
-            "retry/fallback, deadline, and no-persistence envelope."
-        ),
-    )
-    p.add_argument(
         ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
         action="store_true",
         dest="ordinary_live_main_runkernel_coverage_dry_run",
@@ -518,44 +488,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print DEBUG log to stderr",
     )
     args = p.parse_args(argv)
-    if args.bounded_product_profile:
-        incompatible_flags = {
-            "source_of_record_recovery_provider_decision": (args.source_of_record_recovery_provider_decision),
-            "mvp_demo": args.mvp_demo,
-            "mvp_live_dogfood_run": args.mvp_live_dogfood_run,
-            "mvp_single_relation_live_dogfood_run": (args.mvp_single_relation_live_dogfood_run),
-            "mvp_current_source_of_record_single_fact_run": (args.mvp_current_source_of_record_single_fact_run),
-            "mvp_live_dogfood_status": args.mvp_live_dogfood_status,
-            "mvp_query_plan_status": args.mvp_query_plan_status,
-            "ordinary_live_main_runkernel_coverage_dry_run": (args.ordinary_live_main_runkernel_coverage_dry_run),
-            "live_acquisition_readability_status_dry_run": (args.live_acquisition_readability_status_dry_run),
-            "live_source_evidence_admission_status_dry_run": (args.live_source_evidence_admission_status_dry_run),
-            "live_citation_source_obligation_readiness_status_dry_run": (
-                args.live_citation_source_obligation_readiness_status_dry_run
-            ),
-            "live_semantic_coverage_status_dry_run": (args.live_semantic_coverage_status_dry_run),
-            "confirm_live_dogfood": args.confirm_live_dogfood,
-            "confirm_live_dprime_review": args.confirm_live_dprime_review,
-            "confirm_current_source_of_record_single_fact_run": (args.confirm_current_source_of_record_single_fact_run),
-            "confirm_current_source_followup_reentry": (args.confirm_current_source_followup_reentry),
-            "confirm_live_source_challenge_recovery": (args.confirm_live_source_challenge_recovery),
-            "confirm_live_provider_comparison": (args.confirm_live_provider_comparison),
-            "mvp_live_env_file": bool(args.mvp_live_env_file),
-            "output_root": bool(args.output_root),
-            "provider_decision_run_id": bool(args.provider_decision_run_id),
-            "mvp_output_dir": bool(args.mvp_output_dir),
-            "mvp_retained_artifact_root": bool(args.mvp_retained_artifact_root),
-        }
-        selected = sorted(name for name, enabled in incompatible_flags.items() if enabled)
-        if selected:
-            p.error(
-                "--bounded-product-profile cannot be combined with special "
-                f"operator/status modes: {', '.join(selected)}"
-            )
-        if args.output:
-            p.error("--bounded-product-profile forbids persistent --output")
-        if args.verbose:
-            p.error("--bounded-product-profile forbids verbose raw diagnostics")
     if args.query and args.query_option and args.query != args.query_option:
         p.error("query positional argument and --query must match when both are provided")
     if args.query_option:
@@ -572,8 +504,7 @@ def _parse_domains(raw: str) -> list[str]:
 
 
 def _build_run_config(args: argparse.Namespace) -> RunConfig:
-    bounded = bool(args.bounded_product_profile)
-    config = RunConfig(
+    return RunConfig(
         query=args.query,
         mode=args.mode,
         current_date=datetime.now().strftime("%B %d, %Y"),
@@ -588,12 +519,9 @@ def _build_run_config(args: argparse.Namespace) -> RunConfig:
         embed_provider=args.embed_provider,
         embed_model=args.embed_model,
         local_url=args.local_url,
-        or_api_key=("" if bounded else os.getenv("OPENROUTER_API_KEY", "")),
+        or_api_key=os.getenv("OPENROUTER_API_KEY", ""),
         use_reasoning=not args.no_reasoning,
     )
-    if bounded:
-        config.cap_policy = build_bounded_product_policy(config)
-    return config
 
 
 def _build_run_deps(log: logging.Logger) -> RunDeps:
@@ -699,7 +627,7 @@ def _bounded_terminal_payload(
         terminal_owner = "core.cap_enforcement.RunCapPolicy"
         terminal_classification = "cap_enforcement"
     elif configuration_failure:
-        terminal_owner = "core.bounded_product_profile"
+        terminal_owner = "core.cap_enforcement.RunCapPolicy"
         terminal_classification = "configuration"
     else:
         terminal_owner = "core.pipeline_orchestrator.run_pipeline"
@@ -709,11 +637,10 @@ def _bounded_terminal_payload(
         "owner": terminal_owner,
         "classification": terminal_classification,
     }
-    physical_envelope = (
-        config.cap_policy.physical_snapshot()
-        if config is not None and config.cap_policy is not None
-        else bounded_product_configuration_snapshot()
-    )
+    policy = config.cap_policy if config is not None else None
+    if policy is None or not policy.bounded or policy.envelope is None:
+        raise RuntimeError("bounded terminal requires an explicit bounded policy")
+    physical_envelope = policy.physical_snapshot()
     payload: dict[str, object] = {
         "schema_version": "bounded_product_cli_terminal_v1",
         "status": "stopped",
@@ -721,8 +648,8 @@ def _bounded_terminal_payload(
         "bounded_posture": True,
         "entrypoint": entrypoint,
         "ordinary_consumer": "core.pipeline_orchestrator.run_pipeline",
-        "profile_name": BOUNDED_PRODUCT_PROFILE_NAME,
-        "profile_digest": BOUNDED_PRODUCT_PROFILE_DIGEST,
+        "profile_name": policy.envelope.profile_name,
+        "profile_digest": policy.envelope.profile_digest,
         "furthest_product_stage": physical_envelope["furthest_product_stage"],
         "terminal": terminal,
         "answer_present": False,
@@ -1108,18 +1035,7 @@ def main(
         raise ValueError("entrypoint must be scryraven or proplex")
     raw_argv = sys.argv[1:] if argv is None else list(argv)
     args = _parse_args(raw_argv)
-    bounded = bool(args.bounded_product_profile)
-    global PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION, _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED
-    if bounded:
-        PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = ProductModelRouteConfigInitialization()
-        _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED = False
-    elif not _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED:
-        PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = initialize_product_model_route_config(
-            raw_argv,
-            load_dotenv_func=load_dotenv,
-        )
-        _PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZED = True
-    log = _build_logger(args.verbose, persistent=False) if bounded else _build_logger(args.verbose)
+    log = _build_logger(args.verbose)
 
     if args.source_of_record_recovery_provider_decision:
         return _run_source_of_record_recovery_provider_decision(args=args, log=log)
@@ -1157,20 +1073,7 @@ def main(
     if args.live_semantic_coverage_status_dry_run:
         return _run_live_semantic_coverage_status(args=args, log=log)
 
-    config: RunConfig | None = None
-    try:
-        config = _build_run_config(args)
-    except RunCapExceeded as exc:
-        if bounded:
-            _print_bounded_payload(
-                _bounded_terminal_payload(
-                    entrypoint=entrypoint,
-                    exc=exc,
-                    config=None,
-                )
-            )
-            return 2
-        raise
+    config = _build_run_config(args)
 
     # Validate required model-provider keys early so the error message is clean.
     missing_keys = missing_required_api_keys(
@@ -1180,16 +1083,6 @@ def main(
         active_search_providers=None,
     )
     if "OPENAI_API_KEY" in missing_keys:
-        if bounded:
-            _print_bounded_payload(
-                _bounded_terminal_payload(
-                    entrypoint=entrypoint,
-                    exc=None,
-                    config=config,
-                    code="bounded_configuration_unavailable",
-                )
-            )
-            return 2
         print("ERROR: OPENAI_API_KEY is required for OpenAI models.", file=sys.stderr)
         return 1
 
@@ -1200,52 +1093,15 @@ def main(
 
     try:
         outcome = run_pipeline(config, deps, status, accumulator)
-    except RunCapExceeded as exc:
-        if bounded:
-            _print_bounded_payload(
-                _bounded_terminal_payload(
-                    entrypoint=entrypoint,
-                    exc=exc,
-                    config=config,
-                )
-            )
-            return 2
+    except RunCapExceeded:
         raise
     except PipelineError as exc:
-        if bounded:
-            _print_bounded_payload(
-                _bounded_terminal_payload(
-                    entrypoint=entrypoint,
-                    exc=None,
-                    config=config,
-                )
-            )
-            return 1
         print(f"ERROR: Pipeline failed — {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
-        if bounded:
-            _print_bounded_payload(
-                _bounded_terminal_payload(
-                    entrypoint=entrypoint,
-                    exc=None,
-                    config=config,
-                )
-            )
-            return 1
         log.exception("Unexpected pipeline error")
         print(f"ERROR: Unexpected error — {exc}", file=sys.stderr)
         return 1
-
-    if bounded:
-        _print_bounded_payload(
-            _bounded_success_payload(
-                entrypoint=entrypoint,
-                config=config,
-                outcome=outcome,
-            )
-        )
-        return 0
 
     # Output the report plus allowed-artifact diagnostics built from sanitized
     # in-memory runtime fields. The underlying final answer remains unchanged.

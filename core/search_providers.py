@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 import requests
 from exa_py import Exa
 
-from core.bounded_product_profile import get_route_pricing
 from core.cap_enforcement import (
     AttemptReservation,
     ExternalAttemptSpec,
@@ -102,7 +101,7 @@ def _reserve_search_attempt(
     if cap_policy is None or not cap_policy.bounded:
         return None
     logical_id = logical_call_id or cap_policy.new_logical_call_id(f"search-{provider}")
-    pricing = get_route_pricing(
+    pricing = cap_policy.resolve_route_pricing(
         ExternalCallFamily.SEARCH,
         provider,
         "search",

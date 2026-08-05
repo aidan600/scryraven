@@ -54,8 +54,12 @@ from core.searchos_iterative_judgment_runtime import (
 from core.source_classifier import classify_source
 
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
-SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = "searchos_judgment_model_input_v1"
-SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = "searchos_judgment_decision_contract_v1"
+SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
+    "searchos_judgment_model_input_v1"
+)
+SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
+    "searchos_judgment_decision_contract_v1"
+)
 SEARCHOS_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
 The input is one searchos_judgment_model_input_v1 JSON object.
 authorized_request is the sole legal-action and exact-ref authority. Inspect
@@ -135,7 +139,9 @@ component ref, source-obligation ref, provider choice, route, request identity,
 disposition, deterministic fallback, or unsupported field. Exact navigation
 destination URLs are intentionally absent from the input.
 """
-TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset({"custodied", "read_insufficient", "invalid", "declined"})
+TERMINAL_CANDIDATE_OPTION_DISPOSITIONS = frozenset(
+    {"custodied", "read_insufficient", "invalid", "declined"}
+)
 
 
 def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = False) -> dict[str, Any]:
@@ -158,7 +164,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             ],
             "forbidden_fields": ["read_custody_refs", "followup_query"],
             "candidate_use_option_ref_rule": (
-                "copy exactly one candidate_use_option_ref from authorized_request.candidate_use_options"
+                "copy exactly one candidate_use_option_ref from "
+                "authorized_request.candidate_use_options"
             ),
             "post_read_assessment_rule": (
                 "each existing READ material was inspected and does not satisfy "
@@ -195,10 +202,12 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "read_custody_assessments",
             ],
             "read_custody_refs_rule": (
-                "copy a nonempty selection of exact refs from authorized_request.read_custody_refs"
+                "copy a nonempty selection of exact refs from "
+                "authorized_request.read_custody_refs"
             ),
             "semantic_handoff_rule": (
-                "material selected for semantic handoff is not simultaneously labeled insufficient"
+                "material selected for semantic handoff is not simultaneously "
+                "labeled insufficient"
             ),
             "read_custody_assessments_mode": "forbidden",
         },
@@ -210,7 +219,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "followup_query",
             ],
             "unresolved_rule": (
-                "bounded explanation of an open need; this action is not success and is not final whole-run stopping"
+                "bounded explanation of an open need; this action is not success "
+                "and is not final whole-run stopping"
             ),
             "read_custody_assessments_mode": conditionally_assessed,
         },
@@ -222,7 +232,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "required_fields": [*shared_required_fields, "navigation_candidate_ref"],
             "forbidden_fields": ["candidate_use_option_ref", "read_custody_refs", "followup_query"],
             "navigation_candidate_ref_rule": (
-                "copy exactly one navigation_candidate_ref from authorized_request.navigation_options"
+                "copy exactly one navigation_candidate_ref from "
+                "authorized_request.navigation_options"
             ),
             "authorship_forbidden": ["urls", "destination_bindings", "providers", "routes", "alternate_refs"],
             "read_custody_assessments_mode": conditionally_assessed,
@@ -258,7 +269,9 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "accepted component question, source-obligation standard, and "
                 "authorized search work that this decision must advance"
             ),
-            "candidate_directional_contexts": ("DISCOVER-only non-support-bearing hints for READ or follow-up"),
+            "candidate_directional_contexts": (
+                "DISCOVER-only non-support-bearing hints for READ or follow-up"
+            ),
             "read_custody_materials": (
                 "bounded readable content corresponding exactly to current "
                 "custody refs and inspected for usefulness or insufficiency "
@@ -277,7 +290,9 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "material_disposition",
                 "reason_code",
             ],
-            "reviewed_custody_ref_rule": ("copy each authorized_request.read_custody_refs item exactly"),
+            "reviewed_custody_ref_rule": (
+                "copy each authorized_request.read_custody_refs item exactly"
+            ),
             "material_disposition": "read_insufficient",
             "reason_code_rule": (
                 "nonempty machine-readable lower-case token of at most 80 "
@@ -311,7 +326,9 @@ class SearchOSSliceAProductResult:
     provider_calls_completed: int = 0
     initial_query_plan_items: tuple[Mapping[str, Any], ...] = ()
     initial_identity_refs: tuple[Mapping[str, Any], ...] = ()
-    identity_deltas_by_digest: Mapping[str, tuple[Mapping[str, Any], ...]] | None = None
+    identity_deltas_by_digest: Mapping[
+        str, tuple[Mapping[str, Any], ...]
+    ] | None = None
     candidate_packets: tuple[Mapping[str, Any], ...] = ()
     reusable_read_custody_by_url: Mapping[str, Mapping[str, Any]] | None = field(
         default=None,
@@ -443,7 +460,12 @@ def _execute_searchos_slice_a_iterative_judgment(
         else [item.ref() for item in discovery_result_store.identities()]
     )
     prior_packets = (
-        [deepcopy(dict(item)) for item in prior_result.candidate_packets] if prior_result is not None else []
+        [
+            deepcopy(dict(item))
+            for item in prior_result.candidate_packets
+        ]
+        if prior_result is not None
+        else []
     )
     if prior_result is None:
         initial_binding_state = derive_selected_candidate_material_need_bindings(
@@ -477,11 +499,15 @@ def _execute_searchos_slice_a_iterative_judgment(
             selected_candidate_refs=_candidate_refs(initial_packet),
             bounded_candidate_material_refs=_material_refs(bindings),
             selection_facts={
-                "selected_candidate_count": len(initial_packet.get("candidate_records") or ()),
+                "selected_candidate_count": len(
+                    initial_packet.get("candidate_records") or ()
+                ),
                 "first_admitted_discover_wave_count": 1,
             },
             overflow_facts={
-                "selection_overflow_count": int(initial_packet.get("selection_overflow_count") or 0),
+                "selection_overflow_count": int(
+                    initial_packet.get("selection_overflow_count") or 0
+                ),
                 "contributor_overflow_count": sum(
                     int(item.get("contributor_overflow_count") or 0)
                     for item in initial_packet.get("candidate_records") or ()
@@ -511,7 +537,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                 initialize,
                 observation_type=ObservationType.SEARCHOS_INITIALIZED,
                 status=RunStageStatus.COMPLETED,
-                payload={"searchos_state": initialize.inputs["searchos_state"]},
+                payload={
+                    "searchos_state": initialize.inputs["searchos_state"]
+                },
             )
         )
     else:
@@ -520,47 +548,71 @@ def _execute_searchos_slice_a_iterative_judgment(
         )
 
         if recovery_cycle_ref is None:
-            raise SearchOSRuntimeError("recovery execution requires its exact admitted cycle")
+            raise SearchOSRuntimeError(
+                "recovery execution requires its exact admitted cycle"
+            )
         validate_active_searchos_generalized_recovery_cycle_ref(
             run_kernel.state.searchos_state,
             recovery_cycle_ref,
         )
 
     packets_by_id = {
-        str(search_result_candidate_packet_ref_from_packet(packet)["packet_id"]): packet
+        str(
+            search_result_candidate_packet_ref_from_packet(packet)[
+                "packet_id"
+            ]
+        ): packet
         for packet in [initial_packet, *prior_packets]
     }
     candidate_packets = [initial_packet, *prior_packets]
     if prior_packets and prior_packets[0] == initial_packet:
         candidate_packets = prior_packets
     current_binding_state_ref = (
-        deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
+        deepcopy(
+            run_kernel.state.searchos_state["current_candidate_state_ref"]
+        )
         if prior_result is not None
         else revision_ref
     )
-    binding_candidate_states = {binding.binding_id: current_binding_state_ref for binding in bindings}
+    binding_candidate_states = {
+        binding.binding_id: current_binding_state_ref for binding in bindings
+    }
     binding_iteration_refs: dict[str, Mapping[str, Any]] = (
-        {binding.binding_id: current_binding_state_ref for binding in bindings}
-        if prior_result is not None and current_binding_state_ref.get("iteration_candidate_set_id")
+        {
+            binding.binding_id: current_binding_state_ref
+            for binding in bindings
+        }
+        if prior_result is not None
+        and current_binding_state_ref.get("iteration_candidate_set_id")
         else {}
     )
     iteration_sets: list[Mapping[str, Any]] = (
-        [deepcopy(dict(item)) for item in prior_result.iteration_candidate_sets] if prior_result is not None else []
+        [deepcopy(dict(item)) for item in prior_result.iteration_candidate_sets]
+        if prior_result is not None
+        else []
     )
     identity_deltas_by_digest: dict[str, Sequence[Mapping[str, Any]]] = {
         key: [deepcopy(dict(item)) for item in values]
-        for key, values in ((prior_result.identity_deltas_by_digest or {}).items() if prior_result is not None else ())
+        for key, values in (
+            (prior_result.identity_deltas_by_digest or {}).items()
+            if prior_result is not None
+            else ()
+        )
     }
     custody_by_url: dict[str, dict[str, Any]] = {
         str(url): deepcopy(dict(outcome))
         for url, outcome in (
-            (prior_result.reusable_read_custody_by_url or {}).items() if prior_result is not None else ()
+            (prior_result.reusable_read_custody_by_url or {}).items()
+            if prior_result is not None
+            else ()
         )
     }
     packet_by_custody_id: dict[str, Mapping[str, Any]] = {}
     dispositions: dict[str, str] = {}
     semantic_handoffs: list[Mapping[str, Any]] = (
-        [deepcopy(dict(item)) for item in prior_result.semantic_handoffs] if prior_result is not None else []
+        [deepcopy(dict(item)) for item in prior_result.semantic_handoffs]
+        if prior_result is not None
+        else []
     )
     prior_handoff_count = len(semantic_handoffs)
     provider_calls = [0, 0]
@@ -575,7 +627,9 @@ def _execute_searchos_slice_a_iterative_judgment(
         if not participating:
             break
         try:
-            reservation = run_kernel.reserve_searchos_judgment_round(slot_ids=participating)
+            reservation = run_kernel.reserve_searchos_judgment_round(
+                slot_ids=participating
+            )
         except ValueError:
             for slot_id in participating:
                 _mark_budget_exhausted(run_kernel, slot_id)
@@ -595,7 +649,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                         **dispositions,
                         **{
                             option_id: str(record.get("disposition") or "")
-                            for option_id, record in dict(slot.get("candidate_option_dispositions") or {}).items()
+                            for option_id, record in dict(
+                                slot.get("candidate_option_dispositions") or {}
+                            ).items()
                             if isinstance(record, Mapping)
                         },
                     },
@@ -624,9 +680,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                 continue
             run_kernel.expose_searchos_candidate_window(window=window)
             current_slot = run_kernel.state.searchos_state["slots_by_id"][slot_id]
-            navigation_window = (
-                navigation_runtime.project_navigation_window(run_kernel.state.searchos_state, slot_id=slot_id) or None
-            )
+            navigation_window = navigation_runtime.project_navigation_window(
+                run_kernel.state.searchos_state, slot_id=slot_id
+            ) or None
             try:
                 action = run_kernel.authorize_searchos_judgment(
                     reservation_ref=reservation,
@@ -707,31 +763,40 @@ def _execute_searchos_slice_a_iterative_judgment(
             decision = deepcopy(run_kernel.state.projections["searchos_iterative_judgment"])
             for assessment in decision.get("read_custody_assessments") or ():
                 custody_id = str(
-                    dict(assessment.get("reviewed_custody_ref") or {}).get("read_custody_material_id") or ""
+                    dict(assessment.get("reviewed_custody_ref") or {}).get(
+                        "read_custody_material_id"
+                    )
+                    or ""
                 )
                 assessed_custody = next(
                     (
                         dict(item)
                         for item in current_slot.get("custody_refs") or ()
-                        if isinstance(item, Mapping) and item.get("read_custody_material_id") == custody_id
+                        if isinstance(item, Mapping)
+                        and item.get("read_custody_material_id") == custody_id
                     ),
                     {},
                 )
                 assessed_option_id = str(
-                    dict(assessed_custody.get("candidate_use_option_ref") or {}).get("candidate_use_option_id") or ""
+                    dict(assessed_custody.get("candidate_use_option_ref") or {}).get(
+                        "candidate_use_option_id"
+                    )
+                    or ""
                 )
                 if assessed_option_id:
                     dispositions[assessed_option_id] = "read_insufficient"
             decision_action = SearchOSJudgmentAction(decision["action"])
             if decision_action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
-                if (
-                    run_kernel.state.searchos_state["slots_by_id"][slot_id]["posture"]
-                    != SearchOSSlotPosture.AWAITING_READ.value
-                ):
+                if run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                    "posture"
+                ] != SearchOSSlotPosture.AWAITING_READ.value:
                     continue
                 option_ref = dict(decision["candidate_use_option_ref"])
                 option_id = option_ref["candidate_use_option_id"]
-                if dispositions.get(option_id) in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS:
+                if (
+                    dispositions.get(option_id)
+                    in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+                ):
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
                         reason="read_nomination_already_disposed",
@@ -758,7 +823,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                             reason="candidate_packet_stale",
                         )
                         continue
-                    before_attempted, before_completed = _acquisition_provider_call_totals(run_kernel)
+                    before_attempted, before_completed = (
+                        _acquisition_provider_call_totals(run_kernel)
+                    )
                     try:
                         custody_outcome = execute_searchos_candidate_read_to_custody(
                             run_kernel=run_kernel,
@@ -771,7 +838,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                     except RunCapExceeded:
                         raise
                     except Exception as exc:
-                        after_attempted, after_completed = _acquisition_provider_call_totals(run_kernel)
+                        after_attempted, after_completed = (
+                            _acquisition_provider_call_totals(run_kernel)
+                        )
                         provider_calls[0] += max(0, after_attempted - before_attempted)
                         provider_calls[1] += max(0, after_completed - before_completed)
                         run_kernel.mark_searchos_slot_stale_or_invalid(
@@ -779,13 +848,19 @@ def _execute_searchos_slice_a_iterative_judgment(
                             reason=_read_failure_reason(exc),
                         )
                         continue
-                    after_attempted, after_completed = _acquisition_provider_call_totals(run_kernel)
+                    after_attempted, after_completed = (
+                        _acquisition_provider_call_totals(run_kernel)
+                    )
                     attempt_delta = max(0, after_attempted - before_attempted)
                     completion_delta = max(0, after_completed - before_completed)
                     if attempt_delta != int(
                         custody_outcome.get("provider_calls_attempted") or 0
-                    ) or completion_delta != int(custody_outcome.get("provider_calls_completed") or 0):
-                        raise SearchOSRuntimeError("SearchOS READ provider-call accounting is stale")
+                    ) or completion_delta != int(
+                        custody_outcome.get("provider_calls_completed") or 0
+                    ):
+                        raise SearchOSRuntimeError(
+                            "SearchOS READ provider-call accounting is stale"
+                        )
                     provider_calls[0] += attempt_delta
                     provider_calls[1] += completion_delta
                     navigation_source = custody_outcome.pop(
@@ -810,14 +885,10 @@ def _execute_searchos_slice_a_iterative_judgment(
                 )
                 if not reused and isinstance(navigation_source, str):
                     run_kernel.state.searchos_state = navigation_runtime.admit_navigation_options_from_markdown(
-                        run_kernel.state.searchos_state,
-                        slot_id=slot_id,
-                        parent_read_custody_ref=custody_ref,
-                        parent_url=binding.normalized_url,
-                        parent_depth=0,
-                        ancestor_physical_identity_digests=(),
-                        markdown_text=navigation_source,
-                        locator_store=locator_store,
+                        run_kernel.state.searchos_state, slot_id=slot_id,
+                        parent_read_custody_ref=custody_ref, parent_url=binding.normalized_url,
+                        parent_depth=0, ancestor_physical_identity_digests=(),
+                        markdown_text=navigation_source, locator_store=locator_store,
                     )[0]
                 if not reused:
                     custody_by_url[binding.normalized_url] = custody_outcome
@@ -951,7 +1022,10 @@ def _execute_searchos_slice_a_iterative_judgment(
                 if wave.get("followup_failure_reason"):
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
-                        reason=("followup_discover_failed:" + str(wave["followup_failure_reason"]))[:240],
+                        reason=(
+                            "followup_discover_failed:"
+                            + str(wave["followup_failure_reason"])
+                        )[:240],
                     )
             elif decision_action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
                 handoff_action = run_kernel.authorize_searchos_semantic_handoff(
@@ -976,7 +1050,10 @@ def _execute_searchos_slice_a_iterative_judgment(
     )
     semantic_material = [
         *(
-            [deepcopy(dict(item)) for item in prior_result.searchos_semantic_material]
+            [
+                deepcopy(dict(item))
+                for item in prior_result.searchos_semantic_material
+            ]
             if prior_result is not None
             else []
         ),
@@ -1025,7 +1102,9 @@ def _execute_searchos_slice_a_iterative_judgment(
         "ag92b_full_search_judgment_invoked": False,
         "provider_calls_attempted": provider_calls[0],
         "provider_calls_completed": provider_calls[1],
-        "recovery_cycle_admission_ref": deepcopy(dict(recovery_cycle_ref or {})),
+        "recovery_cycle_admission_ref": deepcopy(
+            dict(recovery_cycle_ref or {})
+        ),
         "searchos_recovery_executed": prior_result is not None,
     }
     return SearchOSSliceAProductResult(
@@ -1039,10 +1118,16 @@ def _execute_searchos_slice_a_iterative_judgment(
         initial_query_plan_items=tuple(initial_query_items),
         initial_identity_refs=tuple(initial_identities),
         identity_deltas_by_digest={
-            key: tuple(deepcopy(dict(item)) for item in values) for key, values in identity_deltas_by_digest.items()
+            key: tuple(deepcopy(dict(item)) for item in values)
+            for key, values in identity_deltas_by_digest.items()
         },
-        candidate_packets=tuple(deepcopy(dict(item)) for item in candidate_packets),
-        reusable_read_custody_by_url={url: deepcopy(dict(outcome)) for url, outcome in custody_by_url.items()},
+        candidate_packets=tuple(
+            deepcopy(dict(item)) for item in candidate_packets
+        ),
+        reusable_read_custody_by_url={
+            url: deepcopy(dict(outcome))
+            for url, outcome in custody_by_url.items()
+        },
     )
 
 
@@ -1067,7 +1152,8 @@ def _execute_product_navigation(
     )
     run_kernel.reduce(observation)
     if observation.payload.get("outcome") != "admitted_selection":
-        return {"status": "selection_not_admitted", "provider_calls_attempted": 0, "provider_calls_completed": 0}
+        return {"status": "selection_not_admitted", "provider_calls_attempted": 0,
+                "provider_calls_completed": 0}
     option_id = dict(action.inputs["navigation_option_ref"])["navigation_option_id"]
     option = navigation_runtime.NavigationOption.from_dict(
         dict(run_kernel.state.searchos_state["navigation"]["options_by_id"])[option_id]
@@ -1095,11 +1181,9 @@ def _execute_product_navigation(
         deltas = [max(0, after[index] - before[index]) for index in (0, 1)]
         provider_calls[0] += deltas[0]
         provider_calls[1] += deltas[1]
-        returned = (
-            [int(result.get(name) or 0) for name in ("provider_calls_attempted", "provider_calls_completed")]
-            if result
-            else None
-        )
+        returned = ([int(result.get(name) or 0) for name in
+                     ("provider_calls_attempted", "provider_calls_completed")]
+                    if result else None)
         if returned is not None and deltas != returned:
             raise SearchOSRuntimeError("SearchOS navigation provider-call accounting is stale")
     return result or {}
@@ -1244,8 +1328,16 @@ def _candidate_option_inputs(
 def _binding_source_slot_id(slot: Mapping[str, Any]) -> str:
     slot_ref = dict(slot.get("slot_ref") or {})
     if slot.get("prior_slot_absent") is True:
-        return f"search-judgment-read-slot:{slot_ref.get('component_id')}:{slot_ref.get('source_obligation_id')}"
-    return str(dict(slot.get("prior_terminal_slot_ref") or {}).get("slot_id") or slot_ref.get("slot_id") or "")
+        return (
+            "search-judgment-read-slot:"
+            f"{slot_ref.get('component_id')}:"
+            f"{slot_ref.get('source_obligation_id')}"
+        )
+    return str(
+        dict(slot.get("prior_terminal_slot_ref") or {}).get("slot_id")
+        or slot_ref.get("slot_id")
+        or ""
+    )
 
 
 def _prepare_candidate_window(
@@ -1283,7 +1375,8 @@ def _prepare_candidate_window(
     while (
         window["ordered_candidate_use_option_refs"]
         and all(
-            dispositions.get(ref["candidate_use_option_id"]) in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+            dispositions.get(ref["candidate_use_option_id"])
+            in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
             for ref in window["ordered_candidate_use_option_refs"]
         )
         and window["next_window_available"]
@@ -1299,7 +1392,8 @@ def _prepare_candidate_window(
     exhausted = bool(
         window["ordered_candidate_use_option_refs"]
         and all(
-            dispositions.get(ref["candidate_use_option_id"]) in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
+            dispositions.get(ref["candidate_use_option_id"])
+            in TERMINAL_CANDIDATE_OPTION_DISPOSITIONS
             for ref in window["ordered_candidate_use_option_refs"]
         )
         and not window["next_window_available"]
@@ -1368,7 +1462,9 @@ def _build_searchos_judgment_model_input(
         slot=slot,
     )
     current_options = {
-        str(item.get("candidate_use_option_id") or ""): dict(item) for item in options if isinstance(item, Mapping)
+        str(item.get("candidate_use_option_id") or ""): dict(item)
+        for item in options
+        if isinstance(item, Mapping)
     }
     rows = _candidate_option_inputs(
         bindings=bindings,
@@ -1393,7 +1489,9 @@ def _build_searchos_judgment_model_input(
         option_id = str(option_ref.get("candidate_use_option_id") or "")
         option = current_options.get(option_id)
         if option is None or candidate_use_option_ref(option) != option_ref:
-            raise SearchOSRuntimeError("transient candidate direction binds a stale lineage snapshot")
+            raise SearchOSRuntimeError(
+                "transient candidate direction binds a stale lineage snapshot"
+            )
         context = directional_by_url.get(str(option.get("normalized_url") or ""), {})
         directional_contexts.append(
             {
@@ -1411,8 +1509,12 @@ def _build_searchos_judgment_model_input(
         current_options=current_options,
         packet_by_custody_id=packet_by_custody_id,
     )
-    if [item["read_custody_ref"] for item in read_materials] != list(request.get("read_custody_refs") or ()):
-        raise SearchOSRuntimeError("transient READ material does not match authorized custody order")
+    if [item["read_custody_ref"] for item in read_materials] != list(
+        request.get("read_custody_refs") or ()
+    ):
+        raise SearchOSRuntimeError(
+            "transient READ material does not match authorized custody order"
+        )
     core = {
         "schema_version": SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION,
         "authorized_request": request,
@@ -1420,7 +1522,8 @@ def _build_searchos_judgment_model_input(
         "candidate_directional_contexts": directional_contexts,
         "read_custody_materials": read_materials,
         "decision_contract": build_searchos_judgment_decision_contract_v1(
-            navigation_enabled=request.get("schema_version") == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
+            navigation_enabled=request.get("schema_version")
+            == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
         ),
         "bounded_transient_input": True,
         "durable_retention_allowed": False,
@@ -1438,15 +1541,23 @@ def _build_active_need_projection(
     obligation_ref = dict(slot.get("source_obligation_ref") or {})
     component_id = str(component_ref.get("component_id") or "")
     obligation_id = str(obligation_ref.get("source_obligation_id") or "")
-    if slot_ref.get("component_id") != component_id or slot_ref.get("source_obligation_id") != obligation_id:
+    if (
+        slot_ref.get("component_id") != component_id
+        or slot_ref.get("source_obligation_id") != obligation_id
+    ):
         raise SearchOSRuntimeError("active slot need lineage is internally stale")
 
-    contract = dict(run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract or {})
+    contract = dict(
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+        or {}
+    )
     accepted = next(
         (
             dict(item)
             for item in contract.get("accepted_answer_component_refs") or ()
-            if isinstance(item, Mapping) and item.get("component_id") == component_id
+            if isinstance(item, Mapping)
+            and item.get("component_id") == component_id
         ),
         {},
     )
@@ -1463,41 +1574,72 @@ def _build_active_need_projection(
             "component_digest",
         )
     }:
-        raise SearchOSRuntimeError("accepted component digest does not match active slot")
+        raise SearchOSRuntimeError(
+            "accepted component digest does not match active slot"
+        )
 
     searchos_state = dict(run_kernel.state.searchos_state)
-    active_recovery_ref = dict(searchos_state.get("active_recovery_cycle_ref") or {})
+    active_recovery_ref = dict(
+        searchos_state.get("active_recovery_cycle_ref") or {}
+    )
     recovery_admission = next(
         (
             dict(item)
-            for item in searchos_state.get("recovery_cycle_admission_history") or ()
+            for item in searchos_state.get(
+                "recovery_cycle_admission_history"
+            )
+            or ()
             if isinstance(item, Mapping)
-            and item.get("cycle_id") == active_recovery_ref.get("cycle_id")
-            and item.get("cycle_admission_digest") == active_recovery_ref.get("cycle_admission_digest")
+            and item.get("cycle_id")
+            == active_recovery_ref.get("cycle_id")
+            and item.get("cycle_admission_digest")
+            == active_recovery_ref.get("cycle_admission_digest")
         ),
         {},
     )
-    if recovery_admission.get("recovery_classification") == "searched_premise" and slot_ref.get(
-        "recovery_cycle_id"
-    ) == recovery_admission.get("cycle_id"):
+    if (
+        recovery_admission.get("recovery_classification")
+        == "searched_premise"
+        and slot_ref.get("recovery_cycle_id")
+        == recovery_admission.get("cycle_id")
+    ):
         if (
-            dict(recovery_admission.get("component_ref") or {}) != component_ref
-            or dict(recovery_admission.get("source_obligation_ref") or {}) != obligation_ref
+            dict(recovery_admission.get("component_ref") or {})
+            != component_ref
+            or dict(
+                recovery_admission.get("source_obligation_ref") or {}
+            )
+            != obligation_ref
             or dict(recovery_admission.get("current_contract_ref") or {})
             != dict(searchos_state.get("answer_contract_ref") or {})
         ):
-            raise SearchOSRuntimeError("searched recovery active-need authority is stale")
+            raise SearchOSRuntimeError(
+                "searched recovery active-need authority is stale"
+            )
         component_metadata = dict(accepted.get("metadata") or {})
-        source_specification = dict(component_metadata.get("source_obligation_specification") or {})
+        source_specification = dict(
+            component_metadata.get(
+                "source_obligation_specification"
+            )
+            or {}
+        )
         requirement = {
-            "requirement_id": ("searchos-recovery-requirement:" + str(recovery_admission["cycle_id"])),
+            "requirement_id": (
+                "searchos-recovery-requirement:"
+                + str(recovery_admission["cycle_id"])
+            ),
             "component_id": component_id,
             "requirement_summary": _bounded_judgment_text(
                 accepted.get("user_facing_question"),
                 320,
             ),
             "source_obligation_candidate_ids": [obligation_id],
-            "preferred_source_kinds": [str(source_specification.get("obligation_kind") or "supporting_fact")],
+            "preferred_source_kinds": [
+                str(
+                    source_specification.get("obligation_kind")
+                    or "supporting_fact"
+                )
+            ],
             "searchos_recovery_cycle_ref": active_recovery_ref,
         }
         return {
@@ -1522,17 +1664,26 @@ def _build_active_need_projection(
             "source_obligation": {
                 "source_obligation_ref": obligation_ref,
                 "obligation_id": obligation_id,
-                "kind": str(source_specification.get("obligation_kind") or "supporting_fact"),
-                "strictness": str(source_specification.get("strictness") or "required"),
+                "kind": str(
+                    source_specification.get("obligation_kind")
+                    or "supporting_fact"
+                ),
+                "strictness": str(
+                    source_specification.get("strictness")
+                    or "required"
+                ),
                 "currentness_requirement": _bounded_judgment_text(
                     source_specification.get("currentness_requirement"),
                     220,
                 ),
                 "satisfaction_rule": _bounded_judgment_text(
-                    source_specification.get("satisfaction_rule") or requirement["requirement_summary"],
+                    source_specification.get("satisfaction_rule")
+                    or requirement["requirement_summary"],
                     320,
                 ),
-                "requirement_summary": requirement["requirement_summary"],
+                "requirement_summary": requirement[
+                    "requirement_summary"
+                ],
                 "search_constraint": _bounded_judgment_text(
                     source_specification.get("search_constraint"),
                     240,
@@ -1540,16 +1691,27 @@ def _build_active_need_projection(
             },
             "search_work": {
                 "search_work_plan_ref": {
-                    "search_work_plan_id": ("searchos-recovery-work:" + str(recovery_admission["cycle_id"])),
-                    "search_work_plan_digest": str(recovery_admission["cycle_admission_digest"]),
-                    "authority_kind": ("searchos_recovery_cycle_admission"),
+                    "search_work_plan_id": (
+                        "searchos-recovery-work:"
+                        + str(recovery_admission["cycle_id"])
+                    ),
+                    "search_work_plan_digest": str(
+                        recovery_admission["cycle_admission_digest"]
+                    ),
+                    "authority_kind": (
+                        "searchos_recovery_cycle_admission"
+                    ),
                 },
                 "search_requirement_ref": requirement,
-                "answer_contract_ref": dict(searchos_state["answer_contract_ref"]),
+                "answer_contract_ref": dict(
+                    searchos_state["answer_contract_ref"]
+                ),
             },
             "slot": {
                 "slot_ref": slot_ref,
-                "requirement_posture": slot.get("requirement_posture"),
+                "requirement_posture": slot.get(
+                    "requirement_posture"
+                ),
                 "recovery_cycle_ref": active_recovery_ref,
             },
             "bounded_transient_projection": True,
@@ -1571,9 +1733,13 @@ def _build_active_need_projection(
         ),
         {},
     )
-    work_component_ref = dict(dict(work_component.get("metadata") or {}).get("accepted_component_ref") or {})
+    work_component_ref = dict(
+        dict(work_component.get("metadata") or {}).get("accepted_component_ref")
+        or {}
+    )
     if {
-        key: work_component_ref.get(key) for key in ("component_id", "component_revision", "component_digest")
+        key: work_component_ref.get(key)
+        for key in ("component_id", "component_revision", "component_digest")
     } != accepted_ref:
         raise SearchOSRuntimeError("SearchWorkPlan component ref is stale")
     work_obligation = next(
@@ -1588,29 +1754,41 @@ def _build_active_need_projection(
         raise SearchOSRuntimeError("SearchWorkPlan source obligation is stale")
     requirement_refs = [
         dict(item)
-        for item in dict(work_component.get("metadata") or {}).get("search_requirement_refs") or ()
+        for item in dict(work_component.get("metadata") or {}).get(
+            "search_requirement_refs"
+        )
+        or ()
         if isinstance(item, Mapping)
         and item.get("component_id") == component_id
-        and obligation_id in set(item.get("source_obligation_candidate_ids") or ())
+        and obligation_id
+        in set(item.get("source_obligation_candidate_ids") or ())
     ]
     if len(requirement_refs) != 1:
-        raise SearchOSRuntimeError("SearchWorkPlan requirement ref is missing or ambiguous")
+        raise SearchOSRuntimeError(
+            "SearchWorkPlan requirement ref is missing or ambiguous"
+        )
     metadata = dict(search_work_plan.get("metadata") or {})
     plan_contract_ref = dict(metadata.get("accepted_contract_ref") or {})
     contract_digest = str(contract.get("accepted_contract_digest") or "")
     contract_version = str(contract.get("accepted_contract_version") or "")
     if (
         plan_contract_ref.get("contract_digest") != contract_digest
-        or str(plan_contract_ref.get("contract_version") or "") != contract_version
+        or str(plan_contract_ref.get("contract_version") or "")
+        != contract_version
     ):
         raise SearchOSRuntimeError("SearchWorkPlan is not bound to the active contract")
     answer_contract_ref = dict(run_kernel.state.searchos_state["answer_contract_ref"])
     if (
         answer_contract_ref.get("answer_contract_digest") != contract_digest
-        or str(answer_contract_ref.get("contract_version") or "") != contract_version
+        or str(answer_contract_ref.get("contract_version") or "")
+        != contract_version
     ):
         raise SearchOSRuntimeError("SearchOS AnswerContract ref is stale")
-    search_work_plan_id = str(metadata.get("search_work_plan_id") or metadata.get("construction_id") or "")
+    search_work_plan_id = str(
+        metadata.get("search_work_plan_id")
+        or metadata.get("construction_id")
+        or ""
+    )
     if not search_work_plan_id:
         raise SearchOSRuntimeError("SearchWorkPlan exact identity is missing")
     search_work_plan_ref = {
@@ -1628,7 +1806,8 @@ def _build_active_need_projection(
             "component_ref": component_ref,
             "component_id": component_id,
             "user_facing_question": _bounded_judgment_text(
-                accepted.get("user_facing_question") or work_component.get("user_facing_subquestion"),
+                accepted.get("user_facing_question")
+                or work_component.get("user_facing_subquestion"),
                 500,
             ),
             "user_facing_label": _bounded_judgment_text(
@@ -1647,7 +1826,8 @@ def _build_active_need_projection(
             "kind": work_obligation.get("kind"),
             "strictness": work_obligation.get("strictness"),
             "currentness_requirement": _bounded_judgment_text(
-                work_obligation.get("currentness_requirement") or requirement.get("recency_requirement"),
+                work_obligation.get("currentness_requirement")
+                or requirement.get("recency_requirement"),
                 220,
             ),
             "satisfaction_rule": _bounded_judgment_text(
@@ -1710,11 +1890,15 @@ def _build_read_custody_judgment_materials(
             if historical_option_ref.get(key) != current_option_ref.get(key):
                 raise SearchOSRuntimeError("READ custody stable option identity mismatch")
         custody_id = str(custody.get("read_custody_material_id") or "")
-        packet = validate_fetch_read_content_packet(packet_by_custody_id.get(custody_id) or {})
+        packet = validate_fetch_read_content_packet(
+            packet_by_custody_id.get(custody_id) or {}
+        )
         packet_ref = fetch_read_content_packet_ref_from_packet(packet)
         if packet_ref != dict(custody.get("fetch_read_content_packet_ref") or {}):
             raise SearchOSRuntimeError("READ custody packet ref is stale")
-        ledger_custody_ref = dict(custody.get("evidence_ledger_custody_ref") or {})
+        ledger_custody_ref = dict(
+            custody.get("evidence_ledger_custody_ref") or {}
+        )
         reference_id = str(ledger_custody_ref.get("reference_id") or "")
         references = [
             dict(item)
@@ -1724,14 +1908,20 @@ def _build_read_custody_judgment_materials(
         if len(references) != 1:
             raise SearchOSRuntimeError("READ custody packet candidate binding is ambiguous")
         reference = references[0]
-        url = normalize_discovery_result_url(reference.get("attempted_url") or reference.get("candidate_url"))
-        if url != custody.get("normalized_url") or url != current_option.get("normalized_url"):
+        url = normalize_discovery_result_url(
+            reference.get("attempted_url") or reference.get("candidate_url")
+        )
+        if url != custody.get("normalized_url") or url != current_option.get(
+            "normalized_url"
+        ):
             raise SearchOSRuntimeError("READ custody URL lineage mismatch")
         bounded_text = str(reference.get("bounded_text") or "")
         bounded_count = int(reference.get("bounded_character_count") or 0)
         if not bounded_text or bounded_count != len(bounded_text):
             raise SearchOSRuntimeError("READ custody bounded text is unreadable")
-        if reference.get("excerpt_digest") != _digest({"bounded_text": bounded_text}):
+        if reference.get("excerpt_digest") != _digest(
+            {"bounded_text": bounded_text}
+        ):
             raise SearchOSRuntimeError("READ custody bounded-text digest mismatch")
         materials.append(
             {
@@ -1746,7 +1936,9 @@ def _build_read_custody_judgment_materials(
                         "slot_id",
                     )
                 },
-                "current_candidate_lineage_snapshot_ref": dict(current_option_ref["lineage_snapshot_ref"]),
+                "current_candidate_lineage_snapshot_ref": dict(
+                    current_option_ref["lineage_snapshot_ref"]
+                ),
                 "read_custody_ref": custody,
                 "fetch_read_content_packet_ref": packet_ref,
                 "evidence_ledger_custody_ref": ledger_custody_ref,
@@ -1761,7 +1953,9 @@ def _build_read_custody_judgment_materials(
                 "readability_posture": "readable",
                 "completeness_posture": "unknown",
                 "truncation_posture": "unknown",
-                "same_normalized_url_reused": bool(custody.get("same_normalized_url_reused")),
+                "same_normalized_url_reused": bool(
+                    custody.get("same_normalized_url_reused")
+                ),
             }
         )
     return materials
@@ -1788,11 +1982,14 @@ def _invoke_judgment_model(
     if ask_model is None:
         raise SearchOSRuntimeError("model_unavailable")
     prompt = json.dumps(model_input, sort_keys=True, ensure_ascii=False)
-    navigation_request = (
-        dict(model_input.get("authorized_request") or {}).get("schema_version")
-        == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
+    navigation_request = dict(model_input.get("authorized_request") or {}).get(
+        "schema_version"
+    ) == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
+    system_prompt = (
+        _NAVIGATION_JUDGMENT_SYSTEM_PROMPT
+        if navigation_request
+        else SEARCHOS_JUDGMENT_SYSTEM_PROMPT
     )
-    system_prompt = _NAVIGATION_JUDGMENT_SYSTEM_PROMPT if navigation_request else SEARCHOS_JUDGMENT_SYSTEM_PROMPT
     if measure_context_stage is not None:
         material_count = sum(
             int(item.get("bounded_character_count") or 0)
@@ -1859,7 +2056,10 @@ def _read_failure_reason(exc: Exception) -> str:
     code = str(raw_code) if raw_code else type(exc).__name__
     if "transport" in code.casefold():
         posture = "read_transport_failure"
-    elif any(token in code.casefold() for token in ("unreadable", "empty", "content", "material")):
+    elif any(
+        token in code.casefold()
+        for token in ("unreadable", "empty", "content", "material")
+    ):
         posture = "read_unusable_or_invalid_material"
     else:
         posture = "read_authority_or_route_blocked"
@@ -1920,7 +2120,9 @@ def build_searchos_semantic_outcomes_by_slot(
         if isinstance(item, Mapping)
     }
     admissions_by_component: dict[str, list[dict[str, Any]]] = {}
-    for item in component_admission_projection.get("component_admission_refs") or ():
+    for item in (
+        component_admission_projection.get("component_admission_refs") or ()
+    ):
         if not isinstance(item, Mapping):
             continue
         admissions_by_component.setdefault(
@@ -1946,7 +2148,9 @@ def build_searchos_semantic_outcomes_by_slot(
             slot_ref.get("component_id") or dict(slot_ref.get("component_ref") or {}).get("component_id") or ""
         )
         handoff = handoffs.get(str(slot_id), {})
-        component_admissions = admissions_by_component.get(component_id, [])
+        component_admissions = admissions_by_component.get(
+            component_id, []
+        )
         recovery_admission = next(
             (
                 admission
@@ -1960,9 +2164,16 @@ def build_searchos_semantic_outcomes_by_slot(
         )
         if recovery_admission:
             admission = recovery_admission
-            recovery_cycle_ref = dict(admission.get("searchos_recovery_cycle_ref") or {})
-            recovery_slot_ref = dict(slot.get("slot_ref") or {})
-            recovery_slot_id = str(recovery_slot_ref.get("slot_id") or "")
+            recovery_cycle_ref = dict(
+                admission.get("searchos_recovery_cycle_ref") or {}
+            )
+            recovery_slot_ref = dict(
+                slot.get("slot_ref") or {}
+            )
+            recovery_slot_id = str(
+                recovery_slot_ref.get("slot_id")
+                or ""
+            )
             handoff = handoffs.get(recovery_slot_id, handoff)
             material_slot_id = recovery_slot_id
         else:
@@ -1985,27 +2196,37 @@ def build_searchos_semantic_outcomes_by_slot(
             for item in admission.get("evidence_refs") or ()
             if isinstance(item, Mapping)
         }
-        consumed_evidence_ids = material_source_ids_by_slot.get(material_slot_id, set()) & evidence_ids
+        consumed_evidence_ids = (
+            material_source_ids_by_slot.get(material_slot_id, set())
+            & evidence_ids
+        )
         material_consumed = bool(consumed_evidence_ids)
-        coverage_ref = dict(admission.get("component_coverage_ref") or {})
+        coverage_ref = dict(
+            admission.get("component_coverage_ref") or {}
+        )
         exact_coverage_chain = _coverage_ref_matches_slot(
             admission=admission,
             slot=slot,
         ) and _coverage_ref_matches_contract_and_candidates(
             coverage_ref=coverage_ref,
-            answer_contract_ref=dict(searchos_state.get("answer_contract_ref") or {}),
+            answer_contract_ref=dict(
+                searchos_state.get("answer_contract_ref") or {}
+            ),
             consumed_candidate_ids=consumed_evidence_ids,
         )
         recovery_evidence_ref = next(
             (
                 dict(item)
                 for item in admission.get("evidence_refs") or ()
-                if isinstance(item, Mapping) and str(item.get("evidence_ref_id") or "") in consumed_evidence_ids
+                if isinstance(item, Mapping)
+                and str(item.get("evidence_ref_id") or "")
+                in consumed_evidence_ids
             ),
             {},
         )
         admitted = bool(
-            admission.get("admission_status") in {"admitted", "admitted_with_caveats"}
+            admission.get("admission_status")
+            in {"admitted", "admitted_with_caveats"}
             and material_consumed
             and handoff
             and exact_coverage_chain
@@ -2035,9 +2256,15 @@ def build_searchos_semantic_outcomes_by_slot(
                     "component_digest": admission.get("component_digest"),
                     "admission_status": admission.get("admission_status"),
                     "component_coverage_ref": deepcopy(coverage_ref),
-                    "source_requirement_ids": list(coverage_ref.get("source_requirement_ids") or ()),
-                    "source_obligation_id": dict(slot.get("slot_ref") or {}).get("source_obligation_id"),
-                    "consumed_candidate_ids": sorted(consumed_evidence_ids),
+                    "source_requirement_ids": list(
+                        coverage_ref.get("source_requirement_ids") or ()
+                    ),
+                    "source_obligation_id": dict(
+                        slot.get("slot_ref") or {}
+                    ).get("source_obligation_id"),
+                    "consumed_candidate_ids": sorted(
+                        consumed_evidence_ids
+                    ),
                 }
                 if admitted
                 else {}
@@ -2045,9 +2272,15 @@ def build_searchos_semantic_outcomes_by_slot(
             "semantic_admission_status": "admitted" if admitted else "not_admitted",
             "material_authority": "read_custody_material",
             "searchos_handoff_material_consumed": material_consumed,
-            "searchos_recovery_cycle_ref": (recovery_cycle_ref if recovery_admission and material_consumed else {}),
+            "searchos_recovery_cycle_ref": (
+                recovery_cycle_ref
+                if recovery_admission and material_consumed
+                else {}
+            ),
             "searchos_recovery_evidence_ref": (
-                recovery_evidence_ref if recovery_admission and material_consumed else {}
+                recovery_evidence_ref
+                if recovery_admission and material_consumed
+                else {}
             ),
         }
     return outcomes
@@ -2062,8 +2295,10 @@ def _ordinary_admission_matches_slot(
     return bool(
         not dict(admission.get("searchos_recovery_cycle_ref") or {})
         and admission.get("component_id") == component_ref.get("component_id")
-        and admission.get("component_revision") == component_ref.get("component_revision")
-        and admission.get("component_digest") == component_ref.get("component_digest")
+        and admission.get("component_revision")
+        == component_ref.get("component_revision")
+        and admission.get("component_digest")
+        == component_ref.get("component_digest")
         and _coverage_ref_matches_slot(
             admission=admission,
             slot=slot,
@@ -2072,7 +2307,11 @@ def _ordinary_admission_matches_slot(
 
 
 def _unique_tokens(value: Any) -> list[str]:
-    tokens = [str(item or "").strip() for item in value or () if str(item or "").strip()]
+    tokens = [
+        str(item or "").strip()
+        for item in value or ()
+        if str(item or "").strip()
+    ]
     return tokens if len(tokens) == len(set(tokens)) else []
 
 
@@ -2083,28 +2322,51 @@ def _coverage_ref_matches_slot(
 ) -> bool:
     slot_ref = dict(slot.get("slot_ref") or {})
     component_ref = dict(slot.get("component_ref") or {})
-    coverage_ref = dict(admission.get("component_coverage_ref") or {})
-    target_obligation_id = str(slot_ref.get("source_obligation_id") or "")
-    source_obligation_ids = _unique_tokens(coverage_ref.get("source_obligation_ids"))
-    source_requirement_ids = _unique_tokens(coverage_ref.get("source_requirement_ids"))
+    coverage_ref = dict(
+        admission.get("component_coverage_ref") or {}
+    )
+    target_obligation_id = str(
+        slot_ref.get("source_obligation_id") or ""
+    )
+    source_obligation_ids = _unique_tokens(
+        coverage_ref.get("source_obligation_ids")
+    )
+    source_requirement_ids = _unique_tokens(
+        coverage_ref.get("source_requirement_ids")
+    )
     owned_links = [
-        dict(item) for item in coverage_ref.get("owned_requirement_candidate_refs") or () if isinstance(item, Mapping)
+        dict(item)
+        for item in coverage_ref.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
+        if isinstance(item, Mapping)
     ]
     return bool(
         coverage_ref.get("coverage_state") == "satisfied"
         and coverage_ref.get("coverage_record_id")
         and coverage_ref.get("coverage_record_digest")
-        and coverage_ref.get("answer_component_id") == component_ref.get("component_id") == slot_ref.get("component_id")
-        and coverage_ref.get("component_revision") == component_ref.get("component_revision")
-        and coverage_ref.get("component_digest") == component_ref.get("component_digest")
+        and coverage_ref.get("answer_component_id")
+        == component_ref.get("component_id")
+        == slot_ref.get("component_id")
+        and coverage_ref.get("component_revision")
+        == component_ref.get("component_revision")
+        and coverage_ref.get("component_digest")
+        == component_ref.get("component_digest")
         and source_obligation_ids == [target_obligation_id]
         and source_requirement_ids
         and len(owned_links) == len(source_requirement_ids)
-        and {str(item.get("requirement_id") or "") for item in owned_links} == set(source_requirement_ids)
+        and {
+            str(item.get("requirement_id") or "")
+            for item in owned_links
+        }
+        == set(source_requirement_ids)
         and all(
-            item.get("source_obligation_id") == target_obligation_id
+            item.get("source_obligation_id")
+            == target_obligation_id
             and item.get("link_status") == "accepted"
-            and item.get("candidate_id") in set(_unique_tokens(coverage_ref.get("candidate_ids")))
+            and item.get("candidate_id")
+            in set(_unique_tokens(coverage_ref.get("candidate_ids")))
             for item in owned_links
         )
     )
@@ -2119,12 +2381,17 @@ def _coverage_ref_matches_contract_and_candidates(
     candidate_ids = set(_unique_tokens(coverage_ref.get("candidate_ids")))
     owned_candidate_ids = {
         str(item.get("candidate_id") or "")
-        for item in coverage_ref.get("owned_requirement_candidate_refs") or ()
+        for item in coverage_ref.get(
+            "owned_requirement_candidate_refs"
+        )
+        or ()
         if isinstance(item, Mapping)
     }
     return bool(
-        coverage_ref.get("accepted_contract_version") == answer_contract_ref.get("contract_version")
-        and coverage_ref.get("accepted_contract_digest") == answer_contract_ref.get("answer_contract_digest")
+        coverage_ref.get("accepted_contract_version")
+        == answer_contract_ref.get("contract_version")
+        and coverage_ref.get("accepted_contract_digest")
+        == answer_contract_ref.get("answer_contract_digest")
         and consumed_candidate_ids
         and consumed_candidate_ids <= candidate_ids
         and consumed_candidate_ids <= owned_candidate_ids
@@ -2140,19 +2407,28 @@ def _recovery_admission_matches_slot(
     cycle_ref = dict(admission.get("searchos_recovery_cycle_ref") or {})
     slot_cycle = dict(slot.get("recovery_cycle_ref") or {})
     return bool(
-        admission.get("admission_status") in {"admitted", "admitted_with_caveats"}
+        admission.get("admission_status")
+        in {"admitted", "admitted_with_caveats"}
         and (
-            admission.get("same_component_reassessment") is True or admission.get("derived_component_recovery") is True
+            admission.get("same_component_reassessment") is True
+            or admission.get("derived_component_recovery") is True
         )
         and _coverage_ref_matches_slot(
             admission=admission,
             slot=slot,
         )
         and cycle_ref
-        and cycle_ref.get("cycle_id") == slot_cycle.get("cycle_id") == slot_ref.get("recovery_cycle_id")
-        and admission.get("component_id") == dict(slot.get("component_ref") or {}).get("component_id")
-        and admission.get("component_revision") == dict(slot.get("component_ref") or {}).get("component_revision")
-        and admission.get("component_digest") == dict(slot.get("component_ref") or {}).get("component_digest")
+        and cycle_ref.get("cycle_id")
+        == slot_cycle.get("cycle_id")
+        == slot_ref.get("recovery_cycle_id")
+        and admission.get("component_id")
+        == dict(slot.get("component_ref") or {}).get("component_id")
+        and admission.get("component_revision")
+        == dict(slot.get("component_ref") or {}).get(
+            "component_revision"
+        )
+        and admission.get("component_digest")
+        == dict(slot.get("component_ref") or {}).get("component_digest")
         and bool(admission.get("evidence_refs"))
     )
 
@@ -2220,9 +2496,7 @@ def _semantic_passages(
             navigation_origin = custody.get("origin") == "searchos_navigation"
             packet_ref: Mapping[str, Any] = {}
             if navigation_origin:
-                packet_ref, navigation_reference = navigation_runtime._navigation_custody_packet_reference(
-                    custody, packet
-                )
+                packet_ref, navigation_reference = navigation_runtime._navigation_custody_packet_reference(custody, packet)
                 references: Sequence[Mapping[str, Any]] = (navigation_reference,)
             else:
                 packet_ref = fetch_read_content_packet_ref_from_packet(packet)
@@ -2248,32 +2522,42 @@ def _semantic_passages(
                 if navigation_origin:
                     url = normalize_discovery_result_url(url)
                 read_source_facts: dict[str, Any] = {}
-                source_result_ref = discovery_result_store.ref_for_url(str(url))
-                source_material = discovery_result_store.material_for_ref(source_result_ref)
+                source_result_ref = discovery_result_store.ref_for_url(
+                    str(url)
+                )
+                source_material = discovery_result_store.material_for_ref(
+                    source_result_ref
+                )
                 if source_material is not None:
-                    read_source_facts.update(dict(source_material.source_facts))
-                tier = classify_source(str(url), str(reference.get("content_title") or ""))
-                if tier != "unknown" and not read_source_facts.get("source_tier"):
+                    read_source_facts.update(
+                        dict(source_material.source_facts)
+                    )
+                tier = classify_source(
+                    str(url), str(reference.get("content_title") or "")
+                )
+                if (
+                    tier != "unknown"
+                    and not read_source_facts.get("source_tier")
+                ):
                     read_source_facts["source_tier"] = tier
                 qualification_lineage: dict[str, Any] = {
                     "navigation_origin": navigation_origin,
                     "canonical_candidate_id": source_id,
                     "navigation_content_reference": {
-                        key: reference.get(key) for key in ("reference_id", "reference_digest")
-                    },
-                    "fetch_read_content_packet": {key: packet_ref.get(key) for key in ("packet_id", "packet_digest")},
+                        key: reference.get(key) for key in ("reference_id", "reference_digest")},
+                    "fetch_read_content_packet": {
+                        key: packet_ref.get(key) for key in ("packet_id", "packet_digest")},
                     "read_custody_ref": {
-                        key: custody.get(key) for key in ("read_custody_material_id", "read_custody_material_digest")
-                    },
+                        key: custody.get(key) for key in
+                        ("read_custody_material_id", "read_custody_material_digest")},
                     "semantic_handoff_ref": {
-                        key: handoff.get(key) for key in ("semantic_handoff_id", "semantic_handoff_digest")
-                    },
+                        key: handoff.get(key) for key in
+                        ("semantic_handoff_id", "semantic_handoff_digest")},
                     "slot_ref": deepcopy(handoff.get("slot_ref")),
                     "source_facts": {
                         **read_source_facts,
                         "evidence_material_type": "searchos_read_custody",
-                        "readable_status": "readable",
-                        "fetchable_status": "fetchable",
+                        "readable_status": "readable", "fetchable_status": "fetchable",
                     },
                 }
                 passages.append(
@@ -2303,10 +2587,20 @@ def _semantic_passages(
 
 def _acquisition_provider_call_totals(run_kernel: RunKernel) -> tuple[int, int]:
     control = dict(run_kernel.state.acquisition_control_state or {})
-    observations = list(dict(control.get("execution_observations_by_id") or {}).values())
+    observations = list(
+        dict(control.get("execution_observations_by_id") or {}).values()
+    )
     return (
-        sum(int(dict(item).get("provider_calls_attempted") or 0) for item in observations if isinstance(item, Mapping)),
-        sum(int(dict(item).get("provider_calls_completed") or 0) for item in observations if isinstance(item, Mapping)),
+        sum(
+            int(dict(item).get("provider_calls_attempted") or 0)
+            for item in observations
+            if isinstance(item, Mapping)
+        ),
+        sum(
+            int(dict(item).get("provider_calls_completed") or 0)
+            for item in observations
+            if isinstance(item, Mapping)
+        ),
     )
 
 
