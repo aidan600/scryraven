@@ -4,6 +4,77 @@ Status: current operator guidance for the credentialed local-command doorman.
 This document does not authorize a live provider, model, search, or product
 call. It does not inspect or paste private environment-file contents.
 
+## Durable Purpose Of The Broker / Doorman
+
+When used without a more specific qualifier, "broker" and "doorman" mean
+operator-side secret-custody infrastructure for cases where an LLM-controlled
+process must run trusted ScryRaven work without receiving private credentials
+in its controlling context.
+
+The doorman is not part of the ScryRaven product runtime. Product modules do
+not import or call it.
+
+Normal human local use needs no doorman:
+
+```text
+human invokes normal ScryRaven
+-> ScryRaven loads its normal local configuration
+-> ScryRaven selects providers/models/routes
+-> ScryRaven performs its own calls
+```
+
+LLM-controlled whole-product use:
+
+```text
+human approves one exact argv
+-> operator doorman privately supplies the environment
+-> the same normal ScryRaven CLI runs unchanged
+-> ScryRaven performs its own normal product behavior
+```
+
+LLM-controlled component, test, or evaluation use:
+
+```text
+human approves one exact component/test/evaluator argv
+-> operator doorman privately supplies the environment
+-> that trusted command runs normally
+```
+
+Running subcomponents this way is an intentional part of the doorman's purpose.
+It must not require launching the entire product merely to give a component the
+ordinary environment it would otherwise receive.
+
+This credentialed-command session is the general/default operator mechanism
+when an LLM-controlled process needs to run an ordinary trusted repository
+command with the private environment.
+
+The doorman owns private environment-file custody, private child environment
+construction, keeping credential values out of the controlling LLM
+process/context, exact structured command execution where applicable,
+secret-safe return/output handling, and process cleanup.
+
+The doorman does not own provider selection, model selection, provider
+availability, search or READ selection, route selection, query policy, test
+policy, module policy, command policy, retry/fallback policy, attempt/token/
+dollar budgets, product authorization, SearchOS, AnalystOS, RunKernel, evidence
+custody, source authority, FAP, Author, or answer authority. It does not write
+or check an allowlist. It does not decide who is allowed through the door. The
+human/operator or the launched ScryRaven/test/evaluation command owns whatever
+authorization and policy applies to that work.
+
+The doorman is a credential-custody boundary, not a general sandbox against
+malicious code. `shell=False` and exact-value redaction do not create such a
+sandbox and must not be described as one.
+
+The explicit-provider RPC surface in
+[Generic Provider-Execution Broker Operator Flow](GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md)
+is a specialized sibling mechanism for one versioned provider operation. Its
+provider matrix, operations, request fuse, and route attestations apply only
+to that RPC mechanism. They do not define this general doorman, restrict which
+credentials may exist in the private environment used here, or constrain which
+providers, models, searches, reads, embeddings, or other operations ordinary
+ScryRaven may choose through installed product routing.
+
 ## Active Boundary
 
 The operator-only launcher is:
@@ -12,16 +83,15 @@ The operator-only launcher is:
 scripts/run_brokered_command_once.py
 ```
 
-The doorman is not imported or called by ScryRaven. It owns no provider, model,
-route, test, token, cost, retry, query, SearchOS, AnalystOS, RunKernel,
-evidence, or answer policy. There is no provider, executable, module, or
-command allowlist. The human approves the exact structured argv.
+The doorman is not imported or called by ScryRaven. There is no provider,
+executable, module, or command allowlist. The human approves the exact
+structured argv.
 
-The provider-operation HTTP broker and its operation matrix remain separate and
-unchanged. Prefer
+Prefer this document for whole-product, pytest, evaluation, or component
+commands that need ordinary environment access. Prefer
 [Generic Provider-Execution Broker Operator Flow](GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md)
-when the licensed work is one explicit provider operation through the tracked
-loopback broker.
+only when the licensed work is one explicit provider-RPC operation through the
+tracked loopback broker.
 
 ## Parent And Private-Child Graph
 

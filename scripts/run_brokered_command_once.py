@@ -311,7 +311,7 @@ def load_private_environment_file(path: Path) -> dict[str, str]:
 
     values: dict[str, str] = {}
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
     except (OSError, UnicodeDecodeError) as exc:
         raise BrokeredCommandError("environment_file_unavailable") from exc
     for line_number, line in enumerate(lines, start=1):

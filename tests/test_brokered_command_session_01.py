@@ -339,3 +339,39 @@ def test_no_private_launcher_value_enters_target_environment() -> None:
     assert target_env["API_KEY"] == "fake-secret-value"
     assert doorman.PRIVATE_NONCE_ENV_VAR not in target_env
     assert doorman.PRIVATE_ENV_FILE_PATH_ENV_VAR not in target_env
+
+
+def test_utf8_bom_prefixed_secret_loads_and_redacts(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    output_root = tmp_path / "external"
+    output_root.mkdir()
+    secret = "bom-fake-secret-value"
+    env_file = tmp_path / "private.env"
+    env_file.write_bytes(b"\xef\xbb\xbfAPI_KEY=" + secret.encode("utf-8") + b"\nNORMAL=ok\n")
+    stdout = output_root / "stdout.txt"
+    stderr = output_root / "stderr.txt"
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import json, os, sys; "
+            "print(json.dumps({"
+            "'keys': sorted(k for k in os.environ if k.startswith('API') or k == 'NORMAL'), "
+            "'api_key': os.environ['API_KEY'], "
+            "'normal': os.environ['NORMAL']"
+            "})); "
+            "print(os.environ['API_KEY'], file=sys.stderr)"
+        ),
+    ]
+    assert _run(
+        repo_root=repo_root, env_file=env_file, stdout=stdout, stderr=stderr, command=command
+    ) == 0
+    payload = json.loads(stdout.read_text(encoding="utf-8"))
+    assert payload["keys"] == ["API_KEY", "NORMAL"]
+    assert "\ufeff" not in "".join(payload["keys"])
+    assert payload["api_key"] == "[REDACTED]"
+    assert payload["normal"] == "ok"
+    assert stderr.read_text(encoding="utf-8") == "[REDACTED]\n"
+    assert secret not in stdout.read_text(encoding="utf-8")
+    assert secret not in stderr.read_text(encoding="utf-8")
