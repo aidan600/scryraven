@@ -5,6 +5,23 @@ Status: Conditional fields for the compact phase brief.
 Use only the addenda triggered by the phase. Do not copy empty sections into a
 brief. Standing procedure remains in the root contract and playbook.
 
+## Local Cursor Windows workspace
+
+Use only when a phase uses a disposable local Cursor Windows worktree. Follow
+the [Cursor Local Windows Phase Execution Rule](CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md)
+rather than duplicating its procedure.
+
+```text
+Local workspace:
+- Phase root:
+- Worktree:
+- Cache:
+- Tmp:
+- Evidence:
+- Final:
+- Cursor root is readable and not ignored: YES
+```
+
 ## Large-phase execution posture
 
 Use only for substantial integration work; tiny repairs retain the lightweight

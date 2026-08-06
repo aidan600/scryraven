@@ -43,6 +43,9 @@ VALIDATION_BUCKETS = CODEX / "VALIDATION_BUCKETS.md"
 CI_ERGONOMICS = CODEX / "CI_VALIDATION_ERGONOMICS.md"
 PROOF_GATE = CODEX / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md"
 ROADMAP = ROOT / "docs" / "roadmap" / "CURRENT_ROADMAP.md"
+CURSOR_PHASE = CODEX / "CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md"
+COMMAND_HYGIENE = ROOT / ".cursor" / "rules" / "scryraven-command-hygiene.mdc"
+CURSORIGNORE = ROOT / ".cursorignore"
 
 
 def _read(path: Path) -> str:
@@ -175,6 +178,58 @@ def test_guidance_map_stays_a_compact_resolvable_router() -> None:
     assert targets
     for target in targets:
         assert (GUIDANCE.parent / target).resolve().is_file(), target
+
+
+def test_cursor_windows_phase_execution_contract_is_routed_and_bounded() -> None:
+    assert CURSOR_PHASE.is_file()
+    canonical = _collapsed(CURSOR_PHASE).casefold()
+    guidance = _read(GUIDANCE)
+    hygiene = _collapsed(COMMAND_HYGIENE).casefold()
+    addenda = _collapsed(ADDENDA).casefold()
+
+    owner_name = "CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md"
+    assert owner_name in guidance
+    assert (GUIDANCE.parent / owner_name).resolve().is_file()
+    assert owner_name.casefold() in hygiene
+    assert "local cursor windows workspace" in addenda
+    assert owner_name.casefold() in addenda
+    for field in (
+        "phase root:",
+        "worktree:",
+        "cache:",
+        "tmp:",
+        "evidence:",
+        "final:",
+        "cursor root is readable and not ignored: yes",
+    ):
+        assert field in addenda
+
+    for requirement in (
+        "outside every path excluded by `.cursorignore`",
+        "cache`, `tmp`, `evidence`, and `final` paths from `phaseroot`",
+        "direct editor or patch tools for every repository edit",
+        "do not use powershell, python, shell, or another command as a replacement repository editor",
+        "inspection, editing, validation, commit, publication, and cleanup",
+        "all generated artifacts remain outside `worktree`",
+        "remove the clean worktree without force",
+        "on a lock, path, or cleanup failure, stop and report",
+    ):
+        assert requirement in canonical
+
+    cursorignore_bytes = CURSORIGNORE.read_bytes()
+
+    if cursorignore_bytes.startswith((b"\xff\xfe", b"\xfe\xff")):
+        cursorignore_text = cursorignore_bytes.decode("utf-16")
+    else:
+        cursorignore_text = cursorignore_bytes.decode("utf-8-sig")
+
+    cursorignore_entries = {
+        line.strip()
+        for line in cursorignore_text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert "output/" in cursorignore_entries
+    assert "cursor" not in _read(AGENTS).casefold()
 
 
 def test_convergence_replaces_fixed_red_cycle_stopping() -> None:
