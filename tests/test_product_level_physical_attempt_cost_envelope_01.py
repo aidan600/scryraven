@@ -1227,6 +1227,143 @@ def test_bounded_terminal_helpers_require_explicit_policy() -> None:
     assert payload["physical_envelope"]["physical_attempts"] == 0
     assert payload["physical_envelope"]["authorization_id"] == "fixture-v1"
     assert payload["terminal"]["owner"] == "core.cap_enforcement.RunCapPolicy"
+    assert "search_planner_failure" not in payload["terminal"]
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Bounded CLI projects only the adapter's installed safe failure identity."""
+
+    import json
+
+    from core.search_planner_model_adapter import (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION,
+        SearchPlannerModelAdapterError,
+        SearchPlannerModelAdapterFailureCode,
+        SearchPlannerModelAdapterPredicateId,
+    )
+
+    fixture_sha = "d" * 40
+    auth_path = tmp_path / "offline-auth.json"
+    auth_path.write_text(
+        json.dumps(
+            _offline_proof_authorization_document(repository_sha=fixture_sha)
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "core.run_cap_authorization.resolve_local_repository_identity",
+        lambda _repo_root: fixture_sha,
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_logger",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        lambda _log: SimpleNamespace(),
+    )
+
+    private_fragments = (
+        "fictional-rejected-value-sentinel",
+        "fictional-raw-model-output-sentinel",
+        "fictional-raw-prompt-sentinel",
+        "fictional-provider-payload-sentinel",
+    )
+    private_message = (
+        "SearchPlanner fixture failure: " + " | ".join(private_fragments)
+    )
+    mechanical_failure = SearchPlannerModelAdapterError(
+        private_message,
+        failure_code=SearchPlannerModelAdapterFailureCode.INVALID_JSON,
+        predicate_id=(
+            SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
+        ),
+    )
+    infrastructure_failure = SearchPlannerModelAdapterError(
+        private_message,
+        failure_code=SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED,
+        predicate_id=None,
+    )
+    failure_to_raise: BaseException = mechanical_failure
+
+    def fail_pipeline(*_args: Any, **_kwargs: Any) -> Any:
+        raise failure_to_raise
+
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", fail_pipeline)
+    argv = [
+        _ISCLOSE_QUERY,
+        "--mode",
+        "Balanced",
+        "--include-domains",
+        "docs.python.org",
+        "--fast-provider",
+        "OpenAI",
+        "--fast-model",
+        "gpt-5.4-mini",
+        "--smart-provider",
+        "OpenAI",
+        "--smart-model",
+        "gpt-5.4",
+        "--embed-provider",
+        "OpenAI",
+        "--embed-model",
+        "text-embedding-3-small",
+        "--bounded-run-authorization",
+        str(auth_path),
+    ]
+
+    for expected_failure in (mechanical_failure, infrastructure_failure):
+        failure_to_raise = expected_failure
+        assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+        output = capsys.readouterr().out
+        payload = json.loads(output.strip().splitlines()[-1])
+        terminal = payload["terminal"]
+        assert terminal["code"] == "bounded_run_failed"
+        assert terminal["search_planner_failure"] == {
+            "failure_stage": expected_failure.failure_stage.value,
+            "failure_code": expected_failure.failure_code.value,
+            "mechanical_rule_id": expected_failure.mechanical_rule_id,
+            "predicate_registry_version": (
+                expected_failure.predicate_registry_version
+            ),
+            "predicate_id": (
+                expected_failure.predicate_id.value
+                if expected_failure.predicate_id is not None
+                else None
+            ),
+        }
+        for private_fragment in private_fragments:
+            assert private_fragment not in json.dumps(payload, sort_keys=True)
+
+    assert mechanical_failure.mechanical_rule_id == "M01"
+    assert mechanical_failure.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert infrastructure_failure.mechanical_rule_id is None
+    assert infrastructure_failure.predicate_registry_version is None
+    assert infrastructure_failure.predicate_id is None
+
+    failure_to_raise = RuntimeError(private_message)
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+    generic_output = capsys.readouterr().out
+    generic_payload = json.loads(generic_output.strip().splitlines()[-1])
+    assert generic_payload["terminal"]["code"] == "bounded_run_failed"
+    assert "search_planner_failure" not in generic_payload["terminal"]
+    for private_fragment in private_fragments:
+        assert private_fragment not in json.dumps(generic_payload, sort_keys=True)
 
 
 def _offline_proof_authorization_document(*, repository_sha: str) -> dict[str, Any]:
@@ -1490,6 +1627,7 @@ def test_public_cli_executes_bounded_isclose_with_authorization_file(
     assert str(auth_path) not in out
     payload = json.loads(out.strip().splitlines()[-1])
     assert payload["schema_version"] == "bounded_product_cli_result_v1"
+    assert "search_planner_failure" not in payload["terminal"]
     assert payload["entrypoint"] == entrypoint
     assert payload["authorization_id"] == "offline-isclose-auth-v1"
     assert payload["pricing_fact_set_id"] == "offline-isclose-pricing-v1"
