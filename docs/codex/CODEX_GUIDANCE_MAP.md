@@ -63,6 +63,7 @@ merely because they are not implemented.
 | Test classification and promotion | [Test Classification Library](TEST_CLASSIFICATION_LIBRARY.md) |
 | Validation scope and commands | [Validation Buckets](VALIDATION_BUCKETS.md) and [CI Validation Ergonomics](CI_VALIDATION_ERGONOMICS.md) |
 | Windows sandbox, Git, push, and draft PR | [Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md) |
+| Cursor local Windows phase workspace, editing, approvals, validation artifacts, and cleanup | [Cursor Local Windows Phase Execution Rule](CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md) |
 
 The phase brief declares `Mode: BUILD | PROOF | REPAIR`. Build is the default;
 Proof is an explicit exception with a named blocker and mandatory next Build
