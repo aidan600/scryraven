@@ -119,6 +119,7 @@ from core.run_cap_authorization import (  # noqa: E402
     compile_bounded_run_authorization,
 )
 from core.run_config import RunConfig, RunDeps  # noqa: E402
+from core.search_planner_model_adapter import SearchPlannerModelAdapterError  # noqa: E402
 from core.strict_accounted_model_route import (  # noqa: E402
     build_strict_accounted_fast_model_planning_route,
 )
@@ -723,7 +724,12 @@ def _bounded_success_payload(
 def _bounded_terminal_payload(
     *,
     entrypoint: str,
-    exc: RunCapExceeded | BoundedRunAuthorizationError | None,
+    exc: (
+        RunCapExceeded
+        | BoundedRunAuthorizationError
+        | SearchPlannerModelAdapterError
+        | None
+    ),
     config: RunConfig | None,
     code: str | None = None,
     compiled_authorization: CompiledRunCapAuthorization | None = None,
@@ -790,6 +796,18 @@ def _bounded_terminal_payload(
         "owner": terminal_owner,
         "classification": terminal_classification,
     }
+    if isinstance(exc, SearchPlannerModelAdapterError):
+        terminal["search_planner_failure"] = {
+            "failure_stage": exc.failure_stage.value,
+            "failure_code": exc.failure_code.value,
+            "mechanical_rule_id": exc.mechanical_rule_id,
+            "predicate_registry_version": exc.predicate_registry_version,
+            "predicate_id": (
+                exc.predicate_id.value
+                if exc.predicate_id is not None
+                else None
+            ),
+        }
     policy = config.cap_policy if config is not None else None
     payload: dict[str, object] = {
         "schema_version": "bounded_product_cli_terminal_v1",
@@ -1365,7 +1383,11 @@ def main(
             _print_bounded_payload(
                 _bounded_terminal_payload(
                     entrypoint=entrypoint,
-                    exc=None,
+                    exc=(
+                        exc
+                        if isinstance(exc, SearchPlannerModelAdapterError)
+                        else None
+                    ),
                     config=config,
                     compiled_authorization=compiled,
                 )

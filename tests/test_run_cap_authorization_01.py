@@ -579,6 +579,7 @@ def test_invalid_authorization_fails_before_dotenv_and_credentials(
     assert "bounded_product_cli_terminal_v1" in out
     payload = json.loads(out.strip().splitlines()[-1])
     assert payload["terminal"]["code"] == "bounded_configuration_unavailable"
+    assert "search_planner_failure" not in payload["terminal"]
     assert str(auth_path) not in json.dumps(payload)
 
 
