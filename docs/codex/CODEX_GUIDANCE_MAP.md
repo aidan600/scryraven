@@ -137,6 +137,7 @@ owner rule and default current-state read path remain in force.
 | --- | --- |
 | Provider acquisition classification | [Generic Provider Proxy/Broker Operator Flow](../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md) |
 | Separately licensed trusted-local broker reactivation | [Broker Reactivation Runbook](../operator/BROKER_REACTIVATION_RUNBOOK.md) |
+| Operator-only credentialed local command session | [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md) |
 
 Provider-facing work must declare product integration or testing/operator
 broker-doorman work. Broker output is sanitized provider material only; it is
