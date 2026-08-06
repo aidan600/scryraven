@@ -32,6 +32,14 @@ SearchJudgment does not select a second semantic lane. Non-SearchOS compatibilit
 surfaces retain their established direct behavior. The ordinary CLI/backend
 composition no longer injects or executes the legacy Economist callable.
 
+PR #541 candidate (unmerged): physical attempt/cost envelope enforcement exists
+on the PR branch, and the public CLI requires one complete explicit per-run
+`--bounded-run-authorization` file to activate it. `public-cli-v1` remains
+removed; no reusable mode profiles exist. No live bounded ordinary-product run
+has occurred. Until merge, treat this as candidate state rather than merged
+product truth.
+
+
 That downstream synthesis-class boundary does not limit initial semantic
 planning. Ordinary initial semantic planning uses the selected fast-model
 SearchPlanner. It receives the complete normalized user utterance within the
@@ -890,6 +898,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Current real-model Component/Cross-Component Analyst behavior remains
   unproved.
 - Current ordinary-CLI live product behavior remains unproved.
+- No live bounded ordinary-product run has occurred under explicit per-run
+  authorization; offline public-CLI proof is not live supported-product evidence.
 - The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
   or Component/Cross-Component Analyst reliably originates its required
   semantic decomposition.

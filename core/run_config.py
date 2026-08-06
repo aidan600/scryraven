@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping
 
 from core.acquisition_adapters import AcquisitionTransports
+from core.cap_enforcement import RunCapPolicy
 
 
 @dataclass
@@ -66,8 +67,8 @@ class RunConfig:
     # Optional Streamlit hook: receives the author's token stream iterator (same-thread).
     author_stream_display: Callable[[Any], Any] | None = None
 
-    # Optional bounded-validation policy. None preserves ordinary CLI/UI behavior.
-    cap_policy: Any | None = None
+    # Optional run-scoped physical-attempt policy. None preserves ordinary behavior.
+    cap_policy: RunCapPolicy | None = None
 
     # Optional ordinary-path candidate handoff repair. Defaults preserve CLI/UI behavior.
     enable_ordinary_live_candidate_handoff: bool = False

@@ -20,6 +20,7 @@ from core.analyst_query_resolution_proposal import (
     AnalystQueryResolutionProposalError,
     normalize_local_query_resolution_candidate,
 )
+from core.cap_enforcement import RunCapExceeded
 
 SUPPORTED_QUERY_CLASS = "ordinary-bounded-multicomponent-factual-synthesis-v1"
 
@@ -833,6 +834,8 @@ def execute_prepared_multicomponent_transport(
                 output_schema_variant=prepared.output_schema_variant,
             )
             failure_kind = None
+    except RunCapExceeded:
+        raise
     except Exception as exc:
         normalized = None
         failure_kind = (
@@ -1219,6 +1222,8 @@ def execute_multicomponent_role_call(
             ),
             output_schema_variant=schema_variant,
         )
+    except RunCapExceeded:
+        raise
     except Exception as exc:
         if scheduler_active or recovery_active:
             failure_kind = (

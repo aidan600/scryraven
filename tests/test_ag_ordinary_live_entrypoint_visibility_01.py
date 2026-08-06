@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import importlib
@@ -57,6 +57,7 @@ def test_normal_cli_startup_loads_dotenv_before_search_provider_import(
 
     assert result["search_providers_imported_by_cli_core_imports"] is True
     assert result["brave_search_timeout_sec"] == 17.0
+
 
 
 def test_dry_run_startup_skips_dotenv_before_search_provider_import(

@@ -103,6 +103,30 @@ python -m proplex "your query" --mode Balanced
 
 Use `python -m scryraven --help` for all CLI options. `python -m proplex --help` is preserved for existing scripts.
 
+#### Bounded live-run configuration
+
+The shared CLI accepts one explicit local authorization file when a maintainer
+intends a bounded ordinary-product run:
+
+```powershell
+python -m scryraven "your query" --mode Balanced `
+  --include-domains docs.python.org `
+  --fast-provider OpenAI --fast-model <exact-model> `
+  --smart-provider OpenAI --smart-model <exact-model> `
+  --embed-provider OpenAI --embed-model <exact-model> `
+  --bounded-run-authorization PATH\to\local-authorization.json
+```
+
+The compatibility alias `python -m proplex` shares the same flag. Without
+`--bounded-run-authorization`, normal CLI behavior is unchanged: dotenv loading,
+route defaults, retries/fallbacks, and ordinary persistence remain as before.
+
+The authorization file is user-owned input for one run. It supplies routes,
+limits, price facts, deadline, and `max_run_usd`. The repository does not
+install bounded defaults, repository-owned prices, or reusable mode profiles.
+Keep authorization files outside tracked source. Use fictional placeholders in
+examples and tests only; do not commit executable live authorizations.
+
 ### Retired UI Entrypoint
 
 Executing `python app.py` now prints a retirement notice and exits nonzero. It does not launch or redirect to another interface.

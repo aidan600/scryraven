@@ -922,47 +922,41 @@ def _caps_observed(
 ) -> dict[str, Any]:
     if cap_policy is not None and hasattr(cap_policy, "observed_counts"):
         observed = cap_policy.observed_counts()
-        return {
+        result = {
             "scryraven_runs": 1,
-            "search_dispatches": _optional_int(observed.get("search_dispatches"))
-            or 0,
-            "fetch_read_operations": _optional_int(
-                observed.get("fetch_read_operations")
-            )
-            or 0,
-            "author_model_calls": _optional_int(observed.get("author_model_calls"))
-            or 0,
-            "smart_search_judgment_model_calls": _optional_int(
-                observed.get("smart_search_judgment_model_calls")
-            )
-            or 0,
+            "search_dispatches": _optional_int(observed.get("search_dispatches")) or 0,
+            "fetch_read_operations": _optional_int(observed.get("fetch_read_operations")) or 0,
+            "author_model_calls": _optional_int(observed.get("author_model_calls")) or 0,
+            "smart_search_judgment_model_calls": _optional_int(observed.get("smart_search_judgment_model_calls")) or 0,
             "independent_manual_source_checks": 0,
             "retries": _optional_int(observed.get("retries")) or 0,
             "enforcement": _safe_text(observed.get("enforcement")) or "active",
             "facts": _string_list(getattr(cap_policy, "facts", None)),
         }
-    cap_trace = _mapping(trace.get("cap_enforcement_trace")) or _mapping(
-        trace.get("run_cap_enforcement")
-    )
+        if getattr(cap_policy, "bounded", False) and hasattr(
+            cap_policy,
+            "physical_snapshot",
+        ):
+            result["physical_envelope"] = cap_policy.physical_snapshot()
+        return result
+    cap_trace = _mapping(trace.get("cap_enforcement_trace")) or _mapping(trace.get("run_cap_enforcement"))
     if not cap_trace:
         return {}
-    return {
+    result = {
         "scryraven_runs": 1,
         "search_dispatches": _optional_int(cap_trace.get("search_dispatches")) or 0,
-        "fetch_read_operations": _optional_int(
-            cap_trace.get("fetch_read_operations")
-        )
-        or 0,
+        "fetch_read_operations": _optional_int(cap_trace.get("fetch_read_operations")) or 0,
         "author_model_calls": _optional_int(cap_trace.get("author_model_calls")) or 0,
-        "smart_search_judgment_model_calls": _optional_int(
-            cap_trace.get("smart_search_judgment_model_calls")
-        )
-        or 0,
+        "smart_search_judgment_model_calls": _optional_int(cap_trace.get("smart_search_judgment_model_calls")) or 0,
         "independent_manual_source_checks": 0,
         "retries": _optional_int(cap_trace.get("retries")) or 0,
         "enforcement": _safe_text(cap_trace.get("enforcement")) or "active",
         "facts": _string_list(cap_trace.get("facts")),
     }
+    physical = _mapping(cap_trace.get("physical"))
+    if physical:
+        result["physical_envelope"] = dict(physical)
+    return result
 
 
 def _retrieval_pass_records(trace: Mapping[str, Any]) -> list[dict[str, Any]]:

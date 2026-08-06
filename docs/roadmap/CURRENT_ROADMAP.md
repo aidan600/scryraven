@@ -441,19 +441,25 @@ the installed acquisition and custody owners.
 
 ## Active Decision Gate: Bounded Product Pulse
 
-Establish an acceptable, finite, enforceable product-level envelope covering
-model, embedding, search, READ, retry, and dollar-bearing execution, then obtain
-one bounded ordinary-product pulse.
+Immediate sequence:
 
-If the existing tracked bounded ordinary-product runner already provides that
-envelope, run the separately licensed pulse. If it does not, repair only the
-smallest ordinary-product cap surface required to make the envelope acceptable,
-then run the separately licensed pulse. Cap repair is permitted only when the
-existing runner lacks the required envelope.
+```text
+complete PR #541 review and merge
+-> verify current official prices for exact intended routes
+-> prepare one proposed local authorization
+-> obtain explicit maintainer approval
+-> execute one bounded ordinary-product run
+-> localize through the existing front or back half
+```
 
-This gate remains active until supported-product evidence is obtained. The gate
-does not prescribe a PR-by-PR chronology, and each implementation or live step
-requires its own authority.
+Repository-owned live-run price tables and numerical live-run defaults are not
+acceptable user authority. Bounded activation requires one complete explicit
+per-run authorization file; no reusable mode profiles exist. Do not add another
+infrastructure or calibration phase before the pulse.
+
+This gate remains active until supported-product evidence is obtained. Each
+implementation or live step requires its own authority.
+
 
 ## Durable Evidence Loop
 

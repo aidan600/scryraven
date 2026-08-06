@@ -9,8 +9,20 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping
+from hashlib import sha256
+from typing import Any, Callable, ClassVar, Mapping
 
+from core.cap_enforcement import (
+    MODEL_OUTPUT_TOKEN_LIMIT,
+    AttemptLifecycle,
+    AttemptReservation,
+    ExternalAttemptSpec,
+    ExternalCallFamily,
+    RunCapExceeded,
+    RunCapPolicy,
+    TokenUsage,
+    model_usage_bound,
+)
 from core.cost_accounting import estimate_tokens, extract_usage_tokens
 from core.strict_accounted_model_route import (
     ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE,
@@ -32,25 +44,13 @@ from core.strict_accounted_model_route import (
 # supply or override temperature; OpenAI Responses requests omit it entirely.
 STRICT_ONE_SHOT_CHAT_TEMPERATURE = 0.3
 
-SUPPORTED_STRICT_ONE_SHOT_PROVIDERS = frozenset(
-    {PROVIDER_OPENAI, PROVIDER_OPENROUTER, PROVIDER_LOCAL}
-)
+SUPPORTED_STRICT_ONE_SHOT_PROVIDERS = frozenset({PROVIDER_OPENAI, PROVIDER_OPENROUTER, PROVIDER_LOCAL})
 
-BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED = (
-    "BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED"
-)
-BLOCKED_STRICT_ONE_SHOT_MODEL_UNCONFIGURED = (
-    "BLOCKED_STRICT_ONE_SHOT_MODEL_UNCONFIGURED"
-)
-BLOCKED_STRICT_ONE_SHOT_CREDENTIAL_UNAVAILABLE = (
-    "BLOCKED_STRICT_ONE_SHOT_CREDENTIAL_UNAVAILABLE"
-)
-BLOCKED_STRICT_ONE_SHOT_LOCAL_URL_UNAVAILABLE = (
-    "BLOCKED_STRICT_ONE_SHOT_LOCAL_URL_UNAVAILABLE"
-)
-BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED = (
-    "BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED"
-)
+BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED = "BLOCKED_STRICT_ONE_SHOT_PROVIDER_UNSUPPORTED"
+BLOCKED_STRICT_ONE_SHOT_MODEL_UNCONFIGURED = "BLOCKED_STRICT_ONE_SHOT_MODEL_UNCONFIGURED"
+BLOCKED_STRICT_ONE_SHOT_CREDENTIAL_UNAVAILABLE = "BLOCKED_STRICT_ONE_SHOT_CREDENTIAL_UNAVAILABLE"
+BLOCKED_STRICT_ONE_SHOT_LOCAL_URL_UNAVAILABLE = "BLOCKED_STRICT_ONE_SHOT_LOCAL_URL_UNAVAILABLE"
+BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED = "BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED"
 BLOCKED_STRICT_ONE_SHOT_OUTPUT_EMPTY = "BLOCKED_STRICT_ONE_SHOT_OUTPUT_EMPTY"
 BLOCKED_STRICT_ONE_SHOT_UNSAFE_REQUEST = "BLOCKED_STRICT_ONE_SHOT_UNSAFE_REQUEST"
 
@@ -125,6 +125,7 @@ class StrictOneShotModelTransportResult:
 class StrictOneShotModelTransport:
     """Callable SmartModel transport with at most one provider request."""
 
+    __scryraven_cap_aware__: ClassVar[bool] = True
     canonical_provider: str
     model: str
     local_url: str | None = field(default=None, repr=False, compare=False)
@@ -140,6 +141,11 @@ class StrictOneShotModelTransport:
         compare=False,
     )
     timeout_seconds: float = 60.0
+    cap_policy: RunCapPolicy | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __call__(
         self,
@@ -176,30 +182,56 @@ class StrictOneShotModelTransport:
                 detail="Configured SmartModel name is empty.",
             )
 
-        client_result = self._client_for_provider(provider=provider, base=base)
+        request_kwargs = dict(kwargs)
+        if self.cap_policy is not None and self.cap_policy.bounded:
+            request_kwargs["max_tokens"] = min(
+                _positive_int(request_kwargs.get("max_tokens")) or MODEL_OUTPUT_TOKEN_LIMIT,
+                MODEL_OUTPUT_TOKEN_LIMIT,
+            )
+        reservation = self._reserve_attempt(
+            provider=provider,
+            model=model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            logical_call_id=str(request_kwargs.get("logical_call_id") or ""),
+        )
+        client_result = self._client_for_provider(
+            provider=provider,
+            base=base,
+            timeout_seconds=(reservation.timeout_seconds if reservation is not None else self.timeout_seconds),
+        )
         if isinstance(client_result, StrictOneShotModelTransportResult):
+            if reservation is not None:
+                reservation.cancel_pre_dispatch("client_unavailable")
             return client_result
         client = client_result
         try:
+            if reservation is not None:
+                reservation.mark_dispatched()
             response = self._create_provider_response_once(
                 client,
                 prompt=prompt,
                 system_prompt=system_prompt,
                 provider=provider,
                 model=model,
-                kwargs=kwargs,
+                kwargs=request_kwargs,
             )
+        except RunCapExceeded:
+            if reservation is not None and reservation.lifecycle is AttemptLifecycle.DISPATCHED:
+                reservation.settle_conservative("dispatch_outcome_ambiguous")
+            raise
         except Exception as exc:  # noqa: BLE001 - fail closed with safe facts only.
+            if reservation is not None:
+                reservation.settle_conservative("dispatch_outcome_ambiguous")
             return self._failed_result(
                 base,
                 failure_kind=BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
-                detail=(
-                    "Strict one-shot provider request failed closed: "
-                    f"{type(exc).__name__}."
-                ),
+                detail=(f"Strict one-shot provider request failed closed: {type(exc).__name__}."),
                 attempted=1,
                 provider_request_failed=True,
             )
+        if reservation is not None:
+            reservation.settle_observed(_ledger_usage_from_response(response))
         output_text = _response_text(response)
         usage_facts = _bounded_usage_facts_from_response(
             response,
@@ -240,9 +272,7 @@ class StrictOneShotModelTransport:
 
     def _base_result(self, *, provider: str, model: str) -> dict[str, Any]:
         return {
-            "canonical_provider": provider
-            if provider in SUPPORTED_STRICT_ONE_SHOT_PROVIDERS
-            else PROVIDER_UNSUPPORTED,
+            "canonical_provider": provider if provider in SUPPORTED_STRICT_ONE_SHOT_PROVIDERS else PROVIDER_UNSUPPORTED,
             "configured_model": _safe_route_value(model),
             "configured_endpoint_kind": _endpoint_kind_for_provider(provider),
             "strict_one_shot": True,
@@ -268,9 +298,7 @@ class StrictOneShotModelTransport:
     ) -> str | None:
         if not prompt or not system_prompt:
             return "Strict one-shot transport requires transient prompt and system text."
-        forbidden = sorted(
-            _FORBIDDEN_RUNTIME_KWARGS & {_normalize_key(k) for k in kwargs}
-        )
+        forbidden = sorted(_FORBIDDEN_RUNTIME_KWARGS & {_normalize_key(k) for k in kwargs})
         if forbidden:
             return "Strict one-shot transport rejected unsafe runtime arguments."
         requested_provider = kwargs.get("provider")
@@ -291,6 +319,7 @@ class StrictOneShotModelTransport:
         *,
         provider: str,
         base: Mapping[str, Any],
+        timeout_seconds: float,
     ) -> Any | StrictOneShotModelTransportResult:
         try:
             if provider == PROVIDER_OPENAI:
@@ -304,12 +333,10 @@ class StrictOneShotModelTransport:
                 return self.client_factory(
                     api_key=key,
                     max_retries=0,
-                    timeout=self.timeout_seconds,
+                    timeout=timeout_seconds,
                 )
             if provider == PROVIDER_OPENROUTER:
-                key = _clean_route_value(self.openrouter_api_key) or self.credential_lookup(
-                    "OPENROUTER_API_KEY"
-                )
+                key = _clean_route_value(self.openrouter_api_key) or self.credential_lookup("OPENROUTER_API_KEY")
                 if not key:
                     return self._failed_result(
                         base,
@@ -320,7 +347,7 @@ class StrictOneShotModelTransport:
                     api_key=key,
                     base_url=OPENROUTER_BASE_URL,
                     max_retries=0,
-                    timeout=self.timeout_seconds,
+                    timeout=timeout_seconds,
                 )
             local_url = _clean_route_value(self.local_url)
             if not local_url:
@@ -333,17 +360,46 @@ class StrictOneShotModelTransport:
                 api_key=LOCAL_STUDIO_KEY_PLACEHOLDER,
                 base_url=local_url,
                 max_retries=0,
-                timeout=self.timeout_seconds,
+                timeout=timeout_seconds,
             )
         except Exception as exc:  # noqa: BLE001 - fail closed without provider detail.
             return self._failed_result(
                 base,
                 failure_kind=BLOCKED_STRICT_ONE_SHOT_PROVIDER_CALL_FAILED,
-                detail=(
-                    "Strict one-shot client construction failed closed: "
-                    f"{type(exc).__name__}."
-                ),
+                detail=(f"Strict one-shot client construction failed closed: {type(exc).__name__}."),
             )
+
+    def _reserve_attempt(
+        self,
+        *,
+        provider: str,
+        model: str,
+        prompt: str,
+        system_prompt: str,
+        logical_call_id: str,
+    ) -> AttemptReservation | None:
+        if self.cap_policy is None or not self.cap_policy.bounded:
+            return None
+        self.cap_policy.note_product_stage("multicomponent_model")
+        pricing = self.cap_policy.resolve_route_pricing(
+            ExternalCallFamily.MODEL,
+            provider,
+            model,
+        )
+        identity_source = logical_call_id or self.cap_policy.new_logical_call_id("strict-model")
+        identity_digest = sha256(identity_source.encode("utf-8")).hexdigest()[:20]
+        return self.cap_policy.reserve_attempt(
+            ExternalAttemptSpec(
+                family=ExternalCallFamily.MODEL,
+                provider=provider,
+                route=model,
+                operation=("responses" if provider == PROVIDER_OPENAI else "chat"),
+                logical_call_id=f"strict-model:{identity_digest}",
+                max_usage=model_usage_bound(prompt, system_prompt),
+                pricing=pricing,
+                requested_timeout_seconds=self.timeout_seconds,
+            )
+        )
 
     def _create_provider_response_once(
         self,
@@ -497,6 +553,7 @@ def build_strict_one_shot_smart_model_transport(
     credential_lookup: CredentialLookup | None = None,
     client_factory: OpenAICompatibleClientFactory | None = None,
     timeout_seconds: float = 60.0,
+    cap_policy: RunCapPolicy | None = None,
 ) -> StrictOneShotModelTransport:
     """Build the product-owned strict one-shot SmartModel transport."""
 
@@ -508,6 +565,7 @@ def build_strict_one_shot_smart_model_transport(
         credential_lookup=credential_lookup or os.getenv,
         client_factory=client_factory or _build_openai_compatible_client,
         timeout_seconds=timeout_seconds,
+        cap_policy=cap_policy,
     )
 
 
@@ -628,6 +686,32 @@ def _bounded_usage_facts_from_response(
             "usage_observed": usage_observed,
             "usage_estimated": usage_estimated,
         }
+    )
+
+
+def _ledger_usage_from_response(response: Any) -> TokenUsage | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    if input_tokens is None:
+        input_tokens = getattr(usage, "input_tokens", None)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    if output_tokens is None:
+        output_tokens = getattr(usage, "output_tokens", None)
+    if input_tokens is None and output_tokens is None:
+        return None
+    input_details = getattr(usage, "prompt_tokens_details", None)
+    if input_details is None:
+        input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "completion_tokens_details", None)
+    if output_details is None:
+        output_details = getattr(usage, "output_tokens_details", None)
+    return TokenUsage(
+        input_tokens=int(input_tokens or 0),
+        cached_input_tokens=int(getattr(input_details, "cached_tokens", 0) or 0),
+        output_tokens=int(output_tokens or 0),
+        reasoning_tokens=int(getattr(output_details, "reasoning_tokens", 0) or 0),
     )
 
 

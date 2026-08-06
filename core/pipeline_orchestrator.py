@@ -39,6 +39,14 @@ from core.author_execution_runtime import execute_author_handoff_from_scope
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
+from core.cap_enforcement import (
+    DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+    ExternalAttemptSpec,
+    ExternalCallFamily,
+    RunCapExceeded,
+    TokenUsage,
+    is_cap_aware,
+)
 from core.component_gap_recovery_coordinator import (
     ComponentGapRecoveryPipelineInputs,
     execute_component_gap_recovery,
@@ -518,19 +526,37 @@ def run_pipeline(
     # --- Identity ---
     session_id = config.session_id or str(uuid.uuid4())
     run_id = config.run_id or str(uuid.uuid4())
+    cap_policy = config.cap_policy
+    bounded = cap_policy is not None and cap_policy.bounded
+    if bounded:
+        cap_policy.activate(run_id=run_id, request_id=session_id)
+        cap_policy.note_product_stage("transport_accounting_validation")
+        required_cap_aware = {
+            "ask_model": deps.ask_model,
+            "embed_texts": deps.embed_texts,
+            "process_search_queries": deps.process_search_queries,
+        }
+        if deps.strict_one_shot_smart_model_transport is not None:
+            required_cap_aware["strict_one_shot_smart_model_transport"] = (
+                deps.strict_one_shot_smart_model_transport
+            )
+        if any(not is_cap_aware(transport) for transport in required_cap_aware.values()):
+            cap_policy.finalize_active_attempts()
+            raise RunCapExceeded("unaccounted_transport")
 
-    log_run_started(
-        run_id=run_id,
-        session_id=session_id,
-        phase="pipeline",
-        query=config.query,
-        mode=config.mode,
-        path=deps.execution_log_path,
-        logger=run_log,
-    )
+    if not bounded:
+        log_run_started(
+            run_id=run_id,
+            session_id=session_id,
+            phase="pipeline",
+            query=config.query,
+            mode=config.mode,
+            path=deps.execution_log_path,
+            logger=run_log,
+        )
 
     try:
-        return _run_pipeline_inner(
+        outcome = _run_pipeline_inner(
             config=config,
             deps=deps,
             status=status,
@@ -539,7 +565,15 @@ def run_pipeline(
             run_id=run_id,
             pipeline_start_time=pipeline_start_time,
         )
+        if bounded:
+            cap_policy.finalize_active_attempts()
+            cap_policy.ensure_within_deadline()
+        return outcome
+    except RunCapExceeded:
+        raise
     except PipelineError:
+        if bounded:
+            raise
         # Expected failures — logged but not re-wrapped.
         log_run_failed(
             run_id=run_id,
@@ -553,6 +587,8 @@ def run_pipeline(
         )
         raise
     except Exception as exc:
+        if bounded:
+            raise
         log_run_failed(
             run_id=run_id,
             session_id=session_id,
@@ -564,6 +600,9 @@ def run_pipeline(
             logger=run_log,
         )
         raise
+    finally:
+        if bounded:
+            cap_policy.finalize_active_attempts()
 
 
 def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the original monolith)
@@ -607,6 +646,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     current_date = config.current_date
     cap_policy = config.cap_policy
+    suppress_persistence = bool(
+        cap_policy is not None and cap_policy.persistence_suppressed
+    )
     provider_availability_snapshot = ProviderAvailabilitySnapshot.from_mapping(
         deps.provider_availability
         if deps.provider_availability is not None
@@ -638,6 +680,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         def wrapped(*args: Any, **kw: Any) -> Any:
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
+            if cap_policy is not None and cap_policy.bounded:
+                kw.setdefault("cap_policy", cap_policy)
+                if "logical_call_id" not in kw:
+                    kw["logical_call_id"] = cap_policy.new_logical_call_id(phase)
             return base(*args, **kw)
         return wrapped
 
@@ -646,12 +692,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         def wrapped(*args: Any, **kw: Any) -> Any:
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
+            if cap_policy is not None and cap_policy.bounded:
+                kw.setdefault("cap_policy", cap_policy)
+                if "logical_call_id" not in kw:
+                    kw["logical_call_id"] = cap_policy.new_logical_call_id(phase)
             return base(*args, **kw)
         return wrapped
 
     def _search(*, phase: str = "retrieval"):
         base = deps.process_search_queries
         def wrapped(*args: Any, **kw: Any) -> Any:
+            if cap_policy is not None and cap_policy.bounded:
+                kw.setdefault("cap_policy", cap_policy)
             optional_kw = {
                 key: kw.pop(key)
                 for key in (
@@ -660,6 +712,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     "iteration",
                     "discovery_result_context",
                     "discovery_result_store",
+                    "cap_policy",
                 )
                 if key in kw
             }
@@ -680,15 +733,52 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
             if cap_policy is not None:
-                cap_policy.mark_search_dispatch()
+                if cap_policy.bounded:
+                    if "cap_policy" not in supported_optional_kw:
+                        raise RunCapExceeded("unaccounted_search_transport")
+                else:
+                    cap_policy.mark_search_dispatch()
             return base(*args, **kw)
         return wrapped
+
+    def _before_read_transport(request: Any) -> Any:
+        if cap_policy is None:
+            return None
+        if not cap_policy.bounded:
+            cap_policy.mark_fetch_read_operation()
+            return None
+        provider = str(request.provider)
+        operation = str(request.operation)
+        cap_policy.note_product_stage(f"read-{operation}")
+        pricing = cap_policy.resolve_route_pricing(
+            ExternalCallFamily.READ,
+            provider,
+            operation,
+        )
+        identity_digest = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            str(request.acquisition_job_id),
+        ).hex[:20]
+        return cap_policy.reserve_attempt(
+            ExternalAttemptSpec(
+                family=ExternalCallFamily.READ,
+                provider=provider,
+                route=operation,
+                operation=operation,
+                logical_call_id=f"read-{provider}:{identity_digest}",
+                max_usage=TokenUsage(),
+                pricing=pricing,
+                requested_timeout_seconds=DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+            )
+        )
 
     def _cap_model_phase(base: Any, phase: str) -> Any:
         if cap_policy is None:
             return base
 
         def wrapped(*args: Any, **kw: Any) -> Any:
+            if cap_policy.bounded:
+                return base(*args, **kw)
             if phase == "author":
                 cap_policy.mark_author_model_call()
             elif phase == "search_judgment":
@@ -862,6 +952,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         api_key=or_api_key,
         use_reasoning=use_reasoning,
         measure_context_stage=_measure_context_stage,
+        allow_model_retry=not (
+            cap_policy is not None and cap_policy.should_disable_model_retry()
+        ),
     )
     run_kernel.reduce(route_result.observation)
     router_query_preparation_contract = route_result.router_query_preparation_contract
@@ -900,7 +993,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_kernel.reduce(run_contract_result.observation)
     run_contract_projection = dict(run_kernel.state.run_contract_projection)
 
-    policy_state = load_policy_state(policy_state_path)
+    policy_state = (
+        {} if suppress_persistence else load_policy_state(policy_state_path)
+    )
     cfg = apply_policy_to_run_config(
         {
             "utilization_threshold": DEFAULT_UTILIZATION_THRESHOLD,
@@ -934,11 +1029,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     pre_retrieval_seconds = 0.0
 
     status.step(f"Core Topic: **{core_topic}**")
-    try:
-        for hint in recent_recurring_kb_hints(kb_triggers_path, limit=20, max_display=3):
-            status.step(f"\u2139\ufe0f KB (recurring): {hint[:400]}")
-    except Exception:
-        pass
+    if not suppress_persistence:
+        try:
+            for hint in recent_recurring_kb_hints(
+                kb_triggers_path, limit=20, max_display=3
+            ):
+                status.step(f"\u2139\ufe0f KB (recurring): {hint[:400]}")
+        except Exception:
+            pass
 
     if prior_title_for_thread:
         session_title = prior_title_for_thread
@@ -960,7 +1058,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     status.step("Planning accepted components and initial search strategy...")
     planner_adapter = deps.search_planner_adapter
     if planner_adapter is None:
-        planner_model_transport = deps.ask_model
+        planner_model_transport = _ask(phase="search_planner")
 
         def ask_search_planner_model(*args: Any, **kwargs: Any) -> Any:
             """Bind per-run transport and accounting facts without retaining them."""
@@ -1165,6 +1263,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 deps.ordinary_live_source_acquisition_transports
             ),
             cap_policy=cap_policy,
+            before_transport=(
+                _before_read_transport if cap_policy is not None else None
+            ),
             required_or_preferred_anchors=(
                 config.ordinary_live_source_custody_anchor_groups
             ),
@@ -2814,6 +2915,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     followup_scope,
                     retrieval_pass_records=retrieval_pass_records,
                 )
+            except RunCapExceeded:
+                raise
             except Exception as exc:
                 run_kernel.reduce(
                     Observation.from_action(
@@ -2928,7 +3031,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             available_providers=(provider_availability_snapshot.to_capability_available_keys()),
             acquisition_transports=deps.searchos_read_acquisition_transports,
             execute_followup_discover=_execute_searchos_followup_discover,
-            before_transport=(cap_policy.mark_fetch_read_operation if cap_policy is not None else None),
+            before_transport=(
+                _before_read_transport if cap_policy is not None else None
+            ),
             measure_context_stage=_measure_context_stage,
         )
         searchos_slice_a_projection = dict(searchos_slice_a_result.projection)
@@ -3725,7 +3830,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 _execute_searchos_followup_discover
                             ),
                             before_transport=(
-                                cap_policy.mark_fetch_read_operation
+                                _before_read_transport
                                 if cap_policy is not None
                                 else None
                             ),
@@ -4900,6 +5005,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     evidence_ledger_projection = post_final_source_class_projection.evidence_ledger_projection
     # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
+    if cap_policy is not None and cap_policy.bounded:
+        cap_policy.note_product_stage("final_answer_packaging")
     post_author_trace_packaging = build_post_author_trace_packaging_from_scope(
         locals(),
         analyst_evidence=_evidence_slice_for_analyst(),
@@ -5003,28 +5110,35 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # persistence consumer observes the same field meanings as RunOutcome and
     # the session projection.
     execution_log_entry["execution_trace"] = dict(execution_trace)
-    persistence_side_effect_result = execute_persistence_side_effects(
-        execution_log_path=execution_log_path,
-        execution_log_entry=execution_log_entry,
-        run_id=run_id,
-        session_id=session_id,
-        latency_seconds=latency_seconds,
-        strategy=strategy,
-        execution_trace=execution_trace,
-        run_log=run_log,
-        policy_journal_path=policy_journal_path,
-        policy_applied=policy_applied,
-        default_utilization_threshold=DEFAULT_UTILIZATION_THRESHOLD,
-        ts_utc=ts_utc,
-        query=query,
-        kb_context=build_kb_review_persistence_context(
-            runtime_values=locals(),
-            clean_json_response=deps.clean_json_response,
-            kb_review_agent=kb_review_agent,
-        ),
-        db_enabled=DB_ENABLED,
-    )
-    kb_instrumentation = persistence_side_effect_result.kb_instrumentation
-    kb_warning = persistence_side_effect_result.kb_warning
+    if suppress_persistence:
+        kb_instrumentation = None
+        kb_warning = None
+    else:
+            persistence_side_effect_result = execute_persistence_side_effects(
+                execution_log_path=execution_log_path,
+                execution_log_entry=execution_log_entry,
+                run_id=run_id,
+                session_id=session_id,
+                latency_seconds=latency_seconds,
+                strategy=strategy,
+                execution_trace=execution_trace,
+                run_log=run_log,
+                policy_journal_path=policy_journal_path,
+                policy_applied=policy_applied,
+                default_utilization_threshold=DEFAULT_UTILIZATION_THRESHOLD,
+                ts_utc=ts_utc,
+                query=query,
+                kb_context=build_kb_review_persistence_context(
+                    runtime_values=locals(),
+                    clean_json_response=deps.clean_json_response,
+                    kb_review_agent=kb_review_agent,
+                ),
+                db_enabled=DB_ENABLED,
+            )
+            kb_instrumentation = persistence_side_effect_result.kb_instrumentation
+            kb_warning = persistence_side_effect_result.kb_warning
 
-    return build_run_outcome_from_scope(locals())
+    outcome = build_run_outcome_from_scope(locals())
+    if cap_policy is not None and cap_policy.bounded:
+        cap_policy.note_product_stage("run_outcome_completed")
+    return outcome

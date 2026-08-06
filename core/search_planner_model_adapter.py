@@ -13,6 +13,7 @@ from enum import Enum, auto
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
 
+from core.cap_enforcement import RunCapExceeded
 from core.search_planner_model_prompt import (
     SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS,
     SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES,
@@ -1611,6 +1612,8 @@ class SearchPlannerModelAdapter:
                 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
                 **model_kwargs,
             )
+        except RunCapExceeded:
+            raise
         except Exception as exc:
             raise SearchPlannerModelAdapterError(
                 f"search planner model call failed closed: {type(exc).__name__}",

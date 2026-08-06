@@ -763,6 +763,11 @@ def test_ordinary_discovery_has_a_durable_no_exact_url_transport_boundary() -> N
             "requests.post",
             "https://google.serper.dev/search",
         ),
+        (
+            "search_exa_results",
+            "requests.post",
+            "https://api.exa.ai/search",
+        ),
     }
     exa_search_calls = [
         (function.name, call)

@@ -7,6 +7,11 @@ from hashlib import sha256
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from core.calculations import ALLOWED_CALCULATIONS, sanitize_to_float
+from core.cap_enforcement import (
+    RunCapExceeded,
+    RunCapPolicy,
+    mark_cap_aware,
+)
 from core.cost_accounting import CostAccumulator
 from core.discovery_source_result import (
     DiscoveryResultMaterialStore,
@@ -2766,6 +2771,7 @@ def _provider_candidate_passage_fields(source: dict[str, Any]) -> dict[str, Any]
     return fields
 
 
+@mark_cap_aware
 def process_search_queries(
     queries_list,
     intent,
@@ -2796,6 +2802,7 @@ def process_search_queries(
     query_similarity_basis: str | None = None,
     discovery_result_context: Mapping[str, Any] | None = None,
     discovery_result_store: DiscoveryResultMaterialStore | None = None,
+    cap_policy: RunCapPolicy | None = None,
 ):
     if search_providers is None:
         # Provider selection is complete before mechanical dispatch.  The
@@ -2898,6 +2905,12 @@ def process_search_queries(
                     exclude_domains=exclude_domains,
                     cost_accumulator=cost_accumulator,
                     cost_phase=cost_phase,
+                    cap_policy=cap_policy,
+                    logical_call_id=(
+                        cap_policy.new_logical_call_id("search-tavily")
+                        if cap_policy is not None and cap_policy.bounded
+                        else f"search-tavily:{call_ordinal}"
+                    ),
                 )] = ("tavily", q, call_ordinal, result_context)
             if "linkup" in search_providers and os.getenv("LINKUP_API_KEY"):
                 call_ordinal, result_context = call_lineage("linkup")
@@ -2914,6 +2927,12 @@ def process_search_queries(
                     to_date=to_date,
                     cost_accumulator=cost_accumulator,
                     cost_phase=cost_phase,
+                    cap_policy=cap_policy,
+                    logical_call_id=(
+                        cap_policy.new_logical_call_id("search-linkup")
+                        if cap_policy is not None and cap_policy.bounded
+                        else f"search-linkup:{call_ordinal}"
+                    ),
                 )] = ("linkup", q, call_ordinal, result_context)
             if "exa" in search_providers and os.getenv("EXA_API_KEY"):
                 exa_domains = exa_domain_filter if exa_domain_filter else include_domains
@@ -2929,6 +2948,12 @@ def process_search_queries(
                     to_date=to_date,
                     cost_accumulator=cost_accumulator,
                     cost_phase=cost_phase,
+                    cap_policy=cap_policy,
+                    logical_call_id=(
+                        cap_policy.new_logical_call_id("search-exa")
+                        if cap_policy is not None and cap_policy.bounded
+                        else f"search-exa:{call_ordinal}"
+                    ),
                 )] = ("exa", q, call_ordinal, result_context)
 
         # Futures execute concurrently, but provider material is reduced in stable
@@ -2940,26 +2965,31 @@ def process_search_queries(
             failure_type = None
             try:
                 results, imgs = future.result()
+            except RunCapExceeded:
+                raise
             except Exception as e:
                 success = False
                 failure_type = type(e).__name__
-                logger.warning(f"[SEARCH] {provider} failed for '{q}': {e}")
-                q_preview = (str(q) if q is not None else "")[:200]
-                if _is_retrieval_timeout_error(e):
-                    log_retrieval_timeout(
-                        provider=provider,
-                        query=str(q),
-                        timeout_seconds=retrieval_timeout_seconds(provider),
-                        logger=logger,
-                    )
+                if cap_policy is not None and cap_policy.bounded:
+                    logger.warning("Bounded %s search request failed.", provider)
                 else:
-                    log_provider_error(
-                        provider=provider,
-                        error=str(e),
-                        query_preview=q_preview,
-                        phase="retrieval",
-                        logger=logger,
-                    )
+                    logger.warning(f"[SEARCH] {provider} failed for '{q}': {e}")
+                    q_preview = (str(q) if q is not None else "")[:200]
+                    if _is_retrieval_timeout_error(e):
+                        log_retrieval_timeout(
+                            provider=provider,
+                            query=str(q),
+                            timeout_seconds=retrieval_timeout_seconds(provider),
+                            logger=logger,
+                        )
+                    else:
+                        log_provider_error(
+                            provider=provider,
+                            error=str(e),
+                            query_preview=q_preview,
+                            phase="retrieval",
+                            logger=logger,
+                        )
                 results, imgs = [], []
 
             provider_buckets.setdefault(provider, [])
@@ -3240,6 +3270,12 @@ def process_search_queries(
             base_url=local_url,
             cost_accumulator=cost_accumulator,
             cost_phase="embedding",
+            cap_policy=cap_policy,
+            logical_call_id=(
+                cap_policy.new_logical_call_id("retrieval-embedding")
+                if cap_policy is not None and cap_policy.bounded
+                else None
+            ),
         )
         sim_scores = compute_similarities(query_embedding, new_embeddings)
         _hint = (entity_hint or "").strip()

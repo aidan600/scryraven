@@ -6,12 +6,25 @@ import logging
 import os
 import time
 from functools import lru_cache, wraps
-from typing import Any, Generator, List, Optional, Union
+from typing import Any, Callable, Generator, List, Optional, Union
 
 import numpy as np
 from exa_py import Exa
 from openai import OpenAI
 
+from core.cap_enforcement import (
+    DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+    MODEL_OUTPUT_TOKEN_LIMIT,
+    AttemptReservation,
+    ExternalAttemptSpec,
+    ExternalCallFamily,
+    RunCapExceeded,
+    RunCapPolicy,
+    TokenUsage,
+    embedding_usage_bound,
+    mark_cap_aware,
+    model_usage_bound,
+)
 from core.cost_accounting import CostAccumulator, estimate_tokens, extract_usage_tokens
 
 logger = logging.getLogger(__name__)
@@ -31,20 +44,157 @@ def retry_with_backoff(max_retries: int = 3, base_delay: float = 1.0):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            for attempt in range(max_retries):
+            cap_policy = kwargs.get("cap_policy")
+            bounded = isinstance(cap_policy, RunCapPolicy) and cap_policy.bounded
+            attempt_limit = 1 if bounded and cap_policy.max_retries == 0 else max_retries
+            for attempt in range(attempt_limit):
+                call_kwargs = dict(kwargs)
+                call_kwargs["_physical_retry_index"] = attempt
                 try:
-                    return func(*args, **kwargs)
+                    return func(*args, **call_kwargs)
+                except RunCapExceeded:
+                    raise
                 except Exception as e:
-                    if attempt == max_retries - 1:
-                        logger.error(
-                            f"Function {func.__name__} failed after {max_retries} attempts. Error: {e}"
-                        )
+                    if attempt == attempt_limit - 1:
+                        if bounded:
+                            logger.error(
+                                "Bounded %s request failed.",
+                                func.__name__,
+                            )
+                        else:
+                            logger.error(
+                                "Function %s failed after %s attempts. Error: %s",
+                                func.__name__,
+                                attempt_limit,
+                                e,
+                            )
                         raise
                     time.sleep(base_delay * (2**attempt))
 
         return wrapper
 
     return decorator
+
+
+def _reserve_model_attempt(
+    cap_policy: RunCapPolicy | None,
+    *,
+    provider: str,
+    model: str,
+    operation: str,
+    prompt: str,
+    system_prompt: str,
+    logical_call_id: str | None,
+    retry_index: int,
+    fallback: bool = False,
+) -> AttemptReservation | None:
+    if cap_policy is None or not cap_policy.bounded:
+        return None
+    logical_id = logical_call_id or cap_policy.new_logical_call_id("model")
+    pricing = cap_policy.resolve_route_pricing(ExternalCallFamily.MODEL, provider, model)
+    return cap_policy.reserve_attempt(
+        ExternalAttemptSpec(
+            family=ExternalCallFamily.MODEL,
+            provider=pricing.pricing_key.split(".", 1)[0],
+            route=model,
+            operation=operation,
+            logical_call_id=logical_id,
+            max_usage=model_usage_bound(prompt, system_prompt),
+            pricing=pricing,
+            requested_timeout_seconds=DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+            is_retry=retry_index > 0,
+            is_fallback=fallback,
+        )
+    )
+
+
+def _reserve_embedding_attempt(
+    cap_policy: RunCapPolicy | None,
+    *,
+    provider: str,
+    model: str,
+    batch: list[str],
+    logical_call_id: str | None,
+    retry_index: int,
+) -> AttemptReservation | None:
+    if cap_policy is None or not cap_policy.bounded:
+        return None
+    logical_id = logical_call_id or cap_policy.new_logical_call_id("embedding")
+    pricing = cap_policy.resolve_route_pricing(ExternalCallFamily.EMBEDDING, provider, model)
+    return cap_policy.reserve_attempt(
+        ExternalAttemptSpec(
+            family=ExternalCallFamily.EMBEDDING,
+            provider=pricing.pricing_key.split(".", 1)[0],
+            route=model,
+            operation="embeddings",
+            logical_call_id=logical_id,
+            max_usage=embedding_usage_bound(batch),
+            pricing=pricing,
+            requested_timeout_seconds=DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+            is_retry=retry_index > 0,
+        )
+    )
+
+
+def _bounded_client(client: OpenAI, reservation: AttemptReservation | None) -> OpenAI:
+    if reservation is None:
+        return client
+    try:
+        return client.with_options(
+            max_retries=0,
+            timeout=reservation.timeout_seconds,
+        )
+    except Exception:
+        reservation.cancel_pre_dispatch("client_configuration_failed")
+        raise
+
+
+def _dispatch(
+    reservation: AttemptReservation | None,
+    operation: Any,
+) -> Any:
+    if reservation is None:
+        return operation()
+    reservation.mark_dispatched()
+    try:
+        return operation()
+    except Exception:
+        reservation.settle_conservative("dispatch_outcome_ambiguous")
+        raise
+
+
+def _model_usage(response: Any) -> TokenUsage | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    if input_tokens is None:
+        input_tokens = getattr(usage, "input_tokens", None)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    if output_tokens is None:
+        output_tokens = getattr(usage, "output_tokens", None)
+    if input_tokens is None and output_tokens is None:
+        return None
+    input_details = getattr(usage, "prompt_tokens_details", None)
+    if input_details is None:
+        input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "completion_tokens_details", None)
+    if output_details is None:
+        output_details = getattr(usage, "output_tokens_details", None)
+    return TokenUsage(
+        input_tokens=int(input_tokens or 0),
+        cached_input_tokens=int(getattr(input_details, "cached_tokens", 0) or 0),
+        output_tokens=int(output_tokens or 0),
+        reasoning_tokens=int(getattr(output_details, "reasoning_tokens", 0) or 0),
+    )
+
+
+def _settle_model(
+    reservation: AttemptReservation | None,
+    response: Any,
+) -> None:
+    if reservation is not None:
+        reservation.settle_observed(_model_usage(response))
 
 
 def response_text(resp: Any) -> str:
@@ -97,14 +247,28 @@ def _tracked_stream(
     model: str,
     prompt: str,
     system_prompt: str,
+    reservation: AttemptReservation | None = None,
+    close_stream: Callable[[], Any] | None = None,
 ) -> Generator[str, None, None]:
     parts: list[str] = []
     try:
         for chunk in stream:
+            if reservation is not None and reservation.remaining_seconds <= 0:
+                raise RunCapExceeded(
+                    "deadline_exhausted",
+                    family=ExternalCallFamily.MODEL,
+                )
             if isinstance(chunk, str):
                 parts.append(chunk)
             yield chunk
     finally:
+        if close_stream is not None:
+            try:
+                close_stream()
+            except Exception:
+                pass
+        if reservation is not None:
+            reservation.settle_conservative("stream_usage_unavailable")
         _record_model_cost(
             cost_accumulator,
             phase=phase,
@@ -115,6 +279,7 @@ def _tracked_stream(
         )
 
 
+@mark_cap_aware
 @retry_with_backoff(max_retries=3, base_delay=1.5)
 def ask_model(
     prompt: str,
@@ -131,6 +296,9 @@ def ask_model(
     cost_phase: str = "model",
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
+    _physical_retry_index: int = 0,
 ) -> Union[str, Generator[str, None, None]]:
     messages = [
         {"role": "system", "content": system_prompt},
@@ -140,6 +308,17 @@ def ask_model(
 
     if provider == "Local (LM Studio)":
         local_client = OpenAI(base_url=base_url, api_key="lm-studio")
+        reservation = _reserve_model_attempt(
+            cap_policy,
+            provider=provider,
+            model=model,
+            operation="chat_stream" if stream else "chat",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            logical_call_id=logical_call_id,
+            retry_index=_physical_retry_index,
+        )
+        local_client = _bounded_client(local_client, reservation)
         kwargs = {
             "model": model,
             "messages": messages,
@@ -150,7 +329,10 @@ def ask_model(
             kwargs["max_tokens"] = max_tokens
         if response_format:
             kwargs["response_format"] = response_format
-        resp = local_client.chat.completions.create(**kwargs)
+        resp = _dispatch(
+            reservation,
+            lambda: local_client.chat.completions.create(**kwargs),
+        )
         if stream:
 
             def generator():
@@ -162,9 +344,17 @@ def ask_model(
                     yield "\n\n*[Connection lost]*"
 
             return _tracked_stream(
-                generator(), cost_accumulator, phase=cost_phase, model=model, prompt=prompt, system_prompt=system_prompt
+                generator(),
+                cost_accumulator,
+                phase=cost_phase,
+                model=model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                reservation=reservation,
+                close_stream=getattr(resp, "close", None),
             )
         text = resp.choices[0].message.content or ""
+        _settle_model(reservation, resp)
         _record_model_cost(
             cost_accumulator,
             phase=cost_phase,
@@ -180,6 +370,17 @@ def ask_model(
         if not api_key:
             raise ValueError("OpenRouter API key is missing!")
         or_client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+        reservation = _reserve_model_attempt(
+            cap_policy,
+            provider=provider,
+            model=model,
+            operation="chat_stream" if stream else "chat",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            logical_call_id=logical_call_id,
+            retry_index=_physical_retry_index,
+        )
+        or_client = _bounded_client(or_client, reservation)
         kwargs = {
             "model": model,
             "messages": messages,
@@ -191,7 +392,10 @@ def ask_model(
             kwargs["max_tokens"] = max_tokens
         if response_format:
             kwargs["response_format"] = response_format
-        resp = or_client.chat.completions.create(**kwargs)
+        resp = _dispatch(
+            reservation,
+            lambda: or_client.chat.completions.create(**kwargs),
+        )
         if stream:
 
             def generator():
@@ -203,9 +407,17 @@ def ask_model(
                     yield "\n\n*[Connection lost]*"
 
             return _tracked_stream(
-                generator(), cost_accumulator, phase=cost_phase, model=model, prompt=prompt, system_prompt=system_prompt
+                generator(),
+                cost_accumulator,
+                phase=cost_phase,
+                model=model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                reservation=reservation,
+                close_stream=getattr(resp, "close", None),
             )
         text = resp.choices[0].message.content or ""
+        _settle_model(reservation, resp)
         _record_model_cost(
             cost_accumulator,
             phase=cost_phase,
@@ -231,12 +443,39 @@ def ask_model(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
 
+    if cap_policy is not None and cap_policy.bounded:
+        kwargs.pop("max_tokens", None)
+        kwargs["max_completion_tokens"] = min(
+            max(1, int(max_tokens or MODEL_OUTPUT_TOKEN_LIMIT)),
+            MODEL_OUTPUT_TOKEN_LIMIT,
+        )
+
     if response_format:
         kwargs["response_format"] = response_format
 
     if stream:
         try:
-            resp = openai_client.chat.completions.create(**kwargs, stream=True)
+            reservation = _reserve_model_attempt(
+                cap_policy,
+                provider=provider,
+                model=model,
+                operation="chat_stream",
+                prompt=prompt,
+                system_prompt=system_prompt,
+                logical_call_id=logical_call_id,
+                retry_index=_physical_retry_index,
+            )
+            request_client = _bounded_client(openai_client, reservation)
+            stream_kwargs = dict(kwargs)
+            if reservation is not None:
+                stream_kwargs["stream_options"] = {"include_usage": True}
+            resp = _dispatch(
+                reservation,
+                lambda: request_client.chat.completions.create(
+                    **stream_kwargs,
+                    stream=True,
+                ),
+            )
 
             def generator():
                 try:
@@ -244,18 +483,72 @@ def ask_model(
                         if chunk.choices and chunk.choices[0].delta.content:
                             yield chunk.choices[0].delta.content
                 except Exception as e:
+                    if reservation is not None:
+                        raise
                     yield f"\n\n*[Connection lost: {e}]*"
 
             return _tracked_stream(
-                generator(), cost_accumulator, phase=cost_phase, model=model, prompt=prompt, system_prompt=system_prompt
+                generator(),
+                cost_accumulator,
+                phase=cost_phase,
+                model=model,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                reservation=reservation,
+                close_stream=getattr(resp, "close", None),
             )
+        except RunCapExceeded:
+            raise
         except Exception:
+            if cap_policy is not None and cap_policy.should_disable_fallback():
+                raise
             try:
-                resp = openai_client.chat.completions.create(**kwargs)
+                reservation = _reserve_model_attempt(
+                    cap_policy,
+                    provider=provider,
+                    model=model,
+                    operation="chat",
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    logical_call_id=logical_call_id,
+                    retry_index=_physical_retry_index,
+                    fallback=True,
+                )
+                request_client = _bounded_client(openai_client, reservation)
+                resp = _dispatch(
+                    reservation,
+                    lambda: request_client.chat.completions.create(**kwargs),
+                )
+                _settle_model(reservation, resp)
                 final_text = resp.choices[0].message.content or ""
                 usage_response = resp
+            except RunCapExceeded:
+                raise
             except Exception:
-                resp = openai_client.responses.create(model=model, input=messages, reasoning={"effort": effort})
+                reservation = _reserve_model_attempt(
+                    cap_policy,
+                    provider=provider,
+                    model=model,
+                    operation="responses",
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    logical_call_id=logical_call_id,
+                    retry_index=_physical_retry_index,
+                    fallback=True,
+                )
+                request_client = _bounded_client(openai_client, reservation)
+                response_kwargs = {
+                    "model": model,
+                    "input": messages,
+                    "reasoning": {"effort": effort},
+                }
+                if reservation is not None:
+                    response_kwargs["max_output_tokens"] = MODEL_OUTPUT_TOKEN_LIMIT
+                resp = _dispatch(
+                    reservation,
+                    lambda: request_client.responses.create(**response_kwargs),
+                )
+                _settle_model(reservation, resp)
                 final_text = response_text(resp)
                 usage_response = resp
 
@@ -277,7 +570,22 @@ def ask_model(
             return fake_generator()
 
     try:
-        resp = openai_client.chat.completions.create(**kwargs)
+        reservation = _reserve_model_attempt(
+            cap_policy,
+            provider=provider,
+            model=model,
+            operation="chat",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            logical_call_id=logical_call_id,
+            retry_index=_physical_retry_index,
+        )
+        request_client = _bounded_client(openai_client, reservation)
+        resp = _dispatch(
+            reservation,
+            lambda: request_client.chat.completions.create(**kwargs),
+        )
+        _settle_model(reservation, resp)
         text = resp.choices[0].message.content or ""
         _record_model_cost(
             cost_accumulator,
@@ -289,8 +597,35 @@ def ask_model(
             output_text=text,
         )
         return text
+    except RunCapExceeded:
+        raise
     except Exception:
-        resp = openai_client.responses.create(model=model, input=messages, reasoning={"effort": effort})
+        if cap_policy is not None and cap_policy.should_disable_fallback():
+            raise
+        reservation = _reserve_model_attempt(
+            cap_policy,
+            provider=provider,
+            model=model,
+            operation="responses",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            logical_call_id=logical_call_id,
+            retry_index=_physical_retry_index,
+            fallback=True,
+        )
+        request_client = _bounded_client(openai_client, reservation)
+        response_kwargs = {
+            "model": model,
+            "input": messages,
+            "reasoning": {"effort": effort},
+        }
+        if reservation is not None:
+            response_kwargs["max_output_tokens"] = MODEL_OUTPUT_TOKEN_LIMIT
+        resp = _dispatch(
+            reservation,
+            lambda: request_client.responses.create(**response_kwargs),
+        )
+        _settle_model(reservation, resp)
         text = response_text(resp)
         _record_model_cost(
             cost_accumulator,
@@ -304,6 +639,7 @@ def ask_model(
         return text
 
 
+@mark_cap_aware
 @retry_with_backoff(max_retries=3, base_delay=1.0)
 def embed_texts(
     texts: List[str],
@@ -312,6 +648,9 @@ def embed_texts(
     base_url: Optional[str] = None,
     cost_accumulator: Optional[CostAccumulator] = None,
     cost_phase: str = "embedding",
+    cap_policy: RunCapPolicy | None = None,
+    logical_call_id: str | None = None,
+    _physical_retry_index: int = 0,
 ) -> List[List[float]]:
     if not texts:
         return []
@@ -323,11 +662,30 @@ def embed_texts(
 
     batch_size = 100
     all_embeddings = []
+    effective_logical_id = logical_call_id
+    if effective_logical_id is None and cap_policy is not None and cap_policy.bounded:
+        effective_logical_id = cap_policy.new_logical_call_id("embedding")
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
-        resp = embed_client.embeddings.create(model=model, input=batch)
+        reservation = _reserve_embedding_attempt(
+            cap_policy,
+            provider=provider,
+            model=model,
+            batch=batch,
+            logical_call_id=effective_logical_id,
+            retry_index=_physical_retry_index,
+        )
+        request_client = _bounded_client(embed_client, reservation)
+        resp = _dispatch(
+            reservation,
+            lambda: request_client.embeddings.create(model=model, input=batch),
+        )
         input_tokens, _ = extract_usage_tokens(resp)
+        if reservation is not None:
+            reservation.settle_observed(
+                TokenUsage(embedding_tokens=int(input_tokens)) if input_tokens is not None else None
+            )
         if input_tokens is None:
             input_tokens = estimate_tokens(batch)
         if cost_accumulator is not None:

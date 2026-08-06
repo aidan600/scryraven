@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core import searchos_navigation_runtime as navigation_runtime
 from core.acquisition_adapters import AcquisitionTransports
+from core.cap_enforcement import RunCapExceeded
 from core.discovery_source_result import normalize_discovery_result_url
 from core.fetch_read_content_reference import (
     fetch_read_content_packet_ref_from_packet,
@@ -730,6 +731,8 @@ def _execute_searchos_slice_a_iterative_judgment(
                     request=request,
                     model_output=parsed,
                 )
+            except RunCapExceeded:
+                raise
             except Exception as exc:
                 failure_reason = _failure_reason(exc)
                 run_kernel.reduce(
@@ -832,6 +835,8 @@ def _execute_searchos_slice_a_iterative_judgment(
                             acquisition_transports=acquisition_transports,
                             before_transport=before_transport,
                         )
+                    except RunCapExceeded:
+                        raise
                     except Exception as exc:
                         after_attempted, after_completed = (
                             _acquisition_provider_call_totals(run_kernel)
