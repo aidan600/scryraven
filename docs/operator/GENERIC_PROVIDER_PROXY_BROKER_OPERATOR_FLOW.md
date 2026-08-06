@@ -5,9 +5,24 @@ live call. A phase must separately license the exact provider, operation, route,
 prompt/query, timeout, retries, result/token cap, dollar ceiling, output path,
 decision, and stop condition.
 
+## Scope
+
+This document defines only the specialized explicit-provider RPC surface. It
+does not define the general broker/doorman purpose. Unqualified "broker" or
+"doorman" means operator-side secret custody; see
+[Brokered Command Session Operator Flow](BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
+
+For a whole ScryRaven, pytest, evaluation, or component command that needs
+ordinary environment access, use the credentialed command-session operator
+flow. The provider/operation matrix and mechanical request fuse below apply
+only to this RPC mechanism. They do not become global doorman policy, product
+provider policy, or a constraint on which credentials may exist in a private
+environment used by `scripts/run_brokered_command_once.py`.
+
 ## Active Boundary
 
-The sole active broker is the repository-tracked loopback server:
+The active explicit-provider RPC broker is the repository-tracked loopback
+server:
 
 ```text
 scripts/provider_execution_broker.py

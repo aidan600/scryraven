@@ -76,6 +76,19 @@ Nothing here proves real-world model quality or arbitrary-query downstream
 multi-component synthesis, and no provider, search, retrieval, or
 live-validation license is widened.
 
+## Operator Doorman Boundary
+
+Operator doorman infrastructure is not ordinary product runtime. ScryRaven
+product modules do not call `scripts/run_brokered_command_once.py`. Normal
+human local use continues through the normal CLI and local configuration path
+with no doorman. The credentialed command launcher exists for LLM-controlled
+trusted local execution of whole-product or component/test/evaluator commands
+that need the private environment. The `GENERIC-PROVIDER-EXECUTION-BROKER-V2`
+marker describes only the specialized explicit-provider/evaluator RPC
+mechanism; its provider matrix and mechanical request fuse are not general
+product or doorman policy. See
+[Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
+
 ## Installed Capability Table
 
 The identifiers below are documentation sentinels, not runtime flags or public

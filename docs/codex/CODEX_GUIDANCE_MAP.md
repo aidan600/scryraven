@@ -133,15 +133,27 @@ narrow search task does not require all three supporting documents.
 SearchOS doctrine is a concern owner, not a global workflow owner. The smallest-
 owner rule and default current-state read path remain in force.
 
+Unqualified "broker" or "doorman" does not mean the provider-execution RPC
+service. It means the operator-side secret-custody role; the RPC service is one
+specialized mechanism. For any unqualified request involving broker, doorman,
+secret-safe local execution, `.env` custody, or LLM-controlled live/component
+execution, first understand the general operator doorman boundary from
+[Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
+
 | Concern | Read first |
 | --- | --- |
+| General operator doorman / credentialed command session | [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md) |
+| Whole-product, pytest, evaluation, or component command needing ordinary environment | [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md) |
+| One explicit provider-RPC operation or evaluator transport | [Generic Provider Proxy/Broker Operator Flow](../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md) |
+| Separately licensed trusted-local provider-RPC reactivation | [Broker Reactivation Runbook](../operator/BROKER_REACTIVATION_RUNBOOK.md) |
 | Provider acquisition classification | [Generic Provider Proxy/Broker Operator Flow](../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md) |
-| Separately licensed trusted-local broker reactivation | [Broker Reactivation Runbook](../operator/BROKER_REACTIVATION_RUNBOOK.md) |
 
 Provider-facing work must declare product integration or testing/operator
-broker-doorman work. Broker output is sanitized provider material only; it is
-not evidence custody, citation eligibility, source-obligation satisfaction, or
-answer material.
+broker-doorman work. Explicit provider-RPC broker output is sanitized provider
+material only; it is not evidence custody, citation eligibility,
+source-obligation satisfaction, or answer material. That sanitized-provider-
+material rule applies only to the explicit provider-RPC broker, not to the
+general credentialed-command session.
 
 The capability inventory / reuse-first gate also applies to the generic
 single-relation dogfood path: route planning, acquisition, source/readiness,

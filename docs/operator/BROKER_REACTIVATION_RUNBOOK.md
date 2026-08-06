@@ -1,7 +1,20 @@
 # Provider-Execution Broker Activation Runbook
 
-Status: current operator guidance for the tracked loopback-only broker. This
-document does not authorize live provider contact by itself.
+Status: current operator guidance for reactivating the tracked loopback-only
+explicit-provider RPC broker. This document does not authorize live provider
+contact by itself.
+
+## Relationship To The General Doorman
+
+This runbook reactivates the specialized explicit-provider RPC service. It does
+not define the general broker/doorman purpose. For ordinary credentialed
+command sessions that supply a private environment to a trusted whole-product,
+component, test, or evaluator argv, use
+[Brokered Command Session Operator Flow](BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
+
+The provider matrix, mechanical request-count fuse, token/session mechanics,
+and route assertions in this runbook must not be generalized into policy for
+ordinary credentialed command sessions or for ScryRaven itself.
 
 ## Installed Components
 
@@ -13,7 +26,8 @@ scripts/run_provider_proxy_broker_once.py
 scripts/evaluation/brokered_model_origination_transport.py
 ```
 
-The active doctrine is one explicit-route mechanical broker:
+For this explicit-provider RPC mechanism, the active doctrine is one
+explicit-route mechanical broker:
 
 ```text
 caller resolves exact provider/model route
@@ -23,7 +37,7 @@ caller resolves exact provider/model route
 -> caller-owned interpretation and durable sanitization
 ```
 
-The broker does not own jobs, phases, profiles, commands, aliases,
+This RPC broker does not own jobs, phases, profiles, commands, aliases,
 fast/smart/embed selection, semantic roles, capability judgment, provider
 preference, query strategy, ranking, source admission, retrieval recovery,
 Sufficiency, citation, FAP, Author, or dollar policy.
