@@ -13,6 +13,7 @@ from hashlib import sha256
 from typing import Any, Callable, ClassVar, Mapping
 
 from core.cap_enforcement import (
+    DEFAULT_MODEL_TIMEOUT_SECONDS,
     MODEL_OUTPUT_TOKEN_LIMIT,
     AttemptLifecycle,
     AttemptReservation,
@@ -140,7 +141,7 @@ class StrictOneShotModelTransport:
         repr=False,
         compare=False,
     )
-    timeout_seconds: float = 60.0
+    timeout_seconds: float = DEFAULT_MODEL_TIMEOUT_SECONDS
     cap_policy: RunCapPolicy | None = field(
         default=None,
         repr=False,
@@ -552,7 +553,7 @@ def build_strict_one_shot_smart_model_transport(
     openrouter_api_key: str | None = None,
     credential_lookup: CredentialLookup | None = None,
     client_factory: OpenAICompatibleClientFactory | None = None,
-    timeout_seconds: float = 60.0,
+    timeout_seconds: float = DEFAULT_MODEL_TIMEOUT_SECONDS,
     cap_policy: RunCapPolicy | None = None,
 ) -> StrictOneShotModelTransport:
     """Build the product-owned strict one-shot SmartModel transport."""

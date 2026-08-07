@@ -32,6 +32,7 @@ from core.acquisition_contracts import (
 )
 from core.cap_enforcement import (
     DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+    DEFAULT_MODEL_TIMEOUT_SECONDS,
     AttemptLifecycle,
     ExternalAttemptSpec,
     ExternalCallFamily,
@@ -471,12 +472,160 @@ def test_model_transport_reserves_once_disables_sdk_retry_and_settles_usage(
     assert len(calls) == 1
     assert calls[0]["max_completion_tokens"] > 0
     assert options[0]["max_retries"] == 0
+    # Fixture deadline is 30s, so the 60s model mechanical timeout is clipped.
     assert 0 < options[0]["timeout"] <= 30
     snapshot = policy.physical_snapshot()
     assert snapshot["physical_attempts_by_family"]["model"] == 1
     assert snapshot["lifecycle_counts"]["settled_observed"] == 1
     assert snapshot["observed_tokens"]["cached_input_tokens"] == 3
     assert snapshot["observed_tokens"]["reasoning_tokens"] == 2
+
+
+def test_bounded_model_timeout_is_sixty_when_deadline_allows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = _policy(deadline_seconds=180.0)
+    options: list[dict[str, Any]] = []
+
+    class Chat:
+        def create(self, **_kwargs: Any) -> Any:
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+                usage=SimpleNamespace(
+                    prompt_tokens=4,
+                    completion_tokens=1,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=0),
+                    completion_tokens_details=SimpleNamespace(reasoning_tokens=0),
+                ),
+            )
+
+    class Client:
+        chat = SimpleNamespace(completions=Chat())
+
+        def with_options(self, **kwargs: Any) -> Client:
+            options.append(kwargs)
+            return self
+
+    monkeypatch.setattr(llm, "get_openai_client", lambda: Client())
+    llm.ask_model(
+        "question",
+        "system",
+        provider="OpenAI",
+        model="gpt-5.4-mini",
+        cap_policy=policy,
+        logical_call_id="model:timeout-60",
+    )
+
+    assert options[0]["max_retries"] == 0
+    assert options[0]["timeout"] == pytest.approx(DEFAULT_MODEL_TIMEOUT_SECONDS, abs=0.05)
+    assert DEFAULT_MODEL_TIMEOUT_SECONDS == 60.0
+    assert DEFAULT_EXTERNAL_TIMEOUT_SECONDS == 30.0
+    snapshot = policy.physical_snapshot()
+    assert snapshot["retry_attempts"] == 0
+    assert snapshot["fallback_attempts"] == 0
+    assert snapshot["physical_attempts_by_family"]["model"] == 1
+    assert snapshot["limits"]["max_retries"] == 0
+    assert snapshot["limits"]["max_fallbacks"] == 0
+
+
+def test_bounded_model_timeout_clips_to_remaining_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [1000.0]
+    monkeypatch.setattr(cap_module.time, "monotonic", lambda: clock[0])
+    policy = _policy(deadline_seconds=180.0, activate=False)
+    policy.activate(run_id="model-clip-run", request_id="model-clip-request")
+    clock[0] = 1000.0 + 150.0
+    options: list[dict[str, Any]] = []
+
+    class Chat:
+        def create(self, **_kwargs: Any) -> Any:
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+                usage=SimpleNamespace(
+                    prompt_tokens=4,
+                    completion_tokens=1,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=0),
+                    completion_tokens_details=SimpleNamespace(reasoning_tokens=0),
+                ),
+            )
+
+    class Client:
+        chat = SimpleNamespace(completions=Chat())
+
+        def with_options(self, **kwargs: Any) -> Client:
+            options.append(kwargs)
+            return self
+
+    monkeypatch.setattr(llm, "get_openai_client", lambda: Client())
+    llm.ask_model(
+        "question",
+        "system",
+        provider="OpenAI",
+        model="gpt-5.4-mini",
+        cap_policy=policy,
+        logical_call_id="model:timeout-clip",
+    )
+
+    assert options[0]["max_retries"] == 0
+    assert 29.0 <= options[0]["timeout"] <= 30.0
+    assert options[0]["timeout"] < DEFAULT_MODEL_TIMEOUT_SECONDS
+
+
+def test_bounded_embedding_timeout_remains_thirty_when_deadline_allows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = _policy(deadline_seconds=180.0)
+    options: list[dict[str, Any]] = []
+
+    class Embeddings:
+        def create(self, *, model: str, input: list[str]) -> Any:
+            return SimpleNamespace(
+                data=[SimpleNamespace(embedding=[1.0, 0.0]) for _ in input],
+                usage=SimpleNamespace(prompt_tokens=len(input)),
+            )
+
+    class EmbedClient:
+        embeddings = Embeddings()
+
+        def with_options(self, **kwargs: Any) -> EmbedClient:
+            options.append(kwargs)
+            return self
+
+    monkeypatch.setattr(llm, "get_openai_client", lambda: EmbedClient())
+    llm.embed_texts(
+        ["bounded text"],
+        cap_policy=policy,
+        logical_call_id="embedding:timeout-30",
+    )
+
+    assert options[0]["max_retries"] == 0
+    assert options[0]["timeout"] == pytest.approx(DEFAULT_EXTERNAL_TIMEOUT_SECONDS, abs=0.05)
+    assert DEFAULT_EXTERNAL_TIMEOUT_SECONDS == 30.0
+    assert DEFAULT_MODEL_TIMEOUT_SECONDS == 60.0
+    snapshot = policy.physical_snapshot()
+    assert snapshot["physical_attempts_by_family"]["embedding"] == 1
+    assert snapshot["retry_attempts"] == 0
+    assert snapshot["fallback_attempts"] == 0
+
+
+def test_model_timeout_change_does_not_alter_admission_or_authority_shape() -> None:
+    assert DEFAULT_MODEL_TIMEOUT_SECONDS == 60.0
+    assert DEFAULT_EXTERNAL_TIMEOUT_SECONDS == 30.0
+    policy = _policy(deadline_seconds=180.0)
+    snapshot = policy.physical_snapshot()
+    assert snapshot["limits"]["max_retries"] == 0
+    assert snapshot["limits"]["max_fallbacks"] == 0
+    assert snapshot["deadline_seconds"] == 180.0
+    assert policy.should_disable_model_retry() is True
+    assert policy.should_disable_fallback() is True
+    model_bound = model_usage_bound("question", "system")
+    assert model_bound.output_tokens == cap_module.MODEL_OUTPUT_TOKEN_LIMIT
+    assert model_bound.reasoning_tokens == cap_module.MODEL_REASONING_TOKEN_LIMIT
+    assert policy.envelope is not None
+    assert policy.envelope.max_run_usd == Decimal("50")
+    assert snapshot["retry_posture"]["maximum"] == 0
+    assert snapshot["fallback_posture"]["maximum"] == 0
 
 
 def test_model_transport_failure_has_no_retry_or_endpoint_fallback(

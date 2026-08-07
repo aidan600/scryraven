@@ -14,6 +14,7 @@ from openai import OpenAI
 
 from core.cap_enforcement import (
     DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+    DEFAULT_MODEL_TIMEOUT_SECONDS,
     MODEL_OUTPUT_TOKEN_LIMIT,
     AttemptReservation,
     ExternalAttemptSpec,
@@ -101,7 +102,7 @@ def _reserve_model_attempt(
             logical_call_id=logical_id,
             max_usage=model_usage_bound(prompt, system_prompt),
             pricing=pricing,
-            requested_timeout_seconds=DEFAULT_EXTERNAL_TIMEOUT_SECONDS,
+            requested_timeout_seconds=DEFAULT_MODEL_TIMEOUT_SECONDS,
             is_retry=retry_index > 0,
             is_fallback=fallback,
         )
