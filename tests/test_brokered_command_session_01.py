@@ -15,7 +15,7 @@ import pytest
 from scripts import run_brokered_command_once as doorman
 
 
-def _write_env(path: Path, text: str = "NORMAL=value\nAPI_KEY=fake-secret-value\n") -> Path:
+def _write_env(path: Path, text: str = "NORMAL=value\nAPI_KEY=fake-secret-value\n") -> Path:  # pragma: allowlist secret
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -179,7 +179,7 @@ def test_multiple_secret_values_redact_longest_first_and_preserve_nonsecret(
     repo_root.mkdir()
     output_root = tmp_path / "external"
     output_root.mkdir()
-    secret = "shared-secret-value"
+    secret = "shared-secret-value"  # pragma: allowlist secret
     env_file = _write_env(
         tmp_path / "private.env",
         f"AUTH_TOKEN={secret}\nPASSWORD={secret}-long\nNORMAL=retained\n",
@@ -257,7 +257,7 @@ def test_private_child_uses_one_shell_free_target_process(tmp_path: Path, monkey
     assert observed_kwargs[0]["cwd"] == str(repo_root.resolve())
     target_env = observed_kwargs[0]["env"]
     assert isinstance(target_env, dict)
-    assert target_env["API_KEY"] == "fake-secret-value"
+    assert target_env["API_KEY"] == "fake-secret-value"  # pragma: allowlist secret
     assert doorman.PRIVATE_NONCE_ENV_VAR not in target_env
     assert doorman.PRIVATE_ENV_FILE_PATH_ENV_VAR not in target_env
     assert (output_root / "out.txt").read_text() == "ok"
@@ -331,12 +331,12 @@ def test_product_packages_do_not_import_operator_launcher() -> None:
 
 
 def test_no_private_launcher_value_enters_target_environment() -> None:
-    parsed = {"API_KEY": "fake-secret-value", "NORMAL": "safe"}
+    parsed = {"API_KEY": "fake-secret-value", "NORMAL": "safe"}  # pragma: allowlist secret
     child_env = doorman.private_child_environment(
         nonce="nonce", env_file_path=Path("C:/private.env"), process_env={}
     )
     target_env = doorman.target_environment(parsed, child_env)
-    assert target_env["API_KEY"] == "fake-secret-value"
+    assert target_env["API_KEY"] == "fake-secret-value"  # pragma: allowlist secret
     assert doorman.PRIVATE_NONCE_ENV_VAR not in target_env
     assert doorman.PRIVATE_ENV_FILE_PATH_ENV_VAR not in target_env
 
@@ -346,7 +346,7 @@ def test_utf8_bom_prefixed_secret_loads_and_redacts(tmp_path: Path) -> None:
     repo_root.mkdir()
     output_root = tmp_path / "external"
     output_root.mkdir()
-    secret = "bom-fake-secret-value"
+    secret = "bom-fake-secret-value"  # pragma: allowlist secret
     env_file = tmp_path / "private.env"
     env_file.write_bytes(b"\xef\xbb\xbfAPI_KEY=" + secret.encode("utf-8") + b"\nNORMAL=ok\n")
     stdout = output_root / "stdout.txt"
