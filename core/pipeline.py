@@ -3277,7 +3277,11 @@ def process_search_queries(
                 else None
             ),
         )
+        if cap_policy is not None and cap_policy.bounded:
+            cap_policy.note_product_stage("retrieval_embedding_vectors_ready")
         sim_scores = compute_similarities(query_embedding, new_embeddings)
+        if cap_policy is not None and cap_policy.bounded:
+            cap_policy.note_product_stage("retrieval_similarity_ready")
         _hint = (entity_hint or "").strip()
         filtered_passages = []
         for i, passage in enumerate(new_passages):
@@ -3306,6 +3310,8 @@ def process_search_queries(
         for diagnostic, accepted_urls in attempt_diagnostics:
             diagnostic["new_source_count"] = len(accepted_urls & passage_urls)
 
+    if cap_policy is not None and cap_policy.bounded:
+        cap_policy.note_product_stage("retrieval_passages_ready")
     return new_passages
 
 
